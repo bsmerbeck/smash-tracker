@@ -103,18 +103,16 @@ const DEFAULT_COUNTERPICK_STAGE_IDS = COUNTERPICK_STAGE_NAMES.map(stageIdForLega
 );
 
 /**
- * The ONE default ruleset preset (D-09). This is NOT a claim of a specific
- * organiser's official ruleset (D-17): three independently-checked public
- * SSBU ruleset sources disagree with each other and with this exact split
- * (37-RESEARCH.md Pitfall 7 / Open Question 1 — CEO Gaming's 2026 ruleset,
- * SmashWiki's "Unified North American Ruleset" page, and SmashWiki's general
- * Stage Legality page each classify the starter/counterpick split
- * differently, and none lists Northern Cave or Yoshi's Story as an
- * established counterpick). This preset is therefore a HOUSE CONVENTION
- * informed by, but not identical to, the closest public source cited below —
- * hence the `house` marker in its id. Do not add a doc comment or a shipped
- * string anywhere in this codebase that claims this preset IS a named
- * organiser's official ruleset.
+ * The ONE default ruleset preset (D-09). This is NOT a claim that a specific
+ * tournament organiser sanctions this exact list (D-17): independently
+ * checked public SSBU stage-legality sources disagree with each other and
+ * with this exact split (37-RESEARCH.md Pitfall 7 / Open Question 1 walks
+ * through the citation trail), and none of them lists Northern Cave or
+ * Yoshi's Story as an established counterpick. This preset is therefore a
+ * HOUSE CONVENTION informed by, but not identical to, the closest public
+ * source cited below — hence the `house` marker in its id. Do not add a doc
+ * comment or a shipped string anywhere in this codebase that claims this
+ * preset matches any specific tournament series' sanctioned rules.
  *
  * `starterStageIds`/`counterpickStageIds` are exactly a partition of this
  * app's own `TOURNAMENT_LEGAL_STAGE_IDS` (stageData.ts) — not a fresh stage
