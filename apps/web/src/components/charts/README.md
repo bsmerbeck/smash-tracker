@@ -25,11 +25,25 @@ consequence of getting it wrong:
 3. **`bundleIsolation.guard.test.ts`** — a real production `vite build`, excluded from the default
    suite (`pnpm run guard:chart-bundle`), that proves the CONSEQUENCE of the boundary holding:
    Recharts and its runtime dependencies never land in the entry chunk or anywhere statically
-   reachable from it, and the entry document's `modulepreload` count is locked at a measured
-   integer. A page can pass the two source-level checks above and still leak a chart library into
-   the eager boot graph if the Vite chunking config regresses — this guard is what catches that
-   class of bug (it caught a real one during this kit's own build, see `vite.config.ts`'s doc
-   comment on the `codeSplitting` predicate).
+   reachable from it. A page can pass the two source-level checks above and still leak a chart
+   library into the eager boot graph if the Vite chunking config regresses — this guard is what
+   catches that class of bug (it caught a real one during this kit's own build, see
+   `vite.config.ts`'s doc comment on the `codeSplitting` predicate). Its real oracles, after a
+   code-review fix (2026-09-18) retired an exact-count lock that flapped 25→26→25 across three
+   benign chunking reshuffles in one phase (a healthy-tree false positive AND a same-count-swap
+   false negative, both real risks of an exact-equality lock on a single link count): an
+   **eager-payload BYTE budget** (sums every eagerly-reachable chunk's on-disk size, locked with a
+   small tolerance — the metric that actually tracks boot-stall cost), a **content-level grep** for
+   a forbidden library's own literal bytes in every eager chunk file (independent of and additional
+   to a `moduleIds`-attribution check, so a hole in one detection mechanism doesn't silently pass
+   the other), and the `charts-vendor` chunk's existence/laziness. The `modulepreload` LINK COUNT
+   is now a bounded early-warning signal (`≤` baseline + 1), not the lock — it still catches a real
+   unreviewed growth, but no longer forces a rubber-stamp re-baseline on ordinary healthy-tree
+   churn. Re-baseline rule for the byte budget: DOWN (a real payload shrink) needs no special
+   justification; UP requires a reviewed, recorded reason in a diff — never silently absorbed by
+   loosening the tolerance. See the guard file's own doc comment for the full re-baseline history
+   and the measurement-context caveat (this guard's own nested-build byte totals are not directly
+   comparable to a bare `pnpm build`'s `dist/` size — always re-baseline using the guard's own run).
 
 **The frame rule is structural, not lexical.** The rule is "a Recharts element is only ever
 rendered inside a `ChartCard`" — NOT "a file that imports a kit primitive also imports

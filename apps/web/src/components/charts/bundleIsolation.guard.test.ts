@@ -32,7 +32,10 @@ interface BuiltChunk {
  * proves the isolation from the Rollup/Rolldown chunk GRAPH itself, not from
  * config source text: a chunk's `moduleIds` carry real module attribution
  * even after minification, where a content grep for the string `recharts`
- * would find nothing.
+ * would find nothing (except where it demonstrably does — see the content-
+ * grep assertion below, which exists precisely because a library CAN leave
+ * literal identifying strings in its own minified output, e.g. internal
+ * error messages).
  *
  * Deliberately excluded from the default `pnpm test` run (own
  * `.guard.test.ts` suffix, `vitest.config.ts`'s `exclude`) — a real
@@ -61,6 +64,62 @@ interface BuiltChunk {
  *      (the non-deprecated `output.codeSplitting.groups` API with
  *      `includeDependenciesRecursively: false`). That fix is what makes this
  *      guard pass today.
+ *
+ * ## The re-baseline history and why the count is now a BOUND, not a lock
+ * (CR-01/WR-01 code-review fix, 2026-09-18)
+ *
+ * The exact `modulepreload` count was re-baselined 25 (research, pre-phase)
+ * -> 26 (plan 37-05, Task 1: `AnalyticsFilterContext` split into its own
+ * chunk once `packages/shared` grew by one file) -> **25 again** (some later
+ * 37-06 change — new `retrospective.ts` ruleset-filtering logic and six
+ * locales' worth of new `tournaments.retro.*` keys — pushed the eager module
+ * graph back under whatever internal Rolldown chunking threshold triggered
+ * the 26 split, with NO plan or SUMMARY after the 25->26 re-baseline ever
+ * re-running this guard to notice). Three real, benign chunking reshuffles
+ * in one phase prove the exact count is not a stable enough signal to be the
+ * PRIMARY oracle: an exact-equality lock either goes permanently red on
+ * ordinary healthy-tree churn (forcing a re-baseline nobody has an incentive
+ * to actually investigate before rubber-stamping) or, worse, silently STAYS
+ * GREEN across a same-count swap that trades one small chunk for one large
+ * one — which is exactly the boot-stall hazard this guard exists to catch.
+ *
+ * The real protections, as of this fix, are (in order of what actually
+ * catches a regression):
+ *   1. **The eager-BYTES budget** (`EAGER_BYTES_BASELINE`/
+ *      `EAGER_BYTES_TOLERANCE`, below) — sums the on-disk size of every
+ *      chunk file in the eager closure (the same closure `computeEagerClosure`
+ *      already computes from real static-import edges: every `modulepreload`-
+ *      linked asset PLUS the entry script itself) and locks it at the
+ *      measured value with a small tolerance. This is the metric that
+ *      actually corresponds to the boot-stall mechanism (bytes-to-parse-and-
+ *      execute before first paint), not a proxy for it.
+ *   2. **The forbidden-library CONTENT grep** (`FORBIDDEN_LIBRARY_CONTENT_SIGNATURE`,
+ *      below) — reads the actual bytes of every eager chunk file and checks
+ *      for a forbidden library's own literal identifying strings (confirmed
+ *      present in this app's real `charts-vendor` chunk: `recharts` and
+ *      `react-redux` both survive minification as literal substrings, most
+ *      likely from internal invariant/error messages). This is independent
+ *      of and strictly additional to assertion 3 below (which reads Rollup's
+ *      OWN `moduleIds` attribution, not raw bytes) — a defense-in-depth pair
+ *      so a hole in one detection mechanism doesn't silently pass the other.
+ *   3. The pre-existing `moduleIds`-based "nothing forbidden is reachable"
+ *      assertion (module-graph attribution, survives minification because
+ *      Rollup tracks it independently of the emitted source).
+ *   4. `charts-vendor` chunk existence + laziness (D-19).
+ *   5. **The modulepreload count is now a BOUND** (`ENTRY_MODULEPRELOAD_BOUND
+ *      = 26`, i.e. the 25 baseline + 1), not an exact lock: an early-warning
+ *      signal that stays green through the exact kind of benign reshuffle
+ *      that hit this guard three times, while still catching a real,
+ *      unreviewed GROWTH past baseline+1.
+ *
+ * **Re-baseline rule for `EAGER_BYTES_BASELINE`:** it may be re-baselined
+ * DOWN (an eager-payload shrink) at any time with no special justification —
+ * a smaller number is never the hazard this guard exists to catch. Re-
+ * baselining it UP requires a reviewed, recorded reason in a diff (the same
+ * standard the retired exact-count lock used), following the two-worktree
+ * before/after build-diff method plan 37-05's SUMMARY established. Never
+ * silently absorb a byte-budget failure by loosening the tolerance instead
+ * of diagnosing the cause.
  */
 
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -81,43 +140,74 @@ const FORBIDDEN_CHART_MODULE =
   /node_modules[\\/](recharts|chart\.js|react-chartjs-2|victory-vendor|es-toolkit|@reduxjs[\\/]toolkit|react-redux|immer|reselect|decimal\.js-light|eventemitter3|tiny-invariant|d3-)/;
 
 /**
- * Measured on 2026-09-17 by running this exact guard's own `beforeAll` build
- * once with a temporary logging line and counting `rel="modulepreload"`
- * occurrences in the emitted `outDir/index.html` — equivalently reproducible
- * via `pnpm --filter @smash-tracker/web run guard:chart-bundle` (this file's
- * own last `it` block performs the identical count on every run). Research
- * measured 25 on a pre-phase tree on 2026-09-17 (before this plan's
- * chart-kit work); this plan's own measurement, on the post-37-01-plus-fix
- * tree (see `vite.config.ts`'s doc comment for the `codeSplitting` fix this
- * measurement depended on), is ALSO exactly 25 — the fix restores the
- * pre-phase baseline exactly rather than merely getting under it. Equality
- * below is deliberate in BOTH directions: one link MORE is the boot-stall
- * regression class this lock exists to catch (it is what this guard caught,
- * at 26, during this plan's own execution before the fix); one link
- * FEWER is a real improvement that must be re-measured and re-baselined in a
- * reviewed diff, never silently absorbed by loosening this constant.
- *
- * Re-measured 2026-09-18 (plan 37-05, Counterpick Advisor gate/rank +
- * disclosure): re-running this guard's own build after 37-05's Task 1 (the
- * ONLY task that changed) moved the count from 25 to 26. Diagnosed by
- * building both the pre-37-05 tree and the post-Task-1 tree with the
- * SAME unmodified `vite.config.ts` in two disposable worktrees and diffing
- * the raw `href` list `rel="modulepreload"` resolves to: the other four
- * assertions in this file (eager-graph non-emptiness, nothing forbidden
- * eagerly reachable, `charts-vendor` lazy, the forbidden pattern matching
- * something) all stayed green — the new link is `AnalyticsFilterContext`'s
- * chunk, which was already part of the SAME eager bundle before (inlined
- * into the entry chunk), now split into its own file by Rolldown's
- * automatic chunking once 37-05's new shared-package file
- * (`packages/shared/src/evidence/pickBan.ts`, reached through the
- * already-eager `@smash-tracker/shared` barrel) grew that chunk past an
- * internal size threshold. No new import edge, no chart-library module in
- * the eager set — a chunking reshuffle of already-eager code, not the
- * boot-stall regression class this lock exists to catch. Re-baselined to 26
- * per this file's own instruction ("re-measured and re-baselined in a
- * reviewed diff, never silently absorbed").
+ * Content-level counterpart to `FORBIDDEN_CHART_MODULE` above (WR-01/CR-01
+ * fix): matches a forbidden library's own literal name as it can survive
+ * INSIDE minified emitted bytes (e.g. an internal error/invariant message),
+ * independent of Rollup's `moduleIds` attribution metadata. No
+ * `node_modules[\\/]` path prefix here — this pattern is tested against raw
+ * file CONTENT, which never contains a source path for code that ships in
+ * production. Confirmed non-vacuous against this app's own `charts-vendor`
+ * chunk (`recharts` and `react-redux` both appear literally); `d3-*`,
+ * `es-toolkit`, and `victory-vendor` are NOT expected to appear literally
+ * (they're fully renamed/tree-shaken away) — their presence here is
+ * defense-in-depth for a future recharts/d3 version that stops doing so, not
+ * a claim that they currently match anything.
  */
-const ENTRY_MODULEPRELOAD_LOCK = 26;
+const FORBIDDEN_LIBRARY_CONTENT_SIGNATURE =
+  /\b(recharts|victory-vendor|react-redux|@reduxjs\/toolkit|es-toolkit|chart\.js|react-chartjs-2|d3-[a-z]+)\b/;
+
+/**
+ * The modulepreload count is now a BOUND (early-warning signal), not the
+ * primary lock — see the top-of-file doc comment's "re-baseline history"
+ * section for the full reasoning. 25 is the last-measured healthy baseline
+ * (2026-09-18, post-37-06); 26 (+1) tolerates the exact kind of benign
+ * single-chunk-split reshuffle this guard has now observed twice in one
+ * phase without forcing an unreviewed re-baseline. A measurement ABOVE 26
+ * still fails loudly; a measurement of 25 or 26 passes without needing a
+ * diff. The eager-BYTES budget below is what actually catches a same-count
+ * payload-weight regression this bound alone would miss.
+ */
+const ENTRY_MODULEPRELOAD_BOUND = 26;
+
+/**
+ * Eager-payload byte budget (WR-01 fix): the sum of the on-disk size of
+ * every file in the eager closure (every `modulepreload`-linked chunk PLUS
+ * the entry script itself — the same 26-file set `computeEagerClosure`
+ * computes from real static-import edges). Measured fresh against this
+ * commit (2026-09-18, HEAD `4780caf2`, after all of 37-01..37-06) by running
+ * THIS EXACT guard file under `pnpm --filter @smash-tracker/web run
+ * guard:chart-bundle` (i.e. `vite build()` invoked from inside a Vitest
+ * worker process): 1,056,636 bytes, reproduced identically across 3 cold
+ * process runs.
+ *
+ * **This number is deliberately NOT the same as a plain `pnpm build`'s
+ * `dist/` output for the same eager set** (measured separately, via a bare
+ * Node script invoking the identical unmodified `vite.config.ts` outside
+ * any Vitest process: 835,184 bytes — about 21% smaller). Root cause not
+ * fully chased down (out of scope for this fix), but confirmed to be a
+ * broad, uniform inflation across nearly every emitted chunk (not a
+ * chart-library leak: the eager file SET is byte-for-byte identical between
+ * the two contexts — same 26 filenames, same content-grep/moduleIds
+ * results — only the absolute sizes differ), consistent with Vite/Rolldown
+ * resolving a less-optimized build target or output shape when nested
+ * inside a Vitest worker versus a bare CLI/Node invocation. Since this
+ * guard ALWAYS runs its measurement through the nested-under-Vitest path
+ * (that's what `pnpm run guard:chart-bundle` actually executes), the
+ * baseline is measured and locked through that SAME path — the number that
+ * matters is "does this guard's own repeatable measurement regress",
+ * not "does it match `dist/`'s reported size". Do not re-baseline this
+ * constant using a bare `pnpm build` measurement; always use this guard's
+ * own run.
+ *
+ * Tolerance is `min(2% of baseline, 16 KiB)`: 2% of 1,056,636 is
+ * 21,132.72 B; 16 KiB (16,384 B) is the smaller of the two, so 16,384 B is
+ * what's used. Locked upper bound: 1,056,636 + 16,384 = 1,073,020 B. A
+ * measurement at or below that bound passes; anything above it is a real,
+ * reviewable payload regression. See the top-of-file doc comment for the
+ * re-baseline rule.
+ */
+const EAGER_BYTES_BASELINE = 1_056_636;
+const EAGER_BYTES_TOLERANCE = 16 * 1024;
 
 let outDir: string;
 let builtOutput: BuiltChunk[];
@@ -234,9 +324,52 @@ describe('chart bundle isolation — build-output guard (SCL-02, D-02, D-19)', (
     expect(eager.has(chartsVendorChunk.fileName)).toBe(false);
   });
 
-  it('the entry document preload budget is locked at the measured value (D-02/D-20)', () => {
+  it("no eager-path asset file contains a forbidden library's own bytes, verified by content — not module attribution (WR-01/CR-01)", () => {
+    const chunks = outputChunks();
+    const byFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
+    const eager = computeEagerClosure(chunks);
+
+    const offenders: { fileName: string; signature: string }[] = [];
+    for (const fileName of eager) {
+      const chunk = byFileName.get(fileName);
+      if (!chunk || chunk.type !== 'chunk') continue;
+      const filePath = path.join(outDir, fileName);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const match = content.match(FORBIDDEN_LIBRARY_CONTENT_SIGNATURE);
+      if (match) {
+        offenders.push({ fileName, signature: match[0] });
+      }
+    }
+    expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+  });
+
+  it('the forbidden-library content signature is not vacuous — it matches inside the (lazy) charts-vendor chunk', () => {
+    const chunks = outputChunks();
+    const chartsVendorChunk = chunks.find((chunk) => chunk.fileName.includes('charts-vendor'));
+    if (!chartsVendorChunk) {
+      throw new Error('expected a charts-vendor chunk (asserted in the sibling test above)');
+    }
+    const content = fs.readFileSync(path.join(outDir, chartsVendorChunk.fileName), 'utf8');
+    expect(FORBIDDEN_LIBRARY_CONTENT_SIGNATURE.test(content)).toBe(true);
+  });
+
+  it('the entry document preload count stays within the early-warning bound (D-02/D-20)', () => {
     const entryHtml = fs.readFileSync(path.join(outDir, 'index.html'), 'utf8');
     const modulepreloadCount = (entryHtml.match(/rel="modulepreload"/g) ?? []).length;
-    expect(modulepreloadCount).toBe(ENTRY_MODULEPRELOAD_LOCK);
+    expect(modulepreloadCount).toBeLessThanOrEqual(ENTRY_MODULEPRELOAD_BOUND);
+  });
+
+  it('the eager-payload byte budget is locked at the measured value with a small tolerance (D-02/WR-01)', () => {
+    const chunks = outputChunks();
+    const eager = computeEagerClosure(chunks);
+
+    let totalBytes = 0;
+    for (const fileName of eager) {
+      const filePath = path.join(outDir, fileName);
+      totalBytes += fs.statSync(filePath).size;
+    }
+
+    expect(totalBytes).toBeGreaterThan(0);
+    expect(totalBytes).toBeLessThanOrEqual(EAGER_BYTES_BASELINE + EAGER_BYTES_TOLERANCE);
   });
 });
