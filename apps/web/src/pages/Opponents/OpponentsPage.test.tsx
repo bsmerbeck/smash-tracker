@@ -130,6 +130,9 @@ function renderOpponents(initialEntry = '/opponents') {
             <Routes>
               <Route path="/opponents" element={<OpponentsPage />} />
               <Route path="/coach/:clientId/opponents" element={<OpponentsPage />} />
+              {/* Plan 38-02 (DRL-04): the third subject family — the shared
+                route list now mounts /opponents here too. */}
+              <Route path="/workspace/:tenantId/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
               <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
@@ -238,6 +241,21 @@ describe('OpponentsPage', () => {
     // inspection of the (subject-blind) component code.
     it('renders the identical list/report structure under a coach client-subject route', async () => {
       renderOpponents('/coach/tetra-client/opponents');
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
+      expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+    });
+
+    // Plan 38-02 (DRL-04): the third subject family — the owned-workspace
+    // route was a real gap because it did not exist as a mounted route when
+    // this test file was originally written (only personal and coach were).
+    it('renders the identical list/report structure under an owned-workspace tenant route', async () => {
+      renderOpponents('/workspace/tenant-1/opponents');
 
       expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
       const list = screen.getByRole('list', { name: 'Opponents' });
