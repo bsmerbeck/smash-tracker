@@ -119,6 +119,60 @@ describe('RulesetOverrideSection', () => {
     expect('strikeOrder' in payload).toBe(false);
   });
 
+  // WR-02: an untouched member must stay OMITTED even when a sibling member
+  // in the SAME save is edited — the payload used to always snapshot every
+  // stage's role on every save, freezing the whole stage-legality split the
+  // instant a user touched an unrelated field like DSR.
+  it('editing only DSR submits a payload with dsr as the only ruleset member (WR-02)', async () => {
+    const user = userEvent.setup();
+    setRulesetOverride.mockResolvedValue({ entryKey: 'entry-1', rulesetOverride: null });
+    renderSection({ entryKey: 'entry-1', rulesetOverride: null });
+
+    await user.click(screen.getByRole('button', { name: 'Edit ruleset for this event' }));
+    // DEFAULT_RULESET.dsr is 'modified' — switch to a different variant.
+    await user.click(screen.getByRole('radio', { name: 'no DSR' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(setRulesetOverride).toHaveBeenCalledTimes(1);
+    const [, payload] = setRulesetOverride.mock.calls[0] as [string, RulesetOverrideStored];
+    expect(payload).toEqual({ contractVersion: RULESET_CONTRACT_VERSION, dsr: 'none' });
+  });
+
+  it('editing only the starter list (never touching a counterpick-role stage) omits counterpickStageIds (WR-02)', async () => {
+    const user = userEvent.setup();
+    setRulesetOverride.mockResolvedValue({ entryKey: 'entry-1', rulesetOverride: null });
+    renderSection({ entryKey: 'entry-1', rulesetOverride: null });
+
+    await user.click(screen.getByRole('button', { name: 'Edit ruleset for this event' }));
+    // Battlefield is a DEFAULT_RULESET starter; demoting it to "not legal"
+    // changes only the derived starter set — no counterpick-role stage is
+    // touched, so the counterpick set is byte-for-byte unchanged from baseline.
+    await user.click(within(stageRow('Battlefield')).getByRole('radio', { name: 'Not legal' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(setRulesetOverride).toHaveBeenCalledTimes(1);
+    const [, payload] = setRulesetOverride.mock.calls[0] as [string, RulesetOverrideStored];
+    expect(payload.contractVersion).toBe(RULESET_CONTRACT_VERSION);
+    expect(payload.starterStageIds?.[stageIdKey(1)]).toBeUndefined();
+    expect('counterpickStageIds' in payload).toBe(false);
+    expect('dsr' in payload).toBe(false);
+    expect('banCounts' in payload).toBe(false);
+    expect('setFormat' in payload).toBe(false);
+  });
+
+  it('opening the dialog and saving with no edits at all submits a payload with only contractVersion (WR-02)', async () => {
+    const user = userEvent.setup();
+    setRulesetOverride.mockResolvedValue({ entryKey: 'entry-1', rulesetOverride: null });
+    renderSection({ entryKey: 'entry-1', rulesetOverride: null });
+
+    await user.click(screen.getByRole('button', { name: 'Edit ruleset for this event' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(setRulesetOverride).toHaveBeenCalledTimes(1);
+    const [, payload] = setRulesetOverride.mock.calls[0] as [string, RulesetOverrideStored];
+    expect(payload).toEqual({ contractVersion: RULESET_CONTRACT_VERSION });
+  });
+
   it('a mutation rejection leaves the dialog open, keeps the edited field, and triggers the error toast', async () => {
     const user = userEvent.setup();
     setRulesetOverride.mockRejectedValue(new Error('boom'));

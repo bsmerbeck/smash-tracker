@@ -10,6 +10,7 @@ import {
   stageIdKey,
   TOURNAMENT_LEGAL_STAGE_IDS,
   type DsrVariant,
+  type Ruleset,
   type RulesetOverrideStored,
   type SetFormat,
   type TournamentEntry,
@@ -51,6 +52,26 @@ function buildInitialStageRoles(ruleset: {
   return roles;
 }
 
+/** Ascending-sorted stage ids assigned `role` in `stageRoles`, scoped to this app's own legal-stage list (the only ids this editor's toggles ever assign). */
+function stageIdsWithRole(stageRoles: Record<number, StageRole>, role: StageRole): number[] {
+  return TOURNAMENT_LEGAL_STAGE_IDS.filter((stageId) => stageRoles[stageId] === role).sort(
+    (a, b) => a - b,
+  );
+}
+
+/** Both inputs are pre-sorted ascending (every caller here sorts via `stageIdsWithRole`/`Ruleset`'s own documented invariant). */
+function sameIdList(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function presenceMapFromIds(ids: number[]): Record<string, true> {
+  const map: Record<string, true> = {};
+  for (const id of ids) {
+    map[stageIdKey(id)] = true;
+  }
+  return map;
+}
+
 /**
  * Tournament-detail ruleset disclosure + editor (EVID-04, D-10, D-16). Renders
  * for every entry including admin-imported ones (see `TournamentDetailPage`'s
@@ -68,6 +89,39 @@ function buildInitialStageRoles(ruleset: {
  * intentionally omitted from every payload this component submits (an
  * "untouched" member, per the RTDB conditional-spread convention every other
  * member below follows).
+ *
+ * **WR-01/WR-02 fix (2026-09-18): every editable member follows that same
+ * "untouched -> omitted" rule, not just `strikeOrder`.** `buildPayload()`
+ * diffs the CURRENT form state against `baseline` — the fully resolved
+ * `Ruleset` snapshotted at the moment the dialog opened (same instant the
+ * other fields are re-seeded, below) — and includes a member only when it
+ * differs from that snapshot. This was verified against the PATCH route's
+ * actual behaviour (`apps/api/src/routes/tournaments.ts`): a single
+ * `entryRef.update({ rulesetOverride: stored })` call replaces the WHOLE
+ * `rulesetOverride` child every write — there is no server-side member-wise
+ * merge across separate saves, so "omit" unambiguously means "drop" (revert
+ * that member to inherit from the preset via `resolveRuleset`), never "keep
+ * whatever was stored before." Before this fix, `starterStageIds`/
+ * `counterpickStageIds` (built from every one of `TOURNAMENT_LEGAL_STAGE_IDS`
+ * via `buildInitialStageRoles`) were included on EVERY save regardless of
+ * whether any stage toggle was touched — so editing an unrelated field (say,
+ * the DSR radio) permanently froze that event's entire stage-legality split
+ * as an explicit, stored snapshot, silently opting it out of any future
+ * `DEFAULT_RULESET` revision.
+ *
+ * `starterStageIds` and `counterpickStageIds` are diffed INDEPENDENTLY of
+ * each other (not as one all-or-nothing pair): each is included only if ITS
+ * OWN derived id set differs from `baseline`'s. This matches
+ * `resolveRuleset`'s own documented "each declared member REPLACES the
+ * preset's WHOLE-MEMBER" contract — an omitted sibling list is not claimed
+ * by this override at all, so it correctly falls through to
+ * `DEFAULT_RULESET`'s raw value, exactly as if this override had never
+ * declared it. Known, accepted consequence: if a stored override already
+ * customises ONE list differently from the raw preset and a later save
+ * touches only the OTHER list, the untouched list's customisation is not
+ * re-declared and so reverts to the raw preset default (not to its last
+ * stored value) — the same behaviour the shared contract already documents
+ * for any other omitted member, not something this component papers over.
  */
 export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
   const { t } = useTranslation();
@@ -86,6 +140,11 @@ export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
   const [dsr, setDsr] = useState<DsrVariant>(ruleset.dsr);
   const [setFormatDefault, setSetFormatDefault] = useState<SetFormat>(ruleset.setFormat.default);
   const [setFormatTopCut, setSetFormatTopCut] = useState<SetFormat>(ruleset.setFormat.topCut);
+  // WR-02 fix: the resolved ruleset AT THE MOMENT THE DIALOG OPENED —
+  // `buildPayload` diffs the current form state against this snapshot, never
+  // against the live `ruleset` (which could theoretically move under the
+  // dialog if `entry` refetches while it's open).
+  const [baseline, setBaseline] = useState<Ruleset>(ruleset);
 
   // Render-time state adjustment (mirrors GenerateRecapDialog's `wasOpen`
   // pattern): re-seeds every field from the CURRENTLY resolved ruleset the
@@ -101,6 +160,7 @@ export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
       setDsr(ruleset.dsr);
       setSetFormatDefault(ruleset.setFormat.default);
       setSetFormatTopCut(ruleset.setFormat.topCut);
+      setBaseline(ruleset);
     }
   }
 
@@ -123,26 +183,38 @@ export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
   });
 
   function buildPayload(): RulesetOverrideStored {
-    const starterStageIds: Record<string, true> = {};
-    const counterpickStageIds: Record<string, true> = {};
-    for (const [stageIdText, role] of Object.entries(stageRoles)) {
-      const stageId = Number(stageIdText);
-      if (role === 'starter') {
-        starterStageIds[stageIdKey(stageId)] = true;
-      } else if (role === 'counterpick') {
-        counterpickStageIds[stageIdKey(stageId)] = true;
-      }
-    }
+    const currentStarterIds = stageIdsWithRole(stageRoles, 'starter');
+    const currentCounterpickIds = stageIdsWithRole(stageRoles, 'counterpick');
+    const starterChanged = !sameIdList(currentStarterIds, baseline.starterStageIds);
+    const counterpickChanged = !sameIdList(currentCounterpickIds, baseline.counterpickStageIds);
+
+    const parsedBanBo3 = Number(banBo3) || 0;
+    const parsedBanBo5 = Number(banBo5) || 0;
+    const banCountsChanged =
+      parsedBanBo3 !== baseline.banCounts.bo3 || parsedBanBo5 !== baseline.banCounts.bo5;
+
+    const dsrChanged = dsr !== baseline.dsr;
+    const setFormatChanged =
+      setFormatDefault !== baseline.setFormat.default ||
+      setFormatTopCut !== baseline.setFormat.topCut;
+
+    // WR-02 fix: every member below is conditional-spread — an untouched
+    // member (its current form value equals the `baseline` it was seeded
+    // from) is OMITTED, never resent as an explicit snapshot. See the
+    // component doc comment for why `starterStageIds`/`counterpickStageIds`
+    // are diffed independently of each other, and why "omit" unambiguously
+    // means "drop" under this route's actual whole-child-replace semantics.
     return {
       contractVersion: RULESET_CONTRACT_VERSION,
-      starterStageIds,
-      counterpickStageIds,
-      banCounts: {
-        bo3: Number(banBo3) || 0,
-        bo5: Number(banBo5) || 0,
-      },
-      dsr,
-      setFormat: { default: setFormatDefault, topCut: setFormatTopCut },
+      ...(starterChanged ? { starterStageIds: presenceMapFromIds(currentStarterIds) } : {}),
+      ...(counterpickChanged
+        ? { counterpickStageIds: presenceMapFromIds(currentCounterpickIds) }
+        : {}),
+      ...(banCountsChanged ? { banCounts: { bo3: parsedBanBo3, bo5: parsedBanBo5 } } : {}),
+      ...(dsrChanged ? { dsr } : {}),
+      ...(setFormatChanged
+        ? { setFormat: { default: setFormatDefault, topCut: setFormatTopCut } }
+        : {}),
       // strikeOrder is deliberately OMITTED — this editor exposes no field
       // for it, so it always stays inherited from the preset via
       // `resolveRuleset`.
