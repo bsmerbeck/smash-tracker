@@ -186,6 +186,31 @@
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
       "gameNumber": "Game {{game}}"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "Padrão da casa (SSBU)",
+          "detail": "{{starters}}, {{bans}} por jogo, strike {{strikeOrder}}, {{dsr}}, {{setFormat}} — convenção da casa baseada em {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} palco inicial",
+        "starterClause_other": "{{count}} palcos iniciais",
+        "banClause_one": "{{count}} banimento",
+        "banClause_other": "{{count}} banimentos"
+      },
+      "dsr": {
+        "none": "sem DSR",
+        "standard": "DSR padrão",
+        "modified": "DSR modificado"
+      },
+      "setFormat": {
+        "bo3": "Melhor de 3",
+        "bo5": "Melhor de 5"
+      },
+      "customName": "Personalizado (este evento)",
+      "overrideBadge": "Regras personalizadas",
+      "overrideEditHint": "Edite estas regras na página de detalhes do torneio.",
+      "overrideIgnored": "As regras salvas deste evento foram escritas por uma versão mais nova do app e não estão sendo aplicadas."
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}} DQs excluídos",
       "resultsNotRecorded": "As primeiras colocações não foram registradas nesta importação.",
       "listFootnote": "Linhas \"Importado\" são instantâneos de dados públicos de torneios, não inscrições sincronizadas ao vivo."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Regras deste evento",
+        "usingDefault": "Usando as regras padrão da casa.",
+        "usingOverride": "Usando regras personalizadas para este evento.",
+        "editButton": "Editar regras deste evento",
+        "resetButton": "Restaurar para o padrão da casa",
+        "stageRole": {
+          "starter": "Inicial",
+          "counterpick": "Contra-escolha",
+          "notLegal": "Não legal"
+        },
+        "banCountBo3": "Banimentos em um melhor de 3",
+        "banCountBo5": "Banimentos em um melhor de 5",
+        "dsrLabel": "Regra de repetição de palco",
+        "setFormatDefault": "Formato de set padrão",
+        "setFormatTopCut": "Formato de set no top cut",
+        "saved": "Regras salvas para este evento.",
+        "saveFailed": "Não foi possível salvar as regras deste evento."
+      }
     }
   },
   "billing": {

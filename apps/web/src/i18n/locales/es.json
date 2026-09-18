@@ -186,6 +186,31 @@
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
       "gameNumber": "Partida {{game}}"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "Predeterminado de la casa (SSBU)",
+          "detail": "{{starters}}, {{bans}} por partida, strike {{strikeOrder}}, {{dsr}}, {{setFormat}} — convención de la casa basada en {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} escenario inicial",
+        "starterClause_other": "{{count}} escenarios iniciales",
+        "banClause_one": "{{count}} baneo",
+        "banClause_other": "{{count}} baneos"
+      },
+      "dsr": {
+        "none": "sin DSR",
+        "standard": "DSR estándar",
+        "modified": "DSR modificado"
+      },
+      "setFormat": {
+        "bo3": "Mejor de 3",
+        "bo5": "Mejor de 5"
+      },
+      "customName": "Personalizado (este evento)",
+      "overrideBadge": "Reglas personalizadas",
+      "overrideEditHint": "Edita estas reglas en la página de detalle del torneo.",
+      "overrideIgnored": "Las reglas guardadas de este evento se escribieron con una versión más nueva de la app y no se están aplicando."
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}} DQ excluidas",
       "resultsNotRecorded": "Los primeros puestos no quedaron registrados en esta importación.",
       "listFootnote": "Las filas \"Importado\" son instantáneas de datos públicos de torneos, no inscripciones sincronizadas en vivo."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Reglas para este evento",
+        "usingDefault": "Usando las reglas predeterminadas de la casa.",
+        "usingOverride": "Usando reglas personalizadas para este evento.",
+        "editButton": "Editar reglas de este evento",
+        "resetButton": "Restablecer al predeterminado de la casa",
+        "stageRole": {
+          "starter": "Inicial",
+          "counterpick": "Contra-elección",
+          "notLegal": "No legal"
+        },
+        "banCountBo3": "Baneos en un mejor de 3",
+        "banCountBo5": "Baneos en un mejor de 5",
+        "dsrLabel": "Regla de repetición de escenario",
+        "setFormatDefault": "Formato de set predeterminado",
+        "setFormatTopCut": "Formato de set en el top cut",
+        "saved": "Reglas guardadas para este evento.",
+        "saveFailed": "No se pudieron guardar las reglas de este evento."
+      }
     }
   },
   "billing": {

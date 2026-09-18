@@ -186,6 +186,31 @@
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
       "gameNumber": "Game {{game}}"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "House default (SSBU)",
+          "detail": "{{starters}}, {{bans}} per game, {{strikeOrder}} strike, {{dsr}}, {{setFormat}} — house convention modelled on {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} starter",
+        "starterClause_other": "{{count}} starters",
+        "banClause_one": "{{count}} ban",
+        "banClause_other": "{{count}} bans"
+      },
+      "dsr": {
+        "none": "no DSR",
+        "standard": "standard DSR",
+        "modified": "modified DSR"
+      },
+      "setFormat": {
+        "bo3": "Best of 3",
+        "bo5": "Best of 5"
+      },
+      "customName": "Custom (this event)",
+      "overrideBadge": "Event override",
+      "overrideEditHint": "Edit this ruleset on the tournament's detail page.",
+      "overrideIgnored": "This event's saved ruleset was written by a newer version of the app and is not being applied."
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}} DQs excluded",
       "resultsNotRecorded": "Top standings weren't recorded in this import.",
       "listFootnote": "\"Imported\" rows are snapshots of public tournament data, not live-synced registrations."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Ruleset for this event",
+        "usingDefault": "Using the house default ruleset.",
+        "usingOverride": "Using a custom ruleset for this event.",
+        "editButton": "Edit ruleset for this event",
+        "resetButton": "Reset to house default",
+        "stageRole": {
+          "starter": "Starter",
+          "counterpick": "Counterpick",
+          "notLegal": "Not legal"
+        },
+        "banCountBo3": "Bans in a best of 3",
+        "banCountBo5": "Bans in a best of 5",
+        "dsrLabel": "Stage repeat rule",
+        "setFormatDefault": "Default set format",
+        "setFormatTopCut": "Top-cut set format",
+        "saved": "Ruleset saved for this event.",
+        "saveFailed": "Could not save the ruleset for this event."
+      }
     }
   },
   "billing": {

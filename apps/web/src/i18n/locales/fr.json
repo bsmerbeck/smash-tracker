@@ -186,6 +186,31 @@
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
       "gameNumber": "Manche {{game}}"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "Règles maison par défaut (SSBU)",
+          "detail": "{{starters}}, {{bans}} par manche, strike {{strikeOrder}}, {{dsr}}, {{setFormat}} — convention maison inspirée de {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} stage de départ",
+        "starterClause_other": "{{count}} stages de départ",
+        "banClause_one": "{{count}} bannissement",
+        "banClause_other": "{{count}} bannissements"
+      },
+      "dsr": {
+        "none": "sans DSR",
+        "standard": "DSR standard",
+        "modified": "DSR modifié"
+      },
+      "setFormat": {
+        "bo3": "Meilleur des 3",
+        "bo5": "Meilleur des 5"
+      },
+      "customName": "Personnalisé (cet événement)",
+      "overrideBadge": "Règles personnalisées",
+      "overrideEditHint": "Modifiez ces règles depuis la page de détail du tournoi.",
+      "overrideIgnored": "Les règles enregistrées pour cet événement ont été écrites par une version plus récente de l'application et ne sont pas appliquées."
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}} DQ exclus",
       "resultsNotRecorded": "Le classement final n'a pas été enregistré dans cette importation.",
       "listFootnote": "Les lignes « Importé » sont des instantanés de données publiques de tournois, pas des inscriptions synchronisées en direct."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Règles pour cet événement",
+        "usingDefault": "Utilise les règles maison par défaut.",
+        "usingOverride": "Utilise des règles personnalisées pour cet événement.",
+        "editButton": "Modifier les règles de cet événement",
+        "resetButton": "Rétablir les règles par défaut",
+        "stageRole": {
+          "starter": "Départ",
+          "counterpick": "Contre-pick",
+          "notLegal": "Non légal"
+        },
+        "banCountBo3": "Bannissements en meilleur des 3",
+        "banCountBo5": "Bannissements en meilleur des 5",
+        "dsrLabel": "Règle de répétition de stage",
+        "setFormatDefault": "Format de set par défaut",
+        "setFormatTopCut": "Format de set en top cut",
+        "saved": "Règles enregistrées pour cet événement.",
+        "saveFailed": "Impossible d'enregistrer les règles de cet événement."
+      }
     }
   },
   "billing": {

@@ -186,6 +186,31 @@
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
       "gameNumber": "Spiel {{game}}"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "Haus-Standard (SSBU)",
+          "detail": "{{starters}}, {{bans}} pro Spiel, {{strikeOrder}}-Strike, {{dsr}}, {{setFormat}} — hausinterne Konvention angelehnt an {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} Startstage",
+        "starterClause_other": "{{count}} Startstages",
+        "banClause_one": "{{count}} Bann",
+        "banClause_other": "{{count}} Banns"
+      },
+      "dsr": {
+        "none": "kein DSR",
+        "standard": "Standard-DSR",
+        "modified": "modifiziertes DSR"
+      },
+      "setFormat": {
+        "bo3": "Best of 3",
+        "bo5": "Best of 5"
+      },
+      "customName": "Angepasst (dieses Event)",
+      "overrideBadge": "Angepasstes Regelwerk",
+      "overrideEditHint": "Dieses Regelwerk auf der Turnier-Detailseite bearbeiten.",
+      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet."
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}} DQs ausgeschlossen",
       "resultsNotRecorded": "Die Top-Platzierungen wurden bei diesem Import nicht erfasst.",
       "listFootnote": "\"Importiert\"-Zeilen sind Schnappschüsse öffentlicher Turnierdaten, keine live synchronisierten Anmeldungen."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Regelwerk für dieses Event",
+        "usingDefault": "Verwendet das hausinterne Standard-Regelwerk.",
+        "usingOverride": "Verwendet ein angepasstes Regelwerk für dieses Event.",
+        "editButton": "Regelwerk für dieses Event bearbeiten",
+        "resetButton": "Auf Haus-Standard zurücksetzen",
+        "stageRole": {
+          "starter": "Startstage",
+          "counterpick": "Konter-Wahl",
+          "notLegal": "Nicht legal"
+        },
+        "banCountBo3": "Banns in einem Best of 3",
+        "banCountBo5": "Banns in einem Best of 5",
+        "dsrLabel": "Stage-Wiederholungsregel",
+        "setFormatDefault": "Standard-Set-Format",
+        "setFormatTopCut": "Set-Format im Top-Cut",
+        "saved": "Regelwerk für dieses Event gespeichert.",
+        "saveFailed": "Regelwerk für dieses Event konnte nicht gespeichert werden."
+      }
     }
   },
   "billing": {

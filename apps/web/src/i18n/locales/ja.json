@@ -186,6 +186,31 @@
       "score": "{{result}}（{{score}}）",
       "resultOnly": "{{result}}",
       "gameNumber": "{{game}}戦目"
+    },
+    "ruleset": {
+      "preset": {
+        "default": {
+          "name": "ハウスデフォルト（SSBU）",
+          "detail": "{{starters}}、1戦あたり{{bans}}、{{strikeOrder}}ストライク、{{dsr}}、{{setFormat}} — {{source}}（{{date}}）を参考にしたハウスルール"
+        },
+        "starterClause_one": "初期ステージ{{count}}個",
+        "starterClause_other": "初期ステージ{{count}}個",
+        "banClause_one": "禁止{{count}}回",
+        "banClause_other": "禁止{{count}}回"
+      },
+      "dsr": {
+        "none": "DSRなし",
+        "standard": "標準DSR",
+        "modified": "修正DSR"
+      },
+      "setFormat": {
+        "bo3": "3本先取",
+        "bo5": "5本先取"
+      },
+      "customName": "カスタム（この大会）",
+      "overrideBadge": "カスタムルール",
+      "overrideEditHint": "このルールは大会詳細ページで編集できます。",
+      "overrideIgnored": "この大会に保存されたルールは新しいバージョンのアプリで書き込まれたため、適用されていません。"
     }
   },
   "dashboard": {
@@ -1086,6 +1111,27 @@
       "dqExcluded_other": "{{count}}件のDQを除外",
       "resultsNotRecorded": "このインポートには上位順位が記録されていません。",
       "listFootnote": "「インポート済み」の行は公開トーナメントデータのスナップショットであり、ライブ同期された登録ではありません。"
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "この大会のルール",
+        "usingDefault": "ハウスデフォルトルールを使用しています。",
+        "usingOverride": "この大会にはカスタムルールを使用しています。",
+        "editButton": "この大会のルールを編集",
+        "resetButton": "ハウスデフォルトに戻す",
+        "stageRole": {
+          "starter": "初期ステージ",
+          "counterpick": "カウンターピック",
+          "notLegal": "非合法"
+        },
+        "banCountBo3": "3本先取での禁止数",
+        "banCountBo5": "5本先取での禁止数",
+        "dsrLabel": "ステージ繰り返しルール",
+        "setFormatDefault": "デフォルトのセット形式",
+        "setFormatTopCut": "トップカットのセット形式",
+        "saved": "この大会のルールを保存しました。",
+        "saveFailed": "この大会のルールを保存できませんでした。"
+      }
     }
   },
   "billing": {
