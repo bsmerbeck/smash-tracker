@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
@@ -22,7 +22,7 @@ import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { MatchupChart } from './components/MatchupChart';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
-import { MatchupTable } from './components/MatchupTable';
+import { MatchupTable, MATCHUP_TABLE_ANCHOR_ID } from './components/MatchupTable';
 import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './components/MatchupMatrix';
 import { CounterpickAdvisor } from './components/CounterpickAdvisor';
 import { PairingOpponentSplit } from './components/PairingOpponentSplit';
@@ -69,14 +69,33 @@ export function MatchupsPage() {
     opponentUsage,
   } = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
+  // The trend chart's in-page drill-down selection (D-07, CHRT-02). Cleared
+  // at the single choke point below whenever the pairing changes — never
+  // from a render-time effect keyed on the pairing (this repo's lint rules
+  // forbid writing state during render, and a render-mirrored value would be
+  // one flush behind these programmatic setters).
+  const [selectedMatchIds, setSelectedMatchIds] = useState<ReadonlySet<string> | null>(null);
+
+  function handleSetFighter(nextFighter: Fighter) {
+    setFighter(nextFighter);
+    setSelectedMatchIds(null);
+  }
+
+  function handleSetOpponent(nextOpponent: Fighter) {
+    setOpponent(nextOpponent);
+    setSelectedMatchIds(null);
+  }
+
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
     fighter,
-    setFighter,
+    setFighter: handleSetFighter,
     opponent,
-    setOpponent,
+    setOpponent: handleSetOpponent,
     fighterUsageById,
     opponentUsage,
+    selectedMatchIds,
+    setSelectedMatchIds,
   };
 
   if (fightersLoading || matchesLoading) {
@@ -164,17 +183,25 @@ export function MatchupsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/*
+            items-start (plan 37-03, CHRT-01): CSS Grid's default alignment
+            stretches every cell to its tallest sibling's row height — the
+            load-bearing mechanism behind the "too much empty space"
+            complaint, since a sparse stat tile was being force-stretched to
+            match a taller neighbour. Top-aligning lets each card size to its
+            own intrinsic content instead.
+          */}
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
             <MatchWinLossCard matchupMatches={matchupMatches} />
             <MatchupInsights matchupMatches={matchupMatches} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
             <CounterpickAdvisor matchupMatches={matchupMatches} />
             <MatchupStageTable matchupMatches={matchupMatches} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
             <ChartCard
               title={t('matchups.winRateTrend')}
               caption={t('shared.evidence.type.fact')}
@@ -189,7 +216,7 @@ export function MatchupsPage() {
             <PairingOpponentSplit matchupMatches={matchupMatches} />
           </div>
 
-          <Card>
+          <Card id={MATCHUP_TABLE_ANCHOR_ID} className="scroll-mt-16">
             <CardHeader>
               <CardTitle>{t('matchups.results')}</CardTitle>
             </CardHeader>

@@ -17,6 +17,8 @@ import {
   type RunningWinRatePoint,
 } from '@/lib/stats';
 import { TrendLine, type TrendChartPoint } from '@/components/charts/TrendLine';
+import { useMatchupsContext } from '../MatchupsContext';
+import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 
 export type TrendMode = '5' | '10' | 'cumulative';
 
@@ -84,6 +86,12 @@ export function buildTrendChartPoints(series: TrendPoint[], t: TFunction): Trend
  * `TrendLine` so every test can render at an explicit size — jsdom's no-op
  * ResizeObserver stub plus a zero-size bounding rect make a responsive
  * render produce a 0x0 SVG with no marks to assert on.
+ *
+ * D-07/CHRT-02: a click on a trend point sets the page's selection to that
+ * point's match id and scrolls to the results table — the same two-step
+ * "set state, then scroll to an exported anchor id" shape
+ * `MatchupMatrix.selectPairing` already uses, so this page has one in-page
+ * drill-down idiom, not two.
  */
 export function MatchupChart({
   matchupMatches,
@@ -95,9 +103,17 @@ export function MatchupChart({
   height?: number;
 }) {
   const { t } = useTranslation();
+  const { setSelectedMatchIds } = useMatchupsContext();
   const [mode, setMode] = useState<TrendMode>('5');
   const series = buildTrendSeries(matchupMatches, mode);
   const points = buildTrendChartPoints(series, t);
+
+  function handleSelectPoint(point: TrendChartPoint) {
+    setSelectedMatchIds(new Set([point.context.matchId]));
+    document
+      .getElementById(MATCHUP_TABLE_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -116,7 +132,7 @@ export function MatchupChart({
           </SelectContent>
         </Select>
       </div>
-      <TrendLine points={points} width={width} height={height} />
+      <TrendLine points={points} width={width} height={height} onSelectPoint={handleSelectPoint} />
       <p className="text-xs text-muted-foreground">{t('matchups.chart.clickHint')}</p>
     </div>
   );

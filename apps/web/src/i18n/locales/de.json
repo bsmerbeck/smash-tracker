@@ -796,6 +796,7 @@
       "unfacedGroup": "Noch nicht gespielt"
     },
     "record": {
+      "title": "Bilanz",
       "empty": "Keine erfassten Matches gegen diesen Kämpfer",
       "totalMatches": "Matches gesamt"
     },
@@ -852,7 +853,10 @@
       "empty": "Noch keine Matches erfasst!",
       "date": "Datum",
       "result": "Ergebnis",
-      "manage": "Verwalten"
+      "manage": "Verwalten",
+      "selectionNotice_one": "{{count}} Match aus dem Diagramm wird angezeigt.",
+      "selectionNotice_other": "{{count}} Matches aus dem Diagramm werden angezeigt.",
+      "clearSelection": "Alle Matches anzeigen"
     }
   },
   "fighterAnalysis": {

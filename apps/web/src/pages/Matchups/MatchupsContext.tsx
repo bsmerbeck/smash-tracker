@@ -26,6 +26,21 @@ export interface MatchupsContextValue {
   fighterUsageById: Map<number, number>;
   /** The resolved fighter's faced opponents, most-faced first — the opponent picker's "Faced" group (D-14). */
   opponentUsage: FighterUsage[];
+  /**
+   * The trend chart's in-page drill-down selection (D-07, CHRT-02): `null`
+   * means no selection is active. This is deliberately distinct from an
+   * empty set, which means "a selection was made but matched zero of the
+   * current matches" — conflating the two would make a stale filter
+   * indistinguishable from no filter at all. This is in-page state only and
+   * is NOT addressable by URL or query string this phase — Phase 38 owns
+   * that contract; a future addressable version replaces this field rather
+   * than duplicating it. A `Set` (not a single id) is the shape from the
+   * start so a future comparison view can select a whole stage's games
+   * without a second mechanism.
+   */
+  selectedMatchIds: ReadonlySet<string> | null;
+  /** Sets (or clears, via `null`) the trend chart's in-page drill-down selection (D-07). */
+  setSelectedMatchIds: (ids: ReadonlySet<string> | null) => void;
 }
 
 export const MatchupsContext = createContext<MatchupsContextValue | undefined>(undefined);

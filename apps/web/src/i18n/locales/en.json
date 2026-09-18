@@ -796,6 +796,7 @@
       "unfacedGroup": "Not yet faced"
     },
     "record": {
+      "title": "Record",
       "empty": "No reported matches against this fighter",
       "totalMatches": "Total Matches"
     },
@@ -852,7 +853,10 @@
       "empty": "No matches reported yet!",
       "date": "Date",
       "result": "Result",
-      "manage": "Manage"
+      "manage": "Manage",
+      "selectionNotice_one": "Showing {{count}} match from the chart.",
+      "selectionNotice_other": "Showing {{count}} matches from the chart.",
+      "clearSelection": "Show all matches"
     }
   },
   "fighterAnalysis": {

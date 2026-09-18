@@ -796,6 +796,7 @@
       "unfacedGroup": "Pas encore affrontés"
     },
     "record": {
+      "title": "Bilan",
       "empty": "Aucun match enregistré contre ce combattant",
       "totalMatches": "Matchs au total"
     },
@@ -852,7 +853,10 @@
       "empty": "Aucun match enregistré pour l'instant !",
       "date": "Date",
       "result": "Résultat",
-      "manage": "Gérer"
+      "manage": "Gérer",
+      "selectionNotice_one": "Affichage de {{count}} match du graphique.",
+      "selectionNotice_other": "Affichage de {{count}} matchs du graphique.",
+      "clearSelection": "Afficher tous les matchs"
     }
   },
   "fighterAnalysis": {

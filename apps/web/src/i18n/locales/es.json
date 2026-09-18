@@ -796,6 +796,7 @@
       "unfacedGroup": "Aún no enfrentados"
     },
     "record": {
+      "title": "Récord",
       "empty": "No hay partidas registradas contra este luchador",
       "totalMatches": "Partidas totales"
     },
@@ -852,7 +853,10 @@
       "empty": "¡Aún no hay partidas registradas!",
       "date": "Fecha",
       "result": "Resultado",
-      "manage": "Gestionar"
+      "manage": "Gestionar",
+      "selectionNotice_one": "Mostrando {{count}} partida del gráfico.",
+      "selectionNotice_other": "Mostrando {{count}} partidas del gráfico.",
+      "clearSelection": "Mostrar todas las partidas"
     }
   },
   "fighterAnalysis": {

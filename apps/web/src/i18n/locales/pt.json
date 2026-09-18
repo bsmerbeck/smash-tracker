@@ -796,6 +796,7 @@
       "unfacedGroup": "Ainda não enfrentados"
     },
     "record": {
+      "title": "Retrospecto",
       "empty": "Nenhuma partida registrada contra este lutador",
       "totalMatches": "Partidas no total"
     },
@@ -852,7 +853,10 @@
       "empty": "Nenhuma partida registrada ainda!",
       "date": "Data",
       "result": "Resultado",
-      "manage": "Gerenciar"
+      "manage": "Gerenciar",
+      "selectionNotice_one": "Mostrando {{count}} partida do gráfico.",
+      "selectionNotice_other": "Mostrando {{count}} partidas do gráfico.",
+      "clearSelection": "Mostrar todas as partidas"
     }
   },
   "fighterAnalysis": {

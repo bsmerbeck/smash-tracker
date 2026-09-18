@@ -796,6 +796,7 @@
       "unfacedGroup": "未対戦"
     },
     "record": {
+      "title": "戦績",
       "empty": "このファイターとの対戦記録はありません",
       "totalMatches": "総対戦数"
     },
@@ -852,7 +853,10 @@
       "empty": "まだ対戦が記録されていません！",
       "date": "日時",
       "result": "結果",
-      "manage": "管理"
+      "manage": "管理",
+      "selectionNotice_one": "チャートから{{count}}件の対戦を表示しています。",
+      "selectionNotice_other": "チャートから{{count}}件の対戦を表示しています。",
+      "clearSelection": "すべての対戦を表示"
     }
   },
   "fighterAnalysis": {

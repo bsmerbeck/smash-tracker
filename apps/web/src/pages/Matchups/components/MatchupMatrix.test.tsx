@@ -37,6 +37,8 @@ function renderMatrix(matches: Match[], overrides: Partial<MatchupsContextValue>
     setOpponent,
     fighterUsageById: new Map(),
     opponentUsage: [],
+    selectedMatchIds: null,
+    setSelectedMatchIds: vi.fn(),
     ...overrides,
   };
 

@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18n from '@/i18n';
 import type { Match } from '@smash-tracker/shared';
+import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { buildTrendChartPoints, buildTrendSeries, MatchupChart } from './MatchupChart';
+import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -95,17 +97,51 @@ describe('buildTrendChartPoints', () => {
   });
 });
 
+/**
+ * `MatchupChart` reads `setSelectedMatchIds` off `MatchupsContext` (D-07,
+ * CHRT-02) to wire its click-to-select handler, so every render needs a
+ * provider — this fixture mirrors the shape `MatchupsPage` supplies in
+ * production, plus a real anchor element so the scroll assertion has a
+ * target under jsdom.
+ */
+function renderChart(
+  matches: Match[],
+  props: { width?: number; height?: number } = {},
+  contextOverrides: Partial<MatchupsContextValue> = {},
+) {
+  const setSelectedMatchIds = vi.fn();
+  const contextValue: MatchupsContextValue = {
+    fighterSprites: [],
+    fighter: undefined,
+    setFighter: vi.fn(),
+    opponent: undefined,
+    setOpponent: vi.fn(),
+    fighterUsageById: new Map(),
+    opponentUsage: [],
+    selectedMatchIds: null,
+    setSelectedMatchIds,
+    ...contextOverrides,
+  };
+
+  const utils = render(
+    <MatchupsContext.Provider value={contextValue}>
+      <div id={MATCHUP_TABLE_ANCHOR_ID} />
+      <MatchupChart matchupMatches={matches} {...props} />
+    </MatchupsContext.Provider>,
+  );
+
+  return { ...utils, setSelectedMatchIds };
+}
+
 describe('MatchupChart', () => {
   it('defaults to the rolling-5 window', () => {
-    render(<MatchupChart matchupMatches={sequence([true, false])} width={640} height={288} />);
+    renderChart(sequence([true, false]), { width: 640, height: 288 });
     expect(screen.getByLabelText('Trend window')).toHaveTextContent('Rolling 5');
   });
 
   it('switches to rolling-10 and cumulative via the selector', async () => {
     const user = userEvent.setup();
-    render(
-      <MatchupChart matchupMatches={sequence([true, false, true])} width={640} height={288} />,
-    );
+    renderChart(sequence([true, false, true]), { width: 640, height: 288 });
 
     await user.click(screen.getByLabelText('Trend window'));
     await user.click(await screen.findByRole('option', { name: 'Rolling 10' }));
@@ -117,13 +153,10 @@ describe('MatchupChart', () => {
   });
 
   it('renders real SVG marks when mounted with an explicit numeric size', () => {
-    const { container } = render(
-      <MatchupChart
-        matchupMatches={sequence([true, false, true, true, false])}
-        width={640}
-        height={288}
-      />,
-    );
+    const { container } = renderChart(sequence([true, false, true, true, false]), {
+      width: 640,
+      height: 288,
+    });
     // Scoped to the Recharts surface — the Select trigger's chevron-down icon
     // is also an SVG `path`, so an unscoped query would false-positive.
     expect(container.querySelectorAll('svg.recharts-surface path').length).toBeGreaterThanOrEqual(
@@ -138,7 +171,33 @@ describe('MatchupChart', () => {
     // chevron-down icon `<path>` in the unrelated Select trigger is present
     // either way, so this asserts absence of the Recharts surface itself
     // rather than a raw `path` count.
-    const { container } = render(<MatchupChart matchupMatches={sequence([true, false, true])} />);
+    const { container } = renderChart(sequence([true, false, true]));
     expect(container.querySelector('svg.recharts-surface')).toBeNull();
+  });
+});
+
+describe('MatchupChart drill-down (D-07, CHRT-02, plan 37-03)', () => {
+  it("clicking a trend point selects that point's match id and scrolls to the results-table anchor", () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    const matches = sequence([true, false, true]);
+    const { container, setSelectedMatchIds } = renderChart(matches, { width: 640, height: 288 });
+
+    const svg = container.querySelector('svg.recharts-surface');
+    expect(svg).not.toBeNull();
+    if (svg) {
+      fireEvent.click(svg, { clientX: 320, clientY: 144 });
+    }
+
+    // jsdom's zero-size layout resolves every click to activeTooltipIndex 0
+    // (see TrendLine.test.tsx and the 37-01 SUMMARY) — the clicked point is
+    // therefore always points[0], whose match id is the first sequenced
+    // match ('m0').
+    expect(setSelectedMatchIds).toHaveBeenCalledTimes(1);
+    expect(setSelectedMatchIds).toHaveBeenCalledWith(new Set([matches[0]?.id]));
+    expect(scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: 'smooth', block: 'start' }),
+    );
   });
 });
