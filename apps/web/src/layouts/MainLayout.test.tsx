@@ -114,6 +114,14 @@ function renderLayout() {
  * observable via a distinct rendered marker. Accepts an optional externally
  * created `queryClient` so a test can force a deliberate refetch afterward
  * (e.g. `invalidateQueries`) against the SAME cache the rendered tree reads.
+ *
+ * Quick 260918-hro: added the `/workspace/:tenantId/*` route (mirroring
+ * `SidebarContent.test.tsx`'s `renderWithProviders`) so the rail-variant
+ * matrix below can resolve the client-owned-workspace rail too. Not
+ * strictly required for `useOwnedWorkspaceSubject` itself (it parses
+ * `tenantId` from `location.pathname` directly, not `useParams()`), but
+ * matching the route shape keeps this harness honest about what a real
+ * route table looks like.
  */
 function renderLayoutAt(path: string, page: ReactElement, queryClient?: QueryClient) {
   const client = queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -132,6 +140,7 @@ function renderLayoutAt(path: string, page: ReactElement, queryClient?: QueryCli
                 }
               />
               <Route path="/coach/:clientId/*" element={<MainLayout>{page}</MainLayout>} />
+              <Route path="/workspace/:tenantId/*" element={<MainLayout>{page}</MainLayout>} />
               <Route path="*" element={<MainLayout>{page}</MainLayout>} />
             </Routes>
           </AnalyticsFilterProvider>
@@ -257,6 +266,89 @@ describe('MainLayout app-shell rail collapse (Quick 260918-hro)', () => {
     await user.click(toggle());
     expect(screen.getAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) })).toHaveLength(1);
     expect(window.localStorage.getItem(APP_SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+  });
+
+  /**
+   * Rail-variant coverage: the SAME single control collapses each of the
+   * four `SidebarContent` swap branches. Each case uses the
+   * route-appropriate identifying element rather than a shared one, since
+   * the four rails render entirely different markup.
+   */
+  it('collapses the personal rail (/dashboard)', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+
+    await screen.findByText('Page content');
+    expect(screen.getAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') }));
+    expect(screen.queryAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) })).toHaveLength(0);
+  });
+
+  it('collapses the coaching-hub rail (/coach)', async () => {
+    const user = userEvent.setup();
+    renderLayoutAt('/coach', <div>page</div>);
+
+    await screen.findByText('Coach hub landing');
+    expect(
+      screen.getByRole('link', { name: i18n.t('coaching.sidebar.allClients') }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') }));
+    expect(
+      screen.queryByRole('link', { name: i18n.t('coaching.sidebar.allClients') }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('collapses the coach client-workspace rail (/coach/:clientId/*)', async () => {
+    listClients.mockResolvedValue([{ clientId: 'tetra', label: 'Tetra', draftCount: 0 }]);
+    const user = userEvent.setup();
+    renderLayoutAt('/coach/tetra/overview', <div>page</div>);
+
+    await screen.findByTestId('client-workspace-sidebar-caption');
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') }));
+    expect(screen.queryByTestId('client-workspace-sidebar-caption')).not.toBeInTheDocument();
+  });
+
+  it('collapses the client-owned workspace rail (/workspace/:tenantId/*)', async () => {
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    const user = userEvent.setup();
+    renderLayoutAt('/workspace/t1/overview', <div>page</div>);
+
+    // The Topbar's own `OwnerWorkspaceChip` also renders the "My Workspace"
+    // label (as a dropdown trigger, not a link), so identify the RAIL's
+    // "Back to Personal" NavLink specifically — a role='link' query the
+    // chip's closed-by-default dropdown menu item can never match.
+    await screen.findByRole('link', { name: i18n.t('ownerWorkspace.chrome.backToPersonal') });
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') }));
+    expect(
+      screen.queryByRole('link', { name: i18n.t('ownerWorkspace.chrome.backToPersonal') }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * Mobile non-regression: the desktop rail collapse must never strand
+   * mobile navigation — the Sheet drawer (triggered by the hamburger,
+   * untouched by this quick task) opens and renders the full nav
+   * regardless of the desktop rail's collapsed state.
+   */
+  it('still opens the mobile Sheet with full nav while the desktop rail is collapsed', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+
+    await screen.findByText('Page content');
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') }));
+    expect(screen.queryAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) })).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: i18n.t('chrome.openMenu') }));
+
+    expect(
+      await screen.findAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) }),
+    ).toHaveLength(1);
   });
 });
 
