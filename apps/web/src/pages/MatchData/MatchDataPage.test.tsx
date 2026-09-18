@@ -239,14 +239,18 @@ describe('MatchDataPage', () => {
     expect(link).toHaveAttribute('href', '/opponents?player=sgg%3Auser%2F9fb774ae&opponent=rival');
   });
 
-  it('omits the Analyze opponent link inside a client workspace (no /opponents there)', async () => {
+  // Plan 38-02 (D-03/OPP-04): /opponents is now mounted under the coach
+  // family from the shared subjectAnalyticsRoutes list, so the link renders
+  // here instead of suppressing itself — the destination is built through
+  // the subject-aware useSubjectPath builder and carries the coach prefix.
+  it('renders the Analyze opponent link inside a client workspace, with the coach-prefixed destination', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
 
     renderMatchData('/coach/client-1/match-data');
 
-    await screen.findByText('Match History');
-    expect(screen.queryByRole('link', { name: /Analyze opponent/ })).not.toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'Analyze opponent rival' });
+    expect(link).toHaveAttribute('href', '/coach/client-1/opponents?opponent=rival');
   });
 
   it('renders rows from mocked matches', async () => {
