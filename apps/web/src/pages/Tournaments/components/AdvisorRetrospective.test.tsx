@@ -6,7 +6,12 @@ import { AdvisorRetrospective } from './AdvisorRetrospective';
 import { buildRetrospective } from '../lib/retrospective';
 
 const BATTLEFIELD = { id: 1, name: 'Battlefield' };
+const SMALL_BATTLEFIELD = { id: 113, name: 'Small Battlefield' };
+const TOWN_AND_CITY = { id: 85, name: 'Town and City' };
+const SMASHVILLE = { id: 83, name: 'Smashville' };
 const NO_SELECTION = { id: 0, name: 'no selection' };
+/** Not tournament-legal under the house default ruleset — exercises the ADV-02/D-14 outside-the-ruleset reason. */
+const OFF_RULESET_STAGE = { id: 2, name: 'Big Battlefield' };
 
 function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
   return {
@@ -103,5 +108,137 @@ describe('AdvisorRetrospective', () => {
 
     expect(screen.getByText('Winners Finals')).toBeInTheDocument();
     expect(screen.getByText('Won')).toBeInTheDocument();
+  });
+
+  describe('ADV-02/D-14: visible chip, reason and takeaway (no hover or focus needed)', () => {
+    it('renders the classification chip, reason line and takeaway line as plain visible text', () => {
+      const pre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+      const entry = makeEntry({ firstSetAt: 1_000_000 });
+      const game = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: BATTLEFIELD,
+        externalId: 'sgg:1:g1',
+      });
+
+      // No userEvent.hover/focus anywhere in this test — the queries below
+      // must succeed against the plain, un-interacted-with render.
+      renderRetro([...pre, game], [game], entry);
+
+      expect(screen.getByText('followed')).toBeInTheDocument();
+      expect(screen.getByText('Battlefield — followed (Won)')).toBeInTheDocument();
+      expect(screen.getByText('pick Battlefield')).toBeInTheDocument();
+    });
+
+    it('grades a game on a bottom-ranked stage as against, with a reason and takeaway naming the recommended picks', () => {
+      const pre = [
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+        ),
+        ...Array.from({ length: 4 }, (_, i) =>
+          makeMatch({ time: 200 + i, win: true, map: TOWN_AND_CITY }),
+        ),
+        makeMatch({ time: 204, win: false, map: TOWN_AND_CITY }),
+        ...Array.from({ length: 3 }, (_, i) =>
+          makeMatch({ time: 300 + i, win: true, map: SMASHVILLE }),
+        ),
+        makeMatch({ time: 303, win: false, map: SMASHVILLE }),
+        makeMatch({ time: 304, win: false, map: SMASHVILLE }),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ time: 400 + i, win: false, map: SMALL_BATTLEFIELD }),
+        ),
+      ];
+      const entry = makeEntry({ firstSetAt: 1_000_000 });
+      const game = makeMatch({
+        time: 1_500_000,
+        win: false,
+        map: SMALL_BATTLEFIELD,
+        externalId: 'sgg:1:g1',
+      });
+
+      renderRetro([...pre, game], [game], entry);
+
+      expect(screen.getByText('against')).toBeInTheDocument();
+      expect(screen.getByText('Small Battlefield — against (Lost)')).toBeInTheDocument();
+      expect(screen.getByText('pick Battlefield/Town and City/Smashville')).toBeInTheDocument();
+    });
+
+    it('grades a game played outside the event ruleset as no-stance, with a distinct reason from an ordinary no-stance game', () => {
+      const pre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+      const entry = makeEntry({ firstSetAt: 1_000_000 });
+      const game = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: OFF_RULESET_STAGE,
+        externalId: 'sgg:1:g1',
+      });
+
+      renderRetro([...pre, game], [game], entry);
+
+      expect(screen.getByText('neutral')).toBeInTheDocument();
+      expect(
+        screen.getByText("Big Battlefield — outside this event's ruleset (Won)"),
+      ).toBeInTheDocument();
+    });
+
+    it('reuses the existing classification style treatments unedited (emerald/destructive/muted/dashed)', () => {
+      const followedPre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+      const followedGame = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: BATTLEFIELD,
+        externalId: 'sgg:1:g1',
+      });
+      const { unmount: unmountFollowed } = renderRetro(
+        [...followedPre, followedGame],
+        [followedGame],
+        makeEntry({ firstSetAt: 1_000_000 }),
+      );
+      expect(screen.getByText('followed').parentElement?.className).toContain('bg-emerald-600');
+      unmountFollowed();
+
+      const outsideRulesetPre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+      const outsideRulesetGame = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: OFF_RULESET_STAGE,
+        externalId: 'sgg:1:g1',
+      });
+      const { unmount: unmountNeutral } = renderRetro(
+        [...outsideRulesetPre, outsideRulesetGame],
+        [outsideRulesetGame],
+        makeEntry({ firstSetAt: 1_000_000 }),
+      );
+      expect(screen.getByText('neutral').parentElement?.className).toContain('bg-muted');
+      unmountNeutral();
+
+      const noDataGame = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: NO_SELECTION,
+        externalId: 'sgg:1:g1',
+      });
+      const { unmount: unmountNoData } = renderRetro(
+        [noDataGame],
+        [noDataGame],
+        makeEntry({ firstSetAt: 1_000_000 }),
+      );
+      expect(screen.getByText('no-data').parentElement?.className).toContain('border-dashed');
+      unmountNoData();
+    });
+
+    it('discloses the ruleset preset name in the card description', () => {
+      const entry = makeEntry();
+      renderRetro([], [], entry);
+      expect(screen.getByText(/House default \(SSBU\)/)).toBeInTheDocument();
+    });
   });
 });
