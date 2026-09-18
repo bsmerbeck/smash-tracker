@@ -20,3 +20,4 @@ export * from './predicate.js';
 export * from './cohort.js';
 export * from './matchupEvidence.js';
 export * from './opponentEvidence.js';
+export * from './opponentCrossTab.js';
