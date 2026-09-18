@@ -96,8 +96,28 @@ const FORBIDDEN_CHART_MODULE =
  * at 26, during this plan's own execution before the fix); one link
  * FEWER is a real improvement that must be re-measured and re-baselined in a
  * reviewed diff, never silently absorbed by loosening this constant.
+ *
+ * Re-measured 2026-09-18 (plan 37-05, Counterpick Advisor gate/rank +
+ * disclosure): re-running this guard's own build after 37-05's Task 1 (the
+ * ONLY task that changed) moved the count from 25 to 26. Diagnosed by
+ * building both the pre-37-05 tree and the post-Task-1 tree with the
+ * SAME unmodified `vite.config.ts` in two disposable worktrees and diffing
+ * the raw `href` list `rel="modulepreload"` resolves to: the other four
+ * assertions in this file (eager-graph non-emptiness, nothing forbidden
+ * eagerly reachable, `charts-vendor` lazy, the forbidden pattern matching
+ * something) all stayed green — the new link is `AnalyticsFilterContext`'s
+ * chunk, which was already part of the SAME eager bundle before (inlined
+ * into the entry chunk), now split into its own file by Rolldown's
+ * automatic chunking once 37-05's new shared-package file
+ * (`packages/shared/src/evidence/pickBan.ts`, reached through the
+ * already-eager `@smash-tracker/shared` barrel) grew that chunk past an
+ * internal size threshold. No new import edge, no chart-library module in
+ * the eager set — a chunking reshuffle of already-eager code, not the
+ * boot-stall regression class this lock exists to catch. Re-baselined to 26
+ * per this file's own instruction ("re-measured and re-baselined in a
+ * reviewed diff, never silently absorbed").
  */
-const ENTRY_MODULEPRELOAD_LOCK = 25;
+const ENTRY_MODULEPRELOAD_LOCK = 26;
 
 let outDir: string;
 let builtOutput: BuiltChunk[];

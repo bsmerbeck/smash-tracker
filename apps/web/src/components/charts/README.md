@@ -103,15 +103,36 @@ renders at an explicit size and only the runtime page omits `width` for the resp
 `tooltip?` (defaults to `ChartTooltip`). `TrendChartPoint`/`TrendChartPointContext` are exported
 from `TrendLine.tsx` itself (not a separate types file) — import the vocabulary from there.
 
-**Comparison bars** — horizontal bars per stage/category (see `CounterpickAdvisor.tsx`'s Pick/Ban
-rows), status-coloured (`emerald-500`/`600` vs `--destructive`, never `--chart-*`), value label at
-the tip, unfilled track at ~15% opacity (the "meter" convention — state reads across the whole
-bar, not just the filled portion).
+**Comparison bars** (`ComparisonBars.tsx`, shipped plan 37-05) — horizontal bars per
+stage/category, one `<li>` per row. Props: `rows: ComparisonBarsRow[]` (`{ key, label: ReactNode,
+value: number (0-100), valueLabel: string }`), `tone: 'emerald' | 'destructive'`, `onSelectRow?:
+(row) => void` (a full-width `<button>` row when given, a plain `<div>` row otherwise). Status-
+coloured — `emerald-500` for the pick tone, `--destructive` for the ban tone, never `--chart-*` —
+with the value label at the bar's tip and an unfilled track at ~15% opacity (the "meter"
+convention: state reads across the whole bar, not just the filled portion). Plain DOM, not a
+Recharts primitive: it renders no Recharts element, so it is intentionally NOT a member of
+`chartKitBoundary.test.ts`'s `KIT_CHART_PRIMITIVES` list (that list's structural frame rule scopes
+to files that render a Recharts element; a CSS meter is outside its scope). Test rule: colocated
+`ComparisonBars.test.tsx` asserts one list item and one track+fill element pair per row, sized to
+`value` as an inline width percentage; `CounterpickAdvisor.tsx` supplies the `ChartCard` frame it
+renders inside — see `CounterpickAdvisor.tsx`'s Pick/Ban groups for the shipped call site.
 
-**Sparkline / stat tile** — a `ChartCard` used as a compact `label`/`value`/`trend` tile rather
-than a full chart body (see `MatchWinLossCard`'s promotion to a stat tile: `label` = "Record",
-`value` = the Wins/Total/Losses row, `trend` = the existing `WinLossPips` component reused as the
-sparkline-equivalent — no new sparkline mechanism was invented for this).
+**Sparkline / stat tile** (`StatTile.tsx`, shipped plan 37-03) — a `ChartCard` used as a compact
+tile rather than a full chart body. Props: `stats: { label: string; value: string | number }[]`,
+`trend?: ReactNode`. Sets no height of its own (a stat tile's job is to be small — a forced height
+here would reintroduce the "sparse card stretched to its neighbour's height" grid defect the
+member exists to fix). See `MatchWinLossCard`'s promotion to a stat tile: `stats` = the Wins/Total/
+Losses row, `trend` = the existing `WinLossPips` component reused as the sparkline-equivalent — no
+new sparkline mechanism was invented for this. Test rule: colocated `StatTile.test.tsx` asserts one
+rendered stat cell per entry and the trend row's presence/absence.
+
+**The collision rule, concretely, as it applies on Matchups today:** the win-rate trend line
+(`TrendLine.tsx`) wears the categorical identity token `--chart-1` — it is not read as good/bad, its
+Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and ban bars
+(`ComparisonBars.tsx`) wear the app's status colours instead — `emerald-500` and `--destructive` —
+because they ARE a good/bad judgement. The two never appear as marks in the same chart: the trend
+lives inside its own `ChartCard` on `MatchupChart`, the bars inside the Counterpick Advisor's own
+`ChartCard`, never combined into one chart body.
 
 ### NOT implemented this phase — Phase 41 owns these (D-05)
 

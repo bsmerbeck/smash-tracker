@@ -11,6 +11,8 @@ import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats'
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { advisorThreshold } from '../lib/advisorThreshold';
+import { useMatchupsContext } from '../MatchupsContext';
+import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
 
 /**
@@ -55,10 +57,18 @@ import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
  * combination leaves NO stage legal, the card says exactly that
  * (`noLegalStages`) instead of the generic abstention sentence, which would
  * misdescribe a full sample as a thin one.
+ *
+ * D-07: clicking a Pick or Ban row sets the page's in-page drill-down
+ * selection to that stage's games within the current pairing and scrolls to
+ * the results table — the exact "set state, then scroll to an exported
+ * anchor id" idiom `MatchupChart`'s point click and `MatchupMatrix`'s cell
+ * click already use, so this page has one drill-down mechanism, not two. No
+ * URL, search-param or history API is touched (Phase 38 owns that contract).
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [minGames] = useMinStageMatches();
+  const { setSelectedMatchIds } = useMatchupsContext();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch; a stale `refreshedAt` across re-renders is harmless since
@@ -94,6 +104,19 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   });
   const ranked = claim.kind === 'evidenced' ? claim.value : [];
   const { picks, bans } = pickBanSplit(ranked);
+
+  // Numeric stage id comparison only (never a localized stage name) —
+  // `row.key` is `String(stage.stageId)` (set in `toRow` below).
+  function handleSelectRow(row: ComparisonBarsRow) {
+    const stageId = Number(row.key);
+    const ids = new Set(
+      matchupMatches.filter((m) => (m.map?.id ?? 0) === stageId).map((m) => m.id),
+    );
+    setSelectedMatchIds(ids);
+    document
+      .getElementById(MATCHUP_TABLE_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   function toRow(stage: RankedStage): ComparisonBarsRow {
     const stageData = stagesById.get(stage.stageId);
@@ -146,14 +169,22 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
               <h3 className="mb-2 text-sm font-medium text-emerald-500">
                 {t('matchups.counterpick.pickThese')}
               </h3>
-              <ComparisonBars tone="emerald" rows={picks.map(toRow)} />
+              <ComparisonBars
+                tone="emerald"
+                rows={picks.map(toRow)}
+                onSelectRow={handleSelectRow}
+              />
             </div>
             {bans.length > 0 && (
               <div>
                 <h3 className="mb-2 text-sm font-medium text-destructive">
                   {t('matchups.counterpick.banThese')}
                 </h3>
-                <ComparisonBars tone="destructive" rows={bans.map(toRow)} />
+                <ComparisonBars
+                  tone="destructive"
+                  rows={bans.map(toRow)}
+                  onSelectRow={handleSelectRow}
+                />
               </div>
             )}
           </>

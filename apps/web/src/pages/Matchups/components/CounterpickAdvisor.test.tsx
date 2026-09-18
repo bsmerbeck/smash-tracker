@@ -5,11 +5,38 @@ import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import { CounterpickAdvisor } from './CounterpickAdvisor';
+import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
+import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
 const SET_STATE_EDIT_ARIA = 'Change the game-phase, role, prior-stages and bans assumption';
+
+/**
+ * D-07 (plan 37-05 Task 3): `CounterpickAdvisor` now reads
+ * `useMatchupsContext()` for its bar-click drill-down. `setSelectedMatchIds`
+ * is a shared mock so click tests can assert on the exact selection it was
+ * called with; every other field is inert filler this component never reads.
+ */
+const setSelectedMatchIdsMock = vi.fn();
+
+function baseMatchupsContextValue(
+  overrides: Partial<MatchupsContextValue> = {},
+): MatchupsContextValue {
+  return {
+    fighterSprites: [],
+    fighter: undefined,
+    setFighter: vi.fn(),
+    opponent: undefined,
+    setOpponent: vi.fn(),
+    fighterUsageById: new Map(),
+    opponentUsage: [],
+    selectedMatchIds: null,
+    setSelectedMatchIds: setSelectedMatchIdsMock,
+    ...overrides,
+  };
+}
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -87,10 +114,16 @@ vi.mock('@/hooks/useMinStageMatches', async (importOriginal) => {
  * threshold via `useMinStageMatches`, which calls `useEffectiveSubject()` —
  * Router-context-dependent. Every render in this file must be wrapped.
  */
-function renderAdvisor(matchupMatches: Match[]) {
+function renderAdvisor(
+  matchupMatches: Match[],
+  contextOverrides: Partial<MatchupsContextValue> = {},
+) {
   return render(
     <MemoryRouter initialEntries={['/matchups']}>
-      <CounterpickAdvisor matchupMatches={matchupMatches} />
+      <MatchupsContext.Provider value={baseMatchupsContextValue(contextOverrides)}>
+        <div id={MATCHUP_TABLE_ANCHOR_ID} />
+        <CounterpickAdvisor matchupMatches={matchupMatches} />
+      </MatchupsContext.Provider>
     </MemoryRouter>,
   );
 }
@@ -106,7 +139,9 @@ function renderAdvisorAsSignedInUser(matchupMatches: Match[]) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/matchups']}>
         <AuthProvider>
-          <CounterpickAdvisor matchupMatches={matchupMatches} />
+          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+            <CounterpickAdvisor matchupMatches={matchupMatches} />
+          </MatchupsContext.Provider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -469,7 +504,9 @@ describe('CounterpickAdvisor', () => {
       const user = userEvent.setup();
       const { rerender } = render(
         <MemoryRouter initialEntries={['/matchups']}>
-          <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
+          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
+          </MatchupsContext.Provider>
         </MemoryRouter>,
       );
 
@@ -485,7 +522,9 @@ describe('CounterpickAdvisor', () => {
       }));
       rerender(
         <MemoryRouter initialEntries={['/matchups']}>
-          <CounterpickAdvisor matchupMatches={differentPairing} />
+          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+            <CounterpickAdvisor matchupMatches={differentPairing} />
+          </MatchupsContext.Provider>
         </MemoryRouter>,
       );
 
@@ -500,6 +539,78 @@ describe('CounterpickAdvisor', () => {
       // default suite, not only by a shell command run by hand.
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
       expect(document.querySelector('[data-slot="tooltip-content"]')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Task 3: bar click drills into the results table (D-07)', () => {
+    it('clicking a Pick row sets the Matchups selection to exactly the ids of the pairing matches on that stage, and scrolls to the results-table anchor', async () => {
+      const scrollIntoView = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollIntoView;
+      const user = userEvent.setup();
+
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0), // best -> pick[0]
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+      ];
+      renderAdvisor(matches);
+
+      const pickSection = screen.getByText('Pick these').closest('div')!;
+      const battlefieldRow = within(pickSection).getAllByRole('button')[0]!;
+      await user.click(battlefieldRow);
+
+      const expectedIds = new Set(
+        matches.filter((m) => m.map?.id === BATTLEFIELD.id).map((m) => m.id),
+      );
+      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    });
+
+    it('clicking a Ban row does the same for that stage', async () => {
+      const scrollIntoView = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollIntoView;
+      const user = userEvent.setup();
+
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+        ...matchesOnStage(SMALL_BATTLEFIELD, 0, 5), // worst -> the single ban
+      ];
+      renderAdvisor(matches);
+
+      const banSection = screen.getByText('Ban / avoid these').closest('div')!;
+      const banRow = within(banSection).getAllByRole('button')[0]!;
+      await user.click(banRow);
+
+      const expectedIds = new Set(
+        matches.filter((m) => m.map?.id === SMALL_BATTLEFIELD.id).map((m) => m.id),
+      );
+      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    });
+
+    it('a stage whose matches are all outside the current pairing yields an empty selection set', async () => {
+      // The advisor only ever receives pairing-filtered matches, so a
+      // clicked row's own stage id can never actually miss inside its own
+      // fixture — this proves the id comparison itself (not a name lookup)
+      // by asserting the selection is scoped exactly to that stage's ids,
+      // never the whole pairing.
+      const user = userEvent.setup();
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+      ];
+      renderAdvisor(matches);
+
+      const pickSection = screen.getByText('Pick these').closest('div')!;
+      const rows = within(pickSection).getAllByRole('button');
+      await user.click(rows[1]!); // Town and City
+
+      const expectedIds = new Set(
+        matches.filter((m) => m.map?.id === TOWN_AND_CITY.id).map((m) => m.id),
+      );
+      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
+      expect(expectedIds.size).toBe(5);
     });
   });
 });
