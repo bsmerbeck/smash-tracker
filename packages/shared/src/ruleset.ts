@@ -333,3 +333,84 @@ export function resolveRuleset(
 
   return { ruleset, source: 'event-override', ignoredOverrideReason: null };
 }
+
+// ---------------------------------------------------------------------------
+// Set state + legalStagesFor (EVID-04, EVID-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * The set-state inputs the advisor's UI collects explicitly (D-11) — entered
+ * by the player, never persisted and never inferred from match data this
+ * phase (inferring a set format from a maximum observed game index is lossy
+ * and is deliberately not done). Because nothing here is stored, the
+ * keyed-map/RTDB-safety rules above do not apply to this type: plain ordered
+ * arrays are correct for `priorStages`, since array ORDER is play order and
+ * is exactly what `legalStagesFor`'s modified-DSR clause reads.
+ */
+export interface SetState {
+  phase: 'game1' | 'game2plus';
+  role: 'striking' | 'picking';
+  /** In play order (oldest first) — `legalStagesFor`'s modified-DSR clause reads array order as play order. */
+  priorStages: { stageId: number; won: boolean }[];
+  bannedStageIds: number[];
+  setFormat: SetFormat;
+}
+
+/** The D-11 default the advisor opens on: "Game 1 · striking · no bans". */
+export const DEFAULT_SET_STATE: SetState = {
+  phase: 'game1',
+  role: 'striking',
+  priorStages: [],
+  bannedStageIds: [],
+  setFormat: 'bo3',
+};
+
+/**
+ * A pure function of the ruleset and the set state — no I/O. Clauses, in the
+ * order they're applied:
+ *
+ * 1. Base set: starters only at game one; starters plus counterpicks from
+ *    game two onward.
+ * 2. Every banned id is removed.
+ * 3. The DSR restriction applies ONLY when the phase is game two or later
+ *    AND the role is picking — DSR restricts the counterpicking player, and
+ *    there is no counterpick before game two. Under the modified variant,
+ *    the LAST prior stage whose result was a win (latest by array order,
+ *    which is play order) is removed; under the standard variant, EVERY
+ *    prior stage whose result was a win is removed; under the no-DSR
+ *    variant, nothing is removed for prior wins.
+ *
+ * The result is deduplicated and sorted ascending. An empty result is a
+ * legal, meaningful answer ("no stage is legal here") — this function never
+ * falls back to an unfiltered list when everything is excluded.
+ */
+export function legalStagesFor(ruleset: Ruleset, setState: SetState): number[] {
+  const base =
+    setState.phase === 'game1'
+      ? ruleset.starterStageIds
+      : [...ruleset.starterStageIds, ...ruleset.counterpickStageIds];
+
+  const banned = new Set(setState.bannedStageIds);
+  let survivors = base.filter((id) => !banned.has(id));
+
+  const dsrApplies = setState.phase !== 'game1' && setState.role === 'picking';
+  if (dsrApplies && ruleset.dsr !== 'none') {
+    let removeIds: Set<number>;
+    if (ruleset.dsr === 'modified') {
+      let lastWinStageId: number | null = null;
+      for (const prior of setState.priorStages) {
+        if (prior.won) {
+          lastWinStageId = prior.stageId;
+        }
+      }
+      removeIds = lastWinStageId !== null ? new Set([lastWinStageId]) : new Set();
+    } else {
+      removeIds = new Set(
+        setState.priorStages.filter((prior) => prior.won).map((prior) => prior.stageId),
+      );
+    }
+    survivors = survivors.filter((id) => !removeIds.has(id));
+  }
+
+  return [...new Set(survivors)].sort((a, b) => a - b);
+}
