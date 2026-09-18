@@ -22,3 +22,4 @@ export * from './matchupEvidence.js';
 export * from './opponentEvidence.js';
 export * from './opponentCrossTab.js';
 export * from './eventSeries.js';
+export * from './stageBreakdown.js';
