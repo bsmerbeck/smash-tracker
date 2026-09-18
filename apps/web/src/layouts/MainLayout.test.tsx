@@ -193,9 +193,9 @@ describe('MainLayout', () => {
 });
 
 /**
- * Quick 260918-hro: the app-shell rail collapse — a single Topbar control
- * (mirroring the mobile hamburger's slot at the complementary breakpoint)
- * that removes `Sidebar` from the DOM and persists the choice per device.
+ * Quick 260918-hro: the app-shell rail collapse — a single chevron on the
+ * rail's own edge (mirroring the VOD Manager's in-page rail) that removes
+ * `SidebarContent` from the DOM and persists the choice per device.
  * Own `beforeEach` clears `window.localStorage` so this block cannot
  * perturb the two pre-existing `MainLayout` tests above, and vice versa —
  * neither reads or writes the app-shell collapse key. The harness renders
@@ -217,6 +217,21 @@ describe('MainLayout app-shell rail collapse (Quick 260918-hro)', () => {
     await screen.findByText('Page content');
 
     expect(screen.getAllByRole('link', { name: i18n.t(navItems[0]!.titleKey) })).toHaveLength(1);
+  });
+
+  it('keeps the chevron on the rail itself, in both states, never in the topbar', async () => {
+    const user = userEvent.setup();
+    renderLayout();
+
+    await screen.findByText('Page content');
+    const collapse = screen.getByRole('button', { name: i18n.t('chrome.collapseSidebarAria') });
+    expect(collapse.closest('aside')).not.toBeNull();
+    expect(collapse.closest('header')).toBeNull();
+
+    await user.click(collapse);
+    const expand = screen.getByRole('button', { name: i18n.t('chrome.expandSidebarAria') });
+    expect(expand.closest('aside')).not.toBeNull();
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('removes the rail from the DOM when the toggle is clicked', async () => {

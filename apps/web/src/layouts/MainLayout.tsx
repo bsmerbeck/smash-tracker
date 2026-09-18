@@ -93,9 +93,9 @@ export function MainLayout({ children }: { children: ReactNode }) {
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">
-        <Topbar sidebarCollapsed={sidebarCollapsed} onToggleSidebar={handleToggleSidebar} />
+        <Topbar />
         <div className="flex flex-1">
-          <Sidebar collapsed={sidebarCollapsed} />
+          <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
           <div className="flex min-w-0 flex-1 flex-col">
             <main className="flex-1 p-4 sm:p-6">
               {/* Above GuidedPathCard so the demo label is the first thing in
