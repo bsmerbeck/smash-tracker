@@ -1,18 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import {
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Tooltip,
-  type ChartOptions,
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
 import type { Match } from '@smash-tracker/shared';
+import { parseExternalId } from '@smash-tracker/shared';
 import {
   Select,
   SelectContent,
@@ -26,9 +16,7 @@ import {
   type RollingWinRatePoint,
   type RunningWinRatePoint,
 } from '@/lib/stats';
-import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+import { TrendLine, type TrendChartPoint } from '@/components/charts/TrendLine';
 
 export type TrendMode = '5' | '10' | 'cumulative';
 
@@ -43,7 +31,7 @@ type TrendPoint = RollingWinRatePoint | RunningWinRatePoint;
 /**
  * Builds the trend series for the given mode — the pure part of the chart,
  * factored out so window-switching logic is unit-testable without mounting
- * chart.js. 'cumulative' mirrors the original all-time running win rate;
+ * Recharts. 'cumulative' mirrors the original all-time running win rate;
  * '5'/'10' use the trailing-window "form curve" from the v3 stats engine.
  */
 export function buildTrendSeries(matches: Match[], mode: TrendMode): TrendPoint[] {
@@ -53,11 +41,63 @@ export function buildTrendSeries(matches: Match[], mode: TrendMode): TrendPoint[
   return getRollingWinRate(matches, Number(mode));
 }
 
-/** Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over time for the specific matchup, upgraded with a rolling-window selector (default 5) and a cumulative fallback. */
-export function MatchupChart({ matchupMatches }: { matchupMatches: Match[] }) {
-  const { t, i18n } = useTranslation();
+/**
+ * Maps each trend series point to the kit's `TrendChartPoint` — the tooltip
+ * context (who/where/when/score) carried on the point object, never
+ * re-derived in the chart layer. `opponentTag` is already alias-resolved by
+ * `useFilteredMatches` (the single choke point for opponent identity
+ * merging), so this function does not re-resolve it.
+ */
+export function buildTrendChartPoints(series: TrendPoint[], t: TFunction): TrendChartPoint[] {
+  return series.map((point) => {
+    const stageName =
+      point.match.map && point.match.map.id !== 0 ? point.match.map.name : t('common.unknown');
+    const parsedExternalId = parseExternalId(point.match.externalId);
+    return {
+      index: point.index,
+      winRate: point.winRate,
+      context: {
+        matchId: point.match.id,
+        opponentTag: point.match.opponent || t('common.unknown'),
+        stageName,
+        eventName: point.match.eventName ?? point.match.tournamentName ?? null,
+        dateMs: point.match.time,
+        win: point.match.win,
+        gameNumber: parsedExternalId?.game ?? null,
+      },
+    };
+  });
+}
+
+/**
+ * Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over
+ * time for the specific matchup, upgraded with a rolling-window selector
+ * (default 5) and a cumulative fallback. Renders on the chart kit's
+ * `TrendLine` (Recharts) — the host owns the data and the point context, the
+ * kit owns the chrome. This component no longer owns a card or an
+ * empty-state paragraph: its host, `MatchupsPage`, wraps it in `ChartCard`,
+ * which is why this file legitimately imports a kit primitive without
+ * importing `ChartCard` itself (the kit boundary rule is structural, not a
+ * co-import grep).
+ *
+ * D-04 applied to hosts: `width`/`height` are forwarded straight through to
+ * `TrendLine` so every test can render at an explicit size — jsdom's no-op
+ * ResizeObserver stub plus a zero-size bounding rect make a responsive
+ * render produce a 0x0 SVG with no marks to assert on.
+ */
+export function MatchupChart({
+  matchupMatches,
+  width,
+  height,
+}: {
+  matchupMatches: Match[];
+  width?: number;
+  height?: number;
+}) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<TrendMode>('5');
   const series = buildTrendSeries(matchupMatches, mode);
+  const points = buildTrendChartPoints(series, t);
 
   return (
     <div className="flex flex-col gap-3">
@@ -76,58 +116,7 @@ export function MatchupChart({ matchupMatches }: { matchupMatches: Match[] }) {
           </SelectContent>
         </Select>
       </div>
-      {series.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('matchups.chart.empty')}</p>
-      ) : (
-        <Line data={buildData(series, t)} options={buildOptions(series, i18n.language)} />
-      )}
+      <TrendLine points={points} width={width} height={height} />
     </div>
   );
-}
-
-function buildData(series: TrendPoint[], t: TFunction) {
-  return {
-    labels: series.map((point) => point.index.toString()),
-    datasets: [
-      {
-        label: t('matchups.chart.winRate'),
-        ...redLineDataset(),
-        data: series.map((point) => point.winRate),
-      },
-    ],
-  };
-}
-
-/** Builds chart options with tooltip callbacks closed over `series`, mirroring legacy MatchChart's tooltip title/footer (date + opponent's fighter name). */
-function buildOptions(series: TrendPoint[], locale: string): ChartOptions<'line'> {
-  const theme = darkChartOptions();
-  return {
-    scales: {
-      x: theme.scales?.x,
-      y: {
-        ...theme.scales?.y,
-        position: 'right',
-        suggestedMax: 100,
-      },
-    },
-    plugins: {
-      legend: {
-        display: true,
-        labels: theme.plugins?.legend?.labels,
-      },
-      tooltip: {
-        ...theme.plugins?.tooltip,
-        mode: 'nearest',
-        intersect: true,
-        callbacks: {
-          title: (items) => {
-            const point = series[items[0]?.dataIndex ?? -1];
-            if (!point) return '';
-            return new Date(point.match.time).toLocaleDateString(locale);
-          },
-          label: (item) => `: ${Math.round(Number(item.formattedValue) * 100) / 100}%`,
-        },
-      },
-    },
-  };
 }

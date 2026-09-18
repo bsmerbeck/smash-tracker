@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartCard } from '@/components/charts/ChartCard';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
@@ -173,14 +175,17 @@ export function MatchupsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('matchups.winRateTrend')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <MatchupChart matchupMatches={matchupMatches} />
-              </CardContent>
-            </Card>
+            <ChartCard
+              title={t('matchups.winRateTrend')}
+              caption={t('shared.evidence.type.fact')}
+              abstained={
+                matchupMatches.length < ABSTENTION_FLOOR_GAMES
+                  ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
+                  : null
+              }
+            >
+              <MatchupChart matchupMatches={matchupMatches} />
+            </ChartCard>
             <PairingOpponentSplit matchupMatches={matchupMatches} />
           </div>
 

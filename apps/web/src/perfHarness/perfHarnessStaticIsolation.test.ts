@@ -42,7 +42,16 @@ describe('perf harness production isolation — static half', () => {
   it('vite.config.ts never references the harness entry or a build.rollupOptions.input override', () => {
     const source = fs.readFileSync(path.join(WEB_ROOT, 'vite.config.ts'), 'utf8');
     expect(source).not.toMatch(/perf-harness/i);
-    expect(source).not.toMatch(/rollupOptions/);
+    // Phase 37 Plan 01 (SCL-02, D-02/D-19): narrowed from a blanket
+    // `/rollupOptions/` ban to specifically the `input` override this test's
+    // own docstring names as the actual hazard (a multi-entry build that
+    // could pull the harness entry into production). `vite.config.ts` now
+    // legitimately carries `build.rollupOptions.output.manualChunks` for the
+    // chart kit's `charts-vendor` chunk split — an OUTPUT concern that
+    // cannot add an entry point and never references the harness, so this
+    // narrowing keeps the guard's real protection (no `input` override)
+    // fully intact while unblocking that unrelated, plan-mandated addition.
+    expect(source).not.toMatch(/\binput\s*:/);
   });
 
   it('the production index.html never references the harness entry', () => {

@@ -1,18 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import i18n from '@/i18n';
 import type { Match } from '@smash-tracker/shared';
-import { buildTrendSeries, MatchupChart } from './MatchupChart';
-
-// jsdom has no canvas implementation, and chart.js's resize/render pipeline
-// touches real canvas APIs on every re-render (see chart.js's
-// core.controller getMaximumSize). Mocking react-chartjs-2's <Line> keeps
-// these tests focused on MatchupChart's own window-selector logic, which is
-// what this suite is verifying — the chart.js rendering itself isn't owned
-// by this component.
-vi.mock('react-chartjs-2', () => ({
-  Line: () => null,
-}));
+import { buildTrendChartPoints, buildTrendSeries, MatchupChart } from './MatchupChart';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -65,20 +56,56 @@ describe('buildTrendSeries', () => {
   });
 });
 
-describe('MatchupChart', () => {
-  it('shows a prompt when there are no matches, regardless of window', () => {
-    render(<MatchupChart matchupMatches={[]} />);
-    expect(screen.getByText('Submit a match to see the match chart.')).toBeInTheDocument();
+describe('buildTrendChartPoints', () => {
+  it('falls back to the localized unknown label for a match with stage id 0', () => {
+    const series = buildTrendSeries([makeMatch({ map: { id: 0, name: 'no selection' } })], '5');
+    const points = buildTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.stageName).toBe(i18n.t('common.unknown'));
   });
 
+  it('resolves eventName to null when neither eventName nor tournamentName is set', () => {
+    const series = buildTrendSeries(
+      [makeMatch({ eventName: undefined, tournamentName: undefined })],
+      '5',
+    );
+    const points = buildTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.eventName).toBeNull();
+  });
+
+  it('resolves eventName from tournamentName when eventName is absent', () => {
+    const series = buildTrendSeries(
+      [makeMatch({ eventName: undefined, tournamentName: 'Genesis 10' })],
+      '5',
+    );
+    const points = buildTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.eventName).toBe('Genesis 10');
+  });
+
+  it('resolves the game number from a parseable externalId, else null', () => {
+    const series = buildTrendSeries(
+      [
+        makeMatch({ id: 'm1', time: 1, externalId: 'sgg:123:g2' }),
+        makeMatch({ id: 'm2', time: 2, externalId: undefined }),
+      ],
+      '5',
+    );
+    const points = buildTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.gameNumber).toBe(2);
+    expect(points[1]?.context.gameNumber).toBeNull();
+  });
+});
+
+describe('MatchupChart', () => {
   it('defaults to the rolling-5 window', () => {
-    render(<MatchupChart matchupMatches={sequence([true, false])} />);
+    render(<MatchupChart matchupMatches={sequence([true, false])} width={640} height={288} />);
     expect(screen.getByLabelText('Trend window')).toHaveTextContent('Rolling 5');
   });
 
   it('switches to rolling-10 and cumulative via the selector', async () => {
     const user = userEvent.setup();
-    render(<MatchupChart matchupMatches={sequence([true, false, true])} />);
+    render(
+      <MatchupChart matchupMatches={sequence([true, false, true])} width={640} height={288} />,
+    );
 
     await user.click(screen.getByLabelText('Trend window'));
     await user.click(await screen.findByRole('option', { name: 'Rolling 10' }));
@@ -87,5 +114,31 @@ describe('MatchupChart', () => {
     await user.click(screen.getByLabelText('Trend window'));
     await user.click(await screen.findByRole('option', { name: 'Cumulative' }));
     expect(screen.getByLabelText('Trend window')).toHaveTextContent('Cumulative');
+  });
+
+  it('renders real SVG marks when mounted with an explicit numeric size', () => {
+    const { container } = render(
+      <MatchupChart
+        matchupMatches={sequence([true, false, true, true, false])}
+        width={640}
+        height={288}
+      />,
+    );
+    // Scoped to the Recharts surface — the Select trigger's chevron-down icon
+    // is also an SVG `path`, so an unscoped query would false-positive.
+    expect(container.querySelectorAll('svg.recharts-surface path').length).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it('renders no Recharts surface with no size props — proves the size passthrough is load-bearing, not decorative', () => {
+    // Recorded observation (plan 37-01 SUMMARY): with no width/height, the
+    // ResponsiveContainer measures 0x0 under jsdom's no-op ResizeObserver
+    // stub and Recharts renders no SVG at all — not an empty one. A lucide
+    // chevron-down icon `<path>` in the unrelated Select trigger is present
+    // either way, so this asserts absence of the Recharts surface itself
+    // rather than a raw `path` count.
+    const { container } = render(<MatchupChart matchupMatches={sequence([true, false, true])} />);
+    expect(container.querySelector('svg.recharts-surface')).toBeNull();
   });
 });
