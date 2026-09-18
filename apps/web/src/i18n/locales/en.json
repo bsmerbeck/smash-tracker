@@ -1949,7 +1949,8 @@
     "analyticsNav": {
       "dashboard": "Dashboard",
       "fighterAnalysis": "Fighter Analysis",
-      "matchups": "Matchups"
+      "matchups": "Matchups",
+      "opponents": "Scouting"
     },
     "deliveryVodPicker": {
       "title": "Choose VODs to include",

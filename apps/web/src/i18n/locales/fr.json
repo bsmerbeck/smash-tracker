@@ -1949,7 +1949,8 @@
     "analyticsNav": {
       "dashboard": "Tableau de bord",
       "fighterAnalysis": "Analyse de personnage",
-      "matchups": "Confrontations"
+      "matchups": "Confrontations",
+      "opponents": "Scouting"
     },
     "deliveryVodPicker": {
       "title": "Choisir les VODs à inclure",
