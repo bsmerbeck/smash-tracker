@@ -34,6 +34,8 @@
     "chunkLoadError": "Something failed to load. Check your connection and retry.",
     "retry": "Retry",
     "language": "Language",
+    "collapseSidebarAria": "Collapse sidebar",
+    "expandSidebarAria": "Expand sidebar",
     "languageChanged": "Language set to {{language}} — change it anytime from the top bar."
   },
   "common": {

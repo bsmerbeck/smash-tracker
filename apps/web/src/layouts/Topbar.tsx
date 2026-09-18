@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Check, ChevronDown, LogOut, Menu } from 'lucide-react';
+import { Check, ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -205,8 +205,24 @@ function HubClientPicker() {
  * (V15), sign-out, and a mobile menu toggle. In Coaching mode with an active
  * client, the header swaps its bottom border for an accent-tinted variant so
  * the mode reads as visually distinct without a full re-theme.
+ *
+ * Quick 260918-hro: `sidebarCollapsed`/`onToggleSidebar` are optional
+ * because `Topbar` is also rendered standalone (bare `<Topbar />`, no
+ * props) in `Topbar.test.tsx` — there is nothing to toggle without a host
+ * that owns the collapse state, so the control renders only when
+ * `onToggleSidebar` is supplied. `MainLayout` is that host: it owns the
+ * preference and passes both props down. The control sits immediately
+ * after the mobile hamburger, `hidden lg:inline-flex` — the two occupy the
+ * same visual slot at complementary breakpoints (hamburger below `lg`,
+ * panel toggle at `lg+`).
  */
-export function Topbar() {
+export function Topbar({
+  sidebarCollapsed,
+  onToggleSidebar,
+}: {
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+} = {}) {
   const { signOut } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -256,6 +272,30 @@ export function Topbar() {
       >
         <Menu className="size-5" />
       </Button>
+
+      {/* Quick 260918-hro: the app-shell rail collapse control. Conditional
+          on `onToggleSidebar` because `Topbar` renders bare in tests — no
+          `aria-controls` here, deliberately: the controlled `Sidebar`
+          returns `null` (removed from the DOM) when collapsed, so a
+          referenced id would dangle. */}
+      {onToggleSidebar && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden lg:inline-flex"
+          aria-expanded={!sidebarCollapsed}
+          aria-label={
+            sidebarCollapsed ? t('chrome.expandSidebarAria') : t('chrome.collapseSidebarAria')
+          }
+          onClick={onToggleSidebar}
+        >
+          {sidebarCollapsed ? (
+            <PanelLeftOpen className="size-5" />
+          ) : (
+            <PanelLeftClose className="size-5" />
+          )}
+        </Button>
+      )}
 
       <div className="flex items-center gap-4">
         <button

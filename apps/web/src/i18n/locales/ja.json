@@ -34,6 +34,8 @@
     "chunkLoadError": "ページの一部を読み込めませんでした。接続を確認して再試行してください。",
     "retry": "再試行",
     "language": "言語",
+    "collapseSidebarAria": "サイドバーを折りたたむ",
+    "expandSidebarAria": "サイドバーを展開",
     "languageChanged": "言語を{{language}}に設定しました — 上部バーからいつでも変更できます。"
   },
   "common": {

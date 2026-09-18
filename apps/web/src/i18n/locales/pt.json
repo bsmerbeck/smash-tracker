@@ -34,6 +34,8 @@
     "chunkLoadError": "Uma parte da página não pôde ser carregada. Verifique sua conexão e tente novamente.",
     "retry": "Tentar novamente",
     "language": "Idioma",
+    "collapseSidebarAria": "Recolher a barra lateral",
+    "expandSidebarAria": "Expandir a barra lateral",
     "languageChanged": "Idioma definido para {{language}} — mude quando quiser na barra superior."
   },
   "common": {
