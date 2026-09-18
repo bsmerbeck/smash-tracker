@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
@@ -7,6 +8,8 @@ import { CounterpickAdvisor } from './CounterpickAdvisor';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+
+const SET_STATE_EDIT_ARIA = 'Change the game-phase, role, prior-stages and bans assumption';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -129,6 +132,9 @@ const OFF_RULESET_STAGE = { id: 2, name: 'Big Battlefield' };
 const FINAL_DESTINATION = { id: 3, name: 'Final Destination' };
 const SMASHVILLE = { id: 83, name: 'Smashville' };
 const TOWN_AND_CITY = { id: 85, name: 'Town and City' };
+// A real DEFAULT_RULESET counterpick (not a starter) — legal from game two
+// onward only, the complementary half of the off-ruleset case above.
+const LYLAT_CRUISE = { id: 56, name: 'Lylat Cruise' };
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -359,6 +365,141 @@ describe('CounterpickAdvisor', () => {
       const pickSection = screen.getByText('Pick these').closest('div')!;
       expect(pickSection.textContent).toContain('Battlefield');
       expect(screen.queryByText(/Town and City/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Task 2: ruleset disclosure and editable set state (D-11, D-12, EVID-04, EVID-05)', () => {
+    it('renders the ruleset control in the header even when the claim is abstained', () => {
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 1, 0)); // abstained fixture
+      expect(
+        screen.getByRole('button', {
+          name: 'View the ruleset assumption behind these stage recommendations',
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
+    });
+
+    it('the set-state trigger text is present without any pointer interaction, reading the game-one/striking/no-bans default', () => {
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      // Both the trigger button AND the always-visible under-title line
+      // render the same composed sentence (D-11) — assert on the trigger
+      // button specifically, since that is the "never hover-only" surface
+      // the acceptance criterion targets.
+      const trigger = screen.getByRole('button', { name: SET_STATE_EDIT_ARIA });
+      expect(trigger.textContent).toContain(
+        'Assuming Game 1 · Striking · no stages played yet, no bans',
+      );
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
+        'Assuming Game 1 · Striking · no stages played yet, no bans',
+      );
+    });
+
+    it('a counterpick stage with a fully qualifying record is absent at game one and present from game two', async () => {
+      const user = userEvent.setup();
+      const matches = [
+        ...matchesOnStage(LYLAT_CRUISE, 5, 0), // fully qualifying, illegal at game 1
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+      ];
+      renderAdvisor(matches);
+
+      expect(screen.queryByText(/Lylat Cruise/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      await user.click(screen.getByLabelText('Game 2+'));
+      await user.keyboard('{Escape}'); // close the popover so the checklist rows stop shadowing the bar label
+
+      expect(await screen.findByText('Lylat Cruise')).toBeInTheDocument();
+    });
+
+    it('marking a prior stage as won under the modified repeat rule, with the picking role and a later game phase, removes that stage from both rendered groups', async () => {
+      const user = userEvent.setup();
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+      ];
+      renderAdvisor(matches);
+
+      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      await user.click(screen.getByLabelText('Game 2+'));
+      await user.click(screen.getByLabelText('Picking'));
+
+      const priorSection = screen.getByText('Stages played so far').closest('div')!;
+      await user.click(within(priorSection).getByLabelText('Battlefield'));
+      await user.click(within(priorSection).getByRole('radio', { name: 'Won' }));
+      await user.keyboard('{Escape}'); // close the popover so its own checklist labels stop shadowing the bar labels
+
+      expect(screen.queryByText('Battlefield')).not.toBeInTheDocument();
+      expect(screen.getByText(/Town and City/)).toBeInTheDocument();
+    });
+
+    it('banning every stage in the active ruleset renders the no-legal-stage message with zero bars and no abstention sentence', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+
+      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      const bansSection = screen.getByText('Stages banned so far').closest('div')!;
+      const banCheckboxes = within(bansSection).getAllByRole('checkbox');
+      for (const checkbox of banCheckboxes) {
+        await user.click(checkbox);
+      }
+
+      expect(
+        screen.getByText('No stage is legal under this ruleset and set state.'),
+      ).toBeInTheDocument();
+      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.queryByText(/Not enough data yet/)).not.toBeInTheDocument();
+    });
+
+    it('choosing a later game phase without any prior stage still produces a valid assumption line and does not block closing the control', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+
+      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      await user.click(screen.getByLabelText('Game 2+'));
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
+        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+      );
+
+      await user.keyboard('{Escape}');
+      expect(screen.queryByText('Stages played so far')).not.toBeInTheDocument();
+    });
+
+    it('resets the set state to the default when the pairing changes', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <MemoryRouter initialEntries={['/matchups']}>
+          <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
+        </MemoryRouter>,
+      );
+
+      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      await user.click(screen.getByLabelText('Game 2+'));
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
+        'Assuming Game 2+',
+      );
+
+      const differentPairing = matchesOnStage(BATTLEFIELD, 5, 0).map((m) => ({
+        ...m,
+        opponent_id: 99,
+      }));
+      rerender(
+        <MemoryRouter initialEntries={['/matchups']}>
+          <CounterpickAdvisor matchupMatches={differentPairing} />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
+        'Assuming Game 1',
+      );
+    });
+
+    it('grep gate: SetStateControl never renders a TooltipContent — the assumption is never delivered through a hover surface', () => {
+      // Mechanical statement mirrored from the plan's own acceptance grep;
+      // asserted here too so a component-level regression is caught by the
+      // default suite, not only by a shell command run by hand.
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      expect(document.querySelector('[data-slot="tooltip-content"]')).not.toBeInTheDocument();
     });
   });
 });

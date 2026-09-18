@@ -188,6 +188,10 @@
       "gameNumber": "Game {{game}}"
     },
     "ruleset": {
+      "control": {
+        "label": "Regras: {{preset}}",
+        "aria": "Ver o regulamento por trás destas recomendações de stage"
+      },
       "preset": {
         "default": {
           "name": "Padrão da casa (SSBU)",
@@ -870,7 +874,30 @@
       "banThese": "Bana / evite estes",
       "unknownStage": "Stage desconhecido",
       "threshold_one": "Mín. {{count}} partida por stage",
-      "threshold_other": "Mín. {{count}} partidas por stage"
+      "threshold_other": "Mín. {{count}} partidas por stage",
+      "noLegalStages": "Nenhum stage é legal sob este regulamento e este estado de jogo.",
+      "setState": {
+        "summary": "Assumindo {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Alterar a fase do jogo, o papel, os stages anteriores e os banimentos assumidos",
+        "phase": {
+          "game1": "Jogo 1",
+          "game2plus": "Jogo 2+"
+        },
+        "role": {
+          "striking": "Banindo",
+          "picking": "Escolhendo"
+        },
+        "priorSummary_one": "{{count}} stage jogado",
+        "priorSummary_other": "{{count}} stages jogados",
+        "priorNone": "nenhum stage jogado ainda",
+        "bansSummary_one": "{{count}} stage banido",
+        "bansSummary_other": "{{count}} stages banidos",
+        "bansNone": "sem banimentos",
+        "priorStagesLabel": "Stages jogados até agora",
+        "bansLabel": "Stages banidos até agora",
+        "wonLabel": "Venceu",
+        "lostLabel": "Perdeu"
+      }
     },
     "opponentSplit": {
       "title": "Por oponente",

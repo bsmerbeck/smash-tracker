@@ -188,6 +188,10 @@
       "gameNumber": "Game {{game}}"
     },
     "ruleset": {
+      "control": {
+        "label": "Ruleset: {{preset}}",
+        "aria": "View the ruleset assumption behind these stage recommendations"
+      },
       "preset": {
         "default": {
           "name": "House default (SSBU)",
@@ -870,7 +874,30 @@
       "banThese": "Ban / avoid these",
       "unknownStage": "Unknown stage",
       "threshold_one": "Min {{count}} game per stage",
-      "threshold_other": "Min {{count}} games per stage"
+      "threshold_other": "Min {{count}} games per stage",
+      "noLegalStages": "No stage is legal under this ruleset and set state.",
+      "setState": {
+        "summary": "Assuming {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Change the game-phase, role, prior-stages and bans assumption",
+        "phase": {
+          "game1": "Game 1",
+          "game2plus": "Game 2+"
+        },
+        "role": {
+          "striking": "Striking",
+          "picking": "Picking"
+        },
+        "priorSummary_one": "{{count}} stage played",
+        "priorSummary_other": "{{count}} stages played",
+        "priorNone": "no stages played yet",
+        "bansSummary_one": "{{count}} stage banned",
+        "bansSummary_other": "{{count}} stages banned",
+        "bansNone": "no bans",
+        "priorStagesLabel": "Stages played so far",
+        "bansLabel": "Stages banned so far",
+        "wonLabel": "Won",
+        "lostLabel": "Lost"
+      }
     },
     "opponentSplit": {
       "title": "By Opponent",

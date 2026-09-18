@@ -188,6 +188,10 @@
       "gameNumber": "Spiel {{game}}"
     },
     "ruleset": {
+      "control": {
+        "label": "Regelwerk: {{preset}}",
+        "aria": "Das Regelwerk hinter diesen Stage-Empfehlungen ansehen"
+      },
       "preset": {
         "default": {
           "name": "Haus-Standard (SSBU)",
@@ -870,7 +874,30 @@
       "banThese": "Diese bannen / meiden",
       "unknownStage": "Unbekannte Stage",
       "threshold_one": "Min. {{count}} Spiel pro Stage",
-      "threshold_other": "Min. {{count}} Spiele pro Stage"
+      "threshold_other": "Min. {{count}} Spiele pro Stage",
+      "noLegalStages": "Unter diesem Regelwerk und diesem Spielstand ist keine Stage legal.",
+      "setState": {
+        "summary": "Angenommen {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Spielphase, Rolle, vorherige Stages und Bans der Annahme ändern",
+        "phase": {
+          "game1": "Spiel 1",
+          "game2plus": "Spiel 2+"
+        },
+        "role": {
+          "striking": "Striken",
+          "picking": "Picken"
+        },
+        "priorSummary_one": "{{count}} gespielte Stage",
+        "priorSummary_other": "{{count}} gespielte Stages",
+        "priorNone": "noch keine Stage gespielt",
+        "bansSummary_one": "{{count}} gebannte Stage",
+        "bansSummary_other": "{{count}} gebannte Stages",
+        "bansNone": "keine Bans",
+        "priorStagesLabel": "Bisher gespielte Stages",
+        "bansLabel": "Bisher gebannte Stages",
+        "wonLabel": "Gewonnen",
+        "lostLabel": "Verloren"
+      }
     },
     "opponentSplit": {
       "title": "Nach Gegner",

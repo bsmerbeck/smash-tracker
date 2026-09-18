@@ -188,6 +188,10 @@
       "gameNumber": "Manche {{game}}"
     },
     "ruleset": {
+      "control": {
+        "label": "Règles : {{preset}}",
+        "aria": "Voir le règlement à l'origine de ces recommandations de stages"
+      },
       "preset": {
         "default": {
           "name": "Règles maison par défaut (SSBU)",
@@ -870,7 +874,30 @@
       "banThese": "À bannir / éviter",
       "unknownStage": "Stage inconnu",
       "threshold_one": "Min. {{count}} partie par stage",
-      "threshold_other": "Min. {{count}} parties par stage"
+      "threshold_other": "Min. {{count}} parties par stage",
+      "noLegalStages": "Aucun stage n'est légal avec ce règlement et cet état de la manche.",
+      "setState": {
+        "summary": "En supposant {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Modifier la phase de jeu, le rôle, les stages précédents et les bans supposés",
+        "phase": {
+          "game1": "Manche 1",
+          "game2plus": "Manche 2+"
+        },
+        "role": {
+          "striking": "Strike",
+          "picking": "Choix"
+        },
+        "priorSummary_one": "{{count}} stage joué",
+        "priorSummary_other": "{{count}} stages joués",
+        "priorNone": "aucun stage joué pour l'instant",
+        "bansSummary_one": "{{count}} stage banni",
+        "bansSummary_other": "{{count}} stages bannis",
+        "bansNone": "aucun ban",
+        "priorStagesLabel": "Stages joués jusqu'ici",
+        "bansLabel": "Stages bannis jusqu'ici",
+        "wonLabel": "Gagné",
+        "lostLabel": "Perdu"
+      }
     },
     "opponentSplit": {
       "title": "Par adversaire",

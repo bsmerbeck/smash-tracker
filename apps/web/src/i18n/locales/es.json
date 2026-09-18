@@ -188,6 +188,10 @@
       "gameNumber": "Partida {{game}}"
     },
     "ruleset": {
+      "control": {
+        "label": "Reglas: {{preset}}",
+        "aria": "Ver el reglamento en el que se basan estas recomendaciones de escenario"
+      },
       "preset": {
         "default": {
           "name": "Predeterminado de la casa (SSBU)",
@@ -870,7 +874,30 @@
       "banThese": "Banea / evita estos",
       "unknownStage": "Escenario desconocido",
       "threshold_one": "Mín. {{count}} partida por escenario",
-      "threshold_other": "Mín. {{count}} partidas por escenario"
+      "threshold_other": "Mín. {{count}} partidas por escenario",
+      "noLegalStages": "Ningún escenario es legal con este reglamento y este estado de partida.",
+      "setState": {
+        "summary": "Suponiendo {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Cambiar la fase de partida, el rol, los escenarios previos y los baneos asumidos",
+        "phase": {
+          "game1": "Partida 1",
+          "game2plus": "Partida 2+"
+        },
+        "role": {
+          "striking": "Striking",
+          "picking": "Eligiendo"
+        },
+        "priorSummary_one": "{{count}} escenario jugado",
+        "priorSummary_other": "{{count}} escenarios jugados",
+        "priorNone": "aún no se jugó ningún escenario",
+        "bansSummary_one": "{{count}} escenario baneado",
+        "bansSummary_other": "{{count}} escenarios baneados",
+        "bansNone": "sin baneos",
+        "priorStagesLabel": "Escenarios jugados hasta ahora",
+        "bansLabel": "Escenarios baneados hasta ahora",
+        "wonLabel": "Ganado",
+        "lostLabel": "Perdido"
+      }
     },
     "opponentSplit": {
       "title": "Por rival",

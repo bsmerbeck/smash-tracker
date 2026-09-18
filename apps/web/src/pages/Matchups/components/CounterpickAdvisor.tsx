@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveRuleset, legalStagesFor, DEFAULT_SET_STATE } from '@smash-tracker/shared';
-import type { Match } from '@smash-tracker/shared';
+import type { Match, SetState } from '@smash-tracker/shared';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
 import { SampleCue } from '@/components/EvidenceCues';
+import { RulesetDisclosure } from '@/components/RulesetDisclosure';
 import { StageOption } from '@/components/StageOption';
 import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { advisorThreshold } from '../lib/advisorThreshold';
+import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
 
 /**
  * Stage counterpick advisor for the selected pairing (D-05, D-07, D-11,
@@ -36,6 +38,23 @@ import { advisorThreshold } from '../lib/advisorThreshold';
  * to the house default here. This is deliberate, not an oversight: the
  * override badge path exists and is unit-tested in `RulesetDisclosure`, but
  * never fires on this surface.
+ *
+ * D-11: the set state (game phase, role, prior stages, bans) is component
+ * state for the session only — entered through `SetStateControl`, never
+ * inferred from match data, and never persisted. It resets to
+ * `DEFAULT_SET_STATE` whenever the pairing changes (derived from the first
+ * match's fighter/opponent ids, since this component only ever receives an
+ * already-pairing-filtered array) so an assumption entered for one pairing
+ * can never silently carry into the next.
+ *
+ * D-12/EVID-05: the ruleset control and the set-state assumption are BOTH
+ * always visible — the ruleset/set-state controls sit in the frame's header
+ * slot beside the sample cue, and the composed assumption sentence renders
+ * once, as plain muted text directly under the title (never inside a
+ * tooltip or a hover-only surface). When the active ruleset+set-state
+ * combination leaves NO stage legal, the card says exactly that
+ * (`noLegalStages`) instead of the generic abstention sentence, which would
+ * misdescribe a full sample as a thin one.
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
@@ -47,10 +66,24 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   const [refreshedAt] = useState(() => Date.now());
 
   const resolvedRuleset = resolveRuleset(undefined);
-  // The set state controls arrive in this plan's Task 2 (D-11); this task
-  // renders the fixed default only.
-  const setState = DEFAULT_SET_STATE;
+
+  const pairingKey =
+    matchupMatches.length > 0
+      ? `${matchupMatches[0]!.fighter_id}:${matchupMatches[0]!.opponent_id}`
+      : 'none';
+  const [setState, setSetState] = useState<SetState>(DEFAULT_SET_STATE);
+  // Render-time state adjustment (mirrors `RulesetOverrideSection`'s
+  // `wasDialogOpen` pattern): resets the set state the moment the pairing
+  // key changes, rather than in an effect — no render is ever committed
+  // with a stale pairing's assumption on screen.
+  const [lastPairingKey, setLastPairingKey] = useState(pairingKey);
+  if (pairingKey !== lastPairingKey) {
+    setLastPairingKey(pairingKey);
+    setSetState(DEFAULT_SET_STATE);
+  }
+
   const legalStageIds = new Set(legalStagesFor(resolvedRuleset.ruleset, setState));
+  const noLegalStages = legalStageIds.size === 0;
 
   const threshold = advisorThreshold(minGames);
   const { claim } = buildStageEvidence({
@@ -83,26 +116,47 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
     <ChartCard
       title={t('matchups.counterpick.title')}
       caption={t('shared.evidence.type.recommendation')}
-      headerRight={<SampleCue sample={claim.sample} />}
-      abstained={claim.kind === 'abstained' ? { gamesNeeded: claim.gamesNeeded } : null}
+      headerRight={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <SampleCue sample={claim.sample} />
+          <RulesetDisclosure resolved={resolvedRuleset} />
+          <SetStateControl
+            ruleset={resolvedRuleset.ruleset}
+            setState={setState}
+            onChange={setSetState}
+          />
+        </div>
+      }
+      abstained={
+        !noLegalStages && claim.kind === 'abstained' ? { gamesNeeded: claim.gamesNeeded } : null
+      }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          {t('matchups.counterpick.threshold', { count: threshold })}
+        <p className="text-sm text-muted-foreground" data-testid="set-state-assumption-line">
+          {describeSetStateAssumption(t, setState)}
         </p>
-        <div>
-          <h3 className="mb-2 text-sm font-medium text-emerald-500">
-            {t('matchups.counterpick.pickThese')}
-          </h3>
-          <ComparisonBars tone="emerald" rows={picks.map(toRow)} />
-        </div>
-        {bans.length > 0 && (
-          <div>
-            <h3 className="mb-2 text-sm font-medium text-destructive">
-              {t('matchups.counterpick.banThese')}
-            </h3>
-            <ComparisonBars tone="destructive" rows={bans.map(toRow)} />
-          </div>
+        {noLegalStages ? (
+          <p className="text-sm text-muted-foreground">{t('matchups.counterpick.noLegalStages')}</p>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {t('matchups.counterpick.threshold', { count: threshold })}
+            </p>
+            <div>
+              <h3 className="mb-2 text-sm font-medium text-emerald-500">
+                {t('matchups.counterpick.pickThese')}
+              </h3>
+              <ComparisonBars tone="emerald" rows={picks.map(toRow)} />
+            </div>
+            {bans.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-medium text-destructive">
+                  {t('matchups.counterpick.banThese')}
+                </h3>
+                <ComparisonBars tone="destructive" rows={bans.map(toRow)} />
+              </div>
+            )}
+          </>
         )}
       </div>
     </ChartCard>

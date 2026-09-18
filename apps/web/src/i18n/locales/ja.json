@@ -188,6 +188,10 @@
       "gameNumber": "{{game}}戦目"
     },
     "ruleset": {
+      "control": {
+        "label": "ルール: {{preset}}",
+        "aria": "このステージ推奨の前提となっているルールを見る"
+      },
       "preset": {
         "default": {
           "name": "ハウスデフォルト（SSBU）",
@@ -870,7 +874,30 @@
       "banThese": "ここは拒否/回避",
       "unknownStage": "不明なステージ",
       "threshold_one": "各ステージ最低{{count}}戦",
-      "threshold_other": "各ステージ最低{{count}}戦"
+      "threshold_other": "各ステージ最低{{count}}戦",
+      "noLegalStages": "このルールとゲーム状況では合法なステージがありません。",
+      "setState": {
+        "summary": "前提: {{phase}} ・ {{role}} ・ {{priorSummary}}",
+        "editAria": "ゲーム数、役割、これまでのステージとバンの前提を変更する",
+        "phase": {
+          "game1": "1ゲーム目",
+          "game2plus": "2ゲーム目以降"
+        },
+        "role": {
+          "striking": "ストライク",
+          "picking": "選択側"
+        },
+        "priorSummary_one": "{{count}}ステージ済み",
+        "priorSummary_other": "{{count}}ステージ済み",
+        "priorNone": "まだステージが行われていません",
+        "bansSummary_one": "{{count}}ステージ禁止済み",
+        "bansSummary_other": "{{count}}ステージ禁止済み",
+        "bansNone": "禁止なし",
+        "priorStagesLabel": "これまでにプレイしたステージ",
+        "bansLabel": "これまでに禁止したステージ",
+        "wonLabel": "勝利",
+        "lostLabel": "敗北"
+      }
     },
     "opponentSplit": {
       "title": "相手プレイヤー別",
