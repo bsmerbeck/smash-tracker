@@ -14,6 +14,7 @@ import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
+import { RulesetOverrideSection } from './components/RulesetOverrideSection';
 import { GenerateRecapDialog } from './components/GenerateRecapDialog';
 import { buildRetrospective } from './lib/retrospective';
 
@@ -180,6 +181,11 @@ export function TournamentDetailPage() {
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
       <CharactersAndStages matches={entryMatches} />
+      {/* EVID-04 (D-10, D-18): renders for every entry including
+          admin-imported ones — plan 37-06's retrospective grades historical
+          picks under whichever ruleset applied to that event, and this is
+          where that ruleset is disclosed and (own-account only) edited. */}
+      <RulesetOverrideSection entry={entry} />
       {retrospective && <AdvisorRetrospective retrospective={retrospective} />}
       {canGenerateRecap && entry.entryKey && (
         <GenerateRecapDialog

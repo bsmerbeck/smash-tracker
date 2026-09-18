@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import {
+  entryKeyInputSchema,
   manualTournamentEntryInputSchema,
+  RULESET_CONTRACT_VERSION,
+  rulesetOverrideResponseSchema,
+  rulesetOverrideUpdateBodySchema,
   TOURNAMENT_REGISTRY_ORIGIN,
   tournamentEntrySchema,
   tournamentRegistryListSchema,
   tournamentRegistryRowSchema,
+  type RulesetOverrideStored,
   type TournamentEntry,
   type TournamentRegistryListEntry,
 } from '@smash-tracker/shared';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
+import { NotFoundError } from '../services/rtdb.js';
 
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f\u007f]/g;
@@ -162,6 +169,76 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
         sessionIdFromHeader(request),
       );
       return reply.code(201).send(entry);
+    },
+  );
+
+  // PATCH /api/tournaments/:entryKey/ruleset — EVID-04 (37-CONTEXT.md D-10):
+  // set or clear the per-event ruleset override. Modeled on gspReadings.ts's
+  // own-uid PATCH route: the RTDB path is assembled from `request.uid` ONLY
+  // — no target uid is ever accepted from the client — so a foreign or
+  // unknown entryKey is indistinguishable from one that doesn't exist
+  // (both answer the same not-found error). D-18 (this phase, own-account
+  // only): Tournaments has no coach mount today, and this route does not add
+  // subject/tenant-membership resolution — a client's own tournament entry
+  // is editable by that client alone this phase; Phase 38 owns any future
+  // coach mount for this surface.
+  app.patch(
+    '/tournaments/:entryKey/ruleset',
+    {
+      schema: {
+        params: z.object({ entryKey: entryKeyInputSchema }),
+        body: rulesetOverrideUpdateBodySchema,
+        response: {
+          200: rulesetOverrideResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { entryKey } = request.params;
+      const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
+      const existing = await entryRef.get();
+      if (!existing.exists()) {
+        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+      }
+
+      const { rulesetOverride } = request.body;
+
+      if (rulesetOverride === null) {
+        // Clearing removes the child outright rather than writing a null
+        // into an update payload — the exact pattern this codebase's
+        // documented `260725-juj` outage was caused by omitting.
+        await app.firebase.database
+          .ref(`tournamentEntries/${request.uid}/${entryKey}/rulesetOverride`)
+          .remove();
+        return { entryKey };
+      }
+
+      // Every optional member is conditional-spread so a member the caller
+      // omitted is OMITTED from the write, never stored as an empty value.
+      // `contractVersion` is always stamped from the server's own running
+      // constant — never trusted from the client body — so a stale or
+      // future contractVersion in the request can never be persisted as the
+      // stored value.
+      const stored: RulesetOverrideStored = {
+        contractVersion: RULESET_CONTRACT_VERSION,
+        ...(rulesetOverride.starterStageIds != null
+          ? { starterStageIds: rulesetOverride.starterStageIds }
+          : {}),
+        ...(rulesetOverride.counterpickStageIds != null
+          ? { counterpickStageIds: rulesetOverride.counterpickStageIds }
+          : {}),
+        ...(rulesetOverride.banCounts != null ? { banCounts: rulesetOverride.banCounts } : {}),
+        ...(rulesetOverride.dsr != null ? { dsr: rulesetOverride.dsr } : {}),
+        ...(rulesetOverride.strikeOrder != null
+          ? { strikeOrder: rulesetOverride.strikeOrder }
+          : {}),
+        ...(rulesetOverride.setFormat != null ? { setFormat: rulesetOverride.setFormat } : {}),
+      };
+      // A single named child of an update() call replaces that child
+      // wholesale, so a member the editor dropped this time does not linger
+      // from a previous write.
+      await entryRef.update({ rulesetOverride: stored });
+      return { entryKey, rulesetOverride: stored };
     },
   );
 };

@@ -67,6 +67,8 @@ import {
   REVIEW_DELIVERY_STATES,
   REVIEW_SECTION_KINDS,
   reviewDraftSchema,
+  rulesetOverrideResponseSchema,
+  rulesetOverrideUpdateBodySchema,
   SAFE_MARKDOWN_DOC_MAX_LENGTH,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -103,6 +105,7 @@ import {
   type PrepScoutBindingConfirmRequest,
   type ResearchEnrichmentConfirmRequest,
   type ReviewChecklistItemId,
+  type RulesetOverrideStored,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -777,6 +780,21 @@ export const api = {
         method: 'POST',
         body: manualTournamentEntryInputSchema.parse(input),
       }),
+    /**
+     * PATCH /api/tournaments/:entryKey/ruleset (EVID-04, D-10, D-18 —
+     * own-account only, uid-scoped). `rulesetOverride: null` requests
+     * clearing the stored override back to the house default; a non-null
+     * value is the FULL stored shape the route conditional-spreads from.
+     */
+    setRulesetOverride: (entryKey: string, rulesetOverride: RulesetOverrideStored | null) =>
+      apiRequestParsed(
+        `/api/tournaments/${encodeURIComponent(entryKey)}/ruleset`,
+        rulesetOverrideResponseSchema,
+        {
+          method: 'PATCH',
+          body: rulesetOverrideUpdateBodySchema.parse({ rulesetOverride }),
+        },
+      ),
   },
   /**
    * Phase 26 (PREP-01..04, D-12): the free deterministic tournament prep
