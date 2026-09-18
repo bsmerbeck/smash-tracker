@@ -868,7 +868,9 @@
       "title": "カウンターピック指南",
       "pickThese": "ここを選ぶ",
       "banThese": "ここは拒否/回避",
-      "unknownStage": "不明なステージ"
+      "unknownStage": "不明なステージ",
+      "threshold_one": "各ステージ最低{{count}}戦",
+      "threshold_other": "各ステージ最低{{count}}戦"
     },
     "opponentSplit": {
       "title": "相手プレイヤー別",

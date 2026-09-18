@@ -45,9 +45,25 @@ export interface SampleDateRange {
 export interface SampleMeta {
   /** Total games in the raw input sample, before any known-field filtering. */
   rawSampleSize: number;
-  /** Games that cleared whatever known-field predicate this claim's builder applies (e.g. a known stage id). */
+  /**
+   * Games that cleared whatever known-field predicate this claim's builder
+   * applies (e.g. a known stage id). Plan 37-05 (R2-MEDIUM-4): when
+   * `buildStageEvidence` was given a stage-legality filter, this describes
+   * the LEGAL cohort, not merely the known-stage one — a game on a known but
+   * ILLEGAL stage sits in neither this denominator nor the unknown bucket
+   * below, so for the first time `eligibleDenominator + unknown.games` can
+   * be strictly less than `rawSampleSize`. Without a filter (every consumer
+   * other than the advisor, including the API's report payload assembly,
+   * which passes none) this is unchanged: known-field share, and the two
+   * always sum to `rawSampleSize`.
+   */
   eligibleDenominator: number;
-  /** `eligibleDenominator / rawSampleSize`, or `0` when `rawSampleSize` is `0` — never `NaN`, never `undefined`. */
+  /**
+   * `eligibleDenominator / rawSampleSize`, or `0` when `rawSampleSize` is `0`
+   * — never `NaN`, never `undefined`. Inherits `eligibleDenominator`'s
+   * filtered-cohort reading above: under a supplied stage-legality filter
+   * this is a LEGAL share, not a known-field share.
+   */
   knownFieldCoverage: number;
   /** Earliest/latest match time in the eligible sample, or `null` for an empty sample. */
   dateRange: SampleDateRange | null;

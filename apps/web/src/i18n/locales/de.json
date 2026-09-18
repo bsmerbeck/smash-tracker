@@ -868,7 +868,9 @@
       "title": "Counterpick-Berater",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
-      "unknownStage": "Unbekannte Stage"
+      "unknownStage": "Unbekannte Stage",
+      "threshold_one": "Min. {{count}} Spiel pro Stage",
+      "threshold_other": "Min. {{count}} Spiele pro Stage"
     },
     "opponentSplit": {
       "title": "Nach Gegner",

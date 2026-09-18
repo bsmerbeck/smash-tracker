@@ -1,29 +1,41 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { StageOption } from '@/components/StageOption';
+import { resolveRuleset, legalStagesFor, DEFAULT_SET_STATE } from '@smash-tracker/shared';
 import type { Match } from '@smash-tracker/shared';
-import { buildStageEvidence, type RankedStage } from '@/lib/stats';
+import { ChartCard } from '@/components/charts/ChartCard';
+import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
+import { SampleCue } from '@/components/EvidenceCues';
+import { StageOption } from '@/components/StageOption';
+import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
-
-const PICK_BAN_COUNT = 3;
+import { advisorThreshold } from '../lib/advisorThreshold';
 
 /**
- * Stage counterpick advisor for the selected pairing: the top 3
- * evidence-ranked stages ("Pick these") and the bottom 3 ("Ban/avoid
- * these"), each shown with its stage art, record, rate, and sample size.
- * Only stages with at least the shared per-subject minimum (Phase 35-03,
- * D-11 — `useMinStageMatches`, the same value Matchup Insights and Matchup
- * Stage Guide expose through their own selects) recorded matches in this
- * pairing qualify — and Phase 36's `buildStageEvidence` additionally floors
- * that minimum at `ABSTENTION_FLOOR_GAMES` (D-05, D-07, R1-HIGH-1) inside
- * the engine itself, so a persisted value below the floor cannot reopen a
- * below-floor row here. When nothing clears the floor, the abstained
- * sentence names exactly how many more games are needed instead of showing
- * a misleading recommendation. This component reads the threshold silently
- * — no selector of its own (D-11, planner decision 1) — so moving it in
- * Matchup Insights on the same page moves this component's picks/bans too.
+ * Stage counterpick advisor for the selected pairing (D-05, D-07, D-11,
+ * D-13, ADV-01, EVID-04, EVID-05 — plan 37-05). Gates, ranks and splits
+ * through the shared evidence engine's own functions rather than any local
+ * re-derivation:
+ *
+ * - The legal-stage filter (`legalStagesFor`) narrows the candidate set
+ *   BEFORE `buildStageEvidence`'s internal `gateBySampleSize` runs, so a
+ *   stage excluded by the active ruleset can never be miscounted as
+ *   evidenced or leak into a Pick/Ban bucket.
+ * - `pickBanSplit` (the engine's ONE pick/ban function, D-15) replaces the
+ *   local slice this component used to own — no local `PICK_BAN_COUNT`
+ *   survives here.
+ * - `advisorThreshold` is the ONE binding both the rendered threshold line
+ *   and the `buildStageEvidence` call read (D-13) — never two independent
+ *   expressions that merely happen to agree. See
+ *   `apps/web/src/pages/Matchups/lib/advisorThreshold.ts`'s doc comment for
+ *   why the seam is a separate module.
+ *
+ * Matchups is not event-scoped this phase (D-18 keeps tournaments
+ * own-account only, and Phase 37 doesn't wire a per-tournament ruleset onto
+ * a fighter-pairing surface) — `resolveRuleset(undefined)` always resolves
+ * to the house default here. This is deliberate, not an oversight: the
+ * override badge path exists and is unit-tested in `RulesetDisclosure`, but
+ * never fires on this surface.
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
@@ -33,97 +45,66 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   // escape hatch; a stale `refreshedAt` across re-renders is harmless since
   // it's provenance metadata on the claim, not part of the ranking math.
   const [refreshedAt] = useState(() => Date.now());
+
+  const resolvedRuleset = resolveRuleset(undefined);
+  // The set state controls arrive in this plan's Task 2 (D-11); this task
+  // renders the fixed default only.
+  const setState = DEFAULT_SET_STATE;
+  const legalStageIds = new Set(legalStagesFor(resolvedRuleset.ruleset, setState));
+
+  const threshold = advisorThreshold(minGames);
   const { claim } = buildStageEvidence({
     matches: matchupMatches,
     refreshedAt,
-    minMatches: minGames,
+    minMatches: threshold,
+    legalStageIds,
   });
   const ranked = claim.kind === 'evidenced' ? claim.value : [];
-  const picks = ranked.slice(0, PICK_BAN_COUNT);
-  // Bottom N, worst-first: take the tail (never overlapping the picks
-  // already claimed above) and reverse it into worst-to-better order.
-  const banCount = Math.min(PICK_BAN_COUNT, ranked.length - picks.length);
-  const bans = banCount > 0 ? ranked.slice(ranked.length - banCount).reverse() : [];
-  const sampleCueText =
-    claim.sample.confidenceTier != null
-      ? t('shared.evidence.sampleCue', {
-          total: claim.sample.eligibleDenominator,
-          tier: t(`shared.evidence.tier.${claim.sample.confidenceTier}`),
-        })
-      : null;
+  const { picks, bans } = pickBanSplit(ranked);
+
+  function toRow(stage: RankedStage): ComparisonBarsRow {
+    const stageData = stagesById.get(stage.stageId);
+    return {
+      key: String(stage.stageId),
+      label: stageData ? (
+        <StageOption stage={stageData} />
+      ) : (
+        <span className="text-sm">{t('matchups.counterpick.unknownStage')}</span>
+      ),
+      value: stage.winRate,
+      valueLabel: `${stage.wins}-${stage.losses} ${t('common.rateOverSample', {
+        rate: stage.winRate,
+        total: stage.total,
+      })}`,
+    };
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('matchups.counterpick.title')}</CardTitle>
-        <CardDescription>{t('shared.evidence.type.recommendation')}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {claim.kind === 'abstained' ? (
-          <p className="text-sm text-muted-foreground">
-            {t('shared.evidence.abstained', { count: claim.gamesNeeded })}
-          </p>
-        ) : (
-          <>
-            <StageGroup
-              title={t('matchups.counterpick.pickThese')}
-              tone="emerald"
-              stages={picks}
-              sampleCueText={sampleCueText}
-            />
-            {bans.length > 0 && (
-              <StageGroup
-                title={t('matchups.counterpick.banThese')}
-                tone="destructive"
-                stages={bans}
-                sampleCueText={sampleCueText}
-              />
-            )}
-          </>
+    <ChartCard
+      title={t('matchups.counterpick.title')}
+      caption={t('shared.evidence.type.recommendation')}
+      headerRight={<SampleCue sample={claim.sample} />}
+      abstained={claim.kind === 'abstained' ? { gamesNeeded: claim.gamesNeeded } : null}
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          {t('matchups.counterpick.threshold', { count: threshold })}
+        </p>
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-emerald-500">
+            {t('matchups.counterpick.pickThese')}
+          </h3>
+          <ComparisonBars tone="emerald" rows={picks.map(toRow)} />
+        </div>
+        {bans.length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-medium text-destructive">
+              {t('matchups.counterpick.banThese')}
+            </h3>
+            <ComparisonBars tone="destructive" rows={bans.map(toRow)} />
+          </div>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function StageGroup({
-  title,
-  tone,
-  stages,
-  sampleCueText,
-}: {
-  title: string;
-  tone: 'emerald' | 'destructive';
-  stages: RankedStage[];
-  sampleCueText: string | null;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div>
-      <h3
-        className={`mb-2 text-sm font-medium ${tone === 'emerald' ? 'text-emerald-500' : 'text-destructive'}`}
-      >
-        {title}
-      </h3>
-      <ul className="flex flex-col gap-2">
-        {stages.map((stage) => {
-          const stageData = stagesById.get(stage.stageId);
-          return (
-            <li key={stage.stageId} className="flex items-center justify-between gap-2">
-              {stageData ? (
-                <StageOption stage={stageData} />
-              ) : (
-                <span className="text-sm">{t('matchups.counterpick.unknownStage')}</span>
-              )}
-              <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-                {stage.wins}-{stage.losses}{' '}
-                {t('common.rateOverSample', { rate: stage.winRate, total: stage.total })}
-                {sampleCueText ? ` · ${sampleCueText}` : ''}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+      </div>
+    </ChartCard>
   );
 }

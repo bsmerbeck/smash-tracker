@@ -51,6 +51,8 @@ export {
   rankStagesByEvidence,
   rankMatchupsByEvidence,
   getMatchupStageGuide,
+  pickBanSplit,
+  PICK_BAN_COUNT,
 } from '@smash-tracker/shared';
 export type {
   BestWorstStages,

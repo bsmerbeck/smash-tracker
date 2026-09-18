@@ -13,6 +13,7 @@ export * from './policy.js';
 export * from './records.js';
 export * from './gate.js';
 export * from './rank.js';
+export * from './pickBan.js';
 export * from './stageEvidence.js';
 export * from './identity.js';
 export * from './predicate.js';

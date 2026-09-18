@@ -868,7 +868,9 @@
       "title": "Conseiller de counterpick",
       "pickThese": "À prendre",
       "banThese": "À bannir / éviter",
-      "unknownStage": "Stage inconnu"
+      "unknownStage": "Stage inconnu",
+      "threshold_one": "Min. {{count}} partie par stage",
+      "threshold_other": "Min. {{count}} parties par stage"
     },
     "opponentSplit": {
       "title": "Par adversaire",

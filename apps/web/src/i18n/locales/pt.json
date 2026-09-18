@@ -868,7 +868,9 @@
       "title": "Conselheiro de counterpick",
       "pickThese": "Escolha estes",
       "banThese": "Bana / evite estes",
-      "unknownStage": "Stage desconhecido"
+      "unknownStage": "Stage desconhecido",
+      "threshold_one": "Mín. {{count}} partida por stage",
+      "threshold_other": "Mín. {{count}} partidas por stage"
     },
     "opponentSplit": {
       "title": "Por oponente",

@@ -104,6 +104,73 @@ describe('buildStageEvidence', () => {
   });
 });
 
+describe('rankStagesByEvidence — legal-stage filter (plan 37-05, EVID-05)', () => {
+  it('with the legal-stage argument omitted, behaves exactly as before (identity)', () => {
+    const matches = [
+      ...matchesOnStage(1, 'Battlefield', 5, 0),
+      ...matchesOnStage(3, 'Smashville', 4, 1),
+    ];
+    expect(rankStagesByEvidence(matches, 3, undefined)).toEqual(rankStagesByEvidence(matches, 3));
+  });
+
+  it('excludes a stage outside an explicit legal set even when it has more games than the floor', () => {
+    const matches = [
+      ...matchesOnStage(1, 'Battlefield', 5, 0),
+      ...matchesOnStage(3, 'Smashville', 10, 0),
+    ];
+    const ranked = rankStagesByEvidence(matches, 3, new Set([1]));
+    expect(ranked.map((r) => r.stageId)).toEqual([1]);
+  });
+
+  it('an EMPTY legal set means nothing is legal, not "no filter" — returns empty even when several stages clear the floor', () => {
+    const matches = [
+      ...matchesOnStage(1, 'Battlefield', 5, 0),
+      ...matchesOnStage(3, 'Smashville', 10, 0),
+    ];
+    expect(rankStagesByEvidence(matches, 3, new Set())).toEqual([]);
+  });
+});
+
+describe('buildStageEvidence — legal-stage filter (plan 37-05, R1-HIGH-2)', () => {
+  it('describes the LEGAL cohort when a filter is supplied: a known-but-illegal game sits in neither the denominator nor the unknown bucket', () => {
+    const legalMatches = matchesOnStage(1, 'Battlefield', 4, 1); // 5 legal games
+    const illegalMatches = matchesOnStage(2, 'Big Battlefield', 3, 0); // 3 known-but-illegal games
+    const unknownMatches = matchesOnStage(0, 'no selection', 2, 0); // 2 unknown-stage games
+    const allMatches = [...legalMatches, ...illegalMatches, ...unknownMatches];
+
+    const filtered = buildStageEvidence({
+      matches: allMatches,
+      refreshedAt: 0,
+      legalStageIds: new Set([1]),
+    });
+    expect(filtered.claim.sample.rawSampleSize).toBe(10);
+    expect(filtered.claim.sample.eligibleDenominator).toBe(5);
+    expect(filtered.unknown?.games).toBe(2);
+    // 5 legal + 2 unknown = 7, strictly less than 10 by exactly the 3 illegal games.
+    expect(filtered.claim.sample.eligibleDenominator + (filtered.unknown?.games ?? 0)).toBe(
+      filtered.claim.sample.rawSampleSize - 3,
+    );
+
+    const unfiltered = buildStageEvidence({ matches: allMatches, refreshedAt: 0 });
+    expect(unfiltered.claim.sample.eligibleDenominator + (unfiltered.unknown?.games ?? 0)).toBe(
+      unfiltered.claim.sample.rawSampleSize,
+    );
+  });
+
+  it('reports a games-needed of at least 1 when the eligible denominator already meets the floor but no single stage does', () => {
+    const matches = [
+      ...matchesOnStage(1, 'Battlefield', 1, 1), // 2 games, below the per-stage floor
+      ...matchesOnStage(3, 'Smashville', 1, 1), // 2 games, below the per-stage floor
+    ]; // denominator = 4, at/above the floor of 3, but no stage individually clears it
+    const result = buildStageEvidence({ matches, refreshedAt: 0 });
+    expect(result.claim.kind).toBe('abstained');
+    if (result.claim.kind !== 'abstained') throw new Error('unreachable');
+    expect(result.claim.sample.eligibleDenominator).toBeGreaterThanOrEqual(3);
+    expect(result.claim.gamesNeeded).not.toBe(0);
+    expect(result.claim.gamesNeeded).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('getBestWorstStages', () => {
   it('applies the same floor as rankStagesByEvidence even to an explicit sub-floor minMatches', () => {
     const twoZero = matchesOnStage(1, 'Two Zero', 2, 0);
