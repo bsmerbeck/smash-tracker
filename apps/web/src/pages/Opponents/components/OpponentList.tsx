@@ -107,10 +107,16 @@ export function OpponentList({
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
   const [refreshedAt] = useState(() => Date.now());
 
-  const opponents = useMemo(
-    () => buildOpponentEvidence({ matches, aliasMap, refreshedAt }).rows,
+  // Phase 38-05 (D-10): `buildOpponentEvidence`'s own `unnamed` bucket — games
+  // with no human-readable identity at all — is computed here since Phase 36
+  // but rendered by NO surface until now. Read from the SAME call `opponents`
+  // already makes; never a second `buildOpponentEvidence` invocation.
+  const evidence = useMemo(
+    () => buildOpponentEvidence({ matches, aliasMap, refreshedAt }),
     [matches, aliasMap, refreshedAt],
   );
+  const opponents = evidence.rows;
+  const unnamed = evidence.unnamed;
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -186,6 +192,12 @@ export function OpponentList({
               />
             ))}
           </ul>
+        )}
+        {/* D-10: a disclosed FACT, never a ranked row and never clickable — excluded from every opponent ranking. */}
+        {unnamed && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t('shared.evidence.unnamedBucket', { count: unnamed.games })}
+          </p>
         )}
       </CardContent>
     </Card>

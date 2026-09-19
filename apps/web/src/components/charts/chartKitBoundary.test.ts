@@ -48,11 +48,17 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * TARGET for `react-chartjs-2` — the package name appears only in its doc
  * comment, never in an import) and
  * `apps/web/src/pages/Scout/components/FullAnalysisSection.test.tsx` (which
- * uses `vi.mock('react-chartjs-2', ...)`, not an import) — neither file is
- * listed here, because neither needs an exemption from a rule about imports
- * (R1-BLOCKER-3). Ten entries, matching D-20/37-RESEARCH.md exactly on the
- * post-37-01 tree (37-01 migrated the eleventh, `MatchupChart.tsx`, onto the
- * kit).
+ * previously used `vi.mock('react-chartjs-2', ...)`, not an import — that
+ * mock block was removed by plan 38-05 alongside the Scout replacement
+ * below) — neither file is listed here, because neither needs an exemption
+ * from a rule about imports (R1-BLOCKER-3). Nine entries as of plan 38-05
+ * (D-12/B-01): the chart.js scouting-trend component this list used to name
+ * is DELETED — its two live importers (`OpponentsPage.tsx`,
+ * `Scout/components/FullAnalysisSection.tsx`) moved onto the kit's
+ * `TrendLine` — so its allowlist entry is removed in the SAME commit as the
+ * deletion (the anti-rot assertion below fails the instant a listed path
+ * stops existing). Ten entries matched D-20/37-RESEARCH.md on the post-37-01
+ * tree (37-01 migrated the eleventh, `MatchupChart.tsx`, onto the kit).
  */
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
@@ -61,7 +67,6 @@ const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
   'apps/web/src/pages/Gsp/components/GspCurve.tsx',
   'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
-  'apps/web/src/pages/Opponents/components/ScoutingTrendChart.tsx',
   'apps/web/src/pages/Trends/components/MatchTypeMix.tsx',
   'apps/web/src/pages/Trends/components/MonthlyPerformance.tsx',
   'apps/web/src/pages/Trends/components/RatingCurve.tsx',
@@ -168,6 +173,48 @@ describe('chart kit import boundary — source-tree guard (CHRT-04, D-08)', () =
     expect(LEGACY_CANVAS_ALLOWLIST).not.toContain(
       'apps/web/src/pages/Matchups/components/MatchupChart.tsx',
     );
+  });
+
+  /**
+   * M-01 (plan 38-05): this file's own head comment (above) has claimed since
+   * Phase 37 that `eslint.config.js`'s `ignores` array — the `no-restricted-imports`
+   * rule's exemption list — is "literally comparable to `LEGACY_CANVAS_ALLOWLIST`
+   * below, path for path, with no base-translation step". Nothing ever checked
+   * that claim: ESLint does not error on an `ignores` pattern that matches no
+   * file, so a stale entry there survives `pnpm lint` silently. This assertion
+   * makes the claim real, in BOTH directions, so an entry added to either list
+   * without the other is named.
+   *
+   * Parsed rather than imported — importing the flat config inside a Vitest
+   * worker pulls in the whole ESLint plugin graph. The `ignores` array is
+   * located by finding the LAST `ignores: [...]` literal that appears before
+   * the `'no-restricted-imports'` rule key in the source text (this file
+   * declares two `ignores` arrays; the first, at the top of the config, is an
+   * unrelated dist/coverage/node_modules exclusion).
+   *
+   * Deliberate failure observed (per this file's own discipline), reverted,
+   * and recorded in the plan 38-05 SUMMARY: temporarily removing one entry
+   * from `LEGACY_CANVAS_ALLOWLIST` (leaving `eslint.config.js` untouched)
+   * turned this assertion red, naming the orphaned `eslint.config.js` entry.
+   */
+  it("eslint.config.js's no-restricted-imports ignores array (minus its charts/** kit-directory entry) equals LEGACY_CANVAS_ALLOWLIST, in both directions (M-01)", () => {
+    const eslintSource = readRepoFile('eslint.config.js');
+    const ruleIndex = eslintSource.indexOf("'no-restricted-imports'");
+    expect(ruleIndex, 'expected a no-restricted-imports rule in eslint.config.js').toBeGreaterThan(
+      -1,
+    );
+    const beforeRule = eslintSource.slice(0, ruleIndex);
+    const ignoresStart = beforeRule.lastIndexOf('ignores: [');
+    expect(ignoresStart, 'expected an `ignores: [...]` array before the rule').toBeGreaterThan(-1);
+    const fromIgnores = beforeRule.slice(ignoresStart + 'ignores: ['.length);
+    const arrayBody = fromIgnores.slice(0, fromIgnores.indexOf(']'));
+    const eslintIgnoresMembers = [...arrayBody.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+    const KIT_DIRECTORY_IGNORE_ENTRY = 'apps/web/src/components/charts/**';
+    expect(eslintIgnoresMembers).toContain(KIT_DIRECTORY_IGNORE_ENTRY);
+    const withoutKitDirectory = eslintIgnoresMembers.filter(
+      (entry) => entry !== KIT_DIRECTORY_IGNORE_ENTRY,
+    );
+    expect([...withoutKitDirectory].sort()).toEqual([...LEGACY_CANVAS_ALLOWLIST].sort());
   });
 
   it('the SVG-chart-import assertion is not vacuous — at least one kit file imports recharts', () => {

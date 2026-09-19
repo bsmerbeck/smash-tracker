@@ -4,14 +4,15 @@ import { ChevronDown } from 'lucide-react';
 import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { filterByFighter, rankMatchupsByEvidence } from '@/lib/stats';
+import { filterByFighter, getRollingWinRate, rankMatchupsByEvidence } from '@/lib/stats';
 import { StageMastery } from '@/pages/FighterAnalysis/components/StageMastery';
 import { OpponentTable } from '@/pages/FighterAnalysis/components/OpponentTable';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
-import { ScoutingTrendChart } from '@/pages/Opponents/components/ScoutingTrendChart';
+import { ChartCard } from '@/components/charts/ChartCard';
+import { TrendLine } from '@/components/charts/TrendLine';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { scoutGamesToMatches } from '../lib/fullAnalysis';
+import { scoutGamesToMatches, buildScoutTrendChartPoints } from '../lib/fullAnalysis';
 
 /**
  * V9-D: "Fighter Analysis, but for the player you're scouting" — reuses the
@@ -66,9 +67,14 @@ export function FullAnalysisSection({
   );
 }
 
+/** Trailing-5 rolling window — matches the deleted chart.js scouting-trend component's own `ROLLING_WINDOW` constant, so the numbers this card shows are unchanged by the kit swap. */
+const ROLLING_WINDOW = 5;
+
 function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag: string }) {
   const { t } = useTranslation();
   const matches = scoutGamesToMatches(games);
+  const trendSeries = getRollingWinRate(matches, ROLLING_WINDOW);
+  const trendPoints = buildScoutTrendChartPoints(trendSeries, t);
 
   // "Their top character" — the character with the most sampled games,
   // i.e. whichever fighter_id appears most often once adapted to Match[]
@@ -110,10 +116,13 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
 
       <WhatTheyPlayTable byTheirFighter={matchupSpread} />
 
-      <ScoutingTrendChart
-        matches={matches}
-        title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}
-      />
+      <ChartCard title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}>
+        {trendPoints.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('opponents.trend.empty')}</p>
+        ) : (
+          <TrendLine points={trendPoints} />
+        )}
+      </ChartCard>
 
       <OpponentTable fighterMatches={matches} />
     </>

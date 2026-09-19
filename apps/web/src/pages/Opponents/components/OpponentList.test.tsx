@@ -137,3 +137,37 @@ describe('OpponentList alias-merged identity (EVID-12)', () => {
     expect(within(daveRow).getByLabelText('mixed sources')).toBeInTheDocument();
   });
 });
+
+describe('OpponentList unnamed-opponent bucket (D-10)', () => {
+  it('discloses the unnamed bucket as a fact, outside every ranked row, for a fixture with no opponent name', () => {
+    const matches: Match[] = [
+      makeMatch({ id: 'a1', time: 100, win: true, opponent: 'alice' }),
+      makeMatch({ id: 'n1', time: 200, win: true, opponent: '' }),
+      makeMatch({ id: 'n2', time: 300, win: false, opponent: '' }),
+    ];
+    render(
+      <OpponentList
+        matches={matches}
+        selected={null}
+        onSelect={vi.fn()}
+        onRequestMerge={vi.fn()}
+        aliasMap={{}}
+      />,
+    );
+
+    const list = screen.getByRole('list', { name: 'Opponents' });
+    const rows = within(list).getAllByRole('listitem');
+    // Only "alice" is a ranked row — the two unnamed games are excluded.
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]!).getByText('alice')).toBeInTheDocument();
+
+    expect(screen.getByText('2 games with no opponent name recorded')).toBeInTheDocument();
+    // Not a link, not a listitem — a disclosed fact only.
+    expect(screen.queryByRole('link', { name: /no opponent name/ })).not.toBeInTheDocument();
+  });
+
+  it('renders no bucket disclosure when every match has an opponent name', () => {
+    renderList();
+    expect(screen.queryByText(/no opponent name recorded/)).not.toBeInTheDocument();
+  });
+});

@@ -50,7 +50,6 @@ export default tseslint.config(
       'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
       'apps/web/src/pages/Gsp/components/GspCurve.tsx',
       'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
-      'apps/web/src/pages/Opponents/components/ScoutingTrendChart.tsx',
       'apps/web/src/pages/Trends/components/MatchTypeMix.tsx',
       'apps/web/src/pages/Trends/components/MonthlyPerformance.tsx',
       'apps/web/src/pages/Trends/components/RatingCurve.tsx',

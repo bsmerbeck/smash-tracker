@@ -24,7 +24,6 @@ import { OpponentList } from './components/OpponentList';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
-import { ScoutingTrendChart } from './components/ScoutingTrendChart';
 import { RecentEncounters } from './components/RecentEncounters';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
@@ -251,7 +250,6 @@ export function OpponentsPage() {
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
-            <ScoutingTrendChart matches={opponentMatches} />
             <RecentEncounters matches={profile.recent} />
             <TournamentHistory
               blocks={tournamentBlocks}

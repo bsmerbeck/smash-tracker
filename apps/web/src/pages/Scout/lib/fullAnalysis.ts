@@ -1,4 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Match, ScoutGame } from '@smash-tracker/shared';
+import { parseExternalId } from '@smash-tracker/shared';
+import type { RollingWinRatePoint } from '@/lib/stats';
+import type { TrendChartPoint } from '@/components/charts/TrendLine';
 
 /**
  * V9-D: adapts a scouted player's per-game records (`ScoutReportData.games`,
@@ -36,4 +40,41 @@ export function scoutGamesToMatches(games: ScoutGame[]): Match[] {
     ...(game.stageId != null ? { map: { id: game.stageId, name: game.stageName ?? '' } } : {}),
     ...(game.eventName ? { eventName: game.eventName } : {}),
   }));
+}
+
+/**
+ * Phase 38-05 (D-12/B-01): maps a rolling-win-rate series over the shipped
+ * `getRollingWinRate` helper onto the chart kit's `TrendChartPoint` shape —
+ * the Scout replacement for the deleted chart.js scouting-trend component,
+ * mirroring `MatchupChart.tsx`'s own `buildTrendChartPoints`. This is a
+ * WEB-TIER rendering of a third party's already-shipped recent-form curve,
+ * not a new engine aggregation: `getRollingWinRate` lives in
+ * `apps/web/src/lib/stats.ts` (also consumed by `MatchupChart.tsx`), and
+ * D-11's "no rolling-N window anywhere" prohibition is scoped to this
+ * phase's ENGINE code in `packages/shared` (plan 38-01's own prohibition) —
+ * re-rendering an existing web-tier trailing-window card through the kit
+ * changes no number.
+ */
+export function buildScoutTrendChartPoints(
+  series: RollingWinRatePoint[],
+  t: TFunction,
+): TrendChartPoint[] {
+  return series.map((point) => {
+    const stageName =
+      point.match.map && point.match.map.id !== 0 ? point.match.map.name : t('common.unknown');
+    const parsedExternalId = parseExternalId(point.match.externalId);
+    return {
+      index: point.index,
+      winRate: point.winRate,
+      context: {
+        matchId: point.match.id,
+        opponentTag: point.match.opponent || t('common.unknown'),
+        stageName,
+        eventName: point.match.eventName ?? point.match.tournamentName ?? null,
+        dateMs: point.match.time,
+        win: point.match.win,
+        gameNumber: parsedExternalId?.game ?? null,
+      },
+    };
+  });
 }

@@ -1,16 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ScoutGame } from '@smash-tracker/shared';
 import { FullAnalysisSection } from './FullAnalysisSection';
-
-// jsdom has no canvas implementation, and chart.js's render pipeline touches
-// real canvas APIs — mocked the same way MatchupChart.test.tsx does, since
-// this suite is verifying the section's own composition/empty-state logic,
-// not chart.js's rendering.
-vi.mock('react-chartjs-2', () => ({
-  Line: () => null,
-}));
 
 function makeGame(overrides: Partial<ScoutGame> = {}): ScoutGame {
   return {

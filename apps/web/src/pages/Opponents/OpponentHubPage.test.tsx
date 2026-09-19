@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useProfile } from '@/hooks/useProfile';
 import { OpponentHubPage } from './OpponentHubPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -136,15 +137,20 @@ function renderHub(initialEntry: string) {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <ShellProfileSubscription />
-            <Routes>
-              <Route path="/opponents/:opponentTag" element={<OpponentHubPage />} />
-              <Route path="/coach/:clientId/opponents/:opponentTag" element={<OpponentHubPage />} />
-              <Route
-                path="/workspace/:tenantId/opponents/:opponentTag"
-                element={<OpponentHubPage />}
-              />
-            </Routes>
+            <TooltipProvider>
+              <ShellProfileSubscription />
+              <Routes>
+                <Route path="/opponents/:opponentTag" element={<OpponentHubPage />} />
+                <Route
+                  path="/coach/:clientId/opponents/:opponentTag"
+                  element={<OpponentHubPage />}
+                />
+                <Route
+                  path="/workspace/:tenantId/opponents/:opponentTag"
+                  element={<OpponentHubPage />}
+                />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -367,6 +373,122 @@ describe('OpponentHubPage', () => {
       await findRecordText('1-0');
       await user.click(screen.getByRole('button', { name: 'Merge into...' }));
       expect(await screen.findByText('Merge "rival" into...')).toBeInTheDocument();
+    });
+  });
+
+  describe('content sections (Task 2: matrix, trend, absorbed cards, terminus)', () => {
+    const luigi2 = SpriteList.find((s) => s.id === 10)!;
+    const fox = SpriteList.find((s) => s.id === 15)!;
+
+    function twoCharacterFixture() {
+      return [
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'rival',
+          win: true,
+          fighter_id: mario.id,
+          opponent_id: luigi2.id,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm2',
+          time: 2,
+          opponent: 'rival',
+          win: true,
+          fighter_id: mario.id,
+          opponent_id: luigi2.id,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm3',
+          time: 3,
+          opponent: 'rival',
+          win: false,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          map: { id: 3, name: 'Final Destination' },
+        }),
+      ];
+    }
+
+    it('renders the matrix, the event trend and the terminus in the documented region order', async () => {
+      listMatches.mockResolvedValue(twoCharacterFixture());
+      renderHub('/opponents/rival');
+
+      await findRecordText('2-1');
+      // ChartCard's title renders as `[data-slot="card-title"]`, not a
+      // semantic heading element — queried directly rather than by role.
+      const cardTitles = [...document.querySelectorAll('[data-slot="card-title"]')].map(
+        (el) => el.textContent,
+      );
+      const matrixIdx = cardTitles.findIndex((h) => h === 'Matchup Matrix');
+      const trendIdx = cardTitles.findIndex((h) => h === 'H2H Trend');
+      expect(matrixIdx).toBeGreaterThan(-1);
+      expect(trendIdx).toBeGreaterThan(matrixIdx);
+
+      const list = document.getElementById('opponent-hub-list');
+      expect(list).not.toBeNull();
+      const trendNode = screen.getByText('H2H Trend');
+      // The terminus DOM node comes after the trend section's node.
+      expect(
+        trendNode.compareDocumentPosition(list as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('clicking a matrix cell narrows the terminus and shows the active-filter summary', async () => {
+      listMatches.mockResolvedValue(twoCharacterFixture());
+      const user = userEvent.setup();
+      renderHub('/opponents/rival');
+
+      await findRecordText('2-1');
+      const cell = await screen.findByRole('button', {
+        name: /Mario.*Luigi.*Battlefield.*2.*0/i,
+      });
+      await user.click(cell);
+
+      const list = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => {
+        expect(within(list).getByText(/2 games/)).toBeInTheDocument();
+      });
+    });
+
+    it('renders the cohort composition and the mixed-context badge without hover, for a mixed-source fixture', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false, source: 'startgg' }),
+        makeMatch({ id: 'm4', time: 4, opponent: 'rival', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+
+      await findRecordText('3-1');
+      expect(await screen.findByText('Mixed context')).toBeInTheDocument();
+    });
+
+    it('renders the three filter selects with their documented labels', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+
+      await findRecordText('1-0');
+      // "My character" also appears as a FilteredMatchList column header —
+      // asserting length rather than a single unambiguous match.
+      expect(screen.getAllByText('My character').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Their character').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Stage').length).toBeGreaterThan(0);
+    });
+
+    it('renders the absorbed scouting cards on the hub', async () => {
+      listMatches.mockResolvedValue(twoCharacterFixture());
+      renderHub('/opponents/rival');
+
+      await findRecordText('2-1');
+      expect(await screen.findByText('What They Play')).toBeInTheDocument();
+      expect(screen.getByText('Recent Encounters')).toBeInTheDocument();
+      expect(screen.getByText('Tournament History')).toBeInTheDocument();
+      expect(screen.getByText('Tendencies')).toBeInTheDocument();
     });
   });
 });
