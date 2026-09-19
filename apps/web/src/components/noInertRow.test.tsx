@@ -51,10 +51,11 @@ import userEvent from '@testing-library/user-event';
  * COVERAGE CLAIM (stated no broader than the array below): every row surface
  * named by the roadmap's no-inert-row success criterion, PLUS every other
  * row surface this phase wires — the opponents list, the shared filtered
- * match list, the hub's cross-tab matrix, the stage page's two tables, and
- * the three absorbed hub cards (authored as three entries, per this task's
- * own instruction, making SEVENTEEN entries total) — with the
- * RECORDED_OMISSIONS array below naming what is deliberately outside it.
+ * match list (both its table and its narrow-layout stack, phase 38-08), the
+ * hub's cross-tab matrix, the stage page's two tables, and the three
+ * absorbed hub cards (authored as three entries, per this task's own
+ * instruction, making EIGHTEEN entries total) — with the RECORDED_OMISSIONS
+ * array below naming what is deliberately outside it.
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -189,8 +190,9 @@ function accessibleInteractiveDescendant(row: HTMLElement): HTMLElement | null {
 }
 
 // ---------------------------------------------------------------------------
-// Surface enumeration — SEVENTEEN entries (the three absorbed hub cards are
-// authored separately, per this task's own instruction).
+// Surface enumeration — EIGHTEEN entries (the three absorbed hub cards are
+// authored separately, per this task's own instruction; phase 38-08 adds a
+// second entry for the shared filtered match list's narrow/stacked layout).
 // ---------------------------------------------------------------------------
 
 interface Surface {
@@ -662,8 +664,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('the surface enumeration has the stated SEVENTEEN entries', () => {
-    expect(SURFACES.length).toBe(17);
+  it('the surface enumeration has the stated EIGHTEEN entries', () => {
+    expect(SURFACES.length).toBe(18);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

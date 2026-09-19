@@ -319,6 +319,144 @@ describe('FilteredMatchList — responsive layout (phase 38-08, UI-SPEC E4)', ()
   });
 });
 
+describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () => {
+  it('pinned-axis omission parity: the stage axis hides the stage name in the stacked row', () => {
+    const matches = [makeMatch()];
+    const { container: withoutAxis } = renderList({ matches, axes: {}, layout: 'stack' });
+    expect(
+      within(withoutAxis as unknown as HTMLElement).getByText('Battlefield'),
+    ).toBeInTheDocument();
+
+    const { container: withAxis } = renderList({
+      matches,
+      axes: { stageId: 1 },
+      layout: 'stack',
+    });
+    expect(
+      within(withAxis as unknown as HTMLElement).queryByText('Battlefield'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('pinned-axis omission parity: the fighter axis hides my character in the stacked row', () => {
+    const matches = [makeMatch()];
+    const { container: withAxis } = renderList({
+      matches,
+      axes: { fighterId: mario.id },
+      layout: 'stack',
+    });
+    expect(within(withAxis as unknown as HTMLElement).queryByText('Mario')).not.toBeInTheDocument();
+    expect(within(withAxis as unknown as HTMLElement).getByText('Luigi')).toBeInTheDocument();
+  });
+
+  it('pinned-axis omission parity: the vsFighter axis hides their character in the stacked row', () => {
+    const matches = [makeMatch()];
+    const { container: withAxis } = renderList({
+      matches,
+      axes: { vsFighterId: luigi.id },
+      layout: 'stack',
+    });
+    expect(within(withAxis as unknown as HTMLElement).queryByText('Luigi')).not.toBeInTheDocument();
+    expect(within(withAxis as unknown as HTMLElement).getByText('Mario')).toBeInTheDocument();
+  });
+
+  it('active-filter summary parity: renders above the stacked list and the clear button invokes the host callback once', async () => {
+    const user = userEvent.setup();
+    const onClearFilters = vi.fn();
+    renderList({
+      matches: [makeMatch()],
+      axes: { stageId: 1 },
+      layout: 'stack',
+      onClearFilters,
+    });
+    expect(screen.getByText(/1 game/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('empty-state parity: a narrowed result of zero renders the empty copy and no stacked-list root', () => {
+    const { container } = renderList({ matches: [], layout: 'stack' });
+    expect(screen.getByText('No games match these filters.')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).toBeNull();
+  });
+
+  it('loading parity: the loading prop replaces the whole component — neither layout root is in the DOM', () => {
+    const { container } = renderList({ matches: [makeMatch()], loading: true, layout: 'stack' });
+    expect(screen.getByText('Loading games…')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="filtered-match-table"]')).toBeNull();
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).toBeNull();
+  });
+
+  it('delete-flow parity: no delete button in a stacked row without the host opt-in, present and dialog-gated with it', async () => {
+    const user = userEvent.setup();
+    const matches = [makeMatch({ id: 'del-1', vodUrl: undefined })];
+
+    const { unmount } = renderList({ matches, showDelete: false, layout: 'stack' });
+    expect(screen.queryByRole('button', { name: 'Delete match' })).not.toBeInTheDocument();
+    unmount();
+
+    renderList({ matches, showDelete: true, layout: 'stack' });
+    const deleteButton = screen.getByRole('button', { name: 'Delete match' });
+    await user.click(deleteButton);
+    expect(await screen.findByText('Delete this match?')).toBeInTheDocument();
+  });
+
+  it('keyboard activation: focusing a stacked expander and pressing Enter toggles it open, pressing Enter again collapses it', async () => {
+    const user = userEvent.setup();
+    const matches = [makeMatch({ id: 'novid-1', vodUrl: undefined })];
+    renderList({ matches, layout: 'stack' });
+    const button = screen.getByRole('button', { name: /show details|opens video/i });
+    button.focus();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    await user.keyboard('{Enter}');
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{Enter}');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('single-open accordion parity: expanding the second of two non-VOD stacked rows collapses the first', async () => {
+    const user = userEvent.setup();
+    const matches = [
+      makeMatch({ id: 'a', vodUrl: undefined, opponent: 'alice' }),
+      makeMatch({ id: 'b', vodUrl: undefined, opponent: 'bob' }),
+    ];
+    renderList({ matches, layout: 'stack' });
+    const buttons = screen.getAllByRole('button', { name: /show details|opens video/i });
+    await user.click(buttons[0]!);
+    expect(buttons[0]).toHaveAttribute('aria-expanded', 'true');
+    await user.click(buttons[1]!);
+    expect(buttons[1]).toHaveAttribute('aria-expanded', 'true');
+    expect(buttons[0]).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('coach-route destination parity: the stacked VOD row href carries the coach prefix and the match id', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const matches = [makeMatch({ id: 'vid-3', vodUrl: 'https://youtu.be/x' })];
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/coach/test-client/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/coach/:clientId/matchups"
+                element={<FilteredMatchList matches={matches} axes={{}} layout="stack" />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const link = screen.getByRole('link');
+    expect(link.getAttribute('href')).toContain('/coach/test-client/');
+    expect(link.getAttribute('href')).toContain('vid-3');
+  });
+
+  it('scroll-cap parity: the stacked list renders inside the shared max-height scroll wrapper', () => {
+    const { container } = renderList({ matches: [makeMatch()], layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]');
+    expect(stack?.closest('.max-h-\\[500px\\]')).not.toBeNull();
+  });
+});
+
 describe('waitFor smoke (loading -> populated transition is not tested elsewhere)', () => {
   it('renders populated after a loading prop flips false', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
