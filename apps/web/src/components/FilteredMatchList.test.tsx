@@ -314,7 +314,7 @@ describe('FilteredMatchList — responsive layout (phase 38-08, UI-SPEC E4)', ()
     }));
     const matches = [makeMatch({ id: 'a' })];
     const { container } = renderList({ matches });
-    expect(container.querySelector('[data-slot="filtered-match-stack"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).not.toBeNull();
     expect(container.querySelector('table')).toBeNull();
   });
 });
