@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
@@ -227,9 +227,13 @@ export function StageDetailPage() {
     }
     return map;
   }, [fullEventSeries]);
-  function eventKeyForMatch(match: Match): string | undefined {
-    return eventKeyByMatchId.get(match.id);
-  }
+  // WR-03 (38-REVIEW-FIX): `useCallback`, not a plain function-per-render —
+  // see `OpponentHubPage.tsx`'s identical fix for the full rationale
+  // (`FilteredMatchList`'s D-16 memoize-by-reference contract).
+  const eventKeyForMatch = useCallback(
+    (match: Match): string | undefined => eventKeyByMatchId.get(match.id),
+    [eventKeyByMatchId],
+  );
 
   /**
    * WR-02 (38-REVIEW-FIX): mirrors `OpponentHubPage.tsx`'s
@@ -250,7 +254,14 @@ export function StageDetailPage() {
     });
   }
 
-  const terminusAxes: DrillDownAxes = { stageId: resolvedStageId, eventKey: eventAxis };
+  // WR-03 (38-REVIEW-FIX): same fix as `OpponentHubPage.tsx` — this literal
+  // was a fresh object every render, independently defeating
+  // `FilteredMatchList`'s D-16 memo regardless of the `eventKeyForMatch` fix
+  // above.
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({ stageId: resolvedStageId, eventKey: eventAxis }),
+    [resolvedStageId, eventAxis],
+  );
   // Phase 38-04 (D-16): the single-owner ordering helper — never a local
   // `.sort((a, b) => b.time - a.time)`, which would drop the ascending
   // match-id tiebreak this helper owns.

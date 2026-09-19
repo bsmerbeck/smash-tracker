@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Match, SampleMeta } from '@smash-tracker/shared';
@@ -405,9 +405,15 @@ export function OpponentHubPage() {
     return map;
   }, [eventSeries]);
 
-  function eventKeyForMatch(match: Match): string | undefined {
-    return eventKeyByMatchId.get(match.id);
-  }
+  // WR-03 (38-REVIEW-FIX): `useCallback`, not a plain function-per-render —
+  // `FilteredMatchList`'s own doc comment states its narrowing is memoized
+  // by array reference AND this resolver's reference (D-16); an unstable
+  // reference here defeats that memo on every render even when neither the
+  // matches nor the axes actually changed.
+  const eventKeyForMatch = useCallback(
+    (match: Match): string | undefined => eventKeyByMatchId.get(match.id),
+    [eventKeyByMatchId],
+  );
 
   const trendPoints: TrendEventPoint[] = useMemo(
     () =>
@@ -461,12 +467,21 @@ export function OpponentHubPage() {
     return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
   }, [profile, tournamentBlocks, user]);
 
-  const terminusAxes: DrillDownAxes = {
-    fighterId: axesFromUrl.fighterId,
-    vsFighterId: axesFromUrl.vsFighterId,
-    stageId: axesFromUrl.stageId,
-    eventKey: axesFromUrl.eventKey,
-  };
+  // WR-03 (38-REVIEW-FIX): this object literal was rebuilt fresh every
+  // render (a NEW reference even when every field's VALUE was unchanged) —
+  // the same class of defect the review named for `eventKeyForMatch` above,
+  // just for the axes half of `FilteredMatchList`'s D-16 memo key. Fixing
+  // only `eventKeyForMatch` while leaving this unstable would have left the
+  // memo just as broken, for a different reason, on this same page.
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: axesFromUrl.fighterId,
+      vsFighterId: axesFromUrl.vsFighterId,
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+    }),
+    [axesFromUrl.fighterId, axesFromUrl.vsFighterId, axesFromUrl.stageId, axesFromUrl.eventKey],
+  );
   const sortedOpponentMatches = useMemo(
     () => sortMatchesNewestFirst(opponentMatches),
     [opponentMatches],

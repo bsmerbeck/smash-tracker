@@ -7,6 +7,18 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { StageDetailPage } from './StageDetailPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+
+/**
+ * WR-03 (38-REVIEW-FIX): a partial mock of `matchesDrillDown` — see
+ * `OpponentHubPage.test.tsx`'s identical mock for the full rationale. Used
+ * as the observable signal that `FilteredMatchList`'s D-16 memo actually
+ * hits its cache across an unrelated re-render.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
 import type { TrendLineProps } from '@/components/charts/TrendLine';
 
 /**
@@ -114,9 +126,16 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function renderStageAt(initialEntry: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+/**
+ * Shared between the initial mount and (WR-03's test) a subsequent
+ * `rerender()` call using the SAME `queryClient` — `MemoryRouter` only
+ * consumes `initialEntries` on its own first mount (an uncontrolled/
+ * `defaultValue`-style prop), so re-invoking this with a fresh element but
+ * the same client/component types re-renders in place rather than
+ * remounting or resetting navigation/query state.
+ */
+function stageTree(initialEntry: string, queryClient: QueryClient) {
+  return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -129,8 +148,14 @@ function renderStageAt(initialEntry: string) {
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderStageAt(initialEntry: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const result = render(stageTree(initialEntry, queryClient));
+  return { ...result, queryClient };
 }
 
 describe('StageDetailPage', () => {
@@ -380,6 +405,32 @@ describe('StageDetailPage', () => {
       // and the games list narrows to only this event's games.
       await waitFor(() => expect(screen.getByText('at Genesis 9')).toBeInTheDocument());
       expect(screen.queryByText('other')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('WR-03 (38-REVIEW-FIX): D-16 memoization contract', () => {
+    it('an unrelated re-render does not re-run the terminus narrowing predicate', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true }),
+        makeMatch({ id: 'm2', time: 2, win: true }),
+      ]);
+      const { rerender, queryClient } = renderStageAt('/stages/1');
+
+      await waitFor(() => expect(screen.getAllByText('rival').length).toBeGreaterThan(0));
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // Neither `StageDetailPage` nor `FilteredMatchList` is wrapped in
+      // `React.memo`, so re-invoking `render()` on the same root always
+      // re-runs both function bodies — the only thing under test is
+      // whether that re-run recomputes `FilteredMatchList`'s own narrowing
+      // memo. A stable `terminusAxes`/`eventKeyForMatch` reference means it
+      // doesn't: `matchesDrillDown`'s call count stays flat.
+      rerender(stageTree('/stages/1', queryClient));
+
+      await waitFor(() => expect(screen.getAllByText('rival').length).toBeGreaterThan(0));
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
     });
   });
 });

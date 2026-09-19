@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
@@ -15,7 +15,7 @@ import {
 import { getSessions, type SessionStats } from '@/lib/stats';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
-import { sortMatchesNewestFirst } from '@/lib/drillDownParams';
+import { sortMatchesNewestFirst, type DrillDownAxes } from '@/lib/drillDownParams';
 
 /** Loss runs at or above this length are highlighted in destructive tone in the recent-sessions table. */
 export const TILT_HIGHLIGHT_THRESHOLD = 3;
@@ -89,14 +89,34 @@ function formatDuration(session: SessionStats, t: TFunction): string {
  */
 export function SessionsAndTilt({ matches }: { matches: Match[] }) {
   const { t, i18n } = useTranslation();
-  const sessions = getSessions(matches);
-  const headline = buildSessionsHeadline(sessions);
-  const recentSessions = [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT);
+  const sessions = useMemo(() => getSessions(matches), [matches]);
+  const headline = useMemo(() => buildSessionsHeadline(sessions), [sessions]);
+  const recentSessions = useMemo(
+    () => [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT),
+    [sessions],
+  );
   // Phase 38-07 (D-14): a session row toggles an inline `FilteredMatchList`
   // for that session's inclusive start-to-end window — single-open, keyed on
   // the session's own `start` (unique per session per `getSessions`).
   const [expandedStart, setExpandedStart] = useState<number | null>(null);
-  const sortedMatches = sortMatchesNewestFirst(matches);
+  // WR-03 (38-REVIEW-FIX): `sortMatchesNewestFirst(matches)` ran fresh on
+  // every render (a new array every time, unconditionally) — `matches` fed
+  // straight into `FilteredMatchList`'s own `useMemo` (keyed on array
+  // reference) would defeat that memo just as badly as the unstable `axes`
+  // literal the review flagged. Memoized alongside it for the same reason.
+  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  // WR-03 (38-REVIEW-FIX): one stable `{ from, to }` object PER session,
+  // built once per `recentSessions` change — never a fresh object literal
+  // per render inside the row map below. Mirrors the
+  // `eventKeyByMatchId`/`eventKeyForMatch` Map-then-lookup pattern this
+  // phase already uses on `OpponentHubPage.tsx`/`StageDetailPage.tsx`.
+  const axesBySessionStart = useMemo(() => {
+    const map = new Map<number, DrillDownAxes>();
+    for (const s of recentSessions) {
+      map.set(s.start, { from: s.start, to: s.end });
+    }
+    return map;
+  }, [recentSessions]);
 
   return (
     <Card className="h-full">
@@ -192,7 +212,7 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
                           <TableCell colSpan={5}>
                             <FilteredMatchList
                               matches={sortedMatches}
-                              axes={{ from: session.start, to: session.end }}
+                              axes={axesBySessionStart.get(session.start) ?? {}}
                             />
                           </TableCell>
                         </TableRow>

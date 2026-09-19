@@ -11,6 +11,22 @@ import { OpponentHubPage } from './OpponentHubPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as statsModule from '@/lib/stats';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+
+/**
+ * WR-03 (38-REVIEW-FIX): a partial mock of `matchesDrillDown` (defaulting to
+ * the real implementation, mirroring this file's own `@/lib/stats` mock just
+ * above) — the ONE observable signal that `FilteredMatchList`'s D-16
+ * memoization contract actually hit its cache. `matchesDrillDown` runs once
+ * PER MATCH inside `FilteredMatchList`'s own `useMemo` body; if that memo
+ * MISSES (an unstable `eventKeyForMatch` reference recreated every render),
+ * it runs again on every unrelated re-render. If it HITS, the call count
+ * never grows across a re-render that changes neither `matches` nor `axes`.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
 
 /**
  * H-03 (cycle 2): `@/lib/stats` is the seam `apps/web` actually reaches the
@@ -434,6 +450,34 @@ describe('OpponentHubPage', () => {
       await findRecordText('1-0');
       await user.click(screen.getByRole('button', { name: 'Merge into...' }));
       expect(await screen.findByText('Merge "rival" into...')).toBeInTheDocument();
+    });
+  });
+
+  describe('WR-03 (38-REVIEW-FIX): D-16 memoization contract', () => {
+    it('an unrelated re-render (opening the merge dialog) does not re-run the terminus narrowing predicate', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+      ]);
+      const user = userEvent.setup();
+      renderHub('/opponents/rival');
+
+      await findRecordText('2-0');
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // `mergeCandidate` state is wholly unrelated to the terminus's
+      // `matches`/`axes`/`eventKeyForMatch` inputs — opening this dialog
+      // re-renders the page (and, since neither is wrapped in
+      // `React.memo`, `FilteredMatchList` too) without changing any of
+      // them. A stable `axes` reference and a `useCallback`-wrapped
+      // `eventKeyForMatch` mean `FilteredMatchList`'s own `useMemo` skips
+      // recomputation entirely — `matchesDrillDown` is not called again.
+      await user.click(screen.getByRole('button', { name: 'Merge into...' }));
+      await screen.findByText('Merge "rival" into...');
+
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
     });
   });
 

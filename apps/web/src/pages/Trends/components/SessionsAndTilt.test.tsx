@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
@@ -10,14 +10,31 @@ import {
   buildSessionsHeadline,
 } from './SessionsAndTilt';
 import { getSessions } from '@/lib/stats';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+
+/**
+ * WR-03 (38-REVIEW-FIX): a partial mock of `matchesDrillDown` — see
+ * `OpponentHubPage.test.tsx`'s identical mock for the full rationale. Used
+ * as the observable signal that `FilteredMatchList`'s D-16 memo actually
+ * hits its cache across an unrelated re-render.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
+
+function sessionsTree(ui: React.ReactElement, queryClient: QueryClient) {
+  return (
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  );
+}
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <MemoryRouter>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    </MemoryRouter>,
-  );
+  const result = render(sessionsTree(ui, queryClient));
+  return { ...result, queryClient };
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -172,6 +189,39 @@ describe('SessionsAndTilt component', () => {
 
       await user.click(row);
       expect(row).toHaveAttribute('aria-expanded', 'false');
+    });
+  });
+
+  describe('WR-03 (38-REVIEW-FIX): D-16 memoization contract', () => {
+    it('an unrelated re-render does not re-run the terminus narrowing predicate once a session is expanded', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      const user = userEvent.setup();
+      const sessionAStart = Date.UTC(2023, 5, 15, 12);
+      const matches = [
+        makeMatch({ id: '1', time: sessionAStart, win: true }),
+        makeMatch({ id: '2', time: sessionAStart + 1, win: false }),
+      ];
+      const { rerender, queryClient } = renderWithProviders(<SessionsAndTilt matches={matches} />);
+
+      const dateCell = screen.getAllByRole('cell').find((c) => c.textContent?.includes('2023'))!;
+      const row = within(dateCell.closest('tr')!).getByRole('button', { name: /opens details/ });
+      await user.click(row);
+      expect(screen.getByText(/2 games/)).toBeInTheDocument();
+
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // Neither `SessionsAndTilt` nor `FilteredMatchList` is wrapped in
+      // `React.memo`, so re-invoking `render()` on the same root always
+      // re-runs both function bodies — the only thing under test is
+      // whether that re-run recomputes `FilteredMatchList`'s own narrowing
+      // memo. A stable per-session `axes` reference (looked up from a
+      // memoized Map, never a fresh `{ from, to }` literal per render)
+      // means it doesn't: `matchesDrillDown`'s call count stays flat.
+      rerender(sessionsTree(<SessionsAndTilt matches={matches} />, queryClient));
+
+      expect(screen.getByText(/2 games/)).toBeInTheDocument();
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
     });
   });
 });
