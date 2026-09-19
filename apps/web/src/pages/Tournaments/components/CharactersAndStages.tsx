@@ -117,7 +117,14 @@ function StagesCard({
 }: {
   matches: Match[];
   subjectPath: (path: string) => string;
-  eventKeyForStage?: (stageId: number) => string | undefined;
+  /**
+   * WR-04 (38-REVIEW-FIX): now a per-(stage, proximity-block) lookup — this
+   * card's own aggregate row has no single match of its own (it summarizes
+   * every game on the stage across the whole entry), so it calls this with
+   * only `stageId`, which resolves to the MOST RECENT block for that stage
+   * (see `TournamentDetailPage.tsx`'s `eventKeyForStage`).
+   */
+  eventKeyForStage?: (stageId: number, matchId?: string) => string | undefined;
 }) {
   const { t } = useTranslation();
   const records = getStageRecords(matches)
@@ -200,7 +207,7 @@ export function CharactersAndStages({
   eventKeyForStage,
 }: {
   matches: Match[];
-  eventKeyForStage?: (stageId: number) => string | undefined;
+  eventKeyForStage?: (stageId: number, matchId?: string) => string | undefined;
 }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();

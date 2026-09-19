@@ -146,22 +146,26 @@ function takeawayKey(game: ClassifiedGame): string {
  * — `undefined` when the played stage is unknown (`map.id` 0/absent), the
  * ONLY permitted exemption for this row.
  *
- * CR-03 (38-REVIEW-FIX): `eventKeyForStage` is a per-STAGE lookup (not a
- * flat, whole-tournament string) — each pick names its OWN played stage
- * (`game.match.map.id`), and `StageDetailPage.tsx` resolves `event=` against
- * an anchor that is itself scoped by stage, so the key must be looked up for
- * THIS pick's stage, never one shared value reused across every pick.
+ * CR-03/WR-04 (38-REVIEW-FIX): `eventKeyForStage` is a per-(stage,
+ * proximity-block) lookup (not a flat, whole-tournament string) — each pick
+ * names its OWN played stage AND its OWN played match
+ * (`game.match.map.id`/`game.match.id`), and `StageDetailPage.tsx` resolves
+ * `event=` against an anchor that is itself scoped by stage and by proximity
+ * block, so the key must be looked up for THIS pick's specific game — a
+ * multi-day entry can split one stage into more than one block, and passing
+ * `game.match.id` lets the host resolve the block THIS game actually belongs
+ * to rather than an arbitrary one.
  */
 function retrospectiveStageHref(
   game: ClassifiedGame,
-  eventKeyForStage: ((stageId: number) => string | undefined) | undefined,
+  eventKeyForStage: ((stageId: number, matchId?: string) => string | undefined) | undefined,
   subjectPath: (path: string) => string,
 ): string | undefined {
   const stageId = game.match.map?.id ?? 0;
   if (stageId === 0) {
     return undefined;
   }
-  const eventKey = eventKeyForStage?.(stageId);
+  const eventKey = eventKeyForStage?.(stageId, game.match.id);
   const search = buildDrillDownSearch(eventKey ? { eventKey } : {}).toString();
   return subjectPath(`/stages/${stageId}${search ? `?${search}` : ''}`);
 }
@@ -248,11 +252,12 @@ export function AdvisorRetrospective({
 }: {
   retrospective: Retrospective;
   /**
-   * CR-03 (38-REVIEW-FIX): a per-stage event-anchor-key lookup (D-14),
-   * threaded down rather than derived here, since a pick has no event key of
-   * its own — it names a stage, and the host resolves that stage's anchor.
+   * CR-03/WR-04 (38-REVIEW-FIX): a per-(stage, proximity-block)
+   * event-anchor-key lookup (D-14), threaded down rather than derived here,
+   * since a pick has no event key of its own — it names a stage and a
+   * specific game, and the host resolves that game's own block anchor.
    */
-  eventKeyForStage?: (stageId: number) => string | undefined;
+  eventKeyForStage?: (stageId: number, matchId?: string) => string | undefined;
 }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { EVENT_ANCHOR_PROXIMITY_MS } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -629,5 +630,80 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down (CR-03)',
     expect(row.textContent).toContain('2');
     expect(row.textContent).toContain('1');
     expect(screen.getAllByText('3 games · low confidence').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * WR-04 (38-REVIEW-FIX): CR-03's per-stage lookup computed exactly ONE
+ * anchor key per stage — the block containing the EARLIEST match on that
+ * stage. `buildStageEventSeries` (what `StageDetailPage` actually queries)
+ * splits a stage's matches into a NEW anchor block whenever two consecutive
+ * plays are more than `EVENT_ANCHOR_PROXIMITY_MS` apart — a real condition
+ * for a multi-day entry. Pre-fix, a "Stages Played" row for a stage played
+ * both early AND (more than the proximity window) later in the same entry
+ * always resolved to the EARLY block's key, so the destination never showed
+ * the later game. This fixture's two games on the same stage are separated
+ * by more than `EVENT_ANCHOR_PROXIMITY_MS`, so the real engine produces TWO
+ * separate anchors for this stage — this test asserts the row's link
+ * resolves to the block containing the MOST RECENT game (this fix's chosen,
+ * documented behavior), not the earliest one.
+ */
+describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a proximity-window gap (WR-04)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
+    mockPrepBrief({ isPending: false, activated: false });
+  });
+
+  it('links a stage played across a proximity-window gap to the block containing the most recent game', async () => {
+    const earlyTime = Date.UTC(2021, 0, 1);
+    // Strictly more than the proximity window apart — the engine's own
+    // `splitTournamentBlocks` starts a new block past this gap.
+    const lateTime = earlyTime + EVENT_ANCHOR_PROXIMITY_MS + 24 * 60 * 60 * 1000;
+
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: earlyTime,
+        lastSetAt: lateTime,
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'early-game',
+        time: earlyTime,
+        win: true,
+        opponent: 'earlyrival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+      makeMatch({
+        id: 'late-game',
+        time: lateTime,
+        win: false,
+        opponent: 'laterival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+    ]);
+
+    const user = userEvent.setup();
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    const stageLink = screen.getByRole('link', {
+      name: 'Big Battlefield — Stages Played, opens details',
+    });
+    await user.click(stageLink);
+
+    // The most recent game's block is what the row resolves to — its
+    // opponent shows up, and the earlier block's opponent (a DIFFERENT
+    // anchor entirely) does not.
+    expect(await screen.findByText('By Opponent')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'laterival' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'earlyrival' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
   });
 });

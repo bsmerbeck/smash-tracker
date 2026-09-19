@@ -29,8 +29,16 @@ import type { ClaimKind, ConfidenceTier } from './types.js';
  * assumption).
  */
 
-/** Ported from `apps/web/src/pages/Opponents/tournamentHistory.ts`'s `TOURNAMENT_PROXIMITY_WINDOW_MS` — kept in sync by naming that file, not by importing it (web must never be imported from `packages/shared`). */
-const EVENT_ANCHOR_PROXIMITY_MS = 4 * 24 * 60 * 60 * 1000;
+/**
+ * Ported from `apps/web/src/pages/Opponents/tournamentHistory.ts`'s
+ * `TOURNAMENT_PROXIMITY_WINDOW_MS` — kept in sync by naming that file, not by
+ * importing it (web must never be imported from `packages/shared`).
+ *
+ * WR-04 (38-REVIEW-FIX): exported so a caller that needs to construct a test
+ * fixture spanning more than one proximity block (or otherwise reason about
+ * the window) reads the real value rather than hard-coding `4` days.
+ */
+export const EVENT_ANCHOR_PROXIMITY_MS = 4 * 24 * 60 * 60 * 1000;
 
 export type EventAnchorKind = 'tournament' | 'session';
 
@@ -85,8 +93,19 @@ export function trimmedEventKey(match: Match): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** Splits one name-grouped, time-sorted set of tournament matches into blocks whenever consecutive games exceed the proximity window — the same technique `groupTournamentBlocks` uses, ported rather than imported. */
-function splitTournamentBlocks(sorted: Match[]): Match[][] {
+/**
+ * Splits one name-grouped, time-sorted set of tournament matches into blocks
+ * whenever consecutive games exceed the proximity window — the same
+ * technique `groupTournamentBlocks` uses, ported rather than imported.
+ *
+ * WR-04 (38-REVIEW-FIX): exported as the ONE place this block-splitting rule
+ * lives — `TournamentDetailPage.tsx`'s per-stage anchor-key lookup calls this
+ * directly (over its own stage-scoped, already name-uniform match list)
+ * instead of re-implementing the proximity comparison, so it can never
+ * silently diverge from what `buildStageEventSeries` itself will split a
+ * stage's matches into.
+ */
+export function splitTournamentBlocks(sorted: Match[]): Match[][] {
   const blocks: Match[][] = [];
   let current: Match[] = [];
   for (const match of sorted) {

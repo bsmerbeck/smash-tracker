@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import type { Match } from '@smash-tracker/shared';
 import {
   anchorKey,
   matchesForEntry,
   buildSetTimeline,
+  splitTournamentBlocks,
   stageBucketId,
   trimmedEventKey,
 } from '@smash-tracker/shared';
@@ -113,28 +115,36 @@ export function TournamentDetailPage() {
   const timeline = useMemo(() => buildSetTimeline(entryMatches), [entryMatches]);
 
   /**
-   * CR-03 (38-REVIEW-FIX): a per-STAGE event-anchor key, one per stage this
-   * entry's matches touch — never `entry.entryKey` (the tournament
-   * registry's own foreign key, unrelated to
-   * `packages/shared/src/evidence/eventSeries.ts`'s anchor-key format).
-   * `StageDetailPage.tsx` resolves its `event=` param by looking up
-   * `buildStageEventSeries({ matches, stageId, ... })`'s own anchors, and
-   * that builder scopes matches by STAGE first, then groups by name — so the
-   * anchor's `startMs` (part of the key) is the min time among THIS STAGE's
-   * matches within the block, not the tournament's overall start time. A
-   * single flat key shared across every stage row (the pre-fix behaviour)
-   * can match at most one stage's anchor; this computes one key per stage
-   * instead, using the SAME `trimmedEventKey` name-priority rule and
-   * `anchorKey` format the engine's own anchors use (exported from
-   * `eventSeries.ts` for exactly this reuse). `entryMatches` are already
-   * bounded to this one tournament occurrence (`matchesForEntry`'s
+   * CR-03/WR-04 (38-REVIEW-FIX): a per-STAGE, per-PROXIMITY-BLOCK
+   * event-anchor key — never `entry.entryKey` (the tournament registry's own
+   * foreign key, unrelated to `packages/shared/src/evidence/eventSeries.ts`'s
+   * anchor-key format). `StageDetailPage.tsx` resolves its `event=` param by
+   * looking up `buildStageEventSeries({ matches, stageId, ... })`'s own
+   * anchors, and that builder scopes matches by STAGE first, groups by name,
+   * then calls `splitTournamentBlocks` — which starts a NEW anchor whenever
+   * two consecutive plays on that stage are more than
+   * `EVENT_ANCHOR_PROXIMITY_MS` (4 days) apart. A multi-day entry can
+   * therefore split a single stage into more than one anchor block, each
+   * with its OWN key (its own block's min time). CR-03's original fix
+   * computed exactly one key per stage (the EARLIEST block's), which
+   * under-represents a later block's picks — WR-04 fixes that by computing
+   * every block per stage here (calling the engine's own exported
+   * `splitTournamentBlocks`, never re-implementing the proximity rule) and
+   * resolving the correct block per lookup: a SPECIFIC match's own block when
+   * a `matchId` is given (the Advisor Retrospective case, where each pick
+   * names its own played game), or the MOST RECENT block for that stage
+   * otherwise (the "Stages Played" aggregate row, whose displayed W-L count
+   * already spans every block for that stage — linking to the latest block
+   * keeps the destination showing the freshest data for that stage rather
+   * than an arbitrary/earliest one). `entryMatches` are already bounded to
+   * this one tournament occurrence (`matchesForEntry`'s
    * eventName[+tournamentName]+time-window filter), so every match here
-   * shares one name and the min-time-per-stage computed here matches what
+   * shares one name and the per-stage blocks computed here match what
    * `buildStageEventSeries` independently derives for a real, single
    * occurrence of this event.
    */
-  const stageEventKeyByStageId = useMemo(() => {
-    const map = new Map<number, string>();
+  const stageEventBlocksByStageId = useMemo(() => {
+    const map = new Map<number, { key: string; matchIds: Set<string> }[]>();
     const [firstMatch] = entryMatches;
     if (!firstMatch) {
       return map;
@@ -143,21 +153,44 @@ export function TournamentDetailPage() {
     if (name == null) {
       return map;
     }
-    const minTimeByStage = new Map<number, number>();
+    const matchesByStage = new Map<number, Match[]>();
     for (const match of entryMatches) {
       const stageId = stageBucketId(match);
-      const current = minTimeByStage.get(stageId);
-      if (current == null || match.time < current) {
-        minTimeByStage.set(stageId, match.time);
+      const group = matchesByStage.get(stageId);
+      if (group) {
+        group.push(match);
+      } else {
+        matchesByStage.set(stageId, [match]);
       }
     }
-    for (const [stageId, startMs] of minTimeByStage) {
-      map.set(stageId, anchorKey('tournament', name, startMs));
+    for (const [stageId, stageMatches] of matchesByStage) {
+      const sorted = [...stageMatches].sort((a, b) => a.time - b.time);
+      const blocks = splitTournamentBlocks(sorted).map((block) => ({
+        key: anchorKey('tournament', name, block[0]!.time),
+        matchIds: new Set(block.map((m) => m.id)),
+      }));
+      map.set(stageId, blocks);
     }
     return map;
   }, [entryMatches]);
-  const eventKeyForStage = (stageId: number): string | undefined =>
-    stageEventKeyByStageId.get(stageId);
+  const eventKeyForStage = useCallback(
+    (stageId: number, matchId?: string): string | undefined => {
+      const blocks = stageEventBlocksByStageId.get(stageId);
+      if (!blocks || blocks.length === 0) {
+        return undefined;
+      }
+      if (matchId != null) {
+        const owningBlock = blocks.find((block) => block.matchIds.has(matchId));
+        if (owningBlock) {
+          return owningBlock.key;
+        }
+      }
+      // Blocks are pushed in ascending time order by `splitTournamentBlocks`,
+      // so the last one is the most recent.
+      return blocks[blocks.length - 1]!.key;
+    },
+    [stageEventBlocksByStageId],
+  );
 
   const retrospective = useMemo(() => {
     if (!entry) {
