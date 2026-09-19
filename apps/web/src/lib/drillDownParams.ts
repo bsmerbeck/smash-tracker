@@ -1,4 +1,4 @@
-import type { Match } from '@smash-tracker/shared';
+import { UNKNOWN_STAGE_ID, type Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 
 /**
@@ -117,8 +117,17 @@ export function readDrillDownParams(
     axes.vsFighterId = vsFighterId;
   }
 
+  // WR-01 (38-REVIEW-FIX): `stageId === UNKNOWN_STAGE_ID` (0) must be
+  // accepted even though it is never a member of `stageIds` (the caller's
+  // real-stage set — `stagesById` deliberately excludes the sentinel, per
+  // this module's own doc comment above). This is the cross-tab's own
+  // unknown-stage column (D-09/D-10): clicking it writes `stage=0` to narrow
+  // THIS page's `FilteredMatchList` terminus to the unknown-stage subset —
+  // a list-filter axis, never a `/stages/0` route (that page stays
+  // unaddressable; `StageDetailPage.tsx`'s own path-segment reader,
+  // `isKnownStageSegment`, already carries this exact allowance separately).
   const stageId = parseIntegerAxis(searchParams.get(DRILL_DOWN_STAGE_PARAM));
-  if (stageId != null && stageIds.has(stageId)) {
+  if (stageId != null && (stageId === UNKNOWN_STAGE_ID || stageIds.has(stageId))) {
     axes.stageId = stageId;
   }
 

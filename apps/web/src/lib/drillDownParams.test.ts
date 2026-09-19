@@ -59,6 +59,12 @@ describe('parseIntegerAxis (via readDrillDownParams)', () => {
     expect(axes.stageId).toBe(BATTLEFIELD);
   });
 
+  it('WR-01 (38-REVIEW-FIX): accepts stage=0, the unknown-stage sentinel, even though stageIds never contains it', () => {
+    const params = new URLSearchParams({ [DRILL_DOWN_STAGE_PARAM]: '0' });
+    const axes = readDrillDownParams(params, { stageIds });
+    expect(axes.stageId).toBe(0);
+  });
+
   it('ignores a fighter value naming no known fighter', () => {
     const params = new URLSearchParams({ [DRILL_DOWN_FIGHTER_PARAM]: '999999' });
     const axes = readDrillDownParams(params, { stageIds });
