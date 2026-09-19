@@ -159,6 +159,9 @@
       "label": "Gegner analysieren",
       "aria": "Gegner {{name}} analysieren"
     },
+    "drillableRow": {
+      "aria": "{{subject}} — {{context}}, öffnet Details"
+    },
     "inferredFighters": {
       "title": "Kämpfer aus deinem Match-Verlauf",
       "body": "Du hast noch keine Lieblingskämpfer gespeichert, daher nutzt diese Seite die in deinen erfassten Matches beobachteten Kämpfer. Favoriten zu wählen ist optional und personalisiert diese Seiten nur."

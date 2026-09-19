@@ -159,6 +159,9 @@
       "label": "Analyze opponent",
       "aria": "Analyze opponent {{name}}"
     },
+    "drillableRow": {
+      "aria": "{{subject}} — {{context}}, opens details"
+    },
     "inferredFighters": {
       "title": "Showing fighters from your match history",
       "body": "You haven't saved favorite fighters yet, so this page uses the fighters seen in your recorded matches. Choosing favorites is optional and just personalizes these pages."

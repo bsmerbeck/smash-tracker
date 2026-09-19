@@ -4,9 +4,17 @@ import { ChevronDown } from 'lucide-react';
 import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { filterByFighter, getRollingWinRate, rankMatchupsByEvidence } from '@/lib/stats';
+import {
+  filterByFighter,
+  getOpponentRecords,
+  getRollingWinRate,
+  rankMatchupsByEvidence,
+} from '@/lib/stats';
 import { StageMastery } from '@/pages/FighterAnalysis/components/StageMastery';
-import { OpponentTable } from '@/pages/FighterAnalysis/components/OpponentTable';
+import {
+  OpponentTable,
+  type OpponentTableRow,
+} from '@/pages/FighterAnalysis/components/OpponentTable';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { TrendLine } from '@/components/charts/TrendLine';
@@ -98,6 +106,26 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
 
   const matchupSpread = rankMatchupsByEvidence(matches, ABSTENTION_FLOOR_GAMES);
 
+  // Phase 38-07 (H-02): this host keeps TODAY's behaviour exactly — the
+  // legacy raw-tag-grouped builder over the SCOUTED PLAYER's own per-game
+  // history, descending by games played, with NO `hubHref` supplied.
+  // Applying the viewer's alias map here (`useOpponentAliases`, a `useQuery`
+  // over the VIEWER's subject-scoped map) would silently change what the
+  // scouting report says about a third party, and a hub link here would
+  // send the viewer into their OWN opponent hub for someone else's history —
+  // the same data-scope hazard `StageMastery`'s and `WhatTheyPlayTable`'s
+  // opt-in already guard against in this exact host file.
+  const opponentTableRows: OpponentTableRow[] = getOpponentRecords(matches)
+    .sort((a, b) => b.total - a.total)
+    .map((record) => ({
+      key: record.opponent,
+      displayLabel: record.opponent,
+      wins: record.wins,
+      losses: record.losses,
+      total: record.total,
+      winRate: record.winRate,
+    }));
+
   return (
     <>
       {/*
@@ -133,7 +161,7 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
         )}
       </ChartCard>
 
-      <OpponentTable fighterMatches={matches} />
+      <OpponentTable rows={opponentTableRows} />
     </>
   );
 }

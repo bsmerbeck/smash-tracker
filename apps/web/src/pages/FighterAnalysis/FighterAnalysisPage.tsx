@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
@@ -7,17 +7,21 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { getFighterById } from '@/data/sprites';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { buildOpponentEvidence } from '@/lib/stats';
+import { buildOpponentHubPath } from '@/lib/analyzeOpponent';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { SelectFighter } from './components/SelectFighter';
 import { FighterHero } from './components/FighterHero';
 import { StageMastery } from './components/StageMastery';
 import { MatchupCoverage } from './components/MatchupCoverage';
 import { PracticeRecommendations } from './components/PracticeRecommendations';
 import { MatchupStageGuide } from './components/MatchupStageGuide';
-import { OpponentTable } from './components/OpponentTable';
+import { OpponentTable, type OpponentTableRow } from './components/OpponentTable';
 
 /**
  * Fighter Analysis command center: per-fighter hero, Stage Mastery grid,
@@ -30,6 +34,11 @@ export function FighterAnalysisPage() {
   const subjectPath = useSubjectPath();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const { data: aliasMap } = useOpponentAliases();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch, matching `OpponentsPage.tsx`'s convention.
+  const [refreshedAt] = useState(() => Date.now());
 
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
@@ -84,6 +93,32 @@ export function FighterAnalysisPage() {
 
   const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
 
+  // Phase 38-07 (H-02/Q11.4): the own-subject host consumes the SAME
+  // identity-resolving inventory the opponents list/hub already use, rather
+  // than the legacy raw-tag `getOpponentRecords` — two raw tags belonging to
+  // one person now render as ONE row. `OpponentTable` itself is
+  // presentational (no query/router hook), so the row build + sort +
+  // destination-builder all live here.
+  const opponentEvidenceRows = fighter
+    ? buildOpponentEvidence({ matches: fighterMatches, aliasMap: aliasMap ?? {}, refreshedAt }).rows
+    : [];
+  const opponentTableRows: OpponentTableRow[] = [...opponentEvidenceRows]
+    .sort((a, b) => b.total - a.total)
+    .map((row) => ({
+      key: row.identity,
+      displayLabel: row.displayTag,
+      wins: row.wins,
+      losses: row.losses,
+      total: row.total,
+      winRate: row.winRate,
+    }));
+
+  function opponentHubHref(row: OpponentTableRow): string | undefined {
+    if (!fighter) return undefined;
+    const search = buildDrillDownSearch({ fighterId: fighter.id }).toString();
+    return subjectPath(`${buildOpponentHubPath(row.key)}${search ? `?${search}` : ''}`);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {usingInferredFighters && <ChooseFavoritesPrompt />}
@@ -118,7 +153,7 @@ export function FighterAnalysisPage() {
 
           <MatchupStageGuide fighterMatches={fighterMatches} />
 
-          <OpponentTable fighterMatches={fighterMatches} />
+          <OpponentTable rows={opponentTableRows} hubHref={opponentHubHref} />
         </>
       )}
     </div>

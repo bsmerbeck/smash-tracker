@@ -159,6 +159,9 @@
       "label": "Analisar oponente",
       "aria": "Analisar o oponente {{name}}"
     },
+    "drillableRow": {
+      "aria": "{{subject}} — {{context}}, abre os detalhes"
+    },
     "inferredFighters": {
       "title": "Mostrando lutadores do seu histórico de partidas",
       "body": "Você ainda não salvou lutadores favoritos, então esta página usa os lutadores vistos nas suas partidas registradas. Escolher favoritos é opcional e apenas personaliza estas páginas."

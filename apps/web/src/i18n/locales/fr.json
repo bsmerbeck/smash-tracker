@@ -159,6 +159,9 @@
       "label": "Analyser l'adversaire",
       "aria": "Analyser l'adversaire {{name}}"
     },
+    "drillableRow": {
+      "aria": "{{subject}} — {{context}}, ouvre les détails"
+    },
     "inferredFighters": {
       "title": "Combattants issus de votre historique de matchs",
       "body": "Vous n'avez pas encore enregistré de combattants favoris, cette page utilise donc les combattants observés dans vos matchs enregistrés. Choisir des favoris est facultatif et ne fait que personnaliser ces pages."
