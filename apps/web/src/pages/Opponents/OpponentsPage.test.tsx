@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useParams, useSearchParams } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -136,6 +136,21 @@ function HubDestinationStub() {
   );
 }
 
+/**
+ * CR-01 fix regression (38-REVIEW-FIX): renders the router's OWN current
+ * `pathname` + `search` into the DOM, mounted as a `<Routes>` sibling (like
+ * `ActiveSubjectSync` in `AppRouter.tsx`) so it observes the final location
+ * regardless of which route matched. Without this, a redirect that drops the
+ * `/coach/:clientId` or `/workspace/:tenantId` prefix would still land on the
+ * bare `/opponents/:opponentTag` route mounted below and render
+ * `HubDestinationStub` successfully — the bug is only visible in the
+ * resulting URL, never in what stub renders.
+ */
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+  return <div data-testid="location-probe">{`${pathname}${search}`}</div>;
+}
+
 function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -144,6 +159,7 @@ function renderOpponents(initialEntry = '/opponents') {
         <AuthProvider>
           <AnalyticsFilterProvider>
             <ShellProfileSubscription />
+            <LocationProbe />
             <Routes>
               <Route path="/opponents" element={<OpponentsPage />} />
               <Route path="/coach/:clientId/opponents" element={<OpponentsPage />} />
@@ -157,6 +173,17 @@ function renderOpponents(initialEntry = '/opponents') {
                 stub so the redirect's target is observable without mounting the
                 real (lazy-loaded) OpponentHubPage. */}
               <Route path="/opponents/:opponentTag" element={<HubDestinationStub />} />
+              {/* CR-01 fix regression: the SAME stub mounted under the coach and
+                workspace subject prefixes, so a correctly-prefixed redirect has
+                somewhere to land too. */}
+              <Route
+                path="/coach/:clientId/opponents/:opponentTag"
+                element={<HubDestinationStub />}
+              />
+              <Route
+                path="/workspace/:tenantId/opponents/:opponentTag"
+                element={<HubDestinationStub />}
+              />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -398,6 +425,33 @@ describe('OpponentsPage', () => {
       // hub link (D-14, 38-07) rather than an in-page selection button.
       await waitFor(() => expect(screen.getByRole('link', { name: /rival/ })).toBeInTheDocument());
       expect(screen.queryByText(/^Hub:/)).not.toBeInTheDocument();
+    });
+
+    /**
+     * CR-01 (38-REVIEW-FIX): the legacy `?opponent=`/`?player=` redirect used
+     * to call `navigate(buildOpponentHubPath(...))` directly — an absolute
+     * personal path that escapes whatever subject prefix the current route
+     * matched under. Confirmed failing pre-fix: reverting the `subjectPath(...)`
+     * wrap in `OpponentsPage.tsx` makes the location-probe assertion below
+     * observe `/opponents/zeta` (the coach's OWN personal hub) instead of
+     * `/coach/tetra-client/opponents/zeta` (the client subject's hub).
+     */
+    it('CR-01: keeps the coach subject prefix when redirecting an ?opponent= deep link', async () => {
+      renderOpponents('/coach/tetra-client/opponents?opponent=zeta');
+
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/coach/tetra-client/opponents/zeta',
+      );
+    });
+
+    it('CR-01: keeps the owned-workspace tenant prefix when redirecting an ?opponent= deep link', async () => {
+      renderOpponents('/workspace/tenant-1/opponents?opponent=zeta');
+
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/workspace/tenant-1/opponents/zeta',
+      );
     });
   });
 

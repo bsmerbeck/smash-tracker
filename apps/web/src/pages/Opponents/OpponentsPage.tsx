@@ -110,8 +110,8 @@ export function OpponentsPage() {
     const hubSearch = playerParam
       ? `?${ANALYZE_OPPONENT_PLAYER_PARAM}=${encodeURIComponent(playerParam)}`
       : '';
-    navigate(`${buildOpponentHubPath(resolved)}${hubSearch}`, { replace: true });
-  }, [searchParams, matches, aliasMap, isLoading, navigate]);
+    navigate(subjectPath(`${buildOpponentHubPath(resolved)}${hubSearch}`), { replace: true });
+  }, [searchParams, matches, aliasMap, isLoading, navigate, subjectPath]);
 
   // The opponent name currently open in the "Merge into..." dialog, or null
   // when the dialog is closed.

@@ -238,7 +238,9 @@ export function OpponentHubPage() {
     const hintHasMatches = matches.some((m) => resolve(m) === hintIdentity);
     if (!hintHasMatches) return;
     navigate(
-      `${buildOpponentHubPath(hintTag)}?${ANALYZE_OPPONENT_PLAYER_PARAM}=${encodeURIComponent(playerHint)}`,
+      subjectPath(
+        `${buildOpponentHubPath(hintTag)}?${ANALYZE_OPPONENT_PLAYER_PARAM}=${encodeURIComponent(playerHint)}`,
+      ),
       { replace: true },
     );
   }, [
@@ -251,6 +253,7 @@ export function OpponentHubPage() {
     resolve,
     targetIdentity,
     navigate,
+    subjectPath,
   ]);
 
   // D-05: tolerant read of the character/stage drill-down axes.

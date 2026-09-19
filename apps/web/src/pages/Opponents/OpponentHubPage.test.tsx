@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -130,6 +130,20 @@ function ShellProfileSubscription() {
   return null;
 }
 
+/**
+ * CR-01 fix regression (38-REVIEW-FIX): renders the router's OWN current
+ * `pathname` + `search`, mounted as a `<Routes>` sibling so it observes the
+ * final location regardless of which route matched — the hub's player-hint
+ * fallback used to `navigate()` an absolute personal path, which resolves
+ * against the SAME `/opponents/:opponentTag` route mounted below under every
+ * family, so the stub's own rendered content can't distinguish a correctly-
+ * prefixed redirect from one that escaped the subject.
+ */
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+  return <div data-testid="location-probe">{`${pathname}${search}`}</div>;
+}
+
 function renderHub(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -139,6 +153,7 @@ function renderHub(initialEntry: string) {
           <AnalyticsFilterProvider>
             <TooltipProvider>
               <ShellProfileSubscription />
+              <LocationProbe />
               <Routes>
                 <Route path="/opponents/:opponentTag" element={<OpponentHubPage />} />
                 <Route
@@ -293,6 +308,52 @@ describe('OpponentHubPage', () => {
       expect(
         await screen.findByText('No games recorded against stale-name yet.'),
       ).toBeInTheDocument();
+    });
+
+    /**
+     * CR-01 (38-REVIEW-FIX): the fallback used to `navigate()` an absolute
+     * `/opponents/<tag>` path directly, escaping whatever subject prefix the
+     * route matched under. Confirmed failing pre-fix: reverting the
+     * `subjectPath(...)` wrap in `OpponentHubPage.tsx` makes the
+     * location-probe assertion below observe `/opponents/zeta` instead of
+     * `/coach/tetra-client/opponents/zeta`.
+     */
+    it('CR-01: keeps the coach subject prefix when the player= hint fallback redirects', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'zeta',
+          win: true,
+          opponentUserSlug: 'user/9fb774ae',
+        }),
+      ]);
+
+      renderHub('/coach/tetra-client/opponents/stale-name?player=sgg%3Auser%2F9fb774ae');
+
+      await findRecordText('1-0');
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/coach/tetra-client/opponents/zeta',
+      );
+    });
+
+    it('CR-01: keeps the owned-workspace tenant prefix when the player= hint fallback redirects', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'zeta',
+          win: true,
+          opponentUserSlug: 'user/9fb774ae',
+        }),
+      ]);
+
+      renderHub('/workspace/tenant-1/opponents/stale-name?player=sgg%3Auser%2F9fb774ae');
+
+      await findRecordText('1-0');
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/workspace/tenant-1/opponents/zeta',
+      );
     });
   });
 
