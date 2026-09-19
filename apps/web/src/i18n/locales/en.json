@@ -837,7 +837,8 @@
       "showAll": "Show all {{count}}",
       "empty": "No matches recorded yet — play some matches to build your matchup matrix.",
       "yourFighterSr": "Your fighter",
-      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}} on {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
       "window": "Window",
@@ -1305,6 +1306,11 @@
     "hub": {
       "trend": {
         "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "Not enough data yet ({{count}} game)",
+        "notEnoughData_other": "Not enough data yet ({{count}} games)",
+        "tabAria": "{{row}}'s stage breakdown"
       }
     }
   },

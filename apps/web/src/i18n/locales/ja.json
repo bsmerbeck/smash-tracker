@@ -837,7 +837,8 @@
       "showAll": "全{{count}}体を表示",
       "empty": "まだ対戦が記録されていません — 対戦をプレイして相性マトリクスを作りましょう。",
       "yourFighterSr": "自分のファイター",
-      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}}（{{col}}）: {{wins}}-{{losses}}"
     },
     "chart": {
       "window": "集計範囲",
@@ -1305,6 +1306,11 @@
     "hub": {
       "trend": {
         "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "{{count}}試合ではデータがまだ不十分です",
+        "notEnoughData_other": "{{count}}試合ではデータがまだ不十分です",
+        "tabAria": "{{row}}のステージ内訳"
       }
     }
   },

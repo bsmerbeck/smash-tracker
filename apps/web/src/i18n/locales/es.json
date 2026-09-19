@@ -837,7 +837,8 @@
       "showAll": "Mostrar los {{count}}",
       "empty": "Aún no hay partidas registradas — juega algunas para construir tu matriz de enfrentamientos.",
       "yourFighterSr": "Tu luchador",
-      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}} en {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
       "window": "Ventana",
@@ -1305,6 +1306,11 @@
     "hub": {
       "trend": {
         "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "Datos insuficientes por ahora ({{count}} partida)",
+        "notEnoughData_other": "Datos insuficientes por ahora ({{count}} partidas)",
+        "tabAria": "Desglose de escenarios de {{row}}"
       }
     }
   },

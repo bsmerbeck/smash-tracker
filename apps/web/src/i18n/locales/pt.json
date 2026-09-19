@@ -837,7 +837,8 @@
       "showAll": "Mostrar todos ({{count}})",
       "empty": "Nenhuma partida registrada ainda — jogue algumas para montar sua matriz de confrontos.",
       "yourFighterSr": "Seu lutador",
-      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}} em {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
       "window": "Janela",
@@ -1305,6 +1306,11 @@
     "hub": {
       "trend": {
         "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "Dados insuficientes por enquanto ({{count}} partida)",
+        "notEnoughData_other": "Dados insuficientes por enquanto ({{count}} partidas)",
+        "tabAria": "Detalhamento de estágios de {{row}}"
       }
     }
   },

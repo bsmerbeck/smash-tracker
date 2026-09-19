@@ -837,7 +837,8 @@
       "showAll": "Alle {{count}} anzeigen",
       "empty": "Noch keine Matches erfasst — spiele ein paar Matches, um deine Matchup-Matrix aufzubauen.",
       "yourFighterSr": "Dein Kämpfer",
-      "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}} auf {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
       "window": "Fenster",
@@ -1305,6 +1306,11 @@
     "hub": {
       "trend": {
         "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "Noch nicht genug Daten ({{count}} Spiel)",
+        "notEnoughData_other": "Noch nicht genug Daten ({{count}} Spiele)",
+        "tabAria": "{{row}}s Stage-Aufschlüsselung"
       }
     }
   },
