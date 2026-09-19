@@ -436,6 +436,15 @@ const SURFACES: Surface[] = [
     rows: (result) => dataRows(result.container),
   },
   {
+    name: "The shared filtered match list's rows, narrow layout (the terminus, stacked)",
+    file: 'apps/web/src/components/FilteredMatchList.tsx',
+    render: () => {
+      const matches = [makeMatch({ id: 'g1', time: 1, win: true })];
+      return withRouterAndQuery(<FilteredMatchList matches={matches} axes={{}} layout="stack" />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
     name: "The stage detail page's by-opponent and by-character tables",
     file: 'apps/web/src/pages/Stages/StageDetailPage.tsx',
     render: () => {
