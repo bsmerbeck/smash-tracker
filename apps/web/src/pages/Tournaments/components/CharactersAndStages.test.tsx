@@ -21,10 +21,14 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
-function renderCharactersAndStages(matches: Match[], eventKey?: string, initialPath = '/') {
+function renderCharactersAndStages(
+  matches: Match[],
+  eventKeyForStage?: (stageId: number) => string | undefined,
+  initialPath = '/',
+) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <CharactersAndStages matches={matches} eventKey={eventKey} />
+      <CharactersAndStages matches={matches} eventKeyForStage={eventKeyForStage} />
     </MemoryRouter>,
   );
 }
@@ -90,13 +94,24 @@ describe('CharactersAndStages', () => {
       expect(link).toHaveAttribute('href', `/matchups?vs=${luigi.id}`);
     });
 
-    it('a stage row opens the stage detail page with the event axis set to this tournament entry', () => {
+    it('a stage row opens the stage detail page with the event axis looked up per-stage (CR-03)', () => {
       const matches = [
         makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
       ];
-      renderCharactersAndStages(matches, 'ultimate-singles-2026');
+      renderCharactersAndStages(matches, (stageId) =>
+        stageId === 1 ? 'tournament:ultimate singles:1' : undefined,
+      );
       const link = screen.getByRole('link', { name: /Battlefield/ });
-      expect(link).toHaveAttribute('href', '/stages/1?event=ultimate-singles-2026');
+      expect(link).toHaveAttribute('href', '/stages/1?event=tournament%3Aultimate+singles%3A1');
+    });
+
+    it('a stage row with no resolved anchor for its stage opens the plain stage detail page', () => {
+      const matches = [
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+      ];
+      renderCharactersAndStages(matches, () => undefined);
+      const link = screen.getByRole('link', { name: /Battlefield/ });
+      expect(link).toHaveAttribute('href', '/stages/1');
     });
 
     it('carries the coach prefix through every destination', () => {

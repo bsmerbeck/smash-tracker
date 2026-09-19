@@ -113,11 +113,11 @@ function FighterCard({
 function StagesCard({
   matches,
   subjectPath,
-  eventKey,
+  eventKeyForStage,
 }: {
   matches: Match[];
   subjectPath: (path: string) => string;
-  eventKey?: string;
+  eventKeyForStage?: (stageId: number) => string | undefined;
 }) {
   const { t } = useTranslation();
   const records = getStageRecords(matches)
@@ -138,6 +138,7 @@ function StagesCard({
               const stage = stagesById.get(record.stageId);
               const name = stage?.name ?? t('common.unknown');
               const detail = `${record.wins}-${record.losses} · ${t('common.games', { count: record.total })}`;
+              const eventKey = eventKeyForStage?.(record.stageId);
               const search = buildDrillDownSearch(eventKey ? { eventKey } : {}).toString();
               const destination = subjectPath(
                 `/stages/${record.stageId}${search ? `?${search}` : ''}`,
@@ -185,16 +186,21 @@ function StagesCard({
  * Drillable-Row Contract. This card's only host is `TournamentDetailPage.tsx`
  * (own-account only, D-04), so it calls `useSubjectPath()` directly rather
  * than taking a host-supplied builder — there is no third-party-data host
- * rendering this component. `eventKey` (the host's tournament entry key) is
- * threaded down for the stage rows' event axis; it is optional because a
- * legacy entry may lack one.
+ * rendering this component.
+ *
+ * CR-03 (38-REVIEW-FIX): `eventKeyForStage` (a per-STAGE lookup, not a single
+ * flat string) is threaded down for the stage rows' event axis — a flat key
+ * shared by every row could only ever match ONE stage's real event-series
+ * anchor on `StageDetailPage.tsx` (that page scopes matches by stage BEFORE
+ * grouping into anchors, so each stage's anchor carries its OWN start time).
+ * Optional because a legacy entry may resolve no anchor for a given stage.
  */
 export function CharactersAndStages({
   matches,
-  eventKey,
+  eventKeyForStage,
 }: {
   matches: Match[];
-  eventKey?: string;
+  eventKeyForStage?: (stageId: number) => string | undefined;
 }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -213,7 +219,7 @@ export function CharactersAndStages({
         subjectPath={subjectPath}
         keyFn={(m) => m.opponent_id}
       />
-      <StagesCard matches={matches} subjectPath={subjectPath} eventKey={eventKey} />
+      <StagesCard matches={matches} subjectPath={subjectPath} eventKeyForStage={eventKeyForStage} />
     </div>
   );
 }

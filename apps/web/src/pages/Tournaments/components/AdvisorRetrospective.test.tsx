@@ -44,13 +44,13 @@ function renderRetro(
   allMatches: Match[],
   entryMatches: Match[],
   entry: TournamentEntry,
-  eventKey?: string,
+  eventKeyForStage?: (stageId: number) => string | undefined,
 ) {
   const retrospective = buildRetrospective(allMatches, entryMatches, entry);
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <AdvisorRetrospective retrospective={retrospective} eventKey={eventKey} />
+        <AdvisorRetrospective retrospective={retrospective} eventKeyForStage={eventKeyForStage} />
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -284,7 +284,9 @@ describe('AdvisorRetrospective', () => {
         externalId: 'sgg:1:g1',
       });
 
-      renderRetro([...pre, game], [game], entry, 'ultimate-singles-2026');
+      renderRetro([...pre, game], [game], entry, (stageId) =>
+        stageId === BATTLEFIELD.id ? 'ultimate-singles-2026' : undefined,
+      );
 
       const link = screen.getByRole('link', { name: /Followed advisor/ });
       expect(link).toHaveAttribute('href', '/stages/1?event=ultimate-singles-2026');
@@ -299,7 +301,7 @@ describe('AdvisorRetrospective', () => {
         externalId: 'sgg:1:g1',
       });
 
-      renderRetro([game], [game], entry, 'ultimate-singles-2026');
+      renderRetro([game], [game], entry, () => 'ultimate-singles-2026');
 
       expect(screen.getByText('Not enough data')).toBeInTheDocument();
       expect(screen.queryByRole('link')).not.toBeInTheDocument();

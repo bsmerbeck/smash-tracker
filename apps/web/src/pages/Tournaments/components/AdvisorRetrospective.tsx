@@ -141,16 +141,27 @@ function takeawayKey(game: ClassifiedGame): string {
  * verdict, reason or takeaway, all three of which are ordinary text nodes
  * in the page below.
  */
-/** Phase 38-07 (D-14): a pick opens the stage detail page scoped to this event — `undefined` when the played stage is unknown (`map.id` 0/absent), the ONLY permitted exemption for this row. */
+/**
+ * Phase 38-07 (D-14): a pick opens the stage detail page scoped to this event
+ * — `undefined` when the played stage is unknown (`map.id` 0/absent), the
+ * ONLY permitted exemption for this row.
+ *
+ * CR-03 (38-REVIEW-FIX): `eventKeyForStage` is a per-STAGE lookup (not a
+ * flat, whole-tournament string) — each pick names its OWN played stage
+ * (`game.match.map.id`), and `StageDetailPage.tsx` resolves `event=` against
+ * an anchor that is itself scoped by stage, so the key must be looked up for
+ * THIS pick's stage, never one shared value reused across every pick.
+ */
 function retrospectiveStageHref(
   game: ClassifiedGame,
-  eventKey: string | undefined,
+  eventKeyForStage: ((stageId: number) => string | undefined) | undefined,
   subjectPath: (path: string) => string,
 ): string | undefined {
   const stageId = game.match.map?.id ?? 0;
   if (stageId === 0) {
     return undefined;
   }
+  const eventKey = eventKeyForStage?.(stageId);
   const search = buildDrillDownSearch(eventKey ? { eventKey } : {}).toString();
   return subjectPath(`/stages/${stageId}${search ? `?${search}` : ''}`);
 }
@@ -233,11 +244,15 @@ function AdherenceSummaryCard({ summary }: { summary: Retrospective['summary'] }
  */
 export function AdvisorRetrospective({
   retrospective,
-  eventKey,
+  eventKeyForStage,
 }: {
   retrospective: Retrospective;
-  /** The host tournament entry's key (D-14) — threaded down rather than derived here, since a pick has no event key of its own. */
-  eventKey?: string;
+  /**
+   * CR-03 (38-REVIEW-FIX): a per-stage event-anchor-key lookup (D-14),
+   * threaded down rather than derived here, since a pick has no event key of
+   * its own — it names a stage, and the host resolves that stage's anchor.
+   */
+  eventKeyForStage?: (stageId: number) => string | undefined;
 }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -286,7 +301,7 @@ export function AdvisorRetrospective({
                       <GameVerdict
                         key={game.match.id}
                         game={game}
-                        destination={retrospectiveStageHref(game, eventKey, subjectPath)}
+                        destination={retrospectiveStageHref(game, eventKeyForStage, subjectPath)}
                       />
                     ))}
                   </div>
@@ -307,7 +322,7 @@ export function AdvisorRetrospective({
                     <GameVerdict
                       key={game.match.id}
                       game={game}
-                      destination={retrospectiveStageHref(game, eventKey, subjectPath)}
+                      destination={retrospectiveStageHref(game, eventKeyForStage, subjectPath)}
                     />
                   ))}
                 </div>

@@ -5,9 +5,11 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { TournamentDetailPage } from './TournamentDetailPage';
+import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { SpriteList } from '@/data/sprites';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
 
@@ -38,6 +40,7 @@ const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const createVodShare = vi.fn();
 const getMe = vi.fn();
+const listAliases = vi.fn();
 
 /** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
 function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
@@ -67,6 +70,11 @@ vi.mock('@/lib/api', async () => {
       },
       vodShares: {
         create: (...args: unknown[]) => createVodShare(...args),
+      },
+      opponents: {
+        aliases: {
+          list: (...args: unknown[]) => listAliases(...args),
+        },
       },
     },
   };
@@ -135,12 +143,41 @@ function renderPage(eventId = '42') {
   );
 }
 
+/**
+ * CR-03 (38-REVIEW-FIX): the real cross-page chain the pre-fix bug broke —
+ * `TournamentDetailPage` mounted alongside the REAL `StageDetailPage` (not a
+ * stub), so a "Stages Played" row's destination is exercised end-to-end
+ * rather than only asserting the raw `href` string. Needs
+ * `AnalyticsFilterProvider` (`StageDetailPage` reads `useFilteredMatches`)
+ * on top of `renderPage`'s harness.
+ */
+function renderTournamentAndStagePages(eventId = '42') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/tournaments/${eventId}`]}>
+        <AuthProvider>
+          <AnalyticsFilterProvider>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/tournaments/:eventId" element={<TournamentDetailPage />} />
+                <Route path="/stages/:stageId" element={<StageDetailPage />} />
+              </Routes>
+            </TooltipProvider>
+          </AnalyticsFilterProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe('TournamentDetailPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
     getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
     // Default: resolved, no brief — individual prep-CTA tests override this.
     mockPrepBrief({ isPending: false, activated: false });
   });
@@ -513,5 +550,84 @@ describe('TournamentDetailPage', () => {
 
       expect(await screen.findByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * CR-03 (38-REVIEW-FIX): the actual TournamentDetailPage -> CharactersAndStages
+ * -> StageDetailPage chain, rendered end-to-end (real StageDetailPage, not a
+ * stub) — pre-fix, `entry.entryKey` (a foreign registry key, unrelated to
+ * `eventSeries.ts`'s anchor-key format) was passed as the `event=` param, so
+ * `StageDetailPage`'s anchor lookup always missed and the destination always
+ * rendered its "nothing recorded" empty state, for every real tournament
+ * entry, every time.
+ */
+describe('TournamentDetailPage -> StageDetailPage stage-row drill-down (CR-03)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
+    mockPrepBrief({ isPending: false, activated: false });
+  });
+
+  it('a "Stages Played" row lands on a StageDetailPage that shows this event\'s games, not the empty state', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: Date.UTC(2021, 0, 1),
+        lastSetAt: Date.UTC(2021, 0, 1, 6),
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'g1',
+        time: Date.UTC(2021, 0, 1, 1),
+        win: true,
+        externalId: 'sgg:100:g1',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'g2',
+        time: Date.UTC(2021, 0, 1, 1, 5),
+        win: false,
+        externalId: 'sgg:100:g2',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'g3',
+        time: Date.UTC(2021, 0, 1, 1, 10),
+        win: true,
+        externalId: 'sgg:100:g3',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+    ]);
+
+    const user = userEvent.setup();
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    const stageLink = screen.getByRole('link', {
+      name: 'Battlefield — Stages Played, opens details',
+    });
+    // Pre-fix this was `/stages/1?event=42` (the raw entryKey) — a key
+    // StageDetailPage's own event series never produces.
+    expect(stageLink.getAttribute('href')).toMatch(/^\/stages\/1\?event=/);
+    expect(stageLink.getAttribute('href')).not.toContain('event=42');
+
+    await user.click(stageLink);
+
+    // The empty state never renders, AND the by-opponent table shows this
+    // opponent's real record from the three fixture games above.
+    expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
+    expect(await screen.findByText('By Opponent')).toBeInTheDocument();
+    const rivalLink = screen.getByRole('link', { name: 'rival' });
+    expect(rivalLink).toBeInTheDocument();
+    const row = rivalLink.closest('tr')!;
+    expect(row.textContent).toContain('2');
+    expect(row.textContent).toContain('1');
+    expect(screen.getAllByText('3 games · low confidence').length).toBeGreaterThan(0);
   });
 });

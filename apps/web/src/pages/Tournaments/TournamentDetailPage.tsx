@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { matchesForEntry, buildSetTimeline } from '@smash-tracker/shared';
+import {
+  anchorKey,
+  matchesForEntry,
+  buildSetTimeline,
+  stageBucketId,
+  trimmedEventKey,
+} from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
@@ -106,6 +112,53 @@ export function TournamentDetailPage() {
 
   const timeline = useMemo(() => buildSetTimeline(entryMatches), [entryMatches]);
 
+  /**
+   * CR-03 (38-REVIEW-FIX): a per-STAGE event-anchor key, one per stage this
+   * entry's matches touch — never `entry.entryKey` (the tournament
+   * registry's own foreign key, unrelated to
+   * `packages/shared/src/evidence/eventSeries.ts`'s anchor-key format).
+   * `StageDetailPage.tsx` resolves its `event=` param by looking up
+   * `buildStageEventSeries({ matches, stageId, ... })`'s own anchors, and
+   * that builder scopes matches by STAGE first, then groups by name — so the
+   * anchor's `startMs` (part of the key) is the min time among THIS STAGE's
+   * matches within the block, not the tournament's overall start time. A
+   * single flat key shared across every stage row (the pre-fix behaviour)
+   * can match at most one stage's anchor; this computes one key per stage
+   * instead, using the SAME `trimmedEventKey` name-priority rule and
+   * `anchorKey` format the engine's own anchors use (exported from
+   * `eventSeries.ts` for exactly this reuse). `entryMatches` are already
+   * bounded to this one tournament occurrence (`matchesForEntry`'s
+   * eventName[+tournamentName]+time-window filter), so every match here
+   * shares one name and the min-time-per-stage computed here matches what
+   * `buildStageEventSeries` independently derives for a real, single
+   * occurrence of this event.
+   */
+  const stageEventKeyByStageId = useMemo(() => {
+    const map = new Map<number, string>();
+    const [firstMatch] = entryMatches;
+    if (!firstMatch) {
+      return map;
+    }
+    const name = trimmedEventKey(firstMatch);
+    if (name == null) {
+      return map;
+    }
+    const minTimeByStage = new Map<number, number>();
+    for (const match of entryMatches) {
+      const stageId = stageBucketId(match);
+      const current = minTimeByStage.get(stageId);
+      if (current == null || match.time < current) {
+        minTimeByStage.set(stageId, match.time);
+      }
+    }
+    for (const [stageId, startMs] of minTimeByStage) {
+      map.set(stageId, anchorKey('tournament', name, startMs));
+    }
+    return map;
+  }, [entryMatches]);
+  const eventKeyForStage = (stageId: number): string | undefined =>
+    stageEventKeyByStageId.get(stageId);
+
   const retrospective = useMemo(() => {
     if (!entry) {
       return null;
@@ -180,17 +233,14 @@ export function TournamentDetailPage() {
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
-      <CharactersAndStages matches={entryMatches} eventKey={entry.entryKey ?? undefined} />
+      <CharactersAndStages matches={entryMatches} eventKeyForStage={eventKeyForStage} />
       {/* EVID-04 (D-10, D-18): renders for every entry including
           admin-imported ones — plan 37-06's retrospective grades historical
           picks under whichever ruleset applied to that event, and this is
           where that ruleset is disclosed and (own-account only) edited. */}
       <RulesetOverrideSection entry={entry} />
       {retrospective && (
-        <AdvisorRetrospective
-          retrospective={retrospective}
-          eventKey={entry.entryKey ?? undefined}
-        />
+        <AdvisorRetrospective retrospective={retrospective} eventKeyForStage={eventKeyForStage} />
       )}
       {canGenerateRecap && entry.entryKey && (
         <GenerateRecapDialog

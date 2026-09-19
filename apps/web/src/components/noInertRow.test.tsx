@@ -308,7 +308,9 @@ const SURFACES: Surface[] = [
     file: 'apps/web/src/pages/Tournaments/components/CharactersAndStages.tsx',
     render: () => {
       const matches = [makeMatch({ id: 'g1', time: 1, win: true })];
-      return withRouter(<CharactersAndStages matches={matches} eventKey="genesis-9" />);
+      return withRouter(
+        <CharactersAndStages matches={matches} eventKeyForStage={() => 'genesis-9'} />,
+      );
     },
     rows: (result) => within(result.container).getAllByRole('link'),
   },
@@ -336,7 +338,10 @@ const SURFACES: Surface[] = [
       const retrospective = buildRetrospective([...pre, game], [game], entry);
       return withRouter(
         <TooltipProvider>
-          <AdvisorRetrospective retrospective={retrospective} eventKey="genesis-9" />
+          <AdvisorRetrospective
+            retrospective={retrospective}
+            eventKeyForStage={() => 'genesis-9'}
+          />
         </TooltipProvider>,
       );
     },
