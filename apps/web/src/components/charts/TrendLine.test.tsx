@@ -142,9 +142,10 @@ describe('TrendLine — event mode', () => {
       expect(tickTexts).toContain(formatEventTickLabel(key));
     }
     expect(container.querySelectorAll('circle')).toHaveLength(4);
-    // The on-chart per-point label is a bare wins-dash-losses pair (D-11/ADV-02 spirit).
-    expect(container.textContent).toContain('0-1');
-    expect(container.textContent).toContain('3-1');
+    // The on-chart per-point label is a bare wins-en-dash-losses pair (D-11/ADV-02 spirit,
+    // opponents.hub.trend.pointLabel — en dash per the 38-UI-SPEC Copywriting Contract).
+    expect(container.textContent).toContain('0–1');
+    expect(container.textContent).toContain('3–1');
   });
 
   it('DENSE (thirty anchors): the rendered tick labels equal the eventTicks helper output for the same keys and width, mapped through the exported formatter — strictly fewer than thirty — while thirty dots still render', () => {
@@ -298,6 +299,6 @@ describe('ChartTooltip', () => {
     ).toBeInTheDocument();
     const expectedDate = new Date(1700000000000).toLocaleDateString('en');
     expect(getByText(expectedDate)).toBeInTheDocument();
-    expect(getByText('2-1 this event')).toBeInTheDocument();
+    expect(getByText('2–1 this event')).toBeInTheDocument();
   });
 });

@@ -187,7 +187,7 @@
       "resultOnly": "{{result}}",
       "gameNumber": "Manche {{game}}",
       "whoWhereEvent": "{{opponent}} à {{event}}",
-      "eventScore": "{{wins}}-{{losses}} pour cet événement"
+      "eventScore": "{{wins}}–{{losses}} pour cet événement"
     },
     "ruleset": {
       "control": {
@@ -1304,7 +1304,7 @@
     },
     "hub": {
       "trend": {
-        "pointLabel": "{{wins}}-{{losses}}"
+        "pointLabel": "{{wins}}–{{losses}}"
       }
     }
   },
