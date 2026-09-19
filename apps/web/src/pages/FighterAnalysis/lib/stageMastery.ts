@@ -1,14 +1,21 @@
 import type { Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES, MASTERY_CAPTION_MIN_GAMES } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { rankStagesByEvidence, type RankedStage } from '@/lib/stats';
 
 /**
- * Phase 36 (D-24, R1-MEDIUM-2): `MASTERY_CAPTION_MIN_GAMES` is now sourced
- * from `packages/shared/src/evidence/policy.ts` (raised 2 -> 3) rather than
- * declared here — a Best-pick/Ban-worthy caption is a per-stage Wilson-bound
- * claim about the user's play, the same class of claim D-07's floor governs.
+ * Phase 38-06 (ADV-03/D-13): the bespoke `buildStageMasteryCaption` wrapper
+ * (and its re-export of `MASTERY_CAPTION_MIN_GAMES`, which had no other
+ * consumer) is retired — `StageMastery.tsx` now builds its caption from
+ * `buildStageEvidence` (`packages/shared/src/evidence/stageEvidence.ts`),
+ * the SAME gated engine call `MatchupStageGuide.tsx` already reads, so both
+ * surfaces share one claim shape, one abstention message and one sample
+ * cue. `MASTERY_CAPTION_MIN_GAMES` is imported directly from
+ * `@smash-tracker/shared` at the one remaining call site. This was NOT a
+ * duplicate-computation bug: the retired wrapper already delegated to
+ * `rankStagesByEvidence` and applied a (currently equal) threshold constant
+ * — this retirement collapses two code paths into one shared shape, it does
+ * not correct a numeric discrepancy.
  */
-export { MASTERY_CAPTION_MIN_GAMES };
 
 /** Wilson lower-bound buckets driving the tile tint, mirroring the red -> grey -> emerald convention from the Matchups matrix (implemented locally per the Fighter Analysis spec, not imported). */
 export type MasteryTintBucket = 'weak' | 'even' | 'strong';
@@ -48,27 +55,4 @@ export function buildStageMasteryTiles(fighterMatches: Match[]): StageMasteryTil
     ...stage,
     tint: tintBucketForWilson(stage.wilson),
   }));
-}
-
-export interface StageMasteryCaption {
-  bestPick: RankedStage | null;
-  banWorthy: RankedStage | null;
-}
-
-/**
- * "Best pick / Ban-worthy" caption row for Stage Mastery: the top and bottom
- * evidence-ranked stages, each requiring at least `MASTERY_CAPTION_MIN_GAMES`
- * recorded matches (folds in the legacy BestWorstMap threshold semantics via
- * the evidence-aware ranking instead of raw win rate). When only one stage
- * qualifies it's reported as `bestPick` only, matching `getBestWorstStages`'s
- * "can't be both the recommendation and the warning" rule.
- */
-export function buildStageMasteryCaption(fighterMatches: Match[]): StageMasteryCaption {
-  const qualifying = rankStagesByEvidence(fighterMatches, MASTERY_CAPTION_MIN_GAMES);
-  if (qualifying.length === 0) {
-    return { bestPick: null, banWorthy: null };
-  }
-  const bestPick = qualifying[0] ?? null;
-  const banWorthy = qualifying.length > 1 ? (qualifying[qualifying.length - 1] ?? null) : null;
-  return { bestPick, banWorthy };
 }

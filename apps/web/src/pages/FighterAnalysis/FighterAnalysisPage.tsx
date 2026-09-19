@@ -104,7 +104,10 @@ export function FighterAnalysisPage() {
         <>
           <FighterHero fighter={fighter} fighterMatches={fighterMatches} allMatches={allMatches} />
 
-          <StageMastery fighterMatches={fighterMatches} />
+          <StageMastery
+            fighterMatches={fighterMatches}
+            stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
+          />
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">

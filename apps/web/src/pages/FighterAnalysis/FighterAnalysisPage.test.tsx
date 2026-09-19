@@ -263,7 +263,16 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('Practice Recommendations')).toBeInTheDocument());
-    expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
+    // Scoped to the Practice Recommendations card (plan 38-06/ADV-03): with
+    // only unknown-stage (id 0) games, Stage Mastery's OWN caption now ALSO
+    // renders the same shared abstention sentence (it used to render
+    // nothing here) — an unscoped query would find it twice.
+    const practiceCard = screen
+      .getByText('Practice Recommendations')
+      .closest('[data-slot="card"]')!;
+    expect(
+      within(practiceCard as HTMLElement).getByText(/Not enough data yet/),
+    ).toBeInTheDocument();
   });
 
   it('surfaces a practice recommendation once a matchup has enough losses', async () => {
@@ -315,9 +324,16 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getAllByText(luigi.name).length).toBeGreaterThan(0);
     expect(screen.getAllByText(fox.name).length).toBeGreaterThan(0);
     expect(screen.getByText('3-0')).toBeInTheDocument();
-    // Luigi's best stage qualifies (3 matches on Battlefield at 100%)
-    expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
-    expect(screen.getByText('(100% over 3)')).toBeInTheDocument();
+    // Luigi's best stage qualifies (3 matches on Battlefield at 100%). Scoped
+    // to the Matchup Stage Guide card (plan 38-06/ADV-03): Stage Mastery's
+    // OWN caption can independently qualify the SAME stage for the SAME
+    // fighter from the SAME underlying matches, and now that its stage name
+    // is a real link (H-01/ADV-03) rather than bare text, `(100% over 3)`
+    // reads as that `<p>`'s only OWN direct text — an unscoped query would
+    // find it twice.
+    const guideCard = screen.getByText('Matchup Stage Guide').closest('[data-slot="card"]')!;
+    expect(within(guideCard as HTMLElement).getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+    expect(within(guideCard as HTMLElement).getByText('(100% over 3)')).toBeInTheDocument();
   });
 
   it('lists named-opponent records in the Opponent table, ignoring blank names', async () => {

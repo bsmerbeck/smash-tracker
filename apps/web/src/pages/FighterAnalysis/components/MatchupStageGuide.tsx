@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { Match, SampleMeta } from '@smash-tracker/shared';
 import {
   EVIDENCE_POLICY_VERSION,
   RECENCY_TREATMENT,
+  UNKNOWN_STAGE_ID,
   confidenceTierFor,
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,9 +31,24 @@ import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
 
-function stageCell(record: StageRecord | null, t: TFunction, refreshedAt: number) {
+/**
+ * Phase 38-06 (ADV-03): this card's only host is `FighterAnalysisPage.tsx`
+ * (own-subject, `MemoryRouter`-wrapped test harness) — unlike
+ * `StageMastery.tsx`, there is no third-party-data host rendering this
+ * component bare, so it calls `useSubjectPath()` directly rather than
+ * taking a host-supplied builder.
+ */
+function stageCell(
+  record: StageRecord | null,
+  opponentFighterId: number,
+  t: TFunction,
+  refreshedAt: number,
+  subjectPath: (path: string) => string,
+) {
   if (!record) {
     return <span className="text-muted-foreground">—</span>;
   }
@@ -46,15 +63,24 @@ function stageCell(record: StageRecord | null, t: TFunction, refreshedAt: number
     recencyTreatment: RECENCY_TREATMENT,
     confidenceTier: confidenceTierFor(record.total),
   };
-  return (
-    <span>
+  const label = (
+    <>
       {name}{' '}
       <span className="text-muted-foreground">
         {t('common.rateOverSample', { rate: record.winRate, total: record.total })}
       </span>{' '}
       <SampleCue sample={sample} />
-    </span>
+    </>
   );
+  // An unaddressable target (the unknown-stage sentinel) is an enumerated
+  // exemption, not an inert row — plain text, never a link.
+  if (record.stageId === UNKNOWN_STAGE_ID) {
+    return <span>{label}</span>;
+  }
+  const destination = subjectPath(
+    `/stages/${record.stageId}?${buildDrillDownSearch({ vsFighterId: opponentFighterId }).toString()}`,
+  );
+  return <Link to={destination}>{label}</Link>;
 }
 
 /**
@@ -75,6 +101,7 @@ function stageCell(record: StageRecord | null, t: TFunction, refreshedAt: number
  */
 export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] }) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const [threshold, setThreshold] = useMinStageMatches();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
@@ -152,8 +179,24 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                         {row.record.wins}-{row.record.losses}
                       </TableCell>
                       <TableCell>{row.record.winRate}%</TableCell>
-                      <TableCell>{stageCell(row.bestStage, t, refreshedAt)}</TableCell>
-                      <TableCell>{stageCell(row.worstStage, t, refreshedAt)}</TableCell>
+                      <TableCell>
+                        {stageCell(
+                          row.bestStage,
+                          row.opponentFighterId,
+                          t,
+                          refreshedAt,
+                          subjectPath,
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {stageCell(
+                          row.worstStage,
+                          row.opponentFighterId,
+                          t,
+                          refreshedAt,
+                          subjectPath,
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}

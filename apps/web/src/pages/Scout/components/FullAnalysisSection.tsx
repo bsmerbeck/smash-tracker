@@ -100,6 +100,15 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
 
   return (
     <>
+      {/*
+        Phase 38-06 (H-01/T-38-06-02): NO `stageHref` supplied at either
+        instance below — this surface is own-account-only (D-04) and its
+        tiles describe a SCOUTED PLAYER's play, not the viewer's. A stage
+        link built here would resolve into the VIEWER's own stage history
+        and silently answer a different question. This is also why
+        `StageMastery` must stay router-free: this host's test file renders
+        it bare, with no `MemoryRouter`.
+      */}
       <StageMastery fighterMatches={matches} title={t('scout.fullAnalysis.stageMasteryOverall')} />
 
       {showTopCharacterCard && (

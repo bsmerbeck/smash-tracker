@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
 import {
-  buildStageMasteryCaption,
   buildStageMasteryTiles,
   tintBucketForWilson,
   STRONG_THRESHOLD,
@@ -85,48 +84,11 @@ describe('buildStageMasteryTiles', () => {
   });
 });
 
-describe('buildStageMasteryCaption', () => {
-  // Phase 36 (D-05/D-07): `MASTERY_CAPTION_MIN_GAMES` (2) is now routed
-  // through `rankStagesByEvidence`'s `effectiveFloor`, which raises any
-  // sub-floor caller minimum to ABSTENTION_FLOOR_GAMES (3) — so both
-  // fixtures below need >=3 games to clear the gate at all.
-  it('reports both a best pick and ban-worthy stage when 2+ stages qualify (>=3 games each)', () => {
-    const matches = [
-      ...Array.from({ length: 4 }, (_, i) =>
-        makeMatch({ id: `fd${i}`, time: i, win: true, map: FD }),
-      ),
-      makeMatch({ id: 'bf1', time: 10, win: false, map: BATTLEFIELD }),
-      makeMatch({ id: 'bf2', time: 11, win: false, map: BATTLEFIELD }),
-      makeMatch({ id: 'bf3', time: 12, win: false, map: BATTLEFIELD }),
-    ];
-
-    const caption = buildStageMasteryCaption(matches);
-
-    expect(caption.bestPick?.stageId).toBe(FD.id);
-    expect(caption.banWorthy?.stageId).toBe(BATTLEFIELD.id);
-  });
-
-  it('reports only a best pick when just one stage qualifies', () => {
-    const matches = [
-      makeMatch({ id: 'fd1', time: 1, win: true, map: FD }),
-      makeMatch({ id: 'fd2', time: 2, win: true, map: FD }),
-      makeMatch({ id: 'fd3', time: 3, win: true, map: FD }),
-      // Single game elsewhere never reaches the abstention floor.
-      makeMatch({ id: 'sv1', time: 4, win: false, map: SMASHVILLE }),
-    ];
-
-    const caption = buildStageMasteryCaption(matches);
-
-    expect(caption.bestPick?.stageId).toBe(FD.id);
-    expect(caption.banWorthy).toBeNull();
-  });
-
-  it('reports neither when no stage has met the threshold', () => {
-    const matches = [makeMatch({ id: 'fd1', time: 1, win: true, map: FD })];
-    expect(buildStageMasteryCaption(matches)).toEqual({ bestPick: null, banWorthy: null });
-  });
-
-  it('reports neither when there are no matches', () => {
-    expect(buildStageMasteryCaption([])).toEqual({ bestPick: null, banWorthy: null });
-  });
-});
+/**
+ * Phase 38-06 (ADV-03/D-13): `buildStageMasteryCaption` and its dedicated
+ * test cases are retired — `StageMastery.tsx`'s caption now comes from
+ * `buildStageEvidence` (`@smash-tracker/shared`), asserted at the component
+ * level (`StageMastery.test.tsx`) where the engine call and the sample cue
+ * render together. The tile-builder and tint-bucketing cases above are
+ * unchanged by this retirement.
+ */
