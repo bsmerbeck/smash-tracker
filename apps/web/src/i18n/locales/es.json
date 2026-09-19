@@ -119,6 +119,18 @@
       "message": "Ninguna partida coincide con los filtros actuales.",
       "clear": "Borrar filtros"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}} partida · {{filters}}",
+      "summary_other": "{{count}} partidas · {{filters}}",
+      "clear": "Borrar filtros",
+      "empty": "Ninguna partida coincide con estos filtros.",
+      "loading": "Cargando partidas…",
+      "rowVod": "{{opponent}} — {{stage}}, {{result}}, abre el video",
+      "rowExpand": "{{opponent}} — {{stage}}, {{result}}, mostrar detalles",
+      "columnMyCharacter": "Mi personaje",
+      "columnTheirCharacter": "Su personaje",
+      "columnEvent": "Evento"
+    },
     "pips": {
       "empty": "Aún no hay partidas.",
       "recentResults": "Últimos {{count}} resultados, primero el más reciente"

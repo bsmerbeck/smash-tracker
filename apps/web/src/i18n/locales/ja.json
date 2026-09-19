@@ -119,6 +119,18 @@
       "message": "現在のフィルターに一致する対戦がありません。",
       "clear": "フィルターを解除"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}}試合 · {{filters}}",
+      "summary_other": "{{count}}試合 · {{filters}}",
+      "clear": "フィルターを解除",
+      "empty": "このフィルターに一致する対戦がありません。",
+      "loading": "対戦を読み込み中…",
+      "rowVod": "{{opponent}} — {{stage}}、{{result}}、動画を開く",
+      "rowExpand": "{{opponent}} — {{stage}}、{{result}}、詳細を表示",
+      "columnMyCharacter": "自分のキャラクター",
+      "columnTheirCharacter": "相手のキャラクター",
+      "columnEvent": "大会"
+    },
     "pips": {
       "empty": "まだ対戦がありません。",
       "recentResults": "直近{{count}}戦の結果（新しい順）"

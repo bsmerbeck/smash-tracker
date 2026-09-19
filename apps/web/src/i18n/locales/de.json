@@ -119,6 +119,18 @@
       "message": "Keine Matches entsprechen den aktuellen Filtern.",
       "clear": "Filter zurücksetzen"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}} Spiel · {{filters}}",
+      "summary_other": "{{count}} Spiele · {{filters}}",
+      "clear": "Filter zurücksetzen",
+      "empty": "Keine Spiele entsprechen diesen Filtern.",
+      "loading": "Spiele werden geladen…",
+      "rowVod": "{{opponent}} — {{stage}}, {{result}}, öffnet Video",
+      "rowExpand": "{{opponent}} — {{stage}}, {{result}}, Details anzeigen",
+      "columnMyCharacter": "Mein Charakter",
+      "columnTheirCharacter": "Ihr Charakter",
+      "columnEvent": "Event"
+    },
     "pips": {
       "empty": "Noch keine Matches.",
       "recentResults": "Letzte {{count}} Ergebnisse, neueste zuerst"

@@ -119,6 +119,18 @@
       "message": "Aucun match ne correspond aux filtres actuels.",
       "clear": "Effacer les filtres"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}} match · {{filters}}",
+      "summary_other": "{{count}} matchs · {{filters}}",
+      "clear": "Effacer les filtres",
+      "empty": "Aucune partie ne correspond à ces filtres.",
+      "loading": "Chargement des parties…",
+      "rowVod": "{{opponent}} — {{stage}}, {{result}}, ouvre la vidéo",
+      "rowExpand": "{{opponent}} — {{stage}}, {{result}}, afficher les détails",
+      "columnMyCharacter": "Mon personnage",
+      "columnTheirCharacter": "Son personnage",
+      "columnEvent": "Événement"
+    },
     "pips": {
       "empty": "Pas encore de matchs.",
       "recentResults": "{{count}} derniers résultats, du plus récent au plus ancien"

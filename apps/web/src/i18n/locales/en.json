@@ -125,6 +125,18 @@
       "message": "No matches match the current filters.",
       "clear": "Clear filters"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}} game · {{filters}}",
+      "summary_other": "{{count}} games · {{filters}}",
+      "clear": "Clear filters",
+      "empty": "No games match these filters.",
+      "loading": "Loading games…",
+      "rowVod": "{{opponent}} — {{stage}}, {{result}}, opens video",
+      "rowExpand": "{{opponent}} — {{stage}}, {{result}}, show details",
+      "columnMyCharacter": "My character",
+      "columnTheirCharacter": "Their character",
+      "columnEvent": "Event"
+    },
     "pips": {
       "empty": "No matches yet.",
       "recentResults": "Last {{count}} results, newest first"
