@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -231,6 +231,91 @@ describe('FilteredMatchList', () => {
     // Static assertion companion to the module-level grep gate — kept here
     // so a reviewer sees the intent alongside the behavioural tests.
     expect(matchHasAttachedVideo).toBeTypeOf('function');
+  });
+});
+
+describe('FilteredMatchList — responsive layout (phase 38-08, UI-SPEC E4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('wide branch (explicit): renders a table, no stacked-list root, one data row per narrowed match', () => {
+    const matches = [
+      makeMatch({ id: 'a', vodUrl: undefined }),
+      makeMatch({ id: 'b', vodUrl: undefined }),
+    ];
+    const { container } = renderList({ matches, layout: 'table' });
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).toBeNull();
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('button')).toHaveLength(matches.length);
+  });
+
+  it('narrow branch (explicit): renders the stacked-list root, no table anywhere, one list item per narrowed match with nothing expanded', () => {
+    const matches = [
+      makeMatch({ id: 'a', vodUrl: undefined }),
+      makeMatch({ id: 'b', vodUrl: undefined }),
+    ];
+    const { container } = renderList({ matches, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]');
+    expect(stack).not.toBeNull();
+    expect(container.querySelector('table')).toBeNull();
+    expect(within(stack as HTMLElement).getAllByRole('listitem')).toHaveLength(matches.length);
+    expect(within(stack as HTMLElement).queryAllByText('Battlefield')).toHaveLength(matches.length);
+  });
+
+  it('narrowing parity: both explicit layouts render exactly the narrowed count, not the full count', () => {
+    const matches = [
+      makeMatch({ id: 'a', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'b', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'c', map: { id: 2, name: 'Pokemon Stadium 2' } }),
+    ];
+    const axes: DrillDownAxes = { stageId: 1 };
+
+    const { container: tableContainer } = renderList({ matches, axes, layout: 'table' });
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(3); // header + 2 body rows
+    void tableContainer;
+
+    const { container: stackContainer } = renderList({ matches, axes, layout: 'stack' });
+    const stack = stackContainer.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('D-08 split in the narrow branch: exactly one anchor containing the vod match id, exactly one expand button', () => {
+    const matches = [
+      makeMatch({ id: 'vid', vodUrl: 'https://youtu.be/x' }),
+      makeMatch({ id: 'novid', vodUrl: undefined }),
+    ];
+    renderList({ matches, layout: 'stack' });
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', expect.stringContaining('vid'));
+    const buttons = screen.getAllByRole('button', { name: /show details|opens video/i });
+    expect(buttons).toHaveLength(1);
+  });
+
+  it('default branch (no stub, no override): jsdom has no matchMedia, so it renders the table', () => {
+    const matches = [makeMatch({ id: 'a' })];
+    const { container } = renderList({ matches });
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).toBeNull();
+  });
+
+  it('default branch (matchMedia stubbed to match): renders the stack, no table', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    const matches = [makeMatch({ id: 'a' })];
+    const { container } = renderList({ matches });
+    expect(container.querySelector('[data-slot="filtered-match-stack"]')).not.toBeInTheDocument();
+    expect(container.querySelector('table')).toBeNull();
   });
 });
 
