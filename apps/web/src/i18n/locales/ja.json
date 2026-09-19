@@ -1334,6 +1334,18 @@
       "empty": "{{opponent}}との対戦記録はまだありません。"
     }
   },
+  "stages": {
+    "detail": {
+      "title": "{{stage}}",
+      "atEvent": "{{eventName}}にて",
+      "byOpponent": "対戦相手別",
+      "byCharacter": "キャラクター別",
+      "overTime": "推移",
+      "games": "試合",
+      "loading": "ステージを読み込み中…",
+      "empty": "このステージではまだ試合が記録されていません。"
+    }
+  },
   "scout": {
     "title": "プレイヤーを検索",
     "prompt": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",

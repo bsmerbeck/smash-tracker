@@ -48,6 +48,12 @@ const OpponentsPage = retryableLazy(() =>
 const OpponentHubPage = retryableLazy(() =>
   import('@/pages/Opponents/OpponentHubPage').then((m) => ({ default: m.OpponentHubPage })),
 );
+// Plan 38-06 (DRL-01): the per-stage detail page — every stage row in the
+// app drills here, carrying the stage id as a path segment. Its own lazy
+// factory, same isolation reasoning as `OpponentHubPage` above.
+const StageDetailPage = retryableLazy(() =>
+  import('@/pages/Stages/StageDetailPage').then((m) => ({ default: m.StageDetailPage })),
+);
 
 interface SubjectAnalyticsRouteDescriptor {
   /** Leaf path segment, no leading slash — composes under any parent route. */
@@ -64,6 +70,8 @@ const subjectAnalyticsRouteDescriptors: SubjectAnalyticsRouteDescriptor[] = [
   // `/opponents` path in every family — this leaf requires a non-empty
   // trailing segment, so the two never collide.
   { path: 'opponents/:opponentTag', element: <OpponentHubPage /> },
+  // Plan 38-06 (DRL-01): the per-stage breakdown, one entry for three families.
+  { path: 'stages/:stageId', element: <StageDetailPage /> },
 ];
 
 /**

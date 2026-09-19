@@ -1334,6 +1334,18 @@
       "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet."
     }
   },
+  "stages": {
+    "detail": {
+      "title": "{{stage}}",
+      "atEvent": "bei {{eventName}}",
+      "byOpponent": "Nach Gegner",
+      "byCharacter": "Nach Charakter",
+      "overTime": "Im Zeitverlauf",
+      "games": "Spiele",
+      "loading": "Stage wird geladen…",
+      "empty": "Für diese Stage sind noch keine Spiele erfasst."
+    }
+  },
   "scout": {
     "title": "Spieler scouten",
     "prompt": "Füge oben eine start.gg-Profil-URL, einen Slug oder eine Spieler-ID ein, um die öffentliche Turnier-Historie abzurufen.",

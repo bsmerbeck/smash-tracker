@@ -1334,6 +1334,18 @@
       "empty": "No games recorded against {{opponent}} yet."
     }
   },
+  "stages": {
+    "detail": {
+      "title": "{{stage}}",
+      "atEvent": "at {{eventName}}",
+      "byOpponent": "By Opponent",
+      "byCharacter": "By Character",
+      "overTime": "Over Time",
+      "games": "Games",
+      "loading": "Loading stage…",
+      "empty": "No games recorded on this stage yet."
+    }
+  },
   "scout": {
     "title": "Scout a Player",
     "prompt": "Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.",

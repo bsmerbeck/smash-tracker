@@ -1334,6 +1334,18 @@
       "empty": "Ainda não há partidas registradas contra {{opponent}}."
     }
   },
+  "stages": {
+    "detail": {
+      "title": "{{stage}}",
+      "atEvent": "em {{eventName}}",
+      "byOpponent": "Por adversário",
+      "byCharacter": "Por personagem",
+      "overTime": "Ao longo do tempo",
+      "games": "Partidas",
+      "loading": "Carregando estágio…",
+      "empty": "Ainda não há partidas registradas neste estágio."
+    }
+  },
   "scout": {
     "title": "Buscar jogador",
     "prompt": "Cole acima uma URL de perfil do start.gg, um slug ou um id de jogador para ver o histórico público de torneios.",
