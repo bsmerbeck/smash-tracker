@@ -1,4 +1,4 @@
-import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { anchorKey, type Match, type TournamentEntry } from '@smash-tracker/shared';
 import { stagesById } from '@/data/stages';
 
 /**
@@ -159,18 +159,26 @@ export interface TournamentBlock {
 }
 
 /**
- * Phase 38-07 (D-12/D-14): mirrors
- * `packages/shared/src/evidence/eventSeries.ts`'s private `anchorKey('tournament',
- * name, startMs)` format EXACTLY (`` `tournament:${name.trim().toLowerCase()}:${startMs}` ``)
- * — kept in sync by naming that file, never by importing it (`packages/shared`
- * must never be modified by this plan, and `apps/web` must never be imported
- * from `packages/shared`). This is what lets a `TournamentHistory` set row
- * write the SAME event-anchor key `OpponentHubPage`'s own trend-point clicks
- * already write, so the hub's `FilteredMatchList` terminus narrows
- * identically regardless of which surface produced the key.
+ * CR-02 (38-REVIEW-FIX): calls the SAME exported `anchorKey('tournament', name,
+ * startMs)` builder `packages/shared/src/evidence/eventSeries.ts` uses for its
+ * own anchors, rather than re-deriving the format by hand — the previous copy
+ * hard-coded the template string AND keyed on `block.displayName`
+ * (`tournamentName ?? eventName`, tournament-name-first — chosen for DISPLAY),
+ * which silently diverged from the engine's own anchor key (`eventName ??
+ * tournamentName`, event-name-first) whenever a match carried both fields
+ * with different values — the standard shape for any start.gg-synced set
+ * with a named parent tournament. `block.eventName` (not `displayName`) is
+ * the correct input: `groupTournamentBlocks` only ever admits matches with a
+ * non-empty `eventName`, so it already IS the engine's `trimmedEventKey`
+ * priority winner for every match in this block — never `displayName`, which
+ * stays tournament-name-first because it's user-facing text, not an anchor
+ * identity. This is what lets a `TournamentHistory` set row write the SAME
+ * event-anchor key `OpponentHubPage`'s own trend-point clicks already write,
+ * so the hub's `FilteredMatchList` terminus narrows identically regardless of
+ * which surface produced the key.
  */
 export function tournamentBlockEventKey(block: TournamentBlock): string {
-  return `tournament:${block.displayName.trim().toLowerCase()}:${block.startTime}`;
+  return anchorKey('tournament', block.eventName, block.startTime);
 }
 
 /**

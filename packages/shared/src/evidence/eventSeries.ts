@@ -64,7 +64,19 @@ interface RawAnchor {
   matches: Match[];
 }
 
-function trimmedEventKey(match: Match): string | null {
+/**
+ * CR-02 (38-REVIEW-FIX): the ONE name-priority rule for a tournament anchor
+ * — `eventName` first, `tournamentName` as fallback. Exported so every other
+ * module that needs to reproduce (never re-derive by hand) which name a
+ * match's tournament anchor uses reads it from here — `apps/web`'s
+ * `tournamentHistory.ts` (`tournamentBlockEventKey`) and `TournamentDetailPage.tsx`
+ * both used to hard-code their OWN, differently-prioritized expression,
+ * which silently diverged from the anchors this module actually builds
+ * (`buildOpponentEventSeries`/`buildStageEventSeries`) whenever a match
+ * carried both fields with different values — the standard shape for any
+ * start.gg-synced set with a named parent tournament.
+ */
+export function trimmedEventKey(match: Match): string | null {
   const raw = match.eventName ?? match.tournamentName;
   if (raw == null) {
     return null;
@@ -126,7 +138,13 @@ function buildSessionAnchors(matches: Match[]): RawAnchor[] {
   }));
 }
 
-function anchorKey(kind: EventAnchorKind, name: string, startMs: number): string {
+/**
+ * CR-02/CR-03 (38-REVIEW-FIX): the ONE anchor-key FORMAT, exported alongside
+ * `trimmedEventKey` for the identical reason — any module that needs to
+ * compute (never hand-format) the key one of this module's own anchors will
+ * carry must call this, not re-implement the template string.
+ */
+export function anchorKey(kind: EventAnchorKind, name: string, startMs: number): string {
   return `${kind}:${name.trim().toLowerCase()}:${startMs}`;
 }
 

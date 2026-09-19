@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { buildOpponentEventSeries, type Match, type TournamentEntry } from '@smash-tracker/shared';
 import {
   abbreviateStageName,
   getEncounterContext,
@@ -7,6 +7,7 @@ import {
   groupTournamentBlocks,
   parseSetId,
   resolveTournamentEntry,
+  tournamentBlockEventKey,
   TOURNAMENT_PROXIMITY_WINDOW_MS,
 } from './tournamentHistory';
 
@@ -282,6 +283,49 @@ describe('groupTournamentBlocks', () => {
     const blocks = groupTournamentBlocks(matches);
 
     expect(blocks.map((b) => b.displayName)).toEqual(['Newer Event', 'Older Event']);
+  });
+});
+
+describe('tournamentBlockEventKey (CR-02, 38-REVIEW-FIX)', () => {
+  it('equals a key present in buildOpponentEventSeries output for a match with both eventName and tournamentName set and different', () => {
+    // The standard start.gg-synced shape (apps/api/src/startgg/sync.ts:85-86):
+    // eventName ("Ultimate Singles") names the bracket, tournamentName ("The
+    // Big House 9") names the parent event — normally different strings.
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 1_000,
+        win: true,
+        opponent: 'rival',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        externalId: 'sgg:100:g1',
+      }),
+      makeMatch({
+        id: 'g2',
+        time: 2_000,
+        win: false,
+        opponent: 'rival',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        externalId: 'sgg:100:g2',
+      }),
+    ];
+
+    const [block] = groupTournamentBlocks(matches);
+    // The display name is still tournament-name-first (user-facing text) —
+    // deliberately NOT what the key is derived from.
+    expect(block!.displayName).toBe('The Big House 9');
+
+    const series = buildOpponentEventSeries({
+      matches,
+      aliasMap: {},
+      opponentTag: 'rival',
+      refreshedAt: Date.now(),
+    });
+    const seriesKeys = series.map((a) => a.key);
+
+    expect(seriesKeys).toContain(tournamentBlockEventKey(block!));
   });
 });
 
