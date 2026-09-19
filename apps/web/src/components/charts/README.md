@@ -105,7 +105,7 @@ variant, no new surface colour, no new spacing value.
 | Body            | `children`                                    | The chart or comparison-bar content.                                                                                                                  |
 | Footer          | `footer?`                                     | Rendered below `children` when not abstained (e.g. a click hint).                                                                                     |
 
-## The vocabulary — five members, three implemented (D-05)
+## The vocabulary — five members, four implemented (D-05, D-09)
 
 ### Implemented this phase
 
@@ -116,6 +116,21 @@ plus a zero-size bounding rect make a `ResponsiveContainer` render measure 0×0,
 renders at an explicit size and only the runtime page omits `width` for the responsive wrapper),
 `tooltip?` (defaults to `ChartTooltip`). `TrendChartPoint`/`TrendChartPointContext` are exported
 from `TrendLine.tsx` itself (not a separate types file) — import the vocabulary from there.
+
+**Two rendering modes (plan 38-03, D-11/OPP-03):** a `mode: 'index' | 'event'` prop, defaulting to
+`'index'` so every Phase 37 call site is byte-unchanged. `'index'` (unchanged): a numeric
+game-index x-axis with linear (`type="linear"`) interpolation — the Matchups page's rolling/
+cumulative window selector stays on this mode. `'event'`: a CATEGORICAL x-axis keyed on the
+engine-built anchor key (`packages/shared/src/evidence/eventSeries.ts`'s `EventAnchor.key` — never
+an array index, never a rolling-N window), a stepped (`type="stepAfter"`) line, and an
+always-visible per-anchor W-L label rendered ON the chart (content, not a hover affordance).
+`TrendEventPoint`/`TrendEventPointContext` are the event-mode point shapes, exported alongside the
+existing numeric ones from `TrendLine.tsx`. Tick DENSITY for the event axis is decided by the
+component itself, from a pure helper (`eventTicks.ts`'s `selectEventTicks`), and handed to the axis
+as an explicit `ticks` array — never delegated to Recharts' `preserveStart`/`preserveStartEnd`
+interval modes, which decide what to drop by MEASURING rendered text through
+`getBoundingClientRect` and therefore never thin under jsdom's all-zero rects. `eventTicks.ts` also
+exports the tick-label truncation formatter (`formatEventTickLabel`) applied to every rendered tick.
 
 **Comparison bars** (`ComparisonBars.tsx`, shipped plan 37-05) — horizontal bars per
 stage/category, one `<li>` per row. Props: `rows: ComparisonBarsRow[]` (`{ key, label: ReactNode,
@@ -139,6 +154,36 @@ member exists to fix). See `MatchWinLossCard`'s promotion to a stat tile: `stats
 Losses row, `trend` = the existing `WinLossPips` component reused as the sparkline-equivalent — no
 new sparkline mechanism was invented for this. Test rule: colocated `StatTile.test.tsx` asserts one
 rendered stat cell per entry and the trend row's presence/absence.
+
+**Matrix heat** (`MatrixHeat.tsx`, pulled forward from its Phase 41 sketch to plan 38-03, per D-09 —
+OPP-02 needs a cross-tab this phase) — a `rows × cols` cross-tab, sized by what actually happened
+rather than by a dense roster: no row for a pairing that was never played, no column for an axis
+value that was never played. Props, as actually implemented (correcting the sketch below): `rows:
+MatrixHeatAxis[]` and `cols: MatrixHeatAxis[]` (`{ key, label: string, isUnknown? }` — an
+already-localized text label the host supplies; the component resolves no name of its own),
+`cells: MatrixHeatCell[]` (sparse — `{ rowKey, colKey, wins, losses, total, confidenceTier,
+sample }`), `onSelectCell?: (cell) => void`, `emptyMessage: ReactNode` (rendered instead of the
+table when `rows` or `cols` is empty), and a `layout?: 'grid' | 'stack'` test/host override. **The
+sketch's `value: number | null` scalar became a `{ wins, losses }` pair on implementation** — D-09
+requires the cell to SHOW its record, not just imply it through colour, so a single scalar could
+never carry that. The sketch's `colorScale: (value) => string` callback became a fixed, internal
+four-step function instead of a host-supplied prop — see below for why the scale is discrete.
+
+**The tint is a DISCRETE four-step function (sub-floor, low, medium, high), never the existing 2D
+matrix's continuous blend** (`matchupCellBackground`, deliberately not reused here): a continuous
+interpolation cannot express the sub-floor step as its own CATEGORY — it can only render "not
+enough data" as a paler shade of a verdict, which is exactly the wrong reading. Every step reads
+the engine's own `confidenceTier` value on the cell; the component recomputes no tier and declares
+no bound of its own. An unknown row or column (`isUnknown: true`) forces every cell in it to the
+sub-floor-neutral treatment regardless of its own count — the axis itself is the caveat, never a
+count the axis could earn its way out of. Plain DOM: this member imports no chart library at all,
+so — like `ComparisonBars.tsx` — it is correctly ABSENT from `chartKitBoundary.test.ts`'s
+`KIT_CHART_PRIMITIVES` list. Responsive: a `matchMedia`-backed check (jsdom has no `matchMedia`, so
+the default under test is always the desktop grid) picks between the `overflow-x-auto` sticky-first-
+column table and a `Tabs` stack (one tab per row) below the narrow breakpoint; the `layout` prop
+lets a test or host force either branch explicitly. Test rule: colocated `MatrixHeat.test.tsx`
+asserts the rendered button count equals the supplied cell count (never rows × cols), the sub-floor/
+unknown-axis neutral treatment, the tiered win/loss/neutral tint, and cell activation.
 
 **The collision rule, concretely, as it applies on Matchups today:** the win-rate trend line
 (`TrendLine.tsx`) wears the categorical identity token `--chart-1` — it is not read as good/bad, its
@@ -168,29 +213,6 @@ existing `TrendLine` primitive at a smaller fixed size — this is a LAYOUT/comp
 over the existing trend primitive, not a new chart type. Interaction: clicking a cell's chart
 follows the same click-to-matches contract as the full-size trend chart.
 
-**Matrix heat** — a 2D heatmap (e.g. stage × opponent), each cell shaded by a scalar (win rate,
-sample size). Sketched API:
-
-```ts
-interface MatrixHeatCell {
-  rowKey: string;
-  colKey: string;
-  value: number | null; // null renders the abstained/no-data cell treatment
-  sampleCue?: ReactNode;
-}
-
-interface MatrixHeatProps {
-  rows: string[];
-  cols: string[];
-  cells: MatrixHeatCell[];
-  colorScale: (value: number) => string; // must resolve to a --chart-* or status token, never a raw hex
-  onSelectCell?: (cell: MatrixHeatCell) => void;
-}
-```
-
-Expected data shape: a dense `rows × cols` cell list (missing pairs render the no-data treatment,
-never a blank gap). Interaction: click-to-matches, same contract as every other kit member.
-
 ## Tooltips and interaction (D-06, D-07)
 
 **Every displayed tooltip field arrives PRE-RESOLVED on the point/cell object.** The chart layer
@@ -205,6 +227,16 @@ rendering stripped of the game it came from.
 `coordinate`/`accessibilityLayer`/`activeIndex` fields are non-optional — they describe what
 Recharts computes internally before cloning the element via `content={<ChartTooltip />}`). Every
 custom Recharts tooltip content component in this kit follows that same narrower shape.
+
+**Event mode's tooltip rows (plan 38-03, D-11):** `ChartTooltip` branches on the point shape (an
+`eventKey` field distinguishes `TrendEventPoint` from the numeric `TrendChartPoint`) but the
+pre-resolved rule above still holds without exception. The event-mode branch renders: the
+cumulative rate (same key as the numeric mode), an opponent-at-event row
+(`shared.chartTooltip.whoWhereEvent`, "{{opponent}} at {{event}}" — the FULL event name, never
+truncated here, unlike the axis tick), the date row (the existing date-only key — a single event
+can span several stages, so there is no stage to combine it with), and an event-scoped score row
+(`shared.chartTooltip.eventScore`, that anchor's own W-L). The numeric-mode branch is byte-identical
+to before.
 
 **Click-to-matches is the drill-down mechanism for this phase** (D-07): clicking a chart
 point/bar/cell sets in-page selection state that filters/highlights a table and scrolls to it — no
