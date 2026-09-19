@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
-import { buildAnalyzeOpponentPath, resolveAnalyzeOpponentPreselection } from './analyzeOpponent';
+import {
+  buildAnalyzeOpponentPath,
+  buildOpponentHubPath,
+  readOpponentHubTagParam,
+  resolveAnalyzeOpponentPreselection,
+} from './analyzeOpponent';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -36,6 +41,55 @@ describe('buildAnalyzeOpponentPath', () => {
   it('returns null when nothing identifies the opponent', () => {
     expect(buildAnalyzeOpponentPath({})).toBeNull();
     expect(buildAnalyzeOpponentPath({ opponent: '' })).toBeNull();
+  });
+
+  it('is byte-identical to before plan 38-05 added the hub path pair — the legacy query form is unchanged', () => {
+    const path = buildAnalyzeOpponentPath({
+      opponentUserSlug: 'user/9fb774ae',
+      opponent: 'mkleo',
+    });
+    expect(path).toBe(
+      `/opponents?player=${encodeURIComponent('sgg:user/9fb774ae')}&opponent=mkleo`,
+    );
+  });
+});
+
+describe('buildOpponentHubPath / readOpponentHubTagParam (plan 38-05, D-02)', () => {
+  it('round-trips an ASCII tag', () => {
+    const path = buildOpponentHubPath('mkleo');
+    expect(path).toBe('/opponents/mkleo');
+    const segment = path.split('/opponents/')[1]!;
+    expect(readOpponentHubTagParam(segment)).toBe('mkleo');
+  });
+
+  it('round-trips a non-ASCII tag', () => {
+    const tag = 'プレイヤー';
+    const path = buildOpponentHubPath(tag);
+    const segment = path.split('/opponents/')[1]!;
+    expect(readOpponentHubTagParam(segment)).toBe(tag);
+  });
+
+  it('round-trips a tag containing a percent sign', () => {
+    const tag = '100% player';
+    const path = buildOpponentHubPath(tag);
+    const segment = path.split('/opponents/')[1]!;
+    expect(segment).not.toContain('%3'); // sanity: the raw '%' is escaped as %25, not left bare
+    expect(readOpponentHubTagParam(segment)).toBe(tag);
+  });
+
+  it('round-trips a tag containing a path separator', () => {
+    const tag = 'user/weird tag';
+    const path = buildOpponentHubPath(tag);
+    expect(path).toBe(`/opponents/${encodeURIComponent(tag)}`);
+    const segment = path.slice('/opponents/'.length);
+    expect(readOpponentHubTagParam(segment)).toBe(tag);
+  });
+
+  it('readOpponentHubTagParam returns null for empty/nullish/malformed input', () => {
+    expect(readOpponentHubTagParam(null)).toBeNull();
+    expect(readOpponentHubTagParam(undefined)).toBeNull();
+    expect(readOpponentHubTagParam('')).toBeNull();
+    expect(readOpponentHubTagParam('%')).toBeNull();
   });
 });
 

@@ -169,6 +169,8 @@
       "sampleCue": "{{total}}戦 · 信頼度{{tier}}",
       "unknownRow_one": "不明（{{count}}戦、除外）",
       "unknownRow_other": "不明（{{count}}戦、除外）",
+      "unnamedBucket_one": "対戦相手名が未記録の試合が{{count}}戦あります",
+      "unnamedBucket_other": "対戦相手名が未記録の試合が{{count}}戦あります",
       "mixedContext": "混合コンテキスト",
       "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "{{count}}試合ではデータがまだ不十分です",
         "notEnoughData_other": "{{count}}試合ではデータがまだ不十分です",
         "tabAria": "{{row}}のステージ内訳"
-      }
+      },
+      "filter": {
+        "fighter": "自分のキャラクター",
+        "vs": "相手のキャラクター",
+        "stage": "ステージ"
+      },
+      "empty": "{{opponent}}との対戦記録はまだありません。"
     }
   },
   "scout": {

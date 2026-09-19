@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useParams, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -119,6 +119,23 @@ function ShellProfileSubscription() {
   return null;
 }
 
+/**
+ * Plan 38-05 (D-02): stands in for the real (lazy-loaded) `OpponentHubPage`
+ * so the legacy-redirect tests can assert the DESTINATION (the decoded tag
+ * plus any carried `player=` hint) without mounting the actual hub.
+ */
+function HubDestinationStub() {
+  const { opponentTag } = useParams<{ opponentTag: string }>();
+  const [searchParams] = useSearchParams();
+  const player = searchParams.get('player');
+  return (
+    <div>
+      Hub: {opponentTag}
+      {player && <span>player={player}</span>}
+    </div>
+  );
+}
+
 function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -136,6 +153,10 @@ function renderOpponents(initialEntry = '/opponents') {
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
               <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
+              {/* Plan 38-05 (D-02): the legacy query-hint redirect's destination — a
+                stub so the redirect's target is observable without mounting the
+                real (lazy-loaded) OpponentHubPage. */}
+              <Route path="/opponents/:opponentTag" element={<HubDestinationStub />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -311,21 +332,16 @@ describe('OpponentsPage', () => {
     });
 
     /**
-     * Phase 30.3 (Gate 4): "Analyze opponent" deep links preselect the
-     * opponent via query params instead of defaulting to most-played.
+     * Plan 38-05 (D-01/D-02): "Analyze opponent" deep links now REDIRECT
+     * into the hub instead of preselecting inline on the list.
      */
-    it('preselects the opponent named by an ?opponent= tag deep link', async () => {
+    it('redirects to the hub path for an ?opponent= tag deep link (replacing history)', async () => {
       renderOpponents('/opponents?opponent=zeta');
 
-      // Without the param, most-played "rival" would win — the deep link
-      // must override the default.
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
-      expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
-    it('preselects via the provider player id, preferred over the tag', async () => {
+    it('redirects via the provider player id, preferred over the tag, and carries the player= hint through', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
         makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
@@ -338,44 +354,37 @@ describe('OpponentsPage', () => {
         }),
       ]);
 
-      // The tag param carries a stale name — the provider id must win.
+      // The tag param carries a stale name — the provider id must win, and
+      // D-02 requires the player= hint to survive the redirect verbatim.
       renderOpponents('/opponents?player=sgg%3Auser%2F9fb774ae&opponent=stale-name');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByText('player=sgg:user/9fb774ae')).toBeInTheDocument();
     });
 
-    it('resolves an aliased tag deep link to its canonical opponent', async () => {
+    it('redirects to the canonical hub path for an aliased tag deep link', async () => {
       listAliases.mockResolvedValue({ 'old zeta': 'zeta' });
 
       renderOpponents('/opponents?opponent=old+zeta');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
-    it('falls back to most-played when the deep-linked opponent matches nothing', async () => {
+    it('redirects even for a tag naming an opponent with no recorded games — the hub itself renders the empty state', async () => {
       renderOpponents('/opponents?opponent=nobody-known');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
-      );
+      expect(await screen.findByText('Hub: nobody-known')).toBeInTheDocument();
     });
 
-    it('an explicit click still overrides a deep-linked preselection', async () => {
-      const user = userEvent.setup();
-      renderOpponents('/opponents?opponent=zeta');
+    it('does not redirect when a player= hint resolves to no matching row and no opponent= tag is present', async () => {
+      renderOpponents('/opponents?player=sgg%3Auser%2Funknown-slug');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
-      await user.click(screen.getByRole('button', { name: /rival/, pressed: false }));
-
+      // No identifying tag exists to redirect to — the list renders normally
+      // with its default (most-played) selection.
       await waitFor(() =>
         expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
       );
+      expect(screen.queryByText(/^Hub:/)).not.toBeInTheDocument();
     });
   });
 

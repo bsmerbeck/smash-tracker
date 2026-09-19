@@ -41,6 +41,13 @@ const MatchupsPage = retryableLazy(() =>
 const OpponentsPage = retryableLazy(() =>
   import('@/pages/Opponents/OpponentsPage').then((m) => ({ default: m.OpponentsPage })),
 );
+// Plan 38-05 (D-01/D-02): the opponent hub — a child route of the same
+// `/opponents` base, carrying the resolved tag as a path segment. Declared
+// as its OWN lazy factory (never bundled with OpponentsPage's) so the
+// bundle-isolation guard's entry-graph accounting stays accurate.
+const OpponentHubPage = retryableLazy(() =>
+  import('@/pages/Opponents/OpponentHubPage').then((m) => ({ default: m.OpponentHubPage })),
+);
 
 interface SubjectAnalyticsRouteDescriptor {
   /** Leaf path segment, no leading slash — composes under any parent route. */
@@ -53,6 +60,10 @@ const subjectAnalyticsRouteDescriptors: SubjectAnalyticsRouteDescriptor[] = [
   { path: 'fighter-analysis', element: <FighterAnalysisPage /> },
   { path: 'matchups', element: <MatchupsPage /> },
   { path: 'opponents', element: <OpponentsPage /> },
+  // Plan 38-05: the bare list route above still wins for the bare
+  // `/opponents` path in every family — this leaf requires a non-empty
+  // trailing segment, so the two never collide.
+  { path: 'opponents/:opponentTag', element: <OpponentHubPage /> },
 ];
 
 /**

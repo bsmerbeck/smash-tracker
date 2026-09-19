@@ -169,6 +169,8 @@
       "sampleCue": "{{total}} partidas · confiança {{tier}}",
       "unknownRow_one": "Desconhecido ({{count}} partida, excluída)",
       "unknownRow_other": "Desconhecido ({{count}} partidas, excluídas)",
+      "unnamedBucket_one": "{{count}} partida sem nome de oponente registrado",
+      "unnamedBucket_other": "{{count}} partidas sem nome de oponente registrado",
       "mixedContext": "Contexto misto",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — misturado com {{majorityLabel}}.",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "Dados insuficientes por enquanto ({{count}} partida)",
         "notEnoughData_other": "Dados insuficientes por enquanto ({{count}} partidas)",
         "tabAria": "Detalhamento de estágios de {{row}}"
-      }
+      },
+      "filter": {
+        "fighter": "Meu personagem",
+        "vs": "Personagem dele(a)",
+        "stage": "Estágio"
+      },
+      "empty": "Ainda não há partidas registradas contra {{opponent}}."
     }
   },
   "scout": {

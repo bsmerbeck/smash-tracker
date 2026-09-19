@@ -169,6 +169,8 @@
       "sampleCue": "{{total}} partidas · confianza {{tier}}",
       "unknownRow_one": "Desconocido ({{count}} partida, excluida)",
       "unknownRow_other": "Desconocido ({{count}} partidas, excluidas)",
+      "unnamedBucket_one": "{{count}} partida sin nombre de oponente registrado",
+      "unnamedBucket_other": "{{count}} partidas sin nombre de oponente registrado",
       "mixedContext": "Contexto mixto",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mezclado con {{majorityLabel}}.",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "Datos insuficientes por ahora ({{count}} partida)",
         "notEnoughData_other": "Datos insuficientes por ahora ({{count}} partidas)",
         "tabAria": "Desglose de escenarios de {{row}}"
-      }
+      },
+      "filter": {
+        "fighter": "Mi personaje",
+        "vs": "Su personaje",
+        "stage": "Escenario"
+      },
+      "empty": "Aún no hay partidas registradas contra {{opponent}}."
     }
   },
   "scout": {

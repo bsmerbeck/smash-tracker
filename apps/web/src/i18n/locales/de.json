@@ -169,6 +169,8 @@
       "sampleCue": "{{total}} Matches · {{tier}} Konfidenz",
       "unknownRow_one": "Unbekannt ({{count}} Match, ausgeschlossen)",
       "unknownRow_other": "Unbekannt ({{count}} Matches, ausgeschlossen)",
+      "unnamedBucket_one": "{{count}} Spiel ohne erfassten Gegnernamen",
+      "unnamedBucket_other": "{{count}} Spiele ohne erfassten Gegnernamen",
       "mixedContext": "Gemischter Kontext",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — gemischt mit {{majorityLabel}}.",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "Noch nicht genug Daten ({{count}} Spiel)",
         "notEnoughData_other": "Noch nicht genug Daten ({{count}} Spiele)",
         "tabAria": "{{row}}s Stage-Aufschlüsselung"
-      }
+      },
+      "filter": {
+        "fighter": "Mein Charakter",
+        "vs": "Gegnerischer Charakter",
+        "stage": "Stage"
+      },
+      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet."
     }
   },
   "scout": {

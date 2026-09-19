@@ -169,6 +169,8 @@
       "sampleCue": "{{total}} games · {{tier}} confidence",
       "unknownRow_one": "Unknown ({{count}} game, excluded)",
       "unknownRow_other": "Unknown ({{count}} games, excluded)",
+      "unnamedBucket_one": "{{count}} game with no opponent name recorded",
+      "unnamedBucket_other": "{{count}} games with no opponent name recorded",
       "mixedContext": "Mixed context",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "Not enough data yet ({{count}} game)",
         "notEnoughData_other": "Not enough data yet ({{count}} games)",
         "tabAria": "{{row}}'s stage breakdown"
-      }
+      },
+      "filter": {
+        "fighter": "My character",
+        "vs": "Their character",
+        "stage": "Stage"
+      },
+      "empty": "No games recorded against {{opponent}} yet."
     }
   },
   "scout": {

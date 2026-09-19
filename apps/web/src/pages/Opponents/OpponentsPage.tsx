@@ -1,9 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { resolveAliasChain } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
-import { resolveAnalyzeOpponentPreselection } from '@/lib/analyzeOpponent';
+import {
+  ANALYZE_OPPONENT_PLAYER_PARAM,
+  ANALYZE_OPPONENT_TAG_PARAM,
+  buildOpponentHubPath,
+  resolveAnalyzeOpponentPreselection,
+} from '@/lib/analyzeOpponent';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -70,26 +75,48 @@ export function OpponentsPage() {
   // needed to seed state from data that just loaded.
   const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
 
-  // Phase 30.3 (Gate 4): "Analyze opponent" deep links land here with
-  // ?player=sgg:<slug>|pgg:<id> (provider identity, preferred) and/or
-  // ?opponent=<tag> (alias-aware fallback). Resolved against the SAME
-  // alias-canonicalized, filter-applied match set the page's aggregates and
-  // drill-downs use, so a preselected profile can never disagree with what
-  // the list would show for a manual click. Purely a render-time derivation
-  // — an explicit click always wins over the URL, and a preselection that
-  // isn't in the current filtered records falls back to most-played exactly
-  // like a stale explicit selection does.
+  // Plan 38-05 (D-01/D-02): "Analyze opponent" deep links with
+  // ?player=sgg:<slug>|pgg:<id> and/or ?opponent=<tag> now REDIRECT into the
+  // hub (below) instead of preselecting inline — the hub is the addressable
+  // surface these links resolve into. `player=` is carried through verbatim
+  // (D-02 keeps it alive as a provider-identity hint the hub consumes as an
+  // identity fallback of last resort, never a filter axis).
   const [searchParams] = useSearchParams();
-  const preselected = useMemo(
-    () => resolveAnalyzeOpponentPreselection(searchParams, matches, aliasMap ?? {}),
-    [searchParams, matches, aliasMap],
-  );
+  const navigate = useNavigate();
+  useEffect(() => {
+    const opponentParam = searchParams.get(ANALYZE_OPPONENT_TAG_PARAM);
+    const playerParam = searchParams.get(ANALYZE_OPPONENT_PLAYER_PARAM);
+    if (!opponentParam && !playerParam) {
+      return;
+    }
+    // Wait for BOTH queries to settle before resolving: a provider-id or
+    // alias hint resolved against a still-empty `matches`/`aliasMap` (the
+    // initial render, before either query has loaded) would redirect to the
+    // WRONG tag and, because this component then unmounts, never gets a
+    // chance to correct itself once the real data arrives. `aliasMap` is
+    // checked for definedness rather than the query's own `isLoading` flag —
+    // a disabled query (auth still resolving) reports `isLoading: false`
+    // with `data: undefined`, which would pass a naive `isLoading` check.
+    if (isLoading || aliasMap === undefined) {
+      return;
+    }
+    const resolved = resolveAnalyzeOpponentPreselection(searchParams, matches, aliasMap ?? {});
+    if (!resolved) {
+      // A hint that resolves to nothing falls through to today's behaviour
+      // (the list with no selection) rather than redirecting to a dead hub.
+      return;
+    }
+    const hubSearch = playerParam
+      ? `?${ANALYZE_OPPONENT_PLAYER_PARAM}=${encodeURIComponent(playerParam)}`
+      : '';
+    navigate(`${buildOpponentHubPath(resolved)}${hubSearch}`, { replace: true });
+  }, [searchParams, matches, aliasMap, isLoading, navigate]);
 
   // The opponent name currently open in the "Merge into..." dialog, or null
   // when the dialog is closed.
   const [mergeCandidate, setMergeCandidate] = useState<string | null>(null);
 
-  const requested = selectedOpponent ?? preselected;
+  const requested = selectedOpponent;
   const selected =
     requested && opponentRecords.some((o) => o.displayTag === requested) ? requested : mostPlayed;
 

@@ -169,6 +169,8 @@
       "sampleCue": "{{total}} matchs · confiance {{tier}}",
       "unknownRow_one": "Inconnu ({{count}} match, exclu)",
       "unknownRow_other": "Inconnu ({{count}} matchs, exclus)",
+      "unnamedBucket_one": "{{count}} partie sans nom d'adversaire enregistré",
+      "unnamedBucket_other": "{{count}} parties sans nom d'adversaire enregistré",
       "mixedContext": "Contexte mixte",
       "mixedContextDetail": "{{minorityPct}} % {{minorityLabel}} — mélangé avec {{majorityLabel}}.",
       "tier": {
@@ -1323,7 +1325,13 @@
         "notEnoughData_one": "Pas encore assez de données ({{count}} partie)",
         "notEnoughData_other": "Pas encore assez de données ({{count}} parties)",
         "tabAria": "Répartition des stages de {{row}}"
-      }
+      },
+      "filter": {
+        "fighter": "Mon personnage",
+        "vs": "Son personnage",
+        "stage": "Stage"
+      },
+      "empty": "Aucune partie enregistrée contre {{opponent}} pour l'instant."
     }
   },
   "scout": {

@@ -1,0 +1,372 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { useProfile } from '@/hooks/useProfile';
+import { OpponentHubPage } from './OpponentHubPage';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+import { SpriteList } from '@/data/sprites';
+import * as statsModule from '@/lib/stats';
+
+/**
+ * H-03 (cycle 2): `@/lib/stats` is the seam `apps/web` actually reaches the
+ * engine through (`buildOpponentProfile` re-exported at `stats.ts:62-74`).
+ * A partial mock wraps `buildOpponentProfile` in a `vi.fn` that DEFAULTS to
+ * the real implementation for every test — only the "ENGINE OUTPUT" case
+ * below overrides it, and restores the real implementation afterward so no
+ * other test in this file is affected.
+ */
+vi.mock('@/lib/stats', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/stats')>();
+  return { ...actual, buildOpponentProfile: vi.fn(actual.buildOpponentProfile) };
+});
+
+/**
+ * Phase 38-05 (D-01/D-02): models the harness on `OpponentsPage.test.tsx`,
+ * since the hub consumes the same subject-scoped hooks the list page does —
+ * including its profile-subscription stand-in.
+ *
+ * Countability-ROUTING is NOT re-proven here (H-03, cycle 2): that property
+ * is proven once, mechanically, by `opponentCrossTab.test.ts`'s in-package
+ * module-seam case (plan 38-01 Task 1). This suite proves the ROUTING to the
+ * engine — that the hub's head-to-head figures are `@/lib/stats`'s
+ * `buildOpponentProfile` OUTPUT, never a locally-computed denominator — via
+ * a partial mock of that module.
+ */
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    getRedirectResult: mock.getRedirectResult,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+const listMatches = vi.fn();
+const listTournaments = vi.fn();
+const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
+const listAliases = vi.fn();
+const upsertAlias = vi.fn();
+const removeAlias = vi.fn();
+const listNotes = vi.fn();
+const upsertNote = vi.fn();
+const removeNote = vi.fn();
+
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    users: {
+      upsertMe: (...args: unknown[]) => upsertMe(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
+    },
+    matches: {
+      list: (...args: unknown[]) => listMatches(...args),
+    },
+    tournaments: {
+      list: (...args: unknown[]) => listTournaments(...args),
+    },
+    opponents: {
+      aliases: {
+        list: (...args: unknown[]) => listAliases(...args),
+        upsert: (...args: unknown[]) => upsertAlias(...args),
+        remove: (...args: unknown[]) => removeAlias(...args),
+      },
+      notes: {
+        list: (...args: unknown[]) => listNotes(...args),
+        upsert: (...args: unknown[]) => upsertNote(...args),
+        remove: (...args: unknown[]) => removeNote(...args),
+      },
+    },
+  },
+}));
+
+const mario = SpriteList.find((s) => s.id === 1)!; // Mario
+const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
+
+function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'm1',
+    fighter_id: mario.id,
+    opponent_id: luigi.id,
+    time: 1000,
+    map: { id: 1, name: 'Battlefield' },
+    opponent: 'rival',
+    notes: '',
+    matchType: 'none',
+    win: true,
+    ...overrides,
+  };
+}
+
+/** Phase 30.3 (Gate 6 corrective): stands in for the app shell's own `GET /api/users/me` subscription. */
+function ShellProfileSubscription() {
+  useProfile();
+  return null;
+}
+
+function renderHub(initialEntry: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <AuthProvider>
+          <AnalyticsFilterProvider>
+            <ShellProfileSubscription />
+            <Routes>
+              <Route path="/opponents/:opponentTag" element={<OpponentHubPage />} />
+              <Route path="/coach/:clientId/opponents/:opponentTag" element={<OpponentHubPage />} />
+              <Route
+                path="/workspace/:tenantId/opponents/:opponentTag"
+                element={<OpponentHubPage />}
+              />
+            </Routes>
+          </AnalyticsFilterProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/**
+ * Scopes into the `ScoutingHeader` card (the first `[data-slot="card"]` on
+ * the page when a profile exists) — the head-to-head record renders inside
+ * it, and the SAME record text can also appear elsewhere (the hidden
+ * print-only evidence packet), so an unscoped `screen.getByText` is
+ * ambiguous. Throws (surfacing a clear failure) if the card hasn't rendered.
+ */
+function headerCard(): HTMLElement {
+  const title = document.querySelector('[data-slot="card-title"]');
+  const card = title?.closest('[data-slot="card"]');
+  if (!card) {
+    throw new Error('ScoutingHeader card not found');
+  }
+  return card as HTMLElement;
+}
+
+async function findRecordText(record: string) {
+  return waitFor(() => {
+    const found = within(headerCard()).getByText(record);
+    expect(found).toBeInTheDocument();
+    return found;
+  });
+}
+
+describe('OpponentHubPage', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    upsertAlias.mockResolvedValue({});
+    removeAlias.mockResolvedValue(undefined);
+    listNotes.mockResolvedValue({});
+    upsertNote.mockResolvedValue({ updatedAt: 123 });
+    removeNote.mockResolvedValue(undefined);
+    setMockUser(makeMockUser());
+  });
+
+  it('renders the head-to-head record and terminus for a canonical tag', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false }),
+    ]);
+
+    renderHub('/opponents/rival');
+
+    await findRecordText('2-1');
+    // The terminus renders the same three games.
+    const list = document.getElementById('opponent-hub-list');
+    expect(list).not.toBeNull();
+    expect(within(list as HTMLElement).getAllByText('rival').length).toBeGreaterThan(0);
+  });
+
+  it('renders the SAME canonical hub and total for a registered ALIAS of that tag', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+    ]);
+    listAliases.mockResolvedValue({ 'old rival': 'rival' });
+
+    renderHub('/opponents/old%20rival');
+
+    await findRecordText('2-0');
+  });
+
+  it('renders the hub empty copy (and neither the matrix nor the trend section) for a tag with no recorded games', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true })]);
+
+    renderHub('/opponents/nobody-known');
+
+    expect(
+      await screen.findByText('No games recorded against nobody-known yet.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Matchup Matrix')).not.toBeInTheDocument();
+    expect(screen.queryByText('H2H Trend')).not.toBeInTheDocument();
+  });
+
+  it('resolves under the coach client-subject route', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true })]);
+
+    renderHub('/coach/tetra-client/opponents/rival');
+
+    await findRecordText('1-0');
+  });
+
+  it('resolves under the owned-workspace tenant route', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true })]);
+
+    renderHub('/workspace/tenant-1/opponents/rival');
+
+    await findRecordText('1-0');
+  });
+
+  it('a tag containing non-ASCII characters round-trips through the path segment', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'プレイヤー', win: true }),
+    ]);
+
+    renderHub(`/opponents/${encodeURIComponent('プレイヤー')}`);
+
+    await findRecordText('1-0');
+  });
+
+  describe('legacy player= hint fallback', () => {
+    it('replace-navigates once to a different canonical tag named by the player= hint when the path tag has no games', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'zeta',
+          win: true,
+          opponentUserSlug: 'user/9fb774ae',
+        }),
+      ]);
+
+      renderHub('/opponents/stale-name?player=sgg%3Auser%2F9fb774ae');
+
+      await findRecordText('1-0');
+      expect(within(headerCard()).getByText('zeta')).toBeInTheDocument();
+    });
+
+    it('renders the empty copy with no navigation when the hint resolves to nothing', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+
+      renderHub('/opponents/stale-name?player=sgg%3Auser%2Funknown');
+
+      expect(
+        await screen.findByText('No games recorded against stale-name yet.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('sorts the terminus list with sortMatchesNewestFirst — no local descending sort exists on this page', async () => {
+    // Structural: proven by the `<automated>` grep gate over the source
+    // file; this case only exercises the ordering BEHAVIOUR (newest first).
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 3, opponent: 'rival', win: false }),
+      makeMatch({ id: 'm3', time: 2, opponent: 'rival', win: true }),
+    ]);
+
+    renderHub('/opponents/rival');
+
+    await findRecordText('2-1');
+    const list = document.getElementById('opponent-hub-list') as HTMLElement;
+    const rows = await within(list).findAllByRole('row');
+    // rows[0] is the header row; data rows follow newest-first (m2 t=3, m3 t=2, m1 t=1).
+    expect(within(rows[1]!).getByText('Loss')).toBeInTheDocument();
+  });
+
+  it("the hub's head-to-head figures are ENGINE OUTPUT, not a locally-computed denominator", async () => {
+    const mockedBuildOpponentProfile = vi.mocked(statsModule.buildOpponentProfile);
+    const originalImplementation = mockedBuildOpponentProfile.getMockImplementation();
+    mockedBuildOpponentProfile.mockReturnValue({
+      opponent: 'rival',
+      record: { wins: 41, losses: 2, total: 43, winRate: 95 },
+      firstPlayedAt: 1,
+      lastPlayedAt: 2,
+      byTheirFighter: [],
+      byStage: [],
+      recent: [],
+      source: 'manual',
+    });
+
+    try {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+
+      renderHub('/opponents/rival');
+
+      // A hub that counted locally would render the FIXTURE's real 1-0
+      // record; this asserts the stub's deliberately distinctive numbers.
+      await findRecordText('41-2');
+    } finally {
+      mockedBuildOpponentProfile.mockImplementation(originalImplementation!);
+    }
+  });
+
+  it('has no subject-type branch — the same displayed record renders under every family with the same mocked data', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+    ]);
+
+    const { unmount } = renderHub('/opponents/rival');
+    await findRecordText('2-0');
+    unmount();
+
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+    ]);
+    renderHub('/coach/some-client/opponents/rival');
+    await findRecordText('2-0');
+  });
+
+  describe('un-pooling and merge affordances', () => {
+    it('renders a "Merge into..." affordance on the header', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      const user = userEvent.setup();
+      renderHub('/opponents/rival');
+
+      await findRecordText('1-0');
+      await user.click(screen.getByRole('button', { name: 'Merge into...' }));
+      expect(await screen.findByText('Merge "rival" into...')).toBeInTheDocument();
+    });
+  });
+});
