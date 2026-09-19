@@ -1,18 +1,32 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartCard } from '@/components/charts/ChartCard';
+import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
+import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
+import {
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FIGHTER_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_VS_PARAM,
+  buildDrillDownSearch,
+  readDrillDownParams,
+  sortMatchesNewestFirst,
+  type DrillDownAxes,
+} from '@/lib/drillDownParams';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
@@ -22,7 +36,7 @@ import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { MatchupChart } from './components/MatchupChart';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
-import { MatchupTable, MATCHUP_TABLE_ANCHOR_ID } from './components/MatchupTable';
+import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
 import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './components/MatchupMatrix';
 import { CounterpickAdvisor } from './components/CounterpickAdvisor';
 import { PairingOpponentSplit } from './components/PairingOpponentSplit';
@@ -44,8 +58,19 @@ import { PairingOpponentSplit } from './components/PairingOpponentSplit';
 export function MatchupsPage() {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+
+  const stageIds = useMemo(() => new Set(stagesById.keys()), []);
+  // D-05: tolerant read of every drill-down axis currently in the URL. A URL
+  // axis naming no known fighter/stage already resolves to `undefined` here
+  // (readDrillDownParams's own membership check) — never a throw, never an
+  // out-of-range lookup downstream.
+  const axesFromUrl = useMemo(
+    () => readDrillDownParams(searchParams, { stageIds }),
+    [searchParams, stageIds],
+  );
 
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
@@ -69,33 +94,100 @@ export function MatchupsPage() {
     opponentUsage,
   } = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
-  // The trend chart's in-page drill-down selection (D-07, CHRT-02). Cleared
-  // at the single choke point below whenever the pairing changes — never
-  // from a render-time effect keyed on the pairing (this repo's lint rules
-  // forbid writing state during render, and a render-mirrored value would be
-  // one flush behind these programmatic setters).
-  const [selectedMatchIds, setSelectedMatchIds] = useState<ReadonlySet<string> | null>(null);
+  /** Clears the three filter-axis params from `next` in place — every writer below shares this so "which three params" has one spelling. */
+  function clearFilterAxes(next: URLSearchParams): void {
+    next.delete(DRILL_DOWN_STAGE_PARAM);
+    next.delete(DRILL_DOWN_EVENT_PARAM);
+    next.delete(DRILL_DOWN_FROM_PARAM);
+    next.delete(DRILL_DOWN_TO_PARAM);
+  }
 
+  /**
+   * Phase 38-04 (D-05/D-15/Phase 35 D-06): writes the FILTER axes
+   * (stage/event/window) to the URL, replacing whichever of those three
+   * were previously active — an axis omitted from `axes` is CLEARED, not
+   * left as-is, so switching pairing (via the picker handlers below, which
+   * call this with `{}`) or picking a new stage/point always drops any
+   * stale narrowing rather than composing with it. Never touches the
+   * character axes (`fighter`/`vs`) or any param this contract doesn't own.
+   */
+  function setDrillDown(
+    axes: Partial<Pick<DrillDownAxes, 'stageId' | 'eventKey' | 'from' | 'to'>>,
+  ) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      clearFilterAxes(next);
+      for (const [key, value] of buildDrillDownSearch(axes).entries()) {
+        next.set(key, value);
+      }
+      return next;
+    });
+  }
+
+  /**
+   * Phase 38-04 (D-15/Phase 35 D-06): the two directions are DELIBERATELY
+   * asymmetric. An EXPLICIT picker interaction still calls
+   * `usePersistedSelection`'s persisting setter (shipped Phase 35 D-06
+   * behaviour, unchanged) AND now also writes the corresponding character
+   * axis to the URL, so the URL and the picker can never disagree after a
+   * deliberate change. A URL-seeded axis (`axesFromUrl` below) NEVER calls a
+   * persisting setter — it is render input to the effective-pairing
+   * composition and stops there. Also clears the drill-down FILTER axes
+   * (stage/event/window), mirroring the retired `setSelectedMatchIds(null)`
+   * clear-on-pairing-change behaviour.
+   */
   function handleSetFighter(nextFighter: Fighter) {
     setFighter(nextFighter);
-    setSelectedMatchIds(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      clearFilterAxes(next);
+      next.set(DRILL_DOWN_FIGHTER_PARAM, String(nextFighter.id));
+      return next;
+    });
   }
 
   function handleSetOpponent(nextOpponent: Fighter) {
     setOpponent(nextOpponent);
-    setSelectedMatchIds(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      clearFilterAxes(next);
+      next.set(DRILL_DOWN_VS_PARAM, String(nextOpponent.id));
+      return next;
+    });
   }
+
+  /**
+   * Phase 38-04 (D-05/DRL-02, review finding H-04): the EFFECTIVE pairing —
+   * `URL axis ?? persisted selection` — resolved ONCE, here, before
+   * `matchupMatches` is derived. Every downstream consumer (the pairing
+   * header, the win-loss card, the insights, the counterpick advisor, the
+   * stage table, the trend chart and the results list) renders from THIS
+   * pairing, not from the raw persisted `fighter`/`opponent`. A URL axis
+   * that resolves to no known fighter is already `undefined` coming out of
+   * `readDrillDownParams`, so the persisted value wins rather than the
+   * detail block going blank.
+   */
+  const effectiveFighter =
+    (axesFromUrl.fighterId != null ? getFighterById(axesFromUrl.fighterId) : undefined) ?? fighter;
+  const effectiveOpponent =
+    (axesFromUrl.vsFighterId != null ? getFighterById(axesFromUrl.vsFighterId) : undefined) ??
+    opponent;
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
-    fighter,
+    fighter: effectiveFighter,
     setFighter: handleSetFighter,
-    opponent,
+    opponent: effectiveOpponent,
     setOpponent: handleSetOpponent,
     fighterUsageById,
     opponentUsage,
-    selectedMatchIds,
-    setSelectedMatchIds,
+    drillDownAxes: {
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+    },
+    setDrillDown,
   };
 
   if (fightersLoading || matchesLoading) {
@@ -144,9 +236,26 @@ export function MatchupsPage() {
   }
 
   const matchupMatches =
-    fighter && opponent
-      ? matches.filter((m) => m.fighter_id === fighter.id && m.opponent_id === opponent.id)
+    effectiveFighter && effectiveOpponent
+      ? matches.filter(
+          (m) => m.fighter_id === effectiveFighter.id && m.opponent_id === effectiveOpponent.id,
+        )
       : [];
+
+  // The terminus's axes ALSO carry the effective character pair — not just
+  // stage/window — so `FilteredMatchList` omits the already-pinned
+  // character columns and includes the pairing in its filter summary, even
+  // though `matchupMatches` above is already pairing-filtered (a harmless,
+  // idempotent re-affirmation of membership, not a second narrowing
+  // mechanism).
+  const terminusAxes: DrillDownAxes = {
+    fighterId: effectiveFighter?.id,
+    vsFighterId: effectiveOpponent?.id,
+    stageId: axesFromUrl.stageId,
+    from: axesFromUrl.from,
+    to: axesFromUrl.to,
+  };
+  const sortedMatchupMatches = sortMatchesNewestFirst(matchupMatches);
 
   return (
     <MatchupsContext.Provider value={contextValue}>
@@ -173,13 +282,21 @@ export function MatchupsPage() {
         <MatchupMatrix matches={matches} />
 
         <div id={MATCHUP_DETAIL_ANCHOR_ID} className="flex flex-col gap-6 scroll-mt-16">
-          {fighter && opponent && (
+          {effectiveFighter && effectiveOpponent && (
             <div className="flex items-center justify-center gap-4">
-              {fighter.url && <img src={fighter.url} alt="" className="size-12 object-contain" />}
-              <span className="text-lg font-semibold">{localizedFighterName(fighter.id, t)}</span>
+              {effectiveFighter.url && (
+                <img src={effectiveFighter.url} alt="" className="size-12 object-contain" />
+              )}
+              <span className="text-lg font-semibold">
+                {localizedFighterName(effectiveFighter.id, t)}
+              </span>
               <span className="text-muted-foreground">{t('matchups.vs')}</span>
-              <span className="text-lg font-semibold">{localizedFighterName(opponent.id, t)}</span>
-              {opponent.url && <img src={opponent.url} alt="" className="size-12 object-contain" />}
+              <span className="text-lg font-semibold">
+                {localizedFighterName(effectiveOpponent.id, t)}
+              </span>
+              {effectiveOpponent.url && (
+                <img src={effectiveOpponent.url} alt="" className="size-12 object-contain" />
+              )}
             </div>
           )}
 
@@ -221,7 +338,12 @@ export function MatchupsPage() {
               <CardTitle>{t('matchups.results')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <MatchupTable matchupMatches={matchupMatches} />
+              <FilteredMatchList
+                matches={sortedMatchupMatches}
+                axes={terminusAxes}
+                onClearFilters={() => setDrillDown({})}
+                showDelete
+              />
             </CardContent>
           </Card>
         </div>

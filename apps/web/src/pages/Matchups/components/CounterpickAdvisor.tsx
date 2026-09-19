@@ -11,8 +11,8 @@ import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats'
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { advisorThreshold } from '../lib/advisorThreshold';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
-import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
 
 /**
@@ -58,17 +58,19 @@ import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
  * (`noLegalStages`) instead of the generic abstention sentence, which would
  * misdescribe a full sample as a thin one.
  *
- * D-07: clicking a Pick or Ban row sets the page's in-page drill-down
- * selection to that stage's games within the current pairing and scrolls to
- * the results table — the exact "set state, then scroll to an exported
- * anchor id" idiom `MatchupChart`'s point click and `MatchupMatrix`'s cell
- * click already use, so this page has one drill-down mechanism, not two. No
- * URL, search-param or history API is touched (Phase 38 owns that contract).
+ * D-07/Phase 38-04: clicking a Pick or Ban row writes the stage axis to the
+ * URL (via the Matchups context's `setDrillDown`) and scrolls to the
+ * results table — the exact "write drill-down state, then scroll to an
+ * exported anchor id" idiom `MatchupChart`'s point click and
+ * `MatchupMatrix`'s cell click already use, so this page has one drill-down
+ * mechanism, not two. Phase 38 is now the owner of that URL contract — this
+ * head comment previously said no URL or search param was touched here;
+ * that is no longer true, by design.
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [minGames] = useMinStageMatches();
-  const { setSelectedMatchIds } = useMatchupsContext();
+  const { setDrillDown } = useMatchupsContext();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch; a stale `refreshedAt` across re-renders is harmless since
@@ -109,10 +111,7 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   // `row.key` is `String(stage.stageId)` (set in `toRow` below).
   function handleSelectRow(row: ComparisonBarsRow) {
     const stageId = Number(row.key);
-    const ids = new Set(
-      matchupMatches.filter((m) => (m.map?.id ?? 0) === stageId).map((m) => m.id),
-    );
-    setSelectedMatchIds(ids);
+    setDrillDown({ stageId });
     document
       .getElementById(MATCHUP_TABLE_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

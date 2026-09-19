@@ -39,8 +39,8 @@ function renderSelectOpponent(overrides: Partial<MatchupsContextValue> = {}) {
     setOpponent,
     fighterUsageById: new Map(),
     opponentUsage: [makeUsage(peach.id, 5), makeUsage(luigi.id, 3), makeUsage(bowser.id, 1)],
-    selectedMatchIds: null,
-    setSelectedMatchIds: vi.fn(),
+    drillDownAxes: {},
+    setDrillDown: vi.fn(),
     ...overrides,
   };
 

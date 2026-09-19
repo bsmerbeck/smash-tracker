@@ -17,8 +17,8 @@ import {
   type RunningWinRatePoint,
 } from '@/lib/stats';
 import { TrendLine, type TrendChartPoint } from '@/components/charts/TrendLine';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
-import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 
 export type TrendMode = '5' | '10' | 'cumulative';
 
@@ -87,11 +87,16 @@ export function buildTrendChartPoints(series: TrendPoint[], t: TFunction): Trend
  * ResizeObserver stub plus a zero-size bounding rect make a responsive
  * render produce a 0x0 SVG with no marks to assert on.
  *
- * D-07/CHRT-02: a click on a trend point sets the page's selection to that
- * point's match id and scrolls to the results table — the same two-step
- * "set state, then scroll to an exported anchor id" shape
- * `MatchupMatrix.selectPairing` already uses, so this page has one in-page
- * drill-down idiom, not two.
+ * D-07/CHRT-02/Phase 38-04: a click on a trend point writes an INCLUSIVE
+ * date window covering that point's exact instant to the URL (via the
+ * Matchups context's `setDrillDown`) and scrolls to the results table — the
+ * same two-step "write drill-down state, then scroll to an exported anchor
+ * id" shape `MatchupMatrix`'s cell click already uses. A single match id is
+ * deliberately NOT itself a drill-down axis (D-07 enumerates opponent,
+ * character, opposing character, stage, event and date window; a match id
+ * is not among them) — a degenerate `from === to` window is the
+ * URL-addressable equivalent of "this game," and it deliberately shows
+ * EVERY game recorded at that instant rather than silently picking one.
  */
 export function MatchupChart({
   matchupMatches,
@@ -103,13 +108,13 @@ export function MatchupChart({
   height?: number;
 }) {
   const { t } = useTranslation();
-  const { setSelectedMatchIds } = useMatchupsContext();
+  const { setDrillDown } = useMatchupsContext();
   const [mode, setMode] = useState<TrendMode>('5');
   const series = buildTrendSeries(matchupMatches, mode);
   const points = buildTrendChartPoints(series, t);
 
   function handleSelectPoint(point: TrendChartPoint) {
-    setSelectedMatchIds(new Set([point.context.matchId]));
+    setDrillDown({ from: point.context.dateMs, to: point.context.dateMs });
     document
       .getElementById(MATCHUP_TABLE_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

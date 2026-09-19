@@ -3,9 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18n from '@/i18n';
 import type { Match } from '@smash-tracker/shared';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { buildTrendChartPoints, buildTrendSeries, MatchupChart } from './MatchupChart';
-import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -98,8 +98,8 @@ describe('buildTrendChartPoints', () => {
 });
 
 /**
- * `MatchupChart` reads `setSelectedMatchIds` off `MatchupsContext` (D-07,
- * CHRT-02) to wire its click-to-select handler, so every render needs a
+ * `MatchupChart` reads `setDrillDown` off `MatchupsContext` (D-07, CHRT-02,
+ * Phase 38-04) to wire its click-to-select handler, so every render needs a
  * provider — this fixture mirrors the shape `MatchupsPage` supplies in
  * production, plus a real anchor element so the scroll assertion has a
  * target under jsdom.
@@ -109,7 +109,7 @@ function renderChart(
   props: { width?: number; height?: number } = {},
   contextOverrides: Partial<MatchupsContextValue> = {},
 ) {
-  const setSelectedMatchIds = vi.fn();
+  const setDrillDown = vi.fn();
   const contextValue: MatchupsContextValue = {
     fighterSprites: [],
     fighter: undefined,
@@ -118,8 +118,8 @@ function renderChart(
     setOpponent: vi.fn(),
     fighterUsageById: new Map(),
     opponentUsage: [],
-    selectedMatchIds: null,
-    setSelectedMatchIds,
+    drillDownAxes: {},
+    setDrillDown,
     ...contextOverrides,
   };
 
@@ -130,7 +130,7 @@ function renderChart(
     </MatchupsContext.Provider>,
   );
 
-  return { ...utils, setSelectedMatchIds };
+  return { ...utils, setDrillDown };
 }
 
 describe('MatchupChart', () => {
@@ -176,13 +176,13 @@ describe('MatchupChart', () => {
   });
 });
 
-describe('MatchupChart drill-down (D-07, CHRT-02, plan 37-03)', () => {
-  it("clicking a trend point selects that point's match id and scrolls to the results-table anchor", () => {
+describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
+  it('clicking a trend point writes an inclusive degenerate window covering that instant and scrolls to the results-table anchor', () => {
     const scrollIntoView = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
     const matches = sequence([true, false, true]);
-    const { container, setSelectedMatchIds } = renderChart(matches, { width: 640, height: 288 });
+    const { container, setDrillDown } = renderChart(matches, { width: 640, height: 288 });
 
     const svg = container.querySelector('svg.recharts-surface');
     expect(svg).not.toBeNull();
@@ -192,10 +192,13 @@ describe('MatchupChart drill-down (D-07, CHRT-02, plan 37-03)', () => {
 
     // jsdom's zero-size layout resolves every click to activeTooltipIndex 0
     // (see TrendLine.test.tsx and the 37-01 SUMMARY) — the clicked point is
-    // therefore always points[0], whose match id is the first sequenced
-    // match ('m0').
-    expect(setSelectedMatchIds).toHaveBeenCalledTimes(1);
-    expect(setSelectedMatchIds).toHaveBeenCalledWith(new Set([matches[0]?.id]));
+    // therefore always points[0], whose timestamp is the first sequenced
+    // match's `time`.
+    expect(setDrillDown).toHaveBeenCalledTimes(1);
+    expect(setDrillDown).toHaveBeenCalledWith({
+      from: matches[0]?.time,
+      to: matches[0]?.time,
+    });
     expect(scrollIntoView).toHaveBeenCalledWith(
       expect.objectContaining({ behavior: 'smooth', block: 'start' }),
     );

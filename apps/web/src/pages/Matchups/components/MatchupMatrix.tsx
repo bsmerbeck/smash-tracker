@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getMatchupMatrix, type MatchupMatrixCell } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { matchupCellBackground } from '../lib/matchupCellColor';
 import { useMatchupsContext } from '../MatchupsContext';
 
@@ -21,13 +24,21 @@ export const MATCHUP_DETAIL_ANCHOR_ID = 'matchup-detail';
  * toggle to avoid an unreadably wide grid by default). Cell color blends the
  * theme's destructive red (low Wilson score) through neutral grey (~0.5)
  * to emerald (high), with opacity scaled by sample size so a single game
- * reads as tentative and a 10+-game sample reads at full strength. Clicking
- * a cell sets the page's fighter+opponent selection and scrolls to the
- * pairing detail section.
+ * reads as tentative and a 10+-game sample reads at full strength.
+ *
+ * Phase 38-04 (D-06/DRL-02): clicking a cell NAVIGATES to the param-aware
+ * Matchups page with the character axes set (`?fighter=&vs=`), through the
+ * subject-aware path builder, rather than calling the context's in-page
+ * pairing setters directly — the destination is now shareable and
+ * reachable with the back button. `MatchupsPage`'s own effective-pairing
+ * composition (`URL axis ?? persisted selection`) is what makes this
+ * actually change the rendered detail block, not just the URL.
  */
 export function MatchupMatrix({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
-  const { fighterSprites, setFighter, setOpponent } = useMatchupsContext();
+  const { fighterSprites } = useMatchupsContext();
+  const navigate = useNavigate();
+  const subjectPath = useSubjectPath();
   const [showAllColumns, setShowAllColumns] = useState(false);
 
   const matrix = getMatchupMatrix(matches);
@@ -45,14 +56,8 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
   const hasMoreColumns = allColumnIds.length > VISIBLE_COLUMN_CAP;
 
   function selectPairing(fighterId: number, opponentFighterId: number) {
-    const fighter = fighterSprites.find((f) => f.id === fighterId);
-    const opponent = getFighterById(opponentFighterId);
-    if (fighter) {
-      setFighter(fighter);
-    }
-    if (opponent) {
-      setOpponent(opponent);
-    }
+    const search = buildDrillDownSearch({ fighterId, vsFighterId: opponentFighterId });
+    navigate(subjectPath(`/matchups?${search.toString()}`));
     document
       .getElementById(MATCHUP_DETAIL_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

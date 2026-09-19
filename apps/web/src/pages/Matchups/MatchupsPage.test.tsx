@@ -1,13 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { MatchupsPage } from './MatchupsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -83,13 +84,20 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function renderMatchups() {
+/** Phase 38-04: reads the CURRENT router search string, so a test can assert on the URL a drill-down producer wrote without leaving the render tree. */
+function LocationSearchProbe() {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+}
+
+function renderMatchups(initialEntry = '/matchups') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/matchups']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
+            <LocationSearchProbe />
             <Routes>
               <Route path="/matchups" element={<MatchupsPage />} />
               <Route path="/choose-primary" element={<div>Choose primary page</div>} />
@@ -298,7 +306,10 @@ describe('MatchupsPage', () => {
       await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
     );
 
-    expect(await screen.findByText('No matches reported yet!')).toBeInTheDocument();
+    // Phase 38-04: the results list is now the shared `FilteredMatchList`
+    // terminus, whose own empty copy replaces the retired MatchupTable's
+    // "No matches reported yet!" sentence.
+    expect(await screen.findByText('No games match these filters.')).toBeInTheDocument();
     expect(screen.getByText('No reported matches against this fighter')).toBeInTheDocument();
   });
 
@@ -362,7 +373,10 @@ describe('MatchupsPage', () => {
 
     expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
     expect(screen.getByText('By Opponent')).toBeInTheDocument();
-    expect(screen.getByText('alice')).toBeInTheDocument();
+    // Phase 38-04: "alice" now legitimately appears twice — once in the
+    // per-opponent split card, once in the FilteredMatchList terminus's
+    // Opponent column — so this asserts presence, not uniqueness.
+    expect(screen.getAllByText('alice').length).toBeGreaterThan(0);
   });
 
   /**
@@ -455,6 +469,247 @@ describe('MatchupsPage', () => {
           alphabeticallyFirstSprite.name,
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Phase 38-04: the URL drill-down contract (D-05/D-15/DRL-02, review
+   * finding H-04). The bare route producing no search string is covered by
+   * every OTHER test above (none of them ever assert on
+   * `LocationSearchProbe` before an explicit interaction), so it is not
+   * re-asserted here as a standalone case.
+   */
+  describe('Phase 38-04: URL drill-down contract', () => {
+    it('renders the pairing header from the URL fighter axis when it differs from the persisted fighter', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id, bowser.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: bowser.id, opponent_id: luigi.id, win: true }),
+      ]);
+
+      renderMatchups(`/matchups?fighter=${bowser.id}`);
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByLabelText('Select your fighter')).getByText(bowser.name),
+        ).toBeInTheDocument(),
+      );
+      // The win-loss card also reflects Bowser's own 1-0 record, not Mario's.
+      const winsStat = screen.getByText('Wins').closest('div');
+      expect(winsStat).not.toBeNull();
+      expect(within(winsStat!).getByText('1')).toBeInTheDocument();
+    });
+
+    it('falls back to the persisted fighter, and still renders the detail block, when the URL fighter axis names no known fighter', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ]);
+
+      renderMatchups('/matchups?fighter=999999999');
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+        ).toBeInTheDocument(),
+      );
+      expect(screen.getByText('Matchup Results')).toBeInTheDocument();
+    });
+
+    it('an explicit picker change persists the selection AND writes the character axis to the router search string', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        // Luigi is MORE RECENT (time:2) than alphabeticallyFirstSprite
+        // (time:1) with an equal 1-game count each, so Luigi — not the
+        // fighter this test is about to click — is the computed DEFAULT
+        // opponent. Reversing these times would make the click a no-op
+        // (Radix's Select does not fire `onValueChange` for reselecting an
+        // already-active value), silently defeating this test's own point.
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 2, win: true }),
+        makeMatch({
+          id: 'm2',
+          fighter_id: mario.id,
+          opponent_id: alphabeticallyFirstSprite.id,
+          time: 1,
+          win: false,
+        }),
+      ]);
+
+      renderMatchups();
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      );
+      await waitFor(() => {
+        expect(
+          within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByLabelText('Select opponent fighter'));
+      await user.click(
+        await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search').textContent).toContain(
+          `vs=${alphabeticallyFirstSprite.id}`,
+        );
+      });
+      // The shipped Phase 35 D-06 persisting behaviour is unchanged — an
+      // unmount/remount still remembers the explicit choice (also covered
+      // above by the dedicated persistence test).
+      expect(
+        JSON.parse(
+          window.localStorage.getItem(analyticsSelectionStorageKey('test-uid', null)) ?? '{}',
+        ).opponentId,
+      ).toBe(alphabeticallyFirstSprite.id);
+    });
+
+    it('activating a counterpick row writes the stage axis to the router search string and narrows the results list to that stage', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 1,
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm2',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 2,
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm3',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 3,
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm4',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 4,
+          win: false,
+          map: { id: 83, name: 'Smashville' },
+        }),
+      ]);
+
+      renderMatchups();
+
+      await waitFor(() => expect(screen.getByText('Pick these')).toBeInTheDocument());
+      const pickSection = screen.getByText('Pick these').closest('div')!;
+      const row = within(pickSection).getAllByRole('button')[0]!;
+      await user.click(row);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search').textContent).toContain('stage=1');
+      });
+      // The results list's own summary now names the narrowed count (3
+      // Battlefield games), and the Smashville loss is no longer listed.
+      await waitFor(() => {
+        expect(screen.getByText('3 games · Mario vs Luigi · Battlefield')).toBeInTheDocument();
+      });
+    });
+
+    // `MatchupChart.test.tsx`'s own drill-down suite proves the CLICK writes
+    // `setDrillDown({ from, to })` via a mocked context (jsdom's 0x0
+    // ResizeObserver stub means `MatchupChart` renders NO Recharts surface
+    // at all when mounted at its real, size-prop-less production call site —
+    // see that file's "renders no Recharts surface with no size props" case
+    // — so a full-page click-through test here would assert nothing).  This
+    // integration-level case instead proves the DOWNSTREAM half: a URL
+    // ALREADY carrying an inclusive degenerate window (what that click
+    // would have written) narrows the results list to every game at that
+    // exact instant, never just one.
+    it('a URL carrying an inclusive degenerate window keeps two games recorded at the identical timestamp both in the narrowed list', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const sharedInstant = 5000;
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: sharedInstant,
+          win: true,
+        }),
+        makeMatch({
+          id: 'm2',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: sharedInstant,
+          win: false,
+        }),
+        makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, time: 1000, win: true }),
+      ]);
+
+      renderMatchups(`/matchups?from=${sharedInstant}&to=${sharedInstant}`);
+
+      const expectedDate = new Date(sharedInstant).toLocaleDateString();
+      await waitFor(() => {
+        expect(screen.getByText(`2 games · Mario vs Luigi · ${expectedDate}`)).toBeInTheDocument();
+      });
+    });
+
+    it('renders no browser-storage write whose key is the persisted-selection or analytics-filter key on a URL-seeded arrival', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ]);
+
+      const selectionKey = analyticsSelectionStorageKey('test-uid', null);
+      const beforeValue = window.localStorage.getItem(selectionKey);
+
+      const localStorageSpy = vi.spyOn(window.localStorage, 'setItem');
+      const sessionStorageSpy = vi.spyOn(window.sessionStorage, 'setItem');
+
+      // This harness renders MatchupsPage directly and never mounts
+      // MainLayout, so `useAutoWidenEmptyRange`'s shipped once-per-session
+      // write (Phase 35 D-02) is OUTSIDE this oracle's scope — stated here
+      // rather than left for a reader to discover as a mysterious red.
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+        ).toBeInTheDocument(),
+      );
+
+      const writtenKeys = [...localStorageSpy.mock.calls, ...sessionStorageSpy.mock.calls].map(
+        (call) => call[0],
+      );
+      expect(writtenKeys).not.toContain(selectionKey);
+      expect(
+        writtenKeys.some((key) => typeof key === 'string' && key.includes('AnalyticsFilter')),
+      ).toBe(false);
+      expect(window.localStorage.getItem(selectionKey)).toBe(beforeValue);
+
+      localStorageSpy.mockRestore();
+      sessionStorageSpy.mockRestore();
+    });
+
+    it('the delete confirm dialog still opens from the results list with the existing confirm-title string', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ]);
+
+      renderMatchups();
+
+      await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: 'Delete match' }));
+      expect(await screen.findByText('Delete this match?')).toBeInTheDocument();
     });
   });
 });

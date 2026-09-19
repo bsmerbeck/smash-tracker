@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import { CounterpickAdvisor } from './CounterpickAdvisor';
-import { MATCHUP_TABLE_ANCHOR_ID } from './MatchupTable';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -14,12 +14,13 @@ import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 const SET_STATE_EDIT_ARIA = 'Change the game-phase, role, prior-stages and bans assumption';
 
 /**
- * D-07 (plan 37-05 Task 3): `CounterpickAdvisor` now reads
- * `useMatchupsContext()` for its bar-click drill-down. `setSelectedMatchIds`
- * is a shared mock so click tests can assert on the exact selection it was
- * called with; every other field is inert filler this component never reads.
+ * D-07/Phase 38-04: `CounterpickAdvisor` now reads `useMatchupsContext()` for
+ * its bar-click drill-down, writing the stage axis via `setDrillDown`.
+ * `setDrillDownMock` is a shared mock so click tests can assert on the exact
+ * axes it was called with; every other field is inert filler this component
+ * never reads.
  */
-const setSelectedMatchIdsMock = vi.fn();
+const setDrillDownMock = vi.fn();
 
 function baseMatchupsContextValue(
   overrides: Partial<MatchupsContextValue> = {},
@@ -32,8 +33,8 @@ function baseMatchupsContextValue(
     setOpponent: vi.fn(),
     fighterUsageById: new Map(),
     opponentUsage: [],
-    selectedMatchIds: null,
-    setSelectedMatchIds: setSelectedMatchIdsMock,
+    drillDownAxes: {},
+    setDrillDown: setDrillDownMock,
     ...overrides,
   };
 }
@@ -542,8 +543,8 @@ describe('CounterpickAdvisor', () => {
     });
   });
 
-  describe('Task 3: bar click drills into the results table (D-07)', () => {
-    it('clicking a Pick row sets the Matchups selection to exactly the ids of the pairing matches on that stage, and scrolls to the results-table anchor', async () => {
+  describe('Phase 38-04: bar click writes the stage axis to the URL (D-07)', () => {
+    it('clicking a Pick row calls setDrillDown with exactly that stage id, and scrolls to the results-table anchor', async () => {
       const scrollIntoView = vi.fn();
       HTMLElement.prototype.scrollIntoView = scrollIntoView;
       const user = userEvent.setup();
@@ -558,10 +559,7 @@ describe('CounterpickAdvisor', () => {
       const battlefieldRow = within(pickSection).getAllByRole('button')[0]!;
       await user.click(battlefieldRow);
 
-      const expectedIds = new Set(
-        matches.filter((m) => m.map?.id === BATTLEFIELD.id).map((m) => m.id),
-      );
-      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
+      expect(setDrillDownMock).toHaveBeenCalledWith({ stageId: BATTLEFIELD.id });
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     });
 
@@ -582,19 +580,11 @@ describe('CounterpickAdvisor', () => {
       const banRow = within(banSection).getAllByRole('button')[0]!;
       await user.click(banRow);
 
-      const expectedIds = new Set(
-        matches.filter((m) => m.map?.id === SMALL_BATTLEFIELD.id).map((m) => m.id),
-      );
-      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
+      expect(setDrillDownMock).toHaveBeenCalledWith({ stageId: SMALL_BATTLEFIELD.id });
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     });
 
-    it('a stage whose matches are all outside the current pairing yields an empty selection set', async () => {
-      // The advisor only ever receives pairing-filtered matches, so a
-      // clicked row's own stage id can never actually miss inside its own
-      // fixture — this proves the id comparison itself (not a name lookup)
-      // by asserting the selection is scoped exactly to that stage's ids,
-      // never the whole pairing.
+    it('clicking a different row writes that row’s own stage id, not the whole pairing', async () => {
       const user = userEvent.setup();
       const matches = [
         ...matchesOnStage(BATTLEFIELD, 5, 0),
@@ -606,11 +596,7 @@ describe('CounterpickAdvisor', () => {
       const rows = within(pickSection).getAllByRole('button');
       await user.click(rows[1]!); // Town and City
 
-      const expectedIds = new Set(
-        matches.filter((m) => m.map?.id === TOWN_AND_CITY.id).map((m) => m.id),
-      );
-      expect(setSelectedMatchIdsMock).toHaveBeenCalledWith(expectedIds);
-      expect(expectedIds.size).toBe(5);
+      expect(setDrillDownMock).toHaveBeenCalledWith({ stageId: TOWN_AND_CITY.id });
     });
   });
 });

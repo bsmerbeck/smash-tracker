@@ -29,8 +29,8 @@ function renderSelectFighter(overrides: Partial<MatchupsContextValue> = {}) {
       // appears (D-04/D-07) and its count must default to 0.
     ]),
     opponentUsage: [],
-    selectedMatchIds: null,
-    setSelectedMatchIds: vi.fn(),
+    drillDownAxes: {},
+    setDrillDown: vi.fn(),
     ...overrides,
   };
 

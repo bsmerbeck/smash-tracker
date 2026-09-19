@@ -14,10 +14,13 @@ import { SpriteList } from '@/data/sprites';
  * requirement the ROADMAP names for this phase is a build item, not
  * something a prose claim can close. Copies the shape of
  * `OpponentsPage.test.tsx`'s existing shipped coach-route harness: a
- * `MemoryRouter` declaring BOTH `/matchups` and `/coach/:clientId/matchups`
- * pointing at the same `MatchupsPage` element, with the same fixture matches
- * supplied through the subject-scoped `useFilteredMatches`/`useFighters`
- * hooks in both cases — never a prop passed directly to a component.
+ * `MemoryRouter` declaring `/matchups`, `/coach/:clientId/matchups` AND (Phase
+ * 38-04) `/workspace/:tenantId/matchups`, all pointing at the same
+ * `MatchupsPage` element, with the same fixture matches supplied through the
+ * subject-scoped `useFilteredMatches`/`useFighters` hooks in every case —
+ * never a prop passed directly to a component. A two-family test passes
+ * while the third (owned-workspace) family is broken, which is exactly what
+ * this phase's own review cycle flagged.
  */
 
 vi.mock('firebase/auth', async () => {
@@ -85,6 +88,7 @@ function renderMatchupsAt(initialEntry: string) {
             <Routes>
               <Route path="/matchups" element={<MatchupsPage />} />
               <Route path="/coach/:clientId/matchups" element={<MatchupsPage />} />
+              <Route path="/workspace/:tenantId/matchups" element={<MatchupsPage />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -129,7 +133,7 @@ describe('Matchups coach parity (R1-HIGH-3, cross-cutting coaching non-regressio
     setMockUser(makeMockUser());
   });
 
-  it('renders structurally identical Matchups content — stat tile, Counterpick Advisor with its two disclosure controls, and the trend frame — under /matchups and /coach/:clientId/matchups', async () => {
+  it('renders structurally identical Matchups content — stat tile, Counterpick Advisor with its two disclosure controls, and the trend frame — under /matchups, /coach/:clientId/matchups AND /workspace/:tenantId/matchups', async () => {
     // The "ready" signal is deliberately subject-blind (the Pick group
     // heading and the ruleset-control aria-label are fixed strings this
     // plan's own copy never varies by subject) — a probe that varies TITLE
@@ -141,10 +145,20 @@ describe('Matchups coach parity (R1-HIGH-3, cross-cutting coaching non-regressio
     const personalText = normalisedText(personalContainer);
     unmountPersonal();
 
-    const { container: coachContainer } = renderMatchupsAt('/coach/test-client/matchups');
+    const { container: coachContainer, unmount: unmountCoach } = renderMatchupsAt(
+      '/coach/test-client/matchups',
+    );
     await waitFor(() => expect(within(coachContainer).getByText('Pick these')).toBeInTheDocument());
     const coachText = normalisedText(coachContainer);
+    unmountCoach();
+
+    const { container: workspaceContainer } = renderMatchupsAt('/workspace/test-tenant/matchups');
+    await waitFor(() =>
+      expect(within(workspaceContainer).getByText('Pick these')).toBeInTheDocument(),
+    );
+    const workspaceText = normalisedText(workspaceContainer);
 
     expect(coachText).toBe(personalText);
+    expect(workspaceText).toBe(personalText);
   });
 });
