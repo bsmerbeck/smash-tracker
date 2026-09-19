@@ -185,7 +185,9 @@
       "whenOnly": "{{date}}",
       "score": "{{result}} ({{score}})",
       "resultOnly": "{{result}}",
-      "gameNumber": "Spiel {{game}}"
+      "gameNumber": "Spiel {{game}}",
+      "whoWhereEvent": "{{opponent}} bei {{event}}",
+      "eventScore": "{{wins}}-{{losses}} bei diesem Event"
     },
     "ruleset": {
       "control": {
@@ -1299,6 +1301,11 @@
       "print": "H2H exportieren",
       "copy": "Als Text kopieren",
       "copied": "Kopiert!"
+    },
+    "hub": {
+      "trend": {
+        "pointLabel": "{{wins}}-{{losses}}"
+      }
     }
   },
   "scout": {

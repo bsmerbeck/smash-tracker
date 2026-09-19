@@ -185,7 +185,9 @@
       "whenOnly": "{{date}}",
       "score": "{{result}}（{{score}}）",
       "resultOnly": "{{result}}",
-      "gameNumber": "{{game}}戦目"
+      "gameNumber": "{{game}}戦目",
+      "whoWhereEvent": "{{opponent}}（{{event}}）",
+      "eventScore": "今回のイベント：{{wins}}-{{losses}}"
     },
     "ruleset": {
       "control": {
@@ -1299,6 +1301,11 @@
       "print": "H2Hをエクスポート",
       "copy": "テキストとしてコピー",
       "copied": "コピーしました！"
+    },
+    "hub": {
+      "trend": {
+        "pointLabel": "{{wins}}-{{losses}}"
+      }
     }
   },
   "scout": {

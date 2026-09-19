@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { TrendChartPoint } from './TrendLine';
+import type { TrendChartPoint, TrendEventPoint } from './TrendLine';
 
 /**
  * Deliberately NOT typed against Recharts' `TooltipContentProps` — that type
@@ -27,6 +27,11 @@ interface ChartTooltipProps {
  * is load-bearing — it is what keeps a rate from ever rendering stripped of
  * the game it came from (T-37-01-04).
  */
+/** True for a `TrendEventPoint` (has an `eventKey`), false for the numeric-mode `TrendChartPoint` — the ONLY branch this component makes on point shape. */
+function isEventPoint(point: TrendChartPoint | TrendEventPoint): point is TrendEventPoint {
+  return 'eventKey' in point;
+}
+
 export function ChartTooltip({ active, payload }: ChartTooltipProps) {
   const { t, i18n } = useTranslation();
 
@@ -34,9 +39,31 @@ export function ChartTooltip({ active, payload }: ChartTooltipProps) {
     return null;
   }
 
-  const point = payload[0]?.payload as TrendChartPoint | undefined;
+  const point = payload[0]?.payload as TrendChartPoint | TrendEventPoint | undefined;
   if (!point) {
     return null;
+  }
+
+  if (isEventPoint(point)) {
+    const { context } = point;
+    const date = new Date(context.dateMs).toLocaleDateString(i18n.language);
+    return (
+      <div className="rounded-md border border-border bg-card p-2 text-xs">
+        <p className="text-sm font-semibold">
+          {t('shared.chartTooltip.rate', { rate: Math.round(point.cumulativeWinRate) })}
+        </p>
+        <p className="text-muted-foreground">
+          {t('shared.chartTooltip.whoWhereEvent', {
+            opponent: context.opponentTag,
+            event: context.eventLabel,
+          })}
+        </p>
+        <p className="text-muted-foreground">{t('shared.chartTooltip.whenOnly', { date })}</p>
+        <p className="text-muted-foreground">
+          {t('shared.chartTooltip.eventScore', { wins: point.wins, losses: point.losses })}
+        </p>
+      </div>
+    );
   }
 
   const { context } = point;
