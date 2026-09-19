@@ -287,6 +287,27 @@ describe('OpponentsPage', () => {
       await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
     });
 
+    it("D-14 (38-07): a row's destination is the hub path for the row's engine-resolved display tag", async () => {
+      renderOpponents();
+
+      await screen.findByText('2 opponents faced');
+      expect(screen.getByRole('link', { name: /rival/ })).toHaveAttribute(
+        'href',
+        '/opponents/rival',
+      );
+      expect(screen.getByRole('link', { name: /zeta/ })).toHaveAttribute('href', '/opponents/zeta');
+    });
+
+    it('D-14 (38-07): carries the coach prefix through the destination under a coach entry', async () => {
+      renderOpponents('/coach/client-a/opponents');
+
+      await screen.findByText('2 opponents faced');
+      expect(screen.getByRole('link', { name: /rival/ })).toHaveAttribute(
+        'href',
+        '/coach/client-a/opponents/rival',
+      );
+    });
+
     it('auto-selects the most-played opponent and shows their scouting report', async () => {
       renderOpponents();
 
@@ -312,23 +333,16 @@ describe('OpponentsPage', () => {
       });
     });
 
-    it('selects a different opponent on click and updates the scouting report', async () => {
+    it('D-14 (38-07): a row now navigates into the opponent hub rather than selecting in place', async () => {
       const user = userEvent.setup();
       renderOpponents();
 
       await screen.findByText('2 opponents faced');
-      // Scoped to the row's selection button (has aria-pressed) — the row's
-      // kebab menu button ("Actions for zeta") also matches /zeta/ by name.
-      await user.click(screen.getByRole('button', { name: /zeta/, pressed: false }));
+      // Scoped to the row's link (opens the hub) — the row's kebab menu
+      // button ("Actions for zeta") also matches /zeta/ by name.
+      await user.click(screen.getByRole('link', { name: /zeta/ }));
 
-      // The scouting report card title switches to "zeta".
-      await waitFor(() => {
-        const titles = screen.getAllByText('zeta');
-        expect(titles.length).toBeGreaterThan(0);
-      });
-      // zeta's record is 1-0, shown in the report header (scoped by the
-      // "Last 10" pips section landmark that only renders once selected).
-      expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
     /**
@@ -380,10 +394,9 @@ describe('OpponentsPage', () => {
       renderOpponents('/opponents?player=sgg%3Auser%2Funknown-slug');
 
       // No identifying tag exists to redirect to — the list renders normally
-      // with its default (most-played) selection.
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
-      );
+      // with its default (most-played) selection, and its row is a real
+      // hub link (D-14, 38-07) rather than an in-page selection button.
+      await waitFor(() => expect(screen.getByRole('link', { name: /rival/ })).toBeInTheDocument());
       expect(screen.queryByText(/^Hub:/)).not.toBeInTheDocument();
     });
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { OpponentList } from './OpponentList';
 
@@ -169,5 +170,50 @@ describe('OpponentList unnamed-opponent bucket (D-10)', () => {
   it('renders no bucket disclosure when every match has an opponent name', () => {
     renderList();
     expect(screen.queryByText(/no opponent name recorded/)).not.toBeInTheDocument();
+  });
+});
+
+// Phase 38-07 (C3-M-01): OpponentList takes an OPTIONAL host-supplied
+// `hubHref` destination-builder prop. The TWO existing bare renders above
+// (`renderList()` and the alias-merge render) pass no builder and stay
+// byte-unchanged — this describe block is the ONLY place a `MemoryRouter`
+// is introduced in this file.
+describe('OpponentList hub destination (C3-M-01)', () => {
+  it('with hubHref supplied, a row is a real anchor to that destination', () => {
+    render(
+      <MemoryRouter>
+        <OpponentList
+          matches={MATCHES}
+          selected={null}
+          onSelect={vi.fn()}
+          onRequestMerge={vi.fn()}
+          aliasMap={{}}
+          hubHref={(row) => `/opponents/${row.displayTag}`}
+        />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: /alice/ });
+    expect(link).toHaveAttribute('href', '/opponents/alice');
+    // The old in-page selection button is gone once a destination is supplied.
+    expect(screen.queryByRole('button', { name: /alice/, pressed: false })).not.toBeInTheDocument();
+  });
+
+  it('under a coach entry the destination carries the coach prefix', () => {
+    render(
+      <MemoryRouter>
+        <OpponentList
+          matches={MATCHES}
+          selected={null}
+          onSelect={vi.fn()}
+          onRequestMerge={vi.fn()}
+          aliasMap={{}}
+          hubHref={(row) => `/coach/client-a/opponents/${row.displayTag}`}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /alice/ })).toHaveAttribute(
+      'href',
+      '/coach/client-a/opponents/alice',
+    );
   });
 });

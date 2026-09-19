@@ -22,6 +22,7 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { buildOpponentEvidence, type OpponentEvidenceRow } from '@/lib/stats';
 import { SampleCue } from '@/components/EvidenceCues';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { OpponentSourceBadge } from './OpponentSourceBadge';
 
 export interface OpponentListProps {
@@ -32,6 +33,15 @@ export interface OpponentListProps {
   onRequestMerge: (opponent: string) => void;
   /** EVID-12: alias -> canonical map, required so this list's identity resolution can never forget to pre-alias (D-16). */
   aliasMap: Record<string, string>;
+  /**
+   * Phase 38-07 (C3-M-01): host-supplied hub destination builder. With one
+   * supplied, a row is a real anchor into that opponent's hub. With none
+   * supplied, the row keeps EXACTLY today's selection-button branch
+   * (`onSelect`, `aria-pressed` and all) — this component calls no router
+   * hook and no query hook itself either way, so its own bare test renders
+   * never need a `MemoryRouter`.
+   */
+  hubHref?: (row: OpponentEvidenceRow) => string;
 }
 
 /** Sort orders for the opponent list. */
@@ -97,6 +107,7 @@ export function OpponentList({
   onSelect,
   onRequestMerge,
   aliasMap,
+  hubHref,
 }: OpponentListProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -189,6 +200,7 @@ export function OpponentList({
                 lastPlayedAt={sort === 'recent' ? opponent.lastPlayedAt : undefined}
                 onSelect={onSelect}
                 onRequestMerge={onRequestMerge}
+                destination={hubHref?.(opponent)}
               />
             ))}
           </ul>
@@ -210,6 +222,7 @@ function OpponentRow({
   lastPlayedAt,
   onSelect,
   onRequestMerge,
+  destination,
 }: {
   opponent: OpponentEvidenceRow;
   selected: boolean;
@@ -217,41 +230,66 @@ function OpponentRow({
   lastPlayedAt?: number;
   onSelect: (opponent: string) => void;
   onRequestMerge: (opponent: string) => void;
+  /** Phase 38-07 (C3-M-01): the host-built hub destination for this row, or `undefined` when the host supplies no `hubHref` — in which case the row keeps today's in-page selection-button behavior. */
+  destination?: string;
 }) {
   const { t, i18n } = useTranslation();
+  const rowBody = (
+    <>
+      {/* Name owns the full first line so badges/stats can never squeeze it out. */}
+      <span className="min-w-0 truncate font-medium" title={opponent.displayTag}>
+        {opponent.displayTag}
+      </span>
+      <span className="flex items-center gap-2">
+        <OpponentSourceBadge source={opponent.source} />
+        <span className="text-muted-foreground">
+          {opponent.wins}-{opponent.losses}
+        </span>
+        <span className="font-medium">{opponent.winRate}%</span>
+        <span className="text-xs text-muted-foreground">
+          {t('common.games', { count: opponent.total })}
+        </span>
+        <SampleCue sample={opponent.sample} />
+        {lastPlayedAt != null && (
+          <span className="text-xs text-muted-foreground">
+            {new Date(lastPlayedAt).toLocaleDateString(i18n.language)}
+          </span>
+        )}
+      </span>
+    </>
+  );
+
   return (
     <li
-      className={`flex items-center gap-1 rounded-md border px-1 transition-colors ${
+      className={`relative flex items-center gap-1 rounded-md border px-1 transition-colors ${
         selected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent'
       }`}
     >
-      <button
-        type="button"
-        onClick={() => onSelect(opponent.displayTag)}
-        aria-pressed={selected}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-left text-sm"
-      >
-        {/* Name owns the full first line so badges/stats can never squeeze it out. */}
-        <span className="min-w-0 truncate font-medium" title={opponent.displayTag}>
-          {opponent.displayTag}
-        </span>
-        <span className="flex items-center gap-2">
-          <OpponentSourceBadge source={opponent.source} />
-          <span className="text-muted-foreground">
-            {opponent.wins}-{opponent.losses}
-          </span>
-          <span className="font-medium">{opponent.winRate}%</span>
-          <span className="text-xs text-muted-foreground">
-            {t('common.games', { count: opponent.total })}
-          </span>
-          <SampleCue sample={opponent.sample} />
-          {lastPlayedAt != null && (
-            <span className="text-xs text-muted-foreground">
-              {new Date(lastPlayedAt).toLocaleDateString(i18n.language)}
-            </span>
-          )}
-        </span>
-      </button>
+      {destination != null ? (
+        <>
+          <DrillableRow
+            as="overlay"
+            to={destination}
+            ariaLabel={t('shared.drillableRow.aria', {
+              subject: opponent.displayTag,
+              context: t('opponents.list.title'),
+            })}
+          />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-left text-sm">
+            {rowBody}
+          </div>
+          <DrillableRowChevron />
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onSelect(opponent.displayTag)}
+          aria-pressed={selected}
+          className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-left text-sm"
+        >
+          {rowBody}
+        </button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

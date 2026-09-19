@@ -1,3 +1,4 @@
+import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
@@ -12,6 +13,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getSessions, type SessionStats } from '@/lib/stats';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { sortMatchesNewestFirst } from '@/lib/drillDownParams';
 
 /** Loss runs at or above this length are highlighted in destructive tone in the recent-sessions table. */
 export const TILT_HIGHLIGHT_THRESHOLD = 3;
@@ -88,6 +92,11 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
   const sessions = getSessions(matches);
   const headline = buildSessionsHeadline(sessions);
   const recentSessions = [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT);
+  // Phase 38-07 (D-14): a session row toggles an inline `FilteredMatchList`
+  // for that session's inclusive start-to-end window — single-open, keyed on
+  // the session's own `start` (unique per session per `getSessions`).
+  const [expandedStart, setExpandedStart] = useState<number | null>(null);
+  const sortedMatches = sortMatchesNewestFirst(matches);
 
   return (
     <Card className="h-full">
@@ -144,23 +153,53 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentSessions.map((session) => (
-                  <TableRow key={session.start}>
-                    <TableCell>{formatDate(session.start, i18n.language)}</TableCell>
-                    <TableCell>{formatDuration(session, t)}</TableCell>
-                    <TableCell>
-                      {session.wins}-{session.losses}
-                    </TableCell>
-                    <TableCell>{session.winRate}%</TableCell>
-                    <TableCell>
-                      {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD ? (
-                        <Badge variant="destructive">{session.longestLossRun}</Badge>
-                      ) : (
-                        session.longestLossRun
+                {recentSessions.map((session) => {
+                  const isExpanded = expandedStart === session.start;
+                  const dateLabel = formatDate(session.start, i18n.language);
+                  return (
+                    <Fragment key={session.start}>
+                      <TableRow className="relative hover:bg-accent">
+                        <TableCell className="relative">
+                          <DrillableRow
+                            as="overlay"
+                            onActivate={() => setExpandedStart(isExpanded ? null : session.start)}
+                            expanded={isExpanded}
+                            ariaLabel={t('shared.drillableRow.aria', {
+                              subject: dateLabel,
+                              context: t('trends.sessions.title'),
+                            })}
+                          />
+                          {dateLabel}
+                        </TableCell>
+                        <TableCell>{formatDuration(session, t)}</TableCell>
+                        <TableCell>
+                          {session.wins}-{session.losses}
+                        </TableCell>
+                        <TableCell>{session.winRate}%</TableCell>
+                        <TableCell>
+                          <span className="flex items-center justify-between gap-2">
+                            {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD ? (
+                              <Badge variant="destructive">{session.longestLossRun}</Badge>
+                            ) : (
+                              session.longestLossRun
+                            )}
+                            <DrillableRowChevron />
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={5}>
+                            <FilteredMatchList
+                              matches={sortedMatches}
+                              axes={{ from: session.start, to: session.end }}
+                            />
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </>

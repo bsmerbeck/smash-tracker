@@ -71,11 +71,11 @@ function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
   };
 }
 
-function renderTimeline(matches: Match[], entry: TournamentEntry = makeEntry()) {
+function renderTimeline(matches: Match[], entry: TournamentEntry = makeEntry(), initialPath = '/') {
   const { sets, otherMatches } = buildSetTimeline(matches);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <TooltipProvider>
@@ -344,6 +344,22 @@ describe('SetTimeline', () => {
     expect(link).toHaveAttribute('href', '/vod?match=g1');
     expect(link).not.toHaveAttribute('target');
     expect(link).not.toHaveAttribute('rel');
+  });
+
+  it('D-08: builds the VOD link through the subject-aware path builder, carrying the coach prefix', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ];
+    renderTimeline(matches, undefined, '/coach/client-a/tournaments/1');
+    const link = screen.getByRole('link', { name: 'Watch VOD for Grand Final' });
+    expect(link).toHaveAttribute('href', '/coach/client-a/vods?match=g1');
   });
 
   it('shows the VOD link when only one game in a multi-game set carries the vodUrl', () => {

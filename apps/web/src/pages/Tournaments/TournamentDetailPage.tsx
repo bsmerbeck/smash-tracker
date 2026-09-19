@@ -180,13 +180,18 @@ export function TournamentDetailPage() {
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
-      <CharactersAndStages matches={entryMatches} />
+      <CharactersAndStages matches={entryMatches} eventKey={entry.entryKey ?? undefined} />
       {/* EVID-04 (D-10, D-18): renders for every entry including
           admin-imported ones — plan 37-06's retrospective grades historical
           picks under whichever ruleset applied to that event, and this is
           where that ruleset is disclosed and (own-account only) edited. */}
       <RulesetOverrideSection entry={entry} />
-      {retrospective && <AdvisorRetrospective retrospective={retrospective} />}
+      {retrospective && (
+        <AdvisorRetrospective
+          retrospective={retrospective}
+          eventKey={entry.entryKey ?? undefined}
+        />
+      )}
       {canGenerateRecap && entry.entryKey && (
         <GenerateRecapDialog
           entryKey={entry.entryKey}

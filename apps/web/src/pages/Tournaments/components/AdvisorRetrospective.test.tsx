@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AdvisorRetrospective } from './AdvisorRetrospective';
@@ -39,12 +40,19 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'time' | 'win'>): Mat
   };
 }
 
-function renderRetro(allMatches: Match[], entryMatches: Match[], entry: TournamentEntry) {
+function renderRetro(
+  allMatches: Match[],
+  entryMatches: Match[],
+  entry: TournamentEntry,
+  eventKey?: string,
+) {
   const retrospective = buildRetrospective(allMatches, entryMatches, entry);
   return render(
-    <TooltipProvider>
-      <AdvisorRetrospective retrospective={retrospective} />
-    </TooltipProvider>,
+    <MemoryRouter>
+      <TooltipProvider>
+        <AdvisorRetrospective retrospective={retrospective} eventKey={eventKey} />
+      </TooltipProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -262,6 +270,39 @@ describe('AdvisorRetrospective', () => {
           'Every stage this ruleset makes legal was treated as available — per-game bans and strikes were never recorded.',
         ),
       ).toBeInTheDocument();
+    });
+
+    it('D-14: a pick with a known stage opens the stage detail page scoped to the event, threaded from the host', () => {
+      const pre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+      const entry = makeEntry({ firstSetAt: 1_000_000 });
+      const game = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: BATTLEFIELD,
+        externalId: 'sgg:1:g1',
+      });
+
+      renderRetro([...pre, game], [game], entry, 'ultimate-singles-2026');
+
+      const link = screen.getByRole('link', { name: /Followed advisor/ });
+      expect(link).toHaveAttribute('href', '/stages/1?event=ultimate-singles-2026');
+    });
+
+    it('D-14: a pick with an unknown stage renders plain text — no chevron, no link', () => {
+      const entry = makeEntry({ firstSetAt: 1_000_000 });
+      const game = makeMatch({
+        time: 1_500_000,
+        win: true,
+        map: NO_SELECTION,
+        externalId: 'sgg:1:g1',
+      });
+
+      renderRetro([game], [game], entry, 'ultimate-singles-2026');
+
+      expect(screen.getByText('Not enough data')).toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
     });
 
     it('renders one of six distinct takeaway strings per (classification, result) pair', () => {

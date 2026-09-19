@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { WinLossPips } from '@/components/WinLossPips';
 import type { OpponentProfile } from '@/lib/stats';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildAnalyzeOpponentPath } from '@/lib/analyzeOpponent';
 
 /**
  * "Your history vs them": shown only when the scouted player's gamer tag
@@ -12,9 +14,20 @@ import type { OpponentProfile } from '@/lib/stats';
  * Reuses the same head-to-head profile the Scouting page (`/opponents`)
  * builds, so the record here can never disagree with that report — this is
  * just a compact pointer to it.
+ *
+ * Phase 38-07 (D-14): this profile is already the VIEWER's own opponent (not
+ * a third party — `ScoutPage.tsx` matches the scouted tag against the
+ * viewer's own `getOpponentProfile`), so the "full report" link is built
+ * through the existing analyze-opponent path builder (carrying the resolved
+ * opponent straight through, rather than the bare `/opponents` list) and the
+ * subject-aware path builder, instead of a hard-coded route.
  */
 export function YourHistoryStrip({ profile }: { profile: OpponentProfile }) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
+  const destination = subjectPath(
+    buildAnalyzeOpponentPath({ opponent: profile.opponent }) ?? '/opponents',
+  );
   return (
     <Card className="border-primary/30 bg-primary/5">
       <CardHeader>
@@ -37,7 +50,7 @@ export function YourHistoryStrip({ profile }: { profile: OpponentProfile }) {
           <WinLossPips matches={profile.recent} />
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/opponents">{t('scout.history.fullReport')}</Link>
+          <Link to={destination}>{t('scout.history.fullReport')}</Link>
         </Button>
       </CardContent>
     </Card>

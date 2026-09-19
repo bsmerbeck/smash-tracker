@@ -35,6 +35,7 @@ import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import {
   buildOpponentEvidence,
   buildOpponentProfile,
@@ -70,7 +71,11 @@ import { MergedNamesCard } from './components/MergedNamesCard';
 import { TendenciesCard } from './components/TendenciesCard';
 import { ExportH2HButton } from './components/ExportH2HButton';
 import { PrintableEvidencePacket } from './components/PrintableEvidencePacket';
-import { groupTournamentBlocks, getEncounterContext } from './tournamentHistory';
+import {
+  groupTournamentBlocks,
+  getEncounterContext,
+  resolveTournamentEntry,
+} from './tournamentHistory';
 import { buildEvidencePacket } from './evidencePacket';
 
 /**
@@ -134,6 +139,7 @@ const STAGE_IDS = new Set(stagesById.keys());
 export function OpponentHubPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
   const { matches, isLoading, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
@@ -176,6 +182,35 @@ export function OpponentHubPage() {
 
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
+
+  /**
+   * Phase 38-07 (D-08/D-12): a per-match tournament-link resolver for
+   * `RecentEncounters`'s inline expansion — built once from the SAME
+   * `tournamentBlocks`/`tournamentEntries` `TournamentHistory` already
+   * resolves, so the two surfaces never disagree about which tournament a
+   * match belongs to.
+   */
+  const tournamentLinkByMatchId = useMemo(() => {
+    const map = new Map<string, { href: string; label: string }>();
+    for (const block of tournamentBlocks) {
+      const registryEntry = resolveTournamentEntry(block, tournamentEntries ?? []);
+      const entryPath =
+        registryEntry?.entryKey ??
+        (registryEntry?.eventId != null ? String(registryEntry.eventId) : null);
+      if (!entryPath) continue;
+      const href = subjectPath(`/tournaments/${entryPath}`);
+      for (const set of block.sets) {
+        for (const game of set.games) {
+          map.set(game.match.id, { href, label: block.displayName });
+        }
+      }
+    }
+    return map;
+  }, [tournamentBlocks, tournamentEntries, subjectPath]);
+
+  function tournamentLinkForMatch(match: Match) {
+    return tournamentLinkByMatchId.get(match.id);
+  }
 
   // D-15/pitfall 7: a `player=` hint carried from the legacy redirect is an
   // IDENTITY FALLBACK OF LAST RESORT, never a filter axis — it is NOT part
@@ -267,6 +302,22 @@ export function OpponentHubPage() {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       for (const [key, value] of buildDrillDownSearch({ eventKey: point.eventKey }).entries()) {
+        next.set(key, value);
+      }
+      return next;
+    });
+    scrollToList();
+  }
+
+  /**
+   * Phase 38-07 (D-12/D-14): TournamentHistory's set rows write the SAME
+   * event-anchor axis `handleSelectTrendPoint` above already writes — one
+   * event, one destination shape, regardless of which surface produced it.
+   */
+  function handleSelectEvent(eventKey: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [key, value] of buildDrillDownSearch({ eventKey }).entries()) {
         next.set(key, value);
       }
       return next;
@@ -615,15 +666,34 @@ export function OpponentHubPage() {
             <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
           </ChartCard>
 
-          {/* Absorbed scouting cards (D-12) — unchanged content, chart.js trend removed */}
+          {/*
+            Absorbed scouting cards (D-12) — content unchanged, chart.js
+            trend removed. Phase 38-07 (D-14): the hub threads its resolved
+            opponent identity into each card's destination builder; no
+            absorbed card re-derives the opponent from its own data prop.
+          */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
-            <ScoutingStagesCard byStage={profile.byStage} />
+            <WhatTheyPlayTable
+              byTheirFighter={profile.byTheirFighter}
+              rowHref={(row) =>
+                subjectPath(
+                  `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
+                )
+              }
+            />
+            <ScoutingStagesCard
+              byStage={profile.byStage}
+              stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
+            />
           </div>
-          <RecentEncounters matches={profile.recent} />
+          <RecentEncounters
+            matches={profile.recent}
+            tournamentLinkForMatch={tournamentLinkForMatch}
+          />
           <TournamentHistory
             blocks={tournamentBlocks}
             tournamentEntries={tournamentEntries ?? []}
+            onSelectEvent={handleSelectEvent}
           />
           <TendenciesCard opponent={profile.opponent} note={noteMap?.[profile.opponent]} />
           <MergedNamesCard canonical={profile.opponent} aliases={mergedAliasesForSelected} />

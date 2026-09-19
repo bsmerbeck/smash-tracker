@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import {
   SessionsAndTilt,
@@ -7,6 +10,15 @@ import {
   buildSessionsHeadline,
 } from './SessionsAndTilt';
 import { getSessions } from '@/lib/stats';
+
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
 
 const HOUR = 60 * 60 * 1000;
 
@@ -134,5 +146,32 @@ describe('SessionsAndTilt component', () => {
     // Longest loss run of 1 rendered as plain text, not a badge.
     const cell = screen.getAllByRole('cell').find((c) => c.textContent === '1');
     expect(cell?.querySelector('[data-slot="badge"]')).toBeNull();
+  });
+
+  describe('D-14: a session row opens the filtered match list for its inclusive window', () => {
+    it('toggles an inline FilteredMatchList scoped to the session start/end window', async () => {
+      const user = userEvent.setup();
+      const sessionAStart = Date.UTC(2023, 5, 15, 12);
+      const matches = [
+        makeMatch({ id: '1', time: sessionAStart, win: true }),
+        makeMatch({ id: '2', time: sessionAStart + 1, win: false }),
+        // A second, distant session — must NOT appear in session A's window.
+        makeMatch({ id: '3', time: Date.UTC(2024, 0, 10, 12), win: true }),
+      ];
+      renderWithProviders(<SessionsAndTilt matches={matches} />);
+
+      const dateCell = screen.getAllByRole('cell').find((c) => c.textContent?.includes('2023'))!;
+      const row = within(dateCell.closest('tr')!).getByRole('button', { name: /opens details/ });
+      expect(row).toHaveAttribute('aria-expanded', 'false');
+
+      await user.click(row);
+      expect(row).toHaveAttribute('aria-expanded', 'true');
+      // Two games narrowed to the first session's window; the summary line
+      // proves the terminus actually narrowed rather than showing everything.
+      expect(screen.getByText(/2 games/)).toBeInTheDocument();
+
+      await user.click(row);
+      expect(row).toHaveAttribute('aria-expanded', 'false');
+    });
   });
 });

@@ -14,6 +14,7 @@ import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import {
   buildOpponentEvidence,
@@ -41,6 +42,7 @@ import { buildEvidencePacket } from './evidencePacket';
  */
 export function OpponentsPage() {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
@@ -234,6 +236,7 @@ export function OpponentsPage() {
           onSelect={setSelectedOpponent}
           onRequestMerge={setMergeCandidate}
           aliasMap={aliasMap ?? {}}
+          hubHref={(row) => subjectPath(buildOpponentHubPath(row.displayTag))}
         />
 
         {profile ? (

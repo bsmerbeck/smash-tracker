@@ -159,6 +159,21 @@ export interface TournamentBlock {
 }
 
 /**
+ * Phase 38-07 (D-12/D-14): mirrors
+ * `packages/shared/src/evidence/eventSeries.ts`'s private `anchorKey('tournament',
+ * name, startMs)` format EXACTLY (`` `tournament:${name.trim().toLowerCase()}:${startMs}` ``)
+ * — kept in sync by naming that file, never by importing it (`packages/shared`
+ * must never be modified by this plan, and `apps/web` must never be imported
+ * from `packages/shared`). This is what lets a `TournamentHistory` set row
+ * write the SAME event-anchor key `OpponentHubPage`'s own trend-point clicks
+ * already write, so the hub's `FilteredMatchList` terminus narrows
+ * identically regardless of which surface produced the key.
+ */
+export function tournamentBlockEventKey(block: TournamentBlock): string {
+  return `tournament:${block.displayName.trim().toLowerCase()}:${block.startTime}`;
+}
+
+/**
  * Groups the opponent's start.gg-imported matches into per-tournament
  * blocks: first by `tournamentName ?? eventName`, then split into separate
  * blocks whenever consecutive sets (by time) exceed

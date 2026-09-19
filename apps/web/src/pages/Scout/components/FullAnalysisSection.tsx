@@ -151,6 +151,13 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
         />
       )}
 
+      {/*
+        Phase 38-07 (C2-H-01): NO `rowHref` supplied — a row here is a THIRD
+        PARTY's character, and linking it would open the VIEWER's own
+        Matchups page for a pairing the viewer may never have played. Same
+        data-scope hazard `StageMastery` and `OpponentTable` already carry an
+        opt-in for, in this exact host file.
+      */}
       <WhatTheyPlayTable byTheirFighter={matchupSpread} />
 
       <ChartCard title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}>

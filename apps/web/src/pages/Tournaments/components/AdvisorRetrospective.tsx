@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { stagesById } from '@/data/stages';
 import { cn } from '@/lib/utils';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import { DrillableRow } from '@/components/DrillableRow';
 import type { ClassifiedGame, Retrospective } from '../lib/retrospective';
 
 const CLASSIFICATION_ICON: Record<ClassifiedGame['classification'], string> = {
@@ -138,9 +141,30 @@ function takeawayKey(game: ClassifiedGame): string {
  * verdict, reason or takeaway, all three of which are ordinary text nodes
  * in the page below.
  */
-function GameVerdict({ game }: { game: ClassifiedGame }) {
+/** Phase 38-07 (D-14): a pick opens the stage detail page scoped to this event — `undefined` when the played stage is unknown (`map.id` 0/absent), the ONLY permitted exemption for this row. */
+function retrospectiveStageHref(
+  game: ClassifiedGame,
+  eventKey: string | undefined,
+  subjectPath: (path: string) => string,
+): string | undefined {
+  const stageId = game.match.map?.id ?? 0;
+  if (stageId === 0) {
+    return undefined;
+  }
+  const search = buildDrillDownSearch(eventKey ? { eventKey } : {}).toString();
+  return subjectPath(`/stages/${stageId}${search ? `?${search}` : ''}`);
+}
+
+function GameVerdict({
+  game,
+  destination,
+}: {
+  game: ClassifiedGame;
+  /** Host-supplied destination — `undefined` for the unknown-stage exemption, in which case this renders plain (no chevron, no link). */
+  destination?: string;
+}) {
   const { t } = useTranslation();
-  return (
+  const content = (
     <div className="flex flex-col gap-0.5">
       <Tooltip>
         <TooltipTrigger asChild>
@@ -159,6 +183,23 @@ function GameVerdict({ game }: { game: ClassifiedGame }) {
       <p className="text-xs text-muted-foreground">{reasonLineText(game, t)}</p>
       <p className="text-xs text-muted-foreground">{t(takeawayKey(game))}</p>
     </div>
+  );
+
+  if (destination == null) {
+    return content;
+  }
+
+  return (
+    <DrillableRow
+      to={destination}
+      ariaLabel={t('shared.drillableRow.aria', {
+        subject: t(CHIP_LABEL_KEY[game.classification]),
+        context: reasonLineText(game, t),
+      })}
+      className="items-start"
+    >
+      {content}
+    </DrillableRow>
   );
 }
 
@@ -190,8 +231,16 @@ function AdherenceSummaryCard({ summary }: { summary: Retrospective['summary'] }
  * `buildRetrospective`'s output — all the classification/adherence math
  * lives in `lib/retrospective.ts`.
  */
-export function AdvisorRetrospective({ retrospective }: { retrospective: Retrospective }) {
+export function AdvisorRetrospective({
+  retrospective,
+  eventKey,
+}: {
+  retrospective: Retrospective;
+  /** The host tournament entry's key (D-14) — threaded down rather than derived here, since a pick has no event key of its own. */
+  eventKey?: string;
+}) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const { rows, otherGames, summary, resolvedRuleset } = retrospective;
   const hasAnyGames = rows.some((r) => r.games.length > 0) || otherGames.length > 0;
 
@@ -234,7 +283,11 @@ export function AdvisorRetrospective({ retrospective }: { retrospective: Retrosp
                   </span>
                   <div className="flex flex-wrap items-start gap-3">
                     {games.map((game) => (
-                      <GameVerdict key={game.match.id} game={game} />
+                      <GameVerdict
+                        key={game.match.id}
+                        game={game}
+                        destination={retrospectiveStageHref(game, eventKey, subjectPath)}
+                      />
                     ))}
                   </div>
                   <Badge variant={set.won ? 'success' : 'destructive'}>
@@ -251,7 +304,11 @@ export function AdvisorRetrospective({ retrospective }: { retrospective: Retrosp
                 </h3>
                 <div className="flex flex-wrap items-start gap-3">
                   {otherGames.map((game) => (
-                    <GameVerdict key={game.match.id} game={game} />
+                    <GameVerdict
+                      key={game.match.id}
+                      game={game}
+                      destination={retrospectiveStageHref(game, eventKey, subjectPath)}
+                    />
                   ))}
                 </div>
               </div>
