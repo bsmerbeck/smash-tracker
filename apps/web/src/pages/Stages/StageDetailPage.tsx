@@ -99,7 +99,7 @@ export function StageDetailPage() {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
   const params = useParams<{ stageId: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { matches, isLoading } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
   const [refreshedAt] = useState(() => Date.now());
@@ -229,6 +229,25 @@ export function StageDetailPage() {
   }, [fullEventSeries]);
   function eventKeyForMatch(match: Match): string | undefined {
     return eventKeyByMatchId.get(match.id);
+  }
+
+  /**
+   * WR-02 (38-REVIEW-FIX): mirrors `OpponentHubPage.tsx`'s
+   * `handleSelectTrendPoint` — clicking an anchor on this page's OWN
+   * event-anchored trend writes the SAME `event=` axis arriving via a link
+   * already sets, re-scoping every region (D-06) exactly as a fresh
+   * `?event=` arrival does. Previously this page's `<TrendLine>` passed no
+   * `onSelectPoint` at all, the only structurally-identical chart usage in
+   * this milestone that didn't.
+   */
+  function handleSelectTrendPoint(point: TrendEventPoint) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [key, value] of buildDrillDownSearch({ eventKey: point.eventKey }).entries()) {
+        next.set(key, value);
+      }
+      return next;
+    });
   }
 
   const terminusAxes: DrillDownAxes = { stageId: resolvedStageId, eventKey: eventAxis };
@@ -430,7 +449,7 @@ export function StageDetailPage() {
                 : null
             }
           >
-            <TrendLine mode="event" points={trendPoints} />
+            <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
           </ChartCard>
 
           <Card>

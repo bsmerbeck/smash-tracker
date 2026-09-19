@@ -7,6 +7,31 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { StageDetailPage } from './StageDetailPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import type { TrendLineProps } from '@/components/charts/TrendLine';
+
+/**
+ * WR-02 (38-REVIEW-FIX): captures the `onSelectPoint`/`points` props this
+ * page hands its `<TrendLine>` without depending on Recharts' own zero-size
+ * jsdom click-to-index geometry (`MatchupChart.test.tsx`'s approach, not
+ * reusable here — this page's `<TrendLine>` gets no explicit width/height,
+ * matching `OpponentHubPage.tsx`'s own real usage, so no SVG surface would
+ * render at all under jsdom's no-op ResizeObserver stub). Real chart-click
+ * behaviour is TrendLine's own contract, covered by `TrendLine.test.tsx`;
+ * this only proves the PAGE wires a working handler.
+ */
+let capturedTrendLineProps: TrendLineProps | undefined;
+vi.mock('@/components/charts/TrendLine', async () => {
+  const actual = await vi.importActual<typeof import('@/components/charts/TrendLine')>(
+    '@/components/charts/TrendLine',
+  );
+  return {
+    ...actual,
+    TrendLine: (props: TrendLineProps) => {
+      capturedTrendLineProps = props;
+      return <div data-testid="trend-line-stub" />;
+    },
+  };
+});
 
 /**
  * Plan 38-06 Task 1 (DRL-01): one case per behaviour bullet, on
@@ -112,6 +137,7 @@ describe('StageDetailPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    capturedTrendLineProps = undefined;
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     getMe.mockResolvedValue({
@@ -316,5 +342,44 @@ describe('StageDetailPage', () => {
     const scrollWrapper = (byOpponentCard as HTMLElement).querySelector('.overflow-y-auto');
     expect(scrollWrapper).toBeInTheDocument();
     expect(scrollWrapper?.className ?? '').toMatch(/max-h-\[/);
+  });
+
+  describe('WR-02 (38-REVIEW-FIX): trend click-to-filter parity with the hub', () => {
+    it('wires a working onSelectPoint that writes the clicked anchor to the URL and re-scopes the page', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, eventName: 'Genesis 9' }),
+        makeMatch({ id: 'm2', time: 2, win: true, eventName: 'Genesis 9' }),
+        makeMatch({
+          id: 'm3',
+          time: 20 * 24 * 60 * 60 * 1000,
+          win: false,
+          opponent: 'other',
+          eventName: '',
+        }),
+      ]);
+      renderStageAt('/stages/1');
+
+      await waitFor(() => expect(screen.getAllByText('rival').length).toBeGreaterThan(0));
+      expect(screen.getAllByText('other').length).toBeGreaterThan(0);
+
+      expect(capturedTrendLineProps?.mode).toBe('event');
+      if (capturedTrendLineProps?.mode !== 'event') {
+        throw new Error('expected the event-mode TrendLine props');
+      }
+      const onSelectPoint = capturedTrendLineProps.onSelectPoint;
+      expect(onSelectPoint).toBeTypeOf('function');
+      const genesisPoint = capturedTrendLineProps.points.find(
+        (p) => p.eventKey === 'tournament:genesis 9:1',
+      );
+      expect(genesisPoint).toBeDefined();
+
+      onSelectPoint!(genesisPoint!);
+
+      // The SAME re-scoping a fresh `?event=` arrival produces (pinned by the
+      // existing "scopes to an event axis" test above): the subtitle appears
+      // and the games list narrows to only this event's games.
+      await waitFor(() => expect(screen.getByText('at Genesis 9')).toBeInTheDocument());
+      expect(screen.queryByText('other')).not.toBeInTheDocument();
+    });
   });
 });
