@@ -235,4 +235,86 @@ describe('StageDetailPage', () => {
       expect(href).toContain('stage=1');
     }
   });
+
+  // --- Task 3: partial and zero-one-many cases ---
+
+  it('renders the unnamed-opponent bucket row, and it is not an anchor', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, opponent: '' }),
+      makeMatch({ id: 'm2', time: 2, win: true, opponent: '' }),
+      makeMatch({ id: 'm3', time: 3, win: false, opponent: '' }),
+    ]);
+    renderStageAt('/stages/1');
+
+    await waitFor(() =>
+      expect(screen.getByText(/games with no opponent name recorded/)).toBeInTheDocument(),
+    );
+    const unnamedRow = screen.getByText(/games with no opponent name recorded/).closest('tr')!;
+    expect(within(unnamedRow).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('excludes unknown-character games from the by-character denominators while still listing them in the games list', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+      makeMatch({ id: 'm3', time: 3, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+      makeMatch({
+        id: 'm4',
+        time: 4,
+        win: false,
+        fighter_id: 999999,
+        opponent_id: 999998,
+        opponent: 'weirdo',
+      }),
+    ]);
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    expect(screen.getByText(/Unknown \(1 game, excluded\)/)).toBeInTheDocument();
+    // Still visible in the games list, per D-13/the by-character exclusion
+    // being scoped to that ONE region's own denominators.
+    expect(screen.getAllByText('weirdo').length).toBeGreaterThan(0);
+  });
+
+  it('renders the games-needed copy for a below-floor fixture while the games list still shows every game', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true }),
+      makeMatch({ id: 'm2', time: 2, win: false }),
+    ]);
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument());
+    expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
+  });
+
+  it('renders one row in each table for a one-game fixture, with no special-cased minimum layout', async () => {
+    // One game is itself below `ABSTENTION_FLOOR_GAMES` — the Over Time
+    // region legitimately renders the SAME shared games-needed sentence as
+    // the below-floor case above (a one-point cumulative rate is exactly as
+    // unsupported a claim as a zero-point one); "every region renders" is
+    // satisfied by that sentence being this region's actual output for this
+    // fixture, not by forcing a single dot onto an unsupported claim.
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
+    const byOpponentCard = screen.getByText('By Opponent').closest('[data-slot="card"]')!;
+    expect(within(byOpponentCard as HTMLElement).getAllByRole('row')).toHaveLength(2);
+
+    const byCharacterCard = screen.getByText('By Character').closest('[data-slot="card"]')!;
+    expect(within(byCharacterCard as HTMLElement).getAllByRole('row')).toHaveLength(2);
+
+    expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
+  });
+
+  it('the by-opponent table carries the maximum-height scroll class rather than growing unbounded', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
+    const byOpponentCard = screen.getByText('By Opponent').closest('[data-slot="card"]')!;
+    const scrollWrapper = (byOpponentCard as HTMLElement).querySelector('.overflow-y-auto');
+    expect(scrollWrapper).toBeInTheDocument();
+    expect(scrollWrapper?.className ?? '').toMatch(/max-h-\[/);
+  });
 });
