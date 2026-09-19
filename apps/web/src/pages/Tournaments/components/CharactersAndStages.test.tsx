@@ -23,12 +23,14 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
 
 function renderCharactersAndStages(
   matches: Match[],
-  eventKeyForStage?: (stageId: number) => string | undefined,
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined,
   initialPath = '/',
 ) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <CharactersAndStages matches={matches} eventKeyForStage={eventKeyForStage} />
+      <CharactersAndStages matches={matches} stageAggregateLinkParams={stageAggregateLinkParams} />
     </MemoryRouter>,
   );
 }
@@ -99,7 +101,7 @@ describe('CharactersAndStages', () => {
         makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
       ];
       renderCharactersAndStages(matches, (stageId) =>
-        stageId === 1 ? 'tournament:ultimate singles:1' : undefined,
+        stageId === 1 ? { eventKey: 'tournament:ultimate singles:1' } : undefined,
       );
       const link = screen.getByRole('link', { name: /Battlefield/ });
       expect(link).toHaveAttribute('href', '/stages/1?event=tournament%3Aultimate+singles%3A1');

@@ -634,21 +634,23 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down (CR-03)',
 });
 
 /**
- * WR-04 (38-REVIEW-FIX): CR-03's per-stage lookup computed exactly ONE
+ * WR-04/WR-05 (38-REVIEW-FIX): CR-03's per-stage lookup computed exactly ONE
  * anchor key per stage — the block containing the EARLIEST match on that
  * stage. `buildStageEventSeries` (what `StageDetailPage` actually queries)
  * splits a stage's matches into a NEW anchor block whenever two consecutive
  * plays are more than `EVENT_ANCHOR_PROXIMITY_MS` apart — a real condition
- * for a multi-day entry. Pre-fix, a "Stages Played" row for a stage played
- * both early AND (more than the proximity window) later in the same entry
- * always resolved to the EARLY block's key, so the destination never showed
- * the later game. This fixture's two games on the same stage are separated
- * by more than `EVENT_ANCHOR_PROXIMITY_MS`, so the real engine produces TWO
- * separate anchors for this stage — this test asserts the row's link
- * resolves to the block containing the MOST RECENT game (this fix's chosen,
- * documented behavior), not the earliest one.
+ * for a multi-day entry. WR-04 fixed the block resolved from being always
+ * the EARLIEST one; WR-05 then found that the "Stages Played" aggregate
+ * row's displayed W-L/games figure spans EVERY block for the stage, while a
+ * single `event=<key>` link can only ever resolve to ONE block — for this
+ * fixture's two games (one per block), that meant the row read "1-1 · 2
+ * games" but its link landed on a destination showing only 1 of them, with
+ * nothing disclosing the narrowing. This test now asserts the row's link
+ * instead spans a `from`/`to` date window covering every block, so the
+ * destination lists BOTH games — exactly what the row's own "2 games" count
+ * promises.
  */
-describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a proximity-window gap (WR-04)', () => {
+describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a proximity-window gap (WR-04/WR-05)', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
@@ -658,7 +660,7 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a 
     mockPrepBrief({ isPending: false, activated: false });
   });
 
-  it('links a stage played across a proximity-window gap to the block containing the most recent game', async () => {
+  it("links a stage played across a proximity-window gap to a window spanning every block, matching the row's own aggregate count", async () => {
     const earlyTime = Date.UTC(2021, 0, 1);
     // Strictly more than the proximity window apart — the engine's own
     // `splitTournamentBlocks` starts a new block past this gap.
@@ -693,17 +695,66 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a 
     renderTournamentAndStagePages('42');
 
     await screen.findByText('Stages Played');
+    // The row's own aggregate count spans both blocks: 1 win + 1 loss = 2
+    // games — this is the number the destination must match exactly. (Other
+    // cards on this page, e.g. "Your Characters", may show the identical
+    // "1-1 · 2 games" text for this fixture's single fighter matchup, so
+    // this only asserts the text renders somewhere, not that it's unique.)
+    expect(screen.getAllByText('1-1 · 2 games').length).toBeGreaterThan(0);
     const stageLink = screen.getByRole('link', {
       name: 'Big Battlefield — Stages Played, opens details',
     });
+    // WR-05: more than one block for this stage — the link now carries an
+    // inclusive from/to window (drillDownParams.ts's existing axes) spanning
+    // both blocks' match times, never a single `event=` anchor that could
+    // only ever resolve to one of them.
+    const href = stageLink.getAttribute('href')!;
+    expect(href).not.toContain('event=');
+    expect(href).toContain(`from=${earlyTime}`);
+    expect(href).toContain(`to=${lateTime}`);
+
     await user.click(stageLink);
 
-    // The most recent game's block is what the row resolves to — its
-    // opponent shows up, and the earlier block's opponent (a DIFFERENT
-    // anchor entirely) does not.
+    // Both blocks' games show up on the destination — exactly the 2 games
+    // the row's own count promised, not just the most recent block's 1.
     expect(await screen.findByText('By Opponent')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'laterival' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'earlyrival' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'earlyrival' })).toBeInTheDocument();
     expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
+  });
+
+  it("keeps a single-block stage's link on the unchanged event= anchor form", async () => {
+    const time = Date.UTC(2021, 0, 1);
+
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: time,
+        lastSetAt: time,
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'only-game',
+        time,
+        win: true,
+        opponent: 'solorival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+    ]);
+
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    const stageLink = screen.getByRole('link', {
+      name: 'Big Battlefield — Stages Played, opens details',
+    });
+    // A single block: byte-identical to the pre-WR-05 `event=<key>` link —
+    // no `from`/`to` at all.
+    const href = stageLink.getAttribute('href')!;
+    expect(href).toMatch(/^\/stages\/2\?event=/);
+    expect(href).not.toContain('from=');
+    expect(href).not.toContain('to=');
   });
 });

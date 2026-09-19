@@ -109,14 +109,23 @@ export function StageDetailPage() {
     return parsed != null && isKnownStageSegment(parsed) ? parsed : undefined;
   }, [params.stageId]);
 
-  // D-05: tolerant read — only the event axis is consumed by this page; a
-  // `stage`/`fighter`/`vs` query param (this page's own path already carries
-  // the stage identity) is simply not read here.
+  // D-05: tolerant read — only the event and date-window axes are consumed
+  // by this page; a `stage`/`fighter`/`vs` query param (this page's own path
+  // already carries the stage identity) is simply not read here.
+  //
+  // WR-05 (38-REVIEW-FIX): `from`/`to` are read alongside `eventKey` — the
+  // "Stages Played" aggregate row on `TournamentDetailPage.tsx` links to a
+  // from/to window (instead of a single `event=` anchor) when a stage's
+  // games span more than one proximity block, so this page must narrow by
+  // that window exactly as it already narrows by `event=`, or the row's own
+  // count and this page's regions would disagree again.
   const axesFromUrl = useMemo(
     () => readDrillDownParams(searchParams, { stageIds: STAGE_IDS }),
     [searchParams],
   );
   const eventAxis = axesFromUrl.eventKey;
+  const fromAxis = axesFromUrl.from;
+  const toAxis = axesFromUrl.to;
 
   // The FULL (never event-narrowed) event series for this stage — the source
   // of both the event-key -> match-id lookup the terminus needs and the
@@ -136,17 +145,27 @@ export function StageDetailPage() {
 
   // D-06: arriving with an event axis scopes EVERY region (by-opponent,
   // by-character, over-time, games) to that event; arriving without one is
-  // the account-wide view.
+  // the account-wide view. WR-05 (38-REVIEW-FIX): a from/to date window
+  // (the aggregate "Stages Played" row's multi-block link) scopes every
+  // region the same way `event=` does — never just the games-list terminus —
+  // so a row's own count and this page's regions can't disagree. `event=`
+  // takes priority when both are somehow present (the two producers in this
+  // codebase never emit both together).
   const sourceMatches = useMemo(() => {
-    if (eventAxis == null) {
-      return matches;
+    if (eventAxis != null) {
+      if (!eventAnchor) {
+        return [];
+      }
+      const idSet = new Set(eventAnchor.matchIds);
+      return matches.filter((m) => idSet.has(m.id));
     }
-    if (!eventAnchor) {
-      return [];
+    if (fromAxis != null || toAxis != null) {
+      return matches.filter(
+        (m) => (fromAxis == null || m.time >= fromAxis) && (toAxis == null || m.time <= toAxis),
+      );
     }
-    const idSet = new Set(eventAnchor.matchIds);
-    return matches.filter((m) => idSet.has(m.id));
-  }, [matches, eventAxis, eventAnchor]);
+    return matches;
+  }, [matches, eventAxis, eventAnchor, fromAxis, toAxis]);
 
   const breakdown = useMemo(
     () =>
@@ -257,10 +276,12 @@ export function StageDetailPage() {
   // WR-03 (38-REVIEW-FIX): same fix as `OpponentHubPage.tsx` — this literal
   // was a fresh object every render, independently defeating
   // `FilteredMatchList`'s D-16 memo regardless of the `eventKeyForMatch` fix
-  // above.
+  // above. WR-05: `from`/`to` are included so the games-list terminus
+  // narrows by the same window `sourceMatches` above uses for every other
+  // region.
   const terminusAxes: DrillDownAxes = useMemo(
-    () => ({ stageId: resolvedStageId, eventKey: eventAxis }),
-    [resolvedStageId, eventAxis],
+    () => ({ stageId: resolvedStageId, eventKey: eventAxis, from: fromAxis, to: toAxis }),
+    [resolvedStageId, eventAxis, fromAxis, toAxis],
   );
   // Phase 38-04 (D-16): the single-owner ordering helper — never a local
   // `.sort((a, b) => b.time - a.time)`, which would drop the ascending

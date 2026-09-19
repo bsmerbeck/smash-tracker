@@ -113,18 +113,23 @@ function FighterCard({
 function StagesCard({
   matches,
   subjectPath,
-  eventKeyForStage,
+  stageAggregateLinkParams,
 }: {
   matches: Match[];
   subjectPath: (path: string) => string;
   /**
-   * WR-04 (38-REVIEW-FIX): now a per-(stage, proximity-block) lookup — this
-   * card's own aggregate row has no single match of its own (it summarizes
-   * every game on the stage across the whole entry), so it calls this with
-   * only `stageId`, which resolves to the MOST RECENT block for that stage
-   * (see `TournamentDetailPage.tsx`'s `eventKeyForStage`).
+   * WR-05 (38-REVIEW-FIX): this card's own aggregate row has no single match
+   * of its own (it summarizes every game on the stage across the whole
+   * entry, across every proximity block) — a single `eventKey` link can only
+   * ever resolve to ONE block, so this returns either `{ eventKey }` (a
+   * stage with exactly one block, byte-identical to the pre-WR-05 link) or a
+   * `from`/`to` date window spanning every block (a stage split across more
+   * than one), so the destination lists exactly the games this row counts.
+   * See `TournamentDetailPage.tsx`'s `stageAggregateLinkParams`.
    */
-  eventKeyForStage?: (stageId: number, matchId?: string) => string | undefined;
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined;
 }) {
   const { t } = useTranslation();
   const records = getStageRecords(matches)
@@ -145,8 +150,8 @@ function StagesCard({
               const stage = stagesById.get(record.stageId);
               const name = stage?.name ?? t('common.unknown');
               const detail = `${record.wins}-${record.losses} · ${t('common.games', { count: record.total })}`;
-              const eventKey = eventKeyForStage?.(record.stageId);
-              const search = buildDrillDownSearch(eventKey ? { eventKey } : {}).toString();
+              const linkParams = stageAggregateLinkParams?.(record.stageId);
+              const search = buildDrillDownSearch(linkParams ?? {}).toString();
               const destination = subjectPath(
                 `/stages/${record.stageId}${search ? `?${search}` : ''}`,
               );
@@ -195,19 +200,24 @@ function StagesCard({
  * than taking a host-supplied builder — there is no third-party-data host
  * rendering this component.
  *
- * CR-03 (38-REVIEW-FIX): `eventKeyForStage` (a per-STAGE lookup, not a single
- * flat string) is threaded down for the stage rows' event axis — a flat key
- * shared by every row could only ever match ONE stage's real event-series
- * anchor on `StageDetailPage.tsx` (that page scopes matches by stage BEFORE
- * grouping into anchors, so each stage's anchor carries its OWN start time).
- * Optional because a legacy entry may resolve no anchor for a given stage.
+ * CR-03/WR-05 (38-REVIEW-FIX): `stageAggregateLinkParams` (a per-STAGE
+ * lookup, not a single flat string) is threaded down for the stage rows'
+ * event/date-window axis — a flat key shared by every row could only ever
+ * match ONE stage's real event-series anchor on `StageDetailPage.tsx` (that
+ * page scopes matches by stage BEFORE grouping into anchors, so each stage's
+ * anchor carries its OWN start time), and a stage split across more than one
+ * proximity block needs a date window rather than a single anchor key so the
+ * destination lists exactly the games the row counts (WR-05). Optional
+ * because a legacy entry may resolve no anchor for a given stage.
  */
 export function CharactersAndStages({
   matches,
-  eventKeyForStage,
+  stageAggregateLinkParams,
 }: {
   matches: Match[];
-  eventKeyForStage?: (stageId: number, matchId?: string) => string | undefined;
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined;
 }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -226,7 +236,11 @@ export function CharactersAndStages({
         subjectPath={subjectPath}
         keyFn={(m) => m.opponent_id}
       />
-      <StagesCard matches={matches} subjectPath={subjectPath} eventKeyForStage={eventKeyForStage} />
+      <StagesCard
+        matches={matches}
+        subjectPath={subjectPath}
+        stageAggregateLinkParams={stageAggregateLinkParams}
+      />
     </div>
   );
 }

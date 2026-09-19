@@ -309,7 +309,10 @@ const SURFACES: Surface[] = [
     render: () => {
       const matches = [makeMatch({ id: 'g1', time: 1, win: true })];
       return withRouter(
-        <CharactersAndStages matches={matches} eventKeyForStage={() => 'genesis-9'} />,
+        <CharactersAndStages
+          matches={matches}
+          stageAggregateLinkParams={() => ({ eventKey: 'genesis-9' })}
+        />,
       );
     },
     rows: (result) => within(result.container).getAllByRole('link'),
