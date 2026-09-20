@@ -3,6 +3,8 @@ import { tiltCostTemplate } from './tiltCost.js';
 import { sessionFatigueTemplate } from './sessionFatigue.js';
 import { settingGapTemplate } from './settingGap.js';
 import { ratingMoveTemplate } from './ratingMove.js';
+import { volumeFormTemplate } from './volumeForm.js';
+import { mixShiftTemplate } from './mixShift.js';
 
 /**
  * Cohort-comparison templates (DD-12's two-proportion / RD-band reads):
@@ -17,4 +19,6 @@ export const COHORT_TEMPLATES: InsightTemplate[] = [
   sessionFatigueTemplate,
   settingGapTemplate,
   ratingMoveTemplate,
+  volumeFormTemplate,
+  mixShiftTemplate,
 ];
