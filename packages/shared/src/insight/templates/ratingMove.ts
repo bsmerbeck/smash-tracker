@@ -94,7 +94,6 @@ function buildRatingMoveInsight(input: {
   const gamesNeeded =
     state === 'locked' ? Math.max(0, ABSTENTION_FLOOR_GAMES - recentRate.total) : undefined;
 
-  const dateRange = matchDateRange(scopedMatches);
   const recentClaim = buildRateClaim({
     rate: recentRate,
     refreshedAt: nowMs,
