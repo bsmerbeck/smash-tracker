@@ -64,3 +64,4 @@ export * from './events.js';
 export * from './prep.js';
 export * from './evidence/index.js';
 export * from './ruleset.js';
+export * from './insight/index.js';
