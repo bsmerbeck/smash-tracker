@@ -1,5 +1,6 @@
-import { useMemo, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { InsightCardErrorBoundary } from './InsightCardErrorBoundary';
 
 /**
  * One card's stable identity plus a factory that builds its content, given
@@ -33,6 +34,8 @@ export interface InsightRailLabels {
   dismissedCount: (count: number) => string;
   allDismissed: string;
   restore: string;
+  /** Rendered as the ONLY content when every remaining candidate crashed (UI-SPEC §9.5). */
+  railError: ReactNode;
 }
 
 export interface InsightRailProps {
@@ -57,31 +60,31 @@ interface VisibleSelection {
 }
 
 /**
- * Filters dismissed candidates out of `rail.cards`/`rail.unlocksNext`, then
- * promotes from `rail.promotionQueue` to refill the freed slot(s) up to
- * `cap`. Never re-sorts — `cards`/`promotionQueue` are consumed in the exact
- * order given.
+ * Filters excluded (dismissed OR crashed) candidates out of
+ * `rail.cards`/`rail.unlocksNext`, then promotes from `rail.promotionQueue`
+ * to refill the freed slot(s) up to `cap`. Never re-sorts — `cards` and
+ * `promotionQueue` are consumed in the exact order given.
  */
 function selectVisible(
   rail: InsightRailShape,
-  dismissedIds: string[],
+  excludedIds: string[],
   cap: number,
 ): VisibleSelection {
-  const isDismissed = (id: string) => dismissedIds.includes(id);
+  const isExcluded = (id: string) => excludedIds.includes(id);
 
   const unlocksNext =
-    rail.unlocksNext && !isDismissed(rail.unlocksNext.id) ? rail.unlocksNext : null;
+    rail.unlocksNext && !isExcluded(rail.unlocksNext.id) ? rail.unlocksNext : null;
   const budget = cap - (unlocksNext ? 1 : 0);
 
   const cards: InsightRailCard[] = [];
   for (const card of rail.cards) {
     if (cards.length >= budget) break;
-    if (!isDismissed(card.id)) cards.push(card);
+    if (!isExcluded(card.id)) cards.push(card);
   }
   if (cards.length < budget) {
     for (const card of rail.promotionQueue) {
       if (cards.length >= budget) break;
-      if (isDismissed(card.id)) continue;
+      if (isExcluded(card.id)) continue;
       if (cards.some((c) => c.id === card.id)) continue;
       cards.push(card);
     }
@@ -91,10 +94,22 @@ function selectVisible(
 }
 
 /**
- * The insight rail (INS-04, UI-SPEC §7.8, D-07/D-14): at most `cap` cards,
- * never empty, promotes the next candidate on dismiss, and cannot leak the
- * engine's internal ordering score — it reads only the already-ordered
- * `rail` shape it is handed, never a numeric ranking field of its own.
+ * A plain function component wrapping a card's factory call. The factory
+ * MUST be invoked inside a component's own render (not the rail's) for
+ * `InsightCardErrorBoundary` to catch a throw from it — calling
+ * `card.render(...)` directly inline in the rail's JSX would run it during
+ * the RAIL's render phase, before React ever reaches the boundary.
+ */
+function CardSlot({ card, onDismiss }: { card: InsightRailCard; onDismiss: () => void }) {
+  return <>{card.render({ onDismiss })}</>;
+}
+
+/**
+ * The insight rail (INS-04, UI-SPEC §7.8, D-07/D-14, T-39.1-07-01..04): at
+ * most `cap` cards, never empty, promotes the next candidate on dismiss OR
+ * on a per-card crash, and cannot leak the engine's internal ordering score
+ * — it reads only the already-ordered `rail` shape it is handed, never a
+ * numeric ranking field of its own.
  */
 export function InsightRail({
   rail,
@@ -107,16 +122,35 @@ export function InsightRail({
   fallbackCard,
   cap = DEFAULT_CAP,
 }: InsightRailProps) {
+  const [crashedIds, setCrashedIds] = useState<string[]>([]);
+
+  const handleCrash = useCallback((id: string) => {
+    setCrashedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const excludedIds = useMemo(() => [...dismissedIds, ...crashedIds], [dismissedIds, crashedIds]);
+
   const { unlocksNext, cards } = useMemo(
-    () => selectVisible(rail, dismissedIds, cap),
-    [rail, dismissedIds, cap],
+    () => selectVisible(rail, excludedIds, cap),
+    [rail, excludedIds, cap],
   );
 
-  const totalOriginalCandidates =
-    rail.cards.length + rail.promotionQueue.length + (rail.unlocksNext ? 1 : 0);
+  const allOriginalIds = useMemo(
+    () => [
+      ...rail.cards.map((c) => c.id),
+      ...rail.promotionQueue.map((c) => c.id),
+      ...(rail.unlocksNext ? [rail.unlocksNext.id] : []),
+    ],
+    [rail],
+  );
+
+  const totalOriginalCandidates = allOriginalIds.length;
   const visibleTotal = cards.length + (unlocksNext ? 1 : 0);
   const isEmpty = totalOriginalCandidates === 0;
-  const allDismissed = !isEmpty && visibleTotal === 0;
+  // Every candidate the engine offered crashed (regardless of dismissedIds) —
+  // a system fault, distinct from a user dismissing everything.
+  const allCrashed = !isEmpty && allOriginalIds.every((id) => crashedIds.includes(id));
+  const allExcluded = !isEmpty && !allCrashed && visibleTotal === 0;
 
   return (
     <div data-slot="insight-rail">
@@ -136,7 +170,13 @@ export function InsightRail({
           </div>
         )}
 
-        {allDismissed && (
+        {allCrashed && (
+          <div data-slot="insight-rail-card" data-card-kind="rail-error">
+            {labels.railError}
+          </div>
+        )}
+
+        {allExcluded && (
           <div
             className="flex flex-col gap-2 rounded-xl border border-border p-5"
             data-slot="insight-rail-card"
@@ -150,7 +190,8 @@ export function InsightRail({
         )}
 
         {!isEmpty &&
-          !allDismissed &&
+          !allCrashed &&
+          !allExcluded &&
           cards.map((card) => (
             <div
               key={card.id}
@@ -158,17 +199,21 @@ export function InsightRail({
               data-slot="insight-rail-card"
               data-card-kind="regular"
             >
-              {card.render({ onDismiss: () => onDismiss(card.id) })}
+              <InsightCardErrorBoundary templateId={card.id} onError={handleCrash}>
+                <CardSlot card={card} onDismiss={() => onDismiss(card.id)} />
+              </InsightCardErrorBoundary>
             </div>
           ))}
 
-        {!isEmpty && !allDismissed && unlocksNext && (
+        {!isEmpty && !allCrashed && !allExcluded && unlocksNext && (
           <div
             className="transition-opacity duration-200 motion-reduce:transition-none"
             data-slot="insight-rail-card"
             data-card-kind="unlocks-next"
           >
-            {unlocksNext.render({ onDismiss: () => onDismiss(unlocksNext.id) })}
+            <InsightCardErrorBoundary templateId={unlocksNext.id} onError={handleCrash}>
+              <CardSlot card={unlocksNext} onDismiss={() => onDismiss(unlocksNext.id)} />
+            </InsightCardErrorBoundary>
           </div>
         )}
       </div>
@@ -181,7 +226,7 @@ export function InsightRail({
         </div>
       )}
 
-      {!allDismissed && dismissedIds.length > 0 && (
+      {!allCrashed && !allExcluded && dismissedIds.length > 0 && (
         <div className="flex items-center gap-2" data-slot="insight-rail-foot">
           <span className="text-xs leading-4 text-muted-foreground tabular-nums">
             {labels.dismissedCount(dismissedIds.length)}
