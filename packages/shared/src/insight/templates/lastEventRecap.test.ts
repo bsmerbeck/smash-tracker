@@ -161,9 +161,12 @@ describe('lastEventRecapTemplate (Task 2: the link-less factual recap)', () => {
     expect(insight.copy.values.setRecord).not.toBe('0–0');
   });
 
-  it('SUBJECT_TEMPLATES length is now exactly 3, and no returned Insight carries a debrief or watchlist door', async () => {
+  it('SUBJECT_TEMPLATES includes lastEventRecap, and no returned Insight carries a debrief or watchlist door', async () => {
+    // Not an exact-length assertion (review disposition C2-L4): Task 3 in this same plan grows
+    // this segment further (to 6); the final, exact length is asserted once, in
+    // `matchupOrPlayer.test.ts`, from the LAST task to fill this segment.
     const { SUBJECT_TEMPLATES } = await import('./subject.js');
-    expect(SUBJECT_TEMPLATES).toHaveLength(3);
+    expect(SUBJECT_TEMPLATES.map((t) => t.id)).toContain('lastEventRecap');
     const matches = buildEventGames({
       eventName: 'Door Check',
       setCount: 1,
