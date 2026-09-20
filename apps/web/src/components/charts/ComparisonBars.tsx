@@ -172,6 +172,7 @@ const TONE_CLASSES: Record<ComparisonBarsTone, { track: string; fill: string }> 
  * inside a `ChartCard`); a CSS meter renders no Recharts element, so it is
  * outside that rule's scope. `CounterpickAdvisor.tsx` supplies the
  * `ChartCard` frame this component renders inside, the same split
+ * `MatchupChart.tsx`/`TrendLine.tsx` already establish.
  *
  * `mode: 'dumbbell'` (39.1-08, VIZ-02/DD-04) is a THIRD variant of this same
  * member, added the exact way `TrendLine.tsx` gained its `'event'` mode: the
@@ -182,7 +183,6 @@ const TONE_CLASSES: Record<ComparisonBarsTone, { track: string; fill: string }> 
  * (never hollowed into a fabricated position) when `recentTotal` is below
  * `ABSTENTION_FLOOR_GAMES` or when the row is `collapsed` — see
  * `DumbbellRow` below.
- * `MatchupChart.tsx`/`TrendLine.tsx` already establish.
  */
 export function ComparisonBars(props: ComparisonBarsProps) {
   if (props.mode === 'dumbbell') {
