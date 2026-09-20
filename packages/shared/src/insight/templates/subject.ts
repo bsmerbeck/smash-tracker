@@ -1,5 +1,7 @@
 import type { InsightTemplate } from './registry.js';
 import { characterMoversTemplate } from './characterMovers.js';
+import { rivalMoversTemplate } from './rivalMovers.js';
+import { lastEventRecapTemplate } from './lastEventRecap.js';
 
 /**
  * Character/player/stage-scoped templates: the six reads scoped to a
@@ -9,4 +11,8 @@ import { characterMoversTemplate } from './characterMovers.js';
  * arrays, so a template added here cannot be silently orphaned from the
  * composed registry a caller actually iterates.
  */
-export const SUBJECT_TEMPLATES: InsightTemplate[] = [characterMoversTemplate];
+export const SUBJECT_TEMPLATES: InsightTemplate[] = [
+  characterMoversTemplate,
+  rivalMoversTemplate,
+  lastEventRecapTemplate,
+];
