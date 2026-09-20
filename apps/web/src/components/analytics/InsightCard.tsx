@@ -68,26 +68,23 @@ export function InsightCard({
   return (
     <Card
       data-slot="insight-card"
-      className={cn('gap-4 shadow-none', density === 'compact' ? 'p-5' : 'p-6', className)}
+      className={cn('relative gap-4 shadow-none', density === 'compact' ? 'p-5' : 'p-6', className)}
     >
-      <div className="flex items-center justify-between gap-2" data-slot="insight-card-header">
-        <div className="flex min-w-0 items-center gap-2">
-          {chip}
-          <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">
-            {name}
-          </span>
-        </div>
-        {onDismiss && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onDismiss}
-            aria-label={dismissLabel}
-          >
-            <X />
-          </Button>
-        )}
+      {/*
+        The dismiss control sits visually top-right (UI-SPEC §7.8 anatomy) but
+        MUST be last in DOM/tab order — verdict → marks → doors → dismiss
+        (UI-SPEC §14.5 rule 5). It is rendered as the Card's last child,
+        absolutely positioned over the header row, rather than inline in the
+        header, so visual position and focus order can differ intentionally.
+      */}
+      <div
+        className={cn('flex min-w-0 items-center gap-2', onDismiss && 'pr-8')}
+        data-slot="insight-card-header"
+      >
+        {chip}
+        <span className="truncate text-xs leading-4 text-muted-foreground tabular-nums">
+          {name}
+        </span>
       </div>
 
       <div className="flex flex-col gap-3" data-slot="insight-card-content">
@@ -144,6 +141,19 @@ export function InsightCard({
           </div>
         )}
       </div>
+
+      {onDismiss && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={onDismiss}
+          aria-label={dismissLabel}
+          className="absolute top-4 right-4"
+        >
+          <X />
+        </Button>
+      )}
     </Card>
   );
 }

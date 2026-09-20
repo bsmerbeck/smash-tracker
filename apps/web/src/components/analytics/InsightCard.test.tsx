@@ -120,6 +120,28 @@ describe('InsightCard', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('places the dismiss control last in DOM/tab order, after the doors row (UI-SPEC §14.5 rule 5)', () => {
+    const doors: InsightCardDoors = [
+      <a key="1" href="/a">
+        A
+      </a>,
+    ];
+    render(
+      <InsightCard
+        chip={<span>chip</span>}
+        name="n"
+        verdict="v"
+        evidence="e"
+        doors={doors}
+        onDismiss={vi.fn()}
+        dismissLabel="Dismiss this read"
+      />,
+    );
+    const focusable = Array.from(document.querySelectorAll('a[href], button'));
+    const names = focusable.map((el) => el.textContent || el.getAttribute('aria-label'));
+    expect(names).toEqual(['A', 'Dismiss this read']);
+  });
+
   it('the verdict element carries no truncation utility and no line-clamp below three lines', () => {
     const { container } = render(
       <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,
