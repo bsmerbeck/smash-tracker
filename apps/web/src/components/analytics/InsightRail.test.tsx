@@ -11,6 +11,7 @@ const LABELS = {
   dismissedCount: (count: number) => `${count} dismissed on this device`,
   allDismissed: 'Every read on this rail is dismissed.',
   restore: 'Restore',
+  railError: <p>Insights could not be computed for this view. Reload to try again.</p>,
 };
 
 function makeCard(id: string, name: string): InsightRailCard {
@@ -31,6 +32,15 @@ function makeCard(id: string, name: string): InsightRailCard {
         ]}
       />
     ),
+  };
+}
+
+function makeThrowingCard(id: string): InsightRailCard {
+  return {
+    id,
+    render: () => {
+      throw new Error(`engine read failed for ${id}`);
+    },
   };
 }
 
@@ -306,6 +316,72 @@ describe('InsightRail', () => {
     expect(names?.[0]).toContain('verdict for A');
     expect(names?.[1]).toContain('verdict for B');
     expect(names?.[2]).toContain('verdict for C');
+  });
+
+  it('a rail with 4 candidates where the first throws renders 3 cards with the 4th promoted', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cards = [makeThrowingCard('a'), makeCard('b', 'B'), makeCard('c', 'C')];
+    const promotionQueue = [makeCard('d', 'D')];
+    const rail: InsightRailShape = { cards, unlocksNext: null, lines: [], promotionQueue };
+    const { container } = render(
+      <InsightRail
+        rail={rail}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expect(container.querySelectorAll('[data-slot="insight-rail-card"]')).toHaveLength(3);
+    expect(screen.getByText('verdict for D')).toBeInTheDocument();
+    consoleSpy.mockRestore();
+  });
+
+  it('a rail where every candidate throws renders exactly one node carrying labels.railError', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cards = [makeThrowingCard('a'), makeThrowingCard('b')];
+    const rail: InsightRailShape = { cards, unlocksNext: null, lines: [], promotionQueue: [] };
+    const { container } = render(
+      <InsightRail
+        rail={rail}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expect(container.querySelectorAll('[data-slot="insight-rail-card"]')).toHaveLength(1);
+    expect(
+      screen.getByText('Insights could not be computed for this view. Reload to try again.'),
+    ).toBeInTheDocument();
+    consoleSpy.mockRestore();
+  });
+
+  it('onDismiss is never called as a result of a crash', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onDismiss = vi.fn();
+    const cards = [makeThrowingCard('a')];
+    const rail: InsightRailShape = { cards, unlocksNext: null, lines: [], promotionQueue: [] };
+    render(
+      <InsightRail
+        rail={rail}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={onDismiss}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it('neither InsightRail nor UnlocksNext reads a salience field anywhere in their own source', () => {
