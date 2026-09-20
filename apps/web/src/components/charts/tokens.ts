@@ -16,6 +16,14 @@
  * silently dropped — a future chart needing a second identity color should
  * reach for `--chart-4` (already validated as the `{--chart-1, --chart-4}`
  * pair) instead.
+ *
+ * Phase 39.1 wave 1 (UIX-05, review finding C1-H5): `win`/`loss`/`steady`
+ * landed here ahead of the rest of the visualization token table (scheduled
+ * for Track C, plan 39.1-10) because the marks that draw those roles
+ * (`DeltaChip` here; `FormStrip` and the inline marks in plan 39.1-08) are
+ * wave-1 components and would otherwise have had no legal colour source —
+ * this is the ONE frozen token map (UIX-05's contract), never a second
+ * module.
  */
 export const CHART_TOKENS = Object.freeze({
   /** The trend line's single identity series color (`--chart-1`, the app's brand red). */
@@ -34,6 +42,12 @@ export const CHART_TOKENS = Object.freeze({
   surface: 'var(--card)',
   /** Border color shared with the rest of the `Card` family. */
   border: 'var(--border)',
+  /** Win mark colour (`DeltaChip` up state, `RecordBar` win segment, ▲ glyph). */
+  win: 'var(--win)',
+  /** Loss mark colour (`DeltaChip` down state, `RecordBar` loss segment, ▼ glyph). */
+  loss: 'var(--loss)',
+  /** Steady/no-direction mark colour (`DeltaChip` steady/thin/none states). */
+  steady: 'var(--steady)',
 });
 
 /** Fixed chart body height (SC1's 1440p-fit mechanism) — bounded regardless of data length or viewport. */

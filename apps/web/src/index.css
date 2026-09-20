@@ -36,6 +36,20 @@
   --chart-4: oklch(0.62 0.17 255);
   --chart-5: oklch(0.45 0 0);
   /*
+   * Phase 39.1 mark-role tokens (UIX-05, UI-SPEC §4.1): the three colours a
+   * win/loss/steady mark may EVER carry (win/loss chips, RecordBar, glyphs).
+   * Declared here in wave 1 (ahead of the rest of the visualization token
+   * table, scheduled for Track C) because the marks that draw these roles
+   * (`DeltaChip` — this plan; `FormStrip` and the inline marks — plan
+   * 39.1-08) are wave-1 components and would otherwise have no legal colour
+   * source. `--win` is a new literal; `--loss` and `--steady` are aliases of
+   * existing tokens (`--destructive`, `--muted-foreground`) per the spec
+   * table, not new hues.
+   */
+  --win: #059669;
+  --loss: var(--destructive);
+  --steady: var(--muted-foreground);
+  /*
    * Coaching mode accent (Phase 11 fix round 2, D-06/D6): a distinct violet
    * hue (mockup #8b7cf6) so coaching chrome reads as visually distinct from
    * the app's red without re-theming personal mode. Single token — recoloring
@@ -69,6 +83,10 @@
   --chart-3: oklch(0.8 0.16 85);
   --chart-4: oklch(0.62 0.17 255);
   --chart-5: oklch(0.45 0 0);
+  /* Mirrors :root's mark-role tokens (UIX-05, UI-SPEC §4.1) — see that block's comment. */
+  --win: #059669;
+  --loss: var(--destructive);
+  --steady: var(--muted-foreground);
   --coaching-accent: oklch(0.67 0.15 287);
   --coaching-accent-foreground: oklch(0.16 0.005 285);
 }
@@ -97,6 +115,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-win: var(--win);
+  --color-loss: var(--loss);
+  --color-steady: var(--steady);
   --color-coaching-accent: var(--coaching-accent);
   --color-coaching-accent-foreground: var(--coaching-accent-foreground);
   --radius-sm: calc(var(--radius) - 4px);
