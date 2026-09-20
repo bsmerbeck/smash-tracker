@@ -457,6 +457,50 @@ describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () =
   });
 });
 
+/**
+ * Phase 38-08 code review WR-01: `relative` (the lift above `MatchRowOverlay`'s
+ * absolutely-positioned whole-row click target) must scope to the delete
+ * button's own wrapper only — never to a shared ancestor that also contains
+ * the Badge/video-icon, which would lift those non-interactive elements into
+ * the overlay's paint layer and turn them into a click dead zone. jsdom does
+ * not hit-test by visual stacking order, so this asserts the DOM/class
+ * structure the CSS painting-order argument depends on, for both layouts (so
+ * they cannot drift apart again).
+ */
+function relativeAncestorsBetween(el: HTMLElement, root: HTMLElement): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  let node: HTMLElement | null = el;
+  while (node && node !== root) {
+    if (node.classList.contains('relative')) found.push(node);
+    node = node.parentElement;
+  }
+  return found;
+}
+
+describe('FilteredMatchList — overlay lift scope (phase 38-08 code review WR-01)', () => {
+  it('stacked layout: only the delete button is lifted above the row overlay — the Badge/icon carry no positioned ancestor before the row root', () => {
+    const matches = [makeMatch({ id: 'wr01-stack', vodUrl: undefined })];
+    const { container } = renderList({ matches, showDelete: true, layout: 'stack' });
+    const row = within(container).getByRole('listitem');
+    const badge = row.querySelector<HTMLElement>('[data-slot="badge"]');
+    const deleteButton = within(row).getByRole('button', { name: 'Delete match' });
+    expect(badge).not.toBeNull();
+    expect(relativeAncestorsBetween(badge as HTMLElement, row)).toHaveLength(0);
+    expect(relativeAncestorsBetween(deleteButton, row).length).toBeGreaterThan(0);
+  });
+
+  it('table layout: only the delete cell is lifted above the row overlay — the Badge/icon carry no positioned ancestor before the row root (mirrors the stacked assertion above)', () => {
+    const matches = [makeMatch({ id: 'wr01-table', vodUrl: undefined })];
+    const { container } = renderList({ matches, showDelete: true, layout: 'table' });
+    const row = within(container).getByRole('row', { name: /rival/ });
+    const badge = row.querySelector<HTMLElement>('[data-slot="badge"]');
+    const deleteButton = within(row).getByRole('button', { name: 'Delete match' });
+    expect(badge).not.toBeNull();
+    expect(relativeAncestorsBetween(badge as HTMLElement, row)).toHaveLength(0);
+    expect(relativeAncestorsBetween(deleteButton, row).length).toBeGreaterThan(0);
+  });
+});
+
 describe('waitFor smoke (loading -> populated transition is not tested elsewhere)', () => {
   it('renders populated after a loading prop flips false', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

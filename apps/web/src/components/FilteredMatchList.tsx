@@ -404,7 +404,7 @@ export function FilteredMatchList({
                           <span className="text-xs text-muted-foreground">{facts.eventLabel}</span>
                         )}
                       </div>
-                      <span className="relative flex items-center gap-2">
+                      <span className="flex items-center gap-2">
                         <Badge variant={match.win ? 'success' : 'destructive'}>
                           {facts.resultText}
                         </Badge>
@@ -420,14 +420,16 @@ export function FilteredMatchList({
                           />
                         )}
                         {showDelete && (
-                          <Button
-                            variant="outline"
-                            size="icon-sm"
-                            aria-label={t('shared.matchDelete.aria')}
-                            onClick={() => setPendingDelete(match)}
-                          >
-                            <Trash2 />
-                          </Button>
+                          <span className="relative">
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              aria-label={t('shared.matchDelete.aria')}
+                              onClick={() => setPendingDelete(match)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          </span>
                         )}
                       </span>
                     </li>
