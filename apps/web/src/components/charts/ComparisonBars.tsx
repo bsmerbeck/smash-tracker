@@ -11,6 +11,38 @@ export interface ComparisonBarsRow {
 
 export type ComparisonBarsTone = 'emerald' | 'destructive';
 
+interface ComparisonBarsDefaultProps {
+  mode?: undefined;
+  rows: ComparisonBarsRow[];
+  tone: ComparisonBarsTone;
+  onSelectRow?: (row: ComparisonBarsRow) => void;
+}
+
+/**
+ * RED-phase stub (39.1-08 Task 3, tdd="true"): shape only, no rendering yet.
+ * Replaced by the real dumbbell row shape in the GREEN commit.
+ */
+export interface ComparisonBarsDumbbellRow {
+  key: string;
+  label: ReactNode;
+  recentRecordNode: ReactNode;
+  deltaNode: ReactNode;
+  baselineRate: number;
+  recentRate?: number;
+  recentRange?: [number, number];
+  recentTotal: number;
+  href: string;
+  ariaLabel: string;
+  collapsed?: boolean;
+}
+
+export interface ComparisonBarsDumbbellProps {
+  mode: 'dumbbell';
+  rows: ComparisonBarsDumbbellRow[];
+}
+
+export type ComparisonBarsProps = ComparisonBarsDefaultProps | ComparisonBarsDumbbellProps;
+
 /**
  * Status-colour classes for each tone (CHRT-01 kit README, "the collision
  * rule"): a series that means good/bad wears the app's existing status
@@ -39,15 +71,12 @@ const TONE_CLASSES: Record<ComparisonBarsTone, { track: string; fill: string }> 
  * `ChartCard` frame this component renders inside, the same split
  * `MatchupChart.tsx`/`TrendLine.tsx` already establish.
  */
-export function ComparisonBars({
-  rows,
-  tone,
-  onSelectRow,
-}: {
-  rows: ComparisonBarsRow[];
-  tone: ComparisonBarsTone;
-  onSelectRow?: (row: ComparisonBarsRow) => void;
-}) {
+export function ComparisonBars(props: ComparisonBarsProps) {
+  if (props.mode === 'dumbbell') {
+    // RED-phase placeholder — real dumbbell rendering lands in the GREEN commit.
+    return <ul data-slot="comparison-bars-dumbbell" />;
+  }
+  const { rows, tone, onSelectRow } = props;
   const toneClasses = TONE_CLASSES[tone];
 
   return (
