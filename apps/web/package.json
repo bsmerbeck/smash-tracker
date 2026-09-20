@@ -16,6 +16,7 @@
     "test": "vitest run",
     "guard:perf-harness-build": "vitest run --config vitest.guard.config.ts",
     "guard:chart-bundle": "vitest run --config vitest.guard.config.ts src/components/charts/bundleIsolation.guard.test.ts",
+    "guard:layout": "node scripts/guardLayout.mjs",
     "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {

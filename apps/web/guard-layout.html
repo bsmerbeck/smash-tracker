@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  DEV-ONLY layout-oracle harness (Phase 39.1 Plan 09, UIX-01/UIX-06). NEVER
+  shipped in the production build: `vite.config.ts` has no
+  `build.rollupOptions.input` override, so `vite build` (the command the
+  production `pnpm build` script runs) processes ONLY `index.html`, exactly
+  as it did before this file existed. Only a caller that explicitly starts
+  Vite programmatically with this file as an override input (see
+  `apps/web/scripts/guardLayoutHarness.mjs`) ever serves it. Verified by
+  `apps/web/src/guardHarness/guardHarnessProductionBuild.guard.test.ts`.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Layout oracle harness (dev-only, never shipped)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/guardHarness/main.tsx"></script>
+  </body>
+</html>
