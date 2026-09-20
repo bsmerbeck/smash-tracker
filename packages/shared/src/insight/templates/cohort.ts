@@ -1,5 +1,8 @@
 import type { InsightTemplate } from './registry.js';
 import { tiltCostTemplate } from './tiltCost.js';
+import { sessionFatigueTemplate } from './sessionFatigue.js';
+import { settingGapTemplate } from './settingGap.js';
+import { ratingMoveTemplate } from './ratingMove.js';
 
 /**
  * Cohort-comparison templates (DD-12's two-proportion / RD-band reads):
@@ -9,4 +12,9 @@ import { tiltCostTemplate } from './tiltCost.js';
  * the union of the four segment arrays, so a template added here can never be
  * silently orphaned from the composed registry a caller actually iterates.
  */
-export const COHORT_TEMPLATES: InsightTemplate[] = [tiltCostTemplate];
+export const COHORT_TEMPLATES: InsightTemplate[] = [
+  tiltCostTemplate,
+  sessionFatigueTemplate,
+  settingGapTemplate,
+  ratingMoveTemplate,
+];
