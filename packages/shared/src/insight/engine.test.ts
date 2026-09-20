@@ -73,6 +73,17 @@ describe('computeInsights (Task 1 tracer)', () => {
   });
 
   it('drops a dismissed id from the result', () => {
+    // NOTE (plan 39.1-04): this assertion was originally `toHaveLength(1)` /
+    // `toEqual([])`, correct only while COHORT_TEMPLATES was still the empty
+    // extension point plan 39.1-01 declared. Once populated with real,
+    // account-scoped whole-history reads (tiltCost et al. — none of which
+    // can guard on `scope.kind` the way character-scoped SUBJECT_TEMPLATES
+    // do, since ACCOUNT_SCOPE is their intended and only scope), a realistic
+    // 8000-game fixture legitimately produces more than one Insight at
+    // ACCOUNT_SCOPE. The dismissal contract itself — dismissing one id
+    // removes exactly that id and nothing else — is unchanged and is what
+    // this test now asserts directly, independent of how many templates are
+    // registered.
     const matches = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
     const first = computeInsights({
       matches,
@@ -80,15 +91,17 @@ describe('computeInsights (Task 1 tracer)', () => {
       horizon: 'last30',
       nowMs: NOW_MS,
     });
-    expect(first).toHaveLength(1);
+    expect(first.length).toBeGreaterThanOrEqual(1);
+    const dismissedId = first[0]!.id;
     const dismissed = computeInsights({
       matches,
       scopes: [ACCOUNT_SCOPE],
       horizon: 'last30',
       nowMs: NOW_MS,
-      dismissedIds: [first[0]!.id],
+      dismissedIds: [dismissedId],
     });
-    expect(dismissed).toEqual([]);
+    expect(dismissed.map((insight) => insight.id)).not.toContain(dismissedId);
+    expect(dismissed.length).toBe(first.length - 1);
   });
 });
 
