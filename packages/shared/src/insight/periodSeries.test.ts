@@ -7,7 +7,18 @@ import {
   EIGHT_K_FIXTURE_OPTIONS,
   FIFTY_K_FIXTURE_OPTIONS,
 } from '../testUtils/syntheticMatches.js';
-import { MARK_BOUND_LINE_POINTS, NARROW_PLOT_TARGET } from './markBounds.js';
+import {
+  emptyWorkspace,
+  oneGameWorkspace,
+  twoGameWorkspace,
+  unknownStageOnlyWorkspace,
+  unknownCharacterOnlyWorkspace,
+} from '../testUtils/sparseWorkspaces.js';
+import {
+  MARK_BOUND_LINE_POINTS,
+  NARROW_PLOT_TARGET,
+  PERIOD_TREND_MIN_PERIODS,
+} from './markBounds.js';
 import { buildPeriodSeries, regrainFor, type PeriodGrain } from './periodSeries.js';
 
 /** Minimal, deterministic `Match` builder — only the fields a given test cares about are overridden. */
@@ -115,12 +126,12 @@ describe('buildPeriodSeries (VIZ-01) — the grain ladder', () => {
     expect(series.grain).toBe('quarter');
     expect(series.points).toHaveLength(3);
     const [q1, q2, q3] = series.points;
-    expect(q1.total).toBe(12);
-    expect(q1.subFloor).toBe(false);
-    expect(q2.total).toBe(2);
-    expect(q2.subFloor).toBe(true);
-    expect(q3.total).toBe(12);
-    expect(q3.subFloor).toBe(false);
+    expect(q1?.total).toBe(12);
+    expect(q1?.subFloor).toBe(false);
+    expect(q2?.total).toBe(2);
+    expect(q2?.subFloor).toBe(true);
+    expect(q3?.total).toBe(12);
+    expect(q3?.subFloor).toBe(false);
   });
 
   it('sorts points oldest first by startMs, breaking a tie by ascending key', () => {
@@ -352,5 +363,38 @@ describe('buildPeriodSeries (VIZ-01) — the full ladder (Task 2)', () => {
     expect(source).toMatch(/evidence\/eventSeries\.ts/);
     expect(source).toMatch(/EVENT_SESSION_PROXIMITY_MS/);
     expect(source).not.toMatch(/from\s+['"]\.\.\/evidence\/eventSeries/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: FIXT-02 sparse-workspace conformance and the locked-period-trend
+// threshold, driven entirely from engine output (§13.9's engine half).
+// ---------------------------------------------------------------------------
+
+describe('buildPeriodSeries — FIXT-02 sparse workspaces (Task 3)', () => {
+  const workspaces: Array<[name: string, matches: Match[]]> = [
+    ['empty', emptyWorkspace()],
+    ['one game', oneGameWorkspace()],
+    ['two games', twoGameWorkspace()],
+    ['unknown stage only', unknownStageOnlyWorkspace()],
+    ['unknown character only', unknownCharacterOnlyWorkspace()],
+  ];
+
+  for (const [name, matches] of workspaces) {
+    it(`${name} workspace: an empty series (zero games) or game/set grain with only real, never-padded counts`, () => {
+      const series = buildPeriodSeries({ matches });
+      if (matches.length === 0) {
+        expect(series.points).toEqual([]);
+      } else {
+        expect(['game', 'set']).toContain(series.grain);
+        expect(series.points.length).toBeGreaterThan(0);
+        expect(series.points.every((point) => point.total > 0)).toBe(true);
+      }
+    });
+  }
+
+  it('reports a below-PERIOD_TREND_MIN_PERIODS series detectably from PeriodSeries alone, never by counting DOM nodes', () => {
+    const series = buildPeriodSeries({ matches: twoGameWorkspace() });
+    expect(series.points.length).toBeLessThan(PERIOD_TREND_MIN_PERIODS);
   });
 });
