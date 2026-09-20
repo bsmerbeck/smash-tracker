@@ -18,4 +18,6 @@ export * from './ladder.js';
 export * from './salience.js';
 export * from './rail.js';
 export * from './engine.js';
+export * from './markBounds.js';
+export * from './periodSeries.js';
 export * from './templates/registry.js';
