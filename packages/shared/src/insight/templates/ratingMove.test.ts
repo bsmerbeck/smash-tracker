@@ -50,12 +50,16 @@ describe('ratingMoveTemplate', () => {
     expect(matches[0]).toBe(ratingMoveTemplate);
   });
 
-  it('asserts a Trend once the delta reaches the current RD, and reports steady one game-count below (real Glicko history)', () => {
-    const prior = buildMatches(Array(20).fill(false));
+  it('asserts a Trend once the delta reaches the current RD, and reports steady below it (real Glicko history)', () => {
+    // `last30` always takes the last 30 games; a 60-game prior block (large
+    // enough that the recent 30 never trips the D-06 collapse ratio) plus a
+    // 30-game recent block cleanly separates "start" (end of the prior
+    // block) from "end" (after the recent 30).
+    const prior = buildMatches(Array(60).fill(false));
     const priorEnd = prior[prior.length - 1]!.time;
 
     const steadyRecent = buildMatches(
-      [...Array(3).fill(true), ...Array(5).fill(false)],
+      [...Array(6).fill(true), ...Array(24).fill(false)],
       priorEnd + 4 * 60 * 60 * 1000,
     );
     const steadyInsight = buildInsight([...prior, ...steadyRecent])!;
@@ -64,7 +68,7 @@ describe('ratingMoveTemplate', () => {
     expect(steadyInsight.deltaPoints).toBeNull();
 
     const trendRecent = buildMatches(
-      [...Array(4).fill(true), ...Array(4).fill(false)],
+      [...Array(10).fill(true), ...Array(20).fill(false)],
       priorEnd + 4 * 60 * 60 * 1000,
     );
     const trendInsight = buildInsight([...prior, ...trendRecent])!;

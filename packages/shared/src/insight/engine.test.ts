@@ -61,15 +61,26 @@ describe('computeInsights (Task 1 tracer)', () => {
     expect(result).toEqual([]);
   });
 
-  it('returns one locked Insight over one game', () => {
+  it('returns a locked formNow Insight over one game', () => {
+    // NOTE (plan 39.1-04): originally `toHaveLength(1)` — correct only while
+    // COHORT_TEMPLATES was still empty. Several of its now-populated,
+    // account-scoped reads (sessionFatigue: hidden below its long-session
+    // floor; settingGap: thin with zero online/offline games; ratingMove:
+    // locked below the abstention floor) legitimately also produce an
+    // Insight over a bare 1-game account, none of which can guard on
+    // `scope.kind` the way character-scoped SUBJECT_TEMPLATES do. The
+    // original assertion's actual intent — formNow itself degrades to a
+    // real `locked` Insight rather than nothing over a near-empty account —
+    // is unchanged and is what this test now checks directly.
     const result = computeInsights({
       matches: oneGameWorkspace(),
       scopes: [ACCOUNT_SCOPE],
       horizon: 'last30',
       nowMs: NOW_MS,
     });
-    expect(result).toHaveLength(1);
-    expect(result[0]!.state).toBe('locked');
+    const formNowInsight = result.find((insight) => insight.templateId === 'formNow');
+    expect(formNowInsight).toBeDefined();
+    expect(formNowInsight!.state).toBe('locked');
   });
 
   it('drops a dismissed id from the result', () => {
