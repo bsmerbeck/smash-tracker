@@ -1,5 +1,7 @@
 import type { Match } from '../match.js';
 import { isCountableGame } from '../evidence/predicate.js';
+import { splitIntoSessions } from '../glicko.js';
+import { buildSetTimeline } from '../tournamentAggregation.js';
 import { ABSTENTION_FLOOR_GAMES } from './policy.js';
 import { MARK_BOUND_LINE_POINTS } from './markBounds.js';
 
@@ -13,12 +15,28 @@ import { MARK_BOUND_LINE_POINTS } from './markBounds.js';
  * `buildEventSeries`. This module imports individual, stable `evidence/*`
  * modules (`predicate.ts`) directly but never `evidence/eventSeries.ts` or
  * the `evidence/index.ts` barrel (Track B isolation, `39.1-PARALLELISM.md`
- * Rule B1/B2) — Task 2 below PORTS (never imports) the ~15-line
- * tournament-block anchor logic `evidence/eventSeries.ts` already implements.
- *
- * Task 1 lands the `game`/`quarter`/`month`/`year` tiers end to end; Task 2
- * lands the `set`/`eventSession`/`week` tiers.
+ * Rule B1/B2): the `eventSession` tier PORTS (never imports) the ~15-line
+ * tournament-block anchor logic `evidence/eventSeries.ts` already implements
+ * for its own opponent-/stage-scoped series — see
+ * `EVENT_SESSION_PROXIMITY_MS` below for the ported constant and the reason
+ * it is declared here rather than in `insight/policy.ts`.
  */
+
+/**
+ * Ported (NOT imported) from `packages/shared/src/evidence/eventSeries.ts`'s
+ * `EVENT_ANCHOR_PROXIMITY_MS` — kept in sync by naming that file as the
+ * source of the value, never by importing it: `evidence/eventSeries.ts` is a
+ * Phase-38-owned file, and the whole `insight/` engine stays inside its own
+ * directory (Track B isolation, `39.1-PARALLELISM.md` Rule B1/B2). This is
+ * the ported tournament-block PROXIMITY GEOMETRY this one builder needs —
+ * not a notability threshold — declared here as local ported geometry
+ * exactly as plan 39.1-04 declares its session geometry at the top of
+ * `sessionFatigue.ts` and plan 39.1-03 declares
+ * `MATCHUP_OR_PLAYER_MIN_DISTINCT_OPPONENTS` at the top of
+ * `matchupOrPlayer.ts`. `packages/shared/src/insight/policy.ts` (owned by
+ * plan 39.1-01) is NOT edited by this plan at all (review finding C2-M4).
+ */
+const EVENT_SESSION_PROXIMITY_MS = 4 * 24 * 60 * 60 * 1000;
 
 /** The grain ladder, finest first — the order `buildPeriodSeries` walks looking for the first grain at or under its target. */
 export type PeriodGrain = 'game' | 'set' | 'eventSession' | 'week' | 'month' | 'quarter' | 'year';
@@ -130,26 +148,124 @@ function buildGamePoints(matches: Match[]): PeriodPoint[] {
   );
 }
 
+/** The one name-priority rule for a "tournament" match: `eventName` first, `tournamentName` as fallback — `null` for a non-tournament (manual/session) game. Ported alongside `EVENT_SESSION_PROXIMITY_MS` from `evidence/eventSeries.ts`'s `trimmedEventKey`. */
+function tournamentEventName(match: Match): string | null {
+  const raw = match.eventName ?? match.tournamentName;
+  if (raw == null) {
+    return null;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** One session (from `splitIntoSessions`) or one tournament block, resolved down to its own `PeriodPoint`. */
+function sessionOrBlockToPoint(grain: PeriodGrain, group: Match[], label: string): PeriodPoint {
+  const startMs = Math.min(...group.map((m) => m.time));
+  return toPeriodPoint({ grain, key: `${grain}:session:${startMs}`, label, matches: group });
+}
+
 /**
- * Task 1 placeholder for the `set`/`eventSession`/`week` tiers: one point
- * per countable game, stamped with the requested grain name. This keeps
- * `buildPointsForGrain` exhaustive (and the ladder's game/quarter/month/year
- * path fully correct and tracer-provable) while Task 2 replaces this with
- * real set/tournament/session/week grouping. A placeholder tier's point
- * count is never smaller than the real grouped count would be, so it can
- * only ever make the ladder skip PAST it (never falsely select it) —
- * `buildPeriodSeries` never under-counts a placeholder tier into a false
- * "grain reached" result.
+ * Groups `matches` into sessions via the shared `glicko.ts` 3h-gap rule
+ * (`splitIntoSessions`) and reduces each session to one point. Takes
+ * `matches` exactly as given — the caller decides what belongs in the
+ * bucket (the `set` tier's fallback passes every unparsable-externalId game;
+ * the `eventSession` tier's fallback passes only the non-tournament
+ * remainder), so this helper never re-derives tournament membership itself.
  */
-function buildUngroupedPlaceholderPoints(matches: Match[], grain: PeriodGrain): PeriodPoint[] {
-  return matches.map((match) =>
+function buildSessionPoints(matches: Match[], grain: PeriodGrain): PeriodPoint[] {
+  return splitIntoSessions(matches)
+    .filter((session) => session.length > 0)
+    .map((session) =>
+      sessionOrBlockToPoint(
+        grain,
+        session,
+        new Date(Math.min(...session.map((m) => m.time))).toISOString(),
+      ),
+    );
+}
+
+/**
+ * `set` tier: one point per parsed `TournamentSet` (`tournamentAggregation.ts`'s
+ * `buildSetTimeline`, keyed off `externalId`); games with no parsable
+ * external id (`otherMatches`) fall through to the session bucket instead of
+ * each becoming their own set (UI-SPEC's "an extra grouping step" caveat,
+ * `39.1-RESEARCH.md` Pattern 3) — regardless of whether they also happen to
+ * carry an event name; only a parseable `externalId` makes a game a "set"
+ * here.
+ */
+function buildSetPoints(matches: Match[]): PeriodPoint[] {
+  const { sets, otherMatches } = buildSetTimeline(matches);
+  const setPoints = sets.map((set) =>
     toPeriodPoint({
-      grain,
-      key: `${grain}:${match.id}`,
-      label: new Date(match.time).toISOString(),
-      matches: [match],
+      grain: 'set',
+      key: `set:${set.setId}`,
+      label: set.setId,
+      matches: set.games.map((g) => g.match),
     }),
   );
+  return [...setPoints, ...buildSessionPoints(otherMatches, 'set')];
+}
+
+/**
+ * `eventSession` tier: games inside one tournament block (name-grouped, then
+ * split wherever consecutive games exceed `EVENT_SESSION_PROXIMITY_MS`,
+ * mirroring `evidence/eventSeries.ts`'s ported `splitTournamentBlocks`)
+ * become one point labelled by the event key; every game carrying NO event
+ * name splits into sessions by the shared session-gap rule.
+ */
+function buildEventSessionPoints(matches: Match[]): PeriodPoint[] {
+  const byName = new Map<string, Match[]>();
+  const nonTournament: Match[] = [];
+  for (const match of matches) {
+    const name = tournamentEventName(match);
+    if (name === null) {
+      nonTournament.push(match);
+      continue;
+    }
+    const group = byName.get(name);
+    if (group) {
+      group.push(match);
+    } else {
+      byName.set(name, [match]);
+    }
+  }
+
+  const blockPoints: PeriodPoint[] = [];
+  for (const [name, group] of byName) {
+    const sorted = [...group].sort((a, b) => a.time - b.time);
+    let current: Match[] = [];
+    for (const match of sorted) {
+      const previous = current[current.length - 1];
+      if (previous && match.time - previous.time > EVENT_SESSION_PROXIMITY_MS) {
+        blockPoints.push(sessionOrBlockToPoint('eventSession', current, name));
+        current = [match];
+      } else {
+        current.push(match);
+      }
+    }
+    if (current.length > 0) {
+      blockPoints.push(sessionOrBlockToPoint('eventSession', current, name));
+    }
+  }
+
+  return [...blockPoints, ...buildSessionPoints(nonTournament, 'eventSession')];
+}
+
+/**
+ * ISO 8601 week key (`YYYY-Www`), computed entirely in UTC so the key is
+ * stable regardless of the reader's time zone — the standard "nearest
+ * Thursday" algorithm: a week belongs to the ISO year of its Thursday.
+ */
+function isoWeekKey(ms: number): string {
+  const date = new Date(ms);
+  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const isoDayNumber = utcDate.getUTCDay() || 7; // Monday=1 .. Sunday=7
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - isoDayNumber); // shift to this week's Thursday
+  const isoYearStart = Date.UTC(utcDate.getUTCFullYear(), 0, 1);
+  const weekNumber = Math.ceil(
+    ((utcDate.getTime() - isoYearStart) / (24 * 60 * 60 * 1000) + 1) / 7,
+  );
+  return `${utcDate.getUTCFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 }
 
 function monthKey(ms: number): string {
@@ -193,11 +309,11 @@ function buildPointsForGrain(grain: PeriodGrain, matches: Match[]): PeriodPoint[
     case 'game':
       return buildGamePoints(matches);
     case 'set':
-      return buildUngroupedPlaceholderPoints(matches, 'set');
+      return buildSetPoints(matches);
     case 'eventSession':
-      return buildUngroupedPlaceholderPoints(matches, 'eventSession');
+      return buildEventSessionPoints(matches);
     case 'week':
-      return buildUngroupedPlaceholderPoints(matches, 'week');
+      return buildKeyedPoints(matches, 'week', isoWeekKey);
     case 'month':
       return buildKeyedPoints(matches, 'month', monthKey);
     case 'quarter':
