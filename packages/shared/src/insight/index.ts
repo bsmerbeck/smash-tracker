@@ -15,5 +15,7 @@ export * from './wilsonInterval.js';
 export * from './twoProportion.js';
 export * from './horizon.js';
 export * from './ladder.js';
+export * from './salience.js';
+export * from './rail.js';
 export * from './engine.js';
 export * from './templates/registry.js';

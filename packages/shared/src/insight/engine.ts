@@ -2,6 +2,7 @@ import type { Match } from '../match.js';
 import { isCountableGame } from '../evidence/predicate.js';
 import type { HorizonKey, Insight, InsightScope } from './types.js';
 import { INSIGHT_TEMPLATES } from './templates/registry.js';
+import { scoreInsight } from './salience.js';
 
 /**
  * The one entry point that turns a `Match[]` plus a horizon into typed,
@@ -16,12 +17,12 @@ import { INSIGHT_TEMPLATES } from './templates/registry.js';
  * (UI-SPEC §9.5's per-card error rule, T-39.1-01-03) — the catch logs
  * nothing that could carry a uid, tag or email.
  *
- * Note on `salience`: each template returns its `Insight`s with a
- * placeholder `salience` field; `scoreInsight` (`salience.ts`, added in this
- * plan's next task) is the canonical scorer. Wiring it in here (rather than
- * duplicating the formula per template) keeps salience computation in ONE
- * place, matching `salience.ts`'s own doc comment that nothing outside the
- * `Insight.salience` field should ever see a raw score.
+ * `salience` is populated HERE, once, via `salience.ts`'s `scoreInsight` —
+ * a template never sets its own final salience (each template returns a
+ * `0` placeholder, overwritten below before sorting). Centralizing this in
+ * the one place every `Insight` passes through keeps the formula
+ * un-duplicated and matches `salience.ts`'s own doc comment that nothing
+ * outside the `Insight.salience` field should ever see a raw score.
  */
 export function computeInsights(input: {
   matches: Match[];
@@ -41,6 +42,7 @@ export function computeInsights(input: {
         const built = template.build({ matches: countable, scope, horizon, nowMs });
         for (const insight of built) {
           if (!dismissed.has(insight.id)) {
+            insight.salience = scoreInsight(insight, nowMs);
             results.push(insight);
           }
         }
