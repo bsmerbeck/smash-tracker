@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "Public-data research snapshot — unverified, not player-owned or endorsed.",
     "disabledReason": "Disabled for public-data research accounts."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Fact",
+      "trend": "Trend",
+      "suggestion": "Suggestion",
+      "locked": "Locked",
+      "unlocksNext": "Unlocks next"
+    },
+    "rail": {
+      "title": {
+        "last30": "Insights · last 30 games vs all time",
+        "lastEvent": "Insights · last event vs all time",
+        "last90": "Insights · last 90 days vs all time"
+      },
+      "legend": "Fact · Trend · Suggestion",
+      "allDismissed": "Every read on this rail is dismissed.",
+      "dismissedCount_one": "{{count}} dismissed on this device",
+      "dismissedCount_other": "{{count}} dismissed on this device",
+      "restore": "Restore",
+      "dismiss": "Dismiss",
+      "dismissedToast": "Insight dismissed on this device.",
+      "error": "Insights could not be computed for this view. Reload to try again."
+    },
+    "door": {
+      "seeGames_one": "See the {{count}} game",
+      "seeGames_other": "See the {{count}} games",
+      "openMatchup": "Open matchup",
+      "openOpponent": "Open opponent",
+      "openStage": "Open stage",
+      "openEvent": "Open event",
+      "findVods": "Find VODs",
+      "ratingModelNote": "Rating model note"
+    },
+    "chip": {
+      "up": "Up",
+      "down": "Down",
+      "steady": "Steady",
+      "thin": "Thin",
+      "none_one": "{{count}} match with no notable change",
+      "none_other": "{{count}} matches with no notable change",
+      "aria": {
+        "up": "Trending up",
+        "down": "Trending down",
+        "steady": "No notable change",
+        "thin": "Not enough data yet"
+      }
+    },
+    "horizon": {
+      "label": "Recent window",
+      "last30": "Last 30 games",
+      "lastEvent": "Last event",
+      "last90": "Last 90 days",
+      "lastEventDisabled": "No events recorded",
+      "short": {
+        "last30": "30 games",
+        "lastEvent": "Last event",
+        "last90": "90 days"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Those {{count}} games span {{from}} – {{to}}.",
+      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}})."
+    },
+    "state": {
+      "collapsed": {
+        "last30": "The last 30 games are the whole record — one figure, no comparison.",
+        "last90": "The last 90 days are the whole record — one figure, no comparison."
+      },
+      "thinRecent": {
+        "scoped_one": "Only {{count}} game vs {{fighter}} in the last 12 months — showing lifetime.",
+        "scoped_other": "Only {{count}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "page": {
+          "last30": "Only {{count}} games in the last 30 — showing all time.",
+          "lastEvent": "Only {{count}} games at the last event — showing all time.",
+          "last90": "Only {{count}} games in the last 90 days — showing all time."
+        }
+      },
+      "locked_one": "vs {{fighter}} — 1 more game unlocks this read.",
+      "locked_other": "vs {{fighter}} — {{count}} more games unlock this read.",
+      "lockedMeter": "{{have}} of {{need}} games",
+      "steady": {
+        "last30": "No notable change over the last 30 games.",
+        "lastEvent": "No notable change at the last event.",
+        "last90": "No notable change over the last 90 days."
+      }
+    }
   }
 }

@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "これは公開データによるリサーチスナップショットです。未検証であり、選手本人が所有・承認したものではありません。",
     "disabledReason": "公開データによるリサーチアカウントでは無効です。"
+  },
+  "insights": {
+    "kind": {
+      "fact": "事実",
+      "trend": "傾向",
+      "suggestion": "提案",
+      "locked": "ロック中",
+      "unlocksNext": "次に解放される項目"
+    },
+    "rail": {
+      "title": {
+        "last30": "分析 · 直近30試合 vs 全期間",
+        "lastEvent": "分析 · 直近のイベント vs 全期間",
+        "last90": "分析 · 直近90日間 vs 全期間"
+      },
+      "legend": "事実 · 傾向 · 提案",
+      "allDismissed": "このパネルの分析はすべて非表示にされています。",
+      "dismissedCount_one": "この端末で{{count}}件を非表示中",
+      "dismissedCount_other": "この端末で{{count}}件を非表示中",
+      "restore": "元に戻す",
+      "dismiss": "非表示にする",
+      "dismissedToast": "この端末で分析を非表示にしました。",
+      "error": "この画面の分析を計算できませんでした。再読み込みしてやり直してください。"
+    },
+    "door": {
+      "seeGames_one": "{{count}}試合を見る",
+      "seeGames_other": "{{count}}試合を見る",
+      "openMatchup": "相性を開く",
+      "openOpponent": "対戦相手を開く",
+      "openStage": "ステージを開く",
+      "openEvent": "イベントを開く",
+      "findVods": "VODを探す",
+      "ratingModelNote": "レーティングモデルについての注記"
+    },
+    "chip": {
+      "up": "上昇",
+      "down": "下降",
+      "steady": "横ばい",
+      "thin": "データ不足",
+      "none_one": "有意な変化のない対戦{{count}}件",
+      "none_other": "有意な変化のない対戦{{count}}件",
+      "aria": {
+        "up": "上昇傾向",
+        "down": "下降傾向",
+        "steady": "有意な変化なし",
+        "thin": "まだデータが足りません"
+      }
+    },
+    "horizon": {
+      "label": "直近ウィンドウ",
+      "last30": "直近30試合",
+      "lastEvent": "直近のイベント",
+      "last90": "直近90日間",
+      "lastEventDisabled": "記録されたイベントがありません",
+      "short": {
+        "last30": "30試合",
+        "lastEvent": "直近のイベント",
+        "last90": "90日間"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}",
+        "lastEvent": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}",
+        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "この{{count}}試合の期間は{{from}}〜{{to}}です。",
+      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。"
+    },
+    "state": {
+      "collapsed": {
+        "last30": "直近30試合が記録の全体です — 比較対象のない単一の数値です。",
+        "last90": "直近90日間が記録の全体です — 比較対象のない単一の数値です。"
+      },
+      "thinRecent": {
+        "scoped_one": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
+        "scoped_other": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
+        "page": {
+          "last30": "直近30試合のうち{{count}}試合のみ — 全期間のデータを表示しています。",
+          "lastEvent": "直近のイベントは{{count}}試合のみ — 全期間のデータを表示しています。",
+          "last90": "直近90日間で{{count}}試合のみ — 全期間のデータを表示しています。"
+        }
+      },
+      "locked_one": "{{fighter}}戦 — あと1試合でこの分析が解放されます。",
+      "locked_other": "{{fighter}}戦 — あと{{count}}試合でこの分析が解放されます。",
+      "lockedMeter": "{{need}}戦中{{have}}戦",
+      "steady": {
+        "last30": "直近30試合で有意な変化はありません。",
+        "lastEvent": "直近のイベントで有意な変化はありません。",
+        "last90": "直近90日間で有意な変化はありません。"
+      }
+    }
   }
 }

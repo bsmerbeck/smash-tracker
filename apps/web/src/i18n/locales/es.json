@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "Instantánea de investigación con datos públicos — no verificada, no es propiedad del jugador ni cuenta con su respaldo.",
     "disabledReason": "Deshabilitado para cuentas de investigación con datos públicos."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Hecho",
+      "trend": "Tendencia",
+      "suggestion": "Sugerencia",
+      "locked": "Bloqueado",
+      "unlocksNext": "Se desbloquea después"
+    },
+    "rail": {
+      "title": {
+        "last30": "Análisis · últimas 30 partidas vs histórico",
+        "lastEvent": "Análisis · último evento vs histórico",
+        "last90": "Análisis · últimos 90 días vs histórico"
+      },
+      "legend": "Hecho · Tendencia · Sugerencia",
+      "allDismissed": "Todas las lecturas de este panel están descartadas.",
+      "dismissedCount_one": "{{count}} descartada en este dispositivo",
+      "dismissedCount_other": "{{count}} descartadas en este dispositivo",
+      "restore": "Restaurar",
+      "dismiss": "Descartar",
+      "dismissedToast": "Lectura descartada en este dispositivo.",
+      "error": "No se pudieron calcular los análisis para esta vista. Recarga para volver a intentarlo."
+    },
+    "door": {
+      "seeGames_one": "Ver la {{count}} partida",
+      "seeGames_other": "Ver las {{count}} partidas",
+      "openMatchup": "Abrir enfrentamiento",
+      "openOpponent": "Abrir rival",
+      "openStage": "Abrir escenario",
+      "openEvent": "Abrir evento",
+      "findVods": "Buscar VODs",
+      "ratingModelNote": "Nota sobre el modelo de clasificación"
+    },
+    "chip": {
+      "up": "Sube",
+      "down": "Baja",
+      "steady": "Estable",
+      "thin": "Escaso",
+      "none_one": "{{count}} enfrentamiento sin cambio notable",
+      "none_other": "{{count}} enfrentamientos sin cambio notable",
+      "aria": {
+        "up": "En subida",
+        "down": "En bajada",
+        "steady": "Sin cambio notable",
+        "thin": "Aún sin datos suficientes"
+      }
+    },
+    "horizon": {
+      "label": "Ventana reciente",
+      "last30": "Últimas 30 partidas",
+      "lastEvent": "Último evento",
+      "last90": "Últimos 90 días",
+      "lastEventDisabled": "No hay eventos registrados",
+      "short": {
+        "last30": "30 partidas",
+        "lastEvent": "Último evento",
+        "last90": "90 días"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Esas {{count}} partidas van de {{from}} a {{to}}.",
+      "range": "{{rate}} sobre {{count}}, dentro del rango habitual ({{lower}}–{{upper}})."
+    },
+    "state": {
+      "collapsed": {
+        "last30": "Las últimas 30 partidas son todo el historial — una sola cifra, sin comparación.",
+        "last90": "Los últimos 90 días son todo el historial — una sola cifra, sin comparación."
+      },
+      "thinRecent": {
+        "scoped_one": "Solo {{count}} partida vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+        "scoped_other": "Solo {{count}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+        "page": {
+          "last30": "Solo {{count}} partidas en las últimas 30 — se muestra el histórico.",
+          "lastEvent": "Solo {{count}} partidas en el último evento — se muestra el histórico.",
+          "last90": "Solo {{count}} partidas en los últimos 90 días — se muestra el histórico."
+        }
+      },
+      "locked_one": "vs {{fighter}} — 1 partida más desbloquea esta lectura.",
+      "locked_other": "vs {{fighter}} — {{count}} partidas más desbloquean esta lectura.",
+      "lockedMeter": "{{have}} de {{need}} partidas",
+      "steady": {
+        "last30": "Sin cambio notable en las últimas 30 partidas.",
+        "lastEvent": "Sin cambio notable en el último evento.",
+        "last90": "Sin cambio notable en los últimos 90 días."
+      }
+    }
   }
 }

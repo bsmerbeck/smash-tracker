@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "Instantané de recherche à partir de données publiques — non vérifié, ni détenu ni approuvé par le joueur.",
     "disabledReason": "Désactivé pour les comptes de recherche à partir de données publiques."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Fait",
+      "trend": "Tendance",
+      "suggestion": "Suggestion",
+      "locked": "Verrouillé",
+      "unlocksNext": "Se débloque ensuite"
+    },
+    "rail": {
+      "title": {
+        "last30": "Analyses · 30 derniers matchs vs historique",
+        "lastEvent": "Analyses · dernier événement vs historique",
+        "last90": "Analyses · 90 derniers jours vs historique"
+      },
+      "legend": "Fait · Tendance · Suggestion",
+      "allDismissed": "Toutes les analyses de ce panneau sont ignorées.",
+      "dismissedCount_one": "{{count}} ignorée sur cet appareil",
+      "dismissedCount_other": "{{count}} ignorées sur cet appareil",
+      "restore": "Restaurer",
+      "dismiss": "Ignorer",
+      "dismissedToast": "Analyse ignorée sur cet appareil.",
+      "error": "Impossible de calculer les analyses pour cette vue. Rechargez pour réessayer."
+    },
+    "door": {
+      "seeGames_one": "Voir le {{count}} match",
+      "seeGames_other": "Voir les {{count}} matchs",
+      "openMatchup": "Ouvrir le duel",
+      "openOpponent": "Ouvrir l'adversaire",
+      "openStage": "Ouvrir le stage",
+      "openEvent": "Ouvrir l'événement",
+      "findVods": "Trouver des VODs",
+      "ratingModelNote": "Note sur le modèle de classement"
+    },
+    "chip": {
+      "up": "En hausse",
+      "down": "En baisse",
+      "steady": "Stable",
+      "thin": "Peu de données",
+      "none_one": "{{count}} duel sans changement notable",
+      "none_other": "{{count}} duels sans changement notable",
+      "aria": {
+        "up": "En hausse",
+        "down": "En baisse",
+        "steady": "Aucun changement notable",
+        "thin": "Pas encore assez de données"
+      }
+    },
+    "horizon": {
+      "label": "Fenêtre récente",
+      "last30": "30 derniers matchs",
+      "lastEvent": "Dernier événement",
+      "last90": "90 derniers jours",
+      "lastEventDisabled": "Aucun événement enregistré",
+      "short": {
+        "last30": "30 matchs",
+        "lastEvent": "Dernier événement",
+        "last90": "90 jours"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} sur 30 derniers · {{baselineRate}} historique sur {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} dernier événement · {{baselineRate}} historique sur {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} sur 90 derniers jours · {{baselineRate}} historique sur {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Ces {{count}} matchs s'étendent de {{from}} à {{to}}.",
+      "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}})."
+    },
+    "state": {
+      "collapsed": {
+        "last30": "Les 30 derniers matchs sont tout l'historique — un seul chiffre, pas de comparaison.",
+        "last90": "Les 90 derniers jours sont tout l'historique — un seul chiffre, pas de comparaison."
+      },
+      "thinRecent": {
+        "scoped_one": "Seulement {{count}} match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
+        "scoped_other": "Seulement {{count}} matchs vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
+        "page": {
+          "last30": "Seulement {{count}} matchs sur les 30 derniers — l'historique est affiché.",
+          "lastEvent": "Seulement {{count}} matchs au dernier événement — l'historique est affiché.",
+          "last90": "Seulement {{count}} matchs sur les 90 derniers jours — l'historique est affiché."
+        }
+      },
+      "locked_one": "vs {{fighter}} — 1 match de plus débloque cette analyse.",
+      "locked_other": "vs {{fighter}} — {{count}} matchs de plus débloquent cette analyse.",
+      "lockedMeter": "{{have}} sur {{need}} matchs",
+      "steady": {
+        "last30": "Aucun changement notable sur les 30 derniers matchs.",
+        "lastEvent": "Aucun changement notable au dernier événement.",
+        "last90": "Aucun changement notable sur les 90 derniers jours."
+      }
+    }
   }
 }

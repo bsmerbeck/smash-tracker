@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fixtureLocales, type FixtureLocaleTree } from './guardFixtures/fixtureLocales';
 
 /**
  * Phase 39.1 Plan 09 (UI-SPEC §13.8, D-05): the insight-copy guard — no
@@ -15,16 +14,18 @@ import { fixtureLocales, type FixtureLocaleTree } from './guardFixtures/fixtureL
  *
  * PROVEN FAILING (RED phase, `test(39.1-09)` commit): with the walker NOT
  * yet excluding `guardFixtures/`, assertion (a) found
- * `ConcatenatedCopyFixture.tsx`'s three-piece sentence and failed. Each of
- * the six locale second-person patterns (b) and the probability pattern (c)
- * were proven directly against `fixtureLocales.ts`'s deliberately offending
- * values from the first commit (they are permanent positive-control tests,
- * not part of the RED/GREEN toggle). See the plan SUMMARY for the exact
- * recorded runs.
+ * `ConcatenatedCopyFixture.tsx`'s three-piece sentence and failed.
  *
- * In THIS plan (b)/(c) run against `fixtureLocales.ts`. Plan 39.1-11
- * repoints `INSIGHT_COPY_LOCALE_SOURCE` (the single exported scan target
- * below) at the six real locale JSON files, changing ONE declaration.
+ * Plan 39.1-11 (Task 1) repoints the locale-scan half of this guard from
+ * plan 39.1-09's small hand-written `guardFixtures/fixtureLocales.ts`
+ * object at the SIX REAL locale JSON files under
+ * `apps/web/src/i18n/locales/` — the actual shipped `insights`/`analytics`
+ * namespace content, not a fixture standing in for it. `fixtureLocales.ts`
+ * itself is left uncommented-on and unused by this file from here on (it
+ * remains committed for any other guard that may reuse the same shape;
+ * removing it is out of this plan's scope). The concatenation scanner
+ * (assertion a) is untouched — it still scans real `.tsx` source files via
+ * `ConcatenatedCopyFixture.tsx`, which has nothing to do with locale JSON.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
@@ -34,13 +35,61 @@ const SELF_PATH = 'apps/web/src/components/analytics/insightCopy.test.ts';
 const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/ConcatenatedCopyFixture.tsx';
 
 /**
- * Plan 39.1-11 repoints this SINGLE constant at the six real locale JSON
- * files under `apps/web/src/i18n/locales/` — never rewrites the guard
- * logic below it.
+ * The two NEW top-level i18n namespaces this phase introduces (UI-SPEC
+ * §9.3) — the only namespaces this guard's second-person/probability/
+ * empty-value scan ever reads. `analytics` does not exist yet as of this
+ * plan's Task 1 commit (it lands in Task 2); the filter in
+ * `buildLocaleSource` below reads whichever of the two are actually present
+ * on a given locale module, so this file needs no further edits when Task 2
+ * adds `analytics`.
  */
-export const INSIGHT_COPY_LOCALE_SOURCE: Record<string, FixtureLocaleTree> = fixtureLocales;
+const NEW_NAMESPACE_KEYS = ['insights', 'analytics'] as const;
+type NewNamespaceKey = (typeof NEW_NAMESPACE_KEYS)[number];
 
-/** UI-SPEC §13.8's per-locale second-person word lists. */
+/**
+ * ONE declaration pointing at the locales directory (this plan's own
+ * acceptance criterion) — Vite's `import.meta.glob`, eagerly resolving
+ * every `*.json` file under `apps/web/src/i18n/locales/` at once, rather
+ * than six hand-written `import` statements that would need a new line
+ * every time a locale is added.
+ */
+const REAL_LOCALE_MODULES = import.meta.glob('/src/i18n/locales/*.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, Record<string, unknown>>;
+
+function localeCodeFromModulePath(modulePath: string): string {
+  const match = /\/([a-z]{2})\.json$/.exec(modulePath);
+  if (!match) {
+    throw new Error(`Could not extract a two-letter locale code from ${modulePath}`);
+  }
+  return match[1]!;
+}
+
+/** `{ locale-code: real parsed locale JSON module }`, keyed off the glob's file paths. */
+function buildLocaleSource(): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [modulePath, mod] of Object.entries(REAL_LOCALE_MODULES)) {
+    out[localeCodeFromModulePath(modulePath)] = mod;
+  }
+  return out;
+}
+
+/**
+ * The single exported locale-scan constant plan 39.1-09 declared and this
+ * plan repoints — now the six REAL locale files, keyed by locale code, each
+ * holding the FULL parsed document (every existing namespace, not just the
+ * two new ones). The scan functions below explicitly narrow to
+ * `NEW_NAMESPACE_KEYS` before flattening — the guard scans only `insights`/
+ * `analytics`, never the rest of the document, which is exactly D-05's
+ * scoping contract proven below.
+ */
+export const INSIGHT_COPY_LOCALE_SOURCE: Record<
+  string,
+  Record<string, unknown>
+> = buildLocaleSource();
+
+/** UI-SPEC §13.8's per-locale second-person word lists — unchanged from plan 39.1-09. */
 const SECOND_PERSON_PATTERNS: Record<string, RegExp> = {
   en: /\b(you|your|you're)\b/i,
   es: /\b(tú|tu|tus|usted)\b/i,
@@ -50,7 +99,7 @@ const SECOND_PERSON_PATTERNS: Record<string, RegExp> = {
   ja: /あなた/,
 };
 
-/** UI-SPEC §13.8 assertion (c): a percent sign next to a chance/probability/future-tense word. English phrasing, per the spec's literal word list. */
+/** UI-SPEC §13.8 assertion (c): a percent sign next to a chance/probability/future-tense word. English phrasing, per the spec's literal word list — unchanged from plan 39.1-09. */
 const PROBABILITY_PATTERN =
   /%[^%]{0,25}\b(chance|probability|will)\b|\b(chance|probability|will)\b[^%]{0,25}%/i;
 
@@ -61,13 +110,66 @@ interface LocaleLeaf {
   value: string;
 }
 
-/** Flattens one locale's namespace object into `{ locale, namespace, keyPath, value }` leaves. */
+/**
+ * Recursively flattens one locale's namespace object into
+ * `{ locale, namespace, keyPath, value }` leaves — the real `insights`/
+ * `analytics` trees nest several levels deep (`insights.state.thinRecent
+ * .page.lastEvent`, etc.), unlike plan 39.1-09's flat one-level fixture, so
+ * this walker recurses until it hits a non-object value.
+ */
 function collectLeaves(
   locale: string,
   namespace: string,
-  tree: Record<string, string>,
+  tree: Record<string, unknown>,
+  prefix = '',
 ): LocaleLeaf[] {
-  return Object.entries(tree).map(([keyPath, value]) => ({ locale, namespace, keyPath, value }));
+  return Object.entries(tree).flatMap(([key, value]) => {
+    const keyPath = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object') {
+      return collectLeaves(locale, namespace, value as Record<string, unknown>, keyPath);
+    }
+    return [{ locale, namespace, keyPath, value: String(value) }];
+  });
+}
+
+/** Every leaf under a locale's `insights`/`analytics` namespaces only — never the rest of the document (D-05 scoping). */
+function collectNewNamespaceLeaves(locale: string): LocaleLeaf[] {
+  const tree = INSIGHT_COPY_LOCALE_SOURCE[locale];
+  if (!tree) {
+    throw new Error(`No locale module resolved for ${locale}`);
+  }
+  return NEW_NAMESPACE_KEYS.filter(
+    (namespace): namespace is NewNamespaceKey => tree[namespace] !== undefined,
+  ).flatMap((namespace) =>
+    collectLeaves(locale, namespace, tree[namespace] as Record<string, unknown>),
+  );
+}
+
+/**
+ * A cheap structural deep-clone (locale namespace trees are plain
+ * JSON-shaped data — string/number leaves and plain-object branches only),
+ * used by the permanent positive-control tests below to inject a
+ * deliberately offending value into a COPY of the real content without
+ * ever touching the committed locale files.
+ */
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Overwrites one arbitrary existing leaf (by dotted path) in a cloned namespace tree with `newValue`, for a positive-control test. */
+function withOverriddenLeaf(
+  tree: Record<string, unknown>,
+  dottedPath: string,
+  newValue: string,
+): Record<string, unknown> {
+  const clone = deepClone(tree);
+  const segments = dottedPath.split('.');
+  let node = clone as Record<string, unknown>;
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    node = node[segments[i]!] as Record<string, unknown>;
+  }
+  node[segments[segments.length - 1]!] = newValue;
+  return clone;
 }
 
 /** Matches one balanced `t(...)` call, tolerating one level of nested parens (an interpolation options object). */
@@ -209,8 +311,18 @@ describe('insight copy — no concatenation, no second person, no probability (I
     });
   });
 
-  describe('assertions (b)/(c) — second person and probability phrasing, scoped to the insight namespace', () => {
-    const locales = Object.keys(INSIGHT_COPY_LOCALE_SOURCE);
+  describe('assertions (b)/(c)/(d) — second person, probability and empty values, scoped to insights/analytics (Plan 39.1-11: real locale files)', () => {
+    const REAL_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
+
+    /**
+     * Measured directly against the six real locale files at Task 1's
+     * commit time (the `insights.{kind,rail,door,chip,horizon,evidence,
+     * state}` shared vocabulary — 61 leaf keys per locale). A floor, not an
+     * exact match: Task 2 lands ~86 more per-template keys plus the
+     * `analytics` namespace on top of this without needing this number
+     * changed, since every later addition only grows the count.
+     */
+    const MEASURED_MIN_NEW_NAMESPACE_KEYS_PER_LOCALE = 61;
 
     it('the locale scan target is a single exported constant (source scan showing exactly one declaration)', () => {
       const selfSource = readRepoFile(SELF_PATH);
@@ -218,40 +330,120 @@ describe('insight copy — no concatenation, no second person, no probability (I
       expect(declarations.length).toBe(1);
     });
 
-    it('examines at least one key per locale (non-vacuity canary)', () => {
-      for (const locale of locales) {
-        const leaves = collectLeaves(
-          locale,
-          'insights',
-          INSIGHT_COPY_LOCALE_SOURCE[locale]!.insights,
-        );
-        expect(leaves.length).toBeGreaterThan(0);
+    it('the locale-scan constant resolves via exactly one import.meta.glob declaration pointing at the locales directory', () => {
+      const selfSource = readRepoFile(SELF_PATH);
+      const globDeclarations = selfSource.match(/import\.meta\.glob\([^)]*i18n\/locales/g) ?? [];
+      expect(globDeclarations.length).toBe(1);
+    });
+
+    it('resolves all six real locale files (non-vacuity canary)', () => {
+      expect(Object.keys(INSIGHT_COPY_LOCALE_SOURCE).sort()).toEqual([...REAL_LOCALES].sort());
+    });
+
+    it('examines at least the measured minimum number of insights/analytics keys per locale (non-vacuity canary)', () => {
+      for (const locale of REAL_LOCALES) {
+        const leaves = collectNewNamespaceLeaves(locale);
+        expect(
+          leaves.length,
+          `locale ${locale} has ${leaves.length} scanned keys`,
+        ).toBeGreaterThanOrEqual(MEASURED_MIN_NEW_NAMESPACE_KEYS_PER_LOCALE);
       }
     });
 
-    for (const locale of ['en', 'es', 'fr', 'de', 'pt', 'ja']) {
-      it(`${locale}'s second-person pattern fires on its deliberately offending fixture value and NOT on the clean one`, () => {
-        const tree = INSIGHT_COPY_LOCALE_SOURCE[locale];
-        expect(tree, `expected a fixture entry for locale ${locale}`).toBeDefined();
-        const pattern = SECOND_PERSON_PATTERNS[locale]!;
-        expect(pattern.test(tree!.insights.offendingSecondPerson!)).toBe(true);
-        expect(pattern.test(tree!.insights.cleanVerdict!)).toBe(false);
-      });
-    }
+    describe('assertion (b) — no second-person copy in insights/analytics, real content', () => {
+      for (const locale of REAL_LOCALES) {
+        it(`${locale}: no real insights/analytics value matches the second-person pattern`, () => {
+          const pattern = SECOND_PERSON_PATTERNS[locale]!;
+          const offenders = collectNewNamespaceLeaves(locale).filter((leaf) =>
+            pattern.test(leaf.value),
+          );
+          expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+        });
 
-    it('assertion (c) fires against a percent sign paired with a probability word, and not against a clean observed-rate value', () => {
-      const enTree = INSIGHT_COPY_LOCALE_SOURCE.en!;
-      expect(PROBABILITY_PATTERN.test(enTree.insights.offendingProbability!)).toBe(true);
-      expect(PROBABILITY_PATTERN.test(enTree.insights.cleanRate!)).toBe(false);
+        it(`${locale}: permanent positive control — injecting a second-person value into a clone of the real insights tree makes the scan fire`, () => {
+          const pattern = SECOND_PERSON_PATTERNS[locale]!;
+          const realTree = INSIGHT_COPY_LOCALE_SOURCE[locale]!;
+          const offendingWord: Record<(typeof REAL_LOCALES)[number], string> = {
+            en: 'your win rate is down',
+            es: 'tu tasa de victorias bajó',
+            fr: 'votre taux de victoires a baissé',
+            de: 'deine Siegquote ist gesunken',
+            pt: 'sua taxa de vitórias caiu',
+            ja: 'あなたの勝率は下降しました',
+          };
+          const mutatedInsights = withOverriddenLeaf(
+            realTree.insights as Record<string, unknown>,
+            'kind.fact',
+            offendingWord[locale],
+          );
+          const violations = collectLeaves(locale, 'insights', mutatedInsights).filter((leaf) =>
+            pattern.test(leaf.value),
+          );
+          expect(violations.length).toBeGreaterThan(0);
+        });
+      }
     });
 
-    it('D-05 scoping: a second-person string OUTSIDE the insights namespace does NOT fail the guard', () => {
-      const enTree = INSIGHT_COPY_LOCALE_SOURCE.en!;
-      // The guard only ever reads `.insights` — `.unrelated` exists in the
-      // fixture purely to prove this scoping, never scanned by the guard.
-      expect(SECOND_PERSON_PATTERNS.en!.test(enTree.unrelated.existingSecondPerson!)).toBe(true);
-      const scannedNamespaces = Object.keys(enTree).filter((key) => key !== 'unrelated');
-      expect(scannedNamespaces).toEqual(['insights']);
+    describe('assertion (c) — no bare probability phrasing in insights/analytics, real content', () => {
+      it('no real insights/analytics value (any locale) matches the probability pattern', () => {
+        const offenders = REAL_LOCALES.flatMap((locale) =>
+          collectNewNamespaceLeaves(locale).filter((leaf) => PROBABILITY_PATTERN.test(leaf.value)),
+        );
+        expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+      });
+
+      it('permanent positive control — injecting a probability phrase into a clone of the real (en) insights tree makes the scan fire', () => {
+        const realTree = INSIGHT_COPY_LOCALE_SOURCE.en!;
+        const mutatedInsights = withOverriddenLeaf(
+          realTree.insights as Record<string, unknown>,
+          'kind.fact',
+          'a 70% chance the trend will continue',
+        );
+        const violations = collectLeaves('en', 'insights', mutatedInsights).filter((leaf) =>
+          PROBABILITY_PATTERN.test(leaf.value),
+        );
+        expect(violations.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('assertion (d) — no empty string in either new namespace, real content', () => {
+      it('no real insights/analytics leaf (any locale) is an empty string', () => {
+        const offenders = REAL_LOCALES.flatMap((locale) =>
+          collectNewNamespaceLeaves(locale).filter((leaf) => leaf.value.trim() === ''),
+        );
+        expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+      });
+
+      it('permanent positive control — an empty-string leaf in a clone of the real insights tree makes the scan fire', () => {
+        const realTree = INSIGHT_COPY_LOCALE_SOURCE.en!;
+        const mutatedInsights = withOverriddenLeaf(
+          realTree.insights as Record<string, unknown>,
+          'kind.fact',
+          '',
+        );
+        const offenders = collectLeaves('en', 'insights', mutatedInsights).filter(
+          (leaf) => leaf.value.trim() === '',
+        );
+        expect(offenders.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('D-05 scoping: a second-person string OUTSIDE insights/analytics does NOT fail the guard', () => {
+      const enModule = INSIGHT_COPY_LOCALE_SOURCE.en!;
+      // A real, already-shipped second-person string that lives OUTSIDE the
+      // two new namespaces — proves this guard's scope, never sweeps in the
+      // rest of the document. Replaces plan 39.1-09's synthetic
+      // `.unrelated` fixture entry now that real content is in scope.
+      const existingOutsideString = (
+        (enModule.trends as { setting: { youWin: string } }).setting as { youWin: string }
+      ).youWin;
+      expect(SECOND_PERSON_PATTERNS.en!.test(existingOutsideString)).toBe(true);
+      const scannedLeaves = collectNewNamespaceLeaves('en');
+      expect(scannedLeaves.some((leaf) => leaf.value === existingOutsideString)).toBe(false);
+      const scannedNamespaces = [...new Set(scannedLeaves.map((leaf) => leaf.namespace))].sort();
+      expect(
+        scannedNamespaces.every((ns) => (NEW_NAMESPACE_KEYS as readonly string[]).includes(ns)),
+      ).toBe(true);
     });
 
     it('the guard never scans apps/web/src/pages/ for second-person strings (D-05)', () => {

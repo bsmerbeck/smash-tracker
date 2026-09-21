@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "Instantâneo de pesquisa com dados públicos — não verificado, não pertence nem é endossado pelo jogador.",
     "disabledReason": "Desativado para contas de pesquisa com dados públicos."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Fato",
+      "trend": "Tendência",
+      "suggestion": "Sugestão",
+      "locked": "Bloqueado",
+      "unlocksNext": "Desbloqueia a seguir"
+    },
+    "rail": {
+      "title": {
+        "last30": "Análises · últimas 30 partidas vs histórico",
+        "lastEvent": "Análises · último evento vs histórico",
+        "last90": "Análises · últimos 90 dias vs histórico"
+      },
+      "legend": "Fato · Tendência · Sugestão",
+      "allDismissed": "Todas as leituras deste painel foram dispensadas.",
+      "dismissedCount_one": "{{count}} dispensada neste dispositivo",
+      "dismissedCount_other": "{{count}} dispensadas neste dispositivo",
+      "restore": "Restaurar",
+      "dismiss": "Dispensar",
+      "dismissedToast": "Leitura dispensada neste dispositivo.",
+      "error": "Não foi possível calcular as análises para esta visão. Recarregue para tentar novamente."
+    },
+    "door": {
+      "seeGames_one": "Ver a {{count}} partida",
+      "seeGames_other": "Ver as {{count}} partidas",
+      "openMatchup": "Abrir confronto",
+      "openOpponent": "Abrir adversário",
+      "openStage": "Abrir cenário",
+      "openEvent": "Abrir evento",
+      "findVods": "Buscar VODs",
+      "ratingModelNote": "Nota sobre o modelo de classificação"
+    },
+    "chip": {
+      "up": "Sobe",
+      "down": "Desce",
+      "steady": "Estável",
+      "thin": "Poucos dados",
+      "none_one": "{{count}} confronto sem mudança notável",
+      "none_other": "{{count}} confrontos sem mudança notável",
+      "aria": {
+        "up": "Em alta",
+        "down": "Em queda",
+        "steady": "Sem mudança notável",
+        "thin": "Ainda sem dados suficientes"
+      }
+    },
+    "horizon": {
+      "label": "Janela recente",
+      "last30": "Últimas 30 partidas",
+      "lastEvent": "Último evento",
+      "last90": "Últimos 90 dias",
+      "lastEventDisabled": "Nenhum evento registrado",
+      "short": {
+        "last30": "30 partidas",
+        "lastEvent": "Último evento",
+        "last90": "90 dias"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico em {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico em {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} últimos 90 dias · {{baselineRate}} histórico em {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Essas {{count}} partidas vão de {{from}} a {{to}}.",
+      "range": "{{rate}} em {{count}}, dentro da faixa habitual ({{lower}}–{{upper}})."
+    },
+    "state": {
+      "collapsed": {
+        "last30": "As últimas 30 partidas são todo o histórico — um só número, sem comparação.",
+        "last90": "Os últimos 90 dias são todo o histórico — um só número, sem comparação."
+      },
+      "thinRecent": {
+        "scoped_one": "Só {{count}} partida vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
+        "scoped_other": "Só {{count}} partidas vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
+        "page": {
+          "last30": "Só {{count}} partidas nas últimas 30 — mostrando o histórico.",
+          "lastEvent": "Só {{count}} partidas no último evento — mostrando o histórico.",
+          "last90": "Só {{count}} partidas nos últimos 90 dias — mostrando o histórico."
+        }
+      },
+      "locked_one": "vs {{fighter}} — 1 partida a mais desbloqueia esta leitura.",
+      "locked_other": "vs {{fighter}} — {{count}} partidas a mais desbloqueiam esta leitura.",
+      "lockedMeter": "{{have}} de {{need}} partidas",
+      "steady": {
+        "last30": "Sem mudança notável nas últimas 30 partidas.",
+        "lastEvent": "Sem mudança notável no último evento.",
+        "last90": "Sem mudança notável nos últimos 90 dias."
+      }
+    }
   }
 }

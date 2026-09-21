@@ -3065,5 +3065,98 @@
   "demo": {
     "accountBanner": "Forschungs-Snapshot aus öffentlichen Daten — unverifiziert, nicht im Besitz des Spielers und nicht von ihm unterstützt.",
     "disabledReason": "Deaktiviert für Forschungskonten mit öffentlichen Daten."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Fakt",
+      "trend": "Trend",
+      "suggestion": "Empfehlung",
+      "locked": "Gesperrt",
+      "unlocksNext": "Als Nächstes freigeschaltet"
+    },
+    "rail": {
+      "title": {
+        "last30": "Auswertungen · letzte 30 Matches vs. gesamt",
+        "lastEvent": "Auswertungen · letztes Event vs. gesamt",
+        "last90": "Auswertungen · letzte 90 Tage vs. gesamt"
+      },
+      "legend": "Fakt · Trend · Empfehlung",
+      "allDismissed": "Alle Auswertungen in dieser Leiste wurden ausgeblendet.",
+      "dismissedCount_one": "{{count}} auf diesem Gerät ausgeblendet",
+      "dismissedCount_other": "{{count}} auf diesem Gerät ausgeblendet",
+      "restore": "Wiederherstellen",
+      "dismiss": "Ausblenden",
+      "dismissedToast": "Auswertung auf diesem Gerät ausgeblendet.",
+      "error": "Auswertungen für diese Ansicht konnten nicht berechnet werden. Zum erneuten Versuch neu laden."
+    },
+    "door": {
+      "seeGames_one": "Das {{count}} Match ansehen",
+      "seeGames_other": "Die {{count}} Matches ansehen",
+      "openMatchup": "Matchup öffnen",
+      "openOpponent": "Gegner öffnen",
+      "openStage": "Stage öffnen",
+      "openEvent": "Event öffnen",
+      "findVods": "VODs finden",
+      "ratingModelNote": "Hinweis zum Wertungsmodell"
+    },
+    "chip": {
+      "up": "Steigt",
+      "down": "Fällt",
+      "steady": "Stabil",
+      "thin": "Zu wenig Daten",
+      "none_one": "{{count}} Matchup ohne nennenswerte Veränderung",
+      "none_other": "{{count}} Matchups ohne nennenswerte Veränderung",
+      "aria": {
+        "up": "Steigender Trend",
+        "down": "Fallender Trend",
+        "steady": "Keine nennenswerte Veränderung",
+        "thin": "Noch nicht genug Daten"
+      }
+    },
+    "horizon": {
+      "label": "Aktuelles Fenster",
+      "last30": "Letzte 30 Matches",
+      "lastEvent": "Letztes Event",
+      "last90": "Letzte 90 Tage",
+      "lastEventDisabled": "Keine Events erfasst",
+      "short": {
+        "last30": "30 Matches",
+        "lastEvent": "Letztes Event",
+        "last90": "90 Tage"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Diese {{count}} Matches erstrecken sich von {{from}} bis {{to}}.",
+      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}})."
+    },
+    "state": {
+      "collapsed": {
+        "last30": "Die letzten 30 Matches sind der gesamte Datensatz — eine Zahl, kein Vergleich.",
+        "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
+      },
+      "thinRecent": {
+        "scoped_one": "Nur {{count}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "scoped_other": "Nur {{count}} Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "page": {
+          "last30": "Nur {{count}} Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
+          "lastEvent": "Nur {{count}} Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
+          "last90": "Nur {{count}} Matches in den letzten 90 Tagen — es wird der Gesamtzeitraum gezeigt."
+        }
+      },
+      "locked_one": "vs. {{fighter}} — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "vs. {{fighter}} — {{count}} weitere Matches schalten diese Auswertung frei.",
+      "lockedMeter": "{{have}} von {{need}} Matches",
+      "steady": {
+        "last30": "Keine nennenswerte Veränderung in den letzten 30 Matches.",
+        "lastEvent": "Keine nennenswerte Veränderung beim letzten Event.",
+        "last90": "Keine nennenswerte Veränderung in den letzten 90 Tagen."
+      }
+    }
   }
 }
