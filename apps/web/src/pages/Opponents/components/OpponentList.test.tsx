@@ -45,11 +45,16 @@ function renderList() {
   );
 }
 
+// Plan 39.1-17 (UIX-03): the tag is the row's ONE flexible truncating slot,
+// identified by `data-truncate-guard` — its `title` attribute is now
+// CONDITIONAL (only present when the rendered string genuinely overflows,
+// never measurable in jsdom's unmocked layout), so `getByTitle` no longer
+// reliably locates it.
 function rowNames(): string[] {
   const list = screen.getByRole('list', { name: 'Opponents' });
   return within(list)
     .getAllByRole('listitem')
-    .map((li) => within(li).getByTitle(/.+/).textContent ?? '');
+    .map((li) => li.querySelector('[data-truncate-guard]')?.textContent ?? '');
 }
 
 describe('OpponentList sorting and filtering', () => {

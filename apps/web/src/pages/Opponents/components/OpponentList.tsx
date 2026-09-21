@@ -1,8 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MoreVertical, Search } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  classify,
+  toRateValue,
+  type RateValue,
+} from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,8 +26,14 @@ import {
 } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
 import { buildOpponentEvidence, type OpponentEvidenceRow } from '@/lib/stats';
-import { SampleCue } from '@/components/EvidenceCues';
+import { SampleCue, SampleCueGlyph } from '@/components/EvidenceCues';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { LIST_PASS_MAX, LIST_PASS_STEP } from '@/components/analytics/BoundedList';
+// Aliased: this file already uses TypeScript's built-in `Record<K, V>` utility
+// type (`aliasMap`, `SORT_LABEL_KEYS`) — importing the analytics primitive
+// under its own name would shadow that global type.
+import { Record as RecordFigure } from '@/components/analytics/Record';
+import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
 import { OpponentSourceBadge } from './OpponentSourceBadge';
 
 export interface OpponentListProps {
@@ -100,6 +111,11 @@ function sortOpponents(
  * faced regardless of the toggle. Each row also carries a sample cue — a raw
  * win/loss count is the recorded FACT, so this surface deliberately carries
  * no evidence-type caption (the UI-SPEC's documented conservative default).
+ *
+ * Plan 39.1-17 (UIX-03, owner note 1): the row is two lines with exactly one
+ * flexible truncating slot (the tag). UIX-02: bounded at the per-pass rule
+ * (`LIST_PASS_MAX`, +`LIST_PASS_STEP` per "show more" click) — this list has
+ * no other pagination mechanism, unlike `MatchTable.tsx`'s TanStack pager.
  */
 export function OpponentList({
   matches,
@@ -129,6 +145,12 @@ export function OpponentList({
   const opponents = evidence.rows;
   const unnamed = evidence.unnamed;
 
+  // Plan 39.1-17: whole-account baseline this row's own record is classified
+  // against (T-39.1-17-04-adjacent — this is NOT the Dashboard's two-horizon
+  // engine read, just the same `classify()` ladder already used by
+  // `PairingOpponentRow.tsx` to decide "is this opponent unusual for me").
+  const overallRate = useMemo(() => toRateValue(matches), [matches]);
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const searched = needle
@@ -139,6 +161,14 @@ export function OpponentList({
       : searched;
     return sortOpponents(thresholded, sort);
   }, [opponents, query, sort, minGamesOnly]);
+
+  // UIX-02: at most `LIST_PASS_MAX` rows render per pass; "Show 50 more"
+  // reveals another `LIST_PASS_STEP`. Not resynced when `filtered` shrinks —
+  // the same one-time-initializer limitation `BoundedList`'s own
+  // `mode="full-page"` branch has (see its `visibleCount` state).
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(LIST_PASS_MAX, filtered.length));
+  const visibleFiltered = filtered.slice(0, Math.min(visibleCount, filtered.length));
+  const hasMoreRows = visibleCount < filtered.length;
 
   return (
     <Card className="flex h-full flex-col">
@@ -191,19 +221,36 @@ export function OpponentList({
               : t('opponents.list.emptyFiltered')}
           </p>
         ) : (
-          <ul className="flex flex-col gap-1" role="list" aria-label={t('opponents.list.title')}>
-            {filtered.map((opponent) => (
-              <OpponentRow
-                key={opponent.identity}
-                opponent={opponent}
-                selected={opponent.displayTag === selected}
-                lastPlayedAt={sort === 'recent' ? opponent.lastPlayedAt : undefined}
-                onSelect={onSelect}
-                onRequestMerge={onRequestMerge}
-                destination={hubHref?.(opponent)}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-col gap-1" role="list" aria-label={t('opponents.list.title')}>
+              {visibleFiltered.map((opponent) => (
+                <OpponentRow
+                  key={opponent.identity}
+                  opponent={opponent}
+                  selected={opponent.displayTag === selected}
+                  lastPlayedAt={sort === 'recent' ? opponent.lastPlayedAt : undefined}
+                  onSelect={onSelect}
+                  onRequestMerge={onRequestMerge}
+                  destination={hubHref?.(opponent)}
+                  overallRate={overallRate}
+                />
+              ))}
+            </ul>
+            {hasMoreRows && (
+              <div className="mt-2">
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  onClick={() =>
+                    setVisibleCount((v) => Math.min(v + LIST_PASS_STEP, filtered.length))
+                  }
+                >
+                  {t('analytics.list.showMore50')}
+                </Button>
+              </div>
+            )}
+          </>
         )}
         {/* D-10: a disclosed FACT, never a ranked row and never clickable — excluded from every opponent ranking. */}
         {unnamed && (
@@ -216,14 +263,80 @@ export function OpponentList({
   );
 }
 
-function OpponentRow({
-  opponent,
-  selected,
-  lastPlayedAt,
-  onSelect,
-  onRequestMerge,
-  destination,
-}: {
+/**
+ * Plan 39.1-17 (UIX-03): real CSS-driven truncation detection for the row's
+ * ONE flexible slot — never a JavaScript character-count slice
+ * (T-39.1-17-01). Compares the rendered span's own `scrollWidth` against its
+ * `clientWidth`; only when they diverge is the text genuinely clipped by
+ * `truncate`'s `text-overflow: ellipsis`, and only then does the element
+ * carry a `title` with the full string. A `ResizeObserver` keeps the
+ * measurement current as the row's own width changes.
+ */
+function useTruncationGuard<T extends HTMLElement>(measureKey: string) {
+  const ref = useRef<T>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return undefined;
+    }
+    const measure = () => setIsTruncated(el.scrollWidth > el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [measureKey]);
+  return { ref, isTruncated };
+}
+
+/**
+ * Plan 39.1-17 (UIX-03 §6.5 rule 8, container-query priority drop): the
+ * row's OWN rendered width, JS-measured rather than pure CSS `@container`
+ * (unlike `RosterUsage.tsx`/`PairingOpponentRow`'s `@max-[Npx]` classes) —
+ * this row's acceptance criteria require a committed, falsifiable unit test
+ * proving the exact swap at named thresholds, and jsdom never evaluates a
+ * real container query, so a CSS-only implementation would leave this
+ * specific contract unverifiable by anything but the deferred real-browser
+ * `guard:layout` harness. Mirrors `useTruncationGuard`'s same real-DOM
+ * measurement technique.
+ */
+function useElementWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return undefined;
+    }
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, width };
+}
+
+/** Below this meta-line width the confidence sentence becomes the glyph (dots + full-sentence `aria-label`). */
+const OPPONENT_ROW_SENTENCE_THRESHOLD_PX = 380;
+/** Below this meta-line width the record leaves the row entirely, staying reachable via the badge's own tooltip. */
+const OPPONENT_ROW_RECORD_THRESHOLD_PX = 260;
+
+const EN_DASH = '–';
+
+/** `classify`'s `InsightState` -> `DeltaChip`'s state union, duplicated per this codebase's small-helper convention (`PairingOpponentRow`'s `deltaChipStateFor` is its own private, unexported function). Only `trend`/`suggestion` are "notable" here — every other state renders no chip at all (never `DeltaChip`'s own `steady`/`thin`/`collapsed` variants), since this row has no room for a non-notable delta. */
+function isNotableState(state: ReturnType<typeof classify>['state']): boolean {
+  return state === 'trend' || state === 'suggestion';
+}
+
+/** Plan 39.1-17 (UIX-03): exported so `OpponentRow.narrowContainer.test.tsx` can render the row in isolation at a fixed container width. */
+export interface OpponentRowProps {
   opponent: OpponentEvidenceRow;
   selected: boolean;
   /** Set only under the "Recently played" sort — renders a date hint. */
@@ -232,30 +345,102 @@ function OpponentRow({
   onRequestMerge: (opponent: string) => void;
   /** Phase 38-07 (C3-M-01): the host-built hub destination for this row, or `undefined` when the host supplies no `hubHref` — in which case the row keeps today's in-page selection-button behavior. */
   destination?: string;
-}) {
+  /** Plan 39.1-17: the whole-account baseline this row's own record is classified against for the delta chip. */
+  overallRate: RateValue;
+}
+
+export function OpponentRow({
+  opponent,
+  selected,
+  lastPlayedAt,
+  onSelect,
+  onRequestMerge,
+  destination,
+  overallRate,
+}: OpponentRowProps) {
   const { t, i18n } = useTranslation();
+  const { ref: tagRef, isTruncated } = useTruncationGuard<HTMLSpanElement>(opponent.displayTag);
+  const { ref: metaRef, width: metaWidth } = useElementWidth<HTMLDivElement>();
+
+  const showSentence = metaWidth >= OPPONENT_ROW_SENTENCE_THRESHOLD_PX;
+  const showRecord = metaWidth === 0 || metaWidth >= OPPONENT_ROW_RECORD_THRESHOLD_PX;
+
+  const showRate = opponent.total >= ABSTENTION_FLOOR_GAMES;
+  const recordTooltip = showRate
+    ? `${opponent.wins}${EN_DASH}${opponent.losses} · ${opponent.winRate}% · ${opponent.total}`
+    : `${opponent.wins}${EN_DASH}${opponent.losses} · ${opponent.total}`;
+
+  const recentRate: RateValue = {
+    wins: opponent.wins,
+    losses: opponent.losses,
+    total: opponent.total,
+    rate: opponent.winRate / 100,
+  };
+  const { state: classifyState, deltaPoints } = classify({
+    recent: recentRate,
+    baseline: overallRate,
+    scoped: false,
+    hasAction: false,
+  });
+  const notable = isNotableState(classifyState);
+  const chipState: DeltaChipState = deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
+  const recordText = `${opponent.wins}${EN_DASH}${opponent.losses}`;
+  const baselineRecordText = `${overallRate.wins}${EN_DASH}${overallRate.losses}`;
+
   const rowBody = (
     <>
-      {/* Name owns the full first line so badges/stats can never squeeze it out. */}
-      <span className="min-w-0 truncate font-medium" title={opponent.displayTag}>
+      {/* Line 1: the ONE flexible truncating slot (the tag) plus nothing else — the kebab menu is a row-level sibling, not part of this flex-col group. */}
+      <span
+        ref={tagRef}
+        className="min-w-0 truncate font-medium"
+        data-truncate-guard
+        title={isTruncated ? opponent.displayTag : undefined}
+      >
         {opponent.displayTag}
       </span>
-      <span className="flex items-center gap-2">
-        <OpponentSourceBadge source={opponent.source} />
-        <span className="text-muted-foreground">
-          {opponent.wins}-{opponent.losses}
+      {/* Line 2: a wrapping meta line — every token wraps WHOLE, never mid-token. */}
+      <div
+        ref={metaRef}
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+        data-slot="opponent-row-meta"
+      >
+        <span title={recordTooltip}>
+          <OpponentSourceBadge source={opponent.source} />
         </span>
-        <span className="font-medium">{opponent.winRate}%</span>
-        <span className="text-xs text-muted-foreground">
-          {t('common.games', { count: opponent.total })}
-        </span>
-        <SampleCue sample={opponent.sample} />
-        {lastPlayedAt != null && (
-          <span className="text-xs text-muted-foreground">
-            {new Date(lastPlayedAt).toLocaleDateString(i18n.language)}
+        {showRecord && (
+          <span className="tabular-nums whitespace-nowrap">
+            <RecordFigure
+              wins={opponent.wins}
+              losses={opponent.losses}
+              cue="none"
+              locale={i18n.language}
+            />
           </span>
         )}
-      </span>
+        {showSentence ? (
+          <SampleCue sample={opponent.sample} />
+        ) : (
+          <SampleCueGlyph sample={opponent.sample} />
+        )}
+        {notable && (
+          <DeltaChip
+            state={chipState}
+            valueLabel={t(
+              chipState === 'up' ? 'analytics.record.deltaUp' : 'analytics.record.deltaDown',
+              { points: Math.abs(deltaPoints ?? 0) },
+            )}
+            horizonOwnedByParent
+            ariaLabel={t('analytics.dumbbell.rowAria', {
+              label: opponent.displayTag,
+              recentRecord: recordText,
+              baselineRecord: baselineRecordText,
+            })}
+          />
+        )}
+        {lastPlayedAt != null && (
+          <span>{new Date(lastPlayedAt).toLocaleDateString(i18n.language)}</span>
+        )}
+      </div>
     </>
   );
 
