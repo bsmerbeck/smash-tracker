@@ -259,23 +259,32 @@ describe('registry-driven scope derivation', () => {
   });
 });
 
+const SAME_N_DOOR_TIMEOUT_MS = 60_000;
+
 describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) => {
   const template = INSIGHT_TEMPLATES.find((t) => t.id === templateId)!;
 
   if (template.windowExpressible) {
-    it('renders the counted-games door, and the filtered match list at its destination shows exactly the printed count', () => {
-      const insight = buildInsight(templateId);
-      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
-      const gamesDoor = doors.find((d) => d.kind === 'games');
-      expect(
-        gamesDoor,
-        `${templateId} (window-expressible) must render a counted-games door`,
-      ).toBeDefined();
+    it(
+      'renders the counted-games door, and the filtered match list at its destination shows exactly the printed count',
+      () => {
+        const insight = buildInsight(templateId);
+        const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
+        const gamesDoor = doors.find((d) => d.kind === 'games');
+        expect(
+          gamesDoor,
+          `${templateId} (window-expressible) must render a counted-games door`,
+        ).toBeDefined();
 
-      const { matches } = FIXTURES[templateId];
-      renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
-      expect(renderedRowCount()).toBe(gamesDoor!.count);
-    });
+        const { matches } = FIXTURES[templateId];
+        renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
+        expect(renderedRowCount()).toBe(gamesDoor!.count);
+        // Whole-history reads (settingGap, rosterCore) land on thousands of rows of the 8k
+        // fixture, and FilteredMatchList renders every one: ~5s alone, past the 15s default
+        // when `pnpm test` runs the shared/api/web suites concurrently.
+      },
+      SAME_N_DOOR_TIMEOUT_MS,
+    );
   } else {
     it('renders no counted-games door at all (out of scope)', () => {
       const insight = buildInsight(templateId);
