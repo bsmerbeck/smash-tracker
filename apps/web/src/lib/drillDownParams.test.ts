@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_FROM_PARAM,
@@ -95,6 +96,57 @@ describe('parseIntegerAxis (via readDrillDownParams)', () => {
     const axes = readDrillDownParams(params, { stageIds });
     expect(axes.from).toBe(1000);
     expect(axes.to).toBe(2000);
+  });
+});
+
+describe('claim axis (plan 39.1-19, DD-09 accepted)', () => {
+  const stageIds = new Set([BATTLEFIELD]);
+
+  it('accepts a well-formed Insight.id verbatim', () => {
+    const params = new URLSearchParams({ [DRILL_DOWN_CLAIM_PARAM]: 'formNow:account:last30' });
+    const axes = readDrillDownParams(params, { stageIds });
+    expect(axes.claimId).toBe('formNow:account:last30');
+  });
+
+  it('accepts a scopeKey carrying an arbitrary player tag (unicode, space, apostrophe, hash)', () => {
+    const tag = "player:O'Brien 42#1234 ゲーム";
+    const params = new URLSearchParams({ [DRILL_DOWN_CLAIM_PARAM]: `formNow:${tag}:last30` });
+    const axes = readDrillDownParams(params, { stageIds });
+    expect(axes.claimId).toBe(`formNow:${tag}:last30`);
+  });
+
+  it('resolves an empty claim value to the axis being absent, never a throw', () => {
+    const params = new URLSearchParams({ [DRILL_DOWN_CLAIM_PARAM]: '' });
+    expect(() => readDrillDownParams(params, { stageIds })).not.toThrow();
+    expect(readDrillDownParams(params, { stageIds }).claimId).toBeUndefined();
+  });
+
+  it('resolves a malformed claim value (disallowed characters) to the axis being absent, never a throw', () => {
+    const params = new URLSearchParams({
+      [DRILL_DOWN_CLAIM_PARAM]: '<script>alert(1)</script>',
+    });
+    expect(() => readDrillDownParams(params, { stageIds })).not.toThrow();
+    expect(readDrillDownParams(params, { stageIds }).claimId).toBeUndefined();
+  });
+
+  it('resolves an over-length claim value to the axis being absent, never a throw', () => {
+    const params = new URLSearchParams({ [DRILL_DOWN_CLAIM_PARAM]: 'a'.repeat(301) });
+    expect(() => readDrillDownParams(params, { stageIds })).not.toThrow();
+    expect(readDrillDownParams(params, { stageIds }).claimId).toBeUndefined();
+  });
+
+  it('round-trips through buildDrillDownSearch', () => {
+    const axes: DrillDownAxes = { claimId: 'formNow:account:last30' };
+    const search = buildDrillDownSearch(axes);
+    expect(search.get(DRILL_DOWN_CLAIM_PARAM)).toBe('formNow:account:last30');
+    expect(readDrillDownParams(search, { stageIds }).claimId).toBe('formNow:account:last30');
+  });
+
+  it('matchesDrillDown never examines the claim axis — resolution happens at the consumer, not here', () => {
+    const match = makeMatch();
+    // A claim axis with no bearing on any Match field: matchesDrillDown must
+    // still resolve purely on the OTHER (absent) axes and match everything.
+    expect(matchesDrillDown(match, { claimId: 'formNow:account:last30' })).toBe(true);
   });
 });
 

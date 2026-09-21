@@ -214,6 +214,55 @@ describe('FilteredMatchList', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
+  it('plan 39.1-19: a claim axis with a resolver narrows to exactly the resolver-returned games, in addition to the other axes', () => {
+    const matches = [
+      makeMatch({ id: 'a', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'b', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'c', map: { id: 2, name: 'Pokemon Stadium 2' } }),
+    ];
+    const resolveClaim = vi.fn((claimId: string) =>
+      claimId === 'formNow:account:last30' ? [matches[0]!, matches[1]!] : undefined,
+    );
+    renderList({
+      matches,
+      axes: { claimId: 'formNow:account:last30' },
+      resolveClaim,
+    });
+    expect(resolveClaim).toHaveBeenCalledWith('formNow:account:last30', matches);
+    expect(screen.getByText(/2 games/)).toBeInTheDocument();
+  });
+
+  it('plan 39.1-19: a stale claim id (resolver returns undefined) falls back to the remaining axes', () => {
+    const matches = [
+      makeMatch({ id: 'a', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'b', map: { id: 2, name: 'Pokemon Stadium 2' } }),
+    ];
+    const resolveClaim = vi.fn(() => undefined);
+    renderList({
+      matches,
+      axes: { claimId: 'stale:id:last30', stageId: 1 },
+      resolveClaim,
+    });
+    expect(screen.getByText(/1 game/)).toBeInTheDocument();
+  });
+
+  it('plan 39.1-19: no resolver supplied at all — the claim axis is a no-op, remaining axes still apply', () => {
+    const matches = [makeMatch({ id: 'a', map: { id: 1, name: 'Battlefield' } })];
+    renderList({ matches, axes: { claimId: 'formNow:account:last30' } });
+    expect(screen.getByText(/1 game/)).toBeInTheDocument();
+  });
+
+  it('plan 39.1-19: the active-filter summary shows the insight label-and-statement head when claimSummary is supplied', () => {
+    const matches = [makeMatch({ id: 'a' })];
+    renderList({
+      matches,
+      axes: { claimId: 'formNow:account:last30' },
+      resolveClaim: () => matches,
+      claimSummary: 'vs Terry · last 30 games',
+    });
+    expect(screen.getByText(/vs Terry · last 30 games/)).toBeInTheDocument();
+  });
+
   it('never re-sorts the given array — renders rows in the exact order passed', () => {
     const outOfOrder = [
       makeMatch({ id: 'older', time: 100, vodUrl: undefined }),
