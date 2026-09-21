@@ -78,6 +78,32 @@ export default tseslint.config(
     },
   },
   {
+    // UI-SPEC §13.2 / UIX-01 (plan 39.1-20): the stretch lint rule. A
+    // `Card`/`ChartCard`/`InsightCard` whose `className` carries a stretch
+    // (`h-full`), minimum-stretch (`min-h-full`) or viewport-height
+    // (`h-screen`) utility is exactly the "card force-stretched to a
+    // sibling's height" defect `PageGrid`'s `items-start` exists to
+    // prevent — the browser layout oracle (§13.1) catches it too, but this
+    // is the fast, CI-only half of the two-oracle pair. The `ignores` array
+    // below is the SAME "one named entry, shrink-only" discipline as the
+    // `no-restricted-imports` block above: `OpponentList.tsx`'s sticky
+    // master rail is the one card this phase's own layout intentionally
+    // stretches, and a future removal shrinks this array, never widens it.
+    files: ['apps/web/src/pages/**/*.{ts,tsx}'],
+    ignores: ['apps/web/src/pages/Opponents/components/OpponentList.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement[name.name=/^(Card|ChartCard|InsightCard)$/] JSXAttribute[name.name='className'] Literal[value=/\\bh-full\\b|\\bmin-h-full\\b|\\bh-screen\\b/]",
+          message:
+            "A Card/ChartCard/InsightCard may not carry a stretch (h-full), minimum-stretch (min-h-full) or viewport-height (h-screen) utility (UI-SPEC §13.2, UIX-01) — PageGrid's items-start already prevents row-height stretching; size the card to its own content instead. The only named exemption is OpponentList.tsx's sticky master rail.",
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/api/**/*.ts', 'packages/shared/**/*.ts'],
     languageOptions: {
       ecmaVersion: 2022,

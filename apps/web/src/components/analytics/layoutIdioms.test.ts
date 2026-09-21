@@ -77,10 +77,18 @@ const FLEX_DISTRIBUTION_PATTERN = /justify-(evenly|around)\b/;
 /**
  * Measured by a real grep at plan-execution time (2026-09-20), never
  * recalled (37 D-20). Shrink-only: an entry that no longer contains the
- * banned utility fails the anti-rot assertion below, so this array can only
- * shrink toward empty as Track C converts each file.
+ * banned utility fails the anti-rot assertion below, so this array could
+ * only ever shrink toward empty as Track C converted each file.
+ *
+ * TERMINAL STATE (plan 39.1-20): `StatTile.tsx` was the sole remaining
+ * entry (measured before this plan: `['apps/web/src/components/charts/
+ * StatTile.tsx']`, length 1) — this plan rewrites it as a thin wrapper over
+ * `StatRow`, so the array is now EMPTY (measured after: `[]`, length 0) and
+ * is expected to STAY empty: every file under `pages/` and `components/
+ * charts/` uses the one stat idiom for this pattern, with no known-offender
+ * allowlist left to shrink-track.
  */
-const KNOWN_FLEX_DISTRIBUTION_OFFENDERS = ['apps/web/src/components/charts/StatTile.tsx'];
+const KNOWN_FLEX_DISTRIBUTION_OFFENDERS: string[] = [];
 
 /** §13.4: a page-local component whose name begins with one of the closed stat-idiom names — the defect `StatRow`/`StatFigure` replace. */
 const STAT_COMPONENT_NAME_PATTERN = /\bfunction\s+(Stat|HeroCard|StatBlock|SettingBlock)\b/;
@@ -200,11 +208,16 @@ describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
       expect(stale, `stale allowlist entries: ${stale.join(', ')}`).toEqual([]);
     });
 
-    it('the allowlist is not vacuous — the pattern matches at least one real offender', () => {
-      const anyRealOffender = KNOWN_FLEX_DISTRIBUTION_OFFENDERS.some((file) =>
-        FLEX_DISTRIBUTION_PATTERN.test(readRepoFile(file)),
-      );
-      expect(anyRealOffender).toBe(true);
+    it('has reached its terminal empty state (plan 39.1-20 converted StatTile.tsx, the last known offender)', () => {
+      // The "not vacuous — matches at least one real offender" shape this
+      // test used to have is no longer meaningful: there is no longer a
+      // known-offender entry FOR this pattern to prove against, by design.
+      // A zero-violation, zero-allowlist state IS the correct terminal claim
+      // — asserting it directly (rather than vacuously `.some()`-ing over an
+      // empty array, which would silently read `false` on this same line
+      // without this rewrite) keeps the guard honest about which state it's
+      // actually in.
+      expect(KNOWN_FLEX_DISTRIBUTION_OFFENDERS).toEqual([]);
     });
   });
 
