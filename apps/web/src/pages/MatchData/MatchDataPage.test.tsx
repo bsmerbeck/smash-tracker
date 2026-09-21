@@ -894,3 +894,59 @@ describe('MatchDataPage — CSV export demo gating', () => {
     expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeEnabled();
   });
 });
+
+// Task 3 (T-39.1-16-03): the page-shell/grid rewrite, the roster rail, and
+// the conditional games terminus — mirrors FighterAnalysisPage.test.tsx's
+// own equivalent tests exactly (T-39.1-14 precedent).
+describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-03)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    setMockUser(makeMockUser());
+    listOpponents.mockResolvedValue(['rival']);
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+  });
+
+  it('no card root on this surface carries a stretch utility (UIX-04)', async () => {
+    renderMatchData();
+
+    await screen.findByText('Match History');
+    const cardRoots = document.querySelectorAll('[data-slot="card"]');
+    expect(cardRoots.length).toBeGreaterThan(0);
+    for (const card of cardRoots) {
+      expect(card.className).not.toMatch(/\bflex-1\b/);
+      expect(card.className).not.toMatch(/\bgrow\b/);
+      expect(card.className).not.toMatch(/\bself-stretch\b/);
+    }
+  });
+
+  it('renders exactly one filter row and one horizon switch', async () => {
+    renderMatchData();
+
+    await screen.findByText('Match History');
+    expect(document.querySelectorAll('[data-slot="horizon-switch"]')).toHaveLength(1);
+  });
+
+  it('renders the filtered match list only when a drill axis is present in the URL', async () => {
+    const { unmount } = renderMatchData('/match-data');
+    await screen.findByText('Match History');
+    expect(document.getElementById('games')).not.toBeInTheDocument();
+    unmount();
+
+    renderMatchData('/match-data?stage=1');
+    await screen.findByText('Match History');
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  it('mounts the roster rail', async () => {
+    renderMatchData();
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+    );
+  });
+});
