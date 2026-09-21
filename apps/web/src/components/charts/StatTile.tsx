@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 
 export interface StatTileStat {
   label: string;
@@ -12,27 +13,23 @@ export interface StatTileProps {
 }
 
 /**
- * The sparkline/stat-tile vocabulary member (CHRT-01): a small row of
- * label/value stats with an optional trend node underneath. This is the fix
- * for the grid-stretch defect, not a restyle: the tile has INTRINSIC height
- * only — it sets no minimum height and must never be given a chart-sized
- * fixed height, because a forced height here would reintroduce the exact
- * "sparse card stretched to its neighbour's height" problem this member
- * exists to remove (a stat tile's job is to be small). It reads no design
- * tokens beyond the existing typography classes and renders no frame of its
+ * The sparkline/stat-tile vocabulary member (CHRT-01). Plan 39.1-20 (UIX-04):
+ * a thin wrapper over the one stat idiom (`StatRow`/`StatFigure`) — the old
+ * flex-based even-distribution row that could collide with a gapped grid
+ * under `PageGrid`'s `items-start` is gone, removing the last §13.3-banned
+ * pattern occurrence in the chart kit. Existing consumers keep their exact
+ * `{ label, value }[]` + optional `trend` shape unchanged; each pair maps
+ * onto one `StatFigure`. The tile still sets no minimum/fixed height of its
  * own — `ChartCard` is the frame every consumer wraps it in.
  */
 export function StatTile({ stats, trend }: StatTileProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-evenly">
-        {stats.map((stat) => (
-          <div key={stat.label} className="flex flex-col items-center text-center">
-            <span className="text-sm text-muted-foreground">{stat.label}</span>
-            <span className="text-xl font-medium">{stat.value}</span>
-          </div>
+      <StatRow
+        figures={stats.map((stat) => (
+          <StatFigure key={stat.label} label={stat.label} value={stat.value} />
         ))}
-      </div>
+      />
       {trend && <div>{trend}</div>}
     </div>
   );

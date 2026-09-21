@@ -164,7 +164,13 @@ export function Tournaments({ matches }: { matches: Match[] }) {
   const rows = buildTournamentEntryRows(visibleEntries, matches);
 
   return (
-    <Card className="h-full">
+    // Plan 39.1-20 [Rule 1]: `h-full` removed — TournamentsPage.tsx renders
+    // this card alone in a `flex flex-col` column, never beside a sibling
+    // whose height it needs to match (the grid-row it used to share inside
+    // TrendsPage.tsx was removed by plan 39.1-15's recomposition), so the
+    // class was dead: no definite-height ancestor for it to resolve
+    // against, and now a violation of the stretch lint rule (UI-SPEC §13.2).
+    <Card>
       <CardHeader>
         <CardTitle>{t('trends.tournaments.title')}</CardTitle>
       </CardHeader>
