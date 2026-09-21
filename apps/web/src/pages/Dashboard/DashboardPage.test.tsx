@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { OnboardingIntent } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -92,18 +93,22 @@ function renderDashboard(initialEntry = '/dashboard') {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror — the
-                  Dashboard's Add Match must stay VOD-optional there too. */}
-              <Route path="/coach/:clientId/dashboard" element={<DashboardPage />} />
-              {/* Phase 13 (ONBD-03): next-best-action area link targets. */}
-              <Route path="/welcome" element={<div>Welcome page</div>} />
-              <Route path="/coach" element={<div>Client Hub page</div>} />
-              <Route path="/fighter-analysis" element={<div>Fighter Analysis page</div>} />
-            </Routes>
+            {/* Plan 39.1-17: DashboardToolbar now renders HorizonSwitch, whose
+                disabled "lastEvent" option needs a TooltipProvider ancestor. */}
+            <TooltipProvider>
+              <Routes>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror — the
+                    Dashboard's Add Match must stay VOD-optional there too. */}
+                <Route path="/coach/:clientId/dashboard" element={<DashboardPage />} />
+                {/* Phase 13 (ONBD-03): next-best-action area link targets. */}
+                <Route path="/welcome" element={<div>Welcome page</div>} />
+                <Route path="/coach" element={<div>Client Hub page</div>} />
+                <Route path="/fighter-analysis" element={<div>Fighter Analysis page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
