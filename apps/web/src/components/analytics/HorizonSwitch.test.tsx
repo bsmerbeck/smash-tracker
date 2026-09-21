@@ -118,7 +118,11 @@ describe('HorizonSwitch', () => {
 
     const radios = screen.getAllByRole('radio');
     expect(radios).toHaveLength(3);
-    expect(radios.map((r) => r.textContent)).toEqual([
+    // The accessible name (pinned via `aria-label`), not raw `textContent`
+    // — jsdom never loads the stylesheet, so the CSS-only short/full span
+    // toggle is invisible to it and `textContent` would see BOTH spans at
+    // once regardless of viewport.
+    expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual([
       'Last 30 games',
       'Last event',
       'Last 90 days',
@@ -134,7 +138,7 @@ describe('HorizonSwitch', () => {
 
     const radios = screen.getAllByRole('radio');
     expect(radios).toHaveLength(3);
-    expect(radios.map((r) => r.textContent)).toEqual([
+    expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual([
       'Letzte 30 Matches',
       'Letztes Event',
       'Letzte 90 Tage',
@@ -236,7 +240,7 @@ describe('HorizonSwitch', () => {
     const accents = container.querySelectorAll('[data-slot="horizon-switch-accent"]');
     expect(accents).toHaveLength(1);
     const last30 = screen.getByRole('radio', { name: 'Last 30 games' });
-    expect(last30.contains(accents[0])).toBe(true);
+    expect(last30.contains(accents[0] ?? null)).toBe(true);
   });
 
   it('every transition utility in the source is paired with its reduced-motion counterpart', () => {
