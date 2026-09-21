@@ -296,7 +296,7 @@ describe('OpponentsPage', () => {
       expect(rows).toHaveLength(2);
       expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
       expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
     });
 
     // Plan 38-02 (DRL-04): the third subject family — the owned-workspace
@@ -311,7 +311,7 @@ describe('OpponentsPage', () => {
       expect(rows).toHaveLength(2);
       expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
       expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
     });
 
     it("D-14 (38-07): a row's destination is the hub path for the row's engine-resolved display tag", async () => {
@@ -340,7 +340,7 @@ describe('OpponentsPage', () => {
 
       // The scouting report renders "Last 10" pips once a profile loads —
       // proof the most-played opponent ("rival") was auto-selected.
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
     });
 
@@ -603,11 +603,11 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
 
       // Scouting report header shows the overall H2H record (4-2) and rate.
       const headerCard = screen
-        .getByText('Last 10 (newest first)')
+        .getByText(/First played/)
         .closest('[data-slot="card"]') as HTMLElement;
       expect(within(headerCard).getByText('4-2')).toBeInTheDocument();
       expect(within(headerCard).getByText(/67% over 6 games/)).toBeInTheDocument();
@@ -853,7 +853,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('start.gg-verified').length).toBeGreaterThan(0);
     });
 
@@ -864,7 +864,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('manually entered').length).toBeGreaterThan(0);
     });
 
@@ -876,7 +876,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('mixed sources').length).toBeGreaterThan(0);
     });
 
@@ -897,13 +897,13 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       // Scoped to the report card (the ScoutingHeader), not a page-wide
       // getAllByLabelText — the OpponentList row already carries the
       // correct badge independently, which would satisfy a page-wide query
       // even if the header's own badge were wrong.
       const reportCard = screen
-        .getByText('Last 10 (newest first)')
+        .getByText(/First played/)
         .closest('[data-slot="card"]') as HTMLElement;
       expect(within(reportCard).getByLabelText('mixed sources')).toBeInTheDocument();
     });
@@ -992,7 +992,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
 
       const mergedCard = (await screen.findByText('Merged names')).closest(
         '[data-slot="card"]',
@@ -1012,7 +1012,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.queryByText('Merged names')).not.toBeInTheDocument();
     });
 
@@ -1032,7 +1032,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
 
       const mergedCard = (await screen.findByText('Merged names')).closest(
         '[data-slot="card"]',
@@ -1056,7 +1056,7 @@ describe('OpponentsPage', () => {
     it('shows the empty state prompting a first note when none is saved', async () => {
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
       expect(within(card).getByText(/No scouting notes yet/)).toBeInTheDocument();
       expect(within(card).getByRole('button', { name: 'Add a note' })).toBeInTheDocument();
@@ -1074,7 +1074,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
       expect(within(card).getByText('Rolls a lot')).toBeInTheDocument();
       expect(within(card).getByText('Ledge mixups')).toBeInTheDocument();
@@ -1086,7 +1086,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Add a note' }));
@@ -1107,7 +1107,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Add a note' }));
@@ -1127,7 +1127,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Edit' }));
@@ -1144,7 +1144,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Edit' }));
@@ -1164,7 +1164,7 @@ describe('OpponentsPage', () => {
     it('shows an Export H2H button and a Copy as text fallback', async () => {
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeInTheDocument();
     });
@@ -1174,7 +1174,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       await user.click(screen.getByRole('button', { name: /Export H2H/ }));
 
       expect(printSpy).toHaveBeenCalledTimes(1);
@@ -1186,7 +1186,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       // Stubbed AFTER the initial render settles: jsdom installs its own
       // real Clipboard implementation as part of mounting (observed via
       // debugging — a stub defined before render gets clobbered), so this
@@ -1211,7 +1211,7 @@ describe('OpponentsPage', () => {
       getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const printButton = screen.getByRole('button', { name: /Export H2H/ });
       const copyButton = screen.getByRole('button', { name: /Copy as text/ });
       expect(printButton).toBeDisabled();
@@ -1224,7 +1224,7 @@ describe('OpponentsPage', () => {
       getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeEnabled();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeEnabled();
     });

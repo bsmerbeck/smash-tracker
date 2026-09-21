@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { WinLossPips } from '@/components/WinLossPips';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import type { OpponentProfile } from '@/lib/stats';
 import type { OpponentSource } from '@/hooks/useFilteredMatches';
 import type { EncounterContext } from '../tournamentHistory';
@@ -30,9 +29,14 @@ function formatEncounterContext(
 
 /**
  * Scouting report header: opponent tag, overall H2H record + rate + sample
- * size, first/last played dates, last-10 form pips vs this opponent, and (when
- * tournament-tagged encounters exist) an encounter context line summarizing
- * how many tournaments and over what date span you've met them.
+ * size, first/last played dates, and (when tournament-tagged encounters
+ * exist) an encounter context line summarizing how many tournaments and
+ * over what date span you've met them.
+ *
+ * Phase 39.1 Plan 18 (UI-SPEC §8.6): the last-10 form pips this card used to
+ * render in its own `CardContent` are gone — replaced by the twenty-tick
+ * set-grouped `FormStrip` `OpponentHubPage.tsx` now mounts above the H2H
+ * trend plot, one level closer to the trend it actually describes.
  */
 export function ScoutingHeader({
   profile,
@@ -72,12 +76,6 @@ export function ScoutingHeader({
           </p>
         </div>
       </CardHeader>
-      <CardContent>
-        <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-          {t('fighterAnalysis.hero.last10')}
-        </h3>
-        <WinLossPips matches={profile.recent} limit={10} />
-      </CardContent>
     </Card>
   );
 }

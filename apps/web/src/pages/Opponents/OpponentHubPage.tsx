@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Match, SampleMeta } from '@smash-tracker/shared';
+import type { TFunction } from 'i18next';
+import type { Insight, InsightKind, InsightScope, Match, SampleMeta } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   EVIDENCE_POLICY_VERSION,
+  INSIGHT_TEMPLATES,
   RECENCY_TREATMENT,
   UNKNOWN_STAGE_ID,
   buildOpponentCrossTab,
@@ -27,6 +30,8 @@ import {
   type MatrixHeatCell,
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
+import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
+import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
@@ -36,6 +41,7 @@ import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
 import {
   buildOpponentEvidence,
   buildOpponentProfile,
@@ -65,6 +71,7 @@ import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
 import { RecentEncounters } from './components/RecentEncounters';
+import { groupEncounters, type EncounterGroup } from './components/encounterGrouping';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
@@ -90,6 +97,123 @@ import { buildEvidencePacket } from './evidencePacket';
 const OPPONENT_HUB_TAG_PATTERN = /\/opponents\/([^/]+)/;
 const OPPONENT_HUB_LIST_ANCHOR_ID = 'opponent-hub-list';
 const ALL_AXIS_VALUE = '__all__';
+
+/** Phase 39.1 Plan 18 (UI-SPEC §8.6): the H2H trend's `formNow` verdict, at opponent-PLAYER scope — this hub's own identity, not a fighter-character pairing (`MatchupChart.tsx`'s `formNow` reuse, distinct scope kind). Looked up by id, matching that same precedent (`formNowTemplate` is not a public export of `@smash-tracker/shared`). */
+const OPPONENT_FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
+
+/** UI-SPEC §7.8: `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated, not shared — this codebase's established "no shared file for one small mapping" convention (`MatchupChart.tsx`/`MatchupOrPlayerCard.tsx` both duplicate the same mapping). */
+function claimChipKindFor(kind: InsightKind): ClaimChipKind {
+  if (kind === 'inference') return 'trend';
+  if (kind === 'recommendation') return 'suggestion';
+  return 'fact';
+}
+
+/** Builds the player-scoped `InsightScope` for this resolved opponent identity — `formNow.ts` never derives this itself (D-09/D-15 axis-identity-at-the-boundary discipline). */
+function buildOpponentFormNowScope(opponentTag: string): InsightScope {
+  return {
+    kind: 'player',
+    key: `player:${opponentTag}`,
+    axes: {},
+    filter: (matches: Match[]) => matches,
+  };
+}
+
+/**
+ * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
+ * chip, verdict, evidence — WITHOUT the card's own chrome. Mirrors
+ * `MatchupChart.tsx`'s `renderFormNowHead` exactly, except `entity` is the
+ * resolved opponent's own display tag (a player identity), never a fighter
+ * name — `formNow.ts` never supplies `entity` itself (UI-SPEC §9.2 rule 7).
+ */
+function renderOpponentFormNowHead(
+  insight: Insight,
+  opponentTag: string,
+  t: TFunction,
+): ReactElement {
+  const chipKind = claimChipKindFor(insight.kind);
+  const entity = `${t('matchups.vs')} ${opponentTag}`;
+  const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
+
+  const recentRecord = `${insight.copy.values.record ?? ''} · ${insight.copy.values.rate ?? ''}`;
+  const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
+  const tier = confidenceTierFor(count);
+  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
+  const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
+    recentRecord,
+    baselineRate: insight.copy.values.baselineRate ?? '',
+    baselineGames: insight.copy.values.baselineGames ?? 0,
+    cue,
+  });
+
+  return (
+    <div className="flex flex-col gap-2" data-slot="opponent-form-now">
+      <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
+      <p
+        className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+        data-slot="opponent-form-now-verdict"
+      >
+        {verdict}
+      </p>
+      <p
+        className="text-xs leading-4 text-muted-foreground tabular-nums"
+        data-slot="opponent-form-now-evidence"
+      >
+        {evidence}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Converts Task 1's `groupEncounters()` output (newest-first groups of
+ * newest-first sets) into `FormStrip`'s oldest-first `FormStripEvent[]` —
+ * reusing the SAME event/session grouping `RecentEncounters.tsx` renders
+ * rather than writing a second grouping algorithm for this strip.
+ */
+function buildOpponentFormStripEvents(
+  groups: EncounterGroup[],
+  recentWindow: { fromMs: number | null; toMs: number | null },
+  opponentTag: string,
+  t: TFunction,
+): FormStripEvent[] {
+  const inWindow = (m: Match): boolean =>
+    recentWindow.fromMs != null &&
+    recentWindow.toMs != null &&
+    m.time >= recentWindow.fromMs &&
+    m.time <= recentWindow.toMs;
+
+  const oldestFirst = [...groups].reverse();
+
+  return oldestFirst.map((group) => {
+    const gamesWon = group.sets.reduce((sum, set) => sum + set.gamesWon, 0);
+    const gamesLost = group.sets.reduce((sum, set) => sum + set.gamesLost, 0);
+    const label =
+      group.kind === 'event'
+        ? group.label
+        : t('analytics.encounters.sessionHeader', {
+            date: new Date(group.dateMs).toLocaleDateString(),
+            record: `${gamesWon}–${gamesLost}`,
+          });
+    return {
+      key: group.key,
+      label,
+      record: `${gamesWon}–${gamesLost}`,
+      sets: [...group.sets].reverse().map((set) => ({
+        key: set.key,
+        label: t('analytics.strip.setAria', {
+          opponent: opponentTag,
+          record: `${set.gamesWon}–${set.gamesLost}`,
+        }),
+        inRecentWindow: set.games.some((game) => inWindow(game.match)),
+        games: set.games.map((game) => ({
+          key: game.match.id,
+          won: game.match.win,
+          label: `${game.match.win ? t('common.win') : t('common.loss')} · ${new Date(game.match.time).toLocaleDateString()}`,
+        })),
+      })),
+    };
+  });
+}
 
 /**
  * D-02: reads the raw (still percent-encoded) tag segment directly from
@@ -148,6 +272,10 @@ export function OpponentHubPage() {
   const { user } = useAuth();
   const [refreshedAt] = useState(() => Date.now());
   const [mergeCandidate, setMergeCandidate] = useState<string | null>(null);
+  // Plan 39.1-18: lazy `useState` initializer, not a bare `Date.now()` call
+  // in the render body — the React Compiler forbids the latter (see
+  // `MatchupChart.tsx`'s `useMatchupFormNow` for the same discipline).
+  const [formNowNowMs] = useState(() => Date.now());
 
   const pathTag = useHubTagFromPathname();
 
@@ -431,6 +559,50 @@ export function OpponentHubPage() {
     [eventSeries, profile, pathTag],
   );
 
+  // Plan 39.1-18 (UI-SPEC §8.6): the H2H trend's insight slot — `formNow` at
+  // opponent-PLAYER scope, resolved over the SAME `trendSourceMatches` the
+  // plot itself reads (chip-filtered, optionally narrowed to one opposing
+  // character via `vs=`). No page-level `HorizonSwitch` exists on this hub,
+  // so this reads `DEFAULT_HORIZON` directly (`HeroStats.tsx`'s own
+  // optional-horizon-prop precedent for a page with no switch).
+  const trendInsight = useMemo(() => {
+    if (!targetIdentity) return null;
+    const scope = buildOpponentFormNowScope(targetIdentity);
+    const built = OPPONENT_FORM_NOW_TEMPLATE.build({
+      matches: trendSourceMatches,
+      scope,
+      horizon: DEFAULT_HORIZON,
+      nowMs: formNowNowMs,
+    });
+    return built[0] ?? null;
+  }, [targetIdentity, trendSourceMatches, formNowNowMs]);
+
+  // The twenty-tick set-grouped form strip above the trend plot, replacing
+  // the header's ten-pip indicator (`ScoutingHeader.tsx`). Reuses Task 1's
+  // `groupEncounters()` — the SAME event/session grouping `RecentEncounters`
+  // renders — rather than a second grouping algorithm for this strip.
+  const encounterGroupsForStrip = useMemo(
+    () => groupEncounters({ matches: trendSourceMatches }),
+    [trendSourceMatches],
+  );
+  const trendRecentWindow = useMemo(
+    () => ({
+      fromMs: trendInsight?.window.fromMs ?? null,
+      toMs: trendInsight?.window.toMs ?? null,
+    }),
+    [trendInsight],
+  );
+  const formStripEvents: FormStripEvent[] = useMemo(
+    () =>
+      buildOpponentFormStripEvents(
+        encounterGroupsForStrip,
+        trendRecentWindow,
+        profile?.opponent ?? pathTag ?? '',
+        t,
+      ),
+    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t],
+  );
+
   const headToHeadSample: SampleMeta | null = useMemo(() => {
     if (!profile) return null;
     const total = profile.record.total;
@@ -676,11 +848,32 @@ export function OpponentHubPage() {
             />
           </ChartCard>
 
-          {/* Event-anchored trend (OPP-03) */}
+          {/* Event-anchored trend (OPP-03) — Plan 39.1-18: gains the formNow
+              insight slot and a 20-tick set-grouped form strip above the
+              plot (UI-SPEC §8.6), replacing the header's ten-pip indicator. */}
           <ChartCard
             title={t('opponents.trend.title')}
             abstained={trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null}
+            insight={trendInsight ? renderOpponentFormNowHead(trendInsight, displayTag, t) : null}
           >
+            <FormStrip
+              events={formStripEvents}
+              limit={20}
+              labels={{
+                summary: t('analytics.strip.aria', { count: trendSourceMatches.length }),
+                legend: t('analytics.strip.legend'),
+                shownOfTotal:
+                  trendSourceMatches.length > 20
+                    ? t('analytics.strip.shownOf', { shown: 20, total: trendSourceMatches.length })
+                    : undefined,
+                empty: <span>{t('analytics.strip.empty')}</span>,
+                windowEmpty:
+                  trendInsight && trendInsight.window.games === 0
+                    ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
+                    : undefined,
+              }}
+              onSelectSet={handleSelectEvent}
+            />
             <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
           </ChartCard>
 
@@ -707,6 +900,7 @@ export function OpponentHubPage() {
           <RecentEncounters
             matches={profile.recent}
             tournamentLinkForMatch={tournamentLinkForMatch}
+            onSeeAllInMatchList={scrollToList}
           />
           <TournamentHistory
             blocks={tournamentBlocks}

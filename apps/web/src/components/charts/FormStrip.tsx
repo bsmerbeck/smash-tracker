@@ -64,8 +64,13 @@ export interface FormStripLabels {
 
 export interface FormStripProps {
   events: FormStripEvent[];
-  /** The strip renders at most this many ticks, trimming from the oldest end when the source holds more. */
-  limit: 30 | 60;
+  /**
+   * The strip renders at most this many ticks, trimming from the oldest end
+   * when the source holds more. `20` added in Phase 39.1 Plan 18 (UI-SPEC
+   * §8.6) for the opponent hub's H2H trend strip, alongside the pre-existing
+   * `30` (Matchups) and `60` (Fighter Analysis hero) call sites.
+   */
+  limit: 20 | 30 | 60;
   labels: FormStripLabels;
   onSelectSet?: (setKey: string) => void;
 }
