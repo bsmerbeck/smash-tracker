@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CHART_TOKENS } from './tokens';
 
 /**
  * Phase 37 Plan 02 (CHRT-04, D-08): the SOURCE-TREE half of the chart-kit
@@ -24,6 +25,17 @@ import { fileURLToPath } from 'node:url';
  *      turned "the allowlist cannot rot" red, naming that stale entry.
  *   3. Temporarily adding a `#ff0000` literal to a non-test kit file turned
  *      "dark-only" red, naming that file.
+ *
+ * PROVEN FAILING, plan 39.1-10 (T-39.1-10-02/T-39.1-10-06, executed by hand,
+ * reverted before commit — recorded verbatim in the plan's SUMMARY):
+ *   4. Temporarily replacing every `CHART_TOKENS.border` reference in
+ *      `TrendLine.tsx` with a literal `'var(--border)'` turned "every key of
+ *      the frozen CHART_TOKENS map is referenced" red, naming `border` as
+ *      the unreferenced key.
+ *   5. Temporarily adding `var(--chart-1)` to a non-test kit file turned "no
+ *      kit file reads a raw chart custom property" red, naming that file.
+ *   6. Temporarily adding `var(--primary)` to a non-test kit file turned "no
+ *      kit file uses --primary" red, naming that file.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
@@ -123,6 +135,22 @@ const SOURCE_FILES = listSourceFiles();
  */
 const KIT_FILES = SOURCE_FILES.filter(
   (file) => file.startsWith(KIT_DIR) && !/\.test\.tsx?$/.test(file),
+);
+
+/**
+ * Phase 39.1 plan 10 (T-39.1-10-06): the every-`CHART_TOKENS`-key-is-consumed
+ * assertion below scans this directory ALONGSIDE `KIT_DIR` — `DeltaChip` and
+ * `UnlocksNext` (both mark-role/token consumers) live under
+ * `components/analytics/`, not `components/charts/`. `tokens.ts` itself is
+ * excluded (it DECLARES every key; declaration is not consumption, and
+ * including it would let a key "reference itself" and pass vacuously).
+ */
+const ANALYTICS_DIR = 'apps/web/src/components/analytics/';
+const TOKEN_CONSUMPTION_FILES = SOURCE_FILES.filter(
+  (file) =>
+    (file.startsWith(KIT_DIR) || file.startsWith(ANALYTICS_DIR)) &&
+    !/\.test\.tsx?$/.test(file) &&
+    file !== 'apps/web/src/components/charts/tokens.ts',
 );
 
 function readRepoFile(repoRelativePath: string): string {
@@ -276,5 +304,51 @@ describe('chart kit import boundary — source-tree guard (CHRT-04, D-08)', () =
       'apps/web/src/pages/Matchups/components/MatchupChart.tsx',
     );
     expect(matchupChartSource).not.toMatch(/from\s+['"]@\/components\/charts\/ChartCard['"]/);
+  });
+
+  /**
+   * Phase 39.1 plan 10 (T-39.1-10-06, review finding C1-H5): a palette run
+   * that validates the stylesheet says nothing about whether anything DRAWS
+   * with what it validated. This is the check that would have caught
+   * win/loss/steady shipping as declared-but-unused tokens while three
+   * components drew their marks with Tailwind colour utilities instead.
+   * Every key of the frozen map must be referenced — by the literal
+   * `CHART_TOKENS.<key>` substring — in at least one non-test source file
+   * under the kit or analytics directories (`tokens.ts` itself excluded; see
+   * `TOKEN_CONSUMPTION_FILES`'s doc comment).
+   */
+  it('every key of the frozen CHART_TOKENS map is referenced by at least one non-test source file under the kit or analytics directories (T-39.1-10-06)', () => {
+    const combinedSource = TOKEN_CONSUMPTION_FILES.map((file) => readRepoFile(file)).join('\n');
+    const tokenKeys = Object.keys(CHART_TOKENS);
+    const unreferenced = tokenKeys.filter((key) => !combinedSource.includes(`CHART_TOKENS.${key}`));
+    expect(unreferenced, `unreferenced CHART_TOKENS keys: ${unreferenced.join(', ')}`).toEqual([]);
+  });
+
+  it('the consumption assertion is not vacuous — the frozen map has at least one key and at least one file actually references one', () => {
+    expect(Object.keys(CHART_TOKENS).length).toBeGreaterThan(0);
+    const anyFileReferencesAnyKey = TOKEN_CONSUMPTION_FILES.some((file) =>
+      /CHART_TOKENS\.\w+/.test(readRepoFile(file)),
+    );
+    expect(anyFileReferencesAnyKey).toBe(true);
+  });
+
+  /**
+   * Phase 39.1 plan 10 (T-39.1-10-02, UI-SPEC §4.2): after the token-map
+   * repoint, `CHART_TOKENS` is the ONLY legal consumption point for a chart
+   * custom property — a kit file reading `var(--chart-...)` directly bypasses
+   * the frozen map entirely (Phase 38 hand-off item 7's exact failure class).
+   */
+  it('no kit file reads a raw chart custom property directly — the frozen token map is the only consumption point (T-39.1-10-02)', () => {
+    const offenders = KIT_FILES.filter((file) => /var\(--chart-/.test(readRepoFile(file)));
+    expect(offenders, `raw --chart- property offenders: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  /**
+   * Phase 39.1 plan 10 (T-39.1-10-02, UI-SPEC §4.3): brand red (`--primary`)
+   * is never a data mark anywhere in the kit — chrome only.
+   */
+  it('no kit file uses --primary as a fill or a stroke (brand red is never a data mark, T-39.1-10-02)', () => {
+    const offenders = KIT_FILES.filter((file) => /var\(--primary\)/.test(readRepoFile(file)));
+    expect(offenders, `--primary-as-mark offenders: ${offenders.join(', ')}`).toEqual([]);
   });
 });

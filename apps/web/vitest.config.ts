@@ -28,7 +28,16 @@ export default defineConfig({
     // vitest's own collector, so vitest reports "No test suite found in
     // file" and fails the default suite on a file that node --test correctly
     // passes (verified empirically both ways before adding this line).
-    exclude: [...configDefaults.exclude, '**/*.guard.test.ts', 'scripts/guardLayoutCore.test.mjs'],
+    // Phase 39.1 Plan 10 (palette oracle): `scripts/guardPaletteCore.test.mjs`
+    // is the SAME plain-`node:test` shape as `guardLayoutCore.test.mjs` above
+    // (its own `<verify>` command is `node --test`, not vitest) — excluded
+    // for the identical reason.
+    exclude: [
+      ...configDefaults.exclude,
+      '**/*.guard.test.ts',
+      'scripts/guardLayoutCore.test.mjs',
+      'scripts/guardPaletteCore.test.mjs',
+    ],
     // GitHub Actions runners are ~3x slower than dev hardware; the heaviest
     // userEvent interaction tests (e.g. GspPage Quick Logger double-entry)
     // legitimately exceed vitest's 5s default there. 15s still catches hangs.

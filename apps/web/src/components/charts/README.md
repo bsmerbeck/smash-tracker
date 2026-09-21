@@ -61,21 +61,38 @@ identical palette. SVG resolves CSS custom properties natively in `stroke`/`fill
 chart.js this kit does NOT keep a resolved-hex mirror (`apps/web/src/lib/chartTheme.ts`'s pattern
 is the one this kit deliberately does not repeat).
 
-| Token       | Role                                                                                                                                 | Status                                                                                                                                                                                                                                                                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--chart-1` | The one series-identity colour this phase uses (the win-rate trend line). Single series → no legend box; the title already names it. | Validated: dark-band lightness, chroma floor, contrast on `--card` all pass.                                                                                                                                                                                                                                                                                        |
-| `--chart-4` | RESERVED for a second series slot (a future two-series comparison, e.g. small-multiples). Not rendered anywhere yet.                 | Validated as the `{--chart-1, --chart-4}` pair — hand this pair to the next chart that needs two identity series, don't pick a fresh one.                                                                                                                                                                                                                           |
-| `--chart-2` | De-emphasis ink only (reference lines, previous-period segments). NEVER an identity series.                                          | Achromatic — fails the categorical chroma floor by design; that's correct for de-emphasis, not a defect.                                                                                                                                                                                                                                                            |
-| `--chart-5` | Same de-emphasis role as `--chart-2`, one step darker (gridlines, an unfilled meter track). NEVER an identity series.                | Same as `--chart-2`.                                                                                                                                                                                                                                                                                                                                                |
-| `--chart-3` | **NOT USED anywhere in this kit.**                                                                                                   | **Documented defect, not silently dropped:** its lightness (`L 0.80`) sits above the dark-mode lightness ceiling (`0.67`) the palette validator enforces — it reads washed-out/low-contrast on `--card`. Needs re-stepping (darker `L`) before any future chart uses it as a mark colour. See `37-UI-SPEC.md`'s "Chart Kit Palette" table for the measured figures. |
+**Phase 39.1 plan 10 (UIX-05, UI-SPEC §4.1/§4.2) repointed the kit's identity/context tokens onto
+a dedicated tokenised visualization layer.** No kit file may read `var(--chart-` directly anymore
+— `CHART_TOKENS` (`tokens.ts`) is the one consumption point, enforced by `chartKitBoundary.test.ts`.
+The seven visualization tokens, declared in both `:root` and `.dark` of `apps/web/src/index.css`:
+
+| Token                  | `CHART_TOKENS` key | Role                                                                                                                                               | Contrast on `--card`  |
+| ---------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `--viz-series-1`       | `series1`          | **The** identity series: every line, dot, usage bar, recent dumbbell dot (`var(--chart-4)`).                                                       | 4.87 : 1              |
+| `--viz-series-2`       | `series2`          | Second identity series only when two are unavoidable (`ShareBar` segment 2). Re-steps `--chart-3`, closing that token's former defect (see below). | 5.83 : 1              |
+| `--viz-context`        | `deemphasis`       | Baselines, all-time tick, reference hairline, previous period, meter fill (`var(--chart-2)`).                                                      | 8.06 : 1              |
+| `--viz-context-strong` | `deemphasisStrong` | Tracks, set-baseline rule, midline, 4th `ShareBar` segment (`var(--chart-5)`). **Never the only carrier of a value.**                              | 2.40 : 1 (decorative) |
+| `--win`                | `win`              | Win ticks / `RecordBar` win segment / ▲ glyph.                                                                                                     | 4.75 : 1              |
+| `--loss`               | `loss`             | Loss ticks / segment / ▼ glyph (`var(--destructive)`).                                                                                             | 4.57 : 1              |
+| `--steady`             | `steady`           | Flat-bar glyph, hollow-circle glyph, steady-line lead mark (`var(--muted-foreground)`).                                                            | 7.18 : 1              |
+
+`--tier-1` … `--tier-5` are **reserved names, NOT declared in 39.1** (Phase 39.2's ordinal
+tournament-tier ramp). A committed palette oracle (`apps/web/scripts/guardPalette.mjs`) reads
+these hex values from `index.css` itself — never a copy — and validates the dark lightness band,
+the chroma floor, contrast on `--card`, and colourblind separation for `{series-1, series-2}`,
+`{series-1, loss}` and `{win, loss}`.
+
+`--chart-3` **is no longer unused**: it is re-stepped to `--viz-series-2`'s value (`#c98500`,
+closing the defect this table used to document — its old value's lightness sat above the
+dark-mode lightness ceiling the palette validator enforces) and consumed via `--viz-series-2`.
 
 **The collision rule:** a series that means good/bad wears status tokens (`emerald-500`/`600` for
 "pick"/win, `--destructive` for "ban"/loss — the app's existing convention). A series that is only
-identity wears a categorical token (`--chart-1..5`). Never both in one chart. The win-rate trend
-line's colour (`--chart-1`) carries NO win/loss judgement on its own — a reader must never read
-"the line is red, therefore losing" from hue alone. Meaning comes from the line's Y-position and
-the tooltip's numeric value, never from its colour. (`--chart-1` and `--destructive` are both
-red-family hues serving different jobs — never render both as marks in the same chart.)
+identity wears a categorical token (`--viz-series-1`/`--viz-series-2`). Never both in one chart.
+The win-rate trend line's colour (`--viz-series-1`) carries NO win/loss judgement on its own — a
+reader must never read "the line is red, therefore losing" from hue alone (and, after this plan,
+it no longer even can — brand red is never a data mark anywhere in the kit). Meaning comes from
+the line's Y-position and the tooltip's numeric value, never from its colour.
 
 ## Where the jsdom stub is licensed
 
