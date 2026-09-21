@@ -6,7 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
-import { buildSetTimeline } from '@smash-tracker/shared';
+import {
+  buildSetTimeline,
+  ROSTER_MAIN_MIN_GAMES,
+  ROSTER_SECONDARY_MIN_GAMES,
+} from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -36,6 +40,12 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { FullAnalysisSection } from '@/pages/Scout/components/FullAnalysisSection';
 import { SetTimeline } from '@/pages/Tournaments/components/SetTimeline';
+import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
+import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
+import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
+import { VsCharactersList } from '@/pages/FighterAnalysis/components/VsCharactersList';
+import { VsPlayersList } from '@/pages/FighterAnalysis/components/VsPlayersList';
+import { SettingComparison } from '@/pages/Trends/components/SettingComparison';
 import userEvent from '@testing-library/user-event';
 
 /**
@@ -56,6 +66,20 @@ import userEvent from '@testing-library/user-event';
  * absorbed hub cards (authored as three entries, per this task's own
  * instruction, making EIGHTEEN entries total) — with the RECORDED_OMISSIONS
  * array below naming what is deliberately outside it.
+ *
+ * Plan 39.1-21 Task 2 appends SEVEN more entries (18 -> 25) for this phase's
+ * own new row surfaces (named in the plan SUMMARYs of 39.1-13/14/15/16/18):
+ * the Matchups by-opponent list (`PairingOpponents.tsx`), the Match Data
+ * roster rows (`RosterUsage.tsx`), the Match Data stage rows
+ * (`StageBreakdown.tsx`), the Fighter Analysis dumbbell lists
+ * (`VsCharactersList.tsx`/`VsPlayersList.tsx`), the Trends setting-comparison
+ * dumbbell rows (`SettingComparison.tsx`), and the Recent Encounters
+ * event-set rows (`RecentEncounters.tsx`'s `SetRow`, the event-grouped
+ * variant — the file's own EXISTING "Recent encounters" entry above already
+ * covers the session-pseudo-set variant on a single-match fixture, so this
+ * new entry is named distinctly rather than duplicating that coverage). The
+ * array is EXTENDED in place — no second enumeration file, per this task's
+ * own instruction never to fork it.
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -545,6 +569,123 @@ const SURFACES: Surface[] = [
     },
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
+  // -------------------------------------------------------------------------
+  // Plan 39.1-21 Task 2 additions — this phase's own new row surfaces
+  // (see the module doc comment's "COVERAGE CLAIM" addendum above).
+  // -------------------------------------------------------------------------
+  {
+    name: 'Matchups by-opponent list (PairingOpponents)',
+    file: 'apps/web/src/pages/Matchups/components/PairingOpponents.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'p1', time: 1, win: true, opponent: 'foxplayer' }),
+        makeMatch({ id: 'p2', time: 2, win: true, opponent: 'foxplayer' }),
+        makeMatch({ id: 'p3', time: 3, win: false, opponent: 'marthplayer' }),
+      ];
+      return withRouter(<PairingOpponents matchupMatches={matches} />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
+    name: 'Match Data roster rows (RosterUsage)',
+    file: 'apps/web/src/pages/MatchData/components/RosterUsage.tsx',
+    render: () => {
+      const [main, secondary] = SpriteList;
+      const matches = [
+        ...Array.from({ length: ROSTER_MAIN_MIN_GAMES + 5 }, (_, i) =>
+          makeMatch({ id: `main${i}`, time: i, win: true, fighter_id: main!.id }),
+        ),
+        ...Array.from({ length: ROSTER_SECONDARY_MIN_GAMES + 5 }, (_, i) =>
+          makeMatch({ id: `sec${i}`, time: 1000 + i, win: true, fighter_id: secondary!.id }),
+        ),
+      ];
+      return withRouter(<RosterUsage matches={matches} />);
+    },
+    rows: (result) => Array.from(result.container.querySelectorAll('[data-slot="roster-row"]')),
+  },
+  {
+    name: 'Match Data stage rows (StageBreakdown)',
+    file: 'apps/web/src/pages/MatchData/components/StageBreakdown.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'st1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'st2', time: 2, win: false, map: { id: 83, name: 'Smashville' } }),
+      ];
+      return withRouter(<StageBreakdown matches={matches} />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
+    name: 'Fighter Analysis vs-characters dumbbell list (VsCharactersList)',
+    file: 'apps/web/src/pages/FighterAnalysis/components/VsCharactersList.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'vc1', time: 1, win: true, opponent_id: luigi.id }),
+        makeMatch({ id: 'vc2', time: 2, win: true, opponent_id: luigi.id }),
+        makeMatch({ id: 'vc3', time: 3, win: false, opponent_id: 8 }),
+      ];
+      return withRouter(<VsCharactersList fighterId={mario.id} fighterMatches={matches} />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
+    name: 'Fighter Analysis vs-players dumbbell list (VsPlayersList)',
+    file: 'apps/web/src/pages/FighterAnalysis/components/VsPlayersList.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'vp1', time: 1, win: true, opponent: 'foxplayer' }),
+        makeMatch({ id: 'vp2', time: 2, win: true, opponent: 'foxplayer' }),
+        makeMatch({ id: 'vp3', time: 3, win: false, opponent: 'marthplayer' }),
+      ];
+      return withRouter(
+        <VsPlayersList fighterId={mario.id} fighterMatches={matches} aliasMap={{}} />,
+      );
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
+    name: 'Trends setting-comparison dumbbell rows (SettingComparison)',
+    file: 'apps/web/src/pages/Trends/components/SettingComparison.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'on1', time: 1, win: true, matchType: 'quickplay' }),
+        makeMatch({ id: 'on2', time: 2, win: false, matchType: 'quickplay' }),
+        makeMatch({ id: 'off1', time: 3, win: true, matchType: 'offline-tourney' }),
+        makeMatch({ id: 'off2', time: 4, win: false, matchType: 'offline-tourney' }),
+      ];
+      return withRouter(<SettingComparison matches={matches} horizon="last30" />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
+  {
+    // Distinct from the "Recent encounters" entry above (which covers the
+    // session-pseudo-set variant on a single manual match) — this fixture
+    // gives every game a parseable `externalId` + `eventName` so
+    // `groupEncounters` produces a real EVENT-kind group, exercising the
+    // `SetRow` variant that variant never reaches.
+    name: 'Recent Encounters event-set rows (RecentEncounters, event-grouped)',
+    file: 'apps/web/src/pages/Opponents/components/RecentEncounters.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({
+          id: 'e1',
+          time: 1,
+          win: true,
+          externalId: 'sgg:100:g1',
+          eventName: 'Genesis 9',
+        }),
+        makeMatch({
+          id: 'e2',
+          time: 2,
+          win: true,
+          externalId: 'sgg:100:g2',
+          eventName: 'Genesis 9',
+        }),
+      ];
+      return withRouter(<RecentEncounters matches={matches} />);
+    },
+    rows: (result) => within(result.container).getAllByRole('listitem'),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -677,8 +818,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('the surface enumeration has the stated EIGHTEEN entries', () => {
-    expect(SURFACES.length).toBe(18);
+  it("the surface enumeration has the stated TWENTY-FIVE entries (18 + this plan's 7)", () => {
+    expect(SURFACES.length).toBe(25);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

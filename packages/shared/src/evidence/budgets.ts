@@ -91,6 +91,28 @@ export const SCL_01_BUDGETS: readonly Scl01Budget[] = Object.freeze([
     scale: '8k',
     measuredBy: 'automated',
   },
+  /**
+   * Plan 39.1-21 Task 2 (VIZ-01/append-only rule): a SIXTH, APPENDED entry —
+   * the insight engine's own `computeInsights()` scan (account scope + one
+   * character scope, `last30` horizon) over the 8k fixture, distinct from
+   * the five D-19 entries above (which time `buildStageEvidence`/
+   * `buildMatchupEvidence`/`buildOpponentCrossTab`, never the insight
+   * engine). Measured p95 at authoring time: ~20ms (20 samples, nearest-rank,
+   * `computeBudget.budget.test.ts`'s own `it` prints the exact figure via
+   * `formatScl01Line` every run). Target set at 50ms — comfortable headroom
+   * over the measured figure, tighter than the pre-existing
+   * `engine-recompute-p95-8k` target (100ms) since a two-scope insight scan
+   * is lighter-weight than a full evidence recompute. Appended AFTER the
+   * five pinned D-19 ids (`budgets.guard.test.ts`'s append-only guard scans
+   * for exactly those five, in order, and permits anything following them).
+   */
+  {
+    id: 'insight-scan-p95-8k',
+    target: 50,
+    unit: 'ms',
+    scale: '8k',
+    measuredBy: 'automated',
+  },
 ]);
 
 /** Fixed iteration count each timed automated run uses (at least 20 samples per p95). */

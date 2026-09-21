@@ -8,6 +8,8 @@ import {
 import { buildStageEvidence } from './stageEvidence.js';
 import { buildMatchupEvidence } from './matchupEvidence.js';
 import { buildOpponentCrossTab } from './opponentCrossTab.js';
+import { computeInsights, ACCOUNT_SCOPE } from '../insight/index.js';
+import type { InsightScope } from '../insight/types.js';
 import {
   SCL_01_BUDGETS,
   BUDGET_SAMPLE_ITERATIONS,
@@ -95,6 +97,52 @@ function measureRecomputeP95Ms(matches: Match[]): number {
   return percentileNearestRank(samplesMs, 95);
 }
 
+/** Plan 39.1-21 Task 2 (VIZ-01): the main fighter (most games) in a fixture — a real, non-trivial character scope for the insight-scan budget, computed fresh per fixture (never a hardcoded id). */
+function mainCharacterScope(matches: Match[]): InsightScope {
+  const counts = new Map<number, number>();
+  for (const match of matches) {
+    counts.set(match.fighter_id, (counts.get(match.fighter_id) ?? 0) + 1);
+  }
+  let bestFighterId = -1;
+  let bestCount = -1;
+  for (const [fighterId, count] of counts) {
+    if (count > bestCount) {
+      bestFighterId = fighterId;
+      bestCount = count;
+    }
+  }
+  return {
+    kind: 'character',
+    key: `character:${bestFighterId}`,
+    axes: { fighter: bestFighterId },
+    filter: (ms) => ms.filter((m) => m.fighter_id === bestFighterId),
+  };
+}
+
+/** One insight scan: account scope + one character scope, `last30` horizon — the same shape `evidence.bench.ts`'s companion bench case exercises. */
+function scanInsights(matches: Match[], characterScope: InsightScope): void {
+  computeInsights({
+    matches,
+    scopes: [ACCOUNT_SCOPE, characterScope],
+    horizon: 'last30',
+    nowMs: Date.now(),
+  });
+}
+
+/** Warms up once, then times `BUDGET_SAMPLE_ITERATIONS` insight scans and returns the p95 (ms). */
+function measureInsightScanP95Ms(matches: Match[]): number {
+  const characterScope = mainCharacterScope(matches);
+  scanInsights(matches, characterScope); // warmup — excluded from the sample
+  const samplesMs: number[] = [];
+  for (let i = 0; i < BUDGET_SAMPLE_ITERATIONS; i += 1) {
+    const start = performance.now();
+    scanInsights(matches, characterScope);
+    samplesMs.push(performance.now() - start);
+  }
+  samplesMs.sort((a, b) => a - b);
+  return percentileNearestRank(samplesMs, 95);
+}
+
 describe('SCL-01 engine-compute budget', () => {
   it('8k synthetic fixture: p95 full recompute against the written budget', () => {
     const matches = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
@@ -110,6 +158,14 @@ describe('SCL-01 engine-compute budget', () => {
     benchOpponentTag = deriveBenchOpponentTag(matches);
     const budget = budgetFor('engine-recompute-p95-50k');
     const p95 = Math.round(measureRecomputeP95Ms(matches) * 100) / 100;
+    console.log(formatScl01Line(budget.id, budget.target, budget.unit, p95));
+    expect(p95).toBeLessThanOrEqual(budget.target);
+  });
+
+  it('8k synthetic fixture: p95 insight scan (account + one character scope) against the appended budget (39.1-21)', () => {
+    const matches = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
+    const budget = budgetFor('insight-scan-p95-8k');
+    const p95 = Math.round(measureInsightScanP95Ms(matches) * 100) / 100;
     console.log(formatScl01Line(budget.id, budget.target, budget.unit, p95));
     expect(p95).toBeLessThanOrEqual(budget.target);
   });
