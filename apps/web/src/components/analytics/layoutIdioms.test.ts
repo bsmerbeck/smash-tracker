@@ -116,9 +116,14 @@ const VERTICAL_OVERFLOW_PATTERN = /\boverflow-y-(auto|scroll)\b/;
  * `OpponentTable.tsx`, `MonthlyPerformance.tsx`, `StageDetailPage.tsx`); the
  * remaining eight are dialog/form scroll regions outside this phase's scope
  * and stay allowlisted until a future phase addresses dialogs.
+ *
+ * Plan 39.1-18: `StageDetailPage.tsx` removed — both its by-opponent and
+ * by-character tables converted to the `LIST_CAP`/`LIST_CAP_RAIL` cap-ladder
+ * idiom (`OpponentTable.tsx`'s precedent), in the SAME commit as this
+ * removal, since the anti-rot assertion below fails the instant the fix
+ * lands without it.
  */
 const NESTED_SCROLLER_KNOWN_OFFENDERS = [
-  'apps/web/src/pages/Stages/StageDetailPage.tsx',
   'apps/web/src/pages/Matchups/components/SetStateControl.tsx',
   'apps/web/src/pages/Dashboard/components/AddMatchForm.tsx',
   'apps/web/src/pages/Review/components/DeliveryVodNotesTab.tsx',

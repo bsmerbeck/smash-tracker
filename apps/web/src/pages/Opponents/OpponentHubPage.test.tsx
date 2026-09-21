@@ -595,5 +595,60 @@ describe('OpponentHubPage', () => {
       expect(screen.getByText('Tournament History')).toBeInTheDocument();
       expect(screen.getByText('Tendencies')).toBeInTheDocument();
     });
+
+    describe('Task 3 (39.1-18): the H2H trend verdict + strip, and the removed header pips', () => {
+      it("the header's ten-pip indicator no longer renders", async () => {
+        listMatches.mockResolvedValue(twoCharacterFixture());
+        renderHub('/opponents/rival');
+
+        await findRecordText('2-1');
+        // `WinLossPips` labels its container via `shared.pips.recentResults`
+        // ("Last {{count}} results, newest first") — asserted absent by
+        // element query, not by absence of a specific string (which could
+        // pass vacuously).
+        expect(screen.queryByLabelText(/results, newest first/i)).not.toBeInTheDocument();
+      });
+
+      it('the trend card renders a claim chip, a verdict and an evidence line, plus a form strip above the plot', async () => {
+        listMatches.mockResolvedValue(twoCharacterFixture());
+        renderHub('/opponents/rival');
+
+        await findRecordText('2-1');
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument();
+        expect(
+          document.querySelector('[data-slot="opponent-form-now-verdict"]'),
+        ).toBeInTheDocument();
+        expect(
+          document.querySelector('[data-slot="opponent-form-now-evidence"]'),
+        ).toBeInTheDocument();
+        expect(document.querySelector('[data-slot="form-strip-root"]')).toBeInTheDocument();
+        const ticks = document.querySelectorAll('[data-slot="form-strip-tick"]');
+        expect(ticks.length).toBeGreaterThan(0);
+        expect(ticks.length).toBeLessThanOrEqual(20);
+      });
+
+      it("the hub's region structure (card count and order) is otherwise unchanged", async () => {
+        listMatches.mockResolvedValue(twoCharacterFixture());
+        renderHub('/opponents/rival');
+
+        await findRecordText('2-1');
+        const cardTitles = [...document.querySelectorAll('[data-slot="card"]')].map(
+          (card) => card.querySelector('[data-slot="card-title"]')?.textContent ?? null,
+        );
+        // MEASURED against this plan's own Task 1+2 state (before this
+        // plan's Task 3 edits) via a temporary probe test, recorded in the
+        // SUMMARY: 8 cards in this exact order.
+        expect(cardTitles).toEqual([
+          'rival',
+          'Matchup Matrix',
+          'H2H Trend',
+          'What They Play',
+          'Stages',
+          'Recent Encounters',
+          'Tournament History',
+          'Tendencies',
+        ]);
+      });
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
@@ -358,15 +359,54 @@ describe('StageDetailPage', () => {
     expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
   });
 
-  it('the by-opponent table carries the maximum-height scroll class rather than growing unbounded', async () => {
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+  it('the by-opponent table has no nested scroller and caps at 8 rows with a show-all control past that', async () => {
+    listMatches.mockResolvedValue(
+      Array.from({ length: 9 }, (_, i) =>
+        makeMatch({ id: `m${i}`, time: i + 1, win: true, opponent: `opponent${i}` }),
+      ),
+    );
     renderStageAt('/stages/1');
 
     await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
-    const byOpponentCard = screen.getByText('By Opponent').closest('[data-slot="card"]')!;
-    const scrollWrapper = (byOpponentCard as HTMLElement).querySelector('.overflow-y-auto');
-    expect(scrollWrapper).toBeInTheDocument();
-    expect(scrollWrapper?.className ?? '').toMatch(/max-h-\[/);
+    const byOpponentCard = screen
+      .getByText('By Opponent')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(byOpponentCard.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(byOpponentCard.querySelector('[class*="max-h-["]')).not.toBeInTheDocument();
+    // 9 opponent rows + 1 header row = 10; capped to 8 data rows + 1 header = 9.
+    expect(within(byOpponentCard).getAllByRole('row')).toHaveLength(9);
+
+    const showAll = within(byOpponentCard).getByRole('button', { name: /show all 9/i });
+    await userEvent.setup().click(showAll);
+    expect(within(byOpponentCard).getAllByRole('row')).toHaveLength(10);
+    expect(within(byOpponentCard).getByRole('button', { name: /show fewer/i })).toBeInTheDocument();
+  });
+
+  it('the per-fighter split (by-character table) has no nested scroller and caps at 5 rows, sorted by games', async () => {
+    const fighters = [luigi, fox, mario].map((f) => f.id);
+    const extraFighters = SpriteList.filter((s) => !fighters.includes(s.id))
+      .slice(0, 4)
+      .map((s) => s.id);
+    const allOpponentFighters = [...fighters, ...extraFighters];
+    listMatches.mockResolvedValue(
+      allOpponentFighters.map((opponentFighterId, i) =>
+        makeMatch({ id: `c${i}`, time: i + 1, win: true, opponent_id: opponentFighterId }),
+      ),
+    );
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    const byCharacterCard = screen
+      .getByText('By Character')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(byCharacterCard.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(byCharacterCard.querySelector('[class*="max-h-["]')).not.toBeInTheDocument();
+    // 7 distinct fighter-pair rows + 1 header row; capped to 5 data rows + 1 header = 6.
+    expect(within(byCharacterCard).getAllByRole('row')).toHaveLength(6);
+
+    const showAll = within(byCharacterCard).getByRole('button', { name: /show all 7/i });
+    await userEvent.setup().click(showAll);
+    expect(within(byCharacterCard).getAllByRole('row')).toHaveLength(8);
   });
 
   describe('WR-02 (38-REVIEW-FIX): trend click-to-filter parity with the hub', () => {
