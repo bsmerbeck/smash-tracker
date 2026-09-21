@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
  * lifecycle test files must spawn the harness through ONE shared helper that
  * puts the signal on the harness process itself, never through the tsx CLI
  * shim (which relays signals to a grandchild on a 30 ms acknowledgement
- * budget before escalating to SIGKILL — see 260920-tns-CONTEXT.md).
+ * budget before escalating to SIGKILL — see `lifecycleHarnessSpawn.ts`).
  *
  * This is a content-read grep gate, mirroring
  * `apps/api/src/prep/phase13Integrity.test.ts`: every assertion below must be
