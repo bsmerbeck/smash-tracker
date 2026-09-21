@@ -1,50 +1,222 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Fighter, Match } from '@smash-tracker/shared';
+import type { TFunction } from 'i18next';
+import type { Match, RosterFighterEntry } from '@smash-tracker/shared';
+import { buildRosterModel, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import { useFighterName } from '@/hooks/useFighterName';
-import { buildRosterUsage, winRateTone, type RosterUsageRow } from '../lib/rosterUsage';
+import { Record } from '@/components/analytics/Record';
+import { LIST_INLINE_MAX } from '@/components/analytics/BoundedList';
+import { CHART_TOKENS } from '@/components/charts/tokens';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { getFighterById } from '@/data/sprites';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
 
-const VISIBLE_CAP = 10;
+const USAGE_BAR_HEIGHT_PX = 10;
 
-/** Cycles through the theme's 5 chart tokens (index.css `--chart-1..5`) for usage bar fills — no red-to-black gradient, just the existing design-system palette. */
-const BAR_COLOR_CLASSES = [
-  'bg-chart-1',
-  'bg-chart-2',
-  'bg-chart-3',
-  'bg-chart-4',
-  'bg-chart-5',
-] as const;
+interface RosterRowShape {
+  fighterId: number;
+  games: number;
+  /** 0..1, never a percent — the row formats it. */
+  share: number;
+  wins: number;
+  losses: number;
+}
 
-const CHIP_CLASSES: Record<ReturnType<typeof winRateTone>, string> = {
-  positive: 'bg-emerald-500/15 text-emerald-500',
-  neutral: 'bg-muted text-muted-foreground',
-  negative: 'bg-destructive/15 text-destructive',
-};
+function toRowShape(entry: RosterFighterEntry): RosterRowShape {
+  return {
+    fighterId: entry.fighterId,
+    games: entry.games,
+    share: entry.share,
+    wins: entry.rate.wins,
+    losses: entry.rate.losses,
+  };
+}
 
 /**
- * Replaces FighterPieChart per user feedback ("huge and doesn't give much
- * insight... color scheme is frankly crap"): a compact horizontal bar list,
- * one row per fighter actually played, ordered by usage. Bar fill colors
- * cycle through the theme's `--chart-*` tokens instead of a red-to-black
- * gradient. Capped at `VISIBLE_CAP` rows with a "show all" expander for
- * larger rosters.
+ * A plain per-fighter share listing over the whole account, applying NO
+ * main/secondary/pocket threshold — used only below `buildRosterModel`'s own
+ * establishment floor (`model.main === null`, "main not established yet"),
+ * where the grouped anatomy has nothing to group, and to re-derive
+ * individual rows for the pooled pockets group's own inline expansion
+ * (`RosterPocketGroup` only carries a pooled record, not a per-fighter one).
+ * T-39.1-16-01: this is a sort, never a classification — it never compares
+ * against `ROSTER_MAIN_MIN_GAMES`/`ROSTER_SECONDARY_MIN_SHARE`/
+ * `ROSTER_SECONDARY_MIN_GAMES`, so it cannot re-derive the roster model.
  */
-export function RosterUsage({
-  matches,
-  fighterSprites,
+function buildFlatShareList(matches: Match[]): RosterRowShape[] {
+  const groups = new Map<number, Match[]>();
+  for (const match of matches) {
+    const existing = groups.get(match.fighter_id);
+    if (existing) {
+      existing.push(match);
+    } else {
+      groups.set(match.fighter_id, [match]);
+    }
+  }
+  const total = matches.length;
+  const rows: RosterRowShape[] = [];
+  for (const [fighterId, group] of groups) {
+    const rate = toRateValue(group);
+    rows.push({
+      fighterId,
+      games: rate.total,
+      share: total > 0 ? rate.total / total : 0,
+      wins: rate.wins,
+      losses: rate.losses,
+    });
+  }
+  return rows.sort((a, b) => b.games - a.games || a.fighterId - b.fighterId);
+}
+
+/**
+ * One roster row (UI-SPEC §8.4): sprite 24px, the localised fighter name in
+ * the row's one flexible truncating slot, the share percentage, a usage bar
+ * in ONE identity colour (`--viz-series-1`) on a muted track — nominal
+ * categories (which fighter) are never coloured by rank, replacing
+ * `RosterUsage.tsx`'s old `--chart-1..5` cycle — a `Record` (which alone
+ * carries the games count, UI-SPEC §6.5 rule 4) and the confidence glyph.
+ * Wraps in Phase 38's `DrillableRow` (`as="overlay"`, `PairingOpponents.tsx`'s
+ * established multi-segment-row pattern) and navigates to Fighter Analysis
+ * with the fighter axis.
+ */
+function RosterRow({
+  entry,
+  t,
+  subjectPath,
+  fighterName,
 }: {
-  matches: Match[];
-  fighterSprites: Fighter[];
+  entry: RosterRowShape;
+  t: TFunction;
+  subjectPath: (path: string) => string;
+  fighterName: (id: number) => string;
 }) {
+  const fighter = getFighterById(entry.fighterId);
+  const name = fighterName(entry.fighterId);
+  const sharePercent = Math.round(entry.share * 100);
+  const tier = confidenceTierFor(entry.games);
+  const cueLabel = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: entry.games }) : '';
+  const recordText = `${entry.wins}–${entry.losses}`;
+  const to = subjectPath(
+    `/fighter-analysis?${buildDrillDownSearch({ fighterId: entry.fighterId }).toString()}`,
+  );
+
+  return (
+    <li
+      className="@container/roster-row relative flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+      data-slot="roster-row"
+    >
+      <DrillableRow
+        as="overlay"
+        to={to}
+        ariaLabel={t('shared.drillableRow.aria', { subject: name, context: recordText })}
+      />
+      {fighter?.url && <img src={fighter.url} alt="" className="size-6 shrink-0 object-contain" />}
+      <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
+        {name}
+      </span>
+      <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{sharePercent}%</span>
+      <span
+        className="w-16 shrink-0 overflow-hidden rounded-full bg-muted @max-[380px]/roster-row:hidden"
+        style={{ height: USAGE_BAR_HEIGHT_PX }}
+        data-slot="roster-usage-bar-track"
+      >
+        <span
+          className="block h-full rounded-full"
+          data-slot="roster-usage-bar-fill"
+          style={{ width: `${Math.max(sharePercent, 2)}%`, backgroundColor: CHART_TOKENS.series1 }}
+        />
+      </span>
+      <Record wins={entry.wins} losses={entry.losses} cue="glyph" cueLabel={cueLabel} />
+      <DrillableRowChevron />
+    </li>
+  );
+}
+
+function RosterRowList({
+  entries,
+  t,
+  subjectPath,
+  fighterName,
+}: {
+  entries: RosterRowShape[];
+  t: TFunction;
+  subjectPath: (path: string) => string;
+  fighterName: (id: number) => string;
+}) {
+  return (
+    <ul className="flex min-w-0 flex-1 flex-col gap-1">
+      {entries.map((entry) => (
+        <RosterRow
+          key={entry.fighterId}
+          entry={entry}
+          t={t}
+          subjectPath={subjectPath}
+          fighterName={fighterName}
+        />
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * One labelled group (UI-SPEC §8.4): the overline label sits in a fixed
+ * 112px-equivalent first column at >= 640px, and stacks above its rows below
+ * that. A group with no members is never rendered by the caller — this
+ * component renders NO header of its own accord; the caller decides whether
+ * to mount it at all (T-39.1-16-04: an empty group never implies existence).
+ */
+function RosterGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div
+      className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3"
+      data-slot="roster-group"
+    >
+      <div
+        className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase sm:w-28 sm:shrink-0"
+        data-slot="roster-group-header"
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The Match Data roster card (INS-05/UIX-04, UI-SPEC §8.4, owner note 7):
+ * ONE list in three labelled groups — MAIN, SECONDARIES, POCKETS — derived
+ * from `buildRosterModel`, the shared engine's single definition
+ * (T-39.1-16-01: this component reads it, it never re-derives a threshold).
+ * The pockets group collapses to one pooled summary row with an inline
+ * "show all" expansion (capped at `LIST_INLINE_MAX`). Below the model's
+ * establishment floor the card falls back to `mainNotEstablished` plus a
+ * flat, ungrouped share list.
+ */
+export function RosterUsage({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const subjectPath = useSubjectPath();
+  const fighterName = useFighterNameResolver();
+  const [pocketsExpanded, setPocketsExpanded] = useState(false);
 
-  const rows = useMemo(() => buildRosterUsage(matches, fighterSprites), [matches, fighterSprites]);
+  const model = useMemo(() => buildRosterModel({ matches }), [matches]);
+  const flatEntries = useMemo(() => buildFlatShareList(matches), [matches]);
+  const flatByFighterId = useMemo(
+    () => new Map(flatEntries.map((entry) => [entry.fighterId, entry])),
+    [flatEntries],
+  );
+  const pocketEntries = useMemo(
+    () =>
+      model.pockets.fighterIds
+        .map((id) => flatByFighterId.get(id))
+        .filter((entry): entry is RosterRowShape => entry != null)
+        .sort((a, b) => b.games - a.games || a.fighterId - b.fighterId),
+    [model.pockets.fighterIds, flatByFighterId],
+  );
 
-  if (rows.length === 0) {
+  if (matches.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -57,78 +229,108 @@ export function RosterUsage({
     );
   }
 
-  const visibleRows = expanded ? rows : rows.slice(0, VISIBLE_CAP);
-  const hiddenCount = rows.length - visibleRows.length;
+  if (model.main === null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('matchData.roster.title')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            {t('analytics.roster.mainNotEstablished')}
+          </p>
+          <RosterRowList
+            entries={flatEntries}
+            t={t}
+            subjectPath={subjectPath}
+            fighterName={fighterName}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const mainEntry = toRowShape(model.main);
+  const secondaryEntries = model.secondaries.map(toRowShape);
+  const pocketRatePercent = Math.round(model.pockets.rate.rate * 100);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('matchData.roster.title')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <ul className="flex flex-col gap-2">
-          {visibleRows.map((row, i) => (
-            <RosterUsageItem key={row.fighter.id} row={row} colorIndex={i} />
-          ))}
-        </ul>
+      <CardContent className="flex flex-col gap-4">
+        <RosterGroup label={t('analytics.roster.main')}>
+          <RosterRowList
+            entries={[mainEntry]}
+            t={t}
+            subjectPath={subjectPath}
+            fighterName={fighterName}
+          />
+        </RosterGroup>
 
-        {hiddenCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            onClick={() => setExpanded(true)}
-          >
-            {t('matchData.roster.showAll', { count: hiddenCount })}
-          </Button>
+        {secondaryEntries.length > 0 && (
+          <RosterGroup label={t('analytics.roster.secondaries')}>
+            <RosterRowList
+              entries={secondaryEntries}
+              t={t}
+              subjectPath={subjectPath}
+              fighterName={fighterName}
+            />
+          </RosterGroup>
         )}
-        {expanded && rows.length > VISIBLE_CAP && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-start"
-            onClick={() => setExpanded(false)}
-          >
-            {t('matchData.roster.showLess')}
-          </Button>
+
+        {model.pockets.fighterIds.length > 0 && (
+          <RosterGroup label={t('analytics.roster.pockets')}>
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <ul className="flex flex-col gap-1">
+                <li
+                  className="flex flex-col gap-1 rounded-md p-2 text-sm text-muted-foreground"
+                  data-slot="roster-pocket-summary"
+                >
+                  <span>
+                    {t('analytics.roster.pocketsRow', {
+                      count: model.pockets.fighterIds.length,
+                      games: model.pockets.games,
+                    })}
+                    {' · '}
+                    {pocketRatePercent}%
+                  </span>
+                </li>
+              </ul>
+              {!pocketsExpanded ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="w-fit self-start px-0"
+                  onClick={() => setPocketsExpanded(true)}
+                >
+                  {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
+                </Button>
+              ) : (
+                <>
+                  <RosterRowList
+                    entries={pocketEntries.slice(0, LIST_INLINE_MAX)}
+                    t={t}
+                    subjectPath={subjectPath}
+                    fighterName={fighterName}
+                  />
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="w-fit self-start px-0"
+                    onClick={() => setPocketsExpanded(false)}
+                  >
+                    {t('analytics.list.showFewer')}
+                  </Button>
+                </>
+              )}
+            </div>
+          </RosterGroup>
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function RosterUsageItem({ row, colorIndex }: { row: RosterUsageRow; colorIndex: number }) {
-  const { t } = useTranslation();
-  const { fighter, games, usagePercent, wins, losses, winRate } = row;
-  const localizedName = useFighterName(fighter.id);
-  const tone = winRateTone(winRate);
-  const barColor = BAR_COLOR_CLASSES[colorIndex % BAR_COLOR_CLASSES.length];
-
-  return (
-    <li className="flex items-center gap-3">
-      <img src={fighter.url} alt="" className="size-8 shrink-0 object-contain" />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{localizedName}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {t('common.games', { count: games })}
-          </span>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn('h-full rounded-full', barColor)}
-            style={{ width: `${Math.max(usagePercent, 2)}%` }}
-          />
-        </div>
-      </div>
-      <span
-        className={cn(
-          'shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold',
-          CHIP_CLASSES[tone],
-        )}
-      >
-        {wins}-{losses} · {winRate}% ({games})
-      </span>
-    </li>
   );
 }

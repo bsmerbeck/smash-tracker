@@ -1,18 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Fighter, Match } from '@smash-tracker/shared';
+import { ROSTER_MAIN_MIN_GAMES, ROSTER_SECONDARY_MIN_GAMES } from '@smash-tracker/shared';
 import { SpriteList } from '@/data/sprites';
 import { RosterUsage } from './RosterUsage';
 
-const roster = SpriteList.slice(0, 12);
+const roster = SpriteList;
 
-function makeMatch(fighterId: number, win: boolean, id: string): Match {
+let matchIdCounter = 0;
+
+function makeMatch(fighterId: number, win: boolean): Match {
+  matchIdCounter += 1;
   return {
-    id,
+    id: `m-${matchIdCounter}`,
     fighter_id: fighterId,
     opponent_id: roster[0]!.id,
-    time: 1_700_000_000_000,
+    time: 1_700_000_000_000 + matchIdCounter,
     map: { id: 0, name: 'no selection' },
     opponent: 'rival',
     notes: '',
@@ -23,81 +31,147 @@ function makeMatch(fighterId: number, win: boolean, id: string): Match {
 
 function matchesFor(fighter: Fighter, wins: number, losses: number): Match[] {
   const matches: Match[] = [];
-  for (let i = 0; i < wins; i++) matches.push(makeMatch(fighter.id, true, `${fighter.id}-w${i}`));
-  for (let i = 0; i < losses; i++)
-    matches.push(makeMatch(fighter.id, false, `${fighter.id}-l${i}`));
+  for (let i = 0; i < wins; i++) matches.push(makeMatch(fighter.id, true));
+  for (let i = 0; i < losses; i++) matches.push(makeMatch(fighter.id, false));
   return matches;
 }
 
+function renderRoster(matches: Match[]) {
+  return render(
+    <MemoryRouter>
+      <RosterUsage matches={matches} />
+    </MemoryRouter>,
+  );
+}
+
+/** Below `ROSTER_SECONDARY_MIN_GAMES`/`ROSTER_SECONDARY_MIN_SHARE` — pools into pockets. */
+const SMALL_GAMES = 3;
+
 describe('RosterUsage', () => {
   it('shows an empty state when there is no match data', () => {
-    render(<RosterUsage matches={[]} fighterSprites={roster.slice(0, 2)} />);
+    renderRoster([]);
     expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
   });
 
-  it('orders rows by usage (games played) descending', () => {
+  it('reads the roster model from the shared engine — no share-threshold literal in the component', () => {
+    const source = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'RosterUsage.tsx'),
+      'utf8',
+    );
+    expect(source).toMatch(/buildRosterModel/);
+    // ROSTER_SECONDARY_MIN_SHARE's own value (0.08) — a re-derived threshold
+    // would need this literal; the component only ever reads the engine's
+    // exported constant/model, never restates the number itself.
+    expect(source).not.toMatch(/0\.08/);
+  });
+
+  it('renders exactly one main row, two secondary rows and one pooled pocket row', () => {
+    const [main, secA, secB, ...small] = roster;
+    const matches = [
+      ...matchesFor(main!, 60, 0),
+      ...matchesFor(secA!, 25, 0),
+      ...matchesFor(secB!, 25, 0),
+      ...small.slice(0, 5).flatMap((fighter) => matchesFor(fighter, SMALL_GAMES, 0)),
+    ];
+    // Sanity: secondaries clear both floors, small fighters clear neither.
+    expect(25).toBeGreaterThanOrEqual(ROSTER_SECONDARY_MIN_GAMES);
+    expect(SMALL_GAMES).toBeLessThan(ROSTER_SECONDARY_MIN_GAMES);
+
+    renderRoster(matches);
+
+    const groups = document.querySelectorAll('[data-slot="roster-group-header"]');
+    expect([...groups].map((g) => g.textContent)).toEqual(['Main', 'Secondaries', 'Pockets']);
+
+    const rows = document.querySelectorAll('[data-slot="roster-row"]');
+    expect(rows).toHaveLength(3); // main + 2 secondaries (pockets is a summary, not individual rows)
+    expect(document.querySelectorAll('[data-slot="roster-pocket-summary"]')).toHaveLength(1);
+  });
+
+  it('renders the main group and zero other group headers when only a main exists', () => {
+    const [main] = roster;
+    const matches = matchesFor(main!, 60, 0);
+
+    renderRoster(matches);
+
+    const groups = document.querySelectorAll('[data-slot="roster-group-header"]');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.textContent).toBe('Main');
+    expect(document.querySelectorAll('[data-slot="roster-row"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="roster-pocket-summary"]')).toHaveLength(0);
+  });
+
+  it('renders the main-not-established line and a plain share list, zero group headers, under the model minimum', () => {
     const [a, b] = roster;
-    const matches = [...matchesFor(a!, 2, 0), ...matchesFor(b!, 5, 0)];
+    const matches = [...matchesFor(a!, 5, 0), ...matchesFor(b!, 3, 0)];
+    expect(5).toBeLessThan(ROSTER_MAIN_MIN_GAMES);
 
-    render(<RosterUsage matches={matches} fighterSprites={[a!, b!]} />);
+    renderRoster(matches);
 
-    const images = screen.getAllByRole('listitem').map((li) => li.querySelector('img'));
-    // b has more games (5) so should render first.
-    expect(images[0]).toHaveAttribute('src', b!.url);
-    expect(images[1]).toHaveAttribute('src', a!.url);
+    expect(screen.getByText('Main not established yet')).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="roster-group-header"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-slot="roster-row"]')).toHaveLength(2);
   });
 
-  it('shows win-rate chips with the "W-L · rate% (n)" shape', () => {
-    const fighter = roster[0]!;
-    const matches = matchesFor(fighter, 6, 4); // 60% win rate, 10 games
+  it('every usage bar carries the same identity colour class regardless of row position', () => {
+    const [main, secA, secB] = roster;
+    const matches = [
+      ...matchesFor(main!, 60, 0),
+      ...matchesFor(secA!, 25, 0),
+      ...matchesFor(secB!, 25, 0),
+    ];
 
-    render(<RosterUsage matches={matches} fighterSprites={[fighter]} />);
+    renderRoster(matches);
 
-    expect(screen.getByText('6-4 · 60% (10)')).toBeInTheDocument();
+    const fills = document.querySelectorAll('[data-slot="roster-usage-bar-fill"]');
+    expect(fills.length).toBeGreaterThanOrEqual(3);
+    const colors = [...fills].map((el) => (el as HTMLElement).style.backgroundColor);
+    expect(new Set(colors).size).toBe(1);
+    expect(colors[0]).toBe('var(--viz-series-1)');
   });
 
-  it('applies the positive tone at 55% or above', () => {
-    const fighter = roster[0]!;
-    const matches = matchesFor(fighter, 11, 9); // 55%
-    render(<RosterUsage matches={matches} fighterSprites={[fighter]} />);
-    expect(screen.getByText('11-9 · 55% (20)')).toHaveClass('text-emerald-500');
+  it('states the games count exactly once per row', () => {
+    const [main] = roster;
+    const matches = matchesFor(main!, 20, 5);
+
+    renderRoster(matches);
+
+    const row = document.querySelector('[data-slot="roster-row"]')!;
+    const occurrences = row.textContent!.match(/\b25\b/g) ?? [];
+    expect(occurrences).toHaveLength(1);
   });
 
-  it('applies the destructive tone below 45%', () => {
-    const fighter = roster[0]!;
-    const matches = matchesFor(fighter, 4, 6); // 40%
-    render(<RosterUsage matches={matches} fighterSprites={[fighter]} />);
-    expect(screen.getByText('4-6 · 40% (10)')).toHaveClass('text-destructive');
+  it('every row is a link with a non-empty accessible name and a destination carrying the fighter axis', () => {
+    const [main, secA] = roster;
+    const matches = [...matchesFor(main!, 60, 0), ...matchesFor(secA!, 25, 0)];
+
+    renderRoster(matches);
+
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const link of links) {
+      expect(link).toHaveAccessibleName();
+      expect(link.getAttribute('href')).toMatch(/fighter-analysis\?fighter=\d+/);
+    }
   });
 
-  it('applies the neutral tone between 45% and 55%', () => {
-    const fighter = roster[0]!;
-    const matches = matchesFor(fighter, 1, 1); // 50%
-    render(<RosterUsage matches={matches} fighterSprites={[fighter]} />);
-    expect(screen.getByText('1-1 · 50% (2)')).toHaveClass('text-muted-foreground');
-  });
-
-  it('caps the visible list at 10 rows and offers a "show all" expander', async () => {
+  it("the pocket row's show-all control expands inline to at most the inline cap", async () => {
     const user = userEvent.setup();
-    const matches = roster.flatMap((fighter, i) => matchesFor(fighter, i + 1, 0));
+    const [main, ...pocketFighters] = roster;
+    const matches = [
+      ...matchesFor(main!, 60, 0),
+      ...pocketFighters.slice(0, 30).flatMap((fighter) => matchesFor(fighter, 1, 0)),
+    ];
 
-    render(<RosterUsage matches={matches} fighterSprites={roster} />);
+    renderRoster(matches);
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(10);
-    const expandButton = screen.getByRole('button', { name: /show all/i });
-    expect(expandButton).toHaveTextContent('Show all (2 more)');
+    const groups = document.querySelectorAll('[data-slot="roster-group"]');
+    const pocketGroup = groups[groups.length - 1] as HTMLElement;
+    const showAllButton = within(pocketGroup).getByRole('button', { name: /show all/i });
+    await user.click(showAllButton);
 
-    await user.click(expandButton);
-
-    expect(screen.getAllByRole('listitem')).toHaveLength(12);
-    expect(screen.getByRole('button', { name: 'Show less' })).toBeInTheDocument();
-  });
-
-  it('does not show the expander when there are 10 or fewer fighters', () => {
-    const matches = roster.slice(0, 5).flatMap((fighter, i) => matchesFor(fighter, i + 1, 0));
-
-    render(<RosterUsage matches={matches} fighterSprites={roster.slice(0, 5)} />);
-
-    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    const expandedRows = within(pocketGroup).getAllByRole('listitem');
+    // The pooled summary `<li>` stays; the inline-expanded rows are capped.
+    expect(expandedRows.length - 1).toBeLessThanOrEqual(25);
+    expect(expandedRows.length - 1).toBe(25);
   });
 });
