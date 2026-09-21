@@ -3344,7 +3344,8 @@
       "allTournaments": "{{count}}大会すべて →",
       "allOpponents": "{{count}}人の対戦相手すべて →",
       "sortMostGames": "試合数が多い順",
-      "allMatchups": "{{count}}件のマッチアップすべて →"
+      "allMatchups": "{{count}}件のマッチアップすべて →",
+      "allStages": "{{count}}件のステージすべて →"
     },
     "record": {
       "aria": "{{wins}}勝{{losses}}敗",

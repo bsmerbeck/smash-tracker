@@ -3344,7 +3344,8 @@
       "allTournaments": "Todos os {{count}} torneios →",
       "allOpponents": "Todos os {{count}} adversários →",
       "sortMostGames": "Mais partidas",
-      "allMatchups": "Todos os {{count}} confrontos →"
+      "allMatchups": "Todos os {{count}} confrontos →",
+      "allStages": "Todos os {{count}} stages →"
     },
     "record": {
       "aria": "{{wins}} vitórias, {{losses}} derrotas",
