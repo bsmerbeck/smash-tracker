@@ -9,17 +9,35 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
+export type ChartCardDensity = 'default' | 'compact';
+
 export interface ChartCardProps {
   title: string;
-  /** The evidence-type sentence (`shared.evidence.type.*`), rendered as the card's description. */
+  /** The evidence-type sentence (`shared.evidence.type.*`), rendered as the card's description — or, when `insight` is supplied, demoted to the footer at the meta role (UI-SPEC §7.9). */
   caption?: string;
   /** Header-right slot (sample cue, ruleset control, min-matches select) — `CardAction`. */
   headerRight?: ReactNode;
   /** Non-null below the engine's abstention floor: swaps the body for the abstention sentence. */
   abstained?: { gamesNeeded: number } | null;
+  /**
+   * Renders above the plot, under the header: claim chip + verdict + evidence
+   * (the `InsightCard` head without its card chrome) — UI-SPEC §7.9. Omitted
+   * (`undefined`) is byte-identical to every Phase 37/38 call site. Supplied
+   * as `null` (e.g. a dismissed insight) still demotes `caption` to the
+   * footer and reserves no slot space — only whether the prop was supplied
+   * at all decides the layout, not whether the node itself is truthy.
+   */
+  insight?: ReactNode;
+  /** `'default'` (Phase 37/38 byte-unchanged) or `'compact'` (UI-SPEC §6.2: 20px padding ≥640px / 16px below, 16px header-to-content gap, no shadow) — applied by className composition on the composed `Card`/`CardHeader`/`CardContent`; the installed `Card` family is never edited. */
+  density?: ChartCardDensity;
   footer?: ReactNode;
   children: ReactNode;
 }
+
+/** UI-SPEC §6.2 compact density — overrides `Card`'s default `py-6 shadow-sm` and `CardHeader`/`CardContent`'s default `px-6`, composed via className, never by editing `@/components/ui/card`. */
+const COMPACT_CARD_CLASSES = 'gap-4 py-4 shadow-none sm:py-5';
+const COMPACT_HEADER_CLASSES = 'px-4 sm:px-5';
+const COMPACT_CONTENT_CLASSES = 'px-4 sm:px-5';
 
 /**
  * The single chart frame every kit chart renders inside (CHRT-01). Every
@@ -35,25 +53,38 @@ export function ChartCard({
   caption,
   headerRight,
   abstained,
+  insight,
+  density = 'default',
   footer,
   children,
 }: ChartCardProps) {
   const { t } = useTranslation();
+  const hasInsightSlot = insight !== undefined;
+  const isCompact = density === 'compact';
   return (
-    <Card>
-      <CardHeader>
+    <Card className={isCompact ? COMPACT_CARD_CLASSES : undefined}>
+      <CardHeader className={isCompact ? COMPACT_HEADER_CLASSES : undefined}>
         <CardTitle>{title}</CardTitle>
-        {caption && <CardDescription>{caption}</CardDescription>}
+        {caption && !hasInsightSlot && <CardDescription>{caption}</CardDescription>}
         {headerRight && <CardAction>{headerRight}</CardAction>}
       </CardHeader>
-      <CardContent>
+      <CardContent className={isCompact ? COMPACT_CONTENT_CLASSES : undefined}>
         {abstained ? (
           <p className="text-sm text-muted-foreground">
             {t('shared.evidence.abstained', { count: abstained.gamesNeeded })}
           </p>
         ) : (
           <>
+            {hasInsightSlot && insight && <div data-slot="chart-card-insight">{insight}</div>}
             {children}
+            {caption && hasInsightSlot && (
+              <p
+                className="text-xs leading-4 text-muted-foreground tabular-nums"
+                data-slot="chart-card-caption-footer"
+              >
+                {caption}
+              </p>
+            )}
             {footer}
           </>
         )}
