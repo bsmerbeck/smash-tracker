@@ -80,10 +80,7 @@ const FLEX_DISTRIBUTION_PATTERN = /justify-(evenly|around)\b/;
  * banned utility fails the anti-rot assertion below, so this array can only
  * shrink toward empty as Track C converts each file.
  */
-const KNOWN_FLEX_DISTRIBUTION_OFFENDERS = [
-  'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
-  'apps/web/src/components/charts/StatTile.tsx',
-];
+const KNOWN_FLEX_DISTRIBUTION_OFFENDERS = ['apps/web/src/components/charts/StatTile.tsx'];
 
 /** §13.4: a page-local component whose name begins with one of the closed stat-idiom names — the defect `StatRow`/`StatFigure` replace. */
 const STAT_COMPONENT_NAME_PATTERN = /\bfunction\s+(Stat|HeroCard|StatBlock|SettingBlock)\b/;
@@ -102,9 +99,7 @@ const STAT_COMPONENT_GSP_ALLOWLIST = [
  * Measured by a real grep at plan-execution time (2026-09-20). Shrink-only:
  * Track C empties this array as each page adopts `StatRow`/`StatFigure`.
  */
-const STAT_COMPONENT_KNOWN_OFFENDERS = [
-  'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
-];
+const STAT_COMPONENT_KNOWN_OFFENDERS: string[] = [];
 
 /** §6.4: a `max-h-*` utility paired with a vertical-overflow utility in the same file — a nested scroller inside an analytics surface. */
 const MAX_HEIGHT_PATTERN = /\bmax-h-[^\s"'`]+/;

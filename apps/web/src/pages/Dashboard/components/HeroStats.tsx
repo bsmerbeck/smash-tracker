@@ -15,6 +15,7 @@ import {
 import { computeRatingHistory } from '@/lib/glicko';
 import { filterBySource } from '@/hooks/useFilteredMatches';
 import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
+import { GridCell } from '@/components/analytics/PageGrid';
 import { StatFigure } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
@@ -53,6 +54,18 @@ function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: T
  * under the page's ONE horizon switch, both horizon figures resolved
  * through the engine (`resolveWindow`/`toRateValue`/`classify`), never a
  * component-side window computation.
+ *
+ * Plan 39.1-17 Task 3 (UI-SPEC §8.7 placement table): returns a FRAGMENT of
+ * five `GridCell span={3}` cells — not its own wrapping `<div>` grid — so
+ * `DashboardPage.tsx`'s single `PageGrid` places these five cells directly
+ * (a fragment contributes no DOM wrapper, so `<HeroStats/>`'s five children
+ * become real siblings of every "below the hero row" cell in that one grid).
+ * At the widest breakpoint this is four tiles per row with the fifth
+ * wrapping to a second row, left-aligned — `PageGrid`'s hardcoded
+ * `items-start` never stretches it to a sibling's height. Not in this
+ * task's own `<files>` sub-list (only the plan-level `files_modified`) —
+ * recorded as a deviation: the fifth-tile-wraps contract Task 3 owns is
+ * literally this component's OWN grid shape, unreachable without touching it.
  */
 export function HeroStats({
   matches,
@@ -72,13 +85,23 @@ export function HeroStats({
   horizon?: HorizonKey;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <OverallRecordCard matches={matches} horizon={horizon} />
-      <FormCard matches={matches} />
-      <CasualVsCompetitiveCard matches={timeFilteredMatches} />
-      <OnlineOfflineCard matches={matches} />
-      <RatingCard matches={matches} />
-    </div>
+    <>
+      <GridCell span={3}>
+        <OverallRecordCard matches={matches} horizon={horizon} />
+      </GridCell>
+      <GridCell span={3}>
+        <FormCard matches={matches} />
+      </GridCell>
+      <GridCell span={3}>
+        <CasualVsCompetitiveCard matches={timeFilteredMatches} />
+      </GridCell>
+      <GridCell span={3}>
+        <OnlineOfflineCard matches={matches} />
+      </GridCell>
+      <GridCell span={3}>
+        <RatingCard matches={matches} />
+      </GridCell>
+    </>
   );
 }
 

@@ -15,6 +15,9 @@ import { intentDestination } from '@/hooks/useOnboarding';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { RatingModelNote } from '@/components/RatingModelNote';
+import { useHorizon } from '@/hooks/useHorizon';
+import { PageShell } from '@/components/analytics/PageShell';
+import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
@@ -154,6 +157,13 @@ export function DashboardPage() {
     isLoading: matchesLoading,
     filterActive,
   } = useFilteredMatches();
+  // Plan 39.1-17 (INS-02): the page's ONE HorizonSwitch value — DashboardToolbar
+  // (rendered below as PageShell's filterRow) reads/writes this SAME
+  // persisted value through its own internal useHorizon() call; this read
+  // just threads the CURRENT value into HeroStats so its delta chip
+  // actually reacts to the switch (both calls share the same underlying
+  // store, matching TrendsPage.tsx's established page-level-read pattern).
+  const { horizon } = useHorizon();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -223,24 +233,44 @@ export function DashboardPage() {
 
   return (
     <DashboardContext.Provider value={contextValue}>
-      <div className="flex flex-col gap-6">
+      {/* Plan 39.1-17 (UI-SPEC §10.4, §8.7): PageShell's filterRow is ALWAYS
+          first — DashboardToolbar (now carrying HorizonSwitch) moves ahead of
+          the onboarding/coverage chrome that used to precede it, matching
+          every other 39.1 page's "one filter row above everything it
+          scopes" contract. */}
+      <PageShell filterRow={<DashboardToolbar />}>
         <SelfDataCoveragePanel />
         <DashboardNextBestAction />
         <DashboardPrepActionSlot />
         <RatingModelNote />
-        <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
-
-        <DashboardToolbar />
-        {filterActive && allMatches.length > 0 && matches.length === 0 && <FilteredEmptyNotice />}
-        <WinLossTracker matches={matches} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <LastMatchesChart matches={matches} />
-          <PreviousMatches matches={matches} />
-        </div>
-
-        <StageTiles matches={matches} />
-        <MatchupSnapshot matches={matches} />
-      </div>
+        <PageGrid>
+          <HeroStats
+            matches={matches}
+            timeFilteredMatches={timeFilteredMatches}
+            horizon={horizon}
+          />
+          {filterActive && allMatches.length > 0 && matches.length === 0 && (
+            <GridCell span={12}>
+              <FilteredEmptyNotice />
+            </GridCell>
+          )}
+          <GridCell span={12}>
+            <WinLossTracker matches={matches} />
+          </GridCell>
+          <GridCell span={6}>
+            <LastMatchesChart matches={matches} />
+          </GridCell>
+          <GridCell span={6}>
+            <PreviousMatches matches={matches} />
+          </GridCell>
+          <GridCell span={12}>
+            <StageTiles matches={matches} />
+          </GridCell>
+          <GridCell span={12}>
+            <MatchupSnapshot matches={matches} />
+          </GridCell>
+        </PageGrid>
+      </PageShell>
     </DashboardContext.Provider>
   );
 }
