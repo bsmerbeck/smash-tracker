@@ -868,13 +868,7 @@
       "cellAria4": "{{row}} en {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Ventana",
-      "windowAria": "Ventana de tendencia",
-      "rolling5": "Últimas 5",
-      "rolling10": "Últimas 10",
-      "cumulative": "Acumulado",
-      "winRate": "% de victorias",
-      "clickHint": "Haz clic en un punto para ver esa partida."
+      "winRate": "% de victorias"
     },
     "insights": {
       "title": "Análisis del enfrentamiento",
@@ -3365,9 +3359,24 @@
         "month_one": "{{count}} mes más desbloquea este período",
         "month_other": "{{count}} meses más desbloquean este período",
         "quarter_one": "{{count}} trimestre más desbloquea este período",
-        "quarter_other": "{{count}} trimestres más desbloquean este período"
+        "quarter_other": "{{count}} trimestres más desbloquean este período",
+        "game_one": "{{count}} partida más desbloquea este período",
+        "game_other": "{{count}} partidas más desbloquean este período",
+        "set_one": "{{count}} set más desbloquea este período",
+        "set_other": "{{count}} sets más desbloquean este período",
+        "eventSession_one": "{{count}} evento más desbloquea este período",
+        "eventSession_other": "{{count}} eventos más desbloquean este período",
+        "year_one": "{{count}} año más desbloquea este período",
+        "year_other": "{{count}} años más desbloquean este período"
       },
-      "aria": "Gráfico de tendencia, {{count}} períodos"
+      "aria": "Gráfico de tendencia, {{count}} períodos",
+      "tableToggle": "Ver como tabla",
+      "tableHeaders": {
+        "period": "Período",
+        "record": "Récord",
+        "rate": "Tasa",
+        "sample": "Muestra"
+      }
     },
     "roster": {
       "main": "Principal",

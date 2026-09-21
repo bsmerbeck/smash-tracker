@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { MatchupsPage } from './MatchupsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -97,13 +98,23 @@ function renderMatchups(initialEntry = '/matchups') {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <LocationSearchProbe />
-            <Routes>
-              <Route path="/matchups" element={<MatchupsPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-            </Routes>
+            {/*
+              Plan 39.1-13: `MatchupsPage` now mounts `HorizonSwitch`
+              (INS-02), whose disabled `lastEvent` option wraps in a real
+              shadcn `Tooltip` — production always has this via
+              `MainLayout.tsx`'s app-wide `TooltipProvider`; this page-level
+              render helper needs its own, matching the same fix
+              `HorizonSwitch.test.tsx` already applies.
+            */}
+            <TooltipProvider>
+              <LocationSearchProbe />
+              <Routes>
+                <Route path="/matchups" element={<MatchupsPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>

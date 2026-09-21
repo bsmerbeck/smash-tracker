@@ -2,6 +2,7 @@ import type { Match } from '../../match.js';
 import { ABSTENTION_FLOOR_GAMES } from '../../evidence/policy.js';
 import { resolveWindow, toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
 import { classify } from '../ladder.js';
+import { wilsonInterval } from '../wilsonInterval.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -79,6 +80,16 @@ function buildFormNowInsight(input: {
   const gamesNeeded =
     state === 'locked' ? Math.max(0, ABSTENTION_FLOOR_GAMES - recentRate.total) : undefined;
 
+  // Review finding (this plan, 39.1-13): `insights.formNow.steady`
+  // interpolates `{{lower}}`/`{{upper}}` (the recent window's own Wilson
+  // interval, formatted as whole percents) — `classify` computes this
+  // interval internally to DECIDE the steady branch but never returns it, so
+  // it is recomputed here (the same inputs `classify` already used) rather
+  // than adding a second return field to `ClassifyResult` for a value only
+  // one state's copy needs. Harmless to compute unconditionally: no other
+  // state's locale key reads `lower`/`upper`.
+  const recentInterval = wilsonInterval(recentRate.wins, recentRate.total);
+
   const scopeKey = scope.key;
   const id = `${TEMPLATE_ID}:${scopeKey}:${horizon}`;
 
@@ -106,6 +117,8 @@ function buildFormNowInsight(input: {
         points: deltaPoints !== null ? Math.abs(deltaPoints) : 0,
         baselineRate: `${Math.round(baselineRate.rate * 100)}%`,
         baselineGames: baselineRate.total,
+        lower: `${Math.round(recentInterval.lower * 100)}%`,
+        upper: `${Math.round(recentInterval.upper * 100)}%`,
         ...(window.fromMs !== null ? { from: new Date(window.fromMs).toISOString() } : {}),
         ...(window.toMs !== null ? { to: new Date(window.toMs).toISOString() } : {}),
       },

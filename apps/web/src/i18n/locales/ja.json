@@ -868,13 +868,7 @@
       "cellAria4": "{{row}}（{{col}}）: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "集計範囲",
-      "windowAria": "トレンドの範囲",
-      "rolling5": "直近5戦",
-      "rolling10": "直近10戦",
-      "cumulative": "累計",
-      "winRate": "勝率",
-      "clickHint": "点をクリックするとその対戦を確認できます。"
+      "winRate": "勝率"
     },
     "insights": {
       "title": "相性の分析",
@@ -3365,9 +3359,24 @@
         "month_one": "あと{{count}}か月でこの期間が解放されます",
         "month_other": "あと{{count}}か月でこの期間が解放されます",
         "quarter_one": "あと{{count}}四半期でこの期間が解放されます",
-        "quarter_other": "あと{{count}}四半期でこの期間が解放されます"
+        "quarter_other": "あと{{count}}四半期でこの期間が解放されます",
+        "game_one": "あと{{count}}試合でこの期間が解放されます",
+        "game_other": "あと{{count}}試合でこの期間が解放されます",
+        "set_one": "あと{{count}}セットでこの期間が解放されます",
+        "set_other": "あと{{count}}セットでこの期間が解放されます",
+        "eventSession_one": "あと{{count}}イベントでこの期間が解放されます",
+        "eventSession_other": "あと{{count}}イベントでこの期間が解放されます",
+        "year_one": "あと{{count}}年でこの期間が解放されます",
+        "year_other": "あと{{count}}年でこの期間が解放されます"
       },
-      "aria": "トレンドグラフ、{{count}}期間"
+      "aria": "トレンドグラフ、{{count}}期間",
+      "tableToggle": "表で見る",
+      "tableHeaders": {
+        "period": "期間",
+        "record": "戦績",
+        "rate": "勝率",
+        "sample": "試合数"
+      }
     },
     "roster": {
       "main": "メイン",

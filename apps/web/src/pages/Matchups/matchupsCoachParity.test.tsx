@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { MatchupsPage } from './MatchupsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -85,11 +86,14 @@ function renderMatchupsAt(initialEntry: string) {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/matchups" element={<MatchupsPage />} />
-              <Route path="/coach/:clientId/matchups" element={<MatchupsPage />} />
-              <Route path="/workspace/:tenantId/matchups" element={<MatchupsPage />} />
-            </Routes>
+            {/* Plan 39.1-13: `HorizonSwitch`'s disabled `lastEvent` option needs a real `TooltipProvider` ancestor — production has it via `MainLayout.tsx`. */}
+            <TooltipProvider>
+              <Routes>
+                <Route path="/matchups" element={<MatchupsPage />} />
+                <Route path="/coach/:clientId/matchups" element={<MatchupsPage />} />
+                <Route path="/workspace/:tenantId/matchups" element={<MatchupsPage />} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>

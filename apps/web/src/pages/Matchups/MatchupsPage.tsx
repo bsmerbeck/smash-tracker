@@ -2,13 +2,14 @@ import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartCard } from '@/components/charts/ChartCard';
+import { PageGrid } from '@/components/analytics/PageGrid';
+import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useHorizon } from '@/hooks/useHorizon';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
@@ -33,7 +34,7 @@ import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
-import { MatchupChart } from './components/MatchupChart';
+import { MatchupChart, formStripEventKeyForMatch } from './components/MatchupChart';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
 import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
@@ -61,6 +62,7 @@ export function MatchupsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const { horizon } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: tolerant read of every drill-down axis currently in the URL. A URL
@@ -263,19 +265,24 @@ export function MatchupsPage() {
         {usingInferredFighters && <ChooseFavoritesPrompt />}
         {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
+        {/* UI-SPEC §10.4: one filter row — the fighter picker, a spacer, then the
+            page's single HorizonSwitch (INS-02). Never a per-chart control. */}
         <Card>
-          <CardContent className="flex flex-wrap items-center justify-center gap-6 pt-6">
-            <div className="flex flex-col items-center gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">{t('matchups.you')}</h3>
-              <SelectFighter />
+          <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
+            <div className="flex flex-1 flex-wrap items-center justify-center gap-6">
+              <div className="flex flex-col items-center gap-2">
+                <h3 className="text-sm font-medium text-muted-foreground">{t('matchups.you')}</h3>
+                <SelectFighter />
+              </div>
+              <span className="text-xl font-semibold">{t('matchups.vs')}</span>
+              <div className="flex flex-col items-center gap-2">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  {t('matchups.opponent')}
+                </h3>
+                <SelectOpponent />
+              </div>
             </div>
-            <span className="text-xl font-semibold">{t('matchups.vs')}</span>
-            <div className="flex flex-col items-center gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                {t('matchups.opponent')}
-              </h3>
-              <SelectOpponent />
-            </div>
+            <HorizonSwitch />
           </CardContent>
         </Card>
 
@@ -309,29 +316,36 @@ export function MatchupsPage() {
             own intrinsic content instead.
           */}
           <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            <MatchWinLossCard matchupMatches={matchupMatches} />
-            <MatchupInsights matchupMatches={matchupMatches} />
-          </div>
-
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
             <CounterpickAdvisor matchupMatches={matchupMatches} />
             <MatchupStageTable matchupMatches={matchupMatches} />
           </div>
 
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            <ChartCard
-              title={t('matchups.winRateTrend')}
-              caption={t('shared.evidence.type.fact')}
-              abstained={
-                matchupMatches.length < ABSTENTION_FLOOR_GAMES
-                  ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
-                  : null
-              }
-            >
-              <MatchupChart matchupMatches={matchupMatches} />
-            </ChartCard>
-            <PairingOpponentSplit matchupMatches={matchupMatches} />
-          </div>
+          {/*
+            UI-SPEC §8.3's placement table. DOM order is the NARROW-width
+            reading order (record tile -> Matchup Insights -> trend ->
+            PairingOpponentSplit) with `xl:order-*` re-flowing to the
+            >=1280px pairing: trend(8) + stack(4) on row A, PairingOpponents
+            (8, Task 3) + MatchupOrPlayer (4, Task 2) on row B. `GridCell`
+            (39.1-06) only expresses a single `lg` breakpoint transition, so
+            this block uses raw Tailwind classes at the `sm`/`lg`/`xl`
+            breakpoints (640/1024/1280px — the same three widths UI-SPEC's
+            table names) rather than the primitive, matching the plan's own
+            "static responsive classes" instruction.
+          */}
+          <PageGrid>
+            <div className="col-span-12 xl:order-2 xl:col-span-4">
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 xl:flex xl:flex-col">
+                <MatchWinLossCard matchupMatches={matchupMatches} />
+                <MatchupInsights matchupMatches={matchupMatches} />
+              </div>
+            </div>
+            <div className="col-span-12 xl:order-1 xl:col-span-8">
+              <MatchupChart matchupMatches={matchupMatches} horizon={horizon} />
+            </div>
+            <div className="col-span-12 xl:order-3 xl:col-span-8">
+              <PairingOpponentSplit matchupMatches={matchupMatches} />
+            </div>
+          </PageGrid>
 
           <Card id={MATCHUP_TABLE_ANCHOR_ID} className="scroll-mt-16">
             <CardHeader>
@@ -341,6 +355,7 @@ export function MatchupsPage() {
               <FilteredMatchList
                 matches={sortedMatchupMatches}
                 axes={terminusAxes}
+                eventKeyForMatch={formStripEventKeyForMatch}
                 onClearFilters={() => setDrillDown({})}
                 showDelete
               />

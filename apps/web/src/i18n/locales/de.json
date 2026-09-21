@@ -868,13 +868,7 @@
       "cellAria4": "{{row}} auf {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Fenster",
-      "windowAria": "Trend-Fenster",
-      "rolling5": "Letzte 5",
-      "rolling10": "Letzte 10",
-      "cumulative": "Kumuliert",
-      "winRate": "Winrate",
-      "clickHint": "Klicke auf einen Punkt, um dieses Match zu sehen."
+      "winRate": "Winrate"
     },
     "insights": {
       "title": "Matchup-Einblicke",
@@ -3365,9 +3359,24 @@
         "month_one": "{{count}} weiterer Monat schaltet diesen Zeitraum frei",
         "month_other": "{{count}} weitere Monate schalten diesen Zeitraum frei",
         "quarter_one": "{{count}} weiteres Quartal schaltet diesen Zeitraum frei",
-        "quarter_other": "{{count}} weitere Quartale schalten diesen Zeitraum frei"
+        "quarter_other": "{{count}} weitere Quartale schalten diesen Zeitraum frei",
+        "game_one": "{{count}} weiteres Spiel schaltet diesen Zeitraum frei",
+        "game_other": "{{count}} weitere Spiele schalten diesen Zeitraum frei",
+        "set_one": "{{count}} weiteres Set schaltet diesen Zeitraum frei",
+        "set_other": "{{count}} weitere Sets schalten diesen Zeitraum frei",
+        "eventSession_one": "{{count}} weiteres Event schaltet diesen Zeitraum frei",
+        "eventSession_other": "{{count}} weitere Events schalten diesen Zeitraum frei",
+        "year_one": "{{count}} weiteres Jahr schaltet diesen Zeitraum frei",
+        "year_other": "{{count}} weitere Jahre schalten diesen Zeitraum frei"
       },
-      "aria": "Trenddiagramm, {{count}} Zeiträume"
+      "aria": "Trenddiagramm, {{count}} Zeiträume",
+      "tableToggle": "Als Tabelle anzeigen",
+      "tableHeaders": {
+        "period": "Zeitraum",
+        "record": "Bilanz",
+        "rate": "Quote",
+        "sample": "Stichprobe"
+      }
     },
     "roster": {
       "main": "Main",

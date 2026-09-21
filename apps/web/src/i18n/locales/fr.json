@@ -868,13 +868,7 @@
       "cellAria4": "{{row}} sur {{col}} : {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Fenêtre",
-      "windowAria": "Fenêtre de tendance",
-      "rolling5": "5 derniers",
-      "rolling10": "10 derniers",
-      "cumulative": "Cumulé",
-      "winRate": "Taux de victoire",
-      "clickHint": "Cliquez sur un point pour voir ce match."
+      "winRate": "Taux de victoire"
     },
     "insights": {
       "title": "Analyse du matchup",
@@ -3365,9 +3359,24 @@
         "month_one": "{{count}} mois de plus débloque cette période",
         "month_other": "{{count}} mois de plus débloquent cette période",
         "quarter_one": "{{count}} trimestre de plus débloque cette période",
-        "quarter_other": "{{count}} trimestres de plus débloquent cette période"
+        "quarter_other": "{{count}} trimestres de plus débloquent cette période",
+        "game_one": "{{count}} match de plus débloque cette période",
+        "game_other": "{{count}} matchs de plus débloquent cette période",
+        "set_one": "{{count}} set de plus débloque cette période",
+        "set_other": "{{count}} sets de plus débloquent cette période",
+        "eventSession_one": "{{count}} événement de plus débloque cette période",
+        "eventSession_other": "{{count}} événements de plus débloquent cette période",
+        "year_one": "{{count}} année de plus débloque cette période",
+        "year_other": "{{count}} années de plus débloquent cette période"
       },
-      "aria": "Graphique de tendance, {{count}} périodes"
+      "aria": "Graphique de tendance, {{count}} périodes",
+      "tableToggle": "Afficher sous forme de tableau",
+      "tableHeaders": {
+        "period": "Période",
+        "record": "Bilan",
+        "rate": "Taux",
+        "sample": "Échantillon"
+      }
     },
     "roster": {
       "main": "Principal",

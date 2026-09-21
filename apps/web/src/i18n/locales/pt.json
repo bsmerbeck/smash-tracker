@@ -868,13 +868,7 @@
       "cellAria4": "{{row}} em {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Janela",
-      "windowAria": "Janela de tendência",
-      "rolling5": "Últimas 5",
-      "rolling10": "Últimas 10",
-      "cumulative": "Acumulado",
-      "winRate": "Taxa de vitórias",
-      "clickHint": "Clique em um ponto para ver essa partida."
+      "winRate": "Taxa de vitórias"
     },
     "insights": {
       "title": "Insights do confronto",
@@ -3365,9 +3359,24 @@
         "month_one": "{{count}} mês a mais desbloqueia este período",
         "month_other": "{{count}} meses a mais desbloqueiam este período",
         "quarter_one": "{{count}} trimestre a mais desbloqueia este período",
-        "quarter_other": "{{count}} trimestres a mais desbloqueiam este período"
+        "quarter_other": "{{count}} trimestres a mais desbloqueiam este período",
+        "game_one": "{{count}} partida a mais desbloqueia este período",
+        "game_other": "{{count}} partidas a mais desbloqueiam este período",
+        "set_one": "{{count}} set a mais desbloqueia este período",
+        "set_other": "{{count}} sets a mais desbloqueiam este período",
+        "eventSession_one": "{{count}} evento a mais desbloqueia este período",
+        "eventSession_other": "{{count}} eventos a mais desbloqueiam este período",
+        "year_one": "{{count}} ano a mais desbloqueia este período",
+        "year_other": "{{count}} anos a mais desbloqueiam este período"
       },
-      "aria": "Gráfico de tendência, {{count}} períodos"
+      "aria": "Gráfico de tendência, {{count}} períodos",
+      "tableToggle": "Ver como tabela",
+      "tableHeaders": {
+        "period": "Período",
+        "record": "Retrospecto",
+        "rate": "Taxa",
+        "sample": "Amostra"
+      }
     },
     "roster": {
       "main": "Principal",

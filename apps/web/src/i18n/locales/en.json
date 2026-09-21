@@ -868,13 +868,7 @@
       "cellAria4": "{{row}} on {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Window",
-      "windowAria": "Trend window",
-      "rolling5": "Rolling 5",
-      "rolling10": "Rolling 10",
-      "cumulative": "Cumulative",
-      "winRate": "Win Rate",
-      "clickHint": "Click a point to see that match."
+      "winRate": "Win Rate"
     },
     "insights": {
       "title": "Matchup Insights",
@@ -3365,9 +3359,24 @@
         "month_one": "{{count}} more month unlocks this period",
         "month_other": "{{count}} more months unlock this period",
         "quarter_one": "{{count}} more quarter unlocks this period",
-        "quarter_other": "{{count}} more quarters unlock this period"
+        "quarter_other": "{{count}} more quarters unlock this period",
+        "game_one": "{{count}} more game unlocks this period",
+        "game_other": "{{count}} more games unlock this period",
+        "set_one": "{{count}} more set unlocks this period",
+        "set_other": "{{count}} more sets unlock this period",
+        "eventSession_one": "{{count}} more event unlocks this period",
+        "eventSession_other": "{{count}} more events unlock this period",
+        "year_one": "{{count}} more year unlocks this period",
+        "year_other": "{{count}} more years unlock this period"
       },
-      "aria": "Trend plot, {{count}} periods"
+      "aria": "Trend plot, {{count}} periods",
+      "tableToggle": "View as table",
+      "tableHeaders": {
+        "period": "Period",
+        "record": "Record",
+        "rate": "Rate",
+        "sample": "Sample"
+      }
     },
     "roster": {
       "main": "Main",
