@@ -694,7 +694,7 @@ export function OpponentHubPage() {
           {t('opponents.hub.empty', { opponent: displayTag })}
         </div>
       ) : (
-        <div key={profile.opponent} className="flex flex-col gap-6">
+        <div key={profile.opponent} data-slot="opponent-hub-body" className="flex flex-col gap-6">
           {/* Identity header + head-to-head summary */}
           <div className="flex flex-col gap-2">
             <ScoutingHeader

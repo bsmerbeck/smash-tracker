@@ -364,7 +364,7 @@ export function StageDetailPage() {
           {t('stages.detail.empty')}
         </div>
       ) : (
-        <>
+        <div data-slot="stage-detail-body" className="contents">
           <Card>
             <CardHeader>
               <CardTitle>{t('stages.detail.byOpponent')}</CardTitle>
@@ -529,7 +529,7 @@ export function StageDetailPage() {
               />
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </div>
   );
