@@ -221,6 +221,61 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
 
+  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's five cards
+  // render as `GridCell span={3}` — 4 per row at the widest breakpoint, the
+  // fifth wrapping to a second row LEFT-ALIGNED (never stretched to a
+  // sibling's height — `PageGrid`'s `items-start` is hardcoded, never a prop).
+  it('renders the hero row as five span-3 grid cells, the fifth wrapping left-aligned', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const heroCells = Array.from(container.querySelectorAll('[data-span="3"]'));
+    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating —
+    // exactly the hero row's five cards, no more.
+    expect(heroCells).toHaveLength(5);
+    for (const cell of heroCells) {
+      expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
+    }
+  });
+
+  it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const gridCells = Array.from(container.querySelectorAll('[data-span]'));
+    expect(gridCells.length).toBeGreaterThan(0);
+    for (const cell of gridCells) {
+      expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
+    }
+  });
+
+  // Plan 39.1-17 (UI-SPEC §10.4): DashboardToolbar (now carrying
+  // HorizonSwitch) is PageShell's filterRow — the one row above everything
+  // it scopes, so it renders exactly once and it precedes the page grid.
+  it('renders exactly one HorizonSwitch, ahead of the page grid', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const switches = container.querySelectorAll('[data-slot="horizon-switch"]');
+    expect(switches).toHaveLength(1);
+    const grid = container.querySelector('[data-slot="page-grid"]');
+    expect(grid).not.toBeNull();
+    // DOCUMENT_POSITION_FOLLOWING (4): the switch precedes the grid in the DOM.
+    expect(switches[0]!.compareDocumentPosition(grid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+  });
+
   it('shows a no-matches empty state for a new user with fighters but no matches yet', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
