@@ -609,7 +609,8 @@
     "roster": {
       "title": "Utilisation du roster",
       "showAll": "Tout afficher ({{count}} de plus)",
-      "showLess": "Afficher moins"
+      "showLess": "Afficher moins",
+      "railName": "Roster"
     },
     "stages": {
       "title": "Détail par stage",

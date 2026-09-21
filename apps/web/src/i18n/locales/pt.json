@@ -609,7 +609,8 @@
     "roster": {
       "title": "Uso do elenco",
       "showAll": "Mostrar todos ({{count}} a mais)",
-      "showLess": "Mostrar menos"
+      "showLess": "Mostrar menos",
+      "railName": "Elenco"
     },
     "stages": {
       "title": "Detalhamento por stage",

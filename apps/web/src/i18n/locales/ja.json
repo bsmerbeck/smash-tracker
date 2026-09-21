@@ -609,7 +609,8 @@
     "roster": {
       "title": "使用ファイター",
       "showAll": "すべて表示（あと{{count}}体）",
-      "showLess": "少なく表示"
+      "showLess": "少なく表示",
+      "railName": "使用ファイター"
     },
     "stages": {
       "title": "ステージ別集計",

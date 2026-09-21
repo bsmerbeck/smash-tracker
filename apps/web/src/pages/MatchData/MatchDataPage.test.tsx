@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
@@ -131,19 +132,21 @@ function renderMatchData(initialEntry = '/match-data') {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <ShellProfileSubscription />
-            <Routes>
-              <Route path="/match-data" element={<MatchDataPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-              <Route path="/vod" element={<VodRouteProbe />} />
-              {/* Phase 11 fix round 3 (FB-6): the coaching-route mirror — proves
-                  "Go to VOD Manager" stays subject-aware instead of escaping
-                  to the personal /vod route above. */}
-              <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
-              <Route path="/coach/:clientId/vods" element={<VodRouteProbe />} />
-            </Routes>
+            <TooltipProvider>
+              <ShellProfileSubscription />
+              <Routes>
+                <Route path="/match-data" element={<MatchDataPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+                <Route path="/vod" element={<VodRouteProbe />} />
+                {/* Phase 11 fix round 3 (FB-6): the coaching-route mirror — proves
+                    "Go to VOD Manager" stays subject-aware instead of escaping
+                    to the personal /vod route above. */}
+                <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
+                <Route path="/coach/:clientId/vods" element={<VodRouteProbe />} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>

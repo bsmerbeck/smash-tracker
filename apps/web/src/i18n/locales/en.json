@@ -609,7 +609,8 @@
     "roster": {
       "title": "Roster Usage",
       "showAll": "Show all ({{count}} more)",
-      "showLess": "Show less"
+      "showLess": "Show less",
+      "railName": "Roster"
     },
     "stages": {
       "title": "Stage Breakdown",

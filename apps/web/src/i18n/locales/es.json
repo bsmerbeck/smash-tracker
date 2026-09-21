@@ -609,7 +609,8 @@
     "roster": {
       "title": "Uso del plantel",
       "showAll": "Mostrar todos ({{count}} más)",
-      "showLess": "Mostrar menos"
+      "showLess": "Mostrar menos",
+      "railName": "Plantel"
     },
     "stages": {
       "title": "Desglose por escenario",
