@@ -108,6 +108,26 @@ export interface FilteredMatchListProps {
   matches: Match[];
   /** The resolved drill-down axes to narrow `matches` by — also drives the summary bar, the clear-filters affordance and pinned-column omission. */
   axes: DrillDownAxes;
+  /**
+   * Plan 39.1-19 (DD-09): resolves `axes.claimId` (an `Insight.id`) to the
+   * predicate the host's own insight engine computation actually counted —
+   * supplied by the host, which is the only party that has the `Insight[]`
+   * an id can be looked up against (this component owns no insight-engine
+   * import, per D-05/D-07's "one contract, one terminus"). Applied IN
+   * ADDITION to the six existing axes below (an intersection, never a
+   * replacement); when omitted, or when it returns `undefined` for a
+   * stale/unknown id, the list falls back to whatever the remaining axes
+   * alone narrow to — never a throw, never a not-found state.
+   */
+  resolveClaim?: (claimId: string, matches: Match[]) => Match[] | undefined;
+  /**
+   * The insight's label-and-statement head (e.g. "vs Terry · last 30
+   * games") shown in the active-filter summary line when `axes.claimId` is
+   * present — supplied by the host for the same reason as `resolveClaim`
+   * above (no insight-engine import here). Ignored when `axes.claimId` is
+   * absent.
+   */
+  claimSummary?: string;
   /** Resolves a per-match event key for the `eventKey` axis (mirrors the resolver the host's own predicate would use) — required only when a host narrows by event. */
   eventKeyForMatch?: (match: Match) => string | undefined;
   /** Renders a human-readable label for a match's event, for the Event column. Falls back to the match's own tournament/event name field. */
@@ -131,13 +151,17 @@ function hasActiveAxis(axes: DrillDownAxes): boolean {
     axes.stageId != null ||
     axes.eventKey != null ||
     axes.from != null ||
-    axes.to != null
+    axes.to != null ||
+    axes.claimId != null
   );
 }
 
-/** Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). */
-function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction): string {
+/** Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). `claimSummary` (the insight's label-and-statement head) leads when a claim axis is present (plan 39.1-19). */
+function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction, claimSummary?: string): string {
   const parts: string[] = [];
+  if (axes.claimId != null && claimSummary) {
+    parts.push(claimSummary);
+  }
   const fighterName = axes.fighterId != null ? localizedFighterName(axes.fighterId, t) : null;
   const vsFighterName = axes.vsFighterId != null ? localizedFighterName(axes.vsFighterId, t) : null;
   if (fighterName && vsFighterName) {
@@ -259,6 +283,8 @@ function MatchRowOverlay({
 export function FilteredMatchList({
   matches,
   axes,
+  resolveClaim,
+  claimSummary,
   eventKeyForMatch,
   eventLabelForMatch,
   tournamentLinkForMatch,
@@ -279,10 +305,25 @@ export function FilteredMatchList({
   // D-16: memoized by the source array reference and the axes object — the
   // host is responsible for handing a stable `axes` reference (e.g. via its
   // own `useMemo`) when it wants this to actually skip recomputation.
-  const narrowedMatches = useMemo(
-    () => matches.filter((match) => matchesDrillDown(match, axes, eventKeyForMatch)),
-    [matches, axes, eventKeyForMatch],
-  );
+  //
+  // Plan 39.1-19 (DD-09): the claim axis is applied IN ADDITION to the six
+  // existing axes above, via the host-supplied `resolveClaim` resolver —
+  // never inside `matchesDrillDown` itself (that stays a Phase 38 module
+  // touching no insight-engine concern). A resolver that returns `undefined`
+  // (no resolver supplied, or the id is stale/unknown) leaves the list
+  // showing whatever the remaining axes alone narrow to.
+  const narrowedMatches = useMemo(() => {
+    const axisNarrowed = matches.filter((match) => matchesDrillDown(match, axes, eventKeyForMatch));
+    if (axes.claimId == null || !resolveClaim) {
+      return axisNarrowed;
+    }
+    const claimResolved = resolveClaim(axes.claimId, matches);
+    if (claimResolved == null) {
+      return axisNarrowed;
+    }
+    const claimedIds = new Set(claimResolved.map((match) => match.id));
+    return axisNarrowed.filter((match) => claimedIds.has(match.id));
+  }, [matches, axes, eventKeyForMatch, resolveClaim]);
 
   if (loading) {
     return <div className="text-muted-foreground">{t('shared.filteredMatchList.loading')}</div>;
@@ -318,7 +359,7 @@ export function FilteredMatchList({
           <p className="text-sm text-muted-foreground">
             {t('shared.filteredMatchList.summary', {
               count: narrowedMatches.length,
-              filters: buildFilterSummaryText(axes, t),
+              filters: buildFilterSummaryText(axes, t, claimSummary),
             })}
           </p>
           {onClearFilters && (

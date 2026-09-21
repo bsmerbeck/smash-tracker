@@ -34,6 +34,17 @@ import { getFighterById } from '@/data/sprites';
  *   character, stage, event and date window; a match id is not among them),
  *   so two games sharing one timestamp both appear where a match-id param
  *   would have shown only one.
+ * - `claim` — plan 39.1-19 (DD-09, UI-SPEC §10.3): a stable `Insight.id`
+ *   (`${templateId}:${scopeKey}:${horizon}`) naming an insight card's own
+ *   counted-games door. This axis is read here EXACTLY like `event` —
+ *   shape-validated only, never resolved against anything — because
+ *   resolving it back to a game set requires the insight engine, which this
+ *   module deliberately never imports (a sibling concern, not a drill-down
+ *   filter it can express). Resolution happens at the ONE consumer,
+ *   `FilteredMatchList`'s optional `resolveClaim` host-supplied prop
+ *   (`apps/web/src/components/analytics/insightDoors.ts`'s
+ *   `resolveInsightClaim`), applied IN ADDITION to this module's six
+ *   existing axes, never inside `matchesDrillDown` itself.
  *
  * Deliberately NOT params here: range and source. Both live in the global
  * subject-scoped analytics filter (`AnalyticsFilterContext`) — carrying them
@@ -55,6 +66,7 @@ export const DRILL_DOWN_STAGE_PARAM = 'stage';
 export const DRILL_DOWN_EVENT_PARAM = 'event';
 export const DRILL_DOWN_FROM_PARAM = 'from';
 export const DRILL_DOWN_TO_PARAM = 'to';
+export const DRILL_DOWN_CLAIM_PARAM = 'claim';
 
 /** Resolved, validated drill-down axes — every field is either a trusted value or absent. */
 export interface DrillDownAxes {
@@ -64,6 +76,30 @@ export interface DrillDownAxes {
   eventKey?: string;
   from?: number;
   to?: number;
+  /** Plan 39.1-19 (DD-09): an `Insight.id`, shape-validated only — see this module's doc comment. */
+  claimId?: string;
+}
+
+/**
+ * `Insight.id` is `${templateId}:${scopeKey}:${horizon}` (camelCase template
+ * ids, `scopeKey`s composed of ascii identifiers, colons and an arbitrary
+ * opponent TAG for player scope — which may carry Unicode letters/digits,
+ * spaces, apostrophes and a handful of separator characters, per real
+ * start.gg/parry.gg tags). This is a SHAPE check only (length + character
+ * class) — never a membership check against a real `Insight[]`, which lives
+ * outside this module entirely (see the module doc comment's `claim` row).
+ * An empty string, anything over the length cap, or any character outside
+ * this allowlist resolves to "axis absent", matching every other axis's
+ * tolerance rule.
+ */
+const CLAIM_ID_MAX_LENGTH = 300;
+const CLAIM_ID_SHAPE = /^[\p{L}\p{N}_:.#@' -]+$/u;
+
+function parseClaimAxis(raw: string | null): string | undefined {
+  if (raw == null || raw === '' || raw.length > CLAIM_ID_MAX_LENGTH) {
+    return undefined;
+  }
+  return CLAIM_ID_SHAPE.test(raw) ? raw : undefined;
 }
 
 /**
@@ -146,6 +182,11 @@ export function readDrillDownParams(
     axes.to = to;
   }
 
+  const claimId = parseClaimAxis(searchParams.get(DRILL_DOWN_CLAIM_PARAM));
+  if (claimId != null) {
+    axes.claimId = claimId;
+  }
+
   return axes;
 }
 
@@ -173,6 +214,9 @@ export function buildDrillDownSearch(axes: Partial<DrillDownAxes>): URLSearchPar
   }
   if (axes.to != null) {
     params.set(DRILL_DOWN_TO_PARAM, String(axes.to));
+  }
+  if (axes.claimId != null) {
+    params.set(DRILL_DOWN_CLAIM_PARAM, axes.claimId);
   }
   return params;
 }
