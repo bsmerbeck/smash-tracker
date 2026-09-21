@@ -15,11 +15,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
  */
 
 /**
- * `"{{total}} games · {{tier}} confidence"` appended after an existing
- * rate/record line on the same line (never a second line). Renders nothing
- * below the abstention floor — `confidenceTier` is `null` there, and there is
- * no confidence to report below the floor (only a gap, shown by the host's
- * own abstained branch).
+ * One whole-sentence key per confidence tier (UI-SPEC §9.2 rule 8,
+ * Phase 39.1 Plan 11) — `shared.evidence.sampleCue.low|medium|high`
+ * (`_one`/`_other`), appended after an existing rate/record line on the
+ * same line (never a second line). The tier word is now part of the KEY,
+ * never interpolated into the sentence (the pattern rule 8 replaces:
+ * `shared.evidence.sampleCue` used to interpolate a translated tier word
+ * via a second `t()` call). Renders nothing below the abstention floor —
+ * `confidenceTier` is `null` there, and there is no confidence to report
+ * below the floor (only a gap, shown by the host's own abstained branch).
  */
 export function SampleCue({ sample }: { sample: SampleMeta }) {
   const { t } = useTranslation();
@@ -28,10 +32,33 @@ export function SampleCue({ sample }: { sample: SampleMeta }) {
   }
   return (
     <span className="text-xs text-muted-foreground">
-      {t('shared.evidence.sampleCue', {
-        total: sample.eligibleDenominator,
-        tier: t(`shared.evidence.tier.${sample.confidenceTier}`),
+      {t(`shared.evidence.sampleCue.${sample.confidenceTier}`, {
+        count: sample.eligibleDenominator,
       })}
+    </span>
+  );
+}
+
+/** UI-SPEC §14.3: the glyph confidence indicator (●○○ / ●●○ / ●●●) — one `<span role="img">` whose `aria-label` is the whole-sentence key per tier (`shared.evidence.sampleCueGlyph.low|medium|high`, `_one`/`_other`). The dots themselves are never read out; this form is used wherever the container is narrower than the words form's 280px threshold. Renders nothing below the abstention floor, mirroring `SampleCue`. */
+const CONFIDENCE_GLYPH_DOTS: Record<NonNullable<SampleMeta['confidenceTier']>, string> = {
+  low: '●○○',
+  medium: '●●○',
+  high: '●●●',
+};
+
+export function SampleCueGlyph({ sample }: { sample: SampleMeta }) {
+  const { t } = useTranslation();
+  if (sample.confidenceTier == null) {
+    return null;
+  }
+  return (
+    <span
+      role="img"
+      aria-label={t(`shared.evidence.sampleCueGlyph.${sample.confidenceTier}`, {
+        count: sample.eligibleDenominator,
+      })}
+    >
+      {CONFIDENCE_GLYPH_DOTS[sample.confidenceTier]}
     </span>
   );
 }

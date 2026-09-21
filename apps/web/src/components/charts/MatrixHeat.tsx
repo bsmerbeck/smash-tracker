@@ -168,12 +168,14 @@ function MatrixHeatCellButton({
   const colUnknown = col.isUnknown === true;
   const subFloor = isSubFloorTreatment(cell, rowUnknown, colUnknown);
 
+  // `subFloor` is false in the branch below, so `confidenceTier` is non-null (isSubFloorTreatment's
+  // other check). UI-SPEC §9.2 rule 8: the tier word is part of the key, never interpolated
+  // (Phase 39.1 Plan 11) — moved above the ternary so the guard's exclusive-branch-selector
+  // exclusion (a bare `:` between the two calls) still matches.
   const hintText = subFloor
     ? t('opponents.hub.matrix.notEnoughData', { count: cell.total })
-    : t('shared.evidence.sampleCue', {
-        total: cell.sample.eligibleDenominator,
-        // `subFloor` is false here, so `confidenceTier` is non-null (isSubFloorTreatment's other check).
-        tier: t(`shared.evidence.tier.${cell.confidenceTier}`),
+    : t(`shared.evidence.sampleCue.${cell.confidenceTier}`, {
+        count: cell.sample.eligibleDenominator,
       });
 
   return (

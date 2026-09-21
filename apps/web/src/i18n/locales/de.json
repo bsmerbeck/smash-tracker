@@ -169,17 +169,27 @@
     "evidence": {
       "abstained_one": "Noch nicht genug Daten — {{count}} weiteres Match nötig.",
       "abstained_other": "Noch nicht genug Daten — {{count}} weitere Matches nötig.",
-      "sampleCue": "{{total}} Matches · {{tier}} Konfidenz",
+      "sampleCue": {
+        "low_one": "{{count}} Match · niedrige Konfidenz",
+        "low_other": "{{count}} Matches · niedrige Konfidenz",
+        "medium_one": "{{count}} Match · mittlere Konfidenz",
+        "medium_other": "{{count}} Matches · mittlere Konfidenz",
+        "high_one": "{{count}} Match · hohe Konfidenz",
+        "high_other": "{{count}} Matches · hohe Konfidenz"
+      },
       "unknownRow_one": "Unbekannt ({{count}} Match, ausgeschlossen)",
       "unknownRow_other": "Unbekannt ({{count}} Matches, ausgeschlossen)",
       "unnamedBucket_one": "{{count}} Spiel ohne erfassten Gegnernamen",
       "unnamedBucket_other": "{{count}} Spiele ohne erfassten Gegnernamen",
       "mixedContext": "Gemischter Kontext",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — gemischt mit {{majorityLabel}}.",
-      "tier": {
-        "low": "niedrige",
-        "medium": "mittlere",
-        "high": "hohe"
+      "sampleCueGlyph": {
+        "low_one": "niedrige Konfidenz, {{count}} Match",
+        "low_other": "niedrige Konfidenz, {{count}} Matches",
+        "medium_one": "mittlere Konfidenz, {{count}} Match",
+        "medium_other": "mittlere Konfidenz, {{count}} Matches",
+        "high_one": "hohe Konfidenz, {{count}} Match",
+        "high_other": "hohe Konfidenz, {{count}} Matches"
       },
       "cohort": {
         "online": "online",

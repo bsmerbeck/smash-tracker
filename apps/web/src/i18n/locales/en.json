@@ -169,17 +169,27 @@
     "evidence": {
       "abstained_one": "Not enough data yet — {{count}} more game needed.",
       "abstained_other": "Not enough data yet — {{count}} more games needed.",
-      "sampleCue": "{{total}} games · {{tier}} confidence",
+      "sampleCue": {
+        "low_one": "{{count}} game · low confidence",
+        "low_other": "{{count}} games · low confidence",
+        "medium_one": "{{count}} game · medium confidence",
+        "medium_other": "{{count}} games · medium confidence",
+        "high_one": "{{count}} game · high confidence",
+        "high_other": "{{count}} games · high confidence"
+      },
       "unknownRow_one": "Unknown ({{count}} game, excluded)",
       "unknownRow_other": "Unknown ({{count}} games, excluded)",
       "unnamedBucket_one": "{{count}} game with no opponent name recorded",
       "unnamedBucket_other": "{{count}} games with no opponent name recorded",
       "mixedContext": "Mixed context",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
-      "tier": {
-        "low": "low",
-        "medium": "medium",
-        "high": "high"
+      "sampleCueGlyph": {
+        "low_one": "low confidence, {{count}} game",
+        "low_other": "low confidence, {{count}} games",
+        "medium_one": "medium confidence, {{count}} game",
+        "medium_other": "medium confidence, {{count}} games",
+        "high_one": "high confidence, {{count}} game",
+        "high_other": "high confidence, {{count}} games"
       },
       "cohort": {
         "online": "online",

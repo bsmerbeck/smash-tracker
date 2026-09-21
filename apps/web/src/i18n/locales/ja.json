@@ -169,17 +169,27 @@
     "evidence": {
       "abstained_one": "まだデータが足りません — あと{{count}}戦必要です。",
       "abstained_other": "まだデータが足りません — あと{{count}}戦必要です。",
-      "sampleCue": "{{total}}戦 · 信頼度{{tier}}",
+      "sampleCue": {
+        "low_one": "{{count}}戦 · 信頼度低",
+        "low_other": "{{count}}戦 · 信頼度低",
+        "medium_one": "{{count}}戦 · 信頼度中",
+        "medium_other": "{{count}}戦 · 信頼度中",
+        "high_one": "{{count}}戦 · 信頼度高",
+        "high_other": "{{count}}戦 · 信頼度高"
+      },
       "unknownRow_one": "不明（{{count}}戦、除外）",
       "unknownRow_other": "不明（{{count}}戦、除外）",
       "unnamedBucket_one": "対戦相手名が未記録の試合が{{count}}戦あります",
       "unnamedBucket_other": "対戦相手名が未記録の試合が{{count}}戦あります",
       "mixedContext": "混合コンテキスト",
       "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
-      "tier": {
-        "low": "低",
-        "medium": "中",
-        "high": "高"
+      "sampleCueGlyph": {
+        "low_one": "信頼度低、{{count}}戦",
+        "low_other": "信頼度低、{{count}}戦",
+        "medium_one": "信頼度中、{{count}}戦",
+        "medium_other": "信頼度中、{{count}}戦",
+        "high_one": "信頼度高、{{count}}戦",
+        "high_other": "信頼度高、{{count}}戦"
       },
       "cohort": {
         "online": "オンライン",

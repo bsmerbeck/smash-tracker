@@ -169,17 +169,27 @@
     "evidence": {
       "abstained_one": "Aún no hay suficientes datos — falta {{count}} partida más.",
       "abstained_other": "Aún no hay suficientes datos — faltan {{count}} partidas más.",
-      "sampleCue": "{{total}} partidas · confianza {{tier}}",
+      "sampleCue": {
+        "low_one": "{{count}} partida · confianza baja",
+        "low_other": "{{count}} partidas · confianza baja",
+        "medium_one": "{{count}} partida · confianza media",
+        "medium_other": "{{count}} partidas · confianza media",
+        "high_one": "{{count}} partida · confianza alta",
+        "high_other": "{{count}} partidas · confianza alta"
+      },
       "unknownRow_one": "Desconocido ({{count}} partida, excluida)",
       "unknownRow_other": "Desconocido ({{count}} partidas, excluidas)",
       "unnamedBucket_one": "{{count}} partida sin nombre de oponente registrado",
       "unnamedBucket_other": "{{count}} partidas sin nombre de oponente registrado",
       "mixedContext": "Contexto mixto",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mezclado con {{majorityLabel}}.",
-      "tier": {
-        "low": "baja",
-        "medium": "media",
-        "high": "alta"
+      "sampleCueGlyph": {
+        "low_one": "confianza baja, {{count}} partida",
+        "low_other": "confianza baja, {{count}} partidas",
+        "medium_one": "confianza media, {{count}} partida",
+        "medium_other": "confianza media, {{count}} partidas",
+        "high_one": "confianza alta, {{count}} partida",
+        "high_other": "confianza alta, {{count}} partidas"
       },
       "cohort": {
         "online": "en línea",

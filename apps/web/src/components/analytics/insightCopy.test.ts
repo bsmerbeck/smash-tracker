@@ -484,3 +484,204 @@ describe('insight namespace covers every registered template id (INS-03, Plan 39
     });
   }
 });
+
+/**
+ * Plan 39.1-11 Task 3: the two-directional registry audit (T-39.1-11-01).
+ *
+ * `TEMPLATE_EMITTABLE_KEYS` transcribes, per template file's own
+ * `copy.key`/`buildCopyKey` construction (read exhaustively at authoring
+ * time — every branch below cites the exact source behavior), the closed
+ * set of relative key paths (under `insights.<templateId>.`) that
+ * template's `build()` can actually produce:
+ *
+ * - `formNow.ts`: `up`/`down` (trend/suggestion) and `collapsed` get a
+ *   `.last30|.lastEvent|.last90` horizon suffix; `steady`/`thinRecent`/
+ *   `thin`/`locked` are bare (no horizon suffix) — `buildCopyKey`'s own
+ *   `if (state === 'trend' || 'suggestion') ... .horizon` /
+ *   `if (state === 'collapsed') ... .horizon` / `return insights.formNow.
+ *   ${state}` fallback.
+ * - `characterMovers.ts` / `rivalMovers.ts`: `copyKey` NEVER appends a
+ *   horizon suffix (no `.horizon` anywhere in either file) — `up`/`down`/
+ *   `steady`/`thinRecent`/`locked` are all bare. `characterMovers` also
+ *   emits a `sub` line (UI-SPEC §9.4's "sub line" row; not itself a
+ *   `copy.key` selection, authored alongside per Task 2's action text).
+ * - `lastEventRecap.ts`: `hidden`, `fact`, `factGamesOnly`,
+ *   `factPlacement`, `factPlacementGamesOnly` (the `hasSets`/`hasPlacement`
+ *   2×2 in `buildLastEventRecapInsight`), plus `noSetLosses`/`setLosses`
+ *   (`_one`/`_other`) from `setLossSubLine`.
+ * - `ratingMove.ts`: `gate.state` funnels `locked`/`collapsed`/`thin` to a
+ *   bare key; `steady` and `up`/`down` (trend) are also bare (no horizon
+ *   suffix appended anywhere in this file). `thinRecent` is excluded here
+ *   even though `gate.state` could type-theoretically equal it — this
+ *   template ALWAYS calls `resolveWindow` with `scoped: false`, and
+ *   `ladder.ts`'s `thinRecent` branch requires `scoped` to be true, so it
+ *   is genuinely unreachable for this template (dead per the reverse
+ *   audit, so intentionally not authored in any locale).
+ * - `tiltCost.ts`: `buildCopyKey` returns a bare `insights.tiltCost.
+ *   ${state}` for exactly `locked`/`suggestion`/`trend`/`steady`.
+ * - `sessionFatigue.ts`: `hidden` (below `SESSION_FATIGUE_MIN_LONG_SESSIONS`)
+ *   plus bare `suggestion`/`trend`/`steady`. `caveat` is the always-carried
+ *   standing-caveat line (`copy.values.caveat: 1` on every non-hidden
+ *   branch), a fixed companion key rather than a `copy.key` selection.
+ * - `settingGap.ts`: bare `up`/`down` (trend direction), `steady`, `thin`
+ *   (either side at 0 games), `locked`.
+ * - `volumeForm.ts`: bare `locked`, and `up`/`down`/`steady` — this
+ *   template's `up`/`down` share IDENTICAL English content (UI-SPEC §9.4's
+ *   single combined "up / down" row), a legitimate byte-for-byte duplicate
+ *   since the sentence states no direction word of its own.
+ * - `mixShift.ts`: bare `hidden`, `fact` only (`assertsDirection: false`,
+ *   no up/down branch exists in this file at all).
+ * - `rosterCore.ts`: bare `fact`, `thin` only.
+ * - `rosterShift.ts`: bare `hidden` (D-06 collapse), `steady`, `up`, `down`.
+ * - `secondaryPayoff.ts`: bare `trend`, `suggestion`, `steady`, `locked`.
+ * - `pocketCost.ts`: bare `hidden`, `fact`, `steady`.
+ * - `matchupOrPlayer.ts`: bare `hidden` (covers BOTH the UI-SPEC table's
+ *   "hidden" AND "locked" rows — `buildHiddenInsight` is the template's
+ *   ONLY below-floor branch; there is no separate `locked` key emitted by
+ *   this file, so `locked` is deliberately NOT in this template's set),
+ *   `player`, `matchup`.
+ * - `bestMatchup.ts` / `worstMatchup.ts`: bare `locked`, `fact` each.
+ *
+ * Both audit directions below are proven failing (reverted before commit,
+ * recorded in this plan's SUMMARY): deleting an emitted key from a clone
+ * of the real content makes `findMissingEmittableKeys` report it; adding
+ * an unreachable key makes `findUnreachableKeys` report it.
+ */
+const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
+  formNow: [
+    'up.last30',
+    'up.lastEvent',
+    'up.last90',
+    'down.last30',
+    'down.lastEvent',
+    'down.last90',
+    'collapsed.last30',
+    'collapsed.lastEvent',
+    'collapsed.last90',
+    'steady',
+    'thinRecent',
+    'thin',
+    'locked_one',
+    'locked_other',
+  ],
+  characterMovers: ['up', 'down', 'steady', 'thinRecent', 'locked_one', 'locked_other', 'sub'],
+  rivalMovers: ['up', 'down', 'steady', 'thinRecent', 'locked_one', 'locked_other'],
+  lastEventRecap: [
+    'hidden',
+    'fact',
+    'factGamesOnly',
+    'factPlacement',
+    'factPlacementGamesOnly',
+    'noSetLosses',
+    'setLosses_one',
+    'setLosses_other',
+  ],
+  ratingMove: ['up', 'down', 'steady', 'thin', 'collapsed', 'locked_one', 'locked_other'],
+  tiltCost: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
+  sessionFatigue: ['hidden', 'suggestion', 'trend', 'steady', 'caveat'],
+  settingGap: ['up', 'down', 'steady', 'thin', 'locked_one', 'locked_other'],
+  volumeForm: ['up', 'down', 'steady', 'locked_one', 'locked_other'],
+  mixShift: ['hidden', 'fact'],
+  rosterCore: ['fact', 'thin'],
+  rosterShift: ['hidden', 'steady', 'up', 'down'],
+  secondaryPayoff: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
+  pocketCost: ['hidden', 'fact', 'steady'],
+  matchupOrPlayer: ['hidden', 'player', 'matchup'],
+  bestMatchup: ['locked', 'fact'],
+  worstMatchup: ['locked', 'fact'],
+};
+
+/** Every dotted leaf path under a (relative, template-scoped) object tree. */
+function flattenKeyPaths(tree: Record<string, unknown>, prefix = ''): string[] {
+  return Object.entries(tree).flatMap(([key, value]) => {
+    const keyPath = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object') {
+      return flattenKeyPaths(value as Record<string, unknown>, keyPath);
+    }
+    return [keyPath];
+  });
+}
+
+/** Forward direction: every key the template CAN emit, absent from the locale's actual tree. */
+function findMissingEmittableKeys(
+  templateTree: Record<string, unknown>,
+  expectedKeys: string[],
+): string[] {
+  const actual = new Set(flattenKeyPaths(templateTree));
+  return expectedKeys.filter((key) => !actual.has(key));
+}
+
+/** Reverse direction: every key present in the locale's tree that the template can NEVER emit (a dead sentence). */
+function findUnreachableKeys(
+  templateTree: Record<string, unknown>,
+  expectedKeys: string[],
+): string[] {
+  const expectedSet = new Set(expectedKeys);
+  return flattenKeyPaths(templateTree).filter((key) => !expectedSet.has(key));
+}
+
+describe('registry audit — every emittable key exists, no dead sentences, both directions (Plan 39.1-11 Task 3, T-39.1-11-01)', () => {
+  it('the emittable-key map covers exactly the registered template ids (registry-driven boundary, not a stray or missing id)', () => {
+    const mapIds = Object.keys(TEMPLATE_EMITTABLE_KEYS).sort();
+    const registryIds = INSIGHT_TEMPLATES.map((template) => template.id).sort();
+    expect(mapIds).toEqual(registryIds);
+  });
+
+  it('non-vacuity: the collected emittable key set is at least the number of registered templates', () => {
+    const totalKeys = Object.values(TEMPLATE_EMITTABLE_KEYS).flat().length;
+    expect(totalKeys).toBeGreaterThanOrEqual(INSIGHT_TEMPLATES.length);
+  });
+
+  for (const locale of REAL_LOCALES) {
+    it(`${locale}: every emittable per-template key exists (forward direction)`, () => {
+      const insightsTree = INSIGHT_COPY_LOCALE_SOURCE[locale]!.insights as Record<string, unknown>;
+      const missing: string[] = [];
+      for (const [templateId, expectedKeys] of Object.entries(TEMPLATE_EMITTABLE_KEYS)) {
+        const templateTree = (insightsTree[templateId] ?? {}) as Record<string, unknown>;
+        missing.push(
+          ...findMissingEmittableKeys(templateTree, expectedKeys).map(
+            (key) => `${templateId}.${key}`,
+          ),
+        );
+      }
+      expect(missing).toEqual([]);
+    });
+
+    it(`${locale}: no key under any template id is unreachable (reverse direction — no dead sentences)`, () => {
+      const insightsTree = INSIGHT_COPY_LOCALE_SOURCE[locale]!.insights as Record<string, unknown>;
+      const unreachable: string[] = [];
+      for (const [templateId, expectedKeys] of Object.entries(TEMPLATE_EMITTABLE_KEYS)) {
+        const templateTree = (insightsTree[templateId] ?? {}) as Record<string, unknown>;
+        unreachable.push(
+          ...findUnreachableKeys(templateTree, expectedKeys).map((key) => `${templateId}.${key}`),
+        );
+      }
+      expect(unreachable).toEqual([]);
+    });
+  }
+
+  it('permanent positive control (forward) — deleting one emitted key from a clone of the real tree is reported missing', () => {
+    const insightsTree = deepClone(
+      INSIGHT_COPY_LOCALE_SOURCE.en!.insights as Record<string, unknown>,
+    );
+    delete (insightsTree.formNow as Record<string, unknown>).steady;
+    const missing = findMissingEmittableKeys(
+      insightsTree.formNow as Record<string, unknown>,
+      TEMPLATE_EMITTABLE_KEYS.formNow!,
+    );
+    expect(missing).toContain('steady');
+  });
+
+  it('permanent positive control (reverse) — an unreachable key added under a template id in a clone of the real tree is reported', () => {
+    const insightsTree = deepClone(
+      INSIGHT_COPY_LOCALE_SOURCE.en!.insights as Record<string, unknown>,
+    );
+    (insightsTree.formNow as Record<string, unknown>).neverEmittedByAnyBranch =
+      'a dead sentence nobody can reach';
+    const unreachable = findUnreachableKeys(
+      insightsTree.formNow as Record<string, unknown>,
+      TEMPLATE_EMITTABLE_KEYS.formNow!,
+    );
+    expect(unreachable).toContain('neverEmittedByAnyBranch');
+  });
+});
