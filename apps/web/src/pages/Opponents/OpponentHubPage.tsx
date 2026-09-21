@@ -674,7 +674,7 @@ export function OpponentHubPage() {
         <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
         <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
         <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
           <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
         </div>
@@ -912,7 +912,10 @@ export function OpponentHubPage() {
             opponent identity into each card's destination builder; no
             absorbed card re-derives the opponent from its own data prop.
           */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Plan 39.1-20 Task 3 [Rule 1]: items-start added — see
+              OpponentsPage.tsx's identical fix for the same pair; the layout
+              oracle measured the same 29px stretch violation here. */}
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
             <WhatTheyPlayTable
               byTheirFighter={profile.byTheirFighter}
               rowHref={(row) =>

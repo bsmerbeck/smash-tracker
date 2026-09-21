@@ -208,8 +208,29 @@ export function FormStrip({ events, limit, labels, onSelectSet }: FormStripProps
   const trimmedEvents = trimToLimit(events, limit);
 
   return (
-    <div className="flex flex-col gap-2" data-slot="form-strip-root">
-      <div role="group" aria-label={labels.summary} className="flex flex-wrap gap-4">
+    // Plan 39.1-20 Task 3 [Rule 1]: `min-w-0` on both this flex-column root
+    // and the flex-wrap ticks row below it — without it, a flex item that
+    // CONTAINS a `flex-wrap` child computes its own max-content size as if
+    // that child had unlimited width (every event tick on one line, no
+    // wrapping), and refuses to shrink below that width inside an ancestor
+    // flex/grid column. `overflow-x-auto` on the ticks row is a second,
+    // independent fix for a narrower case `flex-wrap` alone cannot solve: an
+    // account with NO named events (every game falls into ONE `__manual__`
+    // bucket, one `SetGroup`, `limit` un-wrapped ticks in a row — a set's own
+    // ticks never wrap internally, so its decorative connecting line stays a
+    // single straight rule) — that ONE oversized set now scrolls locally
+    // inside the strip, the same technique the shadcn `Table` wrapper already
+    // uses for a too-wide table, instead of blowing out the page's width. The
+    // layout oracle (guard:layout) measured this as a real horizontal-
+    // overflow violation on the Fighter Analysis hero and the Matchups
+    // win-rate trend at the 390px viewport (both host a `FormStrip`, and
+    // both fixtures happened to have no named events) before this fix.
+    <div className="flex min-w-0 flex-col gap-2" data-slot="form-strip-root">
+      <div
+        role="group"
+        aria-label={labels.summary}
+        className="min-w-0 flex flex-wrap gap-4 overflow-x-auto"
+      >
         {trimmedEvents.map((event) => (
           <div
             key={event.key}

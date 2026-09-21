@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react';
 import { StretchedCardFixture } from '@/components/analytics/guardFixtures/StretchedCardFixture';
+import { DashboardPage } from '@/pages/Dashboard/DashboardPage';
+import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
+import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
+import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
+import { TrendsPage } from '@/pages/Trends/TrendsPage';
+import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
+import { OpponentHubPage } from '@/pages/Opponents/OpponentHubPage';
+import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 
 /**
  * The layout-oracle harness's route table (Phase 39.1 Plan 09, review
@@ -39,6 +47,32 @@ export interface GuardHarnessRouteEntry {
   loadedMarker: string;
 }
 
+/**
+ * The eight real analytics routes (plan 39.1-20, Task 3). Each `path` is the
+ * REAL path pattern read from `apps/web/src/routes/subjectAnalyticsRoutes.tsx`
+ * / `AppRouter.tsx` for the PERSONAL subject family (the family the harness's
+ * fake auth context represents — `GUARD_HARNESS_UID`, never a coach/workspace
+ * subject). `initialEntry` substitutes a concrete value for the two routes
+ * that carry a path parameter (`/opponents/synthopp15`, `/stages/1`), chosen
+ * to exist in `guardLayoutFixturePlugin.mjs`'s `realistic` fixture (see that
+ * file's own doc comment for the exact measured counts).
+ *
+ * `loadedMarker` provenance (review finding C2-M1 — plan 39.1-20 records
+ * which plan's SUMMARY handed it each selector, and which it chose itself):
+ *   - fighter-analysis: `[data-slot="fighter-hero-body"]`, plan 39.1-14's SUMMARY.
+ *   - match-data: `[data-slot="match-data-rail"]`, plan 39.1-16's SUMMARY.
+ *   - opponents-hub, stages: `[data-slot="opponent-hub-body"]` /
+ *     `[data-slot="stage-detail-body"]`, plan 39.1-18's SUMMARY.
+ *   - dashboard, opponents: `[data-slot="dashboard-body"]` /
+ *     `[data-slot="opponents-body"]` — no prior SUMMARY recorded one for
+ *     these two pages, so plan 39.1-20 added the marker itself (Task 1) and
+ *     chose it here.
+ *   - matchups: `[data-slot="matchup-chart-body"]` — an EXISTING marker on
+ *     `MatchupChart.tsx` (plan 39.1-13), reused as-is; it renders
+ *     unconditionally once the page reaches its populated return branch.
+ *   - trends: `[data-slot="trends-hero-body"]` — an EXISTING marker on
+ *     `TrendsHero.tsx` (plan 39.1-15), reused as-is for the same reason.
+ */
 export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
   {
     id: 'stretched-card-fixture',
@@ -46,6 +80,62 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/guard-harness/stretched-card-fixture',
     element: <StretchedCardFixture />,
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
+  },
+  {
+    id: 'dashboard',
+    path: '/dashboard',
+    initialEntry: '/dashboard',
+    element: <DashboardPage />,
+    loadedMarker: '[data-slot="dashboard-body"]',
+  },
+  {
+    id: 'fighter-analysis',
+    path: '/fighter-analysis',
+    initialEntry: '/fighter-analysis',
+    element: <FighterAnalysisPage />,
+    loadedMarker: '[data-slot="fighter-hero-body"]',
+  },
+  {
+    id: 'matchups',
+    path: '/matchups',
+    initialEntry: '/matchups',
+    element: <MatchupsPage />,
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+  },
+  {
+    id: 'match-data',
+    path: '/match-data',
+    initialEntry: '/match-data',
+    element: <MatchDataPage />,
+    loadedMarker: '[data-slot="match-data-rail"]',
+  },
+  {
+    id: 'trends',
+    path: '/trends',
+    initialEntry: '/trends',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="trends-hero-body"]',
+  },
+  {
+    id: 'opponents',
+    path: '/opponents',
+    initialEntry: '/opponents',
+    element: <OpponentsPage />,
+    loadedMarker: '[data-slot="opponents-body"]',
+  },
+  {
+    id: 'opponent-hub',
+    path: '/opponents/:opponentTag',
+    initialEntry: '/opponents/synthopp15',
+    element: <OpponentHubPage />,
+    loadedMarker: '[data-slot="opponent-hub-body"]',
+  },
+  {
+    id: 'stage-detail',
+    path: '/stages/:stageId',
+    initialEntry: '/stages/1',
+    element: <StageDetailPage />,
+    loadedMarker: '[data-slot="stage-detail-body"]',
   },
 ];
 

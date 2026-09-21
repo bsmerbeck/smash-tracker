@@ -139,7 +139,7 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
       title={t('matchups.counterpick.title')}
       caption={t('shared.evidence.type.recommendation')}
       headerRight={
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex max-w-[180px] flex-wrap items-center justify-end gap-2 sm:max-w-none">
           <SampleCue sample={claim.sample} />
           <RulesetDisclosure resolved={resolvedRuleset} />
           <SetStateControl

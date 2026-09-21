@@ -315,7 +315,10 @@ export function MatchupChart({
   }
 
   return (
-    <div className="flex flex-col gap-4" data-slot="matchup-chart-body">
+    // min-w-0 (plan 39.1-20 Task 3 [Rule 1]): without it, this flex item
+    // refuses to shrink below FormStrip's unconstrained max-content width
+    // — see FormStrip.tsx's own doc comment for the full mechanism.
+    <div className="flex min-w-0 flex-col gap-4" data-slot="matchup-chart-body">
       <FormStrip
         events={formStripEvents}
         limit={30}

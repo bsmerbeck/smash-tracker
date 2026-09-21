@@ -193,7 +193,7 @@ export function OpponentsPage() {
           <CardSkeleton variant="list" rows={6} statusLabel={t('opponents.loading')} />
           <div className="flex flex-col gap-4">
             <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
               <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
               <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
             </div>
@@ -282,7 +282,12 @@ export function OpponentsPage() {
               encounterContext={encounterContext}
               source={profile.source}
             />
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Plan 39.1-20 Task 3 [Rule 1]: items-start added — a plain CSS
+                Grid without it stretches every row's shorter card to its
+                taller sibling's height (the same defect PageGrid's own
+                items-start exists to prevent). The layout oracle measured
+                this as a real 29px stretch violation on this exact pair. */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>

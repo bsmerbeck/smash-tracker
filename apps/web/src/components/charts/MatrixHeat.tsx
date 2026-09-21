@@ -277,7 +277,15 @@ function MatrixHeatStack({
   }
   return (
     <Tabs defaultValue={firstRow.key} data-slot="matrix-heat-stack">
-      <TabsList>
+      {/* Plan 39.1-20 Task 3 [Rule 1]: overflow-x-auto — TabsList itself
+          never wraps (shadcn default `inline-flex`, no wrap), and with
+          enough row tabs (one per fighter pairing) it can exceed a narrow
+          viewport's width. MatrixHeatGrid (the wide-viewport sibling, just
+          above) already wraps its own table in the SAME pattern; this stack
+          variant was missing the equivalent. The layout oracle
+          (guard:layout) measured this as a real horizontal-overflow
+          violation on the opponent hub at the 390px viewport. */}
+      <TabsList className="max-w-full overflow-x-auto">
         {rows.map((row) => (
           <TabsTrigger
             key={row.key}

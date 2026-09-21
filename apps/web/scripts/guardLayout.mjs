@@ -15,11 +15,11 @@
  * USAGE:
  *   pnpm --filter @smash-tracker/web run guard:layout
  *
- * In THIS plan `LAYOUT_ORACLE_ROUTES` contains ONLY the harness's own
- * stretch fixture route, mirroring the single entry in
- * `guardHarnessRoutes.tsx`. Plan 39.1-20 adds the real analytics routes to
- * BOTH — the route table (so they can be mounted) and this array (so they
- * are measured).
+ * Plan 39.1-20 Task 3 added the eight real analytics routes to BOTH — the
+ * route table in `guardHarnessRoutes.tsx` (so they can be mounted) and this
+ * array (so they are measured), keeping the stretch fixture route too
+ * (behind `VITE_GUARD_LAYOUT_STRETCH_FIXTURE`, plan 39.1-09's own env flag)
+ * so its own failing case stays runnable.
  *
  * A route whose page-loaded marker never appears is reported as UNMEASURED
  * and makes the run exit non-zero — it is never scored as a clean pass
@@ -49,6 +49,14 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'stretched-card-fixture',
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
   },
+  { id: 'dashboard', loadedMarker: '[data-slot="dashboard-body"]' },
+  { id: 'fighter-analysis', loadedMarker: '[data-slot="fighter-hero-body"]' },
+  { id: 'matchups', loadedMarker: '[data-slot="matchup-chart-body"]' },
+  { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
+  { id: 'trends', loadedMarker: '[data-slot="trends-hero-body"]' },
+  { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
+  { id: 'opponent-hub', loadedMarker: '[data-slot="opponent-hub-body"]' },
+  { id: 'stage-detail', loadedMarker: '[data-slot="stage-detail-body"]' },
 ];
 
 const HARD_TIMEOUT_MS = Number(process.env.GUARD_LAYOUT_HARD_TIMEOUT_MS) || 5 * 60 * 1000;
@@ -158,7 +166,17 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       ...evaluateTruncation(measurements.truncationElements),
     ];
 
-    return { unmeasured: false, violations };
+    // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
+    // output contract requires the measured maximum card stretch and the
+    // measured scroll-height ratio for EVERY route at EVERY viewport, not
+    // only the routes that were over budget.
+    const maxStretchPx = measurements.cards.reduce((max, card) => {
+      const contentHeight = card.lastChildBottom - card.top + card.paddingBottom;
+      return Math.max(max, card.height - contentHeight);
+    }, 0);
+    const scrollRatio = measurements.scrollHeight / measurements.innerHeight;
+
+    return { unmeasured: false, violations, maxStretchPx, scrollRatio };
   } finally {
     await page.close();
   }
@@ -185,6 +203,9 @@ async function main() {
               continue;
             }
             measuredCount += 1;
+            console.log(
+              `MEASUREMENT route=${route.id} viewport=${viewport.name} maxStretchPx=${result.maxStretchPx.toFixed(1)} scrollRatio=${result.scrollRatio.toFixed(3)}`,
+            );
             for (const violation of result.violations) {
               console.log(
                 `VIOLATION route=${route.id} viewport=${viewport.name} type=${violation.type} selector=${violation.selectorPath ?? 'n/a'} detail=${JSON.stringify(violation)}`,

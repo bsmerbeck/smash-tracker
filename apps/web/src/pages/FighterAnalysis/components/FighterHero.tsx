@@ -489,8 +489,11 @@ export function FighterHero({
         {/* 3. stat row of four */}
         <StatRow leadWidth figures={[allTimeFigure, ...recentFigureNodes]} />
 
-        {/* 4. form strip */}
-        <div className="flex flex-col gap-2" data-slot="fighter-hero-strip">
+        {/* 4. form strip. min-w-0 (plan 39.1-20 Task 3 [Rule 1]): without
+            it, this flex item refuses to shrink below FormStrip's
+            unconstrained (every event on one line) max-content width — see
+            FormStrip.tsx's own doc comment for the full mechanism. */}
+        <div className="flex min-w-0 flex-col gap-2" data-slot="fighter-hero-strip">
           <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
             {t('fighterAnalysis.hero.formStrip.title')}
           </p>
