@@ -81,7 +81,6 @@ const FLEX_DISTRIBUTION_PATTERN = /justify-(evenly|around)\b/;
  * shrink toward empty as Track C converts each file.
  */
 const KNOWN_FLEX_DISTRIBUTION_OFFENDERS = [
-  'apps/web/src/pages/MatchData/components/StageBreakdown.tsx',
   'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
   'apps/web/src/components/charts/StatTile.tsx',
 ];
@@ -104,7 +103,6 @@ const STAT_COMPONENT_GSP_ALLOWLIST = [
  * Track C empties this array as each page adopts `StatRow`/`StatFigure`.
  */
 const STAT_COMPONENT_KNOWN_OFFENDERS = [
-  'apps/web/src/pages/MatchData/components/StageBreakdown.tsx',
   'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
 ];
 
