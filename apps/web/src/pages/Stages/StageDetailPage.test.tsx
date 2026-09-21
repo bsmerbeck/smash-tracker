@@ -473,4 +473,66 @@ describe('StageDetailPage', () => {
       expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
     });
   });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderStageAt('/stages/1');
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading stage…');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once loaded', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true }),
+        makeMatch({ id: 'm2', time: 2, win: true }),
+      ]);
+
+      const { container } = renderStageAt('/stages/1');
+      await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="stage-detail-body"]')).not.toBeNull();
+    });
+
+    it('on a background refetch, dims the stage body instead of flashing a skeleton', async () => {
+      const twoGames = [
+        makeMatch({ id: 'm1', time: 1, win: true }),
+        makeMatch({ id: 'm2', time: 2, win: true }),
+      ];
+      listMatches.mockResolvedValue(twoGames);
+
+      const { container, queryClient } = renderStageAt('/stages/1');
+      await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="stage-detail-body"]');
+        expect(body?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Battlefield')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch(twoGames);
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="stage-detail-body"]');
+        expect(body?.className).not.toMatch(/opacity-60/);
+      });
+    });
+  });
 });

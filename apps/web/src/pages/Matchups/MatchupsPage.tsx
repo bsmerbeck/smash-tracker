@@ -6,8 +6,10 @@ import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartCard } from '@/components/charts/ChartCard';
-import { PageGrid } from '@/components/analytics/PageGrid';
+import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -69,7 +71,13 @@ export function MatchupsPage() {
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const {
+    matches,
+    allMatches,
+    isLoading: matchesLoading,
+    isFetching: matchesFetching,
+    filterActive,
+  } = useFilteredMatches();
   const { horizon } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
@@ -213,13 +221,49 @@ export function MatchupsPage() {
     setDrillDown,
   };
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
+  // skeleton echoing the loaded page's own section shapes (matrix, the
+  // 2-up counterpick/stage-table pair, the PageGrid rail block at 4/8/8/4,
+  // and the results table), so nothing shifts when data lands. This page is
+  // not fully on the PageGrid/GridCell contract for its OWN non-rail
+  // sections (the matrix and 2-up pair use raw grid classes, matching the
+  // loaded layout below) — only the PageGrid block's spans are asserted for
+  // an exact grid-span match, since that is the only section of this page
+  // that already carries `data-span`. The filter card (fighter pickers +
+  // HorizonSwitch) needs resolved fighter selections, so it is intentionally
+  // omitted here too.
   if (fightersLoading || matchesLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('matchups.loading')}</div>
+      <div role="status" aria-busy="true" className="flex flex-col gap-6">
+        <span className="sr-only">{t('matchups.loading')}</span>
+        <CardSkeleton variant="chart" statusLabel={t('matchups.loading')} />
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
+          <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
+        </div>
+        <PageGrid>
+          <GridCell span={4} stack>
+            <CardSkeleton variant="stat-row" rows={2} statusLabel={t('matchups.loading')} />
+            <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
+          </GridCell>
+          <GridCell span={8}>
+            <CardSkeleton variant="chart" statusLabel={t('matchups.loading')} />
+          </GridCell>
+          <GridCell span={8}>
+            <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
+          </GridCell>
+          <GridCell span={4}>
+            <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
+          </GridCell>
+        </PageGrid>
+        <CardSkeleton variant="list" rows={5} statusLabel={t('matchups.loading')} />
       </div>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = matchesFetching && !matchesLoading;
 
   if (orderedFighterSprites.length === 0) {
     return (
@@ -302,7 +346,20 @@ export function MatchupsPage() {
 
         <MatchupMatrix matches={matches} />
 
-        <div id={MATCHUP_DETAIL_ANCHOR_ID} className="flex flex-col gap-6 scroll-mt-16">
+        {/* Plan 39.1-20: a background refetch (matches already loaded once)
+            holds this whole detail block at reduced opacity instead of
+            flashing a skeleton — the page's PageGrid lives inside this same
+            wrapper, and MatchupChart's own `data-slot="matchup-chart-body"`
+            (which exists only once this branch is reached) doubles as this
+            route's layout-oracle loaded marker. */}
+        <div
+          id={MATCHUP_DETAIL_ANCHOR_ID}
+          className={cn(
+            'flex flex-col gap-6 scroll-mt-16',
+            isRefetching &&
+              'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+          )}
+        >
           {effectiveFighter && effectiveOpponent && (
             <div className="flex items-center justify-center gap-4">
               {effectiveFighter.url && (

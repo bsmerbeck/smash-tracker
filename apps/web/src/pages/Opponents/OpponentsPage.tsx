@@ -16,6 +16,8 @@ import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import {
   buildOpponentEvidence,
   buildOpponentProfile,
@@ -43,7 +45,7 @@ import { buildEvidencePacket } from './evidencePacket';
 export function OpponentsPage() {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
-  const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
+  const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
@@ -177,13 +179,34 @@ export function OpponentsPage() {
     return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
   }, [profile, tournamentBlocks, user]);
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
+  // skeleton echoing the loaded page's own 320px-rail + report split, so
+  // nothing shifts when data lands. This page is not on the PageGrid/
+  // GridCell contract (a raw `lg:grid-cols-[320px_1fr]` split, unchanged by
+  // this plan), so the skeleton mirrors that same raw split rather than
+  // asserting an exact `data-span` match.
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('opponents.loading')}</div>
+      <div role="status" aria-busy="true" className="flex flex-col gap-6">
+        <span className="sr-only">{t('opponents.loading')}</span>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+          <CardSkeleton variant="list" rows={6} statusLabel={t('opponents.loading')} />
+          <div className="flex flex-col gap-4">
+            <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+            </div>
+            <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
+          </div>
+        </div>
       </div>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = isFetching && !isLoading;
 
   if (allMatches.length === 0) {
     return (
@@ -229,7 +252,17 @@ export function OpponentsPage() {
     <div className="flex flex-col gap-6">
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      {/* data-slot="opponents-body" (plan 39.1-20): a marker that exists
+          only once the loading gate above has cleared — used as the layout
+          oracle's page-loaded marker for this route. */}
+      <div
+        data-slot="opponents-body"
+        className={cn(
+          'grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]',
+          isRefetching &&
+            'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+        )}
+      >
         <OpponentList
           matches={matches}
           selected={selected}

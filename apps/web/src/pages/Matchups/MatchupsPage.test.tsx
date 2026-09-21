@@ -111,7 +111,7 @@ function recordCard(): HTMLElement {
 
 function renderMatchups(initialEntry = '/matchups') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -138,6 +138,7 @@ function renderMatchups(initialEntry = '/matchups') {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('MatchupsPage', () => {
@@ -726,6 +727,81 @@ describe('MatchupsPage', () => {
       await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
       await user.click(screen.getByRole('button', { name: 'Delete match' }));
       expect(await screen.findByText('Delete this match?')).toBeInTheDocument();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderMatchups();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading matchups...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    // ABSTENTION_FLOOR_GAMES (3) or more of the SAME pairing so ChartCard
+    // does not render its `abstained` placeholder in place of MatchupChart
+    // — `data-slot="matchup-chart-body"` only exists once real chart content
+    // is reached.
+    function threePairingMatches() {
+      return [
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+      ];
+    }
+
+    it('renders zero skeleton blocks once loaded', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(threePairingMatches());
+
+      const { container } = renderMatchups();
+      await screen.findByText('Matchup Matrix');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
+      );
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+    });
+
+    it('on a background refetch, dims the detail block instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(threePairingMatches());
+
+      const { container, queryClient } = renderMatchups();
+      await screen.findByText('Matchup Matrix');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
+      );
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const detail = document.getElementById('matchup-detail');
+        expect(detail?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Matchup Matrix')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch(threePairingMatches());
+      await waitFor(() => {
+        const detail = document.getElementById('matchup-detail');
+        expect(detail?.className).not.toMatch(/opacity-60/);
+      });
     });
   });
 });

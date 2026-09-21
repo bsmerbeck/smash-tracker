@@ -66,7 +66,7 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
 
 function renderTrends() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/trends']}>
         <AuthProvider>
@@ -82,6 +82,7 @@ function renderTrends() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('TrendsPage', () => {
@@ -177,5 +178,76 @@ describe('TrendsPage', () => {
       expect(card.className).not.toMatch(/\bh-full\b/);
       expect(card.className).not.toMatch(/\bflex-1\b/);
     }
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderTrends();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading trends...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+      // The skeleton's grid spans (12, 12, 4, 4, 4) mirror the loaded page's
+      // own hero(12)/timeline(12)/rails(4+4+4) spans.
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+    });
+
+    it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      ]);
+
+      const { container } = renderTrends();
+      await screen.findByText('Monthly Performance');
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="trends-hero-body"]')).not.toBeNull();
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      ]);
+
+      const { container, queryClient } = renderTrends();
+      await screen.findByText('Monthly Performance');
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Monthly Performance')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      ]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
+    });
   });
 });

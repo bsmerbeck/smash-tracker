@@ -35,6 +35,8 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -265,7 +267,7 @@ export function OpponentHubPage() {
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { matches, isLoading, filterActive } = useFilteredMatches();
+  const { matches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
@@ -659,13 +661,32 @@ export function OpponentHubPage() {
     [opponentMatches],
   );
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
+  // skeleton echoing the loaded hub's own section shapes (header, matrix,
+  // trend, the 2-up what-they-play/stages pair, and the encounters/history
+  // list below). This page is not on the PageGrid/GridCell contract, so the
+  // skeleton mirrors the same raw section stack rather than asserting an
+  // exact `data-span` match.
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('opponents.loading')}</div>
+      <div role="status" aria-busy="true" className="flex flex-col gap-6">
+        <span className="sr-only">{t('opponents.loading')}</span>
+        <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
+        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+          <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+        </div>
+        <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
+        <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
       </div>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = isFetching && !isLoading;
 
   const displayTag = profile?.opponent ?? pathTag ?? '';
 
@@ -694,7 +715,15 @@ export function OpponentHubPage() {
           {t('opponents.hub.empty', { opponent: displayTag })}
         </div>
       ) : (
-        <div key={profile.opponent} data-slot="opponent-hub-body" className="flex flex-col gap-6">
+        <div
+          key={profile.opponent}
+          data-slot="opponent-hub-body"
+          className={cn(
+            'flex flex-col gap-6',
+            isRefetching &&
+              'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+          )}
+        >
           {/* Identity header + head-to-head summary */}
           <div className="flex flex-col gap-2">
             <ScoutingHeader

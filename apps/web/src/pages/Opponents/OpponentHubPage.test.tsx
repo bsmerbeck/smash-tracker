@@ -162,7 +162,7 @@ function LocationProbe() {
 
 function renderHub(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -187,6 +187,7 @@ function renderHub(initialEntry: string) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 /**
@@ -648,6 +649,69 @@ describe('OpponentHubPage', () => {
           'Tournament History',
           'Tendencies',
         ]);
+      });
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderHub('/opponents/rival');
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading scouting reports...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once loaded', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false }),
+      ]);
+
+      const { container } = renderHub('/opponents/rival');
+      await findRecordText('2-1');
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="opponent-hub-body"]')).not.toBeNull();
+    });
+
+    it('on a background refetch, dims the hub body instead of flashing a skeleton', async () => {
+      const threeGames = [
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false }),
+      ];
+      listMatches.mockResolvedValue(threeGames);
+
+      const { container, queryClient } = renderHub('/opponents/rival');
+      await findRecordText('2-1');
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponent-hub-body"]');
+        expect(body?.className).toMatch(/opacity-60/);
+      });
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch(threeGames);
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponent-hub-body"]');
+        expect(body?.className).not.toMatch(/opacity-60/);
       });
     });
   });

@@ -127,7 +127,7 @@ function ShellProfileSubscription() {
 
 function renderMatchData(initialEntry = '/match-data') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -152,6 +152,7 @@ function renderMatchData(initialEntry = '/match-data') {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('MatchDataPage', () => {
@@ -951,5 +952,78 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
     await waitFor(() =>
       expect(document.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
     );
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderMatchData();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading match data...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+      // The skeleton's grid spans (12, 8, 4) mirror the loaded page's own
+      // table(12)/roster+stage(8)/rail(4) spans.
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '4', '8'].sort());
+    });
+
+    it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch()]);
+
+      const { container } = renderMatchData();
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+      );
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '4', '8'].sort());
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch()]);
+
+      const { container, queryClient } = renderMatchData();
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+      );
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Match History')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch()]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
+    });
   });
 });

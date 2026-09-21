@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -53,7 +55,13 @@ export function FighterAnalysisPage() {
   const subjectPath = useSubjectPath();
   const [searchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const {
+    matches,
+    allMatches,
+    isLoading: matchesLoading,
+    isFetching: matchesFetching,
+    filterActive,
+  } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
   const { horizon, setHorizon, isLoading: horizonLoading } = useHorizon();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
@@ -94,9 +102,41 @@ export function FighterAnalysisPage() {
     fighterSprites: rawFighterSprites,
   });
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
+  // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
+  // rail(4)/vs-lists(12)/existing-cards(12) layout, so nothing shifts when
+  // data lands. The filter row (fighter picker + HorizonSwitch) needs the
+  // resolved `fighter`/`orderedFighterSprites`, so it isn't rendered here —
+  // `PageShell`'s `filterRow` is an optional slot.
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">{t('fighterAnalysis.loading')}</div>;
+    return (
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('fighterAnalysis.loading')}</span>
+          <PageGrid>
+            <GridCell span={8}>
+              <CardSkeleton variant="chart" statusLabel={t('fighterAnalysis.loading')} />
+            </GridCell>
+            <GridCell span={4}>
+              <CardSkeleton variant="insight" statusLabel={t('fighterAnalysis.loading')} />
+            </GridCell>
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('fighterAnalysis.loading')} />
+            </GridCell>
+            <GridCell span={12} stack>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('fighterAnalysis.loading')} />
+              <CardSkeleton variant="chart" statusLabel={t('fighterAnalysis.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('fighterAnalysis.loading')} />
+            </GridCell>
+          </PageGrid>
+        </div>
+      </PageShell>
+    );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = matchesFetching && !matchesLoading;
 
   if (orderedFighterSprites.length === 0) {
     return (
@@ -189,7 +229,12 @@ export function FighterAnalysisPage() {
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       {fighter && (
-        <PageGrid>
+        <PageGrid
+          className={cn(
+            isRefetching &&
+              'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+          )}
+        >
           {/* DD-07: the hero leads at every width — first in DOM order,
               never reordered by a responsive class. */}
           <GridCell span={8}>

@@ -65,7 +65,7 @@ function makeMatch(
 
 function renderFighterAnalysis() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/fighter-analysis']}>
         <AuthProvider>
@@ -83,6 +83,7 @@ function renderFighterAnalysis() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('FighterAnalysisPage', () => {
@@ -450,5 +451,73 @@ describe('FighterAnalysisPage', () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderFighterAnalysis();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading fighter analysis...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+      // The skeleton's grid spans (8, 4, 12, 12) mirror the loaded page's own
+      // hero(8)/rail(4)/vs-lists(12)/existing-cards(12) spans.
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+    });
+
+    it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const { container } = renderFighterAnalysis();
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="fighter-hero-body"]')).not.toBeNull();
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const { container, queryClient } = renderFighterAnalysis();
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByRole('heading', { name: mario.name, level: 2 })).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch({ id: 'm1', time: 1, win: true })]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
+    });
   });
 });

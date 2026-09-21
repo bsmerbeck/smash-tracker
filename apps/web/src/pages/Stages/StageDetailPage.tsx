@@ -24,6 +24,8 @@ import { ChartCard } from '@/components/charts/ChartCard';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { SampleCue, UnknownRow } from '@/components/EvidenceCues';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -101,7 +103,7 @@ export function StageDetailPage() {
   const subjectPath = useSubjectPath();
   const params = useParams<{ stageId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { matches, isLoading } = useFilteredMatches();
+  const { matches, isLoading, isFetching } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
   const [refreshedAt] = useState(() => Date.now());
   // Plan 39.1-18 (UI-SPEC §6.4, UIX-02): both nested-scroller tables on this
@@ -317,13 +319,26 @@ export function StageDetailPage() {
     : sortedByCharacter.slice(0, LIST_CAP_RAIL);
   const byCharacterHasMore = sortedByCharacter.length > LIST_CAP_RAIL;
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
+  // skeleton echoing the loaded page's own by-opponent/by-character/
+  // over-time/games section stack. This page is not on the PageGrid/
+  // GridCell contract, so the skeleton mirrors the same raw section stack
+  // rather than asserting an exact `data-span` match.
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('stages.detail.loading')}</div>
+      <div role="status" aria-busy="true" className="flex flex-col gap-6">
+        <span className="sr-only">{t('stages.detail.loading')}</span>
+        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
+        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
+        <CardSkeleton variant="chart" statusLabel={t('stages.detail.loading')} />
+        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
       </div>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = isFetching && !isLoading;
 
   const showEmpty = resolvedStageId == null || !breakdown || breakdown.sample.rawSampleSize === 0;
 
@@ -364,7 +379,23 @@ export function StageDetailPage() {
           {t('stages.detail.empty')}
         </div>
       ) : (
-        <div data-slot="stage-detail-body" className="contents">
+        <div
+          data-slot="stage-detail-body"
+          className={cn(
+            // Plan 39.1-20 [Rule 1]: was `display: contents` (a pure
+            // passthrough box) — `opacity` has no visual effect on a
+            // `display: contents` element (it generates no box of its own
+            // to apply the property to), which would have silently made
+            // the refetch-dim rule below a no-op on this route. A real
+            // `flex flex-col gap-6` box reproduces the SAME child spacing
+            // `contents` achieved (this element's only child before was the
+            // parent's own `flex flex-col gap-6`), while giving `opacity`
+            // something to apply to.
+            'flex flex-col gap-6',
+            isRefetching &&
+              'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+          )}
+        >
           <Card>
             <CardHeader>
               <CardTitle>{t('stages.detail.byOpponent')}</CardTitle>

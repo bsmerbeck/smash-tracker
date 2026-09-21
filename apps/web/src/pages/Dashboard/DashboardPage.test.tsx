@@ -88,7 +88,7 @@ function defaultProfile(
 
 function renderDashboard(initialEntry = '/dashboard') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -114,6 +114,7 @@ function renderDashboard(initialEntry = '/dashboard') {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('DashboardPage', () => {
@@ -429,6 +430,80 @@ describe('DashboardPage', () => {
       await screen.findAllByText('Overall Record');
       await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
       expect(screen.queryByTestId('dashboard-next-best-action')).not.toBeInTheDocument();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading your dashboard...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      // The retired idiom is gone — no bare muted-text loading line anywhere.
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once the dashboard has loaded', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="dashboard-body"]')).not.toBeNull();
+    });
+
+    it('renders zero skeleton blocks in the empty (no-matches) state', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      expect(screen.getByText('No matches recorded yet.')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container, queryClient } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      // opacity-60 is applied to the PageGrid itself, not the surrounding
+      // `data-slot="dashboard-body"` marker — that marker is a `display:
+      // contents` passthrough, which generates no box for `opacity` to
+      // apply to.
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      // Still holding the previous frame — no skeleton, previous content stays mounted.
+      expect(screen.getAllByText('Overall Record').length).toBeGreaterThan(0);
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
     });
   });
 });

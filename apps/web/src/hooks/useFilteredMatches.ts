@@ -204,6 +204,16 @@ export interface UseFilteredMatchesResult {
    */
   timeFilteredMatches: Match[];
   isLoading: boolean;
+  /**
+   * Plan 39.1-20 (UIX-07): true while the underlying matches query is
+   * in-flight AND the initial load has already settled once (`!isLoading`)
+   * — a background refetch, not the first paint. Threaded straight from
+   * `useMatches()`'s own react-query `isFetching`, which was previously
+   * discarded here; every one of the eight analytics pages needs this to
+   * implement the "hold the previous frame at reduced opacity" refetch rule
+   * (UI-SPEC §7.2/§10.5) without re-deriving it from a second query call.
+   */
+  isFetching: boolean;
   /** True when the active filters exclude at least one record the user actually has. */
   filterActive: boolean;
 }
@@ -220,7 +230,7 @@ export interface UseFilteredMatchesResult {
  * just want to show opponent names quickly and re-render once aliases land.
  */
 export function useFilteredMatches(): UseFilteredMatchesResult {
-  const { data: rawMatches = [], isLoading } = useMatches();
+  const { data: rawMatches = [], isLoading, isFetching } = useMatches();
   const { data: aliasMap } = useOpponentAliases();
   const { source, range } = useAnalyticsFilter();
 
@@ -241,6 +251,7 @@ export function useFilteredMatches(): UseFilteredMatchesResult {
     allMatches,
     timeFilteredMatches,
     isLoading,
+    isFetching,
     filterActive: matches.length !== allMatches.length,
   };
 }

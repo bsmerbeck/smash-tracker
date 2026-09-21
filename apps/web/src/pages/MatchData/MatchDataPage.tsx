@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { useFighters } from '@/hooks/useFighters';
@@ -53,7 +55,13 @@ export function MatchDataPage() {
   const subjectPath = useSubjectPath();
   const [searchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const {
+    matches,
+    allMatches,
+    isLoading: matchesLoading,
+    isFetching: matchesFetching,
+    filterActive,
+  } = useFilteredMatches();
   const { horizon } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
@@ -89,13 +97,37 @@ export function MatchDataPage() {
   // picker in the app.
   const fighterSprites = useSortedFighters(rawFighterSprites);
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
+  // skeleton built from the SAME PageGrid spans as the loaded
+  // table(12)/roster+stage(8)/rail(4) layout, so nothing shifts when data
+  // lands. The filter row (HorizonSwitch only) needs no fighter/match data,
+  // but is intentionally omitted here too, matching every other page in this
+  // plan — `PageShell`'s `filterRow` is an optional slot.
   if (fightersLoading || matchesLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('matchData.loading')}</div>
-      </div>
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('matchData.loading')}</span>
+          <PageGrid>
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={5} statusLabel={t('matchData.loading')} />
+            </GridCell>
+            <GridCell span={8} stack>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
+              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
+            </GridCell>
+            <GridCell span={4}>
+              <CardSkeleton variant="insight" statusLabel={t('matchData.loading')} />
+            </GridCell>
+          </PageGrid>
+        </div>
+      </PageShell>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = matchesFetching && !matchesLoading;
 
   if (fighterSprites.length === 0) {
     return (
@@ -159,7 +191,12 @@ export function MatchDataPage() {
       {usingInferredFighters && <ChooseFavoritesPrompt />}
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <PageGrid>
+      <PageGrid
+        className={cn(
+          isRefetching &&
+            'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+        )}
+      >
         <GridCell span={12}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">

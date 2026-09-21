@@ -153,7 +153,7 @@ function LocationProbe() {
 
 function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
@@ -190,6 +190,7 @@ function renderOpponents(initialEntry = '/opponents') {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('OpponentsPage', () => {
@@ -1227,6 +1228,61 @@ describe('OpponentsPage', () => {
       await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeEnabled();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeEnabled();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderOpponents();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading scouting reports...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once loaded', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1' })]);
+
+      const { container } = renderOpponents();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="opponents-body"]')).not.toBeNull();
+    });
+
+    it('on a background refetch, dims the body instead of flashing a skeleton', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1' })]);
+
+      const { container, queryClient } = renderOpponents();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponents-body"]');
+        expect(body?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Recent Encounters')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch({ id: 'm1' })]);
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponents-body"]');
+        expect(body?.className).not.toMatch(/opacity-60/);
+      });
     });
   });
 });

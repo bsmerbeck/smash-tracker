@@ -134,6 +134,28 @@ const NESTED_SCROLLER_KNOWN_OFFENDERS = [
   'apps/web/src/pages/Coaching/components/DeliveryVodPicker.tsx',
 ];
 
+/**
+ * §13.7 / UIX-07 (plan 39.1-20): the eight analytics pages this phase
+ * rebuilds onto the one `CardSkeleton`-based loading pattern — named
+ * explicitly, not derived from a directory scan, so the non-vacuity canary
+ * below can assert the scanned set is exactly this size rather than
+ * "whatever glob happened to match."
+ */
+const ANALYTICS_PAGE_FILES = [
+  'apps/web/src/pages/Dashboard/DashboardPage.tsx',
+  'apps/web/src/pages/FighterAnalysis/FighterAnalysisPage.tsx',
+  'apps/web/src/pages/Matchups/MatchupsPage.tsx',
+  'apps/web/src/pages/MatchData/MatchDataPage.tsx',
+  'apps/web/src/pages/Trends/TrendsPage.tsx',
+  'apps/web/src/pages/Opponents/OpponentsPage.tsx',
+  'apps/web/src/pages/Opponents/OpponentHubPage.tsx',
+  'apps/web/src/pages/Stages/StageDetailPage.tsx',
+];
+
+/** The text-loading-line idiom §7.2/§13.7 replaces — a `text-muted-foreground` div wrapping a `t('…loading')` call, literally `<div className="text-muted-foreground">{t('…loading')}</div>`. */
+const TEXT_LOADING_LINE_PATTERN =
+  /<div className="text-muted-foreground">\{t\('[^']*\.loading'\)\}<\/div>/;
+
 describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
   it('the default suite excludes the .guard.test.ts suffix (this file is deliberately NOT named with it)', () => {
     const vitestConfigSource = readRepoFile('apps/web/vitest.config.ts');
@@ -233,6 +255,34 @@ describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
         return !(MAX_HEIGHT_PATTERN.test(source) && VERTICAL_OVERFLOW_PATTERN.test(source));
       });
       expect(stale, `stale nested-scroller allowlist entries: ${stale.join(', ')}`).toEqual([]);
+    });
+  });
+
+  describe('§13.7 — one loading pattern across the eight analytics pages (UIX-07, plan 39.1-20)', () => {
+    it('the scanned analytics-page set contains exactly the eight named files (non-vacuity canary)', () => {
+      expect(ANALYTICS_PAGE_FILES).toHaveLength(8);
+      for (const file of ANALYTICS_PAGE_FILES) {
+        expect(fs.existsSync(path.join(REPO_ROOT, file)), `missing: ${file}`).toBe(true);
+      }
+    });
+
+    it('none of the eight analytics pages still renders the muted-text loading line', () => {
+      const offenders = ANALYTICS_PAGE_FILES.filter((file) =>
+        TEXT_LOADING_LINE_PATTERN.test(readRepoFile(file)),
+      );
+      expect(offenders).toEqual([]);
+    });
+
+    it('a zero-length analytics-page set fails the non-vacuity assertion rather than vacuously passing the loading-line check', () => {
+      const emptySet: string[] = [];
+      expect(() => expect(emptySet).toHaveLength(8)).toThrow();
+    });
+
+    it('every one of the eight pages composes a page skeleton from CardSkeleton (positive presence check)', () => {
+      const missing = ANALYTICS_PAGE_FILES.filter(
+        (file) => !readRepoFile(file).includes('CardSkeleton'),
+      );
+      expect(missing, `pages missing CardSkeleton: ${missing.join(', ')}`).toEqual([]);
     });
   });
 });
