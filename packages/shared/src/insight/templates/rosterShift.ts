@@ -1,10 +1,16 @@
 import type { Match } from '../../match.js';
+import { getFighterById } from '../../fighterData.js';
 import { resolveWindow, buildRateClaim } from '../horizon.js';
 import { TREND_MIN_RECENT_GAMES, HORIZON_COLLAPSE_RATIO } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
 const TEMPLATE_ID = 'rosterShift' as const;
+
+/** Mirrors `rosterCore.ts`'s identical helper — duplicated locally per this codebase's small-helper-duplication convention. */
+function fighterNameFor(id: number): string {
+  return getFighterById(id)?.name ?? String(id);
+}
 
 /**
  * Cohort GEOMETRY (not a notability threshold — `insight/policy.ts`'s own
@@ -198,7 +204,7 @@ function buildRosterShiftInsight(input: {
     copy: {
       key: `insights.${TEMPLATE_ID}.${direction}`,
       values: {
-        fighter: headline.fighterId,
+        fighter: fighterNameFor(headline.fighterId),
         points: Math.abs(headline.shiftPoints),
         count: recentTotal,
       },

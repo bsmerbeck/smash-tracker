@@ -86,6 +86,29 @@ describe('secondaryPayoffTemplate', () => {
     expect(insight!.doors[0]!.kind).toBe('matchup');
   });
 
+  it('resolves copy.values.opponent/secondary/main to fighter names, never raw ids (Rule 1 fix, T-39.1-16)', () => {
+    // opponentId 50 is Wii Fit Trainer, MAIN_ID (1) is Mario, SECONDARY_ID
+    // (2) is Donkey Kong — the locale string
+    // `insights.secondaryPayoff.suggestion` interpolates all three expecting
+    // names, not the numeric ids the template used to supply.
+    const matches = buildPayoffFixture({
+      opponentId: 50,
+      mainGamesVsOpponent: 30,
+      mainWinsVsOpponent: 15,
+      secondaryGamesVsOpponent: 20,
+      secondaryWinsVsOpponent: 18,
+    });
+    const [insight] = secondaryPayoffTemplate.build({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insight!.copy.values.opponent).toBe('Wii Fit Trainer');
+    expect(insight!.copy.values.secondary).toBe('Donkey Kong');
+    expect(insight!.copy.values.main).toBe('Mario');
+  });
+
   it('returns Trend when a secondary clearly outperforms the main below the high tier', () => {
     const matches = buildPayoffFixture({
       opponentId: 53,
@@ -146,6 +169,10 @@ describe('secondaryPayoffTemplate', () => {
     expect(insight!.state).toBe('locked');
     expect(insight!.gamesNeeded).toBe(3);
     expect(insight!.doors).toEqual([]);
+    // Rule 1 fix (T-39.1-16): the locked branch also names fighters, not ids
+    // (opponentId 55 is Mii Swordfighter).
+    expect(insight!.copy.values.opponent).toBe('Mii Swordfighter');
+    expect(insight!.copy.values.secondary).toBe('Donkey Kong');
   });
 
   it('returns [] when no main is established', () => {

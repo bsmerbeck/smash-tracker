@@ -86,6 +86,20 @@ describe('rosterShiftTemplate', () => {
     expect(insight!.doors[0]!.kind).toBe('games');
   });
 
+  it('resolves copy.values.fighter to the localizable fighter name, never the raw id (Rule 1 fix, T-39.1-16)', () => {
+    // X_ID (1) is Mario in the real fighter data — the locale string
+    // `insights.rosterShift.up` interpolates `{{fighter}}` expecting a name,
+    // not the numeric id the template used to supply.
+    const matches = buildRosterShiftFixture({ oldXCount: 45, recentXCount: 10 });
+    const [insight] = rosterShiftTemplate.build({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insight!.copy.values.fighter).toBe('Mario');
+  });
+
   it('does not assert one point below the threshold (14)', () => {
     // baseline (300 games): X has 58 (19.33%). recent: X has 10 (33.33%).
     // Shift = 33.33 - 19.33 = +14.0 exactly — below the 15-point floor.

@@ -1,4 +1,5 @@
 import type { Match } from '../../match.js';
+import { getFighterById } from '../../fighterData.js';
 import { isUnknownCharacter } from '../../evidence/predicate.js';
 import { buildRosterModel, type RosterFighterEntry } from './rosterCore.js';
 import { isNotableCohortGap } from '../twoProportion.js';
@@ -8,6 +9,11 @@ import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
 const TEMPLATE_ID = 'secondaryPayoff' as const;
+
+/** Mirrors `rosterCore.ts`'s identical helper — duplicated locally per this codebase's small-helper-duplication convention. */
+function fighterNameFor(id: number): string {
+  return getFighterById(id)?.name ?? String(id);
+}
 
 /** Mirrors `characterMovers.ts`'s identical helper — duplicated locally per this plan's own per-file convention (no shared grouping helper across template files). */
 function groupByOpponentCharacter(matches: Match[]): Map<number, Match[]> {
@@ -165,9 +171,9 @@ function buildSecondaryPayoffInsight(input: {
       copy: {
         key: `insights.${TEMPLATE_ID}.${state}`,
         values: {
-          opponent: headline.opponentCharacterId,
-          secondary: headline.secondary.fighterId,
-          main: main.fighterId,
+          opponent: fighterNameFor(headline.opponentCharacterId),
+          secondary: fighterNameFor(headline.secondary.fighterId),
+          main: fighterNameFor(main.fighterId),
           secondaryRate: Math.round(headline.secondaryRate.rate * 100),
           mainRate: Math.round(headline.mainRate.rate * 100),
           points: headline.deltaPoints,
@@ -228,8 +234,8 @@ function buildSecondaryPayoffInsight(input: {
       copy: {
         key: `insights.${TEMPLATE_ID}.locked`,
         values: {
-          opponent: headline.opponentCharacterId,
-          secondary: headline.secondary.fighterId,
+          opponent: fighterNameFor(headline.opponentCharacterId),
+          secondary: fighterNameFor(headline.secondary.fighterId),
           count: headline.gamesNeeded,
         },
       },
