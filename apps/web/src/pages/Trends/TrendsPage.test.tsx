@@ -161,4 +161,21 @@ describe('TrendsPage', () => {
       expect(screen.queryByText('No matches match the current filters.')).not.toBeInTheDocument(),
     );
   });
+
+  it('carries no stretch utility on any rendered card root (UIX-01/UIX-04, whole-page scan)', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      makeMatch({ id: 'm2', win: false, time: Date.UTC(2021, 1, 1), matchType: 'offline-tourney' }),
+    ]);
+
+    const { container } = renderTrends();
+    await screen.findByText('Monthly Performance');
+
+    const cardRoots = container.querySelectorAll('[data-slot="card"]');
+    expect(cardRoots.length).toBeGreaterThan(0);
+    for (const card of cardRoots) {
+      expect(card.className).not.toMatch(/\bh-full\b/);
+      expect(card.className).not.toMatch(/\bflex-1\b/);
+    }
+  });
 });
