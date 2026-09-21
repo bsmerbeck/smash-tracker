@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -69,12 +70,14 @@ function renderFighterAnalysis() {
       <MemoryRouter initialEntries={['/fighter-analysis']}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-            </Routes>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -186,9 +189,8 @@ describe('FighterAnalysisPage', () => {
     expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
   });
 
-  it('renders the fighter hero with sprite, name, record, share of games, and streak chip', async () => {
+  it('renders the fighter hero with sprite, name, the all-time record and its share of play (T-39.1-14)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    // Chronological: W, W, L, L, L, W (current streak 1 win)
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', time: 1, win: true }),
       makeMatch({ id: 'm2', time: 2, win: true }),
@@ -203,10 +205,10 @@ describe('FighterAnalysisPage', () => {
     const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
     expect(heroHeading).toBeInTheDocument();
     const heroCard = heroHeading.closest('[data-slot="card"]') as HTMLElement;
-    expect(within(heroCard).getByTestId('hero-record')).toHaveTextContent('3-3');
-    expect(within(heroCard).getByText('1W streak')).toBeInTheDocument();
-    // All 6 matches are Mario's -> 100% share.
-    expect(within(heroCard).getByText('100% of your games')).toBeInTheDocument();
+    // 3 wins - 3 losses over 6 games, rendered by the shared `<Record>` idiom.
+    expect(within(heroCard).getAllByText(/3–3/).length).toBeGreaterThan(0);
+    // All 6 matches are Mario's -> 100% share of play.
+    expect(within(heroCard).getByText(/100% of play/)).toBeInTheDocument();
   });
 
   it('shows Stage Mastery tiles with a Best pick caption once a stage qualifies', async () => {
@@ -349,7 +351,7 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getByText('rival')).toBeInTheDocument();
   });
 
-  it('shows the by-match-type table folded into the hero', async () => {
+  it('shows the by-match-type share bar in the hero with localised labels, never a raw enum (T-39.1-14/UI-SPEC §9.6)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', time: 1, win: true, matchType: 'quickplay' }),
@@ -359,9 +361,9 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
-    expect(screen.getByText('quickplay')).toBeInTheDocument();
-    expect(screen.getByText('unspecified')).toBeInTheDocument();
-    const pipsRegion = within(screen.getByLabelText('Last 2 results, newest first'));
-    expect(pipsRegion).toBeTruthy();
+    expect(screen.getByText('Quickplay')).toBeInTheDocument();
+    expect(screen.getByText('Unspecified')).toBeInTheDocument();
+    expect(screen.queryByText('quickplay')).not.toBeInTheDocument();
+    expect(screen.queryByText('unspecified')).not.toBeInTheDocument();
   });
 });

@@ -3,8 +3,11 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useHorizon } from '@/hooks/useHorizon';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -35,6 +38,7 @@ export function FighterAnalysisPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
+  const { horizon, setHorizon, isLoading: horizonLoading } = useHorizon();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `OpponentsPage.tsx`'s convention.
@@ -123,21 +127,35 @@ export function FighterAnalysisPage() {
     <div className="flex flex-col gap-6">
       {usingInferredFighters && <ChooseFavoritesPrompt />}
 
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('fighterAnalysis.title')}</h1>
-        <SelectFighter
-          fighter={fighter}
-          fighterSprites={orderedFighterSprites}
-          fighterUsageById={fighterUsageById}
-          onChange={setFighter}
-        />
-      </div>
+      {/* UI-SPEC §10.4: one filter row — the fighter picker, a spacer, then the
+          page's single HorizonSwitch (INS-02). Never a per-chart control. */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
+          <div className="flex flex-1 flex-col items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{t('fighterAnalysis.title')}</h1>
+            <SelectFighter
+              fighter={fighter}
+              fighterSprites={orderedFighterSprites}
+              fighterUsageById={fighterUsageById}
+              onChange={setFighter}
+            />
+          </div>
+          <HorizonSwitch />
+        </CardContent>
+      </Card>
 
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       {fighter && (
         <>
-          <FighterHero fighter={fighter} fighterMatches={fighterMatches} allMatches={allMatches} />
+          <FighterHero
+            fighter={fighter}
+            fighterMatches={fighterMatches}
+            allMatches={allMatches}
+            horizon={horizon}
+            setHorizon={setHorizon}
+            isLoading={horizonLoading || matchesLoading}
+          />
 
           <StageMastery
             fighterMatches={fighterMatches}

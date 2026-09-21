@@ -951,7 +951,37 @@
       "share": "{{pct}}% das suas partidas",
       "last10": "Últimas 10 (mais recente primeiro)",
       "formRolling": "Forma (janela de 10)",
-      "typeColumn": "Tipo"
+      "typeColumn": "Tipo",
+      "allTime": "Sempre",
+      "identityMeta": "{{pct}}% das partidas · {{confidence}}",
+      "verdictMeta": {
+        "last30": "FormNow · últimas 30 partidas vs sempre",
+        "lastEvent": "FormNow · último evento vs sempre",
+        "last90": "FormNow · últimos 90 dias vs sempre"
+      },
+      "figureLocked_one": "{{count}} partida a mais desbloqueia isso",
+      "figureLocked_other": "{{count}} partidas a mais desbloqueiam isso",
+      "formStrip": {
+        "title": "Forma · últimas 60 partidas, por evento"
+      },
+      "trendTitle": {
+        "game": "Taxa de vitórias por partida · tamanho do ponto = partidas",
+        "set": "Taxa de vitórias por set · tamanho do ponto = partidas",
+        "eventSession": "Taxa de vitórias por evento · tamanho do ponto = partidas",
+        "week": "Taxa de vitórias por semana · tamanho do ponto = partidas",
+        "month": "Taxa de vitórias por mês · tamanho do ponto = partidas",
+        "quarter": "Taxa de vitórias por trimestre · tamanho do ponto = partidas",
+        "year": "Taxa de vitórias por ano · tamanho do ponto = partidas"
+      },
+      "vsCharacters": {
+        "title": "vs personagens",
+        "empty": "Ainda sem dados de personagens — registre partidas para ver tendências por personagem."
+      },
+      "vsPlayers": {
+        "title": "vs jogadores",
+        "empty": "Ainda sem dados de oponentes — registre partidas para ver tendências por oponente."
+      },
+      "listMeta": "mais partidas primeiro · últimas 30 em cada"
     },
     "stageMastery": {
       "title": "Domínio de stages",
@@ -3297,7 +3327,8 @@
       "allSessions": "Todas as {{count}} sessões →",
       "allTournaments": "Todos os {{count}} torneios →",
       "allOpponents": "Todos os {{count}} adversários →",
-      "sortMostGames": "Mais partidas"
+      "sortMostGames": "Mais partidas",
+      "allMatchups": "Todos os {{count}} confrontos →"
     },
     "record": {
       "aria": "{{wins}} vitórias, {{losses}} derrotas",

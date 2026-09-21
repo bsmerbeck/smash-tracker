@@ -951,7 +951,37 @@
       "share": "{{pct}} % deiner Matches",
       "last10": "Letzte 10 (neueste zuerst)",
       "formRolling": "Form (gleitende 10)",
-      "typeColumn": "Typ"
+      "typeColumn": "Typ",
+      "allTime": "Gesamt",
+      "identityMeta": "{{pct}} % der Spiele · {{confidence}}",
+      "verdictMeta": {
+        "last30": "FormNow · letzte 30 Spiele gegen Gesamt",
+        "lastEvent": "FormNow · letztes Event gegen Gesamt",
+        "last90": "FormNow · letzte 90 Tage gegen Gesamt"
+      },
+      "figureLocked_one": "{{count}} weiteres Spiel schaltet dies frei",
+      "figureLocked_other": "{{count}} weitere Spiele schalten dies frei",
+      "formStrip": {
+        "title": "Form · letzte 60 Spiele, nach Event"
+      },
+      "trendTitle": {
+        "game": "Siegquote nach Spiel · Punktgröße = Spiele",
+        "set": "Siegquote nach Satz · Punktgröße = Spiele",
+        "eventSession": "Siegquote nach Event · Punktgröße = Spiele",
+        "week": "Siegquote nach Woche · Punktgröße = Spiele",
+        "month": "Siegquote nach Monat · Punktgröße = Spiele",
+        "quarter": "Siegquote nach Quartal · Punktgröße = Spiele",
+        "year": "Siegquote nach Jahr · Punktgröße = Spiele"
+      },
+      "vsCharacters": {
+        "title": "vs Charaktere",
+        "empty": "Noch keine Charakterdaten — erfasse Spiele, um Trends nach Charakter zu sehen."
+      },
+      "vsPlayers": {
+        "title": "vs Spieler",
+        "empty": "Noch keine Gegnerdaten — erfasse Spiele, um Trends nach Gegner zu sehen."
+      },
+      "listMeta": "meiste Spiele zuerst · jeweils letzte 30"
     },
     "stageMastery": {
       "title": "Stage-Beherrschung",
@@ -3297,7 +3327,8 @@
       "allSessions": "Alle {{count}} Sessions →",
       "allTournaments": "Alle {{count}} Turniere →",
       "allOpponents": "Alle {{count}} Gegner →",
-      "sortMostGames": "Meiste Matches"
+      "sortMostGames": "Meiste Matches",
+      "allMatchups": "Alle {{count}} Matchups →"
     },
     "record": {
       "aria": "{{wins}} Siege, {{losses}} Niederlagen",

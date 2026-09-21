@@ -951,7 +951,37 @@
       "share": "全対戦の{{pct}}%",
       "last10": "直近10戦（新しい順）",
       "formRolling": "調子（直近10戦）",
-      "typeColumn": "種類"
+      "typeColumn": "種類",
+      "allTime": "通算",
+      "identityMeta": "対戦の{{pct}}% · {{confidence}}",
+      "verdictMeta": {
+        "last30": "FormNow · 直近30試合 対 通算",
+        "lastEvent": "FormNow · 直近イベント 対 通算",
+        "last90": "FormNow · 直近90日 対 通算"
+      },
+      "figureLocked_one": "あと{{count}}試合でこれが解放されます",
+      "figureLocked_other": "あと{{count}}試合でこれが解放されます",
+      "formStrip": {
+        "title": "フォーム · 直近60試合、イベント別"
+      },
+      "trendTitle": {
+        "game": "試合ごとの勝率 · 点の大きさ = 試合数",
+        "set": "セットごとの勝率 · 点の大きさ = 試合数",
+        "eventSession": "イベントごとの勝率 · 点の大きさ = 試合数",
+        "week": "週ごとの勝率 · 点の大きさ = 試合数",
+        "month": "月ごとの勝率 · 点の大きさ = 試合数",
+        "quarter": "四半期ごとの勝率 · 点の大きさ = 試合数",
+        "year": "年ごとの勝率 · 点の大きさ = 試合数"
+      },
+      "vsCharacters": {
+        "title": "対キャラクター",
+        "empty": "まだキャラクターデータがありません — 試合を記録するとキャラクター別の傾向が表示されます。"
+      },
+      "vsPlayers": {
+        "title": "対プレイヤー",
+        "empty": "まだ対戦相手データがありません — 試合を記録すると相手別の傾向が表示されます。"
+      },
+      "listMeta": "試合数が多い順 · 各々直近30試合"
     },
     "stageMastery": {
       "title": "ステージ習熟度",
@@ -3297,7 +3327,8 @@
       "allSessions": "{{count}}セッションすべて →",
       "allTournaments": "{{count}}大会すべて →",
       "allOpponents": "{{count}}人の対戦相手すべて →",
-      "sortMostGames": "試合数が多い順"
+      "sortMostGames": "試合数が多い順",
+      "allMatchups": "{{count}}件のマッチアップすべて →"
     },
     "record": {
       "aria": "{{wins}}勝{{losses}}敗",

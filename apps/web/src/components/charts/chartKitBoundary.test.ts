@@ -75,7 +75,6 @@ const KIT_DIR = 'apps/web/src/components/charts/';
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
   'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-  'apps/web/src/pages/FighterAnalysis/components/FighterHero.tsx',
   'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
   'apps/web/src/pages/Gsp/components/GspCurve.tsx',
   'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
