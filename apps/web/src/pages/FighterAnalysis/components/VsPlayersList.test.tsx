@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { SpriteList } from '@/data/sprites';
@@ -48,12 +48,13 @@ function manyOpponentsFixture(): Match[] {
   return matches;
 }
 
+/** A single opponent under `ABSTENTION_FLOOR_GAMES` (3) — a real all-time record, but too few recent games. */
 function subFloorFixture(): Match[] {
   const now = Date.now();
-  return Array.from({ length: 5 }, (_, i) =>
+  return Array.from({ length: 2 }, (_, i) =>
     makeMatch({
       id: `s${i}`,
-      time: now - (5 - i) * 60 * 60 * 1000,
+      time: now - (2 - i) * 60 * 60 * 1000,
       win: i % 2 === 0,
       opponent: 'rival',
     }),
@@ -70,7 +71,7 @@ describe('VsPlayersList', () => {
 
   it('expands to a terminus link at more than 25 opponents', () => {
     renderList(manyOpponentsFixture());
-    screen.getByRole('button', { name: /show all/i }).click();
+    fireEvent.click(screen.getByRole('button', { name: /show all/i }));
     const terminus = screen.getByRole('link', { name: /all .* opponents/i });
     expect(terminus).toBeInTheDocument();
     expect(terminus.getAttribute('href')).toMatch(/\/opponents/);

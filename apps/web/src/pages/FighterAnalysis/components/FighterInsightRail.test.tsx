@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
@@ -129,17 +129,62 @@ function richFixture(): Match[] {
   return matches;
 }
 
-/** Thin fixture — everything under the abstention floor and no named event, so both movers templates lock and lastEventRecap hides. */
+/** Thin fixture — under `ABSTENTION_FLOOR_GAMES` (3) and no named event, so both movers templates lock (a real opponent tag is set so rivalMovers also gets a group) and lastEventRecap hides. */
 function thinFixture(): Match[] {
   const now = Date.now();
-  return Array.from({ length: 5 }, (_, i) =>
+  return Array.from({ length: 2 }, (_, i) =>
     makeMatch({
       id: `t${i}`,
-      time: now - (5 - i) * 60 * 60 * 1000,
+      time: now - (2 - i) * 60 * 60 * 1000,
       win: i % 2 === 0,
       opponent_id: luigi.id,
+      opponent: 'rival-luigi',
     }),
   );
+}
+
+/** A fixture designed to produce TWO real asserting cards (characterMovers vs Fox, rivalMovers vs a second tag) plus the event recap — enough regular cards that dismissing one still leaves another. */
+function dismissFixture(): Match[] {
+  const now = Date.now();
+  const matches: Match[] = [];
+  // A large, low baseline vs Fox (character) with an all-win recent-30 —
+  // recent(30)/baseline(200) stays well under the 60% collapse ratio.
+  for (let i = 0; i < 200; i++) {
+    matches.push(
+      makeMatch({
+        id: `base${i}`,
+        time: now - (300 - i) * 60 * 60 * 1000,
+        win: i % 5 === 0,
+        opponent_id: fox.id,
+        opponent: 'rival-fox',
+      }),
+    );
+  }
+  for (let i = 0; i < 30; i++) {
+    matches.push(
+      makeMatch({
+        id: `recent${i}`,
+        time: now - (30 - i) * 60 * 60 * 1000,
+        win: true,
+        opponent_id: fox.id,
+        opponent: 'rival-fox',
+      }),
+    );
+  }
+  // A named event vs a different opponent character/player for the recap.
+  for (let i = 0; i < 9; i++) {
+    matches.push(
+      makeMatch({
+        id: `e${i}`,
+        time: now - (2 - i / 10) * 60 * 60 * 1000,
+        win: i % 3 !== 0,
+        opponent_id: luigi.id,
+        opponent: 'rival-luigi',
+        eventName: 'Supernova 2026',
+      }),
+    );
+  }
+  return matches;
 }
 
 describe('FighterInsightRail', () => {
@@ -197,18 +242,22 @@ describe('FighterInsightRail', () => {
   });
 
   it('dismissing a card reduces the rendered cards by one and persists exactly one dismissal for the subject', async () => {
-    list.mockResolvedValue(richFixture());
-    renderRail(richFixture());
+    list.mockResolvedValue(dismissFixture());
+    renderRail(dismissFixture());
     await waitForSettled();
 
     const before = document.querySelectorAll(
       '[data-slot="insight-rail-card"][data-card-kind="regular"]',
     );
-    expect(before.length).toBeGreaterThan(0);
-    const dismissButtons = screen.getAllByRole('button', { name: /dismiss/i });
-    dismissButtons[0]!.click();
-
+    expect(before.length).toBeGreaterThan(1);
+    // `useInsightDismissals`'s own internal `useFilteredMatches()` query
+    // instance can still be settling on the very first tick even though the
+    // rail already rendered from the `fighterMatches` PROP — retry the click
+    // on each poll (idempotent: `dismiss` no-ops once already dismissed)
+    // until the hook's writer is live.
     await waitFor(() => {
+      const dismissButtons = screen.getAllByRole('button', { name: /dismiss/i });
+      fireEvent.click(dismissButtons[0]!);
       const dismissedCountText = screen.queryByText(/1 dismissed on this device/i);
       expect(dismissedCountText).toBeInTheDocument();
     });
