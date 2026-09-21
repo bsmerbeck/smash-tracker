@@ -25,6 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { LIST_CAP } from '@/components/analytics/BoundedList';
 import { buildStageEvidence, getMatchupStageGuide, type StageRecord } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
@@ -107,7 +109,15 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
   const [refreshedAt] = useState(() => Date.now());
+  // T-39.1-14: this surface's nested vertical scroller is replaced by the
+  // bounded-list cap ladder (UI-SPEC §6.4) — capped at `LIST_CAP` (8), with a
+  // "Show all"/"Show fewer" toggle instead of an `overflow-y-auto` box. Table
+  // semantics stay a real `<table>` (the row/cell-count tests this component
+  // already carries depend on it) rather than `BoundedList`'s own `<ul>`.
+  const [expanded, setExpanded] = useState(false);
   const rows = getMatchupStageGuide(fighterMatches, threshold);
+  const visibleRows = expanded ? rows : rows.slice(0, LIST_CAP);
+  const hasMore = rows.length > LIST_CAP;
   const { claim, unknown, cohort } = buildStageEvidence({
     matches: fighterMatches,
     refreshedAt,
@@ -147,7 +157,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
             {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}
           </p>
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -159,7 +169,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => {
+                {visibleRows.map((row) => {
                   const sprite = getFighterById(row.opponentFighterId);
                   return (
                     <TableRow key={row.opponentFighterId}>
@@ -203,7 +213,19 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                 <UnknownRow bucket={unknown} as="tr" />
               </TableBody>
             </Table>
-          </div>
+            {hasMore && (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setExpanded((prev) => !prev)}
+              >
+                {expanded
+                  ? t('analytics.list.showFewer')
+                  : t('analytics.list.showAll', { count: rows.length })}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

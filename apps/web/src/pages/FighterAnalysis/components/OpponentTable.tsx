@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -8,6 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { LIST_CAP } from '@/components/analytics/BoundedList';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 
 /**
@@ -58,9 +61,17 @@ export function OpponentTable({
   hubHref?: (row: OpponentTableRow) => string | undefined;
 }) {
   const { t } = useTranslation();
+  // T-39.1-14: this surface's nested vertical scroller is replaced by the
+  // bounded-list cap ladder (UI-SPEC §6.4) — capped at `LIST_CAP` (8), with a
+  // "Show all"/"Show fewer" toggle instead of an `overflow-y-auto` box. Table
+  // semantics stay a real `<table>` (this component's own row/cell-count
+  // tests depend on it) rather than `BoundedList`'s own `<ul>`.
+  const [expanded, setExpanded] = useState(false);
+  const visibleRows = expanded ? rows : rows.slice(0, LIST_CAP);
+  const hasMore = rows.length > LIST_CAP;
 
   return (
-    <Card className="flex-1">
+    <Card>
       <CardHeader>
         <CardTitle>{t('fighterAnalysis.opponents.title')}</CardTitle>
       </CardHeader>
@@ -68,7 +79,7 @@ export function OpponentTable({
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('fighterAnalysis.opponents.empty')}</p>
         ) : (
-          <div className="max-h-[400px] overflow-y-auto">
+          <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -80,7 +91,7 @@ export function OpponentTable({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => {
+                {visibleRows.map((row) => {
                   const destination = hubHref?.(row);
                   return (
                     <TableRow key={row.key} className="relative hover:bg-accent">
@@ -111,7 +122,19 @@ export function OpponentTable({
                 })}
               </TableBody>
             </Table>
-          </div>
+            {hasMore && (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setExpanded((prev) => !prev)}
+              >
+                {expanded
+                  ? t('analytics.list.showFewer')
+                  : t('analytics.list.showAll', { count: rows.length })}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

@@ -348,7 +348,10 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('Opponents')).toBeInTheDocument());
-    expect(screen.getByText('rival')).toBeInTheDocument();
+    const opponentsCard = screen
+      .getByText('Opponents')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(within(opponentsCard).getByText('rival')).toBeInTheDocument();
   });
 
   it('shows the by-match-type share bar in the hero with localised labels, never a raw enum (T-39.1-14/UI-SPEC §9.6)', async () => {
@@ -365,5 +368,87 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getByText('Unspecified')).toBeInTheDocument();
     expect(screen.queryByText('quickplay')).not.toBeInTheDocument();
     expect(screen.queryByText('unspecified')).not.toBeInTheDocument();
+  });
+
+  it('the hero is the first grid cell in DOM order (T-39.1-14, DD-07)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    const grid = document.querySelector('[data-slot="page-grid"]') as HTMLElement;
+    expect(grid).toBeInTheDocument();
+    const firstCell = grid.children[0] as HTMLElement;
+    expect(firstCell.querySelector('[data-slot="fighter-hero-body"]')).toBeInTheDocument();
+  });
+
+  it('no card root on this surface carries a stretch utility (UIX-04)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    const cardRoots = document.querySelectorAll('[data-slot="card"]');
+    for (const card of cardRoots) {
+      expect(card.className).not.toMatch(/\bflex-1\b/);
+      expect(card.className).not.toMatch(/\bgrow\b/);
+      expect(card.className).not.toMatch(/\bself-stretch\b/);
+    }
+  });
+
+  it('renders exactly one filter row and one horizon switch', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(document.querySelectorAll('[data-slot="horizon-switch"]')).toHaveLength(1);
+  });
+
+  it('renders the filtered match list only when a drill axis is present in the URL (T-39.1-14)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+    ]);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/fighter-analysis']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <TooltipProvider>
+                <Routes>
+                  <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                </Routes>
+              </TooltipProvider>
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(document.getElementById('games')).not.toBeInTheDocument();
+
+    const queryClient2 = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient2}>
+        <MemoryRouter initialEntries={['/fighter-analysis?stage=1']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <TooltipProvider>
+                <Routes>
+                  <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                </Routes>
+              </TooltipProvider>
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
   });
 });

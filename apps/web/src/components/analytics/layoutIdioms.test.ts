@@ -127,8 +127,6 @@ const VERTICAL_OVERFLOW_PATTERN = /\boverflow-y-(auto|scroll)\b/;
  * and stay allowlisted until a future phase addresses dialogs.
  */
 const NESTED_SCROLLER_KNOWN_OFFENDERS = [
-  'apps/web/src/pages/FighterAnalysis/components/MatchupStageGuide.tsx',
-  'apps/web/src/pages/FighterAnalysis/components/OpponentTable.tsx',
   'apps/web/src/pages/Stages/StageDetailPage.tsx',
   'apps/web/src/pages/Matchups/components/SetStateControl.tsx',
   'apps/web/src/pages/Dashboard/components/AddMatchForm.tsx',
