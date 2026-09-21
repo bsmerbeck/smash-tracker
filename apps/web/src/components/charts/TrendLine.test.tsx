@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
-import { TrendLine, type TrendChartPoint, type TrendEventPoint } from './TrendLine';
+import { fireEvent, render, screen } from '@testing-library/react';
+import {
+  TrendLine,
+  type TrendChartPoint,
+  type TrendEventPoint,
+  type TrendLinePeriodLabels,
+} from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
+import type { PeriodPoint } from '@smash-tracker/shared';
+import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function makePoint(overrides: Partial<TrendChartPoint> = {}): TrendChartPoint {
   return {
@@ -300,5 +310,250 @@ describe('ChartTooltip', () => {
     const expectedDate = new Date(1700000000000).toLocaleDateString('en');
     expect(getByText(expectedDate)).toBeInTheDocument();
     expect(getByText('2–1 this event')).toBeInTheDocument();
+  });
+});
+
+function makePeriodPoint(overrides: Partial<PeriodPoint> = {}): PeriodPoint {
+  return {
+    grain: 'week',
+    key: 'week:2024-W01',
+    label: '2024-W01',
+    startMs: 0,
+    endMs: 999,
+    wins: 3,
+    losses: 2,
+    total: 5,
+    rate: 0.6,
+    subFloor: false,
+    ...overrides,
+  };
+}
+
+/** 8 points (at the `PERIOD_TREND_MIN_PERIODS` floor), evenly spaced 1000ms apart, all above the abstention floor with equal rates unless overridden per-index. */
+function makePeriodSeries(
+  count: number,
+  perIndex: (i: number) => Partial<PeriodPoint> = () => ({}),
+): PeriodPoint[] {
+  return Array.from({ length: count }, (_, i) =>
+    makePeriodPoint({
+      key: `week:2024-W${String(i).padStart(2, '0')}`,
+      label: `2024-W${String(i).padStart(2, '0')}`,
+      startMs: i * 1000,
+      endMs: i * 1000 + 999,
+      ...perIndex(i),
+    }),
+  );
+}
+
+const PERIOD_LABELS: TrendLinePeriodLabels = {
+  lockedSentence: 'Period trend — 3 more weeks with 3+ games unlock this chart.',
+  lockedCountLabel: '5 of 8 weeks',
+  tableToggle: 'View as table',
+  tableHeaders: { period: 'Period', record: 'Record', rate: 'Rate', sample: 'Sample' },
+};
+
+describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
+  it('renders one hollow dot per sub-floor point (fill=surface, stroke=deemphasis) and one filled dot per normal point (fill=series1, stroke=surface)', () => {
+    const points = makePeriodSeries(8, (i) =>
+      i === 3 || i === 4 ? { subFloor: true, total: 2, rate: 0.2 } : { rate: 0.5 },
+    );
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const circles = Array.from(container.querySelectorAll('circle'));
+    expect(circles).toHaveLength(8);
+    circles.forEach((circle, i) => {
+      const isHollow = i === 3 || i === 4;
+      expect(circle.getAttribute('fill')).toBe(isHollow ? 'var(--card)' : 'var(--viz-series-1)');
+      expect(circle.getAttribute('stroke')).toBe(isHollow ? 'var(--viz-context)' : 'var(--card)');
+    });
+  });
+
+  it('two adjacent sub-floor points render NO line segment between them or to their neighbors — the stroke line breaks into two disjoint runs', () => {
+    const points = makePeriodSeries(8, (i) =>
+      i === 3 || i === 4 ? { subFloor: true, total: 2, rate: 0.2 } : { rate: 0.5 },
+    );
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const strokeLine = container.querySelector('.trend-line-period-line .recharts-line-curve');
+    expect(strokeLine).not.toBeNull();
+    const d = strokeLine!.getAttribute('d') ?? '';
+    // Two disjoint runs of 3 consecutive points each (indices 0-2, indices
+    // 5-7) — exactly 2 "M" (move-to, one per run) and exactly 4 "L"
+    // (line-to: 2 segments per 3-point run). A bug that connected across the
+    // gap would produce 1 "M" and 7 "L" instead.
+    expect(d.match(/M/g)).toHaveLength(2);
+    expect(d.match(/L/g)).toHaveLength(4);
+  });
+
+  it('a fully-connected series (no sub-floor points) renders one unbroken run — sanity check for the gap mechanism above', () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.5 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const strokeLine = container.querySelector('.trend-line-period-line .recharts-line-curve');
+    const d = strokeLine!.getAttribute('d') ?? '';
+    expect(d.match(/M/g)).toHaveLength(1);
+    expect(d.match(/L/g)).toHaveLength(7);
+  });
+
+  it('draws exactly one mark per series point — never a synthetic mark for a period absent from the series (a calendar gap is not padded)', () => {
+    // Weeks 0,1,2,5,8,9,10,11 — a real calendar gap (weeks 3,4,6,7 missing)
+    // that the engine never emitted a point for.
+    const weekIndices = [0, 1, 2, 5, 8, 9, 10, 11];
+    const points = weekIndices.map((week, i) =>
+      makePeriodPoint({
+        key: `week:2024-W${week}`,
+        label: `2024-W${week}`,
+        startMs: week * 1000,
+        endMs: week * 1000 + 999,
+        rate: 0.4 + i * 0.01,
+      }),
+    );
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(container.querySelectorAll('circle')).toHaveLength(points.length);
+  });
+
+  it('direct value labels render on exactly the last, maximum and minimum points; a MAX tie keeps the earlier period, never duplicating the label', () => {
+    // rates: [.5, .9, .3, .9, .6, .7, .4, .2] — max .9 ties at index 1 and 3
+    // (index 1 must win); min .2 is unique at index 7 (which is also last).
+    const rates = [0.5, 0.9, 0.3, 0.9, 0.6, 0.7, 0.4, 0.2];
+    const points = makePeriodSeries(8, (i) => ({ rate: rates[i] }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const percentLabels = Array.from(container.querySelectorAll('text'))
+      .map((el) => el.textContent ?? '')
+      .filter((text) => /^\d+%$/.test(text));
+    expect(percentLabels.sort()).toEqual(['20%', '90%']);
+    // Exactly one "90%" label exists — the tied index 3 does not also render one.
+    expect(percentLabels.filter((text) => text === '90%')).toHaveLength(1);
+  });
+
+  it('the emphasis band left edge snaps to the period containing the window start, and its rendered width is at least 4px', () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.5 }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+        emphasisStartMs={points[5]!.startMs}
+      />,
+    );
+    const band = container.querySelector('.recharts-reference-area-rect');
+    expect(band).not.toBeNull();
+    expect(band!.getAttribute('x1')).toBe(points[5]!.key);
+    expect(band!.getAttribute('x2')).toBe(points[7]!.key);
+    const width = Number(band!.getAttribute('width'));
+    expect(width).toBeGreaterThanOrEqual(4);
+  });
+
+  it('below PERIOD_TREND_MIN_PERIODS the plot is absent and the locked inset with a meter is present, using the host-supplied sentence', () => {
+    const points = makePeriodSeries(PERIOD_TREND_MIN_PERIODS - 1);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(container.querySelector('svg')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
+    expect(screen.getByText(PERIOD_LABELS.lockedSentence)).toBeInTheDocument();
+    expect(container.querySelector('[role="img"]')).toHaveAttribute(
+      'aria-label',
+      PERIOD_LABELS.lockedCountLabel,
+    );
+  });
+
+  it('an empty period series (0 points) also renders the locked inset, never a bare null', () => {
+    const { container } = render(
+      <TrendLine mode="period" points={[]} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(container.querySelector('svg')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
+  });
+
+  it('the table twin is a real keyboard-reachable button (native <button>) whose row count and cell values equal the series points', () => {
+    const points = makePeriodSeries(8, (i) => ({
+      wins: i,
+      losses: 8 - i,
+      total: 8,
+      rate: i / 8,
+    }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const toggle = screen.getByRole('button', { name: PERIOD_LABELS.tableToggle });
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(container.querySelector('table')).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    const table = container.querySelector('table');
+    expect(table).not.toBeNull();
+    const rows = table!.querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(points.length);
+    rows.forEach((row, i) => {
+      const point = points[i]!;
+      const cells = row.querySelectorAll('td');
+      expect(cells[0]?.textContent).toBe(point.label);
+      expect(cells[1]?.textContent).toBe(`${point.wins}–${point.losses}`);
+      expect(cells[2]?.textContent).toBe(`${Math.round(point.rate * 100)}%`);
+      expect(cells[3]?.textContent).toBe(String(point.total));
+    });
+    const headers = table!.querySelectorAll('thead th');
+    expect(Array.from(headers).map((h) => h.textContent)).toEqual([
+      PERIOD_LABELS.tableHeaders.period,
+      PERIOD_LABELS.tableHeaders.record,
+      PERIOD_LABELS.tableHeaders.rate,
+      PERIOD_LABELS.tableHeaders.sample,
+    ]);
+  });
+
+  it('a click resolves the period at the active tooltip index and hands the whole PeriodPoint to the callback', () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.5 }));
+    const onSelectPoint = vi.fn();
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+        onSelectPoint={onSelectPoint}
+      />,
+    );
+    const svg = container.querySelector('svg.recharts-surface');
+    expect(svg).not.toBeNull();
+    fireEvent.click(svg!, { clientX: 320, clientY: 144 });
+    expect(onSelectPoint).toHaveBeenCalledTimes(1);
+    expect(onSelectPoint).toHaveBeenCalledWith(points[0]);
+  });
+
+  it('TrendLine.tsx imports nothing from the shared engine but period TYPES and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
+    const filePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'TrendLine.tsx');
+    const source = fs.readFileSync(filePath, 'utf8');
+    const sharedImportLines = source
+      .split('\n')
+      .filter((line) => line.includes("from '@smash-tracker/shared'"));
+    expect(sharedImportLines).toHaveLength(2);
+    expect(sharedImportLines.join('\n')).toMatch(/PeriodGrain/);
+    expect(sharedImportLines.join('\n')).toMatch(/PeriodPoint/);
+    expect(sharedImportLines.join('\n')).toMatch(/PERIOD_TREND_MIN_PERIODS/);
+    expect(sharedImportLines.join('\n')).not.toMatch(/buildPeriodSeries|regrainFor/);
+    // No date-bucketing helper of the kind periodSeries.ts owns.
+    expect(source).not.toMatch(
+      /isoWeekKey|monthKey|quarterKey|yearKey|splitIntoSessions|buildSetTimeline|buildEventSessionPoints/,
+    );
+  });
+
+  it('does not truncate or resample a longer-than-typical series — it renders exactly what it is given', () => {
+    const points = makePeriodSeries(60, (i) => ({ rate: (i % 10) / 10 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(container.querySelectorAll('circle')).toHaveLength(60);
   });
 });
