@@ -164,7 +164,9 @@ const SOURCE_FILES = listSourceFiles();
 /** Non-test `.tsx` files under the two scanned directories, excluding this guard's own proving fixtures. */
 const SCANNED_FILES = SOURCE_FILES.filter(
   (file) =>
-    (file.startsWith(ANALYTICS_DIR) || file.startsWith(CHARTS_DIR)) && !/\.test\.tsx?$/.test(file),
+    (file.startsWith(ANALYTICS_DIR) || file.startsWith(CHARTS_DIR)) &&
+    !/\.test\.tsx?$/.test(file) &&
+    !file.includes('guardFixtures/'),
 );
 
 /** Pages are explicitly OUT of scope (D-05): the app's existing second-person copy elsewhere is left alone. */
