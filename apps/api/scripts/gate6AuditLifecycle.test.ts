@@ -1,8 +1,7 @@
-import { execFile, type ChildProcess } from 'node:child_process';
-import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { HARNESS_READY_MARKER } from './harnessReadyMarker.js';
+import { spawnLifecycleHarness } from './lifecycleHarnessSpawn.js';
 
 /**
  * Owner/Codex hard gate #4 (B6): PROMPT TERMINATION for `gate6Audit.ts`.
@@ -21,77 +20,15 @@ import { HARNESS_READY_MARKER } from './harnessReadyMarker.js';
  * network — see `gate6AuditHarness.ts`.
  */
 
-const TSX_BIN = fileURLToPath(new URL('../node_modules/.bin/tsx', import.meta.url));
 const HARNESS = fileURLToPath(new URL('./gate6AuditHarness.ts', import.meta.url));
-
-interface ChildOutcome {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  output: string;
-  elapsedMs: number;
-}
-
-interface SpawnedHarness {
-  child: ChildProcess;
-  outcome: Promise<ChildOutcome>;
-  /** Resolves when the child prints `marker`; rejects if it exits first. See B10. */
-  waitFor: (marker: string) => Promise<void>;
-}
-
-function spawnHarness(mode: string, hardExitMs: number): SpawnedHarness {
-  const startedAt = Date.now();
-  let output = '';
-  const listeners = new Set<() => void>();
-  const child = execFile(TSX_BIN, [HARNESS, mode, String(hardExitMs)], {
-    // A hard ceiling well past every assertion bound, so a regression fails
-    // the test rather than hanging the suite.
-    timeout: 25_000,
-  });
-  const collect = (chunk: string | Buffer): void => {
-    output += String(chunk);
-    for (const notify of listeners) {
-      notify();
-    }
-  };
-  child.stdout?.on('data', collect);
-  child.stderr?.on('data', collect);
-  const outcome = once(child, 'exit').then(([code, signal]) => ({
-    code: code as number | null,
-    signal: signal as NodeJS.Signals | null,
-    output,
-    elapsedMs: Date.now() - startedAt,
-  }));
-
-  const waitFor = (marker: string): Promise<void> =>
-    new Promise<void>((resolve, reject) => {
-      const check = (): void => {
-        if (output.includes(marker)) {
-          listeners.delete(check);
-          resolve();
-        }
-      };
-      listeners.add(check);
-      void outcome.then((result) => {
-        listeners.delete(check);
-        if (result.output.includes(marker)) {
-          resolve();
-          return;
-        }
-        reject(
-          new Error(
-            `child exited (code ${result.code}, signal ${result.signal}) before printing "${marker}"\n${result.output}`,
-          ),
-        );
-      });
-      check();
-    });
-
-  return { child, outcome, waitFor };
-}
 
 describe('gate6Audit lifecycle (child process — a hung RTDB read cannot hang the gate)', () => {
   it('SUCCESS: an audit against a reachable database settles and exits well before the deadline', async () => {
-    const { outcome } = spawnHarness('success', 5_000);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'success',
+      hardExitMs: 5_000,
+    });
     const result = await outcome;
     // The empty fixture cannot satisfy the expectation table, so the ORACLE
     // fails — which is the correct verdict and, for this test, proof that the
@@ -103,7 +40,11 @@ describe('gate6Audit lifecycle (child process — a hung RTDB read cannot hang t
   });
 
   it('REQUEST TIMEOUT: a hung RTDB read is cut off at the per-operation deadline and exits 1', async () => {
-    const { outcome } = spawnHarness('request-timeout', 5_000);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'request-timeout',
+      hardExitMs: 5_000,
+    });
     const result = await outcome;
     expect(result.code).toBe(1);
     expect(result.output).toMatch(/exceeded its 600ms request timeout/);
@@ -115,7 +56,11 @@ describe('gate6Audit lifecycle (child process — a hung RTDB read cannot hang t
   });
 
   it('STALL: the no-progress watchdog aborts an audit whose reads never answer', async () => {
-    const { outcome } = spawnHarness('stall', 5_000);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'stall',
+      hardExitMs: 5_000,
+    });
     const result = await outcome;
     expect(result.code).toBe(1);
     expect(result.output).toMatch(/\[watchdog\] no progress for \d+ms/);
@@ -124,7 +69,11 @@ describe('gate6Audit lifecycle (child process — a hung RTDB read cannot hang t
   });
 
   it('INTERRUPTION: SIGINT terminates an audit stuck on an unresponsive database, exit 130', async () => {
-    const { child, outcome, waitFor } = spawnHarness('interrupt', 5_000);
+    const { child, outcome, waitFor } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'interrupt',
+      hardExitMs: 5_000,
+    });
     // Wait for the child's OWN statement that it has reached the hung read —
     // never a fixed sleep (B10).
     await waitFor(HARNESS_READY_MARKER);
