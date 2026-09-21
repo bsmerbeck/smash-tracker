@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { CohortComposition, SampleMeta, UnknownBucket } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { SampleCue, UnknownRow, MixedContextBadge } from './EvidenceCues';
+import { SampleCue, SampleCueGlyph, UnknownRow, MixedContextBadge } from './EvidenceCues';
 
 function makeSample(overrides: Partial<SampleMeta> = {}): SampleMeta {
   return {
@@ -35,7 +35,7 @@ function makeCohort(overrides: Partial<CohortComposition> = {}): CohortCompositi
 }
 
 describe('SampleCue', () => {
-  it('renders the total and localized confidence tier', () => {
+  it('renders the count and confidence tier via a whole re-keyed sentence (medium, plural)', () => {
     render(
       <SampleCue sample={makeSample({ eligibleDenominator: 12, confidenceTier: 'medium' })} />,
     );
@@ -43,8 +43,55 @@ describe('SampleCue', () => {
     expect(screen.getByText(/medium confidence/)).toBeInTheDocument();
   });
 
+  it('selects the singular plural pair at count 1 (UI-SPEC §9.2 rule 8)', () => {
+    render(<SampleCue sample={makeSample({ eligibleDenominator: 1, confidenceTier: 'low' })} />);
+    expect(screen.getByText('1 game · low confidence')).toBeInTheDocument();
+  });
+
+  it('selects the high-tier whole sentence (plural) for a large count', () => {
+    render(
+      <SampleCue sample={makeSample({ eligibleDenominator: 4564, confidenceTier: 'high' })} />,
+    );
+    expect(screen.getByText('4564 games · high confidence')).toBeInTheDocument();
+  });
+
   it('renders nothing below the abstention floor (no confidence tier)', () => {
     const { container } = render(<SampleCue sample={makeSample({ confidenceTier: null })} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('SampleCueGlyph', () => {
+  it('renders the dot indicator for each tier with a whole-sentence accessible label', () => {
+    const { rerender } = render(
+      <SampleCueGlyph sample={makeSample({ eligibleDenominator: 5, confidenceTier: 'low' })} />,
+    );
+    expect(screen.getByRole('img', { name: 'low confidence, 5 games' })).toHaveTextContent('●○○');
+
+    rerender(
+      <SampleCueGlyph sample={makeSample({ eligibleDenominator: 12, confidenceTier: 'medium' })} />,
+    );
+    expect(screen.getByRole('img', { name: 'medium confidence, 12 games' })).toHaveTextContent(
+      '●●○',
+    );
+
+    rerender(
+      <SampleCueGlyph sample={makeSample({ eligibleDenominator: 4564, confidenceTier: 'high' })} />,
+    );
+    expect(screen.getByRole('img', { name: 'high confidence, 4564 games' })).toHaveTextContent(
+      '●●●',
+    );
+  });
+
+  it('selects the singular plural pair at count 1', () => {
+    render(
+      <SampleCueGlyph sample={makeSample({ eligibleDenominator: 1, confidenceTier: 'low' })} />,
+    );
+    expect(screen.getByRole('img', { name: 'low confidence, 1 game' })).toBeInTheDocument();
+  });
+
+  it('renders nothing below the abstention floor (no confidence tier)', () => {
+    const { container } = render(<SampleCueGlyph sample={makeSample({ confidenceTier: null })} />);
     expect(container).toBeEmptyDOMElement();
   });
 });
