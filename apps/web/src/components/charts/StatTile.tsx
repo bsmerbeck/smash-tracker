@@ -29,7 +29,7 @@ export function StatTile({ stats, trend }: StatTileProps) {
         {stats.map((stat) => (
           <div key={stat.label} className="flex flex-col items-center text-center">
             <span className="text-sm text-muted-foreground">{stat.label}</span>
-            <span className="text-lg font-medium">{stat.value}</span>
+            <span className="text-xl font-medium">{stat.value}</span>
           </div>
         ))}
       </div>

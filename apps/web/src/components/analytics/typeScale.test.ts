@@ -141,7 +141,9 @@ const SOURCE_FILES = listSourceFiles();
  */
 const SCANNED_FILES = SOURCE_FILES.filter(
   (file) =>
-    (file.startsWith(ANALYTICS_DIR) || file.startsWith(CHARTS_DIR)) && !/\.test\.tsx?$/.test(file),
+    (file.startsWith(ANALYTICS_DIR) || file.startsWith(CHARTS_DIR)) &&
+    !/\.test\.tsx?$/.test(file) &&
+    !file.includes('guardFixtures/'),
 );
 
 describe('type-scale guard — source-tree guard (UIX-04, §5.1/§13.16)', () => {
