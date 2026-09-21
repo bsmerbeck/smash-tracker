@@ -1074,11 +1074,14 @@
       "offline": "オフライン",
       "unspecified": "未指定",
       "noData": "データなし",
-      "even": "オンラインとオフラインの勝率はほぼ同じです。",
-      "youWin": "勝率の差:",
-      "moreOnline": "オンラインの方が高い。",
-      "moreOffline": "オフラインの方が高い。",
-      "smallSample": "信頼できる比較には、オンライン・オフラインそれぞれ{{count}}戦以上が必要です。"
+      "unspecifiedFootnote_one": "未指定の対戦{{count}}戦は集計に含まれません。",
+      "unspecifiedFootnote_other": "未指定の対戦{{count}}戦は集計に含まれません。"
+    },
+    "recentEvents": {
+      "title": "最近のイベント",
+      "placementAndSeed": "{{entrants}}人中{{placement}}位 · シード{{seed}}",
+      "placementOnly": "{{entrants}}人中{{placement}}位",
+      "seedOnly": "シード{{seed}}"
     },
     "tournaments": {
       "title": "大会",
@@ -1093,11 +1096,17 @@
       "showAllTime": "全期間を表示"
     },
     "mix": {
-      "title": "対戦タイプの推移",
+      "title": "対戦タイプの内訳",
       "tourney": "大会",
       "friendly": "フリー",
       "quickplay": "クイックプレイ",
-      "unspecified": "未指定"
+      "unspecified": "未指定",
+      "allTime": "通算",
+      "recentHeader": {
+        "last30": "直近30戦",
+        "lastEvent": "直近の大会",
+        "last90": "直近90日"
+      }
     }
   },
   "tournaments": {

@@ -436,9 +436,15 @@ describe('insight copy — no concatenation, no second person, no probability (I
       // two new namespaces — proves this guard's scope, never sweeps in the
       // rest of the document. Replaces plan 39.1-09's synthetic
       // `.unrelated` fixture entry now that real content is in scope.
-      const existingOutsideString = (
-        (enModule.trends as { setting: { youWin: string } }).setting as { youWin: string }
-      ).youWin;
+      //
+      // Plan 39.1-15 (Task 2, TRND-02, review of #4-M3): this test used to
+      // read `trends.setting.youWin` — one of the five concatenated
+      // second-person `SettingComparison.tsx` keys that plan deletes from
+      // all six locale files in the SAME commit as the code reading them.
+      // `chrome.yourProfile` is an unrelated, stable second-person string no
+      // plan currently touches, chosen so this scoping proof survives that
+      // deletion instead of throwing on an undefined property.
+      const existingOutsideString = (enModule.chrome as { yourProfile: string }).yourProfile;
       expect(SECOND_PERSON_PATTERNS.en!.test(existingOutsideString)).toBe(true);
       const scannedLeaves = collectNewNamespaceLeaves('en');
       expect(scannedLeaves.some((leaf) => leaf.value === existingOutsideString)).toBe(false);

@@ -1074,11 +1074,14 @@
       "offline": "Hors ligne",
       "unspecified": "Non précisé",
       "noData": "aucune donnée",
-      "even": "Vous gagnez à peu près au même rythme en ligne et hors ligne.",
-      "youWin": "Vous gagnez",
-      "moreOnline": "de plus en ligne que hors ligne.",
-      "moreOffline": "de plus hors ligne qu'en ligne.",
-      "smallSample": "Il faut au moins {{count}} matchs en ligne et hors ligne pour une comparaison fiable."
+      "unspecifiedFootnote_one": "{{count}} match non précisé non comptabilisé.",
+      "unspecifiedFootnote_other": "{{count}} matchs non précisés non comptabilisés."
+    },
+    "recentEvents": {
+      "title": "Événements récents",
+      "placementAndSeed": "{{placement}} sur {{entrants}} · Tête de série {{seed}}",
+      "placementOnly": "{{placement}} sur {{entrants}}",
+      "seedOnly": "Tête de série {{seed}}"
     },
     "tournaments": {
       "title": "Tournois",
@@ -1093,11 +1096,17 @@
       "showAllTime": "Afficher depuis le début"
     },
     "mix": {
-      "title": "Répartition des types de match dans le temps",
+      "title": "Répartition des types de match",
       "tourney": "Tournoi",
       "friendly": "Amical",
       "quickplay": "Quickplay",
-      "unspecified": "Non précisé"
+      "unspecified": "Non précisé",
+      "allTime": "Historique complet",
+      "recentHeader": {
+        "last30": "30 derniers matchs",
+        "lastEvent": "Dernier événement",
+        "last90": "90 derniers jours"
+      }
     }
   },
   "tournaments": {

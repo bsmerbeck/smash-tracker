@@ -1,32 +1,21 @@
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
 import {
-  BarElement,
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  Tooltip,
-  type ChartOptions,
-} from 'chart.js';
-import { Bar } from 'react-chartjs-2';
-import type { Match } from '@smash-tracker/shared';
+  ACCOUNT_SCOPE,
+  INSIGHT_TEMPLATES,
+  resolveWindow,
+  toRateValue,
+} from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { chartColors, darkChartOptions } from '@/lib/chartTheme';
-import { formatMonthLabel } from './MonthlyPerformance';
+import { InsightLine } from '@/components/analytics/InsightLine';
+import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { Record } from '@/components/analytics/Record';
+import { ShareBar, type ShareBarSegment } from '@/components/charts/inlineMarks';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
-
-/** The four buckets matches are grouped into for the mix chart, in stack/legend order. */
+/** The four buckets matches are grouped into for the mix read, in stack/legend/fixed-fill order. */
 export const MATCH_TYPE_BUCKETS = ['tourney', 'friendly', 'quickplay', 'unspecified'] as const;
 export type MatchTypeBucket = (typeof MATCH_TYPE_BUCKETS)[number];
-
-const BUCKET_COLORS: Record<MatchTypeBucket, string> = {
-  tourney: '#e60012',
-  friendly: '#3b82f6',
-  quickplay: '#eab308',
-  unspecified: '#71717a',
-};
 
 const BUCKET_LABEL_KEYS: Record<MatchTypeBucket, string> = {
   tourney: 'trends.mix.tourney',
@@ -34,6 +23,9 @@ const BUCKET_LABEL_KEYS: Record<MatchTypeBucket, string> = {
   quickplay: 'trends.mix.quickplay',
   unspecified: 'trends.mix.unspecified',
 };
+
+const MIX_SHIFT_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'mixShift')!;
+const VOLUME_FORM_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'volumeForm')!;
 
 /** Buckets a stored `matchType` literal into one of the four mix categories. */
 export function bucketMatchType(matchType: Match['matchType']): MatchTypeBucket {
@@ -44,90 +36,119 @@ export function bucketMatchType(matchType: Match['matchType']): MatchTypeBucket 
   return 'unspecified';
 }
 
-export interface MonthlyMatchTypeMix {
-  month: string;
-  counts: Record<MatchTypeBucket, number>;
-}
-
-/**
- * Games played per month, split by match-type bucket. Exported as a pure
- * builder so the bucketing + monthly grouping is unit-testable without
- * rendering chart.js. Months are chronological ascending (same convention as
- * `getMonthlyRecords`).
- */
-export function buildMonthlyMatchTypeMix(matches: Match[]): MonthlyMatchTypeMix[] {
-  const byMonth = new Map<string, Record<MatchTypeBucket, number>>();
+function partitionByBucket(matches: Match[]): Record<MatchTypeBucket, Match[]> {
+  const out: Record<MatchTypeBucket, Match[]> = {
+    tourney: [],
+    friendly: [],
+    quickplay: [],
+    unspecified: [],
+  };
   for (const match of matches) {
-    const d = new Date(match.time);
-    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-    const bucket = bucketMatchType(match.matchType);
-    const counts = byMonth.get(month) ?? {
-      tourney: 0,
-      friendly: 0,
-      quickplay: 0,
-      unspecified: 0,
-    };
-    counts[bucket] += 1;
-    byMonth.set(month, counts);
+    out[bucketMatchType(match.matchType)].push(match);
   }
-  return [...byMonth.entries()]
-    .map(([month, counts]) => ({ month, counts }))
-    .sort((a, b) => a.month.localeCompare(b.month));
+  return out;
 }
 
-function buildChartData(mix: MonthlyMatchTypeMix[], t: TFunction, locale: string) {
-  return {
-    labels: mix.map((m) => formatMonthLabel(m.month, locale)),
-    datasets: MATCH_TYPE_BUCKETS.map((bucket) => ({
+function buildSegments(matches: Match[], t: (key: string) => string): ShareBarSegment[] {
+  const byBucket = partitionByBucket(matches);
+  return MATCH_TYPE_BUCKETS.filter((bucket) => byBucket[bucket].length > 0).map((bucket) => {
+    const rate = toRateValue(byBucket[bucket]);
+    return {
+      key: bucket,
       label: t(BUCKET_LABEL_KEYS[bucket]),
-      data: mix.map((m) => m.counts[bucket]),
-      backgroundColor: BUCKET_COLORS[bucket],
-      stack: 'games',
-    })),
-  };
+      count: rate.total,
+      record: <Record wins={rate.wins} losses={rate.losses} cue="none" />,
+    };
+  });
 }
 
-function buildChartOptions(): ChartOptions<'bar'> {
-  const theme = darkChartOptions();
-  return {
-    responsive: theme.responsive,
-    maintainAspectRatio: theme.maintainAspectRatio,
-    scales: {
-      x: { ...theme.scales?.x, stacked: true },
-      y: { ...theme.scales?.y, stacked: true, beginAtZero: true },
-    },
-    plugins: {
-      legend: { display: true, labels: theme.plugins?.legend?.labels },
-      tooltip: {
-        backgroundColor: chartColors.tooltipBg,
-        borderColor: chartColors.tooltipBorder,
-        borderWidth: 1,
-      },
-    },
-  };
+export interface MatchTypeMixProps {
+  matches: Match[];
+  horizon: HorizonKey;
 }
 
 /**
- * V3 Phase F (item 5): games played per month, stacked by match-type bucket
- * (tourney/friendly/quickplay/unspecified). Kept intentionally simple — no
- * interactivity beyond the chart.js default tooltip.
+ * The Pro desk's right rail, bottom card (UI-SPEC §8.2 Row 3, DD-10, DD-15):
+ * an optional `MixShift` fact line, two stacked `ShareBar`s (all time and
+ * the active recent horizon, each with localised labels and per-bucket
+ * records), then the `VolumeForm` read as an insight line. The legacy
+ * canvas bar chart is gone — this file leaves BOTH the chart-kit boundary
+ * guard's allowlist and the ESLint restricted-import ignore array in the
+ * SAME commit (DD-10).
  */
-export function MatchTypeMix({ matches }: { matches: Match[] }) {
-  const { t, i18n } = useTranslation();
-  const mix = buildMonthlyMatchTypeMix(matches);
+export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
+  const { t } = useTranslation();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — the lazy `useState` initializer is this codebase's established
+  // one-time-read escape hatch.
+  const [nowMs] = useState(() => Date.now());
+
+  const allTimeSegments = useMemo(() => buildSegments(matches, t), [matches, t]);
+  const recentMatches = useMemo(
+    () => resolveWindow({ matches, horizon, scoped: false, nowMs }).matches,
+    [matches, horizon, nowMs],
+  );
+  const recentSegments = useMemo(() => buildSegments(recentMatches, t), [recentMatches, t]);
+
+  const mixShiftInsight = useMemo(
+    () => MIX_SHIFT_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
+    [matches, horizon, nowMs],
+  );
+  const volumeFormInsight = useMemo(
+    () => VOLUME_FORM_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
+    [matches, horizon, nowMs],
+  );
+
+  const showMixShift = mixShiftInsight != null && mixShiftInsight.state !== 'hidden';
 
   return (
-    <Card className="h-full">
+    <Card>
       <CardHeader>
         <CardTitle>{t('trends.mix.title')}</CardTitle>
       </CardHeader>
-      <CardContent>
-        {mix.length === 0 ? (
+      <CardContent className="flex flex-col gap-4">
+        {matches.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
-          <div className="h-56">
-            <Bar data={buildChartData(mix, t, i18n.language)} options={buildChartOptions()} />
-          </div>
+          <>
+            {showMixShift && (
+              <InsightLine
+                text={t(mixShiftInsight!.copy.key, mixShiftInsight!.copy.values)}
+                tone="notable"
+                chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
+              />
+            )}
+
+            <ShareBar
+              segments={allTimeSegments}
+              total={matches.length}
+              headerLabel={t('trends.mix.allTime')}
+              shareSuffix={(pct) => `${pct}%`}
+              emptyNode={t('analytics.share.empty')}
+              ariaSummary={t('analytics.share.aria', { count: matches.length })}
+            />
+
+            <ShareBar
+              segments={recentSegments}
+              total={recentMatches.length}
+              headerLabel={t(`trends.mix.recentHeader.${horizon}`)}
+              shareSuffix={(pct) => `${pct}%`}
+              emptyNode={t('analytics.share.empty')}
+              ariaSummary={t('analytics.share.aria', { count: recentMatches.length })}
+            />
+
+            {volumeFormInsight && (
+              <InsightLine
+                text={t(volumeFormInsight.copy.key, volumeFormInsight.copy.values)}
+                tone={volumeFormInsight.state === 'trend' ? 'notable' : 'steady'}
+                chip={
+                  volumeFormInsight.state === 'trend' ? (
+                    <ClaimChip kind="trend" label={t('insights.kind.trend')} />
+                  ) : undefined
+                }
+              />
+            )}
+          </>
         )}
       </CardContent>
     </Card>

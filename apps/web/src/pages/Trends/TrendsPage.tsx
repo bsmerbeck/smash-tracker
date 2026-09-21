@@ -12,8 +12,8 @@ import { TrendsHero } from './components/TrendsHero';
 import { TrendsReadsRail } from './components/TrendsReadsRail';
 import { MonthlyPerformance } from './components/MonthlyPerformance';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
+import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
-import { Tournaments } from './components/Tournaments';
 import { MatchTypeMix } from './components/MatchTypeMix';
 import { RatingCurve } from './components/RatingCurve';
 
@@ -27,8 +27,10 @@ import { RatingCurve } from './components/RatingCurve';
  * slot: the existing `RatingCurve`/`MonthlyPerformance` charts at 6+6) lands
  * in plan 39.1-15's Task 3 (`CareerTimelineSlot`) — this task mounts them
  * directly as a placeholder. Row 3 is the three 4-col rails: left (Sessions &
- * Tilt — Recent events is added by Task 2), centre (`TrendsReadsRail`, the
- * engine-backed reads), right (Setting comparison, Match-type mix).
+ * Tilt, Recent events), centre (`TrendsReadsRail`, the engine-backed reads),
+ * right (Setting comparison, Match-type mix). The six-column `Tournaments`
+ * table is removed from this page (Task 2, UI-SPEC §8.2) — `Tournaments.tsx`
+ * itself stays committed, since `TournamentsPage.tsx` still imports it.
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
@@ -82,7 +84,7 @@ export function TrendsPage() {
 
         <GridCell span={4} stack>
           <SessionsAndTilt matches={matches} />
-          <Tournaments matches={matches} />
+          <RecentEvents matches={matches} />
         </GridCell>
 
         <GridCell span={4}>
@@ -90,8 +92,8 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={4} stack>
-          <SettingComparison matches={matches} />
-          <MatchTypeMix matches={matches} />
+          <SettingComparison matches={matches} horizon={horizon} />
+          <MatchTypeMix matches={matches} horizon={horizon} />
         </GridCell>
       </PageGrid>
     </PageShell>

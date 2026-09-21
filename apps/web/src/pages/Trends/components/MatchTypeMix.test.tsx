@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
-import { MatchTypeMix, bucketMatchType, buildMonthlyMatchTypeMix } from './MatchTypeMix';
+import { MatchTypeMix, bucketMatchType } from './MatchTypeMix';
+
+const NOW = Date.now();
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -16,56 +18,65 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
 }
 
 describe('bucketMatchType', () => {
-  it('buckets tourney types (online/offline) together', () => {
+  it('buckets tourney/friendly/quickplay/unspecified correctly', () => {
     expect(bucketMatchType('online-tourney')).toBe('tourney');
     expect(bucketMatchType('offline-tourney')).toBe('tourney');
-  });
-
-  it('buckets friendly types (online/offline) together', () => {
     expect(bucketMatchType('online-friendly')).toBe('friendly');
     expect(bucketMatchType('offline-friendly')).toBe('friendly');
-  });
-
-  it('buckets quickplay on its own', () => {
     expect(bucketMatchType('quickplay')).toBe('quickplay');
-  });
-
-  it('buckets missing/none/empty as unspecified', () => {
     expect(bucketMatchType('none')).toBe('unspecified');
-    expect(bucketMatchType('')).toBe('unspecified');
     expect(bucketMatchType(undefined)).toBe('unspecified');
   });
 });
 
-describe('buildMonthlyMatchTypeMix', () => {
-  it('groups counts per month per bucket', () => {
+describe('MatchTypeMix', () => {
+  it('imports no legacy canvas chart library', () => {
+    // Regression proof for DD-10: this source file must not import chart.js
+    // or react-chartjs-2 (chartKitBoundary.test.ts's own oracle covers the
+    // repo-wide guarantee; this is the direct, file-local statement).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'MatchTypeMix.tsx'), 'utf8');
+    expect(source).not.toMatch(/from\s+['"](chart\.js|react-chartjs-2)['"]/);
+  });
+
+  it('renders two share bars with localised labels and no raw enum value', () => {
     const matches = [
-      makeMatch({ id: '1', time: Date.UTC(2021, 0, 1), win: true, matchType: 'quickplay' }),
-      makeMatch({ id: '2', time: Date.UTC(2021, 0, 2), win: true, matchType: 'online-tourney' }),
-      makeMatch({ id: '3', time: Date.UTC(2021, 1, 1), win: true, matchType: 'offline-friendly' }),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ id: `q${i}`, time: NOW - (5 - i) * 60_000, win: true, matchType: 'quickplay' }),
+      ),
+      ...Array.from({ length: 5 }, (_, i) =>
+        makeMatch({
+          id: `t${i}`,
+          time: NOW - (5 - i) * 60_000,
+          win: false,
+          matchType: 'offline-tourney',
+        }),
+      ),
     ];
-    const mix = buildMonthlyMatchTypeMix(matches);
+    render(<MatchTypeMix matches={matches} horizon="last30" />);
 
-    expect(mix).toEqual([
-      { month: '2021-01', counts: { tourney: 1, friendly: 0, quickplay: 1, unspecified: 0 } },
-      { month: '2021-02', counts: { tourney: 0, friendly: 1, quickplay: 0, unspecified: 0 } },
-    ]);
+    expect(screen.getAllByText('Quickplay').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Tourney').length).toBeGreaterThan(0);
+    expect(screen.queryByText('quickplay')).not.toBeInTheDocument();
+    expect(screen.queryByText('offline-tourney')).not.toBeInTheDocument();
+    expect(screen.getByText('All time')).toBeInTheDocument();
+    expect(screen.getByText('Last 30 games')).toBeInTheDocument();
   });
 
-  it('returns an empty array for no matches', () => {
-    expect(buildMonthlyMatchTypeMix([])).toEqual([]);
-  });
-});
+  it('renders the volume-form line even on a small account (locked state)', () => {
+    const matches = Array.from({ length: 5 }, (_, i) =>
+      makeMatch({ id: `g${i}`, time: NOW - (5 - i) * 60_000, win: true, matchType: 'quickplay' }),
+    );
+    render(<MatchTypeMix matches={matches} horizon="last30" />);
 
-describe('MatchTypeMix component', () => {
-  it('shows an empty state with no match data', () => {
-    render(<MatchTypeMix matches={[]} />);
+    expect(screen.getByText(/unlock the volume read/)).toBeInTheDocument();
+  });
+
+  it('renders no card content when there are no matches', () => {
+    render(<MatchTypeMix matches={[]} horizon="last30" />);
     expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
-  });
-
-  it('renders the card title when data exists', () => {
-    const matches = [makeMatch({ id: '1', time: 1, win: true, matchType: 'quickplay' })];
-    render(<MatchTypeMix matches={matches} />);
-    expect(screen.getByText('Match-Type Mix Over Time')).toBeInTheDocument();
   });
 });

@@ -66,6 +66,13 @@ describe('settingGapTemplate', () => {
     expect(insight.state).toBe('thin');
     expect(insight.copy.values.offlineRate).toBeUndefined();
     expect(insight.copy.values.onlineRate).toBeDefined();
+    // Plan 39.1-15 (Rule 1 bug fix): `insights.settingGap.thin` interpolates
+    // `{{count}}` — this template used to leave it unset for the `thin`
+    // branch (only the `locked` branch populated it from `gamesNeeded`),
+    // leaking a literal `{{count}}` into the rendered sentence. `count`
+    // here is the empty side's own count (always 0, since `thin` triggers
+    // only when a side is literally empty).
+    expect(insight.copy.values.count).toBe(0);
   });
 
   it('emits online keys before offline keys in copy.values even when offline is ahead', () => {

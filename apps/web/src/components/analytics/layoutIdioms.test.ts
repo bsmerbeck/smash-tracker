@@ -106,7 +106,6 @@ const STAT_COMPONENT_GSP_ALLOWLIST = [
 const STAT_COMPONENT_KNOWN_OFFENDERS = [
   'apps/web/src/pages/MatchData/components/StageBreakdown.tsx',
   'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
-  'apps/web/src/pages/Trends/components/SettingComparison.tsx',
 ];
 
 /** §6.4: a `max-h-*` utility paired with a vertical-overflow utility in the same file — a nested scroller inside an analytics surface. */

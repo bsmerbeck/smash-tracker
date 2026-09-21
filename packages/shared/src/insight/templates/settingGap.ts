@@ -99,6 +99,16 @@ function buildSettingGapInsight(input: {
   values.points = deltaPoints !== null ? Math.abs(deltaPoints) : 0;
   if (gamesNeeded !== undefined) {
     values.count = gamesNeeded;
+  } else if (state === 'thin') {
+    // Plan 39.1-15 (Rule 1 bug fix): `insights.settingGap.thin` interpolates
+    // `{{count}}` (the empty side's own game count — always 0, since this
+    // branch triggers only when one side has literally zero games), but this
+    // template never set it, leaking a literal `{{count}}` into the
+    // rendered sentence. The `locked` branch above already sets `count` from
+    // `gamesNeeded`; this mirrors that for the `thin` branch's own floor
+    // (zero games on a side, distinct from `locked`'s "some games but below
+    // the notability floor").
+    values.count = Math.min(online.length, offline.length);
   }
 
   const direction = deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';

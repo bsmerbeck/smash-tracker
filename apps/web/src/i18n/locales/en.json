@@ -1074,11 +1074,14 @@
       "offline": "Offline",
       "unspecified": "Unspecified",
       "noData": "no data",
-      "even": "You win about the same rate online and offline.",
-      "youWin": "You win",
-      "moreOnline": "more online than offline.",
-      "moreOffline": "more offline than online.",
-      "smallSample": "Need at least {{count}} games both online and offline for a reliable comparison."
+      "unspecifiedFootnote_one": "{{count}} unspecified game not counted.",
+      "unspecifiedFootnote_other": "{{count}} unspecified games not counted."
+    },
+    "recentEvents": {
+      "title": "Recent Events",
+      "placementAndSeed": "{{placement}} of {{entrants}} · Seed {{seed}}",
+      "placementOnly": "{{placement}} of {{entrants}}",
+      "seedOnly": "Seed {{seed}}"
     },
     "tournaments": {
       "title": "Tournaments",
@@ -1093,11 +1096,17 @@
       "showAllTime": "Show all time"
     },
     "mix": {
-      "title": "Match-Type Mix Over Time",
+      "title": "Match-Type Mix",
       "tourney": "Tourney",
       "friendly": "Friendly",
       "quickplay": "Quickplay",
-      "unspecified": "Unspecified"
+      "unspecified": "Unspecified",
+      "allTime": "All time",
+      "recentHeader": {
+        "last30": "Last 30 games",
+        "lastEvent": "Last event",
+        "last90": "Last 90 days"
+      }
     }
   },
   "tournaments": {

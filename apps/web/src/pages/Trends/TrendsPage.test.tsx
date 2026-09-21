@@ -110,7 +110,7 @@ describe('TrendsPage', () => {
     );
   });
 
-  it('renders all six trend sections once matches exist', async () => {
+  it('renders every Pro-desk section once matches exist', async () => {
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
       makeMatch({ id: 'm2', win: false, time: Date.UTC(2021, 1, 1), matchType: 'offline-tourney' }),
@@ -121,9 +121,11 @@ describe('TrendsPage', () => {
     expect(await screen.findByText('Monthly Performance')).toBeInTheDocument();
     expect(screen.getByText('Rating Curve')).toBeInTheDocument();
     expect(screen.getByText('Sessions & Tilt')).toBeInTheDocument();
+    expect(screen.getByText('Recent Events')).toBeInTheDocument();
     expect(screen.getByText('Setting Comparison')).toBeInTheDocument();
-    expect(screen.getByText('Tournaments')).toBeInTheDocument();
-    expect(screen.getByText('Match-Type Mix Over Time')).toBeInTheDocument();
+    expect(screen.getByText('Match-Type Mix')).toBeInTheDocument();
+    // The six-column Tournaments table no longer renders on Trends (DD-10/UI-SPEC §8.2).
+    expect(screen.queryByRole('table', { name: /tournament/i })).not.toBeInTheDocument();
   });
 
   it('shows the resync hint in the tournaments section when there are no tournament entries yet', async () => {

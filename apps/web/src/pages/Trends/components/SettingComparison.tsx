@@ -1,107 +1,326 @@
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { HorizonKey, InsightState, Match } from '@smash-tracker/shared';
+import {
+  ACCOUNT_SCOPE,
+  INSIGHT_TEMPLATES,
+  classify,
+  resolveWindow,
+  toRateValue,
+  wilsonInterval,
+} from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getOnlineOfflineSplit, type OnlineOfflineSplit, type WinLossRecord } from '@/lib/stats';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
+import { Record } from '@/components/analytics/Record';
+import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { InsightLine } from '@/components/analytics/InsightLine';
+import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
+import { CHART_TOKENS } from '@/components/charts/tokens';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 
-/** Minimum sample size (each side) required before the takeaway line is shown, rather than a small-sample note. */
-export const TAKEAWAY_MIN_SAMPLE = 10;
+const SETTING_GAP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'settingGap')!;
 
-export interface SettingTakeaway {
-  kind: 'takeaway' | 'small-sample';
-  /** Populated when `kind === 'takeaway'`: which setting wins and by how many points. Absolute value; sign is implied by `better`. */
-  deltaPoints?: number;
-  better?: 'online' | 'offline';
-}
-
-/**
- * Builds the one-line online-vs-offline takeaway. Only compares when both
- * samples meet `TAKEAWAY_MIN_SAMPLE`; otherwise reports `small-sample` so the
- * caller renders a neutral note instead of a possibly-noisy claim. A tie
- * (equal win rate) reports `better: 'online'` with a zero delta — callers
- * should treat a zero delta as "even", not "online wins".
- */
-export function buildSettingTakeaway(split: OnlineOfflineSplit): SettingTakeaway {
-  if (split.online.total < TAKEAWAY_MIN_SAMPLE || split.offline.total < TAKEAWAY_MIN_SAMPLE) {
-    return { kind: 'small-sample' };
+/** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union (duplicated per this codebase's small-helper-duplication convention). */
+function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
+  if (state === 'trend' || state === 'suggestion') {
+    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
   }
-  const delta = split.online.winRate - split.offline.winRate;
-  return {
-    kind: 'takeaway',
-    deltaPoints: Math.abs(delta),
-    better: delta >= 0 ? 'online' : 'offline',
-  };
+  if (state === 'steady') return 'steady';
+  if (state === 'thin' || state === 'thinRecent') return 'thin';
+  if (state === 'collapsed') return 'collapsed';
+  return 'none';
+}
+
+interface SettingPartition {
+  online: Match[];
+  offline: Match[];
+  unspecified: Match[];
+}
+
+/** Mirrors `@smash-tracker/shared`'s `settingGap.ts`'s (unexported) `partitionBySetting` byte-for-byte — ported, not imported, per this codebase's convention (`apps/web` cannot reach a template file's internals). */
+function partitionBySetting(matches: Match[]): SettingPartition {
+  const online: Match[] = [];
+  const offline: Match[] = [];
+  const unspecified: Match[] = [];
+  for (const match of matches) {
+    const type = match.matchType ?? '';
+    if (type === 'quickplay' || type.startsWith('online')) {
+      online.push(match);
+    } else if (type.startsWith('offline')) {
+      offline.push(match);
+    } else {
+      unspecified.push(match);
+    }
+  }
+  return { online, offline, unspecified };
+}
+
+export interface SettingComparisonProps {
+  matches: Match[];
+  horizon: HorizonKey;
 }
 
 /**
- * V3 Phase F: online vs offline vs unspecified setting comparison. Three
- * stat blocks plus a one-line takeaway, gated on both online and offline
- * having at least `TAKEAWAY_MIN_SAMPLE` games.
+ * The Pro desk's right rail, top card (UI-SPEC §8.2 Row 3, TRND-02, D-09):
+ * a two-figure `StatRow` (online then offline, ALWAYS in that fixed order),
+ * a two-row dumbbell (baseline = that side's all-time rate, recent = that
+ * side's rate within the active horizon), then the `SettingGap` engine read
+ * as an insight line. Replaces the three concatenated second-person
+ * fragments and the bordered `SettingBlock` tiles this file used to declare
+ * (UI-SPEC §9.6) — both are deleted in this commit, along with the five
+ * `trends.setting.{youWin,moreOnline,moreOffline,even,smallSample}` locale
+ * keys (in all six locale files, in the SAME commit).
  */
-export function SettingComparison({ matches }: { matches: Match[] }) {
+export function SettingComparison({ matches, horizon }: SettingComparisonProps) {
   const { t } = useTranslation();
-  const split = getOnlineOfflineSplit(matches);
-  const takeaway = buildSettingTakeaway(split);
-  const hasAny = split.online.total > 0 || split.offline.total > 0 || split.unspecified.total > 0;
+  const subjectPath = useSubjectPath();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — the lazy `useState` initializer is this codebase's established
+  // one-time-read escape hatch.
+  const [nowMs] = useState(() => Date.now());
+
+  const { online, offline, unspecified } = useMemo(() => partitionBySetting(matches), [matches]);
+
+  const onlineBaseline = useMemo(() => toRateValue(online), [online]);
+  const offlineBaseline = useMemo(() => toRateValue(offline), [offline]);
+
+  const onlineRecent = useMemo(
+    () => toRateValue(resolveWindow({ matches: online, horizon, scoped: false, nowMs }).matches),
+    [online, horizon, nowMs],
+  );
+  const offlineRecent = useMemo(
+    () => toRateValue(resolveWindow({ matches: offline, horizon, scoped: false, nowMs }).matches),
+    [offline, horizon, nowMs],
+  );
+
+  const onlineClassify = useMemo(
+    () =>
+      classify({ recent: onlineRecent, baseline: onlineBaseline, scoped: false, hasAction: false }),
+    [onlineRecent, onlineBaseline],
+  );
+  const offlineClassify = useMemo(
+    () =>
+      classify({
+        recent: offlineRecent,
+        baseline: offlineBaseline,
+        scoped: false,
+        hasAction: false,
+      }),
+    [offlineRecent, offlineBaseline],
+  );
+
+  const settingGapInsight = useMemo(
+    () => SETTING_GAP_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
+    [matches, horizon, nowMs],
+  );
+
+  function buildFigure(
+    label: string,
+    baseline: ReturnType<typeof toRateValue>,
+    recent: ReturnType<typeof toRateValue>,
+    gate: ReturnType<typeof classify>,
+  ) {
+    if (baseline.total === 0) {
+      return (
+        <StatFigure
+          key={label}
+          label={label}
+          state="empty"
+          emptyCaption={t('trends.setting.noData')}
+        />
+      );
+    }
+    const chipState = deltaChipStateFor(gate.state, gate.deltaPoints);
+    return (
+      <StatFigure
+        key={label}
+        label={label}
+        value={`${Math.round(baseline.rate * 100)}%`}
+        support={<Record wins={baseline.wins} losses={baseline.losses} cue="none" />}
+        delta={
+          chipState === 'collapsed' ? null : (
+            <DeltaChip
+              state={chipState}
+              valueLabel={t(
+                chipState === 'up'
+                  ? 'analytics.record.deltaUp'
+                  : chipState === 'down'
+                    ? 'analytics.record.deltaDown'
+                    : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
+                { points: Math.abs(gate.deltaPoints ?? 0) },
+              )}
+              horizonOwnedByParent
+              ariaLabel={t('analytics.dumbbell.rowAria', {
+                label,
+                recentRecord: `${recent.wins}–${recent.losses}`,
+                baselineRecord: `${baseline.wins}–${baseline.losses}`,
+              })}
+            />
+          )
+        }
+      />
+    );
+  }
+
+  function buildDumbbellRow(
+    key: 'online' | 'offline',
+    label: string,
+    baseline: ReturnType<typeof toRateValue>,
+    recent: ReturnType<typeof toRateValue>,
+    gate: ReturnType<typeof classify>,
+  ): ComparisonBarsDumbbellRow | null {
+    if (baseline.total === 0) {
+      return null;
+    }
+    const collapsed = gate.state === 'collapsed';
+    const chipState = deltaChipStateFor(gate.state, gate.deltaPoints);
+    const interval = wilsonInterval(recent.wins, recent.total);
+    return {
+      key,
+      label,
+      recentRecordNode: <Record wins={recent.wins} losses={recent.losses} cue="none" />,
+      deltaNode: collapsed ? null : (
+        <DeltaChip
+          state={chipState}
+          valueLabel={t(
+            chipState === 'up'
+              ? 'analytics.record.deltaUp'
+              : chipState === 'down'
+                ? 'analytics.record.deltaDown'
+                : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
+            { points: Math.abs(gate.deltaPoints ?? 0) },
+          )}
+          horizonOwnedByParent
+          ariaLabel={t('analytics.dumbbell.rowAria', {
+            label,
+            recentRecord: `${recent.wins}–${recent.losses}`,
+            baselineRecord: `${baseline.wins}–${baseline.losses}`,
+          })}
+        />
+      ),
+      baselineRate: baseline.rate * 100,
+      recentRate: recent.rate * 100,
+      recentRange: [interval.lower * 100, interval.upper * 100],
+      recentTotal: recent.total,
+      href: subjectPath('/trends'),
+      ariaLabel: t('shared.drillableRow.aria', {
+        subject: label,
+        context: `${recent.wins}–${recent.losses}`,
+      }),
+      collapsed,
+    };
+  }
+
+  const dumbbellRows = [
+    buildDumbbellRow(
+      'online',
+      t('trends.setting.online'),
+      onlineBaseline,
+      onlineRecent,
+      onlineClassify,
+    ),
+    buildDumbbellRow(
+      'offline',
+      t('trends.setting.offline'),
+      offlineBaseline,
+      offlineRecent,
+      offlineClassify,
+    ),
+  ].filter((row): row is ComparisonBarsDumbbellRow => row !== null);
+
+  const gapVerdict = settingGapInsight
+    ? t(settingGapInsight.copy.key, settingGapInsight.copy.values)
+    : null;
+  const gapChipKind: ClaimChipKind = settingGapInsight?.kind === 'inference' ? 'trend' : 'fact';
 
   return (
-    <Card className="h-full">
+    <Card>
       <CardHeader>
         <CardTitle>{t('trends.setting.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {!hasAny ? (
+        {online.length === 0 && offline.length === 0 && unspecified.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <SettingBlock label={t('trends.setting.online')} record={split.online} />
-              <SettingBlock label={t('trends.setting.offline')} record={split.offline} />
-              <SettingBlock label={t('trends.setting.unspecified')} record={split.unspecified} />
-            </div>
+            <StatRow
+              figures={[
+                buildFigure(
+                  t('trends.setting.online'),
+                  onlineBaseline,
+                  onlineRecent,
+                  onlineClassify,
+                ),
+                buildFigure(
+                  t('trends.setting.offline'),
+                  offlineBaseline,
+                  offlineRecent,
+                  offlineClassify,
+                ),
+              ]}
+            />
 
-            {takeaway.kind === 'takeaway' ? (
-              <p className="text-sm">
-                {takeaway.deltaPoints === 0 ? (
-                  <span>{t('trends.setting.even')}</span>
-                ) : (
-                  <span>
-                    {t('trends.setting.youWin')}{' '}
-                    <span className="font-semibold text-foreground">{takeaway.deltaPoints}%</span>{' '}
-                    {takeaway.better === 'online'
-                      ? t('trends.setting.moreOnline')
-                      : t('trends.setting.moreOffline')}
+            {dumbbellRows.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div
+                  aria-hidden="true"
+                  className="flex items-center justify-between text-[0.6875rem] text-muted-foreground tabular-nums"
+                >
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+                <ComparisonBars mode="dumbbell" rows={dumbbellRows} />
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-2 rounded-full"
+                      style={{ backgroundColor: CHART_TOKENS.deemphasis }}
+                    />
+                    {t('analytics.dumbbell.legend.allTime')}
                   </span>
-                )}
-              </p>
-            ) : (
+                  <span className="flex items-center gap-1">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-2 rounded-full"
+                      style={{ backgroundColor: CHART_TOKENS.series1 }}
+                    />
+                    {t('analytics.dumbbell.legend.recent')}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-2 rounded-full opacity-40"
+                      style={{ backgroundColor: CHART_TOKENS.series1 }}
+                    />
+                    {t('analytics.dumbbell.legend.range')}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {gapVerdict && (
+              <InsightLine
+                text={gapVerdict}
+                tone={settingGapInsight?.state === 'trend' ? 'notable' : 'steady'}
+                chip={
+                  settingGapInsight?.state === 'trend' ? (
+                    <ClaimChip kind={gapChipKind} label={t(`insights.kind.${gapChipKind}`)} />
+                  ) : undefined
+                }
+              />
+            )}
+
+            {unspecified.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {t('trends.setting.smallSample', { count: TAKEAWAY_MIN_SAMPLE })}
+                {t('trends.setting.unspecifiedFootnote', { count: unspecified.length })}
               </p>
             )}
           </>
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SettingBlock({ label, record }: { label: string; record: WinLossRecord }) {
-  const { t } = useTranslation();
-  if (record.total === 0) {
-    return (
-      <div className="rounded-md border p-3">
-        <h3 className="text-sm text-muted-foreground">{label}</h3>
-        <p className="text-sm text-muted-foreground">{t('trends.setting.noData')}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-md border p-3">
-      <h3 className="text-sm text-muted-foreground">{label}</h3>
-      <p className="text-2xl font-semibold">{record.winRate}%</p>
-      <p className="text-xs text-muted-foreground">
-        {record.wins}-{record.losses} ({t('common.games', { count: record.total })})
-      </p>
-    </div>
   );
 }

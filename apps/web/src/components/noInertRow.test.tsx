@@ -353,13 +353,17 @@ const SURFACES: Surface[] = [
     rows: (result) => within(result.container).getAllByRole('link'),
   },
   {
-    name: 'Sessions-and-tilt table',
+    // Plan 39.1-15 (Task 2, UIX-04): rebuilt off the `Table` idiom onto the
+    // `BoundedList` primitive (a plain `<ul><li>` list, not a table) — the
+    // row selector below follows suit (mirrors "Recent encounters"'s own
+    // `listitem` selector immediately below).
+    name: 'Sessions-and-tilt list',
     file: 'apps/web/src/pages/Trends/components/SessionsAndTilt.tsx',
     render: () => {
       const matches = [makeMatch({ id: 'g1', time: 1, win: true })];
       return withRouterAndQuery(<SessionsAndTilt matches={matches} />);
     },
-    rows: (result) => dataRows(result.container),
+    rows: (result) => within(result.container).getAllByRole('listitem'),
   },
   {
     name: 'Recent encounters',
