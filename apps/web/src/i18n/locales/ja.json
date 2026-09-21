@@ -3157,6 +3157,227 @@
         "lastEvent": "直近のイベントで有意な変化はありません。",
         "last90": "直近90日間で有意な変化はありません。"
       }
+    },
+    "formNow": {
+      "up": {
+        "last30": "{{entity}} — 直近30試合で勝率が{{points}}ポイント上昇。",
+        "lastEvent": "{{entity}} — 直近のイベントで勝率が{{points}}ポイント上昇。",
+        "last90": "{{entity}} — 直近90日間で勝率が{{points}}ポイント上昇。"
+      },
+      "down": {
+        "last30": "{{entity}} — 直近30試合で勝率が{{points}}ポイント下降。",
+        "lastEvent": "{{entity}} — 直近のイベントで勝率が{{points}}ポイント下降。",
+        "last90": "{{entity}} — 直近90日間で勝率が{{points}}ポイント下降。"
+      },
+      "collapsed": {
+        "last30": "{{entity}} — 記録全{{count}}試合で{{record}}。",
+        "lastEvent": "{{entity}} — 直近のイベント全{{count}}試合で{{record}}。",
+        "last90": "{{entity}} — 記録全{{count}}試合で{{record}}。"
+      },
+      "steady": "{{entity}} — 直近{{count}}試合で{{record}}、{{rate}}の成績として通常の範囲内です（{{lower}}〜{{upper}}）。",
+      "thinRecent": "直近の試合は{{count}}戦のみ — 全期間のデータを表示しています。",
+      "thin": "{{entity}} — これまでに{{count}}試合のみで、傾向を判断するには不足しています。",
+      "locked_one": "{{entity}} — あと1試合でこの分析が解放されます。",
+      "locked_other": "{{entity}} — あと{{count}}試合でこの分析が解放されます。"
+    },
+    "characterMovers": {
+      "up": "vs {{fighter}} — 直近{{count}}試合で勝率が{{points}}ポイント上昇。",
+      "down": "vs {{fighter}} — 直近{{count}}試合で勝率が{{points}}ポイント下降。",
+      "steady": "vs キャラクター — 直近8試合以上ある{{count}}件の相性で有意な変化はありません。",
+      "thinRecent": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
+      "locked_one": "vs {{fighter}} — あと1試合でこの分析が解放されます。",
+      "locked_other": "vs {{fighter}} — あと{{count}}試合でこの分析が解放されます。",
+      "sub": "直近8試合以上ある他の{{count}}件の相性で、有意な下降は見られません。"
+    },
+    "rivalMovers": {
+      "up": "vs {{opponent}} — 直近{{count}}試合で勝率が{{points}}ポイント上昇。",
+      "down": "vs {{opponent}} — 直近{{count}}試合で勝率が{{points}}ポイント下降。",
+      "steady": "vs 対戦相手 — 直近8試合以上ある{{count}}人の相手で有意な変化はありません。",
+      "thinRecent": "vs 対戦相手 — 直近のイベントで8試合に達した相手は{{count}}人のみ — 全期間のデータを表示しています。",
+      "locked_one": "vs {{opponent}} — あと1試合でこの分析が解放されます。",
+      "locked_other": "vs {{opponent}} — あと{{count}}試合でこの分析が解放されます。"
+    },
+    "lastEventRecap": {
+      "hidden": "まだイベントが記録されていません。",
+      "fact": "{{event}} — 試合成績{{gameRecord}}、セット成績{{setRecord}}。",
+      "factGamesOnly": "{{event}} — 試合成績{{gameRecord}}。",
+      "factPlacement": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}、セット成績{{setRecord}}。",
+      "factPlacementGamesOnly": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}。",
+      "noSetLosses": "セットの負けはありません。",
+      "setLosses_one": "セット負け — {{named}}。",
+      "setLosses_other": "セット負け — {{named}}。"
+    },
+    "ratingMove": {
+      "up": "レーティング — 直近{{count}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",
+      "down": "レーティング — 直近{{count}}試合で{{points}}下降（{{startRating}} → {{endRating}} ±{{band}}）。",
+      "steady": "レーティング — 直近{{count}}試合で±{{band}}の帯を超える動きはありません（{{startRating}} → {{endRating}}）。",
+      "thin": "レーティング — 直近のイベントで{{startRating}} → {{endRating}}。{{count}}試合では動きを判断するには不足しています。",
+      "collapsed": "レーティング — {{count}}試合後で{{endRating}} ±{{band}}。帯はまだ広い状態です。",
+      "locked_one": "レーティング — あと1試合でこの分析が解放されます。",
+      "locked_other": "レーティング — あと{{count}}試合でこの分析が解放されます。"
+    },
+    "tiltCost": {
+      "trend": "2連敗の直後 — 次の試合は基準の{{baselineRate}}に対して{{spotRate}}。",
+      "suggestion": "2連敗の直後 — 次の試合は基準の{{baselineRate}}に対して{{spotRate}}。2連敗後に一度休むのを試す価値があります。",
+      "steady": "2連敗の直後 — 次の試合は{{spotCount}}件で{{spotRate}}、基準の{{baselineRate}}に対して有意な低下はありません。",
+      "locked_one": "2連敗の直後 — あと1件でこの分析が解放されます。",
+      "locked_other": "2連敗の直後 — あと{{count}}件でこの分析が解放されます。"
+    },
+    "sessionFatigue": {
+      "hidden": "比較できるだけの長いセッションがまだありません。",
+      "suggestion": "セッションの長さ — {{lateGameNumber}}試合目以降は{{lateRate}}、最初の{{earlyGameCount}}試合は{{earlyRate}}。短めのセッションを試す価値があります。",
+      "trend": "セッションの長さ — {{lateGameNumber}}試合目以降は{{lateRate}}、最初の{{earlyGameCount}}試合は{{earlyRate}}。",
+      "steady": "セッションの長さ — {{lateGameNumber}}試合目以降も有意な低下はありません（{{lateRate}} vs {{earlyRate}}）。",
+      "caveat": "ブラケットの深さもセッション後半で上がるため、この差の一部は対戦相手の実力によるものです。"
+    },
+    "settingGap": {
+      "up": "対戦環境 — オンラインの方が{{points}}ポイント高い成績です（{{onlineRate}} vs {{offlineRate}}）。",
+      "down": "対戦環境 — オフラインの方が{{points}}ポイント高い成績です（{{onlineRate}} vs {{offlineRate}}）。",
+      "steady": "対戦環境 — オンラインとオフラインで有意な差はありません（{{onlineRate}} vs {{offlineRate}}）。",
+      "thin": "{{shortSide}}の試合が{{count}}戦しかなく、比較するには不足しています。",
+      "locked_one": "対戦環境 — あと1戦の{{shortSide}}の試合でオンライン/オフライン比較が解放されます。",
+      "locked_other": "対戦環境 — あと{{count}}戦の{{shortSide}}の試合でオンライン/オフライン比較が解放されます。"
+    },
+    "volumeForm": {
+      "up": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}です。",
+      "down": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}です。",
+      "steady": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}で、有意な差はありません。",
+      "locked_one": "プレー量 — あと1か月分の対戦でこの分析が解放されます。",
+      "locked_other": "プレー量 — あと{{count}}か月分の対戦でこの分析が解放されます。"
+    },
+    "mixShift": {
+      "hidden": "対戦タイプの構成にまだ有意な変化はありません。",
+      "fact": "対戦タイプの構成 — 直近は{{matchType}}が{{recentShare}}、全期間では{{lifetimeShare}}です。"
+    },
+    "rosterCore": {
+      "fact": "使用キャラ構成 — {{fighter}}がメインで使用率{{share}}%、サブ{{secondaryCount}}体、ポケット{{pocketCount}}体。",
+      "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count}}試合に達すると確定します。"
+    },
+    "rosterShift": {
+      "hidden": "使用キャラの構成にまだ有意な変化はありません。",
+      "steady": "使用キャラ構成 — 直近30試合で誰を使うかに有意な変化はありません。",
+      "up": "{{fighter}} — 直近{{count}}試合で使用率が{{points}}ポイント上昇。",
+      "down": "{{fighter}} — 直近{{count}}試合で使用率が{{points}}ポイント下降。"
+    },
+    "secondaryPayoff": {
+      "trend": "vs {{opponent}} — {{secondary}}は{{secondaryRate}}%、{{main}}は{{mainRate}}%です。",
+      "suggestion": "vs {{opponent}} — {{secondary}}は{{secondaryRate}}%、{{main}}は{{mainRate}}%です。サブを選ぶ価値があります。",
+      "steady": "サブキャラ — メインを有意に上回る相性は見つかりません。",
+      "locked_one": "vs {{opponent}} — {{secondary}}であと1試合でこの分析が解放されます。",
+      "locked_other": "vs {{opponent}} — {{secondary}}であと{{count}}試合でこの分析が解放されます。"
+    },
+    "pocketCost": {
+      "hidden": "コストを判断できるだけのポケットキャラの試合数がまだありません。",
+      "fact": "ポケットキャラ — {{pocketGames}}試合で{{pocketRate}}%、メインは{{mainRate}}%です。",
+      "steady": "ポケットキャラ — メインに対して有意なコストはありません（{{pocketRate}}% vs {{mainRate}}%）。"
+    },
+    "matchupOrPlayer": {
+      "hidden": "プレイヤー要因か相性要因かを判断できるだけの試合数・対戦相手数がまだありません。",
+      "player": "{{matchup}} — {{totalLosses}}敗中{{lossShare}}敗が{{opponentGames}}試合の1人のプレイヤー、{{opponent}}によるものです。",
+      "matchup": "{{matchup}} — 敗北は{{distinctOpponents}}人のプレイヤーに分散しており、突出した相手はいません。"
+    },
+    "bestMatchup": {
+      "locked": "最高成績 — まだ名前を挙げられるだけの試合数がありません。",
+      "fact": "最高成績 — vs {{vs}}、{{count}}戦{{record}}。"
+    },
+    "worstMatchup": {
+      "locked": "最も苦手な相性 — まだ名前を挙げられるだけの試合数がありません。",
+      "fact": "最も苦手な相性 — vs {{vs}}、{{count}}戦{{record}}。"
+    }
+  },
+  "analytics": {
+    "list": {
+      "showAll": "{{count}}件すべて表示",
+      "showFewer": "表示を減らす",
+      "showMore50": "さらに50件表示",
+      "allSessions": "{{count}}セッションすべて →",
+      "allTournaments": "{{count}}大会すべて →",
+      "allOpponents": "{{count}}人の対戦相手すべて →",
+      "sortMostGames": "試合数が多い順"
+    },
+    "record": {
+      "aria": "{{wins}}勝{{losses}}敗"
+    },
+    "stat": {
+      "collapsedValue": "= 全試合",
+      "collapsedSupport": "{{total}}戦中{{recent}}戦",
+      "noGames": "まだ試合がありません"
+    },
+    "strip": {
+      "legend": "上 = 勝利 · 下 = 敗北 · 間隔 = 新しいセット · ラベル = イベント",
+      "aria": "調子ストリップ、{{count}}試合",
+      "setAria": "vs {{opponent}}のセット、{{record}}",
+      "windowHighlighted": {
+        "last30": "直近30試合を強調表示",
+        "lastEvent": "直近のイベントを強調表示",
+        "last90": "直近90日間を強調表示"
+      },
+      "windowAll": "全期間を表示中",
+      "shownOf": "{{total}}戦中{{shown}}戦を表示",
+      "empty": "まだ表示できる試合がありません。",
+      "windowEmpty": {
+        "last30": "直近30試合に対戦がありません — 全期間のデータを表示しています。",
+        "lastEvent": "直近のイベントに対戦がありません — 全期間のデータを表示しています。",
+        "last90": "直近90日間に対戦がありません — 全期間のデータを表示しています。"
+      }
+    },
+    "share": {
+      "aria": "対戦タイプの構成比、{{count}}試合",
+      "ofGames": "{{total}}戦中{{count}}戦",
+      "recentEqualsAll": "直近は全期間の構成と同じです。",
+      "empty": "まだ表示できる試合がありません。",
+      "recentEmpty": {
+        "last30": "直近30試合に対戦がありません — 全期間のデータを表示しています。",
+        "lastEvent": "直近のイベントに対戦がありません — 全期間のデータを表示しています。",
+        "last90": "直近90日間に対戦がありません — 全期間のデータを表示しています。"
+      }
+    },
+    "dumbbell": {
+      "legend": {
+        "allTime": "全期間",
+        "recent": "直近",
+        "range": "直近の95%範囲"
+      },
+      "rowAria": "{{label}}、直近{{recentRecord}} vs 全期間{{baselineRecord}}",
+      "recentEqualsAll": "直近は全期間と同じです。"
+    },
+    "trend": {
+      "refLabel": "基準線",
+      "legendBand": {
+        "allTime": "全期間",
+        "recent": "直近",
+        "range": "直近の95%範囲"
+      },
+      "legendHollow": "白抜き = 3試合未満",
+      "lockedPeriods": {
+        "week_one": "あと{{count}}週でこの期間が解放されます",
+        "week_other": "あと{{count}}週でこの期間が解放されます",
+        "month_one": "あと{{count}}か月でこの期間が解放されます",
+        "month_other": "あと{{count}}か月でこの期間が解放されます",
+        "quarter_one": "あと{{count}}四半期でこの期間が解放されます",
+        "quarter_other": "あと{{count}}四半期でこの期間が解放されます"
+      },
+      "aria": "トレンドグラフ、{{count}}期間"
+    },
+    "roster": {
+      "main": "メイン",
+      "secondaries": "サブ",
+      "pockets": "ポケット",
+      "pocketsRow": "ポケット — {{count}}キャラ、{{games}}試合",
+      "mainNotEstablished": "メインはまだ確定していません"
+    },
+    "encounters": {
+      "sessionHeader": "{{date}} — {{record}}",
+      "setAria": "セット{{index}}、{{record}}",
+      "showAll": "すべてのセットを表示"
+    },
+    "matchType": {
+      "online-tourney": "オンライン大会",
+      "offline-tourney": "オフライン大会",
+      "quickplay": "クイックプレイ",
+      "online-friendly": "オンラインフレンドリー",
+      "offline-friendly": "オフラインフレンドリー",
+      "none": "未指定"
     }
   }
 }

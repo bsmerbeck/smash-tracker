@@ -3157,6 +3157,227 @@
         "lastEvent": "Sin cambio notable en el último evento.",
         "last90": "Sin cambio notable en los últimos 90 días."
       }
+    },
+    "formNow": {
+      "up": {
+        "last30": "{{entity}} — tasa de victorias sube {{points}} pts en las últimas 30 partidas.",
+        "lastEvent": "{{entity}} — tasa de victorias sube {{points}} pts en el último evento.",
+        "last90": "{{entity}} — tasa de victorias sube {{points}} pts en los últimos 90 días."
+      },
+      "down": {
+        "last30": "{{entity}} — tasa de victorias baja {{points}} pts en las últimas 30 partidas.",
+        "lastEvent": "{{entity}} — tasa de victorias baja {{points}} pts en el último evento.",
+        "last90": "{{entity}} — tasa de victorias baja {{points}} pts en los últimos 90 días."
+      },
+      "collapsed": {
+        "last30": "{{entity}} — {{record}} en las {{count}} partidas registradas.",
+        "lastEvent": "{{entity}} — {{record}} en las {{count}} partidas registradas del último evento.",
+        "last90": "{{entity}} — {{record}} en las {{count}} partidas registradas."
+      },
+      "steady": "{{entity}} — {{record}} en las últimas {{count}} partidas, dentro del rango habitual para una marca de {{rate}} ({{lower}}–{{upper}}).",
+      "thinRecent": "Solo {{count}} partidas recientes — se muestra el histórico.",
+      "thin": "{{entity}} — solo {{count}} partidas hasta ahora, muy pocas para hablar de tendencia.",
+      "locked_one": "{{entity}} — 1 partida más desbloquea esta lectura.",
+      "locked_other": "{{entity}} — {{count}} partidas más desbloquean esta lectura."
+    },
+    "characterMovers": {
+      "up": "vs {{fighter}} — tasa de victorias sube {{points}} pts en las últimas {{count}} partidas.",
+      "down": "vs {{fighter}} — tasa de victorias baja {{points}} pts en las últimas {{count}} partidas.",
+      "steady": "vs personajes — sin cambio notable en {{count}} enfrentamientos con 8+ partidas recientes.",
+      "thinRecent": "Solo {{count}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+      "locked_one": "vs {{fighter}} — 1 partida más desbloquea esta lectura.",
+      "locked_other": "vs {{fighter}} — {{count}} partidas más desbloquean esta lectura.",
+      "sub": "Sin bajadas notables en los otros {{count}} enfrentamientos con 8+ partidas recientes."
+    },
+    "rivalMovers": {
+      "up": "vs {{opponent}} — tasa de victorias sube {{points}} pts en las últimas {{count}} partidas.",
+      "down": "vs {{opponent}} — tasa de victorias baja {{points}} pts en las últimas {{count}} partidas.",
+      "steady": "vs rivales — sin cambio notable en {{count}} rivales con 8+ partidas recientes.",
+      "thinRecent": "vs rivales — solo {{count}} rivales llegaron a 8 partidas en el último evento — se muestra el histórico.",
+      "locked_one": "vs {{opponent}} — 1 partida más desbloquea esta lectura.",
+      "locked_other": "vs {{opponent}} — {{count}} partidas más desbloquean esta lectura."
+    },
+    "lastEventRecap": {
+      "hidden": "Aún no hay ningún evento registrado.",
+      "fact": "{{event}} — {{gameRecord}} en partidas, {{setRecord}} en sets.",
+      "factGamesOnly": "{{event}} — {{gameRecord}} en partidas.",
+      "factPlacement": "{{event}} — {{placement}} de {{entrants}}; {{gameRecord}} en partidas, {{setRecord}} en sets.",
+      "factPlacementGamesOnly": "{{event}} — {{placement}} de {{entrants}}; {{gameRecord}} en partidas.",
+      "noSetLosses": "Sin sets perdidos.",
+      "setLosses_one": "Set perdido — {{named}}.",
+      "setLosses_other": "Sets perdidos — {{named}}."
+    },
+    "ratingMove": {
+      "up": "Clasificación — sube {{points}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Clasificación — baja {{points}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Clasificación — sin movimiento fuera de la banda ±{{band}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}}).",
+      "thin": "Clasificación — {{startRating}} → {{endRating}} en el último evento; {{count}} partidas son muy pocas para hablar de un movimiento.",
+      "collapsed": "Clasificación — {{endRating}} ±{{band}} tras {{count}} partidas; la banda sigue siendo amplia.",
+      "locked_one": "Clasificación — 1 partida más desbloquea esta lectura.",
+      "locked_other": "Clasificación — {{count}} partidas más desbloquean esta lectura."
+    },
+    "tiltCost": {
+      "trend": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} vs {{baselineRate}} de referencia.",
+      "suggestion": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} vs {{baselineRate}} de referencia; vale la pena probar una pausa tras dos derrotas.",
+      "steady": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} en {{spotCount}} casos; sin coste notable vs {{baselineRate}}.",
+      "locked_one": "Tras 2 derrotas seguidas — 1 caso más desbloquea esta lectura.",
+      "locked_other": "Tras 2 derrotas seguidas — {{count}} casos más desbloquean esta lectura."
+    },
+    "sessionFatigue": {
+      "hidden": "Aún no hay suficientes sesiones largas para comparar.",
+      "suggestion": "Duración de sesión — {{lateRate}} desde la partida {{lateGameNumber}} vs {{earlyRate}} en las primeras {{earlyGameCount}}; vale la pena probar bloques más cortos.",
+      "trend": "Duración de sesión — {{lateRate}} desde la partida {{lateGameNumber}} vs {{earlyRate}} en las primeras {{earlyGameCount}}.",
+      "steady": "Duración de sesión — sin bajada notable tras la partida {{lateGameNumber}} ({{lateRate}} vs {{earlyRate}}).",
+      "caveat": "La profundidad del bracket también sube al final de una sesión, así que parte de esta diferencia es el nivel de los rivales."
+    },
+    "settingGap": {
+      "up": "Entorno — online rinde {{points}} pts más ({{onlineRate}} vs {{offlineRate}}).",
+      "down": "Entorno — offline rinde {{points}} pts más ({{onlineRate}} vs {{offlineRate}}).",
+      "steady": "Entorno — sin diferencia notable entre online y offline ({{onlineRate}} vs {{offlineRate}}).",
+      "thin": "No hay suficientes partidas {{shortSide}} para comparar ({{count}}).",
+      "locked_one": "Entorno — 1 partida {{shortSide}} más desbloquea la comparación online/offline.",
+      "locked_other": "Entorno — {{count}} partidas {{shortSide}} más desbloquean la comparación online/offline."
+    },
+    "volumeForm": {
+      "up": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto.",
+      "down": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto.",
+      "steady": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto; sin diferencia notable.",
+      "locked_one": "Volumen — 1 mes más de juego desbloquea esta lectura.",
+      "locked_other": "Volumen — {{count}} meses más de juego desbloquean esta lectura."
+    },
+    "mixShift": {
+      "hidden": "Aún no hay un cambio notable en la mezcla de partidas.",
+      "fact": "Mezcla de partidas — {{recentShare}} {{matchType}} recientemente vs {{lifetimeShare}} histórico."
+    },
+    "rosterCore": {
+      "fact": "Plantel — {{fighter}} es el principal con {{share}}% del juego; {{secondaryCount}} secundarios, {{pocketCount}} de bolsillo.",
+      "thin": "Plantel — el principal aún no está establecido; {{count}} partidas con un mismo personaje lo confirman."
+    },
+    "rosterShift": {
+      "hidden": "Aún no hay un cambio notable en quién se juega.",
+      "steady": "Plantel — sin cambio notable en quién se juega en las últimas 30 partidas.",
+      "up": "{{fighter}} — su parte del juego sube {{points}} pts en las últimas {{count}} partidas.",
+      "down": "{{fighter}} — su parte del juego baja {{points}} pts en las últimas {{count}} partidas."
+    },
+    "secondaryPayoff": {
+      "trend": "vs {{opponent}} — {{secondary}} rinde {{secondaryRate}}% donde {{main}} rinde {{mainRate}}%.",
+      "suggestion": "vs {{opponent}} — {{secondary}} rinde {{secondaryRate}}% donde {{main}} rinde {{mainRate}}%; vale la pena elegir el secundario.",
+      "steady": "Secundarios — ningún enfrentamiento donde un secundario supere notablemente al principal.",
+      "locked_one": "vs {{opponent}} — 1 partida más con {{secondary}} desbloquea esta lectura.",
+      "locked_other": "vs {{opponent}} — {{count}} partidas más con {{secondary}} desbloquean esta lectura."
+    },
+    "pocketCost": {
+      "hidden": "Aún no hay suficientes partidas de bolsillo para reportar un coste.",
+      "fact": "De bolsillo — {{pocketRate}}% en {{pocketGames}} partidas vs {{mainRate}}% del principal.",
+      "steady": "De bolsillo — sin coste notable frente al principal ({{pocketRate}}% vs {{mainRate}}%)."
+    },
+    "matchupOrPlayer": {
+      "hidden": "Aún no hay suficientes partidas ni rivales para distinguir jugador de enfrentamiento.",
+      "player": "{{matchup}} — {{lossShare}} de {{totalLosses}} derrotas vinieron de un solo jugador, {{opponent}}, en {{opponentGames}} partidas.",
+      "matchup": "{{matchup}} — las derrotas se reparten entre {{distinctOpponents}} jugadores; ninguno destaca por sí solo."
+    },
+    "bestMatchup": {
+      "locked": "Mejor marca — aún no hay suficientes partidas para nombrar una.",
+      "fact": "Mejor marca — vs {{vs}}, {{record}} en {{count}}."
+    },
+    "worstMatchup": {
+      "locked": "Marca más difícil — aún no hay suficientes partidas para nombrar una.",
+      "fact": "Marca más difícil — vs {{vs}}, {{record}} en {{count}}."
+    }
+  },
+  "analytics": {
+    "list": {
+      "showAll": "Mostrar las {{count}}",
+      "showFewer": "Mostrar menos",
+      "showMore50": "Mostrar 50 más",
+      "allSessions": "Las {{count}} sesiones →",
+      "allTournaments": "Los {{count}} torneos →",
+      "allOpponents": "Los {{count}} rivales →",
+      "sortMostGames": "Más partidas"
+    },
+    "record": {
+      "aria": "{{wins}} victorias, {{losses}} derrotas"
+    },
+    "stat": {
+      "collapsedValue": "= todas las partidas",
+      "collapsedSupport": "{{recent}} de {{total}} partidas",
+      "noGames": "Aún sin partidas"
+    },
+    "strip": {
+      "legend": "arriba = victoria · abajo = derrota · hueco = set nuevo · etiqueta = evento",
+      "aria": "Franja de forma, {{count}} partidas",
+      "setAria": "Set vs {{opponent}}, {{record}}",
+      "windowHighlighted": {
+        "last30": "Últimas 30 partidas resaltadas",
+        "lastEvent": "Último evento resaltado",
+        "last90": "Últimos 90 días resaltados"
+      },
+      "windowAll": "Se muestra todo el historial",
+      "shownOf": "{{shown}} de {{total}} partidas mostradas",
+      "empty": "Aún no hay partidas que mostrar.",
+      "windowEmpty": {
+        "last30": "Sin partidas en las últimas 30 — se muestra el histórico.",
+        "lastEvent": "Sin partidas en el último evento — se muestra el histórico.",
+        "last90": "Sin partidas en los últimos 90 días — se muestra el histórico."
+      }
+    },
+    "share": {
+      "aria": "Reparto por tipo de partida, {{count}} partidas",
+      "ofGames": "{{count}} de {{total}} partidas",
+      "recentEqualsAll": "Lo reciente coincide con la mezcla histórica.",
+      "empty": "Aún no hay partidas que mostrar.",
+      "recentEmpty": {
+        "last30": "Sin partidas en las últimas 30 — se muestra el histórico.",
+        "lastEvent": "Sin partidas en el último evento — se muestra el histórico.",
+        "last90": "Sin partidas en los últimos 90 días — se muestra el histórico."
+      }
+    },
+    "dumbbell": {
+      "legend": {
+        "allTime": "histórico",
+        "recent": "reciente",
+        "range": "rango del 95% reciente"
+      },
+      "rowAria": "{{label}}, {{recentRecord}} reciente vs {{baselineRecord}} histórico",
+      "recentEqualsAll": "Lo reciente coincide con el histórico."
+    },
+    "trend": {
+      "refLabel": "línea de referencia",
+      "legendBand": {
+        "allTime": "histórico",
+        "recent": "reciente",
+        "range": "rango del 95% reciente"
+      },
+      "legendHollow": "hueco = menos de 3 partidas",
+      "lockedPeriods": {
+        "week_one": "{{count}} semana más desbloquea este período",
+        "week_other": "{{count}} semanas más desbloquean este período",
+        "month_one": "{{count}} mes más desbloquea este período",
+        "month_other": "{{count}} meses más desbloquean este período",
+        "quarter_one": "{{count}} trimestre más desbloquea este período",
+        "quarter_other": "{{count}} trimestres más desbloquean este período"
+      },
+      "aria": "Gráfico de tendencia, {{count}} períodos"
+    },
+    "roster": {
+      "main": "Principal",
+      "secondaries": "Secundarios",
+      "pockets": "De bolsillo",
+      "pocketsRow": "De bolsillo — {{count}} personajes, {{games}} partidas",
+      "mainNotEstablished": "El principal aún no está establecido"
+    },
+    "encounters": {
+      "sessionHeader": "{{date}} — {{record}}",
+      "setAria": "Set {{index}}, {{record}}",
+      "showAll": "Mostrar todos los sets"
+    },
+    "matchType": {
+      "online-tourney": "Torneo online",
+      "offline-tourney": "Torneo presencial",
+      "quickplay": "Partida rápida",
+      "online-friendly": "Amistosa online",
+      "offline-friendly": "Amistosa presencial",
+      "none": "Sin especificar"
     }
   }
 }

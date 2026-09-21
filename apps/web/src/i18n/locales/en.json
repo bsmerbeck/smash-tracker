@@ -3157,6 +3157,227 @@
         "lastEvent": "No notable change at the last event.",
         "last90": "No notable change over the last 90 days."
       }
+    },
+    "formNow": {
+      "up": {
+        "last30": "{{entity}} — win rate up {{points}} pts over the last 30 games.",
+        "lastEvent": "{{entity}} — win rate up {{points}} pts at the last event.",
+        "last90": "{{entity}} — win rate up {{points}} pts over the last 90 days."
+      },
+      "down": {
+        "last30": "{{entity}} — win rate down {{points}} pts over the last 30 games.",
+        "lastEvent": "{{entity}} — win rate down {{points}} pts at the last event.",
+        "last90": "{{entity}} — win rate down {{points}} pts over the last 90 days."
+      },
+      "collapsed": {
+        "last30": "{{entity}} — {{record}} across all {{count}} games.",
+        "lastEvent": "{{entity}} — {{record}} across all {{count}} games at the last event.",
+        "last90": "{{entity}} — {{record}} across all {{count}} games."
+      },
+      "steady": "{{entity}} — {{record}} over the last {{count}} games, inside the usual range for a {{rate}} record ({{lower}}–{{upper}}).",
+      "thinRecent": "Only {{count}} games recently — showing all time.",
+      "thin": "{{entity}} — only {{count}} games so far, too few to call a trend.",
+      "locked_one": "{{entity}} — 1 more game unlocks this read.",
+      "locked_other": "{{entity}} — {{count}} more games unlock this read."
+    },
+    "characterMovers": {
+      "up": "vs {{fighter}} — win rate up {{points}} pts over the last {{count}} games.",
+      "down": "vs {{fighter}} — win rate down {{points}} pts over the last {{count}} games.",
+      "steady": "vs characters — no notable change across {{count}} matchups with 8+ recent games.",
+      "thinRecent": "Only {{count}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+      "locked_one": "vs {{fighter}} — 1 more game unlocks this read.",
+      "locked_other": "vs {{fighter}} — {{count}} more games unlock this read.",
+      "sub": "No notable decliners across the other {{count}} matchups with 8+ recent games."
+    },
+    "rivalMovers": {
+      "up": "vs {{opponent}} — win rate up {{points}} pts over the last {{count}} games.",
+      "down": "vs {{opponent}} — win rate down {{points}} pts over the last {{count}} games.",
+      "steady": "vs players — no notable change across {{count}} opponents with 8+ recent games.",
+      "thinRecent": "vs players — only {{count}} opponents reached 8 games at the last event — showing all time.",
+      "locked_one": "vs {{opponent}} — 1 more game unlocks this read.",
+      "locked_other": "vs {{opponent}} — {{count}} more games unlock this read."
+    },
+    "lastEventRecap": {
+      "hidden": "No event recorded yet.",
+      "fact": "{{event}} — {{gameRecord}} in games, {{setRecord}} in sets.",
+      "factGamesOnly": "{{event}} — {{gameRecord}} in games.",
+      "factPlacement": "{{event}} — {{placement}} of {{entrants}}; {{gameRecord}} in games, {{setRecord}} in sets.",
+      "factPlacementGamesOnly": "{{event}} — {{placement}} of {{entrants}}; {{gameRecord}} in games.",
+      "noSetLosses": "No set losses.",
+      "setLosses_one": "Set loss — {{named}}.",
+      "setLosses_other": "Set losses — {{named}}."
+    },
+    "ratingMove": {
+      "up": "Rating — up {{points}} over the last {{count}} games ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Rating — down {{points}} over the last {{count}} games ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Rating — no move beyond the ±{{band}} band over the last {{count}} games ({{startRating}} → {{endRating}}).",
+      "thin": "Rating — {{startRating}} → {{endRating}} at the last event; {{count}} games are too few to call a move.",
+      "collapsed": "Rating — {{endRating}} ±{{band}} after {{count}} games; the band is still wide.",
+      "locked_one": "Rating — 1 more game unlocks this read.",
+      "locked_other": "Rating — {{count}} more games unlock this read."
+    },
+    "tiltCost": {
+      "trend": "After 2 straight losses — next game {{spotRate}} vs {{baselineRate}} baseline.",
+      "suggestion": "After 2 straight losses — next game {{spotRate}} vs {{baselineRate}} baseline; a reset after two losses is worth testing.",
+      "steady": "After 2 straight losses — next game {{spotRate}} over {{spotCount}} spots; no notable cost vs {{baselineRate}}.",
+      "locked_one": "After 2 straight losses — 1 more such spot unlocks this read.",
+      "locked_other": "After 2 straight losses — {{count}} more such spots unlock this read."
+    },
+    "sessionFatigue": {
+      "hidden": "Not enough long sessions yet to compare.",
+      "suggestion": "Session length — {{lateRate}} from game {{lateGameNumber}} on vs {{earlyRate}} in the first {{earlyGameCount}}; shorter blocks are worth testing.",
+      "trend": "Session length — {{lateRate}} from game {{lateGameNumber}} on vs {{earlyRate}} in the first {{earlyGameCount}}.",
+      "steady": "Session length — no notable drop after game {{lateGameNumber}} ({{lateRate}} vs {{earlyRate}}).",
+      "caveat": "Bracket depth also rises late in a session, so part of this gap is opponent strength."
+    },
+    "settingGap": {
+      "up": "Setting — online runs {{points}} pts higher ({{onlineRate}} vs {{offlineRate}}).",
+      "down": "Setting — offline runs {{points}} pts higher ({{onlineRate}} vs {{offlineRate}}).",
+      "steady": "Setting — no notable online/offline gap ({{onlineRate}} vs {{offlineRate}}).",
+      "thin": "Not enough {{shortSide}} games to compare ({{count}}).",
+      "locked_one": "Setting — 1 more {{shortSide}} game unlocks the online/offline comparison.",
+      "locked_other": "Setting — {{count}} more {{shortSide}} games unlock the online/offline comparison."
+    },
+    "volumeForm": {
+      "up": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise.",
+      "down": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise.",
+      "steady": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise; no notable difference.",
+      "locked_one": "Volume — 1 more month of play unlocks the volume read.",
+      "locked_other": "Volume — {{count}} more months of play unlock the volume read."
+    },
+    "mixShift": {
+      "hidden": "Not enough of a shift in match mix to report yet.",
+      "fact": "Match mix — {{recentShare}} {{matchType}} recently vs {{lifetimeShare}} lifetime."
+    },
+    "rosterCore": {
+      "fact": "Roster — {{fighter}} is the main at {{share}}% of play; {{secondaryCount}} secondaries, {{pocketCount}} pockets.",
+      "thin": "Roster — main not established yet; {{count}} games on one fighter set it."
+    },
+    "rosterShift": {
+      "hidden": "Not enough of a shift in who gets played to report yet.",
+      "steady": "Roster — no notable shift in who gets played over the last 30 games.",
+      "up": "{{fighter}} — share of play up {{points}} pts over the last {{count}} games.",
+      "down": "{{fighter}} — share of play down {{points}} pts over the last {{count}} games."
+    },
+    "secondaryPayoff": {
+      "trend": "vs {{opponent}} — {{secondary}} runs {{secondaryRate}}% where {{main}} runs {{mainRate}}%.",
+      "suggestion": "vs {{opponent}} — {{secondary}} runs {{secondaryRate}}% where {{main}} runs {{mainRate}}%; the secondary is worth the pick.",
+      "steady": "Secondaries — no matchup where a secondary notably beats the main.",
+      "locked_one": "vs {{opponent}} — 1 more game on {{secondary}} unlocks this read.",
+      "locked_other": "vs {{opponent}} — {{count}} more games on {{secondary}} unlock this read."
+    },
+    "pocketCost": {
+      "hidden": "Not enough pocket games yet to report a cost.",
+      "fact": "Pockets — {{pocketRate}}% over {{pocketGames}} games vs {{mainRate}}% on the main.",
+      "steady": "Pockets — no notable cost vs the main ({{pocketRate}}% vs {{mainRate}}%)."
+    },
+    "matchupOrPlayer": {
+      "hidden": "Not enough games or opponents yet to tell player from matchup.",
+      "player": "{{matchup}} — {{lossShare}} of {{totalLosses}} losses came from one player, {{opponent}}, in {{opponentGames}} games.",
+      "matchup": "{{matchup}} — losses are spread across {{distinctOpponents}} players; no single opponent stands out."
+    },
+    "bestMatchup": {
+      "locked": "Best record — not enough games yet to name one.",
+      "fact": "Best record — vs {{vs}}, {{record}} over {{count}}."
+    },
+    "worstMatchup": {
+      "locked": "Toughest record — not enough games yet to name one.",
+      "fact": "Toughest record — vs {{vs}}, {{record}} over {{count}}."
+    }
+  },
+  "analytics": {
+    "list": {
+      "showAll": "Show all {{count}}",
+      "showFewer": "Show fewer",
+      "showMore50": "Show 50 more",
+      "allSessions": "All {{count}} sessions →",
+      "allTournaments": "All {{count}} tournaments →",
+      "allOpponents": "All {{count}} opponents →",
+      "sortMostGames": "Most games"
+    },
+    "record": {
+      "aria": "{{wins}} wins, {{losses}} losses"
+    },
+    "stat": {
+      "collapsedValue": "= all games",
+      "collapsedSupport": "{{recent}} of {{total}} games",
+      "noGames": "No games yet"
+    },
+    "strip": {
+      "legend": "up = win · down = loss · gap = new set · label = event",
+      "aria": "Form strip, {{count}} games",
+      "setAria": "Set vs {{opponent}}, {{record}}",
+      "windowHighlighted": {
+        "last30": "Last 30 games highlighted",
+        "lastEvent": "Last event highlighted",
+        "last90": "Last 90 days highlighted"
+      },
+      "windowAll": "Whole record shown",
+      "shownOf": "{{shown}} of {{total}} games shown",
+      "empty": "No games to show yet.",
+      "windowEmpty": {
+        "last30": "No games in the last 30 — showing all time.",
+        "lastEvent": "No games at the last event — showing all time.",
+        "last90": "No games in the last 90 days — showing all time."
+      }
+    },
+    "share": {
+      "aria": "Match-type share, {{count}} games",
+      "ofGames": "{{count}} of {{total}} games",
+      "recentEqualsAll": "Recent matches the lifetime mix.",
+      "empty": "No games to show yet.",
+      "recentEmpty": {
+        "last30": "No games in the last 30 — showing all time.",
+        "lastEvent": "No games at the last event — showing all time.",
+        "last90": "No games in the last 90 days — showing all time."
+      }
+    },
+    "dumbbell": {
+      "legend": {
+        "allTime": "all time",
+        "recent": "recent",
+        "range": "95% range of recent"
+      },
+      "rowAria": "{{label}}, {{recentRecord}} recent vs {{baselineRecord}} all time",
+      "recentEqualsAll": "Recent matches all time."
+    },
+    "trend": {
+      "refLabel": "reference line",
+      "legendBand": {
+        "allTime": "all time",
+        "recent": "recent",
+        "range": "95% range of recent"
+      },
+      "legendHollow": "hollow = under 3 games",
+      "lockedPeriods": {
+        "week_one": "{{count}} more week unlocks this period",
+        "week_other": "{{count}} more weeks unlock this period",
+        "month_one": "{{count}} more month unlocks this period",
+        "month_other": "{{count}} more months unlock this period",
+        "quarter_one": "{{count}} more quarter unlocks this period",
+        "quarter_other": "{{count}} more quarters unlock this period"
+      },
+      "aria": "Trend plot, {{count}} periods"
+    },
+    "roster": {
+      "main": "Main",
+      "secondaries": "Secondaries",
+      "pockets": "Pockets",
+      "pocketsRow": "Pockets — {{count}} fighters, {{games}} games",
+      "mainNotEstablished": "Main not established yet"
+    },
+    "encounters": {
+      "sessionHeader": "{{date}} — {{record}}",
+      "setAria": "Set {{index}}, {{record}}",
+      "showAll": "Show all sets"
+    },
+    "matchType": {
+      "online-tourney": "Online tournament",
+      "offline-tourney": "Offline tournament",
+      "quickplay": "Quickplay",
+      "online-friendly": "Online friendly",
+      "offline-friendly": "Offline friendly",
+      "none": "Unspecified"
     }
   }
 }

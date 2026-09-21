@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { INSIGHT_TEMPLATES } from '@smash-tracker/shared';
 
 /**
  * Phase 39.1 Plan 09 (UI-SPEC §13.8, D-05): the insight-copy guard — no
@@ -45,6 +46,9 @@ const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/Concatenat
  */
 const NEW_NAMESPACE_KEYS = ['insights', 'analytics'] as const;
 type NewNamespaceKey = (typeof NEW_NAMESPACE_KEYS)[number];
+
+/** The six shipped locales — module scope so both the (b)/(c)/(d) describe block and the Task 2 registry-coverage describe block below can reuse it. */
+const REAL_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
 
 /**
  * ONE declaration pointing at the locales directory (this plan's own
@@ -312,8 +316,6 @@ describe('insight copy — no concatenation, no second person, no probability (I
   });
 
   describe('assertions (b)/(c)/(d) — second person, probability and empty values, scoped to insights/analytics (Plan 39.1-11: real locale files)', () => {
-    const REAL_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
-
     /**
      * Measured directly against the six real locale files at Task 1's
      * commit time (the `insights.{kind,rail,door,chip,horizon,evidence,
@@ -454,4 +456,31 @@ describe('insight copy — no concatenation, no second person, no probability (I
       expect(SCANNED_FILES.some((file) => file.startsWith('apps/web/src/pages/'))).toBe(false);
     });
   });
+});
+
+/**
+ * Plan 39.1-11 Task 2: every one of the seventeen closed-registry template
+ * ids has at least one key under `insights.<templateId>` in all six
+ * locales. The template id UNION comes from the built `@smash-tracker/shared`
+ * package's `INSIGHT_TEMPLATES` (plan 39.1-05's closed registry), never a
+ * hand-written id list — a later plan adding an eighteenth template to the
+ * registry is automatically covered here without a line of new test code.
+ */
+describe('insight namespace covers every registered template id (INS-03, Plan 39.1-11 Task 2)', () => {
+  it('the registry is closed at 17 templates (sanity: matches every plan since 39.1-05)', () => {
+    expect(INSIGHT_TEMPLATES.length).toBe(17);
+  });
+
+  for (const locale of REAL_LOCALES) {
+    it(`${locale}: every registered template id has at least one key under insights.<templateId>`, () => {
+      const insightsTree = INSIGHT_COPY_LOCALE_SOURCE[locale]!.insights as Record<string, unknown>;
+      const missing = INSIGHT_TEMPLATES.filter(
+        (template) => insightsTree[template.id] === undefined,
+      ).map((template) => template.id);
+      expect(
+        missing,
+        `locale ${locale} is missing template subtrees: ${missing.join(', ')}`,
+      ).toEqual([]);
+    });
+  }
 });

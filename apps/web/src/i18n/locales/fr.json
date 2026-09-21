@@ -3157,6 +3157,227 @@
         "lastEvent": "Aucun changement notable au dernier événement.",
         "last90": "Aucun changement notable sur les 90 derniers jours."
       }
+    },
+    "formNow": {
+      "up": {
+        "last30": "{{entity}} — taux de victoires en hausse de {{points}} pts sur les 30 derniers matchs.",
+        "lastEvent": "{{entity}} — taux de victoires en hausse de {{points}} pts au dernier événement.",
+        "last90": "{{entity}} — taux de victoires en hausse de {{points}} pts sur les 90 derniers jours."
+      },
+      "down": {
+        "last30": "{{entity}} — taux de victoires en baisse de {{points}} pts sur les 30 derniers matchs.",
+        "lastEvent": "{{entity}} — taux de victoires en baisse de {{points}} pts au dernier événement.",
+        "last90": "{{entity}} — taux de victoires en baisse de {{points}} pts sur les 90 derniers jours."
+      },
+      "collapsed": {
+        "last30": "{{entity}} — {{record}} sur les {{count}} matchs enregistrés.",
+        "lastEvent": "{{entity}} — {{record}} sur les {{count}} matchs enregistrés au dernier événement.",
+        "last90": "{{entity}} — {{record}} sur les {{count}} matchs enregistrés."
+      },
+      "steady": "{{entity}} — {{record}} sur les {{count}} derniers matchs, dans la plage habituelle pour un taux de {{rate}} ({{lower}}–{{upper}}).",
+      "thinRecent": "Seulement {{count}} matchs récemment — l'historique est affiché.",
+      "thin": "{{entity}} — seulement {{count}} matchs pour l'instant, trop peu pour parler de tendance.",
+      "locked_one": "{{entity}} — 1 match de plus débloque cette analyse.",
+      "locked_other": "{{entity}} — {{count}} matchs de plus débloquent cette analyse."
+    },
+    "characterMovers": {
+      "up": "vs {{fighter}} — taux de victoires en hausse de {{points}} pts sur les {{count}} derniers matchs.",
+      "down": "vs {{fighter}} — taux de victoires en baisse de {{points}} pts sur les {{count}} derniers matchs.",
+      "steady": "vs personnages — aucun changement notable sur {{count}} duels avec 8 matchs récents ou plus.",
+      "thinRecent": "Seulement {{count}} matchs vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
+      "locked_one": "vs {{fighter}} — 1 match de plus débloque cette analyse.",
+      "locked_other": "vs {{fighter}} — {{count}} matchs de plus débloquent cette analyse.",
+      "sub": "Aucune baisse notable sur les {{count}} autres duels avec 8 matchs récents ou plus."
+    },
+    "rivalMovers": {
+      "up": "vs {{opponent}} — taux de victoires en hausse de {{points}} pts sur les {{count}} derniers matchs.",
+      "down": "vs {{opponent}} — taux de victoires en baisse de {{points}} pts sur les {{count}} derniers matchs.",
+      "steady": "vs joueurs — aucun changement notable sur {{count}} adversaires avec 8 matchs récents ou plus.",
+      "thinRecent": "vs joueurs — seulement {{count}} adversaires ont atteint 8 matchs au dernier événement — l'historique est affiché.",
+      "locked_one": "vs {{opponent}} — 1 match de plus débloque cette analyse.",
+      "locked_other": "vs {{opponent}} — {{count}} matchs de plus débloquent cette analyse."
+    },
+    "lastEventRecap": {
+      "hidden": "Aucun événement enregistré pour l'instant.",
+      "fact": "{{event}} — {{gameRecord}} en matchs, {{setRecord}} en sets.",
+      "factGamesOnly": "{{event}} — {{gameRecord}} en matchs.",
+      "factPlacement": "{{event}} — {{placement}} sur {{entrants}} ; {{gameRecord}} en matchs, {{setRecord}} en sets.",
+      "factPlacementGamesOnly": "{{event}} — {{placement}} sur {{entrants}} ; {{gameRecord}} en matchs.",
+      "noSetLosses": "Aucun set perdu.",
+      "setLosses_one": "Set perdu — {{named}}.",
+      "setLosses_other": "Sets perdus — {{named}}."
+    },
+    "ratingMove": {
+      "up": "Classement — en hausse de {{points}} sur les {{count}} derniers matchs ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Classement — en baisse de {{points}} sur les {{count}} derniers matchs ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Classement — aucun mouvement au-delà de la bande ±{{band}} sur les {{count}} derniers matchs ({{startRating}} → {{endRating}}).",
+      "thin": "Classement — {{startRating}} → {{endRating}} au dernier événement ; {{count}} matchs sont trop peu pour parler de mouvement.",
+      "collapsed": "Classement — {{endRating}} ±{{band}} après {{count}} matchs ; la bande reste large.",
+      "locked_one": "Classement — 1 match de plus débloque cette analyse.",
+      "locked_other": "Classement — {{count}} matchs de plus débloquent cette analyse."
+    },
+    "tiltCost": {
+      "trend": "Après 2 défaites d'affilée — le match suivant {{spotRate}} vs {{baselineRate}} de référence.",
+      "suggestion": "Après 2 défaites d'affilée — le match suivant {{spotRate}} vs {{baselineRate}} de référence ; une pause après deux défaites vaut la peine d'être testée.",
+      "steady": "Après 2 défaites d'affilée — le match suivant {{spotRate}} sur {{spotCount}} cas ; aucun coût notable vs {{baselineRate}}.",
+      "locked_one": "Après 2 défaites d'affilée — 1 cas de plus débloque cette analyse.",
+      "locked_other": "Après 2 défaites d'affilée — {{count}} cas de plus débloquent cette analyse."
+    },
+    "sessionFatigue": {
+      "hidden": "Pas encore assez de longues sessions pour comparer.",
+      "suggestion": "Durée de session — {{lateRate}} à partir du match {{lateGameNumber}} vs {{earlyRate}} sur les {{earlyGameCount}} premiers ; des sessions plus courtes valent la peine d'être testées.",
+      "trend": "Durée de session — {{lateRate}} à partir du match {{lateGameNumber}} vs {{earlyRate}} sur les {{earlyGameCount}} premiers.",
+      "steady": "Durée de session — aucune baisse notable après le match {{lateGameNumber}} ({{lateRate}} vs {{earlyRate}}).",
+      "caveat": "La profondeur du bracket augmente aussi en fin de session, donc une partie de cet écart vient du niveau des adversaires."
+    },
+    "settingGap": {
+      "up": "Cadre de jeu — en ligne rapporte {{points}} pts de plus ({{onlineRate}} vs {{offlineRate}}).",
+      "down": "Cadre de jeu — hors ligne rapporte {{points}} pts de plus ({{onlineRate}} vs {{offlineRate}}).",
+      "steady": "Cadre de jeu — aucun écart notable entre en ligne et hors ligne ({{onlineRate}} vs {{offlineRate}}).",
+      "thin": "Pas assez de matchs {{shortSide}} pour comparer ({{count}}).",
+      "locked_one": "Cadre de jeu — 1 match {{shortSide}} de plus débloque la comparaison en ligne/hors ligne.",
+      "locked_other": "Cadre de jeu — {{count}} matchs {{shortSide}} de plus débloquent la comparaison en ligne/hors ligne."
+    },
+    "volumeForm": {
+      "up": "Volume — les mois avec {{threshold}}+ matchs rapportent {{highRate}} vs {{lowRate}} le reste du temps.",
+      "down": "Volume — les mois avec {{threshold}}+ matchs rapportent {{highRate}} vs {{lowRate}} le reste du temps.",
+      "steady": "Volume — les mois avec {{threshold}}+ matchs rapportent {{highRate}} vs {{lowRate}} le reste du temps ; aucune différence notable.",
+      "locked_one": "Volume — 1 mois de jeu supplémentaire débloque cette analyse.",
+      "locked_other": "Volume — {{count}} mois de jeu supplémentaires débloquent cette analyse."
+    },
+    "mixShift": {
+      "hidden": "Pas encore de changement notable dans la répartition des matchs.",
+      "fact": "Répartition des matchs — {{recentShare}} {{matchType}} récemment vs {{lifetimeShare}} sur l'historique."
+    },
+    "rosterCore": {
+      "fact": "Roster — {{fighter}} est le personnage principal avec {{share}}% du temps de jeu ; {{secondaryCount}} secondaires, {{pocketCount}} de dépannage.",
+      "thin": "Roster — le principal n'est pas encore établi ; {{count}} matchs sur un même personnage suffisent à le déterminer."
+    },
+    "rosterShift": {
+      "hidden": "Pas encore de changement notable dans qui est joué.",
+      "steady": "Roster — aucun changement notable dans qui est joué sur les 30 derniers matchs.",
+      "up": "{{fighter}} — sa part de jeu augmente de {{points}} pts sur les {{count}} derniers matchs.",
+      "down": "{{fighter}} — sa part de jeu diminue de {{points}} pts sur les {{count}} derniers matchs."
+    },
+    "secondaryPayoff": {
+      "trend": "vs {{opponent}} — {{secondary}} rapporte {{secondaryRate}}% là où {{main}} rapporte {{mainRate}}%.",
+      "suggestion": "vs {{opponent}} — {{secondary}} rapporte {{secondaryRate}}% là où {{main}} rapporte {{mainRate}}% ; le secondaire vaut le choix.",
+      "steady": "Secondaires — aucun duel où un secondaire dépasse notablement le principal.",
+      "locked_one": "vs {{opponent}} — 1 match de plus avec {{secondary}} débloque cette analyse.",
+      "locked_other": "vs {{opponent}} — {{count}} matchs de plus avec {{secondary}} débloquent cette analyse."
+    },
+    "pocketCost": {
+      "hidden": "Pas encore assez de matchs de dépannage pour évaluer un coût.",
+      "fact": "Dépannage — {{pocketRate}}% sur {{pocketGames}} matchs vs {{mainRate}}% pour le principal.",
+      "steady": "Dépannage — aucun coût notable face au principal ({{pocketRate}}% vs {{mainRate}}%)."
+    },
+    "matchupOrPlayer": {
+      "hidden": "Pas encore assez de matchs ou d'adversaires pour distinguer joueur et duel.",
+      "player": "{{matchup}} — {{lossShare}} défaites sur {{totalLosses}} viennent d'un seul joueur, {{opponent}}, en {{opponentGames}} matchs.",
+      "matchup": "{{matchup}} — les défaites sont réparties sur {{distinctOpponents}} joueurs ; aucun ne se distingue vraiment."
+    },
+    "bestMatchup": {
+      "locked": "Meilleur bilan — pas encore assez de matchs pour en nommer un.",
+      "fact": "Meilleur bilan — vs {{vs}}, {{record}} sur {{count}}."
+    },
+    "worstMatchup": {
+      "locked": "Bilan le plus difficile — pas encore assez de matchs pour en nommer un.",
+      "fact": "Bilan le plus difficile — vs {{vs}}, {{record}} sur {{count}}."
+    }
+  },
+  "analytics": {
+    "list": {
+      "showAll": "Afficher les {{count}}",
+      "showFewer": "Afficher moins",
+      "showMore50": "Afficher 50 de plus",
+      "allSessions": "Les {{count}} sessions →",
+      "allTournaments": "Les {{count}} tournois →",
+      "allOpponents": "Les {{count}} adversaires →",
+      "sortMostGames": "Le plus de matchs"
+    },
+    "record": {
+      "aria": "{{wins}} victoires, {{losses}} défaites"
+    },
+    "stat": {
+      "collapsedValue": "= tous les matchs",
+      "collapsedSupport": "{{recent}} sur {{total}} matchs",
+      "noGames": "Pas encore de matchs"
+    },
+    "strip": {
+      "legend": "haut = victoire · bas = défaite · espace = nouveau set · étiquette = événement",
+      "aria": "Frise de forme, {{count}} matchs",
+      "setAria": "Set vs {{opponent}}, {{record}}",
+      "windowHighlighted": {
+        "last30": "30 derniers matchs surlignés",
+        "lastEvent": "Dernier événement surligné",
+        "last90": "90 derniers jours surlignés"
+      },
+      "windowAll": "Tout l'historique est affiché",
+      "shownOf": "{{shown}} matchs affichés sur {{total}}",
+      "empty": "Pas encore de matchs à afficher.",
+      "windowEmpty": {
+        "last30": "Aucun match sur les 30 derniers — l'historique est affiché.",
+        "lastEvent": "Aucun match au dernier événement — l'historique est affiché.",
+        "last90": "Aucun match sur les 90 derniers jours — l'historique est affiché."
+      }
+    },
+    "share": {
+      "aria": "Répartition par type de match, {{count}} matchs",
+      "ofGames": "{{count}} matchs sur {{total}}",
+      "recentEqualsAll": "Les matchs récents correspondent à la répartition historique.",
+      "empty": "Pas encore de matchs à afficher.",
+      "recentEmpty": {
+        "last30": "Aucun match sur les 30 derniers — l'historique est affiché.",
+        "lastEvent": "Aucun match au dernier événement — l'historique est affiché.",
+        "last90": "Aucun match sur les 90 derniers jours — l'historique est affiché."
+      }
+    },
+    "dumbbell": {
+      "legend": {
+        "allTime": "historique",
+        "recent": "récent",
+        "range": "plage à 95% du récent"
+      },
+      "rowAria": "{{label}}, {{recentRecord}} récent vs {{baselineRecord}} historique",
+      "recentEqualsAll": "Le récent correspond à l'historique."
+    },
+    "trend": {
+      "refLabel": "ligne de référence",
+      "legendBand": {
+        "allTime": "historique",
+        "recent": "récent",
+        "range": "plage à 95% du récent"
+      },
+      "legendHollow": "creux = moins de 3 matchs",
+      "lockedPeriods": {
+        "week_one": "{{count}} semaine de plus débloque cette période",
+        "week_other": "{{count}} semaines de plus débloquent cette période",
+        "month_one": "{{count}} mois de plus débloque cette période",
+        "month_other": "{{count}} mois de plus débloquent cette période",
+        "quarter_one": "{{count}} trimestre de plus débloque cette période",
+        "quarter_other": "{{count}} trimestres de plus débloquent cette période"
+      },
+      "aria": "Graphique de tendance, {{count}} périodes"
+    },
+    "roster": {
+      "main": "Principal",
+      "secondaries": "Secondaires",
+      "pockets": "Dépannage",
+      "pocketsRow": "Dépannage — {{count}} personnages, {{games}} matchs",
+      "mainNotEstablished": "Le principal n'est pas encore établi"
+    },
+    "encounters": {
+      "sessionHeader": "{{date}} — {{record}}",
+      "setAria": "Set {{index}}, {{record}}",
+      "showAll": "Afficher tous les sets"
+    },
+    "matchType": {
+      "online-tourney": "Tournoi en ligne",
+      "offline-tourney": "Tournoi hors ligne",
+      "quickplay": "Partie rapide",
+      "online-friendly": "Amical en ligne",
+      "offline-friendly": "Amical hors ligne",
+      "none": "Non précisé"
     }
   }
 }
