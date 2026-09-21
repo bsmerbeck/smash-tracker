@@ -478,8 +478,13 @@ describe('OpponentsPage', () => {
       const list = screen.getByRole('list', { name: 'Opponents' });
       expect(within(list).getAllByRole('listitem')).toHaveLength(1);
 
-      const encounters = await screen.findByRole('list', { name: 'Recent encounters' });
-      expect(within(encounters).getAllByRole('listitem')).toHaveLength(3);
+      // 39.1-18: none of these matches carry an `externalId`, so they group
+      // into one session under a session header — each game its own
+      // one-game pseudo-set, rendered as a set row (`data-slot`, not
+      // `role="listitem"` scoped to a single flat `role="list"`, since the
+      // card is now event/session-grouped rather than one flat list).
+      await screen.findByText('Recent Encounters');
+      expect(document.querySelectorAll('[data-slot="encounter-set-row"]')).toHaveLength(3);
     });
 
     it('renders TWO list rows with an empty alias map (no merge)', async () => {
@@ -617,15 +622,17 @@ describe('OpponentsPage', () => {
       expect(within(whatTheyPlayCard).getByText(luigi.name)).toBeInTheDocument();
       expect(within(whatTheyPlayCard).getAllByText(fox.name).length).toBeGreaterThan(0);
 
-      // Recent encounters, newest first: m6 (with event/tournament name) first, m1 last.
-      const encountersList = screen.getByRole('list', { name: 'Recent encounters' });
-      const encounterItems = within(encountersList).getAllByRole('listitem');
-      expect(encounterItems.length).toBe(6);
-      // Newest match (m6, time 6) is first and shows the tournament name.
-      expect(within(encounterItems[0]!).getByText('The Big House 9')).toBeInTheDocument();
-      expect(within(encounterItems[0]!).getByText('Win')).toBeInTheDocument();
+      // Recent encounters, newest first: none of m1-m6 carry an `externalId`,
+      // so they group into one session (39.1-18) — six one-game pseudo-sets,
+      // newest (m6, time 6) first. A session pseudo-set shows no per-row
+      // event/tournament name (that now lives only on a real EVENT group's
+      // header, formed from a parsed `externalId`) — a genuine, documented
+      // behavior change from Phase 38's flat per-match tournament label.
+      const encounterRows = document.querySelectorAll('[data-slot="encounter-set-row"]');
+      expect(encounterRows.length).toBe(6);
+      expect(within(encounterRows[0] as HTMLElement).getByText('Win')).toBeInTheDocument();
       // Oldest match (m1, time 1) is last.
-      expect(within(encounterItems[5]!).getByText('Win')).toBeInTheDocument();
+      expect(within(encounterRows[5] as HTMLElement).getByText('Win')).toBeInTheDocument();
 
       // Stages card shows both stages played against this opponent. Scoped
       // for the same reason as "What They Play" above — the hidden print
