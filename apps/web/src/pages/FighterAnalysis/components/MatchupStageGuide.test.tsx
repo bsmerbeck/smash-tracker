@@ -60,4 +60,25 @@ describe('MatchupStageGuide', () => {
     // — plain text, no anchor.
     expect(screen.getByText('—')).toBeInTheDocument();
   });
+
+  it('caps rows at 8 with a show-all control, no nested scroller, when more than 8 opponents are faced (T-39.1-14, UI-SPEC §6.4)', () => {
+    const matches: Match[] = [];
+    for (let opponentId = 20; opponentId < 32; opponentId++) {
+      for (let g = 0; g < 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `m${opponentId}-${g}`,
+            time: opponentId * 10 + g,
+            win: true,
+            opponent_id: opponentId,
+          }),
+        );
+      }
+    }
+    renderGuide(matches);
+    const rows = screen.getAllByRole('row');
+    // Header + at most 8 capped body rows.
+    expect(rows.length).toBeLessThanOrEqual(9);
+    expect(screen.getByRole('button', { name: /show all/i })).toBeInTheDocument();
+  });
 });

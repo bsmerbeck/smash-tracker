@@ -75,6 +75,16 @@ describe('OpponentTable', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('caps rows at 8 with a show-all control, no nested scroller, when more than 8 opponents exist (T-39.1-14, UI-SPEC §6.4)', () => {
+    const rows: OpponentTableRow[] = Array.from({ length: 12 }, (_, i) =>
+      makeRow({ key: `opp${i}`, displayLabel: `opp${i}`, total: 12 - i }),
+    );
+    render(<OpponentTable rows={rows} />);
+    const dataRows = screen.getAllByRole('row').length - 1; // minus header
+    expect(dataRows).toBeLessThanOrEqual(8);
+    expect(screen.getByRole('button', { name: /show all/i })).toBeInTheDocument();
+  });
+
   it('preserves the row order given by the caller (no internal re-sort)', () => {
     const rows = [
       makeRow({ key: 'a', displayLabel: 'alice', total: 2 }),
