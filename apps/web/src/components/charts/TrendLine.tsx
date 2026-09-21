@@ -1,11 +1,24 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceArea,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts';
 import { XAxis, YAxis, type MouseHandlerDataParam } from 'recharts';
+import type { PeriodGrain, PeriodPoint } from '@smash-tracker/shared';
+import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
 import {
   CHART_AXIS_FONT_SIZE,
   CHART_BODY_HEIGHT_PX,
+  CHART_H_COMPACT,
   CHART_DOT_RADIUS,
   CHART_LINE_WIDTH,
   CHART_TOKENS,
@@ -62,6 +75,50 @@ export interface TrendEventPoint {
   context: TrendEventPointContext;
 }
 
+/**
+ * VIZ-01 (UI-SPEC §7.13): the three dot-size steps by sample size, ×2 the
+ * kit's existing `CHART_DOT_RADIUS` convention (radius, not diameter — the
+ * "5/7/9px" the spec names). Exported per the plan's artifact list.
+ */
+export const PERIOD_DOT_RADIUS_SMALL = 5;
+export const PERIOD_DOT_RADIUS_MEDIUM = 7;
+export const PERIOD_DOT_RADIUS_LARGE = 9;
+
+/** UI-SPEC §7.13's table-twin column headers — fully composed by the host (Track B rule B1). */
+export interface TrendLinePeriodTableHeaders {
+  period: string;
+  record: string;
+  rate: string;
+  sample: string;
+}
+
+/** Every string this mode needs, fully composed by the host — the chart never localises (UI-SPEC §9.2 rule 6). */
+export interface TrendLinePeriodLabels {
+  /** UI-SPEC §7.13 locked state, e.g. "Period trend — 3 more weeks with 3+ games unlock this chart." — the host interpolates the count. */
+  lockedSentence: string;
+  /** The locked meter's accessible count label, e.g. "3 of 8 weeks". */
+  lockedCountLabel: string;
+  /** The table twin's disclosure toggle text, e.g. "View as table". */
+  tableToggle: string;
+  tableHeaders: TrendLinePeriodTableHeaders;
+  /** The reference hairline's direct label (e.g. "75% all time") — rendered only when `referenceRate` is also supplied. */
+  referenceLabel?: string;
+}
+
+export interface TrendLinePeriodProps extends TrendLineSharedProps {
+  mode: 'period';
+  /** `buildPeriodSeries`'s output points — this member never bins, buckets or re-windows them (VIZ-01). */
+  points: PeriodPoint[];
+  onSelectPoint?: (point: PeriodPoint) => void;
+  /** The baseline rate (0-100) for the reference hairline; omitted renders no reference line. */
+  referenceRate?: number;
+  /** The recent window's start (ms) for the emphasis band; omitted renders no band. */
+  emphasisStartMs?: number;
+  /** An optional cumulative-rate context step series (Matchups only, UI-SPEC §7.13's Phase-38 D-11 semantic demoted to context), 0-100, same length/order as `points`. */
+  contextRatePercents?: number[];
+  labels: TrendLinePeriodLabels;
+}
+
 interface TrendLineSharedProps {
   /** D-04: explicit numeric size for tests; omitted at runtime for the responsive wrapper. */
   width?: number;
@@ -91,7 +148,7 @@ export interface TrendLineEventProps extends TrendLineSharedProps {
  * (`mode` optional there, required as the literal `'event'` on the other
  * member) with no change to its own type-checking.
  */
-export type TrendLineProps = TrendLineIndexProps | TrendLineEventProps;
+export type TrendLineProps = TrendLineIndexProps | TrendLineEventProps | TrendLinePeriodProps;
 
 /** Used only to derive a legible tick count when no explicit width is given (the runtime responsive wrapper) — the wrapper itself still governs the actual rendered pixel width; this is purely a density fallback. */
 const EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH = 800;
@@ -155,6 +212,11 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
         if (point) {
           props.onSelectPoint(point);
         }
+      } else if (props.mode === 'period') {
+        const point = props.points[index];
+        if (point) {
+          props.onSelectPoint(point);
+        }
       } else {
         const point = props.points[index];
         if (point) {
@@ -164,6 +226,17 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
     },
     [props],
   );
+
+  /**
+   * Period mode's locked state (UI-SPEC §7.13) fires below
+   * `PERIOD_TREND_MIN_PERIODS` PERIODS, including zero — unlike the other
+   * two modes' `points.length === 0` early `return null` below, which never
+   * applies to period mode. `renderPeriodTrend` owns period mode's entire
+   * render tree; the other two modes' code below is untouched.
+   */
+  if (props.mode === 'period') {
+    return renderPeriodTrend(props, { width, height, onClick: handleClick });
+  }
 
   if (props.points.length === 0) {
     return null;
@@ -279,5 +352,378 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
     <ResponsiveContainer width="100%" height={height}>
       {chart}
     </ResponsiveContainer>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Period mode (VIZ-01, VIZ-03, UI-SPEC §7.13) — a third member of the mode
+// union, added exactly the way the 'event' mode was added: a new interface,
+// a new union member, a new arm. The chart CONSUMES `PeriodPoint[]` from the
+// shared engine's grain ladder and bins nothing itself — no date-bucketing
+// helper (a week/month/quarter/year key function, a session/set splitter)
+// exists anywhere below; that logic lives exclusively in
+// `packages/shared/src/insight/periodSeries.ts`.
+// ---------------------------------------------------------------------------
+
+function periodDotRadius(total: number): number {
+  if (total >= 150) return PERIOD_DOT_RADIUS_LARGE;
+  if (total >= 50) return PERIOD_DOT_RADIUS_MEDIUM;
+  return PERIOD_DOT_RADIUS_SMALL;
+}
+
+/** UI-SPEC §7.13: 2px at `CHART_H_DEFAULT`, 1.5px at `CHART_H_COMPACT`. */
+function periodLineStrokeWidth(height: number): number {
+  return height <= CHART_H_COMPACT ? 1.5 : CHART_LINE_WIDTH;
+}
+
+/**
+ * UI-SPEC §7.13/§11: direct value labels on the last, maximum and minimum
+ * points only. Ties broken by keeping the FIRST (earlier) occurrence — only
+ * updating on a STRICT `>`/`<` means a later point tying the current
+ * max/min never displaces it.
+ */
+function findPeriodLabeledIndices(points: PeriodPoint[]): Set<number> {
+  const lastIndex = points.length - 1;
+  let maxIndex = 0;
+  let minIndex = 0;
+  points.forEach((point, i) => {
+    const current = points[maxIndex]!;
+    if (point.rate > current.rate) maxIndex = i;
+    const currentMin = points[minIndex]!;
+    if (point.rate < currentMin.rate) minIndex = i;
+  });
+  return new Set([lastIndex, maxIndex, minIndex]);
+}
+
+/** UI-SPEC §11: fitted to data ± 4pts, snapped to 10s, minimum span 20pts, clamped to [0, 100]. */
+function computePeriodYDomain(points: PeriodPoint[]): [number, number] {
+  const rates = points.map((point) => point.rate * 100);
+  const dataMin = Math.min(...rates);
+  const dataMax = Math.max(...rates);
+  let lo = Math.max(0, Math.floor((dataMin - 4) / 10) * 10);
+  let hi = Math.min(100, Math.ceil((dataMax + 4) / 10) * 10);
+  if (hi - lo < 20) {
+    hi = Math.min(100, lo + 20);
+    if (hi - lo < 20) {
+      lo = Math.max(0, hi - 20);
+    }
+  }
+  return [lo, hi];
+}
+
+/**
+ * UI-SPEC §7.13: "years (quarter grain), month starts (week grain), every
+ * 4th otherwise" — all period points at a chosen grain share that grain, so
+ * the ladder's OWN chosen grain (never re-derived) picks the rule.
+ */
+function selectPeriodXAxisTicks(points: PeriodPoint[]): string[] {
+  const grain: PeriodGrain | undefined = points[0]?.grain;
+  if (grain === 'quarter' || grain === 'year') {
+    const seenYears = new Set<string>();
+    return points
+      .filter((point) => {
+        const year = String(new Date(point.startMs).getUTCFullYear());
+        if (seenYears.has(year)) return false;
+        seenYears.add(year);
+        return true;
+      })
+      .map((point) => point.key);
+  }
+  if (grain === 'week') {
+    const seenMonths = new Set<string>();
+    return points
+      .filter((point) => {
+        const d = new Date(point.startMs);
+        const tickMonthGroup = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+        if (seenMonths.has(tickMonthGroup)) return false;
+        seenMonths.add(tickMonthGroup);
+        return true;
+      })
+      .map((point) => point.key);
+  }
+  return points.filter((_, i) => i % 4 === 0).map((point) => point.key);
+}
+
+/** UI-SPEC §7.13: the emphasis band's left edge snaps to the period CONTAINING the window start; a window start that falls between periods snaps forward to the next period rather than inventing a partial one. */
+function findEmphasisStartKey(points: PeriodPoint[], emphasisStartMs: number): string | undefined {
+  const containing = points.find(
+    (point) => emphasisStartMs >= point.startMs && emphasisStartMs <= point.endMs,
+  );
+  if (containing) return containing.key;
+  const after = points.find((point) => point.startMs >= emphasisStartMs);
+  return (after ?? points[points.length - 1])?.key;
+}
+
+function periodDotRenderer(points: PeriodPoint[]) {
+  return function renderDot(dotProps: unknown): ReactElement {
+    const { cx, cy, index } = dotProps as { cx?: number; cy?: number; index?: number };
+    if (typeof cx !== 'number' || typeof cy !== 'number' || typeof index !== 'number') {
+      return <g />;
+    }
+    const point = points[index];
+    if (!point) {
+      return <g />;
+    }
+    const radius = periodDotRadius(point.total);
+    if (point.subFloor) {
+      return (
+        <circle
+          key={point.key}
+          cx={cx}
+          cy={cy}
+          r={radius}
+          fill={CHART_TOKENS.surface}
+          stroke={CHART_TOKENS.deemphasis}
+          strokeWidth={1.5}
+        />
+      );
+    }
+    return (
+      <circle
+        key={point.key}
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill={CHART_TOKENS.series1}
+        stroke={CHART_TOKENS.surface}
+        strokeWidth={2}
+      />
+    );
+  };
+}
+
+function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>) {
+  return function renderLabel(labelProps: unknown): ReactElement {
+    const { x, y, index } = labelProps as { x?: number; y?: number; index?: number };
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof index !== 'number') {
+      return <g />;
+    }
+    if (!labeledIndices.has(index)) {
+      return <g />;
+    }
+    const point = points[index];
+    if (!point) {
+      return <g />;
+    }
+    return (
+      <text
+        x={x}
+        y={y - 12}
+        textAnchor="middle"
+        fill={CHART_TOKENS.axisText}
+        fontSize={CHART_AXIS_FONT_SIZE}
+        fontWeight={600}
+      >
+        {`${Math.round(point.rate * 100)}%`}
+      </text>
+    );
+  };
+}
+
+interface PeriodChartRow {
+  key: string;
+  lineRatePercent: number | null;
+  ratePercent: number;
+  contextPercent?: number;
+}
+
+function buildPeriodChartData(
+  points: PeriodPoint[],
+  contextRatePercents?: number[],
+): PeriodChartRow[] {
+  return points.map((point, i) => ({
+    key: point.key,
+    lineRatePercent: point.subFloor ? null : point.rate * 100,
+    ratePercent: point.rate * 100,
+    contextPercent: contextRatePercents?.[i],
+  }));
+}
+
+function renderPeriodLockedInset(props: TrendLinePeriodProps): ReactElement {
+  const need = PERIOD_TREND_MIN_PERIODS;
+  const have = props.points.length;
+  const fillPercent = need > 0 ? Math.min(100, Math.round((have / need) * 100)) : 0;
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-md bg-muted/40 p-3"
+      data-slot="trend-line-period-locked"
+    >
+      <p className="text-sm leading-5">{props.labels.lockedSentence}</p>
+      <div
+        role="img"
+        aria-label={props.labels.lockedCountLabel}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${fillPercent}%`, backgroundColor: CHART_TOKENS.steady }}
+        />
+      </div>
+      <p className="text-xs leading-4 text-muted-foreground tabular-nums">
+        {props.labels.lockedCountLabel}
+      </p>
+    </div>
+  );
+}
+
+function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactElement {
+  const [open, setOpen] = useState(false);
+  const { points, labels } = props;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} data-slot="trend-line-period-table">
+      <Button type="button" variant="link" size="sm" onClick={() => setOpen((o) => !o)}>
+        {labels.tableToggle}
+      </Button>
+      <CollapsibleContent>
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              <th scope="col" className="text-left font-medium">
+                {labels.tableHeaders.period}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {labels.tableHeaders.record}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {labels.tableHeaders.rate}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {labels.tableHeaders.sample}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {points.map((point) => (
+              <tr key={point.key}>
+                <td>{point.label}</td>
+                <td>{`${point.wins}–${point.losses}`}</td>
+                <td>{`${Math.round(point.rate * 100)}%`}</td>
+                <td>{point.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function renderPeriodTrend(
+  props: TrendLinePeriodProps,
+  opts: { width?: number; height: number; onClick: (state: MouseHandlerDataParam) => void },
+): ReactElement {
+  const { points } = props;
+  const { width, height, onClick } = opts;
+
+  if (points.length < PERIOD_TREND_MIN_PERIODS) {
+    return (
+      <>
+        {renderPeriodLockedInset(props)}
+        <PeriodTableTwin props={props} />
+      </>
+    );
+  }
+
+  const data = buildPeriodChartData(points, props.contextRatePercents);
+  const labeledIndices = findPeriodLabeledIndices(points);
+  const [yMin, yMax] = computePeriodYDomain(points);
+  const ticks = selectPeriodXAxisTicks(points);
+  const labelByKey = new Map(points.map((point) => [point.key, point.label]));
+  const emphasisStartKey =
+    props.emphasisStartMs !== undefined
+      ? findEmphasisStartKey(points, props.emphasisStartMs)
+      : undefined;
+  const lastKey = points[points.length - 1]!.key;
+  const lineStrokeWidth = periodLineStrokeWidth(height);
+
+  const chart = (
+    <LineChart
+      {...(typeof width === 'number' ? { width, height } : {})}
+      data={data}
+      onClick={onClick}
+      accessibilityLayer
+    >
+      <CartesianGrid stroke={CHART_TOKENS.grid} />
+      <XAxis
+        dataKey="key"
+        type="category"
+        domain={points.map((point) => point.key)}
+        ticks={ticks}
+        interval={0}
+        tickFormatter={(value: string) => labelByKey.get(value) ?? value}
+        tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+      />
+      <YAxis
+        domain={[yMin, yMax]}
+        tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+      />
+      {props.tooltip && (
+        <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
+      )}
+      {props.referenceRate !== undefined && (
+        <ReferenceLine
+          y={props.referenceRate}
+          stroke={CHART_TOKENS.deemphasis}
+          label={
+            props.labels.referenceLabel
+              ? { value: props.labels.referenceLabel, position: 'insideTopRight' }
+              : undefined
+          }
+        />
+      )}
+      {emphasisStartKey !== undefined && (
+        <ReferenceArea
+          x1={emphasisStartKey}
+          x2={lastKey}
+          fill={CHART_TOKENS.series1}
+          fillOpacity={0.1}
+          ifOverflow="visible"
+        />
+      )}
+      {props.contextRatePercents && (
+        <Line
+          type="stepAfter"
+          dataKey="contextPercent"
+          stroke={CHART_TOKENS.deemphasis}
+          strokeWidth={1}
+          dot={false}
+          isAnimationActive={false}
+        />
+      )}
+      <Line
+        className="trend-line-period-line"
+        type="linear"
+        dataKey="lineRatePercent"
+        stroke={CHART_TOKENS.series1}
+        strokeWidth={lineStrokeWidth}
+        dot={false}
+        connectNulls={false}
+        isAnimationActive={false}
+      />
+      <Line
+        type="linear"
+        dataKey="ratePercent"
+        stroke="none"
+        dot={periodDotRenderer(points)}
+        label={periodLabelRenderer(points, labeledIndices)}
+        isAnimationActive={false}
+      />
+    </LineChart>
+  );
+
+  const plot =
+    typeof width === 'number' ? (
+      chart
+    ) : (
+      <ResponsiveContainer width="100%" height={height}>
+        {chart}
+      </ResponsiveContainer>
+    );
+
+  return (
+    <>
+      {plot}
+      <PeriodTableTwin props={props} />
+    </>
   );
 }
