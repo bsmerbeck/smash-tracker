@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -20,6 +21,19 @@ import { WinLossPips } from '@/components/WinLossPips';
 import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
+
+/**
+ * Plan 39.1-13 (UI-SPEC §9.6): `getMatchTypeRecords`' raw `matchType` literal
+ * (`'quickplay'`, `'online-tourney'`, …, `'unspecified'`) -> `analytics.matchType.*`.
+ * `'unspecified'` (the empty/`'none'`-value bucket `getMatchTypeRecords`
+ * groups under) has no key of its own — `analytics.matchType.none`
+ * ("Unspecified") is the same bucket under a different name, so it is the
+ * fallback target rather than a ninth locale key.
+ */
+function matchTypeLabel(matchType: string, t: TFunction): string {
+  const key = matchType === 'unspecified' ? 'none' : matchType;
+  return t(`analytics.matchType.${key}`, { defaultValue: matchType });
+}
 
 /**
  * v2 analytics for the selected matchup: current/best/worst streaks, recent
@@ -190,7 +204,7 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
                 <ul className="flex flex-col gap-1 text-sm">
                   {typeRecords.map((record) => (
                     <li key={record.matchType} className="flex justify-between">
-                      <span>{record.matchType}</span>
+                      <span>{matchTypeLabel(record.matchType, t)}</span>
                       <span className="text-muted-foreground">
                         {record.wins}-{record.losses} ({record.winRate}%)
                       </span>

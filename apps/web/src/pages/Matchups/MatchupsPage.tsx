@@ -35,6 +35,7 @@ import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { MatchupChart, formStripEventKeyForMatch } from './components/MatchupChart';
+import { MatchupOrPlayerCard } from './components/MatchupOrPlayerCard';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
 import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
@@ -335,7 +336,7 @@ export function MatchupsPage() {
           <PageGrid>
             <div className="col-span-12 xl:order-2 xl:col-span-4">
               <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 xl:flex xl:flex-col">
-                <MatchWinLossCard matchupMatches={matchupMatches} />
+                <MatchWinLossCard matchupMatches={matchupMatches} horizon={horizon} />
                 <MatchupInsights matchupMatches={matchupMatches} />
               </div>
             </div>
@@ -344,6 +345,9 @@ export function MatchupsPage() {
             </div>
             <div className="col-span-12 xl:order-3 xl:col-span-8">
               <PairingOpponentSplit matchupMatches={matchupMatches} />
+            </div>
+            <div className="col-span-12 xl:order-4 xl:col-span-4">
+              <MatchupOrPlayerCard matchupMatches={matchupMatches} horizon={horizon} />
             </div>
           </PageGrid>
 

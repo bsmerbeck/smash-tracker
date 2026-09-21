@@ -3300,7 +3300,9 @@
       "sortMostGames": "試合数が多い順"
     },
     "record": {
-      "aria": "{{wins}}勝{{losses}}敗"
+      "aria": "{{wins}}勝{{losses}}敗",
+      "deltaUp": "+{{points}}pt",
+      "deltaDown": "-{{points}}pt"
     },
     "stat": {
       "collapsedValue": "= 全試合",

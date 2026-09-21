@@ -18,39 +18,54 @@ function makeMatch(overrides: Partial<Match> = {}): Match {
   };
 }
 
-describe('MatchWinLossCard', () => {
-  it('with an empty match array renders the existing record-empty string and no pips element', () => {
-    render(<MatchWinLossCard matchupMatches={[]} />);
+/** N countable games, one per day, ending today — every game lands inside `last30`'s window and D-15's 12-month scoped-recency bound. */
+function recentSequence(count: number, results?: boolean[]): Match[] {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Array.from({ length: count }, (_, i) => {
+    const win = results ? results[i % results.length]! : i % 3 !== 0;
+    return makeMatch({ id: `m${i}`, time: now - (count - i) * dayMs, win });
+  });
+}
 
+describe('MatchWinLossCard', () => {
+  it('with an empty match array renders the existing record-empty string', () => {
+    render(<MatchWinLossCard matchupMatches={[]} horizon="last30" />);
     expect(screen.getByText('No reported matches against this fighter')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Last \d+ results/)).not.toBeInTheDocument();
   });
 
-  it('with matches renders the record title, the three stat labels in order, and one pips element', () => {
-    render(
-      <MatchWinLossCard
-        matchupMatches={[
-          makeMatch({ id: 'm1', win: true }),
-          makeMatch({ id: 'm2', win: true }),
-          makeMatch({ id: 'm3', win: false }),
-        ]}
-      />,
+  it('renders exactly one games figure and a lead win-rate figure with a delta chip beside it', () => {
+    const matches = [
+      makeMatch({ id: 'm1', win: true }),
+      makeMatch({ id: 'm2', win: true }),
+      makeMatch({ id: 'm3', win: false }),
+    ];
+    render(<MatchWinLossCard matchupMatches={matches} horizon="last30" />);
+
+    // The games count (3) appears exactly once — as the games figure's
+    // value. It must not also appear as a second, independent occurrence
+    // elsewhere in the card's text (UIX-04: a figure is never stated twice).
+    const gamesFigureValue = screen.getByText('3');
+    expect(gamesFigureValue).toBeInTheDocument();
+
+    expect(screen.getByText('67%')).toBeInTheDocument(); // lead win-rate figure
+    expect(screen.getByText('2–1')).toBeInTheDocument(); // bare record figure
+  });
+
+  it('renders a full-width record bar and a mini strip of the recent window', () => {
+    const { container } = render(
+      <MatchWinLossCard matchupMatches={recentSequence(10)} horizon="last30" />,
     );
+    expect(container.querySelector('[data-slot="record-bar"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="mini-strip"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-slot="mini-strip"] > span').length).toBe(10);
+  });
 
-    expect(screen.getByText('Record')).toBeInTheDocument();
-
-    const labels = ['Wins', 'Total Matches', 'Losses'];
-    const labelElements = labels.map((label) => screen.getByText(label));
-    // Order-preserving: wins, total, losses — matching the existing order.
-    const positions = labelElements.map((el) =>
-      Array.from(el.parentElement?.parentElement?.children ?? []).indexOf(el.parentElement!),
+  it("neither the card's root nor its stat row carries a stretch utility (flex-1/grow on a sibling column)", () => {
+    const { container } = render(
+      <MatchWinLossCard matchupMatches={recentSequence(5)} horizon="last30" />,
     );
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-
-    expect(screen.getByText('2')).toBeInTheDocument(); // wins
-    expect(screen.getByText('3')).toBeInTheDocument(); // total
-    expect(screen.getByText('1')).toBeInTheDocument(); // losses
-
-    expect(screen.getByLabelText('Last 3 results, newest first')).toBeInTheDocument();
+    const root = container.querySelector('[data-slot="card"]') ?? container.firstElementChild;
+    expect(root?.className ?? '').not.toMatch(/\bflex-1\b|\bgrow\b/);
   });
 });

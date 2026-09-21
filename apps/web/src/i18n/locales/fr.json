@@ -3300,7 +3300,9 @@
       "sortMostGames": "Le plus de matchs"
     },
     "record": {
-      "aria": "{{wins}} victoires, {{losses}} défaites"
+      "aria": "{{wins}} victoires, {{losses}} défaites",
+      "deltaUp": "+{{points}} pts",
+      "deltaDown": "-{{points}} pts"
     },
     "stat": {
       "collapsedValue": "= tous les matchs",

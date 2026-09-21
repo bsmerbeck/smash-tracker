@@ -3300,7 +3300,9 @@
       "sortMostGames": "Más partidas"
     },
     "record": {
-      "aria": "{{wins}} victorias, {{losses}} derrotas"
+      "aria": "{{wins}} victorias, {{losses}} derrotas",
+      "deltaUp": "+{{points}} pts",
+      "deltaDown": "-{{points}} pts"
     },
     "stat": {
       "collapsedValue": "= todas las partidas",

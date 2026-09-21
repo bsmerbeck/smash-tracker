@@ -91,6 +91,24 @@ function LocationSearchProbe() {
   return <div data-testid="location-search">{location.search}</div>;
 }
 
+/**
+ * Plan 39.1-13: the record card no longer carries a "Wins" label (UIX-04's
+ * three-equal-numbers layout is gone) — its bare win-loss figure is scoped
+ * by finding the `ChartCard` whose OWN title is "Record" (via `card-title`'s
+ * `data-slot`, never a bare `getByText('Record')`, which also matches the
+ * stage-breakdown table's "Record" column header).
+ */
+function recordCard(): HTMLElement {
+  const cardTitle = screen
+    .getAllByText('Record')
+    .find((el) => el.getAttribute('data-slot') === 'card-title');
+  const card = cardTitle?.closest('[data-slot="card"]');
+  if (!card) {
+    throw new Error('Record ChartCard not found');
+  }
+  return card as HTMLElement;
+}
+
 function renderMatchups(initialEntry = '/matchups') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -179,9 +197,7 @@ describe('MatchupsPage', () => {
 
     // The real analytics render, defaulting to the inferred (only) fighter.
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
-    const winsStat = screen.getByText('Wins').closest('div');
-    expect(winsStat).not.toBeNull();
-    expect(within(winsStat!).getByText('1')).toBeInTheDocument();
+    expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
     // Non-blocking prompt, not the gate.
     expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
     expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
@@ -217,9 +233,7 @@ describe('MatchupsPage', () => {
 
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
     // Only the m1 match (vs the alphabetically-first opponent) should count.
-    const winsStat = screen.getByText('Wins').closest('div');
-    expect(winsStat).not.toBeNull();
-    expect(within(winsStat!).getByText('1')).toBeInTheDocument();
+    expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
   });
 
   it('updates the matchup when a different opponent is selected', async () => {
@@ -240,10 +254,8 @@ describe('MatchupsPage', () => {
     await user.click(await screen.findByRole('option', { name: new RegExp(luigi.name) }));
 
     await waitFor(() => {
-      const winsStat = screen.getByText('Wins').closest('div');
-      expect(winsStat).not.toBeNull();
       // Two wins recorded against Luigi.
-      expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+      expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
     });
   });
 
@@ -281,20 +293,19 @@ describe('MatchupsPage', () => {
     await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
     // Current streak: 1 loss (most recent match lost)
     expect(screen.getByText('1 losses')).toBeInTheDocument();
-    // Recent form pips for all three matches — plan 37-03 promotes
-    // MatchWinLossCard to a stat tile whose trend row reuses the SAME
-    // WinLossPips component MatchupInsights' "Recent form" row already
-    // renders (UI-SPEC: "no new sparkline mechanism invented"), so this
-    // aria-label now legitimately appears twice on the page.
-    expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(2);
+    // Plan 39.1-13 (UIX-04): the record card's trend row is now a `MiniStrip`
+    // (role="img", a different accessible-name shape), not `WinLossPips` —
+    // `WinLossPips`'s "Last N results" aria-label survives only on
+    // `MatchupInsights`' own unchanged "Recent form" row, so this label now
+    // legitimately appears exactly ONCE (the duplication plan 37-03 created
+    // is exactly what this redesign removes).
+    expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(1);
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
     expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
     // The pairing record (2-1) shows up in multiple places now (matrix cell,
     // insights, stage table) — assert on the win-loss card specifically.
-    const winsStat = screen.getByText('Wins').closest('div');
-    expect(winsStat).not.toBeNull();
-    expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+    expect(within(recordCard()).getByText('2–1')).toBeInTheDocument();
   });
 
   it('shows a no-matches message for the matchup table when the pairing has no matches', async () => {
@@ -362,9 +373,7 @@ describe('MatchupsPage', () => {
     await user.click(cell);
 
     await waitFor(() => {
-      const winsStat = screen.getByText('Wins').closest('div');
-      expect(winsStat).not.toBeNull();
-      expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+      expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
     });
   });
 
@@ -422,9 +431,7 @@ describe('MatchupsPage', () => {
     expect(within(opponentTrigger).getByText(luigi.name)).toBeInTheDocument();
 
     // The Mario-vs-Luigi pairing (2 games, both wins) is the one actually rendered.
-    const winsStat = screen.getByText('Wins').closest('div');
-    expect(winsStat).not.toBeNull();
-    expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+    expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
   });
 
   /**
@@ -506,9 +513,7 @@ describe('MatchupsPage', () => {
         ).toBeInTheDocument(),
       );
       // The win-loss card also reflects Bowser's own 1-0 record, not Mario's.
-      const winsStat = screen.getByText('Wins').closest('div');
-      expect(winsStat).not.toBeNull();
-      expect(within(winsStat!).getByText('1')).toBeInTheDocument();
+      expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
     });
 
     it('falls back to the persisted fighter, and still renders the detail block, when the URL fighter axis names no known fighter', async () => {
