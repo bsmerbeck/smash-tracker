@@ -106,7 +106,6 @@ const STAT_COMPONENT_GSP_ALLOWLIST = [
 const STAT_COMPONENT_KNOWN_OFFENDERS = [
   'apps/web/src/pages/MatchData/components/StageBreakdown.tsx',
   'apps/web/src/pages/Dashboard/components/WinLossTracker.tsx',
-  'apps/web/src/pages/Trends/components/TrendsHero.tsx',
   'apps/web/src/pages/Trends/components/SettingComparison.tsx',
 ];
 

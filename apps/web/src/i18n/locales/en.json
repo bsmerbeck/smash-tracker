@@ -1012,9 +1012,12 @@
     }
   },
   "trends": {
+    "title": "Trends",
     "loading": "Loading trends...",
     "noMatches": "You have no matches, report a match and check back here to view trends!",
     "hero": {
+      "winRate": "Win rate",
+      "rating": "Rating",
       "currentRating": "Current Rating",
       "glickoRating": "Glicko-2 rating",
       "notEnoughGames": "Not enough games yet",
@@ -1024,7 +1027,11 @@
       "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} games)",
       "bestMonthNeeds": "Needs a month with {{count}}+ games",
       "currentForm": "Current Form",
-      "formCaption": "Last {{played}} of {{window}} games"
+      "formCaption": "Last {{played}} of {{window}} games",
+      "sessionsLabel": "Sessions",
+      "avgGamesCaption": "{{count}} games avg",
+      "locked_one": "{{count}} more game unlocks this read.",
+      "locked_other": "{{count}} more games unlock this read."
     },
     "monthly": {
       "title": "Monthly Performance",

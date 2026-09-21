@@ -1012,9 +1012,12 @@
     }
   },
   "trends": {
+    "title": "Tendencias",
     "loading": "Cargando tendencias...",
     "noMatches": "No tienes partidas; registra una y vuelve aquí para ver tus tendencias.",
     "hero": {
+      "winRate": "Tasa de victorias",
+      "rating": "Puntuación",
       "currentRating": "Puntuación actual",
       "glickoRating": "Puntuación Glicko-2",
       "notEnoughGames": "Aún no hay suficientes partidas",
@@ -1024,7 +1027,11 @@
       "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} partidas)",
       "bestMonthNeeds": "Necesita un mes con {{count}}+ partidas",
       "currentForm": "Forma actual",
-      "formCaption": "Últimas {{played}} de {{window}} partidas"
+      "formCaption": "Últimas {{played}} de {{window}} partidas",
+      "sessionsLabel": "Sesiones",
+      "avgGamesCaption": "{{count}} partidas de media",
+      "locked_one": "{{count}} partida más desbloquea esta lectura.",
+      "locked_other": "{{count}} partidas más desbloquean esta lectura."
     },
     "monthly": {
       "title": "Rendimiento mensual",

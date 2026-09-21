@@ -1012,9 +1012,12 @@
     }
   },
   "trends": {
+    "title": "Tendances",
     "loading": "Chargement des tendances...",
     "noMatches": "Vous n'avez aucun match : enregistrez-en un puis revenez ici pour voir vos tendances.",
     "hero": {
+      "winRate": "Taux de victoire",
+      "rating": "Classement",
       "currentRating": "Classement actuel",
       "glickoRating": "Classement Glicko-2",
       "notEnoughGames": "Pas encore assez de matchs",
@@ -1024,7 +1027,11 @@
       "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} matchs)",
       "bestMonthNeeds": "Nécessite un mois avec {{count}}+ matchs",
       "currentForm": "Forme actuelle",
-      "formCaption": "{{played}} derniers sur {{window}} matchs"
+      "formCaption": "{{played}} derniers sur {{window}} matchs",
+      "sessionsLabel": "Sessions",
+      "avgGamesCaption": "{{count}} matchs en moyenne",
+      "locked_one": "{{count}} match de plus débloque cette lecture.",
+      "locked_other": "{{count}} matchs de plus débloquent cette lecture."
     },
     "monthly": {
       "title": "Performance mensuelle",

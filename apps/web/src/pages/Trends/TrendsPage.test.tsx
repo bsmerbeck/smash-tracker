@@ -8,6 +8,7 @@ import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
 } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { TrendsPage } from './TrendsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -70,10 +71,12 @@ function renderTrends() {
       <MemoryRouter initialEntries={['/trends']}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/trends" element={<TrendsPage />} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-            </Routes>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/trends" element={<TrendsPage />} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>

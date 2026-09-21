@@ -1012,9 +1012,12 @@
     }
   },
   "trends": {
+    "title": "トレンド",
     "loading": "トレンドを読み込み中...",
     "noMatches": "まだ対戦がありません。対戦を記録してから、ここでトレンドを確認しましょう！",
     "hero": {
+      "winRate": "勝率",
+      "rating": "レーティング",
       "currentRating": "現在のレーティング",
       "glickoRating": "Glicko-2レーティング",
       "notEnoughGames": "まだ対戦数が足りません",
@@ -1024,7 +1027,11 @@
       "bestMonthCaption": "{{month}} · {{wins}}-{{losses}}（{{count}}戦）",
       "bestMonthNeeds": "{{count}}戦以上の月が必要です",
       "currentForm": "現在の調子",
-      "formCaption": "直近{{window}}戦のうち{{played}}戦"
+      "formCaption": "直近{{window}}戦のうち{{played}}戦",
+      "sessionsLabel": "セッション",
+      "avgGamesCaption": "平均{{count}}戦",
+      "locked_one": "あと{{count}}戦でこの読みが解放されます。",
+      "locked_other": "あと{{count}}戦でこの読みが解放されます。"
     },
     "monthly": {
       "title": "月別パフォーマンス",
