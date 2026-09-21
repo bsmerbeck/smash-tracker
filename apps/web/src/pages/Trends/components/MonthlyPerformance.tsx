@@ -20,6 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { LIST_INLINE_MAX } from '@/components/analytics/BoundedList';
 import { getMonthlyRecords, type MonthlyRecord } from '@/lib/stats';
 import { chartColors, darkChartOptions } from '@/lib/chartTheme';
 
@@ -49,10 +52,12 @@ export function buildMonthlyChartData(records: MonthlyRecord[], t: TFunction, lo
       {
         label: t('trends.monthly.winRateLabel'),
         data: records.map((r) => r.winRate),
+        // DD-11/UIX-05: the interim chart's data ink is the tokenised
+        // identity-series colour, never brand red.
         backgroundColor: records.map((r) =>
-          r.total < SMALL_SAMPLE_THRESHOLD ? chartColors.redSoft : chartColors.red,
+          r.total < SMALL_SAMPLE_THRESHOLD ? chartColors.seriesSoft : chartColors.series,
         ),
-        borderColor: chartColors.red,
+        borderColor: chartColors.series,
         borderWidth: 1,
         borderRadius: 4,
         // Carried through purely for the tooltip callback below.
@@ -101,6 +106,11 @@ function buildMonthlyChartOptions(records: MonthlyRecord[], t: TFunction): Chart
 export function MonthlyPerformance({ matches }: { matches: Match[] }) {
   const { t, i18n } = useTranslation();
   const records = getMonthlyRecords(matches);
+  // DD-14: the side table sits behind a closed-by-default disclosure,
+  // capped at LIST_INLINE_MAX (25) rows inline — no nested vertical
+  // scroller (layoutIdioms.test.ts's NESTED_SCROLLER_KNOWN_OFFENDERS array
+  // shrinks by this file's entry in the SAME commit as this fix).
+  const tableRows = [...records].reverse().slice(0, LIST_INLINE_MAX);
 
   return (
     <Card>
@@ -111,50 +121,56 @@ export function MonthlyPerformance({ matches }: { matches: Match[] }) {
         {records.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
-          <div className="flex flex-col gap-4 lg:flex-row">
-            <div className="flex flex-col gap-2 lg:w-3/5">
-              <div className="h-64">
-                <Bar
-                  data={buildMonthlyChartData(records, t, i18n.language)}
-                  options={buildMonthlyChartOptions(records, t)}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t('trends.monthly.caption', { count: SMALL_SAMPLE_THRESHOLD })}
-              </p>
+          <div className="flex flex-col gap-4">
+            <div className="h-64">
+              <Bar
+                data={buildMonthlyChartData(records, t, i18n.language)}
+                options={buildMonthlyChartOptions(records, t)}
+              />
             </div>
-            <div className="max-h-72 overflow-y-auto lg:w-2/5">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('trends.monthly.month')}</TableHead>
-                    <TableHead>{t('trends.monthly.wl')}</TableHead>
-                    <TableHead>{t('common.rate')}</TableHead>
-                    <TableHead>{t('trends.monthly.games')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[...records].reverse().map((record) => (
-                    <TableRow key={record.month}>
-                      <TableCell>{formatMonthLabel(record.month, i18n.language)}</TableCell>
-                      <TableCell>
-                        {record.wins}-{record.losses}
-                      </TableCell>
-                      <TableCell>{record.winRate}%</TableCell>
-                      <TableCell
-                        className={
-                          record.total < SMALL_SAMPLE_THRESHOLD
-                            ? 'text-muted-foreground'
-                            : undefined
-                        }
-                      >
-                        {record.total}
-                      </TableCell>
+            <p className="text-xs text-muted-foreground">
+              {t('trends.monthly.caption', { count: SMALL_SAMPLE_THRESHOLD })}
+            </p>
+
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="link" size="sm" className="self-start px-0">
+                  {t('analytics.trend.tableToggle')}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('trends.monthly.month')}</TableHead>
+                      <TableHead>{t('trends.monthly.wl')}</TableHead>
+                      <TableHead>{t('common.rate')}</TableHead>
+                      <TableHead>{t('trends.monthly.games')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {tableRows.map((record) => (
+                      <TableRow key={record.month}>
+                        <TableCell>{formatMonthLabel(record.month, i18n.language)}</TableCell>
+                        <TableCell>
+                          {record.wins}-{record.losses}
+                        </TableCell>
+                        <TableCell>{record.winRate}%</TableCell>
+                        <TableCell
+                          className={
+                            record.total < SMALL_SAMPLE_THRESHOLD
+                              ? 'text-muted-foreground'
+                              : undefined
+                          }
+                        >
+                          {record.total}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         )}
       </CardContent>

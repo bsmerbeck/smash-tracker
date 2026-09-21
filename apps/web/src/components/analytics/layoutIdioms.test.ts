@@ -128,7 +128,6 @@ const NESTED_SCROLLER_KNOWN_OFFENDERS = [
   'apps/web/src/pages/Stages/StageDetailPage.tsx',
   'apps/web/src/pages/Matchups/components/SetStateControl.tsx',
   'apps/web/src/pages/Dashboard/components/AddMatchForm.tsx',
-  'apps/web/src/pages/Trends/components/MonthlyPerformance.tsx',
   'apps/web/src/pages/Review/components/DeliveryVodNotesTab.tsx',
   'apps/web/src/pages/VodManager/MySharesDialog.tsx',
   'apps/web/src/pages/VodManager/components/VodMatchList.tsx',

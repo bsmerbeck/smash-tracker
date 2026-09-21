@@ -15,7 +15,7 @@ import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
 import { computeRatingHistory, type RatingPeriodResult } from '@/lib/glicko';
-import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import { chartColors, darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -42,7 +42,9 @@ export function buildRatingCurveData(periods: RatingPeriodResult[], t: TFunction
     datasets: [
       {
         label: t('trends.ratingCurve.ratingLabel'),
-        ...redLineDataset(),
+        // DD-11/UIX-05: the interim chart's data ink is the tokenised
+        // identity-series colour, never brand red.
+        ...seriesLineDataset(),
         data: periods.map((p) => p.rating),
       },
       {

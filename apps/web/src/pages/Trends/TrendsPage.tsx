@@ -10,12 +10,11 @@ import { useHorizon } from '@/hooks/useHorizon';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { TrendsHero } from './components/TrendsHero';
 import { TrendsReadsRail } from './components/TrendsReadsRail';
-import { MonthlyPerformance } from './components/MonthlyPerformance';
+import { CareerTimelineSlot } from './components/CareerTimelineSlot';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
-import { RatingCurve } from './components/RatingCurve';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -23,14 +22,15 @@ import { RatingCurve } from './components/RatingCurve';
  * -> `PageGrid` rows. Own-account only (38 D-04) — every link this page
  * builds is an own-account link, never branched on coach state.
  *
- * Row 1 is the five-figure `StatRow` hero. Row 2 (the interim career-timeline
- * slot: the existing `RatingCurve`/`MonthlyPerformance` charts at 6+6) lands
- * in plan 39.1-15's Task 3 (`CareerTimelineSlot`) — this task mounts them
- * directly as a placeholder. Row 3 is the three 4-col rails: left (Sessions &
- * Tilt, Recent events), centre (`TrendsReadsRail`, the engine-backed reads),
- * right (Setting comparison, Match-type mix). The six-column `Tournaments`
- * table is removed from this page (Task 2, UI-SPEC §8.2) — `Tournaments.tsx`
- * itself stays committed, since `TournamentsPage.tsx` still imports it.
+ * Row 1 is the five-figure `StatRow` hero. Row 2 is the interim
+ * career-timeline slot (`CareerTimelineSlot`: the existing `RatingCurve`/
+ * `MonthlyPerformance` charts at 6+6, D-02/D-13 — Phase 41 replaces this with
+ * the bound career-timeline chart, UI-SPEC §12.1). Row 3 is the three 4-col
+ * rails: left (Sessions & Tilt, Recent events), centre (`TrendsReadsRail`,
+ * the engine-backed reads), right (Setting comparison, Match-type mix). The
+ * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2) —
+ * `Tournaments.tsx` itself stays committed, since `TournamentsPage.tsx`
+ * still imports it.
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
@@ -73,13 +73,8 @@ export function TrendsPage() {
           <TrendsHero matches={matches} horizon={horizon} />
         </GridCell>
 
-        {/* Interim career-timeline slot (Task 3 wraps these in
-            `CareerTimelineSlot`; this task mounts them directly). */}
-        <GridCell span={6}>
-          <RatingCurve matches={matches} />
-        </GridCell>
-        <GridCell span={6}>
-          <MonthlyPerformance matches={matches} />
+        <GridCell span={12}>
+          <CareerTimelineSlot matches={matches} />
         </GridCell>
 
         <GridCell span={4} stack>
