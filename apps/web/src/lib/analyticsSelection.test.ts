@@ -158,3 +158,75 @@ describe('readStoredSelection / persistSelection', () => {
     expect(readStoredSelection('u2', null)).toEqual({ fighterId: 6 });
   });
 });
+
+// Plan 39.1-12 (INS-02, D-06): the additive `horizon` field. Every case
+// above this point must keep passing unmodified — these are new cases only.
+describe('horizon field (plan 39.1-12)', () => {
+  it.each([
+    ['last30', 'last30'],
+    ['lastEvent', 'lastEvent'],
+    ['last90', 'last90'],
+  ])('admits a valid horizon value %s', (_label, value) => {
+    expect(parseStoredSelection(JSON.stringify({ horizon: value }))).toEqual({ horizon: value });
+  });
+
+  it.each([
+    ['an unknown string', 'last10'],
+    ['a stale non-horizon string', 'foo'],
+    ['a number', 30],
+    ['null', null],
+  ])('drops a horizon of %s, reading back as absent', (_label, badValue) => {
+    expect(parseStoredSelection(JSON.stringify({ horizon: badValue }))).toEqual({});
+  });
+
+  it('round-trips a horizon through localStorage alongside the other fields', () => {
+    persistSelection('u1', null, { fighterId: MARIO_ID, horizon: 'lastEvent' });
+
+    expect(readStoredSelection('u1', null)).toEqual({
+      fighterId: MARIO_ID,
+      horizon: 'lastEvent',
+    });
+  });
+
+  it('writes the horizon field LAST in the declared field order (fighterId, opponentId, minStageMatches, horizon)', () => {
+    const key = analyticsSelectionStorageKey('u1', null);
+
+    persistSelection('u1', null, {
+      horizon: 'last90',
+      minStageMatches: 5,
+      opponentId: LUIGI_ID,
+      fighterId: MARIO_ID,
+    });
+
+    expect(window.localStorage.getItem(key)).toBe(
+      JSON.stringify({
+        fighterId: MARIO_ID,
+        opponentId: LUIGI_ID,
+        minStageMatches: 5,
+        horizon: 'last90',
+      }),
+    );
+  });
+
+  it('performs no localStorage.setItem call when reading a stored unknown horizon value', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    window.localStorage.setItem(
+      analyticsSelectionStorageKey('u1', null),
+      JSON.stringify({ horizon: 'last10' }),
+    );
+    setItemSpy.mockClear();
+
+    expect(readStoredSelection('u1', null)).toEqual({});
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    setItemSpy.mockRestore();
+  });
+
+  it('isolates the horizon field across two distinct (uid, subject) keys', () => {
+    persistSelection('u1', null, { horizon: 'last90' });
+    persistSelection('u1', 'c1', { horizon: 'lastEvent' });
+
+    expect(readStoredSelection('u1', null)).toEqual({ horizon: 'last90' });
+    expect(readStoredSelection('u1', 'c1')).toEqual({ horizon: 'lastEvent' });
+  });
+});

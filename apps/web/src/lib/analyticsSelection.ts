@@ -1,4 +1,4 @@
-import { MIN_STAGE_MATCHES_OPTIONS } from '@smash-tracker/shared';
+import { MIN_STAGE_MATCHES_OPTIONS, type HorizonKey } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { subjectSegment } from '@/lib/subjectQueryKey';
 
@@ -29,6 +29,13 @@ export interface StoredAnalyticsSelection {
   fighterId?: number;
   opponentId?: number;
   minStageMatches?: number;
+  /**
+   * Plan 39.1-12 (INS-02, D-06): the page-level `HorizonSwitch`'s
+   * persisted choice, additive to the three Phase-35 fields above. Written
+   * ONLY by `useHorizon`'s `setHorizon` (an explicit user change) — never a
+   * computed default (D-06).
+   */
+  horizon?: HorizonKey;
 }
 
 /**
@@ -60,6 +67,13 @@ function isValidMinStageMatches(value: unknown): value is number {
   );
 }
 
+/** The closed `HorizonKey` union (`@smash-tracker/shared`), restated as a runtime membership check for untrusted stored content — a value outside this set (an older/newer build's key, a typo, a stray number) is dropped as absent, never thrown on. */
+const HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
+
+function isValidHorizon(value: unknown): value is HorizonKey {
+  return typeof value === 'string' && (HORIZON_KEYS as readonly string[]).includes(value);
+}
+
 /**
  * Parses a stored selection, tolerating missing/malformed content: a
  * nullish or empty `raw`, invalid JSON, a JSON array, or a JSON scalar all
@@ -86,6 +100,9 @@ export function parseStoredSelection(raw: string | null): StoredAnalyticsSelecti
     if (isValidMinStageMatches(record.minStageMatches)) {
       result.minStageMatches = record.minStageMatches;
     }
+    if (isValidHorizon(record.horizon)) {
+      result.horizon = record.horizon;
+    }
     return result;
   } catch {
     return {};
@@ -110,12 +127,13 @@ export function readStoredSelection(
 /**
  * Merges only the defined fields of `patch` over the current stored record
  * and writes the result back, in the fixed field order fighterId,
- * opponentId, minStageMatches — so writing the same selection twice
+ * opponentId, minStageMatches, horizon — so writing the same selection twice
  * produces byte-identical storage. No-ops when `uid` is nullish or
  * `window` is undefined. This is the ONLY function that writes to the
  * selection store — called exclusively from `usePersistedSelection`'s
- * `setFighter`/`setOpponent` (an explicit user change), never from the
- * default-computation path (D-06: a computed default is never persisted).
+ * `setFighter`/`setOpponent` and (plan 39.1-12) `useHorizon`'s `setHorizon`,
+ * each an explicit user change, never from a computed-default path (D-06: a
+ * computed default is never persisted).
  */
 export function persistSelection(
   uid: string | null,
@@ -131,6 +149,7 @@ export function persistSelection(
       ...(next.fighterId !== undefined && { fighterId: next.fighterId }),
       ...(next.opponentId !== undefined && { opponentId: next.opponentId }),
       ...(next.minStageMatches !== undefined && { minStageMatches: next.minStageMatches }),
+      ...(next.horizon !== undefined && { horizon: next.horizon }),
     };
     window.localStorage.setItem(key, JSON.stringify(ordered));
   } catch {
