@@ -3,10 +3,60 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { Match } from '@smash-tracker/shared';
+import { useTranslation } from 'react-i18next';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
-import { MatchupChart, formStripEventKeyForMatch } from './MatchupChart';
+import {
+  MatchupChart,
+  formStripEventKeyForMatch,
+  renderFormNowHead,
+  useMatchupFormNow,
+} from './MatchupChart';
+
+/**
+ * `MatchupChart.tsx` never imports `ChartCard` (the Phase 37 structural
+ * split `chartKitBoundary.test.ts` enforces) — its host, `MatchupsPage.tsx`,
+ * owns the frame. This test-only wrapper reproduces that EXACT production
+ * composition (title/caption/abstained/insight), so this file can still
+ * assert on the composed card's rendered order without violating the guard.
+ */
+function ChartCardWrapper({
+  matchupMatches,
+  horizon,
+  width,
+  height,
+}: {
+  matchupMatches: Match[];
+  horizon: HorizonKey;
+  width?: number;
+  height?: number;
+}) {
+  const { t } = useTranslation();
+  const insight = useMatchupFormNow({ matchupMatches, horizon });
+  const opponentId = matchupMatches[0]?.opponent_id;
+  return (
+    <ChartCard
+      title={t('matchups.winRateTrend')}
+      caption={t('shared.evidence.type.fact')}
+      abstained={
+        matchupMatches.length < ABSTENTION_FLOOR_GAMES
+          ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
+          : null
+      }
+      insight={insight && opponentId != null ? renderFormNowHead(insight, opponentId, t) : null}
+    >
+      <MatchupChart
+        matchupMatches={matchupMatches}
+        horizon={horizon}
+        width={width}
+        height={height}
+      />
+    </ChartCard>
+  );
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,7 +109,7 @@ function renderChart(
   const utils = render(
     <MatchupsContext.Provider value={contextValue}>
       <div id={MATCHUP_TABLE_ANCHOR_ID} />
-      <MatchupChart matchupMatches={matches} horizon={horizon} width={width} height={height} />
+      <ChartCardWrapper matchupMatches={matches} horizon={horizon} width={width} height={height} />
     </MatchupsContext.Provider>,
   );
 

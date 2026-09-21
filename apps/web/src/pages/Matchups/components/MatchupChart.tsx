@@ -4,14 +4,12 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, InsightKind, InsightScope, Match } from '@smash-tracker/shared';
 import {
-  ABSTENTION_FLOOR_GAMES,
   INSIGHT_TEMPLATES,
   buildPeriodSeries,
   confidenceTierFor,
   parseExternalId,
   toRateValue,
 } from '@smash-tracker/shared';
-import { ChartCard } from '@/components/charts/ChartCard';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent, type FormStripSet } from '@/components/charts/FormStrip';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
@@ -59,14 +57,50 @@ function buildPairingScope(fighterId: number, opponentId: number): InsightScope 
 }
 
 /**
+ * Plan 39.1-13: `formNow` at pairing (character) scope, resolved once and
+ * shared by the insight-slot head (`renderFormNowHead`, called by the HOST —
+ * `MatchupsPage.tsx` owns `ChartCard`, per the Phase 37 structural frame
+ * rule `chartKitBoundary.test.ts` enforces: `MatchupChart.tsx` never imports
+ * `ChartCard`) and by `MatchupChart` itself (the form strip's recent-window
+ * highlight and the trend's emphasis band both read the SAME resolved
+ * window, never a second, independently-resolved one).
+ */
+export function useMatchupFormNow({
+  matchupMatches,
+  horizon,
+}: {
+  matchupMatches: Match[];
+  horizon: HorizonKey;
+}): Insight | null {
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — the lazy `useState` initializer is this codebase's established
+  // one-time-read escape hatch (see `MatchupInsights.tsx`, `useHorizon.ts`).
+  const [nowMs] = useState(() => Date.now());
+  const fighterId = matchupMatches[0]?.fighter_id;
+  const opponentId = matchupMatches[0]?.opponent_id;
+
+  return useMemo(() => {
+    if (fighterId == null || opponentId == null) return null;
+    const scope = buildPairingScope(fighterId, opponentId);
+    const built = FORM_NOW_TEMPLATE.build({ matches: matchupMatches, scope, horizon, nowMs });
+    return built[0] ?? null;
+  }, [fighterId, opponentId, matchupMatches, horizon, nowMs]);
+}
+
+/**
  * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
  * chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
  * wrapper, no doors, no dismiss). `entity` is never supplied by the engine
  * (UI-SPEC §9.2 rule 7: the engine never localises a fighter name) — this
  * function composes it itself before calling `t()`, per plan 39.1-11's
- * documented convention.
+ * documented convention. Called by `MatchupsPage.tsx` to build `ChartCard`'s
+ * `insight` prop — `MatchupChart.tsx` itself never renders `ChartCard`.
  */
-function renderFormNowHead(insight: Insight, opponentId: number, t: TFunction): ReactElement {
+export function renderFormNowHead(
+  insight: Insight,
+  opponentId: number,
+  t: TFunction,
+): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
   const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
@@ -213,11 +247,11 @@ function computeCumulativeContextPercents(points: { wins: number; total: number 
  * time for the specific matchup. Phase 39.1 (VIZ-03, INS-05, UI-SPEC §8.3):
  * rebuilt end to end onto the new contract — the `rolling5/10/cumulative`
  * `Select` is gone with NO replacement control (the horizon comes from the
- * page's single `HorizonSwitch`, passed in as the `horizon` prop), and this
- * component now owns its own `ChartCard` (title/caption/abstained/insight)
- * rather than being wrapped by one — the fixed frame order (insight slot,
- * children, footer caption) IS the card's own contract, so owning both sides
- * of that contract in one file keeps them from drifting apart.
+ * page's single `HorizonSwitch`, passed in as the `horizon` prop). This
+ * component still owns no card and never imports `ChartCard` (the Phase 37
+ * structural split `chartKitBoundary.test.ts` enforces) — `MatchupsPage.tsx`
+ * supplies the frame, reading `useMatchupFormNow`/`renderFormNowHead` above
+ * to build the `insight` prop.
  *
  * D-07/CHRT-02/Phase 38-04 (unchanged): a click on a trend point writes an
  * INCLUSIVE date window covering that period's own bounds to the URL (via
@@ -241,20 +275,8 @@ export function MatchupChart({
 }) {
   const { t } = useTranslation();
   const { setDrillDown } = useMatchupsContext();
-  // React Compiler forbids a bare `Date.now()` call in the render body (it's
-  // impure) — the lazy `useState` initializer is this codebase's established
-  // one-time-read escape hatch (see `MatchupInsights.tsx`, `useHorizon.ts`).
-  const [nowMs] = useState(() => Date.now());
 
-  const fighterId = matchupMatches[0]?.fighter_id;
-  const opponentId = matchupMatches[0]?.opponent_id;
-
-  const insight = useMemo(() => {
-    if (fighterId == null || opponentId == null) return null;
-    const scope = buildPairingScope(fighterId, opponentId);
-    const built = FORM_NOW_TEMPLATE.build({ matches: matchupMatches, scope, horizon, nowMs });
-    return built[0] ?? null;
-  }, [fighterId, opponentId, matchupMatches, horizon, nowMs]);
+  const insight = useMatchupFormNow({ matchupMatches, horizon });
 
   const periodSeries = useMemo(
     () => buildPeriodSeries({ matches: matchupMatches }),
@@ -293,64 +315,53 @@ export function MatchupChart({
   }
 
   return (
-    <ChartCard
-      title={t('matchups.winRateTrend')}
-      caption={t('shared.evidence.type.fact')}
-      abstained={
-        matchupMatches.length < ABSTENTION_FLOOR_GAMES
-          ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
-          : null
-      }
-      insight={insight && opponentId != null ? renderFormNowHead(insight, opponentId, t) : null}
-    >
-      <div className="flex flex-col gap-4" data-slot="matchup-chart-body">
-        <FormStrip
-          events={formStripEvents}
-          limit={30}
-          labels={{
-            summary: t('analytics.strip.aria', { count: matchupMatches.length }),
-            legend: t('analytics.strip.legend'),
-            shownOfTotal:
-              matchupMatches.length > 30
-                ? t('analytics.strip.shownOf', { shown: 30, total: matchupMatches.length })
-                : undefined,
-            empty: <span>{t('analytics.strip.empty')}</span>,
-            windowEmpty:
-              insight && insight.window.games === 0
-                ? t(`analytics.strip.windowEmpty.${horizon}`)
-                : undefined,
-          }}
-          onSelectSet={handleSelectSet}
-        />
+    <div className="flex flex-col gap-4" data-slot="matchup-chart-body">
+      <FormStrip
+        events={formStripEvents}
+        limit={30}
+        labels={{
+          summary: t('analytics.strip.aria', { count: matchupMatches.length }),
+          legend: t('analytics.strip.legend'),
+          shownOfTotal:
+            matchupMatches.length > 30
+              ? t('analytics.strip.shownOf', { shown: 30, total: matchupMatches.length })
+              : undefined,
+          empty: <span>{t('analytics.strip.empty')}</span>,
+          windowEmpty:
+            insight && insight.window.games === 0
+              ? t(`analytics.strip.windowEmpty.${horizon}`)
+              : undefined,
+        }}
+        onSelectSet={handleSelectSet}
+      />
 
-        <TrendLine
-          mode="period"
-          points={periodSeries.points}
-          onSelectPoint={handleSelectPeriodPoint}
-          referenceRate={overallRate}
-          emphasisStartMs={recentWindow.fromMs ?? undefined}
-          contextRatePercents={contextRatePercents}
-          width={width}
-          height={height}
-          labels={{
-            lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
-              count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
-            }),
-            lockedCountLabel: t('insights.state.lockedMeter', {
-              have: periodSeries.points.length,
-              need: PERIOD_TREND_LOCKED_FLOOR,
-            }),
-            tableToggle: t('analytics.trend.tableToggle'),
-            tableHeaders: {
-              period: t('analytics.trend.tableHeaders.period'),
-              record: t('analytics.trend.tableHeaders.record'),
-              rate: t('analytics.trend.tableHeaders.rate'),
-              sample: t('analytics.trend.tableHeaders.sample'),
-            },
-            referenceLabel: `${Math.round(overallRate)}%`,
-          }}
-        />
-      </div>
-    </ChartCard>
+      <TrendLine
+        mode="period"
+        points={periodSeries.points}
+        onSelectPoint={handleSelectPeriodPoint}
+        referenceRate={overallRate}
+        emphasisStartMs={recentWindow.fromMs ?? undefined}
+        contextRatePercents={contextRatePercents}
+        width={width}
+        height={height}
+        labels={{
+          lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
+            count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
+          }),
+          lockedCountLabel: t('insights.state.lockedMeter', {
+            have: periodSeries.points.length,
+            need: PERIOD_TREND_LOCKED_FLOOR,
+          }),
+          tableToggle: t('analytics.trend.tableToggle'),
+          tableHeaders: {
+            period: t('analytics.trend.tableHeaders.period'),
+            record: t('analytics.trend.tableHeaders.record'),
+            rate: t('analytics.trend.tableHeaders.rate'),
+            sample: t('analytics.trend.tableHeaders.sample'),
+          },
+          referenceLabel: `${Math.round(overallRate)}%`,
+        }}
+      />
+    </div>
   );
 }

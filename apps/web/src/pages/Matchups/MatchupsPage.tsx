@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartCard } from '@/components/charts/ChartCard';
 import { PageGrid } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
@@ -34,14 +36,19 @@ import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
-import { MatchupChart, formStripEventKeyForMatch } from './components/MatchupChart';
+import {
+  MatchupChart,
+  formStripEventKeyForMatch,
+  renderFormNowHead,
+  useMatchupFormNow,
+} from './components/MatchupChart';
 import { MatchupOrPlayerCard } from './components/MatchupOrPlayerCard';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
 import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
 import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './components/MatchupMatrix';
 import { CounterpickAdvisor } from './components/CounterpickAdvisor';
-import { PairingOpponentSplit } from './components/PairingOpponentSplit';
+import { PairingOpponents } from './components/PairingOpponents';
 
 /**
  * Ports legacy/src/screens/Matchups. Selecting "your fighter" (from the
@@ -176,6 +183,19 @@ export function MatchupsPage() {
     (axesFromUrl.vsFighterId != null ? getFighterById(axesFromUrl.vsFighterId) : undefined) ??
     opponent;
 
+  // Computed here (BEFORE the loading/empty-state early returns below) so
+  // `useMatchupFormNow` — a hook — is always called unconditionally, never
+  // skipped by an early return (Rules of Hooks). Harmless to compute even on
+  // the branches that return early: `matches`/`effectiveFighter`/
+  // `effectiveOpponent` are already in scope regardless.
+  const matchupMatches =
+    effectiveFighter && effectiveOpponent
+      ? matches.filter(
+          (m) => m.fighter_id === effectiveFighter.id && m.opponent_id === effectiveOpponent.id,
+        )
+      : [];
+  const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
+
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
     fighter: effectiveFighter,
@@ -237,13 +257,6 @@ export function MatchupsPage() {
       </div>
     );
   }
-
-  const matchupMatches =
-    effectiveFighter && effectiveOpponent
-      ? matches.filter(
-          (m) => m.fighter_id === effectiveFighter.id && m.opponent_id === effectiveOpponent.id,
-        )
-      : [];
 
   // The terminus's axes ALSO carry the effective character pair — not just
   // stage/window — so `FilteredMatchList` omits the already-pinned
@@ -324,7 +337,7 @@ export function MatchupsPage() {
           {/*
             UI-SPEC §8.3's placement table. DOM order is the NARROW-width
             reading order (record tile -> Matchup Insights -> trend ->
-            PairingOpponentSplit) with `xl:order-*` re-flowing to the
+            MatchupOrPlayer -> PairingOpponents) with `xl:order-*` re-flowing to the
             >=1280px pairing: trend(8) + stack(4) on row A, PairingOpponents
             (8, Task 3) + MatchupOrPlayer (4, Task 2) on row B. `GridCell`
             (39.1-06) only expresses a single `lg` breakpoint transition, so
@@ -341,10 +354,25 @@ export function MatchupsPage() {
               </div>
             </div>
             <div className="col-span-12 xl:order-1 xl:col-span-8">
-              <MatchupChart matchupMatches={matchupMatches} horizon={horizon} />
+              <ChartCard
+                title={t('matchups.winRateTrend')}
+                caption={t('shared.evidence.type.fact')}
+                abstained={
+                  matchupMatches.length < ABSTENTION_FLOOR_GAMES
+                    ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
+                    : null
+                }
+                insight={
+                  formNowInsight && effectiveOpponent
+                    ? renderFormNowHead(formNowInsight, effectiveOpponent.id, t)
+                    : null
+                }
+              >
+                <MatchupChart matchupMatches={matchupMatches} horizon={horizon} />
+              </ChartCard>
             </div>
             <div className="col-span-12 xl:order-3 xl:col-span-8">
-              <PairingOpponentSplit matchupMatches={matchupMatches} />
+              <PairingOpponents matchupMatches={matchupMatches} />
             </div>
             <div className="col-span-12 xl:order-4 xl:col-span-4">
               <MatchupOrPlayerCard matchupMatches={matchupMatches} horizon={horizon} />

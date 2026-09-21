@@ -348,10 +348,11 @@ export interface OpponentRecord extends WinLossRecord {
  * Phase 36 (EVID-12, R2-MEDIUM-3): this is the PRE-EVID-12 raw-tag path —
  * it keys on the raw `match.opponent` string with no alias resolution and
  * no start.gg-slug / parry.gg-id identity binding, unlike
- * `buildOpponentEvidence` (`@smash-tracker/shared`). Its seven existing call
- * sites (`OpponentTable.tsx`, `OpponentsPage.tsx`, `OpponentList.tsx`,
- * `PairingOpponentSplit.tsx`, `ScoutPage.tsx`, `LikelyOpponentsCard.tsx`)
- * all receive already-alias-rewritten matches from `useFilteredMatches`, so
+ * `buildOpponentEvidence` (`@smash-tracker/shared`). Its several existing
+ * call sites (`OpponentTable.tsx`, `OpponentsPage.tsx`, `OpponentList.tsx`,
+ * plan 39.1-13's `PairingOpponents.tsx`, `ScoutPage.tsx`,
+ * `LikelyOpponentsCard.tsx`) all receive already-alias-rewritten matches
+ * from `useFilteredMatches`, so
  * this function is deliberately NOT promoted/identity-resolved this phase.
  * A NEW call site should use `buildOpponentEvidence` instead. Phase 38's
  * opponent hub retires this pair.
