@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import type { Match } from '@smash-tracker/shared';
-import { MatchupOrPlayerCard } from './MatchupOrPlayerCard';
+import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
+import { MatchupOrPlayerCard, useMatchupOrPlayerInsight } from './MatchupOrPlayerCard';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -45,24 +46,68 @@ function largeFixture(): Match[] {
   );
 }
 
+/**
+ * Plan 39.1-24 (gap closure, Task 2): `MatchupOrPlayerCard` no longer
+ * computes its own insight — a host calls `useMatchupOrPlayerInsight` ONCE
+ * and hands the result down (so `MatchupsPage`'s `FilteredMatchList`
+ * terminus can share the SAME insight for `resolveClaim`), mirroring
+ * `FighterInsightRail`'s Task 1 pattern. This harness reproduces that real
+ * usage pattern, wrapped in a `MemoryRouter` since the card now renders a
+ * real `<Link>` door.
+ */
+function CardTestHarness({
+  matchupMatches,
+  horizon,
+}: {
+  matchupMatches: Match[];
+  horizon: HorizonKey;
+}) {
+  const insight = useMatchupOrPlayerInsight({ matchupMatches, horizon });
+  return <MatchupOrPlayerCard matchupMatches={matchupMatches} insight={insight} />;
+}
+
+function renderCard(matchupMatches: Match[], horizon: HorizonKey = 'last30') {
+  return render(
+    <MemoryRouter>
+      <CardTestHarness matchupMatches={matchupMatches} horizon={horizon} />
+    </MemoryRouter>,
+  );
+}
+
 describe('MatchupOrPlayerCard', () => {
   it('renders nothing (an empty container) when the engine reports the read hidden', () => {
-    const { container } = render(
-      <MatchupOrPlayerCard matchupMatches={tinyFixture()} horizon="last30" />,
-    );
+    const { container } = renderCard(tinyFixture());
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders nothing over zero matches', () => {
-    const { container } = render(<MatchupOrPlayerCard matchupMatches={[]} horizon="last30" />);
+    const { container } = renderCard([]);
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders a real insight-card frame (chip, verdict, evidence) once the template clears its floors', () => {
-    render(<MatchupOrPlayerCard matchupMatches={largeFixture()} horizon="last30" />);
+    renderCard(largeFixture());
     // `opponent_id: 10` resolves to Luigi (SpriteList) — the "matchup" entity
     // is the OPPONENT CHARACTER name, never the free-text `match.opponent`
     // tag (that free-text field names the human, not the pairing).
     expect(screen.getAllByText(/vs Luigi/).length).toBeGreaterThan(0);
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): counted-games + opponent doors', () => {
+    it('renders a primary counted-games door anchored to #matchup-table, then the opponent fallback door', () => {
+      const { container } = renderCard(largeFixture());
+      const card = container.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      const doors = within(card).getAllByRole('link');
+      expect(doors.length).toBe(2);
+
+      const primary = doors[0]!;
+      const href = primary.getAttribute('href') ?? '';
+      expect(href).toMatch(/claim=/);
+      expect(href).toMatch(/#matchup-table$/);
+      expect(primary.textContent ?? '').toMatch(/see the \d+ games?/i);
+
+      const secondary = doors[1]!;
+      expect(secondary.textContent ?? '').toMatch(/open opponent/i);
+    });
   });
 });

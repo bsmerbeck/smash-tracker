@@ -829,6 +829,53 @@ describe('MatchupsPage', () => {
     });
   });
 
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a card door narrows the terminus to exactly N', () => {
+    /** 40 games, Mario vs Luigi, spread across 4 distinct opponent tags — clears matchupOrPlayer's floors (20 games, 3+ distinct opponents). */
+    function richMatchupOrPlayerFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    it("clicking the MatchupOrPlayer card's counted-games door shows the terminus with data-total-rows equal to the door's own count, scrolled to #matchup-table", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richMatchupOrPlayerFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const insightCard = document.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      expect(insightCard).not.toBeNull();
+      const door = within(insightCard).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(door.getAttribute('href') ?? '').toMatch(/#matchup-table$/);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
