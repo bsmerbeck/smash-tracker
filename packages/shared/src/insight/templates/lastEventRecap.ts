@@ -1,7 +1,7 @@
 import type { Match } from '../../match.js';
 import { buildSetTimeline } from '../../tournamentAggregation.js';
 import type { TournamentRegistryRow } from '../../tournamentRegistry.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -65,6 +65,7 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
     salience: 0,
     copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: {} },
     doors: [],
+    countedMatchIds: [],
   };
 }
 
@@ -175,6 +176,8 @@ export function buildLastEventRecapInsight(input: {
       { kind: 'event', axes: { ...(scope.axes ?? {}), event: eventKey }, count: games.length },
       { kind: 'games', axes: { ...(scope.axes ?? {}), event: eventKey }, count: gameRecord.total },
     ],
+    // Plan 39.1-22: the one named event's own games — the same set `gameRecord.total` counts.
+    countedMatchIds: countedMatchIdsOf(games),
   };
 
   return insight;

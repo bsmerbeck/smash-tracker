@@ -56,6 +56,7 @@ function makeInsight(overrides: Partial<Insight> & { templateId: InsightTemplate
     salience: 0,
     copy: { key: 'insights.x.fact', values: {} },
     doors: [],
+    countedMatchIds: [],
     ...overrides,
   };
 }

@@ -1,6 +1,6 @@
 import type { Match } from '../../match.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import { COHORT_MIN_SIDE_GAMES, SUGGESTION_MIN_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -150,6 +150,9 @@ function buildTiltCostInsight(input: {
       },
     },
     doors: [],
+    // Plan 39.1-22: the post-2-loss-streak "spot" games — the pooled cohort this
+    // card's own count (`spots.length`/`window.games`) counts.
+    countedMatchIds: countedMatchIdsOf(spots),
     ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
   };
 

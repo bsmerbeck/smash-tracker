@@ -1,7 +1,7 @@
 import type { Match } from '../../match.js';
 import { splitIntoSessions } from '../../glicko.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import { SUGGESTION_MIN_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -101,6 +101,7 @@ function buildSessionFatigueInsight(input: {
         values: { ...caveatValues, longSessionCount },
       },
       doors: [],
+      countedMatchIds: [],
     };
   }
 
@@ -170,6 +171,9 @@ function buildSessionFatigueInsight(input: {
       },
     },
     doors: [],
+    // Plan 39.1-22: the late-session cohort — the pooled cohort this card's own
+    // count (`late.length`/`window.games`) counts.
+    countedMatchIds: countedMatchIdsOf(late),
   };
 
   return insight;

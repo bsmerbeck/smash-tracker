@@ -1,6 +1,6 @@
 import type { Match } from '../../match.js';
 import { getFighterById } from '../../fighterData.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -199,6 +199,14 @@ function buildRosterCoreInsight(input: {
           },
         ]
       : [],
+    // Plan 39.1-22: asserting -> the main's own games (`model.main.games`);
+    // otherwise ("thin") `window.games` is `scopedMatches.length` — the whole
+    // scope, since no main has been established yet to narrow to.
+    countedMatchIds: countedMatchIdsOf(
+      asserting
+        ? scopedMatches.filter((m) => m.fighter_id === model.main!.fighterId)
+        : scopedMatches,
+    ),
   };
 
   return insight;

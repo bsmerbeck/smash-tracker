@@ -118,6 +118,29 @@ export function resolveWindow(input: {
   return { window, matches: windowed };
 }
 
+/**
+ * Plan 39.1-22 (gap closure, INS-06): the ONE newest-first `Match.id`
+ * ordering every template uses to populate `Insight.countedMatchIds` —
+ * descending `time`, ascending `id` tiebreak. This mirrors WR-A04's
+ * `byTimeAsc` tiebreak direction above and `apps/web/src/lib/
+ * drillDownParams.ts`'s `sortMatchesNewestFirst` (which this module cannot
+ * import — `packages/shared` never depends on `apps/web`), so a caller-
+ * supplied consumer resolving `countedMatchIds` back into `Match[]` and one
+ * sorted newest-first by that web helper land on the identical order.
+ * Exported from `horizon.ts` (never duplicated per-template) since every
+ * template already imports shared aggregation helpers from this one module.
+ */
+export function countedMatchIdsOf(matches: Match[]): string[] {
+  return [...matches]
+    .sort((a, b) => {
+      if (b.time !== a.time) {
+        return b.time - a.time;
+      }
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .map((match) => match.id);
+}
+
 /** A pure win/loss/total/rate aggregate over `matches` — `rate` is `0` for an empty input, never `NaN`. */
 export function toRateValue(matches: Match[]): RateValue {
   let wins = 0;

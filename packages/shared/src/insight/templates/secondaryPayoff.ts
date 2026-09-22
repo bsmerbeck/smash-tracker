@@ -3,7 +3,7 @@ import { getFighterById } from '../../fighterData.js';
 import { isUnknownCharacter } from '../../evidence/predicate.js';
 import { buildRosterModel, type RosterFighterEntry } from './rosterCore.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import { COHORT_MIN_SIDE_GAMES, SUGGESTION_MIN_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -192,6 +192,15 @@ function buildSecondaryPayoffInsight(input: {
           count: headline.secondaryRate.total,
         },
       ],
+      // Plan 39.1-22: this (secondary, opponent character) pairing's own games
+      // — the same set `headline.secondaryRate.total`/`window.games` counts.
+      countedMatchIds: countedMatchIdsOf(
+        scopedMatches.filter(
+          (m) =>
+            m.fighter_id === headline.secondary.fighterId &&
+            m.opponent_id === headline.opponentCharacterId,
+        ),
+      ),
     };
   }
 
@@ -240,6 +249,13 @@ function buildSecondaryPayoffInsight(input: {
         },
       },
       doors: [],
+      countedMatchIds: countedMatchIdsOf(
+        scopedMatches.filter(
+          (m) =>
+            m.fighter_id === headline.secondary.fighterId &&
+            m.opponent_id === headline.opponentCharacterId,
+        ),
+      ),
       gamesNeeded: headline.gamesNeeded,
     };
   }
@@ -274,6 +290,7 @@ function buildSecondaryPayoffInsight(input: {
     salience: 0,
     copy: { key: `insights.${TEMPLATE_ID}.steady`, values: {} },
     doors: [],
+    countedMatchIds: [],
   };
 }
 

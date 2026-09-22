@@ -83,6 +83,7 @@ const FALLBACK_LOCKED_INSIGHT: Insight = {
   salience: 0,
   copy: { key: 'insights.rail.unavailable', values: {} },
   doors: [],
+  countedMatchIds: [],
   gamesNeeded: ABSTENTION_FLOOR_GAMES,
 };
 

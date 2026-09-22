@@ -278,14 +278,32 @@ describe('assertion 6: doors are honest', () => {
     }
   });
 
-  it('the expressible/non-expressible split is measured at exactly 10/7, matching the seven documented ids (CR-A05 moved settingGap from true to false)', () => {
-    const trueCount = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible === true).length;
+  it('DOCUMENTATION ONLY: windowExpressible metadata still names the same seven ids as non-expressible (it no longer decides door behavior — see the countedMatchIds invariant below)', () => {
     const falseIds = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible === false)
       .map((t) => t.id)
       .sort();
-    expect(trueCount).toBe(10);
     expect(falseIds).toEqual([...DOCUMENTED_NON_WINDOW_EXPRESSIBLE_IDS].sort());
   });
+
+  it(
+    'plan 39.1-22: every template records countedMatchIds on every result — the new door-' +
+      'predicate invariant, REPLACING the old windowExpressible 10/7 split measurement. ' +
+      'windowExpressible remains DOCUMENTATION metadata (asserted as a boolean above) but is ' +
+      'no longer what decides whether a counted-games door is exact — see countedGames.test.ts ' +
+      'for the full per-template exactness proof (duplicate-free, scope-honest, length === ' +
+      'window.games).',
+    () => {
+      const all = collectAllResults();
+      expect(all.length).toBeGreaterThan(0);
+      for (const { templateId, fixtureName, insight } of all) {
+        const label = `${templateId} on ${fixtureName}`;
+        expect(Array.isArray(insight.countedMatchIds), label).toBe(true);
+        expect(new Set(insight.countedMatchIds).size, `${label}: duplicate id`).toBe(
+          insight.countedMatchIds.length,
+        );
+      }
+    },
+  );
 
   it('a template whose windowExpressible is false never emits a counted-games door', () => {
     const all = collectAllResults();

@@ -1,6 +1,6 @@
 import type { Match } from '../../match.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -124,6 +124,9 @@ function buildVolumeFormInsight(input: {
         values: { count: gamesNeeded, monthsNeeded: gamesNeeded, monthCount },
       },
       doors: [],
+      // Plan 39.1-22: `window.games` above is `high.length + low.length` — the
+      // pooled high/low volume cohort this card's own count describes.
+      countedMatchIds: countedMatchIdsOf([...high, ...low]),
       gamesNeeded,
     };
   }
@@ -184,6 +187,8 @@ function buildVolumeFormInsight(input: {
       },
     },
     doors: [],
+    // Plan 39.1-22: same pooled high/low volume cohort as the locked branch above.
+    countedMatchIds: countedMatchIdsOf([...high, ...low]),
   };
 
   return insight;

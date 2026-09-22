@@ -1,7 +1,7 @@
 import type { Match } from '../../match.js';
 import { buildRosterModel, ROSTER_MAIN_MIN_GAMES } from './rosterCore.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { buildRateClaim, matchDateRange } from '../horizon.js';
+import { buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -28,6 +28,7 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
     salience: 0,
     copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: {} },
     doors: [],
+    countedMatchIds: [],
   };
 }
 
@@ -105,6 +106,9 @@ function buildPocketCostInsight(input: {
     // §13.13a: pocketCost carries NO route door at all — pooled fighters
     // have no single route to link to.
     doors: [],
+    // Plan 39.1-22: the pooled pocket group's own games — the same set
+    // `model.pockets.games`/`window.games` counts.
+    countedMatchIds: countedMatchIdsOf(pocketMatches),
   };
 }
 

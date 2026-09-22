@@ -2,7 +2,13 @@ import type { Match } from '../../match.js';
 import { SpriteList } from '../../fighterData.js';
 import { isUnknownCharacter } from '../../evidence/predicate.js';
 import { ABSTENTION_FLOOR_GAMES, CONFIDENCE_TIER_BOUNDS } from '../../evidence/policy.js';
-import { resolveWindow, toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import {
+  resolveWindow,
+  toRateValue,
+  buildRateClaim,
+  matchDateRange,
+  countedMatchIdsOf,
+} from '../horizon.js';
 import { classify } from '../ladder.js';
 import type {
   HorizonKey,
@@ -39,6 +45,8 @@ interface CharacterMoverMarkRow {
 interface CharacterCandidate {
   opponentFighterId: number;
   matches: Match[];
+  /** Plan 39.1-22: the recent window's own games (the same slice `window.games` counts) — kept on the candidate so the eventual headline's `Insight.countedMatchIds` doesn't need to re-derive the window. */
+  recentMatches: Match[];
   recentRate: RateValue;
   baselineRate: RateValue;
   window: InsightWindow;
@@ -92,6 +100,7 @@ function buildCandidates(
     candidates.push({
       opponentFighterId,
       matches: groupMatches,
+      recentMatches,
       recentRate,
       baselineRate,
       window,
@@ -283,6 +292,7 @@ function buildCharacterMoversInsight(input: {
         count: headline.window.games,
       },
     ],
+    countedMatchIds: countedMatchIdsOf(headline.recentMatches),
     ...(mark !== undefined ? { mark } : {}),
     ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
   };

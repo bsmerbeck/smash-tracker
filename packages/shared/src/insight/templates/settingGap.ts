@@ -1,6 +1,6 @@
 import type { Match } from '../../match.js';
 import { isNotableCohortGap } from '../twoProportion.js';
-import { toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import { COHORT_MIN_SIDE_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -144,6 +144,11 @@ function buildSettingGapInsight(input: {
     salience: 0,
     copy: { key, values },
     doors: [],
+    // Plan 39.1-22: `window.games` is `online.length + offline.length` — the
+    // PARTITION this card's claim is about (never the `unspecified` side,
+    // which the card deliberately excludes) — so `countedMatchIds` pools
+    // BOTH sides, newest-first, matching that same figure exactly.
+    countedMatchIds: countedMatchIdsOf([...online, ...offline]),
     ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
   };
 

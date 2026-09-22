@@ -3,7 +3,7 @@ import { getFighterById } from '../../fighterData.js';
 import { isUnknownCharacter } from '../../evidence/predicate.js';
 import { ABSTENTION_FLOOR_GAMES } from '../../evidence/policy.js';
 import { wilsonLowerBound } from '../../evidence/rank.js';
-import { toRateValue, matchDateRange, buildRateClaim } from '../horizon.js';
+import { toRateValue, matchDateRange, buildRateClaim, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -97,6 +97,7 @@ function buildBackfillInsight(input: {
       salience: 0,
       copy: { key: `insights.${templateId}.locked`, values: {} },
       doors: [],
+      countedMatchIds: [],
       gamesNeeded,
     };
   }
@@ -149,6 +150,8 @@ function buildBackfillInsight(input: {
         count: winner.rate.total,
       },
     ],
+    // Plan 39.1-22: this matchup's own games — the same set `winner.rate.total` counts.
+    countedMatchIds: countedMatchIdsOf(winner.matches),
   };
 }
 

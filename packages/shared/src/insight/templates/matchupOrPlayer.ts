@@ -2,7 +2,7 @@ import type { Match } from '../../match.js';
 import { resolveOpponentIdentities } from '../../evidence/opponentEvidence.js';
 import { SUGGESTION_MIN_GAMES, TREND_MIN_RECENT_GAMES } from '../policy.js';
 import { wilsonInterval } from '../wilsonInterval.js';
-import { matchDateRange, buildRateClaim } from '../horizon.js';
+import { matchDateRange, buildRateClaim, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -39,6 +39,7 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
     salience: 0,
     copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: {} },
     doors: [],
+    countedMatchIds: [],
   };
 }
 
@@ -138,6 +139,8 @@ function buildMatchupOrPlayerInsight(input: {
     doors: [
       { kind: 'opponent' as const, axes: { ...(scope.axes ?? {}) }, count: distinctOpponents },
     ],
+    // Plan 39.1-22: the whole pairing's own games — the same set `total`/`window.games` counts.
+    countedMatchIds: countedMatchIdsOf(pairingMatches),
   };
 
   if (topIdentity !== null && topLossCount > 0) {

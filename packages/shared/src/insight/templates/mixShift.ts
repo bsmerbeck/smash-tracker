@@ -1,5 +1,5 @@
 import type { Match } from '../../match.js';
-import { resolveWindow, matchDateRange, buildRateClaim } from '../horizon.js';
+import { resolveWindow, matchDateRange, buildRateClaim, countedMatchIdsOf } from '../horizon.js';
 import { TREND_MIN_RECENT_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -110,6 +110,8 @@ function buildMixShiftInsight(input: {
       salience: 0,
       copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: { count: recentMatches.length } },
       doors: [],
+      // Plan 39.1-22: `window.games` here is `recentMatches.length` (resolveWindow's own result).
+      countedMatchIds: countedMatchIdsOf(recentMatches),
     };
   }
 
@@ -149,6 +151,7 @@ function buildMixShiftInsight(input: {
         },
       },
       doors: [],
+      countedMatchIds: countedMatchIdsOf(recentMatches),
     };
   }
 
@@ -174,6 +177,7 @@ function buildMixShiftInsight(input: {
       },
     },
     doors: [],
+    countedMatchIds: countedMatchIdsOf(recentMatches),
   };
 
   return insight;

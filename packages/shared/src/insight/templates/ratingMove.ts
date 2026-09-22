@@ -1,6 +1,12 @@
 import type { Match } from '../../match.js';
 import { computeRatingHistory, DEFAULT_RATING, DEFAULT_RD } from '../../glicko.js';
-import { resolveWindow, toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import {
+  resolveWindow,
+  toRateValue,
+  buildRateClaim,
+  matchDateRange,
+  countedMatchIdsOf,
+} from '../horizon.js';
 import { classify } from '../ladder.js';
 import { ABSTENTION_FLOOR_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
@@ -151,6 +157,11 @@ function buildRatingMoveInsight(input: {
     // UI-SPEC §8.2: the page-level RatingModelNote banner is demoted to a
     // door on this card.
     doors: [{ kind: 'ratingModel', axes: {}, count: 0 }],
+    // Plan 39.1-22: `window` above is `resolveWindow`'s own result and is
+    // returned UNCHANGED in every branch (locked/thinRecent/collapsed/thin/
+    // steady/trend) — so `recentMatches` is always exactly the games
+    // `window.games` counts, regardless of state.
+    countedMatchIds: countedMatchIdsOf(recentMatches),
     ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
   };
 

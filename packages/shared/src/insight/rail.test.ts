@@ -50,6 +50,7 @@ function makeInsight(overrides: Partial<Insight> = {}): Insight {
     salience: 0,
     copy: { key: 'insights.formNow.fact', values: {} },
     doors: [],
+    countedMatchIds: [],
     ...overrides,
   };
 }

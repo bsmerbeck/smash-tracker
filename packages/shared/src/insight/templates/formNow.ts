@@ -1,6 +1,12 @@
 import type { Match } from '../../match.js';
 import { ABSTENTION_FLOOR_GAMES } from '../../evidence/policy.js';
-import { resolveWindow, toRateValue, buildRateClaim, matchDateRange } from '../horizon.js';
+import {
+  resolveWindow,
+  toRateValue,
+  buildRateClaim,
+  matchDateRange,
+  countedMatchIdsOf,
+} from '../horizon.js';
 import { classify } from '../ladder.js';
 import { wilsonInterval } from '../wilsonInterval.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
@@ -134,6 +140,8 @@ function buildFormNowInsight(input: {
         count: window.games,
       },
     ],
+    // Plan 39.1-22: the recent window's own games — the same set `window.games` already counts.
+    countedMatchIds: countedMatchIdsOf(recentMatches),
     ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
   };
 

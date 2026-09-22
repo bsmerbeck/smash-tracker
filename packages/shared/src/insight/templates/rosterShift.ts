@@ -1,6 +1,6 @@
 import type { Match } from '../../match.js';
 import { getFighterById } from '../../fighterData.js';
-import { resolveWindow, buildRateClaim } from '../horizon.js';
+import { resolveWindow, buildRateClaim, countedMatchIdsOf } from '../horizon.js';
 import { TREND_MIN_RECENT_GAMES, HORIZON_COLLAPSE_RATIO } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
@@ -66,6 +66,7 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
     salience: 0,
     copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: {} },
     doors: [],
+    countedMatchIds: [],
   };
 }
 
@@ -161,6 +162,8 @@ function buildRosterShiftInsight(input: {
       salience: 0,
       copy: { key: `insights.${TEMPLATE_ID}.steady`, values: {} },
       doors: [],
+      // Plan 39.1-22: `window.games` here is `recentTotal` (= `recentMatches.length`).
+      countedMatchIds: countedMatchIdsOf(recentMatches),
     };
   }
 
@@ -210,6 +213,7 @@ function buildRosterShiftInsight(input: {
       },
     },
     doors: [{ kind: 'games', axes: { ...(scope.axes ?? {}) }, count: recentTotal }],
+    countedMatchIds: countedMatchIdsOf(recentMatches),
   };
 }
 
