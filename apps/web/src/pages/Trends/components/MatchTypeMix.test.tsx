@@ -66,6 +66,35 @@ describe('MatchTypeMix', () => {
     expect(screen.getByText('Last 30 games')).toBeInTheDocument();
   });
 
+  it('WR-A02: the mix-shift fact line resolves the raw matchType key to its localized label, never leaking the raw enum literal', () => {
+    // 70 old offline-tourney games (baseline) + 30 recent online-tourney
+    // games (the last30 window): a 70-point recent-vs-lifetime share shift,
+    // well past MIX_SHIFT_MIN_POINTS (15) and TREND_MIN_RECENT_GAMES (8).
+    const matches: Match[] = [
+      ...Array.from({ length: 70 }, (_, i) =>
+        makeMatch({
+          id: `old-${i}`,
+          time: NOW - (1000 - i) * 60_000,
+          win: true,
+          matchType: 'offline-tourney',
+        }),
+      ),
+      ...Array.from({ length: 30 }, (_, i) =>
+        makeMatch({
+          id: `recent-${i}`,
+          time: NOW - (30 - i) * 60_000,
+          win: true,
+          matchType: 'online-tourney',
+        }),
+      ),
+    ];
+    render(<MatchTypeMix matches={matches} horizon="last30" />);
+
+    // The localized label ("Online Tourney"), never the raw enum literal.
+    expect(screen.getAllByText(/Online Tourney/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/online-tourney/)).not.toBeInTheDocument();
+  });
+
   it('renders the volume-form line even on a small account (locked state)', () => {
     const matches = Array.from({ length: 5 }, (_, i) =>
       makeMatch({ id: `g${i}`, time: NOW - (5 - i) * 60_000, win: true, matchType: 'quickplay' }),

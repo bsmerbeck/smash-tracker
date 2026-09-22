@@ -113,7 +113,24 @@ export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
           <>
             {showMixShift && (
               <InsightLine
-                text={t(mixShiftInsight!.copy.key, mixShiftInsight!.copy.values)}
+                text={t(mixShiftInsight!.copy.key, {
+                  ...mixShiftInsight!.copy.values,
+                  // Review finding WR-A02: `mixShiftTemplate` (packages/shared,
+                  // which never localises, D-11) emits the stable, raw
+                  // `matchType` key (e.g. 'online-tourney') — the same key
+                  // shape already localised under `matchForm.matchTypes.*`
+                  // (`MatchForm.tsx`'s identical `t(\`matchForm.matchTypes.${value}\`)`
+                  // pattern) in all six locale files. Resolve it here, at the
+                  // UI layer, rather than leaking the raw enum literal into a
+                  // translated sentence.
+                  ...(typeof mixShiftInsight!.copy.values.matchType === 'string'
+                    ? {
+                        matchType: t(
+                          `matchForm.matchTypes.${mixShiftInsight!.copy.values.matchType}`,
+                        ),
+                      }
+                    : {}),
+                })}
                 tone="notable"
                 chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
               />
