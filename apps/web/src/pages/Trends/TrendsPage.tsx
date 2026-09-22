@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useCallback, useEffect, useMemo } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { Insight, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -31,6 +31,7 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
+import { useTrendsCardInsights } from './lib/useTrendsCardInsights';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -117,9 +118,24 @@ export function TrendsPage() {
     dismiss,
     restoreAll,
   } = useTrendsInsights({ matches, horizon });
+  // Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `settingGap`/`mixShift`/
+  // `volumeForm` computation this page shares with `SettingComparison`/
+  // `MatchTypeMix` (which take the result as props) and its own terminus
+  // below — called unconditionally, above every early return, beside
+  // `useTrendsInsights`.
+  const cardInsights = useTrendsCardInsights({ matches, horizon });
+  // The hero's/rail's own insights lead `pageInsights`, followed by the
+  // three card insights (non-null only) — one array, one terminus resolver,
+  // matching `FighterAnalysisPage.tsx`'s `pageInsights` precedent.
+  const pageInsights = useMemo(() => {
+    const cards = [cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm].filter(
+      (insight): insight is Insight => insight != null,
+    );
+    return [...trendsInsights, ...cards];
+  }, [trendsInsights, cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm]);
   const insightById = useMemo(
-    () => new Map(trendsInsights.map((insight) => [insight.id, insight])),
-    [trendsInsights],
+    () => new Map(pageInsights.map((insight) => [insight.id, insight])),
+    [pageInsights],
   );
   const accountNameForClaim = t('trends.title');
   const claimSummary =
@@ -132,13 +148,29 @@ export function TrendsPage() {
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
   // passed as `resolveClaim` would be a NEW reference every render, breaking
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
-  // Memoized by `trendsInsights` alone — the only thing this closure
+  // Memoized by `pageInsights` alone — the only thing this closure
   // actually reads.
   const resolveClaimForTerminus = useCallback(
     (claimId: string, ms: Match[]) =>
-      resolveInsightClaim({ claimId, insights: trendsInsights, matches: ms }),
-    [trendsInsights],
+      resolveInsightClaim({ claimId, insights: pageInsights, matches: ms }),
+    [pageInsights],
   );
+
+  // Plan 39.1-27: `AppRouter.tsx` uses `BrowserRouter`, which performs no
+  // hash scroll of its own, and this terminus mounts conditionally — so an
+  // effect after mount is the only place the scroll can land. Fires once per
+  // navigation whenever the hash names this page's terminus AND the
+  // terminus is actually mounted (`hasDrillAxis`). No state update inside
+  // this effect (react-compiler lint rule). Mirrors
+  // `FighterAnalysisPage.tsx`'s plan 39.1-25 landing effect.
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === `#${GAMES_ANCHOR_ID}` && hasDrillAxis) {
+      document
+        .getElementById(GAMES_ANCHOR_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.key, location.hash, hasDrillAxis]);
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded
@@ -233,7 +265,11 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={4} stack>
-          <SettingComparison matches={matches} horizon={horizon} />
+          <SettingComparison
+            matches={matches}
+            horizon={horizon}
+            settingGapInsight={cardInsights.settingGap}
+          />
           <MatchTypeMix matches={matches} horizon={horizon} />
         </GridCell>
 

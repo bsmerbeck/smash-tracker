@@ -316,7 +316,10 @@ describe('TrendsPage', () => {
         const gamesCard = document.getElementById('games') as HTMLElement;
         const table = within(gamesCard).getByRole('table');
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
-        expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+        const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+        expect(summary).not.toBeNull();
+        expect(summary.textContent).toContain(String(expectedCount));
+        expect(summary.textContent).toMatch(/Setting/);
 
         expect(scrollIntoViewSpy).toHaveBeenCalled();
         const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;

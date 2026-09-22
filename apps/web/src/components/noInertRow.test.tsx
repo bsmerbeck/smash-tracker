@@ -677,7 +677,9 @@ const SURFACES: Surface[] = [
         makeMatch({ id: 'off1', time: 3, win: true, matchType: 'offline-tourney' }),
         makeMatch({ id: 'off2', time: 4, win: false, matchType: 'offline-tourney' }),
       ];
-      return withRouter(<SettingComparison matches={matches} horizon="last30" />);
+      return withRouter(
+        <SettingComparison matches={matches} horizon="last30" settingGapInsight={null} />,
+      );
     },
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
