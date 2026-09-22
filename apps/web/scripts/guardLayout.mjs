@@ -182,9 +182,90 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
   }
 }
 
+/**
+ * WR-B03 (39.1-REVIEW.md): the `try/catch/finally` below only unwinds on
+ * normal completion, a thrown error, or the hard timeout — none of that
+ * runs on `SIGINT`/`SIGTERM`, because Node's default behaviour for those
+ * signals is to terminate immediately without ever reaching the `finally`
+ * block. A developer/CI job cancelling a hung `pnpm guard:layout` with
+ * Ctrl-C left an orphaned headless Chromium process and an orphaned Vite
+ * dev server bound to a loopback port — this repo has a zombie-CLI history
+ * (`enrichDemoAccounts.ts`) the hard timeout above already guards against
+ * for hangs; this guards the OTHER half, operator cancellation.
+ *
+ * A FACTORY, not a bare function with module-level mutable state — each
+ * call returns a fresh closure with its own `shuttingDown` guard and its
+ * own injected `kill`/`offListeners`, so `guardLayoutShutdown.test.mjs` can
+ * unit-test the exact shutdown ORDERING (browser closed, then server, then
+ * listeners removed, then the signal re-raised — and a second signal during
+ * cleanup is a no-op) against fake browser/server/process objects, with no
+ * real Puppeteer, no real Vite server, and no interaction with this actual
+ * process's real signal listeners.
+ */
+export function createShutdownHandler({
+  browser,
+  server,
+  offListeners,
+  kill = (signal) => process.kill(process.pid, signal),
+}) {
+  let shuttingDown = false;
+  return async function shutdownOnSignal(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    await browser.close().catch(() => {});
+    await server.close().catch(() => {});
+    offListeners();
+    // `signal` is re-raised via `kill` (rather than a bare `process.exit`)
+    // so the exit reflects the conventional 128+signal code AND so a second
+    // Ctrl-C during cleanup can't re-enter this handler (the listeners are
+    // already removed above).
+    kill(signal);
+  };
+}
+
 async function main() {
   const { server, baseUrl } = await startGuardLayoutHarnessServer();
-  const browser = await puppeteer.launch();
+  // WR-B03 (39.1-REVIEW.md): Puppeteer's own launcher (`@puppeteer/browsers`)
+  // defaults `handleSIGINT`/`handleSIGTERM`/`handleSIGHUP` to `true` — it
+  // registers ITS OWN signal handler that kills the browser and then calls
+  // `process.exit(130)` directly on SIGINT, with no knowledge of the Vite
+  // server at all. Disabled here so it never competes with this script's
+  // own handler below.
+  const browser = await puppeteer.launch({
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
+  });
+  // Vite's OWN dev server ALSO installs a competing SIGTERM listener
+  // (`setupSIGTERMListener` in its `createServer`), which gracefully closes
+  // ONLY the Vite server and calls `process.exit()` — with no knowledge of
+  // the Puppeteer browser. Left in place alongside this script's own
+  // handler below, the two would race: whichever `process.exit`/`kill` call
+  // resolves first wins, and Puppeteer's browser process (launched
+  // `detached`, so it does NOT die automatically with its parent) could be
+  // left running if Vite's handler wins that race. Removed here so this
+  // script's own `createShutdownHandler` handler is the SOLE owner of the
+  // whole shutdown (browser AND server, in order) on any signal — there is
+  // no reason for either dependency's own signal handling to run instead.
+  process.removeAllListeners('SIGINT');
+  process.removeAllListeners('SIGTERM');
+  // Diagnostic line — useful when debugging the harness by hand; never
+  // parsed by any CI workflow (this repo has none) or `pnpm guard:layout`
+  // consumer.
+  console.log(`HARNESS_BASE_URL=${baseUrl}`);
+
+  const shutdownOnSignal = createShutdownHandler({
+    browser,
+    server,
+    offListeners: () => {
+      process.off('SIGINT', sigintHandler);
+      process.off('SIGTERM', sigtermHandler);
+    },
+  });
+  const sigintHandler = () => void shutdownOnSignal('SIGINT');
+  const sigtermHandler = () => void shutdownOnSignal('SIGTERM');
+  process.on('SIGINT', sigintHandler);
+  process.on('SIGTERM', sigtermHandler);
 
   let exitCode = 0;
   let measuredCount = 0;
@@ -197,7 +278,9 @@ async function main() {
           for (const viewport of LAYOUT_ORACLE_VIEWPORTS) {
             const result = await measureRouteAtViewport(browser, baseUrl, route, viewport);
             if (result.unmeasured) {
-              console.log(`UNMEASURED route=${route.id} viewport=${viewport.name} reason="${result.reason}"`);
+              console.log(
+                `UNMEASURED route=${route.id} viewport=${viewport.name} reason="${result.reason}"`,
+              );
               unmeasuredIds.add(route.id);
               exitCode = 1;
               continue;
@@ -222,6 +305,14 @@ async function main() {
     console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
     exitCode = 1;
   } finally {
+    // Normal completion: unregister the signal handlers ABOVE actually
+    // closing browser/server — a signal arriving in the narrow window
+    // during this shutdown would otherwise race a second close against the
+    // one already in flight (both `.close()` calls below are already
+    // idempotent via `.catch(() => {})`, but there is no reason to leave
+    // the listeners live past this point).
+    process.off('SIGINT', sigintHandler);
+    process.off('SIGTERM', sigtermHandler);
     await browser.close().catch(() => {});
     await server.close().catch(() => {});
   }
@@ -234,4 +325,12 @@ async function main() {
   process.exit(exitCode);
 }
 
-void main();
+// Only auto-run when this file is executed directly (`node guardLayout.mjs` /
+// `pnpm guard:layout`) — NOT when imported as a module, e.g. by
+// `guardLayoutShutdown.test.mjs`'s unit tests against `createShutdownHandler`
+// above. Without this guard, importing this file for that ONE named export
+// would also launch a real Puppeteer browser, a real Vite dev server, and
+// the full route-measurement sweep as an unwanted side effect of the import.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  void main();
+}
