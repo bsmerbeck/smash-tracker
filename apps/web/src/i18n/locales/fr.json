@@ -3138,7 +3138,8 @@
       "restore": "Restaurer",
       "dismiss": "Ignorer",
       "dismissedToast": "Analyse ignorée sur cet appareil.",
-      "error": "Impossible de calculer les analyses pour cette vue. Rechargez pour réessayer."
+      "error": "Impossible de calculer les analyses pour cette vue. Rechargez pour réessayer.",
+      "unavailable": "Les analyses ne sont pas encore disponibles pour cette vue."
     },
     "door": {
       "seeGames_one": "Voir le {{count}} match",

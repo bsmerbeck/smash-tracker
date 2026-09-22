@@ -3138,7 +3138,8 @@
       "restore": "Restaurar",
       "dismiss": "Descartar",
       "dismissedToast": "Lectura descartada en este dispositivo.",
-      "error": "No se pudieron calcular los análisis para esta vista. Recarga para volver a intentarlo."
+      "error": "No se pudieron calcular los análisis para esta vista. Recarga para volver a intentarlo.",
+      "unavailable": "Los análisis todavía no están disponibles para esta vista."
     },
     "door": {
       "seeGames_one": "Ver la {{count}} partida",

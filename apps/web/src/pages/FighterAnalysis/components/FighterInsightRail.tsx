@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, InsightScope, Match } from '@smash-tracker/shared';
 import {
-  ABSTENTION_FLOOR_GAMES,
   INSIGHT_TEMPLATES,
   RAIL_CARD_CAP,
   assembleRail,
@@ -21,14 +20,29 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 
-/** The three cards this rail draws from — FormNow is excluded (it lives in the hero, UI-SPEC §8.1). Resolved once at module scope: the registry is a static, closed array. */
+/**
+ * The five cards this rail draws from — FormNow is excluded (it lives in
+ * the hero, UI-SPEC §8.1). `bestMatchup`/`worstMatchup` are the D-14
+ * back-fill FACT templates (WR-A03, 39.1-REVIEW.md): without them, a large,
+ * steady fighter whose `characterMovers`/`rivalMovers` both settle into
+ * `steady` (a line, not a card) and whose `lastEventRecap` has no named
+ * event to recap could exhaust every candidate and fall through to
+ * `rail.ts`'s synthetic fallback card — confirmed reproducible against the
+ * shared 8,000-game fixture before this fix (see
+ * `39.1-REVIEW-FIX-part-A.md`'s WR-A03 section). Resolved once at module
+ * scope: the registry is a static, closed array.
+ */
 const CHARACTER_MOVERS_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'characterMovers')!;
 const RIVAL_MOVERS_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'rivalMovers')!;
 const LAST_EVENT_RECAP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'lastEventRecap')!;
+const BEST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'bestMatchup')!;
+const WORST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'worstMatchup')!;
 const RAIL_TEMPLATES = [
   CHARACTER_MOVERS_TEMPLATE,
   RIVAL_MOVERS_TEMPLATE,
   LAST_EVENT_RECAP_TEMPLATE,
+  BEST_MATCHUP_TEMPLATE,
+  WORST_MATCHUP_TEMPLATE,
 ];
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention. */
@@ -186,11 +200,14 @@ export function FighterInsightRail({
         const results = template.build({ matches: fighterMatches, scope, horizon, nowMs });
         for (const insight of results) {
           if (!dismissedIds.includes(insight.id)) {
-            insight.salience = scoreInsight(insight, nowMs);
-            built.push(insight);
+            built.push({ ...insight, salience: scoreInsight(insight, nowMs) });
           }
         }
-      } catch {
+      } catch (err) {
+        // WR-C03 (39.1-REVIEW.md): a template crash must not silently drop
+        // its card with zero signal — `template.id` carries no user
+        // identifiers, only the closed template-registry id.
+        console.error('[insight-rail] template failed', template.id, err);
         continue;
       }
     }
@@ -240,7 +257,7 @@ export function FighterInsightRail({
     <InsightCard
       chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
       name={fighterName}
-      verdict={t('insights.formNow.locked', { entity: fighterName, count: ABSTENTION_FLOOR_GAMES })}
+      verdict={t('insights.rail.unavailable')}
       evidence=""
     />
   );

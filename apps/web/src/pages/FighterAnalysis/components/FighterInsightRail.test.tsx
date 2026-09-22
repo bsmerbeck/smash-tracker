@@ -241,6 +241,17 @@ describe('FighterInsightRail', () => {
     expect(cards.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('WR-A03: with zero fighter matches, the forced fallback card renders the honest "unavailable" copy, never a "0 more games" claim', async () => {
+    list.mockResolvedValue([]);
+    renderRail([]);
+    await waitForSettled();
+    const cards = document.querySelectorAll('[data-slot="insight-rail-card"]');
+    expect(cards.length).toBe(1);
+    const verdict = document.querySelector('[data-slot="insight-card-verdict"]');
+    expect(verdict?.textContent).toBe('Insights aren’t available for this view yet.');
+    expect(verdict?.textContent ?? '').not.toMatch(/\d+ more games/i);
+  });
+
   it('dismissing a card reduces the rendered cards by one and persists exactly one dismissal for the subject', async () => {
     list.mockResolvedValue(dismissFixture());
     renderRail(dismissFixture());

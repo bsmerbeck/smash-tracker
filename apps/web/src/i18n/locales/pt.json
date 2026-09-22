@@ -3138,7 +3138,8 @@
       "restore": "Restaurar",
       "dismiss": "Dispensar",
       "dismissedToast": "Leitura dispensada neste dispositivo.",
-      "error": "Não foi possível calcular as análises para esta visão. Recarregue para tentar novamente."
+      "error": "Não foi possível calcular as análises para esta visão. Recarregue para tentar novamente.",
+      "unavailable": "As análises ainda não estão disponíveis para esta visão."
     },
     "door": {
       "seeGames_one": "Ver a {{count}} partida",

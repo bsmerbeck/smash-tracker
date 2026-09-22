@@ -25,13 +25,19 @@ function bySalienceThenId(a: Insight, b: Insight): number {
 
 /**
  * The degenerate synthetic fallback for a rail with genuinely ZERO
- * candidates of any kind (D-14: "a rail is never empty"). Real integration
- * through `computeInsights` only ever reaches this branch when an account
- * has literally zero games in every requested scope — `formNowTemplate`
- * itself already returns a real `locked` Insight for any account with 1-2
- * games. `refreshedAt: 0` and null date range are honest about there being
- * no real backing sample; this is a placeholder card, not a claim about any
- * real data.
+ * candidates of any kind (D-14: "a rail is never empty"). This branch is
+ * reachable more often than its old doc comment claimed (WR-A03,
+ * 39.1-REVIEW.md): a host whose wired `RAIL_TEMPLATES` set doesn't include
+ * enough always-a-fact back-fill templates for a given scope/horizon can
+ * still land here even for a large, steady account (e.g. an
+ * account-scoped rail on a horizon where every wired template is
+ * `hidden`/`collapsed`). Because this card carries NO real backing sample
+ * (`refreshedAt: 0`, null date range), its copy must never assert a
+ * specific "N more games" requirement — that claim was true for the OLD
+ * `insights.formNow.locked` reuse (which correctly describes formNow's own
+ * degenerate case) but is an outright false claim once other templates are
+ * the reason this branch fires. `insights.rail.unavailable` makes no game-count
+ * claim at all — a distinct, honest copy key, not a borrowed one.
  */
 const FALLBACK_LOCKED_INSIGHT: Insight = {
   id: 'formNow:account:last30',
@@ -75,7 +81,7 @@ const FALLBACK_LOCKED_INSIGHT: Insight = {
   deltaPoints: null,
   window: { horizon: 'last30', fromMs: null, toMs: null, games: 0, scoped: false },
   salience: 0,
-  copy: { key: 'insights.formNow.locked', values: { count: ABSTENTION_FLOOR_GAMES } },
+  copy: { key: 'insights.rail.unavailable', values: {} },
   doors: [],
   gamesNeeded: ABSTENTION_FLOOR_GAMES,
 };

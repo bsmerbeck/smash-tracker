@@ -3138,7 +3138,8 @@
       "restore": "Wiederherstellen",
       "dismiss": "Ausblenden",
       "dismissedToast": "Auswertung auf diesem Gerät ausgeblendet.",
-      "error": "Auswertungen für diese Ansicht konnten nicht berechnet werden. Zum erneuten Versuch neu laden."
+      "error": "Auswertungen für diese Ansicht konnten nicht berechnet werden. Zum erneuten Versuch neu laden.",
+      "unavailable": "Für diese Ansicht sind noch keine Auswertungen verfügbar."
     },
     "door": {
       "seeGames_one": "Das {{count}} Match ansehen",

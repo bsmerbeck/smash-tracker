@@ -3138,7 +3138,8 @@
       "restore": "Restore",
       "dismiss": "Dismiss",
       "dismissedToast": "Insight dismissed on this device.",
-      "error": "Insights could not be computed for this view. Reload to try again."
+      "error": "Insights could not be computed for this view. Reload to try again.",
+      "unavailable": "Insights aren’t available for this view yet."
     },
     "door": {
       "seeGames_one": "See the {{count}} game",

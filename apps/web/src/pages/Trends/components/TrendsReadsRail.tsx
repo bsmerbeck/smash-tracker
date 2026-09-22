@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import {
-  ABSTENTION_FLOOR_GAMES,
   ACCOUNT_SCOPE,
   INSIGHT_TEMPLATES,
   RAIL_CARD_CAP,
@@ -24,13 +23,33 @@ import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 
 /**
  * The three account-scoped cards this rail draws from (TRND-02/D-09):
- * `RatingMove`, `TiltCost`, `SessionFatigue`. Resolved once at module scope:
- * the registry is a static, closed array.
+ * `RatingMove`, `TiltCost`, `SessionFatigue`, plus the two D-14 back-fill
+ * FACT templates (WR-A03, 39.1-REVIEW.md). NOTE: `bestMatchup`/
+ * `worstMatchup` both guard `scope.kind !== 'character'` internally and
+ * this rail runs at `ACCOUNT_SCOPE`, so they never actually contribute a
+ * card here today — they're wired for consistency with the other two
+ * rails. Unlike `FighterInsightRail`/`MatchDataRail`, this rail's own three
+ * templates CAN all legitimately land on `hidden`/hidden-equivalent states
+ * at once for a real account on the `last30` horizon, in which case
+ * `rail.ts`'s synthetic fallback still fires — `railBackfillRegression.test.ts`
+ * documents this residual case against the shared 8k fixture; it is why the
+ * fallback's OWN copy was made honest (a distinct `insights.rail.unavailable`
+ * key with no games-needed claim) rather than relying on back-fill wiring
+ * alone. Resolved once at module scope: the registry is a static, closed
+ * array.
  */
 const RATING_MOVE_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'ratingMove')!;
 const TILT_COST_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'tiltCost')!;
 const SESSION_FATIGUE_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'sessionFatigue')!;
-const RAIL_TEMPLATES = [RATING_MOVE_TEMPLATE, TILT_COST_TEMPLATE, SESSION_FATIGUE_TEMPLATE];
+const BEST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'bestMatchup')!;
+const WORST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'worstMatchup')!;
+const RAIL_TEMPLATES = [
+  RATING_MOVE_TEMPLATE,
+  TILT_COST_TEMPLATE,
+  SESSION_FATIGUE_TEMPLATE,
+  BEST_MATCHUP_TEMPLATE,
+  WORST_MATCHUP_TEMPLATE,
+];
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention. */
 function claimChipKindFor(kind: Insight['kind']): ClaimChipKind {
@@ -111,11 +130,14 @@ export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
         const results = template.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs });
         for (const insight of results) {
           if (!dismissedIds.includes(insight.id)) {
-            insight.salience = scoreInsight(insight, nowMs);
-            built.push(insight);
+            built.push({ ...insight, salience: scoreInsight(insight, nowMs) });
           }
         }
-      } catch {
+      } catch (err) {
+        // WR-C03 (39.1-REVIEW.md): a template crash must not silently drop
+        // its card with zero signal — `template.id` carries no user
+        // identifiers, only the closed template-registry id.
+        console.error('[insight-rail] template failed', template.id, err);
         continue;
       }
     }
@@ -251,7 +273,7 @@ export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
     <InsightCard
       chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
       name={accountName}
-      verdict={t('insights.formNow.locked', { entity: accountName, count: ABSTENTION_FLOOR_GAMES })}
+      verdict={t('insights.rail.unavailable')}
       evidence=""
     />
   );

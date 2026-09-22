@@ -168,6 +168,15 @@ describe('assembleRail', () => {
     expect(result.cards).toHaveLength(1);
   });
 
+  it('WR-A03: the synthetic fallback card makes no "N more games" claim — a distinct, honest copy key with no game-count values', () => {
+    const result = assembleRail({ insights: [] });
+    expect(result.cards).toHaveLength(1);
+    const fallback = result.cards[0]!;
+    expect(fallback.copy.key).toBe('insights.rail.unavailable');
+    expect(fallback.copy.key).not.toBe('insights.formNow.locked');
+    expect(fallback.copy.values).toEqual({});
+  });
+
   it('returns 3 cards over 2 assertive and 4 direction-free FACT candidates, with only the 2 assertive carrying non-null deltaPoints', () => {
     const insights = [
       assertiveInsight('a', 50),
