@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import { ACCOUNT_SCOPE, INSIGHT_TEMPLATES } from '@smash-tracker/shared';
 
@@ -70,4 +71,21 @@ export function useTrendsCardInsights({
     }),
     [matches, horizon, nowMs],
   );
+}
+
+/**
+ * Plan 39.1-27 (gap closure, Task 2, WR-A02): `MatchTypeMix.tsx`'s existing
+ * WR-A02 composition — `mixShiftTemplate` (packages/shared, which never
+ * localises, D-11) emits the stable, raw `matchType` key (e.g.
+ * `'online-tourney'`), already localised under `matchForm.matchTypes.*` in
+ * all six locale files. This is now the SINGLE place both the MixShift line
+ * itself AND `TrendsPage.tsx`'s claim summary resolve that sentence — no
+ * raw enum literal ever reaches either rendered surface.
+ */
+export function buildMixShiftVerdict(insight: Insight, t: TFunction): string {
+  const values = { ...insight.copy.values };
+  if (typeof values.matchType === 'string') {
+    values.matchType = t(`matchForm.matchTypes.${values.matchType}`);
+  }
+  return t(insight.copy.key, values);
 }

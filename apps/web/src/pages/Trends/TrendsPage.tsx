@@ -31,7 +31,7 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
-import { useTrendsCardInsights } from './lib/useTrendsCardInsights';
+import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCardInsights';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -142,7 +142,13 @@ export function TrendsPage() {
     axesFromUrl.claimId != null
       ? (() => {
           const insight = insightById.get(axesFromUrl.claimId!);
-          return insight ? buildTrendsVerdict(insight, t, accountNameForClaim) : undefined;
+          if (!insight) return undefined;
+          // Plan 39.1-27 (gap closure, Task 2): mixShift's own raw
+          // `matchType` literal must never reach the summary — the SAME
+          // `buildMixShiftVerdict` the line itself uses.
+          return insight.templateId === 'mixShift'
+            ? buildMixShiftVerdict(insight, t)
+            : buildTrendsVerdict(insight, t, accountNameForClaim);
         })()
       : undefined;
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
@@ -270,7 +276,12 @@ export function TrendsPage() {
             horizon={horizon}
             settingGapInsight={cardInsights.settingGap}
           />
-          <MatchTypeMix matches={matches} horizon={horizon} />
+          <MatchTypeMix
+            matches={matches}
+            horizon={horizon}
+            mixShiftInsight={cardInsights.mixShift}
+            volumeFormInsight={cardInsights.volumeForm}
+          />
         </GridCell>
 
         {hasDrillAxis && (
