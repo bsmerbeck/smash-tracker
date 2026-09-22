@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Insight, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -12,10 +12,18 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { cn } from '@/lib/utils';
 import { stagesById } from '@/data/stages';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FIGHTER_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_VS_PARAM,
   readDrillDownParams,
   sortMatchesNewestFirst,
   type DrillDownAxes,
@@ -58,7 +66,7 @@ export function TrendsPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
-  const { horizon } = useHorizon();
+  const { horizon, isLoading: horizonLoading } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: a tolerant read of every drill-down axis currently in the URL —
@@ -178,6 +186,55 @@ export function TrendsPage() {
     }
   }, [location.key, location.hash, hasDrillAxis]);
 
+  // WR-01 (39.1-REVIEW): the terminus mounts only while a drill axis is in
+  // the URL, and this page's doors write one — Clear filters drops every
+  // axis the terminus reads (and the `#games` hash), which unmounts it.
+  const navigate = useNavigate();
+  function handleClearFilters(): void {
+    const params = new URLSearchParams(searchParams);
+    for (const key of [
+      DRILL_DOWN_FIGHTER_PARAM,
+      DRILL_DOWN_VS_PARAM,
+      DRILL_DOWN_STAGE_PARAM,
+      DRILL_DOWN_EVENT_PARAM,
+      DRILL_DOWN_FROM_PARAM,
+      DRILL_DOWN_TO_PARAM,
+      DRILL_DOWN_CLAIM_PARAM,
+    ]) {
+      params.delete(key);
+    }
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
+  // same insight at a new horizon (or drop it) instead of leaving an id that
+  // no longer resolves. Mirrors `FighterAnalysisPage.tsx`.
+  const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
+  const rewriteClaim = useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(searchParams);
+      if (next == null) {
+        params.delete(DRILL_DOWN_CLAIM_PARAM);
+      } else {
+        params.set(DRILL_DOWN_CLAIM_PARAM, next);
+      }
+      const search = params.toString();
+      navigate(
+        { pathname: location.pathname, search: search ? `?${search}` : '' },
+        { replace: true },
+      );
+    },
+    [searchParams, navigate, location.pathname],
+  );
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded
   // hero(12)/timeline(12)/rails(4+4+4) layout, so nothing shifts when data
@@ -296,6 +353,7 @@ export function TrendsPage() {
                   axes={terminusAxes}
                   resolveClaim={resolveClaimForTerminus}
                   claimSummary={claimSummary}
+                  onClearFilters={handleClearFilters}
                   showDelete
                 />
               </CardContent>

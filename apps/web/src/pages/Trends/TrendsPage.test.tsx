@@ -246,6 +246,19 @@ describe('TrendsPage', () => {
     });
   });
 
+  it('WR-01 (39.1-REVIEW): the page-level terminus offers Clear filters, which drops every drill axis and unmounts it', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+    const user = userEvent.setup();
+
+    renderTrends('/trends?stage=1&claim=ratingMove:account:last30#games');
+
+    await screen.findByText('Monthly Performance');
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(document.getElementById('games')).not.toBeInTheDocument());
+  });
+
   describe('T-39.1-27 (gap closure): the Setting comparison door lands on exactly N', () => {
     /** 10 online (quickplay) + 10 offline (offline-tourney) games, well past `COHORT_MIN_SIDE_GAMES` (8) on each side — a real SettingGap games door, `countedMatchIds.length === 20`. */
     function settingGapDoorFixture() {

@@ -16,6 +16,7 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -265,13 +266,18 @@ export function FighterAnalysisPage() {
   // followed earlier) — `pathname` is passed explicitly so a `/coach/
   // :clientId` or `/workspace/:tenantId` prefix survives.
   const navigate = useNavigate();
-  function handleHeroDrill(axes: FighterHeroDrillAxes): void {
+  /** The current search minus every axis this page's terminus narrows by — the ONE spelling every writer below shares. */
+  function searchWithoutDrillAxes(): URLSearchParams {
     const params = new URLSearchParams(searchParams);
     params.delete(DRILL_DOWN_STAGE_PARAM);
     params.delete(DRILL_DOWN_EVENT_PARAM);
     params.delete(DRILL_DOWN_FROM_PARAM);
     params.delete(DRILL_DOWN_TO_PARAM);
     params.delete(DRILL_DOWN_CLAIM_PARAM);
+    return params;
+  }
+  function handleHeroDrill(axes: FighterHeroDrillAxes): void {
+    const params = searchWithoutDrillAxes();
     for (const [key, value] of buildDrillDownSearch(axes)) {
       params.set(key, value);
     }
@@ -281,6 +287,53 @@ export function FighterAnalysisPage() {
       hash: `#${GAMES_ANCHOR_ID}`,
     });
   }
+
+  // WR-01 (39.1-REVIEW): this page writes drill axes (the hero drills and
+  // the insight doors), so its terminus must offer a way back out — Clear
+  // filters drops every axis and the `#games` hash (the terminus unmounts,
+  // since it only exists while an axis is present).
+  function handleClearFilters(): void {
+    const search = searchWithoutDrillAxes().toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // WR-01 (39.1-REVIEW): a set/period drill or a `formNow:character:<id>`
+  // claim belongs to the fighter it was drawn from — switching fighter drops
+  // them (Matchups' `handleSetFighter` precedent) rather than narrowing the
+  // new fighter to an unrelated set, or silently falling back to all games.
+  function handleSelectFighter(next: Fighter): void {
+    setFighter(next);
+    if (hasDrillAxis) handleClearFilters();
+  }
+
+  // WR-01 (39.1-REVIEW): a claim id ends in its horizon; when the horizon
+  // changes, re-point it to the same insight at the new horizon (or drop it)
+  // rather than leave an id that no longer resolves. `replace`, and no hash:
+  // the user is at the control they pressed, not at the terminus.
+  const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
+  const rewriteClaim = useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(searchParams);
+      if (next == null) {
+        params.delete(DRILL_DOWN_CLAIM_PARAM);
+      } else {
+        params.set(DRILL_DOWN_CLAIM_PARAM, next);
+      }
+      const search = params.toString();
+      navigate(
+        { pathname: location.pathname, search: search ? `?${search}` : '' },
+        { replace: true },
+      );
+    },
+    [searchParams, navigate, location.pathname],
+  );
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
@@ -384,7 +437,7 @@ export function FighterAnalysisPage() {
             fighter={fighter}
             fighterSprites={orderedFighterSprites}
             fighterUsageById={fighterUsageById}
-            onChange={setFighter}
+            onChange={handleSelectFighter}
           />
         </div>
         <HorizonSwitch />
@@ -479,6 +532,7 @@ export function FighterAnalysisPage() {
                     resolveClaim={resolveClaimForTerminus}
                     claimSummary={claimSummary}
                     eventKeyForMatch={eventKeysForMatch}
+                    onClearFilters={handleClearFilters}
                     showDelete
                   />
                 </CardContent>

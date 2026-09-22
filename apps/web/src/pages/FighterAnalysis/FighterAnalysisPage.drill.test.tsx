@@ -401,4 +401,97 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     const probe = locationProbe();
     expect(probe.dataset.pathname).toBe('/coach/test-client/fighter-analysis');
   });
+
+  describe('WR-01 (39.1-REVIEW): the terminus can be reset, and a fighter/horizon change never leaves a stale axis', () => {
+    it('Clear filters removes every drill axis and the #games hash, unmounting the terminus', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      renderFighterAnalysisAt(
+        `/fighter-analysis?event=evset9&claim=${encodeURIComponent(`formNow:character:${mario.id}:last30`)}#games`,
+      );
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+
+      await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+
+      await waitFor(() => {
+        const search = new URLSearchParams(locationProbe().dataset.search ?? '');
+        expect(search.has('event')).toBe(false);
+        expect(search.has('claim')).toBe(false);
+      });
+      expect(locationProbe().dataset.hash).toBe('');
+      expect(document.getElementById('games')).not.toBeInTheDocument();
+    });
+
+    it('switching fighter after a set drill drops the event axis instead of narrowing the new fighter to an unrelated set', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      getFighters.mockResolvedValue({ primary: [mario.id, luigi.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        ...drillFixture(),
+        ...Array.from({ length: 3 }, (_, i) =>
+          makeMatch({ id: `lg${i}`, fighter_id: luigi.id, time: Date.now() - i * 1000, win: true }),
+        ),
+      ]);
+      renderFighterAnalysisAt('/fighter-analysis?event=evset9#games');
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => {
+        const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(GAMES_PER_SET);
+      });
+
+      await user.click(screen.getByLabelText('Select fighter'));
+      await user.click(await screen.findByRole('option', { name: new RegExp(luigi.name) }));
+
+      await screen.findByRole('heading', { name: luigi.name, level: 2 });
+      await waitFor(() => {
+        const search = new URLSearchParams(locationProbe().dataset.search ?? '');
+        expect(search.has('event')).toBe(false);
+      });
+    });
+
+    it("pressing a different horizon figure after following the hero door re-points the claim to that horizon's own counted games", async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      // 50 games over the last ~80 days (last30 counts the newest 30; last90
+      // counts all 50) plus 10 games ~200 days old that NO horizon counts —
+      // so a stale, unresolved claim's fallback (all 60) differs from the
+      // re-pointed claim's exact 50.
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      const recent = Array.from({ length: 50 }, (_, i) =>
+        makeMatch({ id: `hz${i}`, time: now - (49 - i) * ((80 / 49) * day), win: i % 2 === 0 }),
+      );
+      const old = Array.from({ length: 10 }, (_, i) =>
+        makeMatch({ id: `old${i}`, time: now - 200 * day - i * day, win: true }),
+      );
+      listMatches.mockResolvedValue([...recent, ...old]);
+
+      renderFighterAnalysisAt('/fighter-analysis');
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+      );
+      const door = within(
+        document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+      ).getByRole('link');
+      await user.click(door);
+      await waitFor(() => {
+        const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(30);
+      });
+
+      const heroBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      await user.click(within(heroBody).getByText('90 days').closest('button')!);
+
+      await waitFor(() => {
+        const search = new URLSearchParams(locationProbe().dataset.search ?? '');
+        expect(search.get('claim')).toBe(`formNow:character:${mario.id}:last90`);
+      });
+      await waitFor(() => {
+        const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(50);
+      });
+    });
+  });
 });
