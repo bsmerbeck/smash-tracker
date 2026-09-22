@@ -82,6 +82,41 @@ export function MatchDataPage() {
     axesFromUrl.from != null ||
     axesFromUrl.to != null;
 
+  // WR-C02 (39.1-REVIEW.md): this object literal was rebuilt fresh every
+  // render (a NEW reference even when every field's VALUE was unchanged),
+  // defeating `FilteredMatchList`'s D-16 reference-identity memo on every
+  // parent re-render — same fix as `OpponentHubPage.tsx`/`StageDetailPage.tsx`'s
+  // own "WR-03 (38-REVIEW-FIX)". Declared here, BEFORE this component's
+  // loading/empty-state early returns below, so this hook is called on
+  // EVERY render — Rules of Hooks (mirrors this page's own `stageIds`/
+  // `axesFromUrl` memos just above, and `MatchupsPage.tsx`'s identical
+  // placement for the same finding).
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: axesFromUrl.fighterId,
+      vsFighterId: axesFromUrl.vsFighterId,
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+    }),
+    [
+      axesFromUrl.fighterId,
+      axesFromUrl.vsFighterId,
+      axesFromUrl.stageId,
+      axesFromUrl.eventKey,
+      axesFromUrl.from,
+      axesFromUrl.to,
+    ],
+  );
+  // Also moved above the early returns (and memoized), for the SAME reason
+  // as `terminusAxes` just above: `FilteredMatchList`'s D-16 memo keys on
+  // BOTH `axes` and `matches` — stabilizing only `axes` while `matches`
+  // still got a fresh array reference every render left the underlying
+  // recomputation just as unfixed, for a different reason (mirrors
+  // `OpponentHubPage.tsx`'s own `sortedOpponentMatches` useMemo).
+  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
     [fighterSelection],
@@ -167,16 +202,6 @@ export function MatchDataPage() {
       </div>
     );
   }
-
-  const sortedMatches = sortMatchesNewestFirst(matches);
-  const terminusAxes: DrillDownAxes = {
-    fighterId: axesFromUrl.fighterId,
-    vsFighterId: axesFromUrl.vsFighterId,
-    stageId: axesFromUrl.stageId,
-    eventKey: axesFromUrl.eventKey,
-    from: axesFromUrl.from,
-    to: axesFromUrl.to,
-  };
 
   const filterRow = (
     <Card>

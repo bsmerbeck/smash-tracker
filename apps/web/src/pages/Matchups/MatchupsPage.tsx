@@ -191,17 +191,67 @@ export function MatchupsPage() {
     (axesFromUrl.vsFighterId != null ? getFighterById(axesFromUrl.vsFighterId) : undefined) ??
     opponent;
 
+  // WR-C02 (39.1-REVIEW.md): this object literal was rebuilt fresh every
+  // render (a NEW reference even when every field's VALUE was unchanged),
+  // defeating `FilteredMatchList`'s D-16 reference-identity memo on every
+  // parent re-render — same fix as `OpponentHubPage.tsx`/`StageDetailPage.tsx`'s
+  // own "WR-03 (38-REVIEW-FIX)". Declared here, alongside `effectiveFighter`/
+  // `effectiveOpponent`, BEFORE this component's loading/empty-state early
+  // returns below — same Rules-of-Hooks reasoning the `matchupMatches`
+  // comment just below already documents for `useMatchupFormNow`. The
+  // terminus's axes ALSO carry the effective character pair — not just
+  // stage/window — so `FilteredMatchList` omits the already-pinned
+  // character columns and includes the pairing in its filter summary, even
+  // though `matchupMatches` below is already pairing-filtered (a harmless,
+  // idempotent re-affirmation of membership, not a second narrowing
+  // mechanism).
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: effectiveFighter?.id,
+      vsFighterId: effectiveOpponent?.id,
+      stageId: axesFromUrl.stageId,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+    }),
+    [
+      effectiveFighter?.id,
+      effectiveOpponent?.id,
+      axesFromUrl.stageId,
+      axesFromUrl.from,
+      axesFromUrl.to,
+    ],
+  );
+
   // Computed here (BEFORE the loading/empty-state early returns below) so
   // `useMatchupFormNow` — a hook — is always called unconditionally, never
   // skipped by an early return (Rules of Hooks). Harmless to compute even on
   // the branches that return early: `matches`/`effectiveFighter`/
   // `effectiveOpponent` are already in scope regardless.
-  const matchupMatches =
-    effectiveFighter && effectiveOpponent
-      ? matches.filter(
-          (m) => m.fighter_id === effectiveFighter.id && m.opponent_id === effectiveOpponent.id,
-        )
-      : [];
+  //
+  // WR-C02 (39.1-REVIEW.md): also memoized, for the SAME reason as
+  // `terminusAxes` above: `FilteredMatchList`'s D-16 memo keys on BOTH
+  // `axes` and `matches` — stabilizing only `axes` while this array still
+  // got a fresh reference every render left the underlying recomputation
+  // just as unfixed, for a different reason (mirrors `OpponentHubPage.tsx`'s
+  // own `sortedOpponentMatches` useMemo). A beneficial side effect:
+  // `useMatchupFormNow` below now also gets a stable input.
+  const effectiveFighterIdForFilter = effectiveFighter?.id;
+  const effectiveOpponentIdForFilter = effectiveOpponent?.id;
+  const matchupMatches = useMemo(
+    () =>
+      effectiveFighterIdForFilter != null && effectiveOpponentIdForFilter != null
+        ? matches.filter(
+            (m) =>
+              m.fighter_id === effectiveFighterIdForFilter &&
+              m.opponent_id === effectiveOpponentIdForFilter,
+          )
+        : [],
+    [matches, effectiveFighterIdForFilter, effectiveOpponentIdForFilter],
+  );
+  const sortedMatchupMatches = useMemo(
+    () => sortMatchesNewestFirst(matchupMatches),
+    [matchupMatches],
+  );
   const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
 
   const contextValue: MatchupsContextValue = {
@@ -301,21 +351,6 @@ export function MatchupsPage() {
       </div>
     );
   }
-
-  // The terminus's axes ALSO carry the effective character pair — not just
-  // stage/window — so `FilteredMatchList` omits the already-pinned
-  // character columns and includes the pairing in its filter summary, even
-  // though `matchupMatches` above is already pairing-filtered (a harmless,
-  // idempotent re-affirmation of membership, not a second narrowing
-  // mechanism).
-  const terminusAxes: DrillDownAxes = {
-    fighterId: effectiveFighter?.id,
-    vsFighterId: effectiveOpponent?.id,
-    stageId: axesFromUrl.stageId,
-    from: axesFromUrl.from,
-    to: axesFromUrl.to,
-  };
-  const sortedMatchupMatches = sortMatchesNewestFirst(matchupMatches);
 
   return (
     <MatchupsContext.Provider value={contextValue}>

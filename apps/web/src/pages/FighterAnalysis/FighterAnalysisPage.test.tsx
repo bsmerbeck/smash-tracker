@@ -9,6 +9,21 @@ import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+
+/**
+ * WR-C02 (39.1-REVIEW.md): a partial mock of `matchesDrillDown` (defaulting
+ * to the real implementation), mirroring `OpponentHubPage.test.tsx`'s own
+ * "WR-03 (38-REVIEW-FIX)" mock — the ONE observable signal that
+ * `FilteredMatchList`'s D-16 memoization contract actually hit its cache.
+ * `matchesDrillDown` runs once PER MATCH inside `FilteredMatchList`'s own
+ * `useMemo` body; if that memo MISSES (an unstable `axes` reference
+ * recreated every render), it runs again on every unrelated re-render.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -451,6 +466,65 @@ describe('FighterAnalysisPage', () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  describe('WR-C02 (39.1-REVIEW.md): D-16 memoization contract', () => {
+    it('an unrelated re-render does not re-run the terminus narrowing predicate', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'm2', time: 2, win: true, map: { id: 1, name: 'Battlefield' } }),
+      ]);
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // A FRESH element tree on each call (never the SAME object reference
+      // reused) — React's fiber reconciler bails out of re-rendering a
+      // subtree whose parent's `oldProps === newProps` by REFERENCE, so
+      // passing the identical `tree` object to both `render` and `rerender`
+      // would short-circuit before ever reaching `FighterAnalysisPage`,
+      // making this assertion pass VACUOUSLY regardless of the fix. A new
+      // JSX call on each invocation (mirrors `StageDetailPage.test.tsx`'s
+      // own `stageTree()` helper) produces new-but-value-equal props at
+      // every level, forcing a genuine re-render pass all the way down.
+      function tree() {
+        return (
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter initialEntries={['/fighter-analysis?stage=1']}>
+              <AuthProvider>
+                <AnalyticsFilterProvider>
+                  <TooltipProvider>
+                    <Routes>
+                      <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                    </Routes>
+                  </TooltipProvider>
+                </AnalyticsFilterProvider>
+              </AuthProvider>
+            </MemoryRouter>
+          </QueryClientProvider>
+        );
+      }
+      const { rerender } = render(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // Neither `FighterAnalysisPage` nor `FilteredMatchList` is wrapped in
+      // `React.memo`, so re-invoking `render()` on the same root always
+      // re-runs both function bodies (mirrors a horizon toggle, a
+      // background refetch, or any sibling state change — the same class of
+      // "parent re-rendered, nothing this terminus cares about changed"
+      // event) — the only thing under test is whether that re-run
+      // recomputes `FilteredMatchList`'s own narrowing memo. A stable
+      // `terminusAxes`/`matches` reference means it doesn't: `matchesDrillDown`'s
+      // call count stays flat (mirrors `StageDetailPage.test.tsx`'s own
+      // "WR-03 (38-REVIEW-FIX)" test).
+      rerender(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
+    });
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.

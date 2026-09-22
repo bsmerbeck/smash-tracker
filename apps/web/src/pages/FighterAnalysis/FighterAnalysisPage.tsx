@@ -102,6 +102,42 @@ export function FighterAnalysisPage() {
     fighterSprites: rawFighterSprites,
   });
 
+  // WR-C02 (39.1-REVIEW.md): this object literal was rebuilt fresh every
+  // render (a NEW reference even when every field's VALUE was unchanged),
+  // defeating `FilteredMatchList`'s D-16 reference-identity memo on every
+  // parent re-render (a horizon toggle, a background refetch, any sibling
+  // state change) — same fix as `OpponentHubPage.tsx`/`StageDetailPage.tsx`'s
+  // own "WR-03 (38-REVIEW-FIX)". Declared here, BEFORE this component's
+  // conditional early returns below (loading/no-fighters/no-matches), so
+  // this hook is called on EVERY render — rules-of-hooks, mirroring where
+  // `OpponentHubPage.tsx`/`StageDetailPage.tsx` place their own copy.
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: fighter?.id,
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+    }),
+    [fighter?.id, axesFromUrl.stageId, axesFromUrl.eventKey, axesFromUrl.from, axesFromUrl.to],
+  );
+  // Also moved above the early returns (and memoized), for the SAME reason
+  // as `terminusAxes` just above: `FilteredMatchList`'s D-16 memo keys on
+  // BOTH `axes` and `matches` — stabilizing only `axes` while `matches`
+  // still gets a fresh array reference every render leaves the underlying
+  // recomputation just as unfixed, for a different reason (mirrors
+  // `OpponentHubPage.tsx`'s own `sortedOpponentMatches` useMemo).
+  const fighterIdForFilter = fighter?.id;
+  const fighterMatches = useMemo(
+    () =>
+      fighterIdForFilter != null ? matches.filter((m) => m.fighter_id === fighterIdForFilter) : [],
+    [matches, fighterIdForFilter],
+  );
+  const sortedFighterMatches = useMemo(
+    () => sortMatchesNewestFirst(fighterMatches),
+    [fighterMatches],
+  );
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
   // rail(4)/vs-lists(12)/existing-cards(12) layout, so nothing shifts when
@@ -169,8 +205,6 @@ export function FighterAnalysisPage() {
     );
   }
 
-  const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
-
   // Phase 38-07 (H-02/Q11.4): the own-subject host consumes the SAME
   // identity-resolving inventory the opponents list/hub already use, rather
   // than the legacy raw-tag `getOpponentRecords` — two raw tags belonging to
@@ -196,15 +230,6 @@ export function FighterAnalysisPage() {
     const search = buildDrillDownSearch({ fighterId: fighter.id }).toString();
     return subjectPath(`${buildOpponentHubPath(row.key)}${search ? `?${search}` : ''}`);
   }
-
-  const sortedFighterMatches = sortMatchesNewestFirst(fighterMatches);
-  const terminusAxes: DrillDownAxes = {
-    fighterId: fighter?.id,
-    stageId: axesFromUrl.stageId,
-    eventKey: axesFromUrl.eventKey,
-    from: axesFromUrl.from,
-    to: axesFromUrl.to,
-  };
 
   const filterRow = (
     <Card>
