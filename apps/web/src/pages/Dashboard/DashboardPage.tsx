@@ -160,12 +160,11 @@ export function DashboardPage() {
     isFetching: matchesFetching,
     filterActive,
   } = useFilteredMatches();
-  // Plan 39.1-17 (INS-02): the page's ONE HorizonSwitch value — DashboardToolbar
-  // (rendered below as PageShell's filterRow) reads/writes this SAME
-  // persisted value through its own internal useHorizon() call; this read
-  // just threads the CURRENT value into HeroStats so its delta chip
-  // actually reacts to the switch (both calls share the same underlying
-  // store, matching TrendsPage.tsx's established page-level-read pattern).
+  // Plan 39.1-17 (INS-02): the page's ONE HorizonSwitch value, threaded into
+  // HeroStats. DashboardToolbar's switch makes its own useHorizon() call;
+  // the two calls stay in step only because useHorizon broadcasts every
+  // setHorizon to all mounted calls on the same subject (39.1-REVIEW
+  // iteration 2 CR-01) — localStorage alone is NOT a shared React state.
   const { horizon } = useHorizon();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {

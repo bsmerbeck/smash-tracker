@@ -277,6 +277,91 @@ describe('DashboardPage', () => {
     expect(switches[0]!.compareDocumentPosition(grid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
   });
 
+  // 39.1-REVIEW iteration 2 CR-01: the page's HorizonSwitch must drive the
+  // page's OWN horizon. Before the fix, the switch and the page each held a
+  // separate `useHorizon()` record — a press re-highlighted the switch and
+  // wrote localStorage but the hero delta stayed on the old horizon until
+  // remount. Fixture: the newest 30 games (all losses, one a day) are the
+  // `last30` window; 10 older wins inside 90 days widen `last90` to 10–30;
+  // 60 wins from ~200 days ago keep both windows under the engine's 60%
+  // collapse ratio of the 70–30 all-time baseline, so the chip always shows.
+  describe('CR-01: pressing the HorizonSwitch updates the headline delta on the same page', () => {
+    const day = 24 * 60 * 60 * 1000;
+    function horizonFixture() {
+      const now = Date.now();
+      return [
+        ...Array.from({ length: 30 }, (_, i) => ({
+          id: `recent-loss-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (i + 1) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: false,
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          id: `older-win-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (40 + i) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })),
+        ...Array.from({ length: 60 }, (_, i) => ({
+          id: `ancient-win-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (200 + i) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })),
+      ];
+    }
+
+    function overallRecordChip(): HTMLElement {
+      return screen.getByLabelText(/^Overall Record, .* recent vs .* all time$/);
+    }
+
+    it.each([
+      ['personal', '/dashboard'],
+      ['coach-mounted', '/coach/tetra/dashboard'],
+    ])('%s: the Overall Record delta follows a switch press', async (_label, entry) => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonFixture());
+
+      const { container } = renderDashboard(entry);
+
+      await waitFor(() =>
+        expect(overallRecordChip()).toHaveAttribute(
+          'aria-label',
+          'Overall Record, 0–30 recent vs 70–30 all time',
+        ),
+      );
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      expect(container.querySelector('[data-slot="horizon-switch"]')).toHaveAttribute(
+        'data-horizon',
+        'last90',
+      );
+      await waitFor(() =>
+        expect(overallRecordChip()).toHaveAttribute(
+          'aria-label',
+          'Overall Record, 10–30 recent vs 70–30 all time',
+        ),
+      );
+    });
+  });
+
   it('shows a no-matches empty state for a new user with fighters but no matches yet', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);

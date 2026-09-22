@@ -6,8 +6,9 @@ import { AddMatchForm } from './AddMatchForm';
  * Ports legacy/src/screens/Dashboard/components/DashboardToolbar.
  *
  * Plan 39.1-17 (INS-02, UI-SPEC §10.4): gains the page's ONE `HorizonSwitch`
- * on the right — self-contained (reads/writes its own persisted state via
- * `useHorizon`), so no prop threading is needed here.
+ * on the right — self-contained (it makes its own `useHorizon` call, which
+ * `useHorizon`'s same-subject broadcast keeps in step with the page's call),
+ * so no prop threading is needed here.
  */
 export function DashboardToolbar() {
   return (

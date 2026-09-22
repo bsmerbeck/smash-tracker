@@ -523,5 +523,67 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
         expect(Number(table.getAttribute('data-total-rows'))).toBe(50);
       });
     });
+
+    // 39.1-REVIEW iteration 2 CR-01: the page-level HorizonSwitch must drive
+    // the page's horizon (hero figures, insights, the door claim). Before the
+    // fix the switch held its own `useHorizon()` record: a press moved only
+    // the switch, the claim stayed `…:last30` over 30 rows, and the hero's
+    // "30 games" figure stayed pressed. The reverse direction is pinned too —
+    // a hero figure press must move the switch.
+    it.each([
+      ['personal', '/fighter-analysis'],
+      ['coach-mounted', '/coach/test-client/fighter-analysis'],
+    ])(
+      '%s: pressing the HorizonSwitch re-points the hero, the insight and the door claim; a hero figure press moves the switch',
+      async (_label, entry) => {
+        const user = userEvent.setup();
+        HTMLElement.prototype.scrollIntoView = vi.fn();
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+        const recent = Array.from({ length: 50 }, (_, i) =>
+          makeMatch({ id: `hz${i}`, time: now - (49 - i) * ((80 / 49) * day), win: i % 2 === 0 }),
+        );
+        const old = Array.from({ length: 10 }, (_, i) =>
+          makeMatch({ id: `old${i}`, time: now - 200 * day - i * day, win: true }),
+        );
+        listMatches.mockResolvedValue([...recent, ...old]);
+
+        renderFighterAnalysisAt(entry);
+        await screen.findByRole('heading', { name: mario.name, level: 2 });
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+        );
+        await user.click(
+          within(
+            document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+          ).getByRole('link'),
+        );
+        await waitFor(() => {
+          const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+          expect(Number(table.getAttribute('data-total-rows'))).toBe(30);
+        });
+
+        const heroBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+        const heroFigure = (label: string) => within(heroBody).getByText(label).closest('button')!;
+        expect(heroFigure('30 games')).toHaveAttribute('aria-pressed', 'true');
+
+        const horizonSwitch = document.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+        await user.click(within(horizonSwitch).getByRole('radio', { name: 'Last 90 days' }));
+
+        await waitFor(() => expect(heroFigure('90 days')).toHaveAttribute('aria-pressed', 'true'));
+        expect(heroFigure('30 games')).toHaveAttribute('aria-pressed', 'false');
+        await waitFor(() => {
+          const search = new URLSearchParams(locationProbe().dataset.search ?? '');
+          expect(search.get('claim')).toBe(`formNow:character:${mario.id}:last90`);
+        });
+        await waitFor(() => {
+          const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+          expect(Number(table.getAttribute('data-total-rows'))).toBe(50);
+        });
+
+        await user.click(heroFigure('30 games'));
+        await waitFor(() => expect(horizonSwitch).toHaveAttribute('data-horizon', 'last30'));
+      },
+    );
   });
 });

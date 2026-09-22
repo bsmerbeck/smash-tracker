@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -266,5 +267,55 @@ describe('useHorizon', () => {
     renderHarness('/coach/client-a/matchups');
     await waitFor(() => expect(screen.getByTestId('isLoading')).toHaveTextContent('false'));
     expect(screen.getByTestId('horizon')).toHaveTextContent('lastEvent');
+  });
+
+  // 39.1-REVIEW iteration 2 CR-01: every mounted call for the SAME subject is
+  // one source of truth — a write through one call (the page's HorizonSwitch)
+  // reaches the others (the page's own read) in the same session, with no
+  // remount. A different subject's call is never touched.
+  it('a setHorizon through one call reaches every other mounted call on the same subject, and no other subject', async () => {
+    list.mockResolvedValue([manualMatch('m1', Date.now())]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Named({ name }: { name: string }) {
+      const { horizon, setHorizon, isLoading } = useHorizon();
+      return (
+        <div>
+          <span data-testid={`${name}-horizon`}>{isLoading ? 'loading' : horizon}</span>
+          <button onClick={() => setHorizon('last90')}>{`${name}-set-last90`}</button>
+        </div>
+      );
+    }
+    function Tree({ path, children }: { path: string; children: ReactNode }) {
+      return (
+        <MemoryRouter initialEntries={[path]}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>{children}</AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+    }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Tree path="/">
+          <Named name="switch" />
+          <Named name="page" />
+        </Tree>
+        <Tree path="/coach/client-a/matchups">
+          <Named name="coach" />
+        </Tree>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('switch-horizon')).toHaveTextContent('last30');
+      expect(screen.getByTestId('page-horizon')).toHaveTextContent('last30');
+      expect(screen.getByTestId('coach-horizon')).toHaveTextContent('last30');
+    });
+
+    await userEvent.setup().click(screen.getByText('switch-set-last90'));
+
+    expect(screen.getByTestId('switch-horizon')).toHaveTextContent('last90');
+    expect(screen.getByTestId('page-horizon')).toHaveTextContent('last90');
+    expect(screen.getByTestId('coach-horizon')).toHaveTextContent('last30');
+    expect(readRawStored('test-uid', 'client-a')).toBeNull();
   });
 });

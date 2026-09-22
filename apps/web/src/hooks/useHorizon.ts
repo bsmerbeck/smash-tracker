@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { resolveWindow, type HorizonKey, type Match } from '@smash-tracker/shared';
 import { useAuth } from '@/hooks/useAuth';
 import { useEffectiveSubject } from '@/hooks/useEffectiveSubject';
@@ -25,6 +25,27 @@ export const DEFAULT_HORIZON: HorizonKey = 'last30';
  */
 function hasLastEventGames(matches: Match[], nowMs = Date.now()): boolean {
   return resolveWindow({ matches, horizon: 'lastEvent', scoped: false, nowMs }).window.games > 0;
+}
+
+/**
+ * 39.1-REVIEW iteration 2 CR-01: the in-tab change channel that makes every
+ * `useHorizon()` call for one (uid, subject) ONE source of truth. Each call
+ * still seeds from the persisted `analyticsSelection` record (unchanged
+ * persistence semantics), but a `setHorizon` from ANY call — the page's
+ * `HorizonSwitch`, the page itself, FighterHero's recent figures — is
+ * broadcast here, and every mounted call on the same storage key adopts it
+ * in the same event batch. Without it each call kept a private `useState`
+ * copy: a switch press re-highlighted the switch and wrote localStorage while
+ * every page figure stayed on the old horizon until remount (`storage` events
+ * never fire in the writing tab). Keyed by the storage key, so a change on
+ * one subject never reaches another subject's calls. Holds no value of its
+ * own — only live listeners — so nothing survives an unmount.
+ */
+type HorizonListener = (storageKey: string, next: HorizonKey) => void;
+const horizonListeners = new Set<HorizonListener>();
+
+function broadcastHorizon(storageKey: string, next: HorizonKey): void {
+  for (const listener of horizonListeners) listener(storageKey, next);
 }
 
 export interface UseHorizonResult {
@@ -81,6 +102,22 @@ export function useHorizon(): UseHorizonResult {
     setRecord(readStoredSelection(uid, clientId));
   }
 
+  // CR-01: adopt a horizon written by any other call on the SAME subject.
+  // Subscribed above the loading early return (Rules of Hooks); a call that
+  // is still loading adopts it too and then re-seeds from storage, which
+  // `persistSelection` has already written, so the two agree.
+  useEffect(() => {
+    if (storageKey == null) return undefined;
+    const listener: HorizonListener = (changedKey, next) => {
+      if (changedKey !== storageKey) return;
+      setRecord((prev) => (prev.horizon === next ? prev : { ...prev, horizon: next }));
+    };
+    horizonListeners.add(listener);
+    return () => {
+      horizonListeners.delete(listener);
+    };
+  }, [storageKey]);
+
   if (isLoading) {
     return {
       horizon: DEFAULT_HORIZON,
@@ -103,6 +140,7 @@ export function useHorizon(): UseHorizonResult {
   function setHorizon(next: HorizonKey): void {
     setRecord((prev) => ({ ...prev, horizon: next }));
     persistSelection(uid, clientId, { horizon: next });
+    if (storageKey != null) broadcastHorizon(storageKey, next);
   }
 
   return { horizon, setHorizon, isLastEventAvailable, isLoading: false };
