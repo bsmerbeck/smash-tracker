@@ -450,16 +450,17 @@ export function OpponentHubPage() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  /** D-05: writes through the plan 38-04 param builder — the sole spelling for every drill-down axis this page composes. */
-  function handleSelectCell(cell: MatrixHeatCell) {
-    const [myStr, theirStr] = cell.rowKey.split(':');
-    const axes: Partial<DrillDownAxes> = {
-      fighterId: myStr != null ? Number(myStr) : undefined,
-      vsFighterId: theirStr != null ? Number(theirStr) : undefined,
-      stageId: Number(cell.colKey),
-    };
+  /**
+   * CR-01 (39.1-REVIEW): the ONE writer every hub drill goes through. A drill
+   * REPLACES an active insight claim, never intersects it — merging a matrix
+   * cell / trend point / set into a URL that still carried the H2H door's
+   * `claim=` showed `countedMatchIds ∩ drill` under the old verdict, not the
+   * games the clicked mark counted (the Matchups `clearFilterAxes` twin).
+   */
+  function writeHubDrill(axes: Partial<DrillDownAxes>) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
+      next.delete(DRILL_DOWN_CLAIM_PARAM);
       for (const [key, value] of buildDrillDownSearch(axes).entries()) {
         next.set(key, value);
       }
@@ -468,15 +469,18 @@ export function OpponentHubPage() {
     scrollToList();
   }
 
-  function handleSelectTrendPoint(point: TrendEventPoint) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [key, value] of buildDrillDownSearch({ eventKey: point.eventKey }).entries()) {
-        next.set(key, value);
-      }
-      return next;
+  /** D-05: writes through the plan 38-04 param builder — the sole spelling for every drill-down axis this page composes. */
+  function handleSelectCell(cell: MatrixHeatCell) {
+    const [myStr, theirStr] = cell.rowKey.split(':');
+    writeHubDrill({
+      fighterId: myStr != null ? Number(myStr) : undefined,
+      vsFighterId: theirStr != null ? Number(theirStr) : undefined,
+      stageId: Number(cell.colKey),
     });
-    scrollToList();
+  }
+
+  function handleSelectTrendPoint(point: TrendEventPoint) {
+    writeHubDrill({ eventKey: point.eventKey });
   }
 
   /**
@@ -485,14 +489,7 @@ export function OpponentHubPage() {
    * event, one destination shape, regardless of which surface produced it.
    */
   function handleSelectEvent(eventKey: string) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [key, value] of buildDrillDownSearch({ eventKey }).entries()) {
-        next.set(key, value);
-      }
-      return next;
-    });
-    scrollToList();
+    writeHubDrill({ eventKey });
   }
 
   const chipFilteredMatches = useMemo(() => {

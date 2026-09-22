@@ -785,6 +785,76 @@ describe('OpponentHubPage', () => {
       );
     });
 
+    it('CR-01 (39.1-REVIEW): a matrix cell clicked AFTER the H2H door drops the stale claim and lands on exactly the cell total', async () => {
+      // Non-vacuous by construction: 10 in-window games (the door's counted
+      // set) plus 3 games far outside DEFAULT_HORIZON, all Mario vs Luigi on
+      // Battlefield. The cell counts 13; the claim ∩ cell would show only 10.
+      const old = Date.now() - 400 * 24 * 60 * 60 * 1000;
+      listMatches.mockResolvedValue([
+        ...richFormNowFixture(),
+        ...Array.from({ length: 3 }, (_, i) =>
+          makeMatch({ id: `old${i}`, time: old + i, opponent: 'rival', win: true }),
+        ),
+      ]);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub('/opponents/rival');
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      const doorCount = Number(((door.textContent ?? '').match(/\d+/) ?? ['0'])[0]);
+      expect(doorCount).toBe(10);
+      await user.click(door);
+
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => {
+        const table = within(listEl).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(10);
+      });
+      expect(screen.getByTestId('location-probe').textContent).toContain('claim=');
+
+      const cell = await screen.findByRole('button', { name: /Mario.*Luigi.*Battlefield/i });
+      await user.click(cell);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-probe').textContent).not.toContain('claim='),
+      );
+      await waitFor(() => {
+        const table = within(listEl).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(13);
+      });
+    });
+
+    it('CR-01 (39.1-REVIEW): a form-strip/tournament set click AFTER the H2H door drops the stale claim', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub('/opponents/rival');
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      await user.click(within(slot).getByRole('link'));
+      await waitFor(() =>
+        expect(screen.getByTestId('location-probe').textContent).toContain('claim='),
+      );
+
+      const tick = document.querySelector('[data-slot="form-strip-tick"]') as HTMLElement;
+      expect(tick).not.toBeNull();
+      await user.click(tick);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-probe').textContent).toContain('event='),
+      );
+      expect(screen.getByTestId('location-probe').textContent).not.toContain('claim=');
+    });
+
     it('clicking the H2H door scrolls #opponent-hub-list into view', async () => {
       listMatches.mockResolvedValue(richFormNowFixture());
       const scrollSpy = vi.fn();
