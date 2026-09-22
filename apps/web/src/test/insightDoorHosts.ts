@@ -72,6 +72,17 @@ const SECONDARY_FILLER_OPPONENT = 91;
 
 const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
+const DAY = 24 * HOUR;
+
+/**
+ * WR-04 (39.1-REVIEW): every fixture below must count FEWER games than its
+ * host terminus's axis-only base — otherwise a claim that never resolves
+ * (the terminus's tolerant fallback) prints the same n and the reachability
+ * oracle's "exact n" passes vacuously. `FILLER_AGE_MS` places filler games
+ * well past every horizon's reach (D-15's 12-month scoped-recency bound
+ * included), so they sit in the terminus base but in no counted set.
+ */
+const FILLER_AGE_MS = 400 * DAY;
 
 const DEFAULT_HORIZON = 'last30';
 
@@ -203,18 +214,21 @@ function formNowOpponentHubFixture(
   opts: { matchType?: string; fighterId?: number; opponentId?: number } = {},
 ): InsightDoorHostFixture {
   const now = Date.now();
+  const shared = {
+    opponent: opponentTag,
+    ...(opts.matchType ? { matchType: opts.matchType } : {}),
+    ...(opts.fighterId != null ? { fighter_id: opts.fighterId } : {}),
+    ...(opts.opponentId != null ? { opponent_id: opts.opponentId } : {}),
+  };
   const matches = Array.from({ length: 10 }, (_, i) =>
-    mk({
-      id: `hub-fn-${i}`,
-      time: now - (10 - i) * HOUR,
-      opponent: opponentTag,
-      win: i % 3 !== 0,
-      ...(opts.matchType ? { matchType: opts.matchType } : {}),
-      ...(opts.fighterId != null ? { fighter_id: opts.fighterId } : {}),
-      ...(opts.opponentId != null ? { opponent_id: opts.opponentId } : {}),
-    }),
+    mk({ id: `hub-fn-${i}`, time: now - (10 - i) * HOUR, win: i % 3 !== 0, ...shared }),
   );
-  return { matches, primaryFighterId: MARIO_ID, opponentTag };
+  // WR-04: same tag / context / vs, far outside formNow's window — in the
+  // hub terminus base (13), never in the counted set (10).
+  const filler = Array.from({ length: 3 }, (_, i) =>
+    mk({ id: `hub-fn-old-${i}`, time: now - FILLER_AGE_MS - i * HOUR, win: true, ...shared }),
+  );
+  return { matches: [...matches, ...filler], primaryFighterId: MARIO_ID, opponentTag };
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +265,7 @@ function moverFixture(): Match[] {
 
 function lastEventRecapFixture(): Match[] {
   const now = Date.now();
-  return Array.from({ length: 5 }, (_, i) =>
+  const lastEvent = Array.from({ length: 5 }, (_, i) =>
     mk({
       id: `ler-${i}`,
       fighter_id: MARIO_ID,
@@ -261,6 +275,19 @@ function lastEventRecapFixture(): Match[] {
       eventName: 'Genesis 12',
     }),
   );
+  // WR-04: an EARLIER event for the same fighter — in the Fighter Analysis
+  // terminus base (8), never in the last event's counted set (5).
+  const earlierEvent = Array.from({ length: 3 }, (_, i) =>
+    mk({
+      id: `ler-prev-${i}`,
+      fighter_id: MARIO_ID,
+      opponent_id: LUIGI_ID,
+      time: now - 30 * DAY - (3 - i) * HOUR,
+      win: true,
+      eventName: 'Genesis 11',
+    }),
+  );
+  return [...earlierEvent, ...lastEvent];
 }
 
 /** A clear best (high win rate) + worst (low win rate) opponent pairing — drives bestMatchup/worstMatchup on any scope (character or account; accountScope's filter is the identity so `fighterId` is irrelevant there). */
@@ -304,7 +331,7 @@ function fighterRailHostFor(target: InsightTemplateId): InsightDoorHost {
 /** 45 mario games — clears `ROSTER_MAIN_MIN_GAMES` (20). Mirrors MatchDataPage.test.tsx's `richRosterFixture`. */
 function rosterCoreFixture(): Match[] {
   const now = Date.now();
-  return Array.from({ length: 45 }, (_, i) =>
+  const main = Array.from({ length: 45 }, (_, i) =>
     mk({
       id: `roster-${i}`,
       fighter_id: MARIO_ID,
@@ -312,6 +339,12 @@ function rosterCoreFixture(): Match[] {
       win: i % 2 === 0,
     }),
   );
+  // WR-04: a second fighter's games — in the Match Data terminus base (50),
+  // never in the main's counted set (45).
+  const other = Array.from({ length: 5 }, (_, i) =>
+    mk({ id: `roster-fox-${i}`, fighter_id: FOX_ID, time: now - (60 + i) * HOUR, win: true }),
+  );
+  return [...main, ...other];
 }
 
 /** 200 baseline (offline-tourney) + 30 recent (quickplay) games on two different fighters — a real fighter-share shift. Mirrors insightDoorSameN.test.tsx's `buildRosterShiftFixture`. */
@@ -417,16 +450,24 @@ function matchDataRailHostFor(target: MatchDataRailTemplateId): InsightDoorHost 
 // Trends reads rail fixtures (account scope).
 // ---------------------------------------------------------------------------
 
-/** 5 small-sample games — clears `ABSTENTION_FLOOR_GAMES` (3) but stays a real, asserting "thin" fact. Mirrors TrendsPage.test.tsx's `ratingCardFixture`. */
+/**
+ * WR-04 (39.1-REVIEW): 60 alternating prior games ~40 days ago, then a
+ * 30-game win run — ratingMove's unscoped `last30` window is the most recent
+ * 30 GAMES, so it counts exactly the run (30) while the Trends terminus base
+ * is all 90. The prior block must exceed 30 / `HORIZON_COLLAPSE_RATIO` (50)
+ * or the ladder reports `collapsed`, and the win run makes the rating move
+ * notable (`trend`, a card with a games door). (The former 5-game "thin"
+ * fixture counted every game on the account — the whole terminus base.)
+ */
 function ratingMoveFixture(): Match[] {
   const now = Date.now();
-  return [
-    mk({ id: 'rm-g1', time: now - 5 * MINUTE, win: true }),
-    mk({ id: 'rm-g2', time: now - 4 * MINUTE, win: false }),
-    mk({ id: 'rm-g3', time: now - 3 * MINUTE, win: true }),
-    mk({ id: 'rm-g4', time: now - 2 * MINUTE, win: false }),
-    mk({ id: 'rm-g5', time: now - 1 * MINUTE, win: true }),
-  ];
+  const prior = Array.from({ length: 60 }, (_, i) =>
+    mk({ id: `rm-prior-${i}`, time: now - 40 * DAY - i * MINUTE, win: i % 2 === 0 }),
+  );
+  const run = Array.from({ length: 30 }, (_, i) =>
+    mk({ id: `rm-run-${i}`, time: now - (30 - i) * MINUTE, win: true }),
+  );
+  return [...prior, ...run];
 }
 
 /** 8 wins then 5 losses, repeated 3x (39 games, 11 "spots" >= COHORT_MIN_SIDE_GAMES) — a real `trend` state. Mirrors `tiltCost.test.ts`'s `UNDERPERFORM_BLOCK`. */

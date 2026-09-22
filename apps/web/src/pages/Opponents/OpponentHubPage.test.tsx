@@ -654,18 +654,30 @@ describe('OpponentHubPage', () => {
   });
 
   describe('T-39.1-26 (gap closure): the H2H formNow door lands on exactly N', () => {
-    /** 10 games, tag "rival", spread across the last 10 hours — well within DEFAULT_HORIZON (last30). */
+    /**
+     * 10 games, tag "rival", spread across the last 10 hours — well within
+     * DEFAULT_HORIZON (last30) — plus (WR-04, 39.1-REVIEW) 3 games ~400 days
+     * old that formNow never counts. The door prints 10 while the hub
+     * terminus base is 13, so a claim that never resolves (the terminus's
+     * tolerant fallback) can no longer pass "lands on exactly N".
+     */
     function richFormNowFixture(overrides: Partial<Record<string, unknown>> = {}) {
       const now = Date.now();
-      return Array.from({ length: 10 }, (_, i) =>
-        makeMatch({
-          id: `f${i}`,
-          time: now - (10 - i) * 60 * 60 * 1000,
-          opponent: 'rival',
-          win: i % 3 !== 0,
-          ...overrides,
-        }),
-      );
+      const old = now - 400 * 24 * 60 * 60 * 1000;
+      return [
+        ...Array.from({ length: 10 }, (_, i) =>
+          makeMatch({
+            id: `f${i}`,
+            time: now - (10 - i) * 60 * 60 * 1000,
+            opponent: 'rival',
+            win: i % 3 !== 0,
+            ...overrides,
+          }),
+        ),
+        ...Array.from({ length: 3 }, (_, i) =>
+          makeMatch({ id: `old${i}`, time: old + i, opponent: 'rival', win: true, ...overrides }),
+        ),
+      ];
     }
 
     it('the H2H trend door narrows the hub terminus to exactly N, with the count in the summary', async () => {
@@ -786,16 +798,11 @@ describe('OpponentHubPage', () => {
     });
 
     it('CR-01 (39.1-REVIEW): a matrix cell clicked AFTER the H2H door drops the stale claim and lands on exactly the cell total', async () => {
-      // Non-vacuous by construction: 10 in-window games (the door's counted
-      // set) plus 3 games far outside DEFAULT_HORIZON, all Mario vs Luigi on
-      // Battlefield. The cell counts 13; the claim ∩ cell would show only 10.
-      const old = Date.now() - 400 * 24 * 60 * 60 * 1000;
-      listMatches.mockResolvedValue([
-        ...richFormNowFixture(),
-        ...Array.from({ length: 3 }, (_, i) =>
-          makeMatch({ id: `old${i}`, time: old + i, opponent: 'rival', win: true }),
-        ),
-      ]);
+      // Non-vacuous by construction: richFormNowFixture's 10 in-window games
+      // (the door's counted set) plus its 3 games far outside
+      // DEFAULT_HORIZON, all Mario vs Luigi on Battlefield. The cell counts
+      // 13; the claim ∩ cell would show only 10.
+      listMatches.mockResolvedValue(richFormNowFixture());
       HTMLElement.prototype.scrollIntoView = vi.fn();
       const user = userEvent.setup();
 

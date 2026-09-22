@@ -1,7 +1,8 @@
+import { useEffect } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { INSIGHT_TEMPLATES, type InsightTemplateId } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
@@ -129,6 +130,35 @@ function LocationProbe() {
   return <div data-testid="reachability-location-probe">{`${pathname}${search}`}</div>;
 }
 
+/**
+ * WR-04 (39.1-REVIEW): captures the router's own `navigate` so the oracle can
+ * re-point the followed door's `claim=` at an id no page resolves, and read
+ * what the terminus shows when the claim does NOT resolve (its axis-only
+ * fallback) — the discriminating control for every pair.
+ */
+let routerNavigate: ((to: string) => void) | null = null;
+function NavigateProbe() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    routerNavigate = (to: string) => void navigate(to);
+  }, [navigate]);
+  return null;
+}
+
+/**
+ * WR-04 (39.1-REVIEW): templates whose counted set is, BY CONSTRUCTION, the
+ * host terminus's whole base — no fixture can make the count discriminate
+ * for them, so only the count-independent verdict check below guards their
+ * claim wiring. `matchupOrPlayer` counts the whole pairing (`pairingMatches`)
+ * and the Matchups terminus lists that pairing; `volumeForm` pools every
+ * month into its high/low cohorts at account scope, and the Trends terminus
+ * lists the account.
+ */
+const WHOLE_BASE_TEMPLATES: ReadonlySet<InsightTemplateId> = new Set([
+  'matchupOrPlayer',
+  'volumeForm',
+]);
+
 function defaultProfile() {
   return {
     uid: 'test-uid',
@@ -149,6 +179,7 @@ function renderHostRoute(initialEntry: string) {
             <TooltipProvider>
               <ShellProfileSubscription />
               <LocationProbe />
+              <NavigateProbe />
               <Routes>
                 <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
                 <Route path="/coach/:clientId/fighter-analysis" element={<FighterAnalysisPage />} />
@@ -286,6 +317,44 @@ async function expectDoorLandsOnExactN(params: {
       const probe = screen.getByTestId('reachability-location-probe').textContent ?? '';
       expect(probe.startsWith(mountPrefix)).toBe(true);
     });
+  }
+
+  // WR-04 (39.1-REVIEW): the discriminating control. Re-point the followed
+  // door's claim at an id no page resolves and read the terminus's
+  // axis-only fallback. (1) The resolved summary must carry the claim
+  // verdict the fallback lacks — independent of the count. (2) The fixture
+  // must count FEWER games than the fallback shows, so "exact n" could not
+  // pass with a claim that never resolves (except WHOLE_BASE_TEMPLATES).
+  const resolvedFilters = (summaryParagraph?.textContent ?? '').replace(/^\d+ games? · /, '');
+  const followed = new URL(
+    screen.getByTestId('reachability-location-probe').textContent ?? '',
+    'http://probe',
+  );
+  const claim = followed.searchParams.get('claim');
+  expect(claim, 'the followed door wrote no claim= axis').not.toBeNull();
+  followed.searchParams.set('claim', `${claim}__unresolvable`);
+  act(() => routerNavigate!(`${followed.pathname}${followed.search}`));
+  await waitFor(() =>
+    expect(screen.getByTestId('reachability-location-probe').textContent).toContain(
+      '__unresolvable',
+    ),
+  );
+  const fallbackTerminus = document.getElementById(host.terminusAnchorId) as HTMLElement;
+  const fallbackCount = Number(
+    within(fallbackTerminus).getByRole('table').getAttribute('data-total-rows'),
+  );
+  const fallbackFilters = (
+    fallbackTerminus.querySelector('p.text-sm.text-muted-foreground')?.textContent ?? ''
+  ).replace(/^\d+ games? · /, '');
+  expect(
+    resolvedFilters,
+    `${templateId} on ${host.surface}: the resolved summary carries no claim verdict beyond the fallback's`,
+  ).not.toBe(fallbackFilters);
+  if (!WHOLE_BASE_TEMPLATES.has(templateId)) {
+    expect(
+      expectedCount,
+      `${templateId} on ${host.surface}: the fixture is non-discriminating — the door counts ${expectedCount}, and an unresolved claim's fallback also shows ${fallbackCount}`,
+    ).toBeLessThan(fallbackCount);
   }
 }
 
