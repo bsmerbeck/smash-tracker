@@ -348,6 +348,95 @@ describe('TrendsPage', () => {
     });
   });
 
+  describe('T-39.1-27 (gap closure): MixShift and VolumeForm doors land on exactly N', () => {
+    /**
+     * 70 old offline-tourney games (baseline) + 30 recent online-tourney
+     * games — a real, visible MixShift 'fact' state (WR-A02's own fixture
+     * shape), and a single-month VolumeForm 'locked' state (monthCount < 6)
+     * whose own `countedMatchIds` pools every game (100).
+     */
+    function mixShiftAndVolumeFormFixture() {
+      const now = Date.now();
+      const old = Array.from({ length: 70 }, (_, i) =>
+        makeMatch({
+          id: `old-${i}`,
+          time: now - (1000 - i) * 60_000,
+          win: true,
+          matchType: 'offline-tourney',
+        }),
+      );
+      const recent = Array.from({ length: 30 }, (_, i) =>
+        makeMatch({
+          id: `recent-${i}`,
+          time: now - (30 - i) * 60_000,
+          win: true,
+          matchType: 'online-tourney',
+        }),
+      );
+      return [...old, ...recent];
+    }
+
+    it("clicking the Match-type mix card's MixShift door narrows #games to exactly its own count, with the localized match-type label (never the raw enum) in the summary", async () => {
+      const matches = mixShiftAndVolumeFormFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Match-Type Mix');
+      const mixCard = screen
+        .getByText('Match-Type Mix')
+        .closest('[data-slot="card"]') as HTMLElement;
+      const mixShiftText = within(mixCard).getAllByText(/Online Tourney/)[0]!;
+      const mixShiftLine = mixShiftText.closest('[data-slot="insight-line"]') as HTMLElement;
+      const doorSlot = mixShiftLine.querySelector('[data-slot="insight-line-door"]') as HTMLElement;
+      expect(doorSlot).not.toBeNull();
+      const door = within(doorSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBe(30);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+      expect(summary).not.toBeNull();
+      expect(summary.textContent).toMatch(/Online Tourney/);
+      expect(summary.textContent).not.toMatch(/online-tourney/);
+    });
+
+    it("clicking the Match-type mix card's VolumeForm door narrows #games to exactly its own count", async () => {
+      const matches = mixShiftAndVolumeFormFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Match-Type Mix');
+      const mixCard = screen
+        .getByText('Match-Type Mix')
+        .closest('[data-slot="card"]') as HTMLElement;
+      const doorSlots = mixCard.querySelectorAll('[data-slot="insight-line-door"]');
+      expect(doorSlots.length).toBeGreaterThan(0);
+      // VolumeForm is the LAST insight line in this card (MixShift leads).
+      const volumeFormDoorSlot = doorSlots[doorSlots.length - 1] as HTMLElement;
+      const door = within(volumeFormDoorSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBe(100);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
