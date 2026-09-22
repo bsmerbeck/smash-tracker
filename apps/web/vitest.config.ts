@@ -32,11 +32,17 @@ export default defineConfig({
     // is the SAME plain-`node:test` shape as `guardLayoutCore.test.mjs` above
     // (its own `<verify>` command is `node --test`, not vitest) — excluded
     // for the identical reason.
+    //
+    // WR-B04 (39.1-REVIEW.md): `scripts/guardLayoutShutdown.test.mjs` is the
+    // same plain-`node:test` shape too — all three are wired into the root
+    // `test` script's `test:guards` step below (via `node --test`) instead,
+    // so vitest's own suite never touches them.
     exclude: [
       ...configDefaults.exclude,
       '**/*.guard.test.ts',
       'scripts/guardLayoutCore.test.mjs',
       'scripts/guardPaletteCore.test.mjs',
+      'scripts/guardLayoutShutdown.test.mjs',
     ],
     // GitHub Actions runners are ~3x slower than dev hardware; the heaviest
     // userEvent interaction tests (e.g. GspPage Quick Logger double-entry)
