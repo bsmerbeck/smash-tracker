@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run && pnpm run test:guards",
-    "test:guards": "node --test scripts/guardLayoutCore.test.mjs scripts/guardPaletteCore.test.mjs scripts/guardLayoutShutdown.test.mjs",
+    "test:guards": "node --test scripts/guardLayoutCore.test.mjs scripts/guardPaletteCore.test.mjs scripts/guardLayoutShutdown.test.mjs scripts/ciChartBundleGuard.test.mjs",
     "guard:perf-harness-build": "vitest run --config vitest.guard.config.ts",
     "guard:chart-bundle": "vitest run --config vitest.guard.config.ts src/components/charts/bundleIsolation.guard.test.ts",
     "guard:layout": "node scripts/guardLayout.mjs",
