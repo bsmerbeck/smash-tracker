@@ -8,7 +8,7 @@ import type { HorizonKey, Match } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { SpriteList } from '@/data/sprites';
 import { useFighterFormNow } from '../lib/useFighterFormNow';
-import { FighterHero } from './FighterHero';
+import { FighterHero, type FighterHeroDrillAxes } from './FighterHero';
 
 const mario = SpriteList.find((s) => s.id === 1)!;
 const luigi = SpriteList.find((s) => s.id === 10)!;
@@ -37,6 +37,7 @@ function HeroHarness(props: {
   horizon?: HorizonKey;
   setHorizon: (next: HorizonKey) => void;
   isLoading?: boolean;
+  onDrill: (axes: FighterHeroDrillAxes) => void;
 }) {
   const horizon = props.horizon ?? 'last30';
   const { insight, nowMs } = useFighterFormNow({
@@ -54,6 +55,7 @@ function HeroHarness(props: {
       isLoading={props.isLoading ?? false}
       formNowInsight={insight}
       nowMs={nowMs}
+      onDrill={props.onDrill}
     />
   );
 }
@@ -64,8 +66,10 @@ function renderHero(props: {
   horizon?: HorizonKey;
   setHorizon?: (next: HorizonKey) => void;
   isLoading?: boolean;
+  onDrill?: (axes: FighterHeroDrillAxes) => void;
 }) {
   const setHorizon = props.setHorizon ?? vi.fn();
+  const onDrill = props.onDrill ?? vi.fn();
   const result = render(
     <MemoryRouter>
       <HeroHarness
@@ -74,10 +78,11 @@ function renderHero(props: {
         horizon={props.horizon}
         setHorizon={setHorizon}
         isLoading={props.isLoading}
+        onDrill={onDrill}
       />
     </MemoryRouter>,
   );
-  return { setHorizon, ...result };
+  return { setHorizon, onDrill, ...result };
 }
 
 /** A large, mixed-event fixture — enough games to exceed both the form-strip and period-trend line bounds. */
@@ -252,6 +257,50 @@ describe('FighterHero', () => {
 
       renderHero({ fighterMatches: oldFixture, horizon: 'last90' });
       expect(screen.queryByRole('link', { name: /see the .* games?/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('T-39.1-25 (gap closure, SC6/TRND-04): the strip groups by real set id, not by event', () => {
+    it('groups games by their real start.gg set id, not by event (sets are no longer one-per-event)', () => {
+      const now = Date.now();
+      const eventName = 'Big House Online';
+      const matches: Match[] = [
+        makeMatch({
+          id: 'g1',
+          time: now - 3 * 60 * 60 * 1000,
+          win: true,
+          eventName,
+          externalId: 'sgg:100:g1',
+        }),
+        makeMatch({
+          id: 'g2',
+          time: now - 2 * 60 * 60 * 1000,
+          win: false,
+          eventName,
+          externalId: 'sgg:100:g2',
+        }),
+        makeMatch({
+          id: 'g3',
+          time: now - 1 * 60 * 60 * 1000,
+          win: true,
+          eventName,
+          externalId: 'sgg:200:g1',
+        }),
+      ];
+
+      renderHero({ fighterMatches: matches });
+
+      const eventRoot = document.querySelector('[data-slot="form-strip-event"]') as HTMLElement;
+      expect(eventRoot).toBeInTheDocument();
+      const setElements = eventRoot.querySelectorAll('[data-slot="form-strip-set"]');
+      // Two real start.gg sets (100 and 200) inside the SAME event — the
+      // old hand-rolled grouping collapsed every game of an event into ONE
+      // set; the fix must render exactly TWO set elements here.
+      expect(setElements.length).toBe(2);
+      const tickCounts = [...setElements]
+        .map((el) => el.querySelectorAll('[data-slot="form-strip-tick"]').length)
+        .sort();
+      expect(tickCounts).toEqual([1, 2]);
     });
   });
 
