@@ -206,7 +206,23 @@ const ENTRY_MODULEPRELOAD_BOUND = 26;
  * reviewable payload regression. See the top-of-file doc comment for the
  * re-baseline rule.
  */
-const EAGER_BYTES_BASELINE = 1_056_636;
+/**
+ * Re-baselined UP 1_056_636 → 1_126_712 on 2026-09-22 (owner decision, Phase 39.1
+ * close-out). Measured on a fresh `pnpm build` at HEAD after plans 39.1-01..24
+ * and the review-fix chain. Attribution from the per-wave build logs
+ * (39.1-ORCHESTRATOR-NOTES.md, Finding 5): the eager `i18n-*.js` chunk grew
+ * ~14 kB when the English insight vocabulary landed (39.1-11, 208 leaf keys);
+ * the eager shared-package chunk grew ~3 kB with the part of the insight
+ * engine the analytics pages pull through the `@smash-tracker/shared` barrel;
+ * the entry stylesheet grew ~2 kB (Tailwind scanning ~40 new components); the
+ * remaining ~50 kB predates the first measurement (2026-09-20, 1,094,696 B)
+ * and is unattributed between Phase 38 and 39.1's Track B. No forbidden
+ * library reached the eager graph at any point (this guard's other seven
+ * assertions stayed green throughout). Follow-ups the owner may still choose:
+ * lazy-load the `insights`/`analytics` locale namespaces (−~14 kB per locale)
+ * or split the insight engine out of the eager shared chunk.
+ */
+const EAGER_BYTES_BASELINE = 1_126_712;
 const EAGER_BYTES_TOLERANCE = 16 * 1024;
 
 let outDir: string;
