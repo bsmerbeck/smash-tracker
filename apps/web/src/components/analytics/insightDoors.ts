@@ -127,11 +127,18 @@ export function eventKeyOf(match: Match): string | undefined {
  * `subjectPath` would be misread as a pathless path and get a subject
  * prefix PREPENDED to it, navigating away from the current route entirely
  * (the opposite of "the same route with axes + #games").
+ *
+ * Plan 39.1-24 (gap closure, Task 2): `anchor` defaults to `'#games'` (every
+ * existing caller's behaviour, unchanged) but a host whose terminus lives
+ * under a differently-named scroll anchor (Matchups' `#matchup-table` —
+ * Phase 38's own drill-down tests reference that id, so it is never
+ * renamed) can override it. The anchor is purely a same-page scroll target;
+ * it never changes which games the resolver returns.
  */
-function buildGamesDoorHref(insight: Insight): string {
+function buildGamesDoorHref(insight: Insight, anchor = '#games'): string {
   const axes: Partial<DrillDownAxes> = { claimId: insight.id };
   const query = buildDrillDownSearch(axes).toString();
-  return query ? `?${query}#games` : '#games';
+  return query ? `?${query}${anchor}` : anchor;
 }
 
 const FALLBACK_ROUTE_BY_KIND: Partial<Record<InsightDoorKind, string>> = {
@@ -166,8 +173,10 @@ function buildFallbackDoor(
 export function buildInsightDoors(input: {
   insight: Insight;
   subjectPath: (personalPath: string) => string;
+  /** Plan 39.1-24 (gap closure, Task 2): overrides the games door's scroll anchor (default `'#games'`) — see `buildGamesDoorHref`'s doc comment. */
+  anchor?: string;
 }): InsightDoorDescriptor[] {
-  const { insight, subjectPath } = input;
+  const { insight, subjectPath, anchor } = input;
 
   const fallbackDoors = insight.doors
     .map((door) => buildFallbackDoor(door, subjectPath))
@@ -179,7 +188,7 @@ export function buildInsightDoors(input: {
 
   const gamesDoor: InsightDoorDescriptor = {
     kind: 'games',
-    href: buildGamesDoorHref(insight),
+    href: buildGamesDoorHref(insight, anchor),
     count: insight.countedMatchIds.length,
   };
   return [gamesDoor, ...fallbackDoors];

@@ -96,6 +96,28 @@ describe('buildInsightDoors', () => {
     expect(doors[0]!.href).toContain('#games');
   });
 
+  it('T-39.1-24 (gap closure, Task 2): an anchor override changes the games door scroll target without changing which games it resolves to', () => {
+    const insight = makeInsight({
+      templateId: 'matchupOrPlayer',
+      doors: [{ kind: 'opponent', axes: { fighter: 8, vs: 2 }, count: 3 }],
+      countedMatchIds: ['a', 'b'],
+    });
+    const defaultDoors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
+    expect(defaultDoors[0]!.href).toMatch(/#games$/);
+
+    const anchoredDoors = buildInsightDoors({
+      insight,
+      subjectPath: identitySubjectPath,
+      anchor: '#matchup-table',
+    });
+    expect(anchoredDoors[0]!.kind).toBe('games');
+    expect(anchoredDoors[0]!.count).toBe(2);
+    expect(anchoredDoors[0]!.href).toMatch(/#matchup-table$/);
+    expect(anchoredDoors[0]!.href).toContain('claim=matchupOrPlayer%3Aaccount%3Alast30');
+    // The fallback door is unaffected by the anchor override.
+    expect(anchoredDoors[1]!.kind).toBe('opponent');
+  });
+
   it('the games door href is a same-route relative link, never routed through subjectPath', () => {
     const subjectPath = vi.fn((p: string) => `/coach/xyz${p}`);
     const insight = makeInsight({ templateId: 'formNow', countedMatchIds: ['a'] });

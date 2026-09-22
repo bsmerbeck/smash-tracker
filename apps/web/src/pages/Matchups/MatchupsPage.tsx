@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Fighter } from '@smash-tracker/shared';
+import type { Fighter, Match } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
@@ -44,7 +45,11 @@ import {
   renderFormNowHead,
   useMatchupFormNow,
 } from './components/MatchupChart';
-import { MatchupOrPlayerCard } from './components/MatchupOrPlayerCard';
+import {
+  MatchupOrPlayerCard,
+  buildMatchupOrPlayerVerdict,
+  useMatchupOrPlayerInsight,
+} from './components/MatchupOrPlayerCard';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
 import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
@@ -212,6 +217,7 @@ export function MatchupsPage() {
       stageId: axesFromUrl.stageId,
       from: axesFromUrl.from,
       to: axesFromUrl.to,
+      claimId: axesFromUrl.claimId,
     }),
     [
       effectiveFighter?.id,
@@ -219,6 +225,7 @@ export function MatchupsPage() {
       axesFromUrl.stageId,
       axesFromUrl.from,
       axesFromUrl.to,
+      axesFromUrl.claimId,
     ],
   );
 
@@ -253,6 +260,37 @@ export function MatchupsPage() {
     [matchupMatches],
   );
   const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
+
+  // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE
+  // matchupOrPlayer insight this page shares with `MatchupOrPlayerCard`
+  // (which takes the result as a prop below) and this page's own
+  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`) — this
+  // template only ever produces a single insight per pairing, so the
+  // "shared array" the other three surfaces build is just this one entry.
+  // Called unconditionally, above every early return (Rules of Hooks),
+  // mirroring `useMatchupFormNow` just above.
+  const matchupOrPlayerInsight = useMatchupOrPlayerInsight({ matchupMatches, horizon });
+  const insightsForTerminus = useMemo(
+    () => (matchupOrPlayerInsight ? [matchupOrPlayerInsight] : []),
+    [matchupOrPlayerInsight],
+  );
+  const claimSummary =
+    axesFromUrl.claimId != null &&
+    matchupOrPlayerInsight != null &&
+    matchupOrPlayerInsight.id === axesFromUrl.claimId &&
+    effectiveOpponent != null
+      ? buildMatchupOrPlayerVerdict(matchupOrPlayerInsight, t, effectiveOpponent.id)
+      : undefined;
+  // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
+  // passed as `resolveClaim` would be a NEW reference every render, breaking
+  // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
+  // Memoized by `insightsForTerminus` alone — the only thing this closure
+  // actually reads.
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: insightsForTerminus, matches: ms }),
+    [insightsForTerminus],
+  );
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
@@ -467,7 +505,10 @@ export function MatchupsPage() {
               <PairingOpponents matchupMatches={matchupMatches} />
             </div>
             <div className="col-span-12 xl:order-4 xl:col-span-4">
-              <MatchupOrPlayerCard matchupMatches={matchupMatches} horizon={horizon} />
+              <MatchupOrPlayerCard
+                matchupMatches={matchupMatches}
+                insight={matchupOrPlayerInsight}
+              />
             </div>
           </PageGrid>
 
@@ -479,6 +520,8 @@ export function MatchupsPage() {
               <FilteredMatchList
                 matches={sortedMatchupMatches}
                 axes={terminusAxes}
+                resolveClaim={resolveClaimForTerminus}
+                claimSummary={claimSummary}
                 eventKeyForMatch={formStripEventKeyForMatch}
                 onClearFilters={() => setDrillDown({})}
                 showDelete
