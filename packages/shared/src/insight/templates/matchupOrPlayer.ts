@@ -85,6 +85,14 @@ function buildMatchupOrPlayerInsight(input: {
   const lossesByIdentity = new Map<string, number>();
   for (const match of losses) {
     const identity = resolve(match);
+    // Review finding CR-A04: apply the SAME exclusion `byIdentity` above
+    // already uses — an untagged manual game ('unknown') or a raw
+    // start.gg/parry.gg machine key with no bound human tag must never
+    // become `topIdentity` (and therefore never `{{opponent}}` in the
+    // rendered sentence).
+    if (identity === 'unknown' || identity.startsWith('sgg:') || identity.startsWith('pgg:')) {
+      continue;
+    }
     lossesByIdentity.set(identity, (lossesByIdentity.get(identity) ?? 0) + 1);
   }
 
@@ -142,11 +150,22 @@ function buildMatchupOrPlayerInsight(input: {
       overallLossRate < interval.lower || overallLossRate > interval.upper;
 
     if (contributorReachesMedium && overallOutsideInterval) {
+      // Review finding WR-A01: `types.ts` documents `deltaPoints` as non-null
+      // in EXACTLY the `trend`/`suggestion` states — this branch asserts
+      // `trend` but used to leave it `null`, silently zeroing this card's
+      // rank in `salience.ts`'s `scoreInsight` regardless of how lopsided the
+      // loss concentration is. The magnitude: how far the top contributor's
+      // SHARE of total losses sits above an even split across
+      // `distinctOpponents` (a value of 0 would mean losses are perfectly
+      // spread; higher means more concentrated on one player).
+      const lossShareDeltaPoints = Math.round(
+        (topLossCount / losses.length - 1 / distinctOpponents) * 100,
+      );
       return {
         ...commonFields,
         kind: 'inference',
         state: 'trend',
-        deltaPoints: null,
+        deltaPoints: lossShareDeltaPoints,
         copy: {
           key: `insights.${TEMPLATE_ID}.player`,
           values: {

@@ -112,6 +112,46 @@ describe('matchupOrPlayerTemplate (Task 3: player-driven vs matchup-driven)', ()
     expect(insights).toHaveLength(1);
     expect(insights[0]!.copy.key).toBe('insights.matchupOrPlayer.player');
     expect(insights[0]!.state).toBe('trend');
+    // Review finding WR-A01: `trend` must carry a real, non-null magnitude
+    // (types.ts's own documented invariant) — the top contributor supplies
+    // 8 of the pairing's 8 total losses (100%) against an even 1/3 split
+    // across 3 distinct opponents: round((8/8 - 1/3) * 100) = 67.
+    expect(insights[0]!.deltaPoints).toBe(67);
+  });
+
+  it('CR-A04: never names "unknown" (an untagged manual loss) as the player-driven contributor even when it has the single largest loss count', () => {
+    const matches: Match[] = [];
+    let i = 0;
+    // An untagged/manual identity resolves to 'unknown' and has the SINGLE
+    // largest loss count (10) — it must never become `topIdentity`.
+    for (let g = 0; g < 10; g += 1) {
+      matches.push(buildRow(`unknown-${i}`, i, '', false));
+      i += 1;
+    }
+    // The next-largest loss count among genuinely NAMED opponents.
+    for (let g = 0; g < 8; g += 1) {
+      matches.push(buildRow(`contrib-${i}`, i, 'bigloser', false));
+      i += 1;
+    }
+    for (let g = 0; g < 9; g += 1) {
+      matches.push(buildRow(`other1-${i}`, i, 'otherone', true));
+      i += 1;
+    }
+    for (let g = 0; g < 8; g += 1) {
+      matches.push(buildRow(`other2-${i}`, i, 'othertwo', true));
+      i += 1;
+    }
+    expect(matches.length).toBe(35);
+    const insights = matchupOrPlayerTemplate.build({
+      matches,
+      scope: pairingScope(),
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.copy.key).toBe('insights.matchupOrPlayer.player');
+    expect(insights[0]!.copy.values.opponent).toBe('bigloser');
+    expect(insights[0]!.copy.values.opponent).not.toBe('unknown');
   });
 
   it('returns the matchup-driven key and deltaPoints === null over an evenly-spread fixture', () => {
