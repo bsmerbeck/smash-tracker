@@ -131,7 +131,12 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
         />
       );
     }
-    const chipState = deltaChipStateFor(gate.state, gate.deltaPoints);
+    // WR-C01: `locked` (below the abstention floor) is a different honesty
+    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+    // omit the chip entirely rather than let it fall through to
+    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
+    const chipState =
+      gate.state === 'locked' ? null : deltaChipStateFor(gate.state, gate.deltaPoints);
     return (
       <StatFigure
         key={label}
@@ -139,7 +144,7 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
         value={`${Math.round(baseline.rate * 100)}%`}
         support={<Record wins={baseline.wins} losses={baseline.losses} cue="none" />}
         delta={
-          chipState === 'collapsed' ? null : (
+          chipState === null || chipState === 'collapsed' ? null : (
             <DeltaChip
               state={chipState}
               valueLabel={t(
@@ -174,31 +179,37 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
       return null;
     }
     const collapsed = gate.state === 'collapsed';
-    const chipState = deltaChipStateFor(gate.state, gate.deltaPoints);
+    // WR-C01: `locked` (below the abstention floor) is a different honesty
+    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+    // omit the chip entirely rather than let it fall through to
+    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
+    const chipState =
+      gate.state === 'locked' ? null : deltaChipStateFor(gate.state, gate.deltaPoints);
     const interval = wilsonInterval(recent.wins, recent.total);
     return {
       key,
       label,
       recentRecordNode: <Record wins={recent.wins} losses={recent.losses} cue="none" />,
-      deltaNode: collapsed ? null : (
-        <DeltaChip
-          state={chipState}
-          valueLabel={t(
-            chipState === 'up'
-              ? 'analytics.record.deltaUp'
-              : chipState === 'down'
-                ? 'analytics.record.deltaDown'
-                : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
-            { points: Math.abs(gate.deltaPoints ?? 0) },
-          )}
-          horizonOwnedByParent
-          ariaLabel={t('analytics.dumbbell.rowAria', {
-            label,
-            recentRecord: `${recent.wins}–${recent.losses}`,
-            baselineRecord: `${baseline.wins}–${baseline.losses}`,
-          })}
-        />
-      ),
+      deltaNode:
+        collapsed || chipState === null ? null : (
+          <DeltaChip
+            state={chipState}
+            valueLabel={t(
+              chipState === 'up'
+                ? 'analytics.record.deltaUp'
+                : chipState === 'down'
+                  ? 'analytics.record.deltaDown'
+                  : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
+              { points: Math.abs(gate.deltaPoints ?? 0) },
+            )}
+            horizonOwnedByParent
+            ariaLabel={t('analytics.dumbbell.rowAria', {
+              label,
+              recentRecord: `${recent.wins}–${recent.losses}`,
+              baselineRecord: `${baseline.wins}–${baseline.losses}`,
+            })}
+          />
+        ),
       baselineRate: baseline.rate * 100,
       recentRate: recent.rate * 100,
       recentRange: [interval.lower * 100, interval.upper * 100],

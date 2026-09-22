@@ -52,6 +52,17 @@ describe('MatchWinLossCard', () => {
     expect(screen.getByText('2–1')).toBeInTheDocument(); // bare record figure
   });
 
+  it('WR-C01: never mislabels the delta chip "Thin" when the recent window is locked below the abstention floor', () => {
+    // Both matches use the default `time: 1000` (near epoch) -> outside the
+    // 12-month D-15 scoped-recency bound relative to the real `Date.now()`,
+    // so `recent.total` = 0 < ABSTENTION_FLOOR_GAMES(3): the honesty
+    // ladder's `locked` state, a different tier than `thin`.
+    const matches = [makeMatch({ id: 'm1', win: true }), makeMatch({ id: 'm2', win: false })];
+    render(<MatchWinLossCard matchupMatches={matches} horizon="last30" />);
+
+    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+  });
+
   it('renders a full-width record bar and a mini strip of the recent window', () => {
     const { container } = render(
       <MatchWinLossCard matchupMatches={recentSequence(10)} horizon="last30" />,

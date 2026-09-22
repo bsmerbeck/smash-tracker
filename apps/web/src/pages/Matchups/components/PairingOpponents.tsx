@@ -60,7 +60,11 @@ function PairingOpponentRow({
     scoped: false,
     hasAction: false,
   });
-  const chipState = deltaChipStateFor(state, deltaPoints);
+  // WR-C01: `locked` (below the abstention floor) is a different honesty
+  // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+  // omit the chip entirely rather than let it fall through to
+  // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
+  const chipState = state === 'locked' ? null : deltaChipStateFor(state, deltaPoints);
   const tier = confidenceTierFor(record.total);
   const cueLabel = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: record.total }) : '';
 
@@ -93,7 +97,7 @@ function PairingOpponentRow({
       <span className="shrink-0 @max-[280px]/pairing-opponent-row:hidden" title={recordText}>
         <Record wins={record.wins} losses={record.losses} cue="none" />
       </span>
-      {chipState !== 'collapsed' && (
+      {chipState !== null && chipState !== 'collapsed' && (
         <span className="shrink-0">
           <DeltaChip
             state={chipState}

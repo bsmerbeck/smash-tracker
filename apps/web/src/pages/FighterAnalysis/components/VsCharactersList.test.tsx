@@ -97,6 +97,11 @@ describe('VsCharactersList', () => {
     expect(document.querySelector('[data-slot="dumbbell-baseline-tick"]')).toBeInTheDocument();
   });
 
+  it('WR-C01: a locked row (below abstention floor) never renders "Thin" in its delta chip', () => {
+    renderList(subFloorFixture());
+    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+  });
+
   it('states its sort order and window in the meta line', () => {
     renderList(manyOpponentsFixture());
     expect(screen.getByText(/most games first/i)).toBeInTheDocument();

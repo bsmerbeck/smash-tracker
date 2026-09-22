@@ -171,7 +171,12 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
   } else {
     const rmState = ratingMoveInsight?.state ?? 'locked';
     const rmDelta = ratingMoveInsight?.deltaPoints ?? null;
-    const chipState = deltaChipStateFor(rmState, rmDelta);
+    // WR-C01: `locked` (below the abstention floor) is a different honesty
+    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+    // omit the chip entirely rather than let it fall through to
+    // `deltaChipStateFor`'s `'none'` default, which reads "Thin" (mirrors
+    // `winRateFigure`'s own `state === 'locked'` guard above).
+    const chipState = rmState === 'locked' ? null : deltaChipStateFor(rmState, rmDelta);
     ratingFigure = (
       <StatFigure
         key="rating"
@@ -179,7 +184,7 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
         value={`${hero.currentRating.rating}`}
         unitSuffix={`±${hero.currentRating.rd}`}
         delta={
-          chipState === 'collapsed' ? null : (
+          chipState === null || chipState === 'collapsed' ? null : (
             <DeltaChip
               state={chipState}
               valueLabel={deltaValueLabel(chipState, rmDelta, t)}

@@ -72,6 +72,17 @@ describe('PairingOpponents (owner note 11, UIX-02, INS-05)', () => {
     expect(screen.getByRole('link', { name: /all 30 opponents/i })).toBeInTheDocument();
   });
 
+  it('WR-C01: a locked opponent row (below abstention floor) never renders "Thin" in its delta chip', () => {
+    // A single opponent tag with 2 recorded games -> record.total(2) <
+    // ABSTENTION_FLOOR_GAMES(3): the honesty ladder's `locked` state, a
+    // different tier than `thin`.
+    renderPairing([
+      makeMatch({ id: 'r1', opponent: 'rival', win: true }),
+      makeMatch({ id: 'r2', opponent: 'rival', win: false }),
+    ]);
+    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+  });
+
   it('every rendered row is a link with a non-empty accessible name', () => {
     renderPairing(opponentsFixture(8));
     for (const link of screen.getAllByRole('link')) {

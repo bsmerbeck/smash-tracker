@@ -75,10 +75,14 @@ export function MatchWinLossCard({
   });
   const recent = toRateValue(recentMatches);
   const { state, deltaPoints } = classify({ recent, baseline, scoped: true, hasAction: false });
-  const chipState = deltaChipStateFor(state, deltaPoints);
+  // WR-C01: `locked` (below the abstention floor) is a different honesty
+  // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+  // omit the chip entirely rather than let it fall through to
+  // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
+  const chipState = state === 'locked' ? null : deltaChipStateFor(state, deltaPoints);
 
   const deltaChip =
-    chipState === 'collapsed' ? null : (
+    chipState === null || chipState === 'collapsed' ? null : (
       <DeltaChip
         state={chipState}
         valueLabel={deltaValueLabel(chipState, deltaPoints, t)}

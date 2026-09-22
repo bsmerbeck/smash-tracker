@@ -123,7 +123,14 @@ export function VsCharactersList({ fighterId, fighterMatches }: VsCharactersList
     const name = fighterName(candidate.opponentFighterId);
     const subFloor = candidate.recentRate.total < ABSTENTION_FLOOR_GAMES;
     const collapsed = candidate.state === 'collapsed';
-    const chipState = deltaChipStateFor(candidate.state, candidate.deltaPoints);
+    // WR-C01: `locked` (below the abstention floor) is a different honesty
+    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
+    // omit the chip entirely rather than let it fall through to
+    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
+    const chipState =
+      candidate.state === 'locked'
+        ? null
+        : deltaChipStateFor(candidate.state, candidate.deltaPoints);
     const recordNode = subFloor ? (
       <Record
         wins={candidate.baselineRate.wins}
@@ -145,14 +152,19 @@ export function VsCharactersList({ fighterId, fighterMatches }: VsCharactersList
       key: String(candidate.opponentFighterId),
       label: name,
       recentRecordNode: recordNode,
-      deltaNode: collapsed ? null : (
-        <DeltaChip
-          state={chipState}
-          valueLabel={deltaValueLabel(chipState, candidate.deltaPoints, t)}
-          horizonOwnedByParent
-          ariaLabel={t('analytics.dumbbell.rowAria', { label: name, recentRecord, baselineRecord })}
-        />
-      ),
+      deltaNode:
+        collapsed || chipState === null ? null : (
+          <DeltaChip
+            state={chipState}
+            valueLabel={deltaValueLabel(chipState, candidate.deltaPoints, t)}
+            horizonOwnedByParent
+            ariaLabel={t('analytics.dumbbell.rowAria', {
+              label: name,
+              recentRecord,
+              baselineRecord,
+            })}
+          />
+        ),
       baselineRate: candidate.baselineRate.rate * 100,
       recentRate: candidate.recentRate.rate * 100,
       recentRange: [interval.lower * 100, interval.upper * 100],

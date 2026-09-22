@@ -90,6 +90,16 @@ describe('SettingComparison', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('WR-C01: never mislabels the online delta chip "Thin" when its recent window is locked below the abstention floor', () => {
+    // 2 online games -> `settingGap`'s own `onlineRecent` window (unscoped
+    // `last30`, so no 12-month bound, just "last min(total,30) games") is
+    // both games: recent.total(2) < ABSTENTION_FLOOR_GAMES(3), the honesty
+    // ladder's `locked` state — a different tier than `thin`. 8 offline
+    // games keeps the offline side out of the "no data" empty branch.
+    renderCard(buildSplit(2, 8, true));
+    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+  });
+
   it('abstains with 7 games on one side (below COHORT_MIN_SIDE_GAMES, the locked meter text)', () => {
     // 7 offline games is NOT zero (so `SettingGap` is `locked`, not `thin` —
     // `thin` triggers only when a side is literally empty; see

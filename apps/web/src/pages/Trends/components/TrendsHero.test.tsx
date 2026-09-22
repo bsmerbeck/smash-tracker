@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
 import { TrendsHero } from './TrendsHero';
 
@@ -78,6 +78,23 @@ describe('TrendsHero', () => {
 
     expect(screen.getByText('100%')).toBeInTheDocument();
     expect(screen.getByText(/Jan 2021/)).toBeInTheDocument();
+  });
+
+  it('WR-C01: never mislabels the rating delta chip "Thin" when ratingMove is locked below the abstention floor', () => {
+    // 2 total games -> `ratingMoveTemplate`'s own `resolveWindow` call is
+    // unscoped (no 12-month bound), so `last30` takes the last min(total,30)
+    // games — here, both of them: recent.total(2) < ABSTENTION_FLOOR_GAMES(3),
+    // the honesty ladder's `locked` state (a different tier than `thin`).
+    // `computeRatingHistory` still unlocks the hero's own rating figure at 1+
+    // game, so this exercises the `!hero.currentRating` FALSE branch.
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true }),
+      makeMatch({ id: '2', time: 2, win: false }),
+    ];
+    render(<TrendsHero matches={matches} horizon="last30" />);
+
+    const ratingCard = screen.getByText('Rating').closest('div') as HTMLElement;
+    expect(within(ratingCard).queryByText('Thin')).not.toBeInTheDocument();
   });
 
   it('renders the rating figure with a muted RD suffix once the rating curve unlocks', () => {

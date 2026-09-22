@@ -91,6 +91,23 @@ describe('HeroStats', () => {
     expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
   });
 
+  it('WR-C01: never mislabels the delta chip "Thin" when the recent window is locked below the abstention floor', () => {
+    // 2 total games -> recent.total(2) < ABSTENTION_FLOOR_GAMES(3): the
+    // honesty ladder's `locked` state, a different tier than `thin` (enough
+    // games to count but not to assert a direction).
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true }),
+      makeMatch({ id: '2', time: 2, win: false }),
+    ];
+
+    render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+
+    const overallCard = screen
+      .getByText('Overall Record')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
+  });
+
   it('renders the current streak in the form card', () => {
     const matches = [
       makeMatch({ id: '1', time: 1, win: false }),
