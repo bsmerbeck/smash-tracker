@@ -135,7 +135,12 @@
       "showMore_one": "Afficher {{count}} de plus",
       "showMore_other": "Afficher {{count}} de plus",
       "showingOf_one": "{{shown}} partie affichée sur {{count}}",
-      "showingOf_other": "{{shown}} parties affichées sur {{count}}"
+      "showingOf_other": "{{shown}} parties affichées sur {{count}}",
+      "eventSummary": {
+        "set": "Set vs {{opponent}} à {{event}}",
+        "setUnnamed": "Set vs {{opponent}}",
+        "game": "Match vs {{opponent}} le {{date}}"
+      }
     },
     "pips": {
       "empty": "Pas encore de matchs.",

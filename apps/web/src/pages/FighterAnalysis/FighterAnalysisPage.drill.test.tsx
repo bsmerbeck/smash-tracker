@@ -333,6 +333,24 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     expect(search.get('event')).toBe(`evset${SETS_COUNT - 1}`);
   });
 
+  it('WR-03 (39.1-REVIEW): a set drill summary names the set in words, never the raw set id', async () => {
+    const user = userEvent.setup();
+    renderFighterAnalysisAt('/fighter-analysis');
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+
+    const stripRoot = document.querySelector('[data-slot="fighter-hero-strip"]') as HTMLElement;
+    const allSets = stripRoot.querySelectorAll('[data-slot="form-strip-set"]');
+    await user.click(allSets[allSets.length - 1] as HTMLElement);
+
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    const gamesCard = document.getElementById('games') as HTMLElement;
+    const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground')?.textContent ?? '';
+    expect(summary).toMatch(new RegExp(`^${GAMES_PER_SET} games · `));
+    expect(summary).toContain(`Event ${SETS_COUNT - 1}`);
+    expect(summary).toContain('Set vs');
+    expect(summary).not.toContain(`evset${SETS_COUNT - 1}`);
+  });
+
   it('keyboard parity: focusing a set and pressing Enter drills identically to a click', async () => {
     const user = userEvent.setup();
     renderFighterAnalysisAt('/fighter-analysis');

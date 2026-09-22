@@ -32,6 +32,7 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { cn } from '@/lib/utils';
+import { describeEventAxisGames } from '@/lib/eventAxisSummary';
 import { matchesDrillDown, type DrillDownAxes, type EventKeyResolver } from '@/lib/drillDownParams';
 
 /**
@@ -181,8 +182,17 @@ function hasActiveAxis(axes: DrillDownAxes): boolean {
   );
 }
 
-/** Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). `claimSummary` (the insight's label-and-statement head) leads when a claim axis is present (plan 39.1-19). */
-function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction, claimSummary?: string): string {
+/**
+ * Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). `claimSummary` (the insight's label-and-statement head) leads when a claim axis is present (plan 39.1-19).
+ *
+ * WR-03 (39.1-REVIEW): the `event` axis is an opaque host key (a set id, `game:<matchId>`, an anchor or period key) and is never printed — `eventGames` (the games the list resolved to) are described in words instead (`describeEventAxisGames`).
+ */
+function buildFilterSummaryText(
+  axes: DrillDownAxes,
+  t: TFunction,
+  eventGames: Match[],
+  claimSummary?: string,
+): string {
   const parts: string[] = [];
   if (axes.claimId != null && claimSummary) {
     parts.push(claimSummary);
@@ -200,7 +210,7 @@ function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction, claimSummary?
     parts.push(stagesById.get(axes.stageId)?.name ?? t('common.unknown'));
   }
   if (axes.eventKey != null) {
-    parts.push(axes.eventKey);
+    parts.push(describeEventAxisGames(eventGames, t) ?? t('common.unknown'));
   }
   if (axes.from != null || axes.to != null) {
     const from = axes.from != null ? new Date(axes.from).toLocaleDateString() : null;
@@ -454,7 +464,12 @@ export function FilteredMatchList({
           <p className="text-sm text-muted-foreground">
             {t('shared.filteredMatchList.summary', {
               count: narrowedMatches.length,
-              filters: buildFilterSummaryText(axes, t, claimResolvedOk ? claimSummary : undefined),
+              filters: buildFilterSummaryText(
+                axes,
+                t,
+                narrowedMatches,
+                claimResolvedOk ? claimSummary : undefined,
+              ),
             })}
           </p>
           {onClearFilters && (
