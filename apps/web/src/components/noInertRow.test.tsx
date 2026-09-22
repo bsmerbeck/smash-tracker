@@ -493,11 +493,18 @@ const SURFACES: Surface[] = [
         makeMatch({ id: `cap-${i}`, time: i, win: true }),
       );
       const result = withRouterAndQuery(<FilteredMatchList matches={matches} axes={{}} />);
-      let button = within(result.container).queryByRole('button', { name: /show \d+ more/i });
+      // WR-05 (39.1-REVIEW): `getByRole` first, so a renamed paging label
+      // fails loudly instead of skipping the loop, and the row count after
+      // the loop proves the whole tail mounted — otherwise the shared checks
+      // would silently run against only the 100-row head.
+      let button: HTMLElement | null = within(result.container).getByRole('button', {
+        name: /show \d+ more/i,
+      });
       while (button) {
         fireEvent.click(button);
         button = within(result.container).queryByRole('button', { name: /show \d+ more/i });
       }
+      expect(dataRows(result.container)).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 5);
       return result;
     },
     rows: (result) => dataRows(result.container),
