@@ -37,6 +37,9 @@ import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
 
+/** WR-C06 (39.1-REVIEW.md): a stable id the show-all/show-fewer toggle's `aria-controls` points at — this component mounts once per `FighterAnalysisPage`, so a single static id is safe. */
+const STAGE_GUIDE_TABLE_ID = 'matchup-stage-guide-table';
+
 /**
  * Phase 38-06 (ADV-03): this card's only host is `FighterAnalysisPage.tsx`
  * (own-subject, `MemoryRouter`-wrapped test harness) — unlike
@@ -158,7 +161,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
           </p>
         ) : (
           <>
-            <Table>
+            <Table id={STAGE_GUIDE_TABLE_ID}>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('matchups.opponent')}</TableHead>
@@ -219,6 +222,8 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                 variant="link"
                 size="sm"
                 onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                aria-controls={STAGE_GUIDE_TABLE_ID}
               >
                 {expanded
                   ? t('analytics.list.showFewer')

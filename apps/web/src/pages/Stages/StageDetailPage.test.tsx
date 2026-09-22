@@ -409,6 +409,45 @@ describe('StageDetailPage', () => {
     expect(within(byCharacterCard).getAllByRole('row')).toHaveLength(8);
   });
 
+  it('WR-C06 (39.1-REVIEW.md): both show-all/show-fewer toggles carry aria-expanded and aria-controls pointing at their own table', async () => {
+    listMatches.mockResolvedValue(
+      Array.from({ length: 9 }, (_, i) =>
+        makeMatch({ id: `m${i}`, time: i + 1, win: true, opponent: `opponent${i}` }),
+      ),
+    );
+    renderStageAt('/stages/1');
+
+    await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
+    const byOpponentCard = screen
+      .getByText('By Opponent')
+      .closest('[data-slot="card"]') as HTMLElement;
+    const byCharacterCard = screen
+      .getByText('By Character')
+      .closest('[data-slot="card"]') as HTMLElement;
+
+    const byOpponentToggle = within(byOpponentCard).getByRole('button', { name: /show all/i });
+    expect(byOpponentToggle).toHaveAttribute('aria-expanded', 'false');
+    const byOpponentControlsId = byOpponentToggle.getAttribute('aria-controls');
+    expect(byOpponentControlsId).toBeTruthy();
+    expect(document.getElementById(byOpponentControlsId!)).toBe(
+      within(byOpponentCard).getByRole('table'),
+    );
+
+    // Only one table qualifies for a show-all toggle in this fixture (9
+    // opponent rows > cap; the by-character split stays under its own cap),
+    // but the ids must still be DISTINCT so a future second toggle can never
+    // collide.
+    const byCharacterTable = within(byCharacterCard).getByRole('table');
+    expect(byCharacterTable.id).toBeTruthy();
+    expect(byCharacterTable.id).not.toBe(byOpponentControlsId);
+
+    await userEvent.setup().click(byOpponentToggle);
+    expect(within(byOpponentCard).getByRole('button', { name: /show fewer/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
   describe('WR-02 (38-REVIEW-FIX): trend click-to-filter parity with the hub', () => {
     it('wires a working onSelectPoint that writes the clicked anchor to the URL and re-scopes the page', async () => {
       listMatches.mockResolvedValue([

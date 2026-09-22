@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { MatchupStageGuide } from './MatchupStageGuide';
@@ -80,5 +80,35 @@ describe('MatchupStageGuide', () => {
     // Header + at most 8 capped body rows.
     expect(rows.length).toBeLessThanOrEqual(9);
     expect(screen.getByRole('button', { name: /show all/i })).toBeInTheDocument();
+  });
+
+  it('WR-C06 (39.1-REVIEW.md): the show-all/show-fewer toggle carries aria-expanded and aria-controls pointing at the table', () => {
+    const matches: Match[] = [];
+    for (let opponentId = 20; opponentId < 32; opponentId++) {
+      for (let g = 0; g < 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `m${opponentId}-${g}`,
+            time: opponentId * 10 + g,
+            win: true,
+            opponent_id: opponentId,
+          }),
+        );
+      }
+    }
+    renderGuide(matches);
+    const toggle = screen.getByRole('button', { name: /show all/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const controlsId = toggle.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    const table = document.getElementById(controlsId!);
+    expect(table).not.toBeNull();
+    expect(table?.tagName.toLowerCase()).toBe('table');
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: /show fewer/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -67,6 +67,12 @@ export function OpponentTable({
   // semantics stay a real `<table>` (this component's own row/cell-count
   // tests depend on it) rather than `BoundedList`'s own `<ul>`.
   const [expanded, setExpanded] = useState(false);
+  // WR-C06 (39.1-REVIEW.md): `useId()`, not a hardcoded string — this
+  // component has TWO hosts (`FighterAnalysisPage.tsx`'s own-subject render
+  // and Scout's third-party render) and could in principle mount more than
+  // once in one tree, so the show-all toggle's `aria-controls` target needs
+  // a per-instance-unique id.
+  const tableId = useId();
   const visibleRows = expanded ? rows : rows.slice(0, LIST_CAP);
   const hasMore = rows.length > LIST_CAP;
 
@@ -80,7 +86,7 @@ export function OpponentTable({
           <p className="text-sm text-muted-foreground">{t('fighterAnalysis.opponents.empty')}</p>
         ) : (
           <>
-            <Table>
+            <Table id={tableId}>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('matchups.opponent')}</TableHead>
@@ -128,6 +134,8 @@ export function OpponentTable({
                 variant="link"
                 size="sm"
                 onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                aria-controls={tableId}
               >
                 {expanded
                   ? t('analytics.list.showFewer')

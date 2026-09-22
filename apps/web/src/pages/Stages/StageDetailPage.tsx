@@ -58,6 +58,10 @@ import {
 
 const STAGE_IDS = new Set(stagesById.keys());
 
+/** WR-C06 (39.1-REVIEW.md): stable ids the two show-all/show-fewer toggles' `aria-controls` point at — this page mounts once per route, so static ids are safe. */
+const BY_OPPONENT_TABLE_ID = 'stage-by-opponent-table';
+const BY_CHARACTER_TABLE_ID = 'stage-by-character-table';
+
 /**
  * Base-10 parses `raw`, then applies an integer-and-finite guard, then
  * rejects any value `Number.parseInt` would have silently truncated (e.g.
@@ -401,7 +405,7 @@ export function StageDetailPage() {
               <CardTitle>{t('stages.detail.byOpponent')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table id={BY_OPPONENT_TABLE_ID}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('matchups.opponent')}</TableHead>
@@ -448,6 +452,8 @@ export function StageDetailPage() {
                   variant="link"
                   size="sm"
                   onClick={() => setByOpponentExpanded((prev) => !prev)}
+                  aria-expanded={byOpponentExpanded}
+                  aria-controls={BY_OPPONENT_TABLE_ID}
                 >
                   {byOpponentExpanded
                     ? t('analytics.list.showFewer')
@@ -462,7 +468,7 @@ export function StageDetailPage() {
               <CardTitle>{t('stages.detail.byCharacter')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
+              <Table id={BY_CHARACTER_TABLE_ID}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
@@ -528,6 +534,8 @@ export function StageDetailPage() {
                   variant="link"
                   size="sm"
                   onClick={() => setByCharacterExpanded((prev) => !prev)}
+                  aria-expanded={byCharacterExpanded}
+                  aria-controls={BY_CHARACTER_TABLE_ID}
                 >
                   {byCharacterExpanded
                     ? t('analytics.list.showFewer')

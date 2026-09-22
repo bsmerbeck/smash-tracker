@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { OpponentTable, type OpponentTableRow } from './OpponentTable';
 
@@ -83,6 +83,26 @@ describe('OpponentTable', () => {
     const dataRows = screen.getAllByRole('row').length - 1; // minus header
     expect(dataRows).toBeLessThanOrEqual(8);
     expect(screen.getByRole('button', { name: /show all/i })).toBeInTheDocument();
+  });
+
+  it('WR-C06 (39.1-REVIEW.md): the show-all/show-fewer toggle carries aria-expanded and aria-controls pointing at the table', () => {
+    const rows: OpponentTableRow[] = Array.from({ length: 12 }, (_, i) =>
+      makeRow({ key: `opp${i}`, displayLabel: `opp${i}`, total: 12 - i }),
+    );
+    render(<OpponentTable rows={rows} />);
+    const toggle = screen.getByRole('button', { name: /show all/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const controlsId = toggle.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    const table = document.getElementById(controlsId!);
+    expect(table).not.toBeNull();
+    expect(table?.tagName.toLowerCase()).toBe('table');
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: /show fewer/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 
   it('preserves the row order given by the caller (no internal re-sort)', () => {
