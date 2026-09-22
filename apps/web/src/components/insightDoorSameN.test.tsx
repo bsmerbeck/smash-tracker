@@ -24,6 +24,7 @@ import {
   eventKeyOf,
   type InsightDoorDescriptor,
 } from './analytics/insightDoors';
+import { INSIGHT_DOOR_HOSTS } from '@/test/insightDoorHosts';
 
 /**
  * Plan 39.1-19 Task 3, closed out by plan 39.1-22 (gap closure, orchestrator
@@ -271,6 +272,29 @@ describe('registry coverage', () => {
   it("FIXTURES covers exactly the registry's 17 templates", () => {
     expect(INSIGHT_TEMPLATES).toHaveLength(17);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
+  });
+
+  /**
+   * Plan 39.1-29 (gap closure, SC4/INS-04): this file's own per-template
+   * guard proves the DOOR is exact once a `FilteredMatchList` is rendered
+   * directly at the door's own href — Finding 10 showed that a library-level
+   * guard nothing renders through a real page proves nothing. This case
+   * closes that gap AT THE SOURCE: every registered template must have at
+   * least one entry in `INSIGHT_DOOR_HOSTS` (imported from
+   * `@/test/insightDoorHosts`, the page-level reachability suite's own
+   * registry, `insightDoorReachability.test.tsx`) — so a future template
+   * that ships with no live host fails HERE, in the library guard, not only
+   * in the (much slower) page suite.
+   */
+  it('every registered template has at least one live host in INSIGHT_DOOR_HOSTS', () => {
+    for (const template of INSIGHT_TEMPLATES) {
+      const hosts = INSIGHT_DOOR_HOSTS[template.id];
+      expect(hosts, `${template.id} is missing from INSIGHT_DOOR_HOSTS`).toBeDefined();
+      expect(
+        hosts.length,
+        `${template.id} has zero live hosts in INSIGHT_DOOR_HOSTS`,
+      ).toBeGreaterThan(0);
+    }
   });
 });
 

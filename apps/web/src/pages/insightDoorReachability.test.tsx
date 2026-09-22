@@ -17,6 +17,9 @@ import { OpponentHubPage } from './Opponents/OpponentHubPage';
 import { useProfile } from '@/hooks/useProfile';
 import {
   INSIGHT_DOOR_HOSTS,
+  matchupsChartUrlSeededFixture,
+  matchupsCardUrlSeededFixture,
+  opponentHubContextFixture,
   type InsightDoorHost,
   type InsightDoorHostFixture,
 } from '@/test/insightDoorHosts';
@@ -321,4 +324,83 @@ describe('T-39.1-29: formNow on the Fighter hero (personal) — the round trip',
     const host = INSIGHT_DOOR_HOSTS.formNow[0]!;
     await expectDoorLandsOnExactN({ templateId: 'formNow', host });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Every (template, host) pair — personal mount. 23 pairs (see must_haves).
+// ---------------------------------------------------------------------------
+
+const ALL_PAIRS: { templateId: InsightTemplateId; host: InsightDoorHost }[] = Object.entries(
+  INSIGHT_DOOR_HOSTS,
+).flatMap(([templateId, hosts]) =>
+  hosts.map((host) => ({ templateId: templateId as InsightTemplateId, host })),
+);
+
+describe.each(ALL_PAIRS.map((p) => [`${p.templateId} on ${p.host.surface}`, p] as const))(
+  '%s (personal)',
+  (_label, { templateId, host }) => {
+    it('the counted-games door lands on exactly N', async () => {
+      await expectDoorLandsOnExactN({ templateId, host });
+    }, 20_000);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Coach / workspace mounts — one representative template per coach-mountable
+// surface, both `/coach/:clientId` and `/workspace/:tenantId` (12 cases).
+// ---------------------------------------------------------------------------
+
+const COACH_MOUNTABLE_REPRESENTATIVES: { templateId: InsightTemplateId; host: InsightDoorHost }[] =
+  [
+    { templateId: 'formNow', host: INSIGHT_DOOR_HOSTS.formNow[0]! }, // fighter-hero
+    { templateId: 'characterMovers', host: INSIGHT_DOOR_HOSTS.characterMovers[0]! }, // fighter-rail
+    { templateId: 'rosterCore', host: INSIGHT_DOOR_HOSTS.rosterCore[0]! }, // match-data-rail
+    { templateId: 'formNow', host: INSIGHT_DOOR_HOSTS.formNow[1]! }, // matchups-chart
+    { templateId: 'matchupOrPlayer', host: INSIGHT_DOOR_HOSTS.matchupOrPlayer[0]! }, // matchups-card
+    { templateId: 'formNow', host: INSIGHT_DOOR_HOSTS.formNow[2]! }, // opponent-hub-trend
+  ];
+
+describe.each(
+  COACH_MOUNTABLE_REPRESENTATIVES.flatMap(({ templateId, host }) => [
+    ['coach', templateId, host.surface, host, '/coach/test-client', 'test-client'] as const,
+    ['workspace', templateId, host.surface, host, '/workspace/test-tenant', 'test-tenant'] as const,
+  ]),
+)('%s mount: %s on %s', (_family, templateId, _surface, host, mountPrefix, clientId) => {
+  it('the counted-games door lands on exactly N and the mount prefix survives the click', async () => {
+    await expectDoorLandsOnExactN({ templateId, host, mountPrefix, clientId });
+  }, 20_000);
+});
+
+// ---------------------------------------------------------------------------
+// Context-carrying variants: a URL-seeded pairing differing from the
+// persisted one (both Matchups hosts), and a vs+context-narrowed hub.
+// ---------------------------------------------------------------------------
+
+describe('context-carrying variants', () => {
+  it('matchups-chart under a URL-seeded pairing still lands on exactly N', async () => {
+    const host = INSIGHT_DOOR_HOSTS.formNow[1]!;
+    await expectDoorLandsOnExactN({
+      templateId: 'formNow',
+      host,
+      fixtureOverride: matchupsChartUrlSeededFixture(),
+    });
+  }, 20_000);
+
+  it('matchups-card (matchupOrPlayer) under a URL-seeded pairing still lands on exactly N', async () => {
+    const host = INSIGHT_DOOR_HOSTS.matchupOrPlayer[0]!;
+    await expectDoorLandsOnExactN({
+      templateId: 'matchupOrPlayer',
+      host,
+      fixtureOverride: matchupsCardUrlSeededFixture(),
+    });
+  }, 20_000);
+
+  it('opponent-hub-trend under a vs+context-narrowed URL still lands on exactly N', async () => {
+    const host = INSIGHT_DOOR_HOSTS.formNow[2]!;
+    await expectDoorLandsOnExactN({
+      templateId: 'formNow',
+      host,
+      fixtureOverride: opponentHubContextFixture(),
+    });
+  }, 20_000);
 });
