@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, InsightScope, Match } from '@smash-tracker/shared';
@@ -13,12 +14,14 @@ import {
   type InsightRailCard,
   type InsightRailShape,
 } from '@/components/analytics/InsightRail';
-import { InsightCard } from '@/components/analytics/InsightCard';
+import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatPercent } from '@/lib/formatPercent';
 
 /**
@@ -70,6 +73,48 @@ function copyValuesWithEntity(
   return { entity: fighterName, ...insight.copy.values };
 }
 
+/**
+ * Plan 39.1-24 (gap closure, orchestrator Finding 8): exported so a host page
+ * can build the SAME rendered verdict sentence this rail uses on a card, for
+ * `FilteredMatchList`'s `claimSummary` prop — without re-deriving the copy
+ * logic a second time (`FighterAnalysisPage.tsx` imports this directly).
+ */
+export function buildInsightVerdict(insight: Insight, t: TFunction, fighterName: string): string {
+  return t(insight.copy.key, copyValuesWithEntity(insight, fighterName));
+}
+
+/**
+ * Plan 39.1-24: this rail's own door-label mapping — duplicated per this
+ * file's established small-helper-duplication convention (see
+ * `claimChipKindFor` above). `buildInsightDoors` already orders the counted-
+ * games door first, so this only renders and caps at 3 (`InsightCardDoors`'s
+ * own type already enforces the cap; the `.slice(0, 3)` below is a defensive
+ * belt-and-suspenders match, never relied on alone).
+ */
+function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
+  if (door.kind === 'games') return t('insights.door.seeGames', { count: door.count });
+  if (door.kind === 'matchup') return t('insights.door.openMatchup');
+  if (door.kind === 'opponent') return t('insights.door.openOpponent');
+  return t('insights.door.openMatchup');
+}
+
+function buildDoorNodes(
+  insight: Insight,
+  t: TFunction,
+  subjectPath: (personalPath: string) => string,
+): InsightCardDoors | undefined {
+  const descriptors = buildInsightDoors({ insight, subjectPath }).slice(0, 3);
+  if (descriptors.length === 0) return undefined;
+  const nodes = descriptors.map((door) => (
+    <Link key={door.kind} to={door.href}>
+      {insightDoorLabel(door, t)}
+    </Link>
+  ));
+  if (nodes.length === 1) return [nodes[0]!] as const;
+  if (nodes.length === 2) return [nodes[0]!, nodes[1]!] as const;
+  return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
+}
+
 function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
@@ -118,11 +163,13 @@ function insightToRailCard(
   t: TFunction,
   fighterName: string,
   locale: string,
+  subjectPath: (personalPath: string) => string,
 ): InsightRailCard {
   const chipKind = claimChipKindFor(insight.kind);
-  const verdict = t(insight.copy.key, copyValuesWithEntity(insight, fighterName));
+  const verdict = buildInsightVerdict(insight, t, fighterName);
   const evidence = buildEvidenceLine(insight, t, locale);
   const span = buildSpan(insight, t);
+  const doors = buildDoorNodes(insight, t, subjectPath);
   return {
     id: insight.id,
     render: ({ onDismiss }) => (
@@ -133,6 +180,7 @@ function insightToRailCard(
         verdict={verdict}
         evidence={evidence}
         span={span}
+        doors={doors}
         onDismiss={onDismiss}
         dismissLabel={t('insights.rail.dismiss')}
       />
@@ -174,36 +222,50 @@ function buildUnlocksNextCard(
   };
 }
 
-export interface FighterInsightRailProps {
-  fighterId: number;
+export interface UseFighterInsightsInput {
+  /** `undefined` before a fighter is resolved on the host page — resolves to zero insights, never a throw. */
+  fighterId: number | undefined;
   fighterMatches: Match[];
   horizon: HorizonKey;
 }
 
+export interface UseFighterInsightsResult {
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+}
+
 /**
- * The freed right side of the Fighter Analysis hero (T-39.1-14-02, D-12,
- * D-14): the closed rail primitive (plan 39.1-07) wired to the real
- * engine, scoped to ONE fighter — `CharacterMovers`, `LastEventRecap` and
- * `RivalMovers` (FormNow lives in the hero). Every figure reads through the
- * subject-scoped `fighterId`/`fighterMatches` the host already resolved
- * (coach-parity: this component itself never resolves a uid).
+ * Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):
+ * exported so a host page calls this ONCE and hands the result DOWN to both
+ * `FighterInsightRail` (which renders the cards/doors) and its own
+ * `FilteredMatchList` terminus (whose `resolveClaim` needs the SAME
+ * `Insight[]` a rendered door's `claim=<id>` was built from) — "one insight
+ * computation per page", never a second independent build of the same
+ * array. `FighterInsightRail` itself no longer computes `insights`; it takes
+ * the result as props.
  */
-export function FighterInsightRail({
+export function useFighterInsights({
   fighterId,
   fighterMatches,
   horizon,
-}: FighterInsightRailProps) {
-  const { t, i18n } = useTranslation();
-  const fighterName = useFighterName(fighterId);
+}: UseFighterInsightsInput): UseFighterInsightsResult {
   const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
   // one-time-read escape hatch (see `MatchupChart.tsx`, `useHorizon.ts`).
   const [nowMs] = useState(() => Date.now());
 
-  const scope = useMemo(() => buildFighterScope(fighterId), [fighterId]);
+  const scope = useMemo(
+    () => (fighterId != null ? buildFighterScope(fighterId) : null),
+    [fighterId],
+  );
 
   const insights = useMemo(() => {
+    if (scope == null) {
+      return [];
+    }
     const built: Insight[] = [];
     for (const template of RAIL_TEMPLATES) {
       try {
@@ -224,6 +286,39 @@ export function FighterInsightRail({
     return built;
   }, [fighterMatches, scope, horizon, nowMs, dismissedIds]);
 
+  return { insights, dismissedIds, dismiss, restoreAll };
+}
+
+export interface FighterInsightRailProps {
+  fighterId: number;
+  /** The one shared computation — see `useFighterInsights` above. */
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+  horizon: HorizonKey;
+}
+
+/**
+ * The freed right side of the Fighter Analysis hero (T-39.1-14-02, D-12,
+ * D-14): the closed rail primitive (plan 39.1-07) wired to the real
+ * engine, scoped to ONE fighter — `CharacterMovers`, `LastEventRecap` and
+ * `RivalMovers` (FormNow lives in the hero). Every figure reads through the
+ * subject-scoped `fighterId`/`insights` the host already resolved
+ * (coach-parity: this component itself never resolves a uid).
+ */
+export function FighterInsightRail({
+  fighterId,
+  insights,
+  dismissedIds,
+  dismiss,
+  restoreAll,
+  horizon,
+}: FighterInsightRailProps) {
+  const { t, i18n } = useTranslation();
+  const fighterName = useFighterName(fighterId);
+  const subjectPath = useSubjectPath();
+
   const insightById = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
 
   const assembled = useMemo(() => assembleRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
@@ -238,14 +333,14 @@ export function FighterInsightRail({
       !(assembled.unlocksNext && candidate.state === 'locked');
     const cards = assembled.cards
       .filter(dedupeLocked)
-      .map((i) => insightToRailCard(i, t, fighterName, i18n.language));
+      .map((i) => insightToRailCard(i, t, fighterName, i18n.language, subjectPath));
     const promotionQueue = assembled.promotionQueue
       .filter((i) => i.state !== 'locked')
-      .map((i) => insightToRailCard(i, t, fighterName, i18n.language));
+      .map((i) => insightToRailCard(i, t, fighterName, i18n.language, subjectPath));
     const lines = assembled.lines.map((insight) => (
       <InsightLine
         key={insight.id}
-        text={t(insight.copy.key, copyValuesWithEntity(insight, fighterName))}
+        text={buildInsightVerdict(insight, t, fighterName)}
         tone="steady"
       />
     ));
@@ -253,7 +348,7 @@ export function FighterInsightRail({
       ? buildUnlocksNextCard(assembled.unlocksNext, insightById, t, fighterName)
       : null;
     return { cards, unlocksNext, lines, promotionQueue };
-  }, [assembled, insightById, t, fighterName, i18n.language]);
+  }, [assembled, insightById, t, fighterName, i18n.language, subjectPath]);
 
   const legend = (
     <>

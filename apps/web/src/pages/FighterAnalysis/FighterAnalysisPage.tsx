@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Fighter } from '@smash-tracker/shared';
+import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
@@ -10,8 +10,10 @@ import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useFighterName } from '@/hooks/useFighterName';
 import { useHorizon } from '@/hooks/useHorizon';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -31,7 +33,11 @@ import {
 } from '@/lib/drillDownParams';
 import { SelectFighter } from './components/SelectFighter';
 import { FighterHero } from './components/FighterHero';
-import { FighterInsightRail } from './components/FighterInsightRail';
+import {
+  FighterInsightRail,
+  buildInsightVerdict,
+  useFighterInsights,
+} from './components/FighterInsightRail';
 import { VsCharactersList } from './components/VsCharactersList';
 import { VsPlayersList } from './components/VsPlayersList';
 import { StageMastery } from './components/StageMastery';
@@ -84,7 +90,8 @@ export function FighterAnalysisPage() {
     axesFromUrl.stageId != null ||
     axesFromUrl.eventKey != null ||
     axesFromUrl.from != null ||
-    axesFromUrl.to != null;
+    axesFromUrl.to != null ||
+    axesFromUrl.claimId != null;
 
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
@@ -118,8 +125,16 @@ export function FighterAnalysisPage() {
       eventKey: axesFromUrl.eventKey,
       from: axesFromUrl.from,
       to: axesFromUrl.to,
+      claimId: axesFromUrl.claimId,
     }),
-    [fighter?.id, axesFromUrl.stageId, axesFromUrl.eventKey, axesFromUrl.from, axesFromUrl.to],
+    [
+      fighter?.id,
+      axesFromUrl.stageId,
+      axesFromUrl.eventKey,
+      axesFromUrl.from,
+      axesFromUrl.to,
+      axesFromUrl.claimId,
+    ],
   );
   // Also moved above the early returns (and memoized), for the SAME reason
   // as `terminusAxes` just above: `FilteredMatchList`'s D-16 memo keys on
@@ -136,6 +151,51 @@ export function FighterAnalysisPage() {
   const sortedFighterMatches = useMemo(
     () => sortMatchesNewestFirst(fighterMatches),
     [fighterMatches],
+  );
+
+  // Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):
+  // the ONE insight computation this page shares with `FighterInsightRail`
+  // (which takes the result as props below) and this page's own
+  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`) — called
+  // unconditionally, above every early return, matching every other hook on
+  // this page. `fighterIdForFilter` is `undefined` before a fighter is
+  // resolved; the hook itself tolerates that (zero insights, never a throw).
+  const {
+    insights: fighterInsights,
+    dismissedIds,
+    dismiss,
+    restoreAll,
+  } = useFighterInsights({
+    fighterId: fighterIdForFilter,
+    fighterMatches,
+    horizon,
+  });
+  const insightById = useMemo(
+    () => new Map(fighterInsights.map((insight) => [insight.id, insight])),
+    [fighterInsights],
+  );
+  // React Compiler forbids a bare fighter-name lookup with an `undefined` id
+  // (`useFighterName` always needs a number) — a sentinel id resolves to the
+  // hook's own "unknown fighter" fallback string, harmless since it is only
+  // ever interpolated into `claimSummary` when a real claim/insight is found.
+  const fighterNameForClaim = useFighterName(fighterIdForFilter ?? -1);
+  const claimSummary =
+    axesFromUrl.claimId != null
+      ? (() => {
+          const insight = insightById.get(axesFromUrl.claimId!);
+          return insight ? buildInsightVerdict(insight, t, fighterNameForClaim) : undefined;
+        })()
+      : undefined;
+  // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
+  // passed as `resolveClaim` would be a NEW reference every render, breaking
+  // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render
+  // (a horizon toggle, a background refetch) exactly like the un-memoized
+  // `terminusAxes` object literal this file already fixed once. Memoized by
+  // `fighterInsights` alone — the only thing this closure actually reads.
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: fighterInsights, matches: ms }),
+    [fighterInsights],
   );
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
@@ -276,7 +336,10 @@ export function FighterAnalysisPage() {
           <GridCell span={4}>
             <FighterInsightRail
               fighterId={fighter.id}
-              fighterMatches={fighterMatches}
+              insights={fighterInsights}
+              dismissedIds={dismissedIds}
+              dismiss={dismiss}
+              restoreAll={restoreAll}
               horizon={horizon}
             />
           </GridCell>
@@ -325,6 +388,8 @@ export function FighterAnalysisPage() {
                   <FilteredMatchList
                     matches={sortedFighterMatches}
                     axes={terminusAxes}
+                    resolveClaim={resolveClaimForTerminus}
+                    claimSummary={claimSummary}
                     showDelete
                   />
                 </CardContent>
