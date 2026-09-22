@@ -1,18 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type {
-  Fighter,
-  HorizonKey,
-  Insight,
-  InsightKind,
-  InsightScope,
-  Match,
-} from '@smash-tracker/shared';
+import type { Fighter, HorizonKey, Insight, InsightKind, Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
-  INSIGHT_TEMPLATES,
   PERIOD_TREND_MIN_PERIODS,
   buildPeriodSeries,
   classify,
@@ -30,9 +22,9 @@ import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { getMatchTypeRecords } from '@/lib/stats';
 import { formatPercent } from '@/lib/formatPercent';
 
@@ -42,14 +34,6 @@ import { formatPercent } from '@/lib/formatPercent';
  * owns (D-06). Order is fixed, matching UI-SPEC §8.1's stat row.
  */
 const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
-
-/**
- * VIZ-03/INS-05: the `formNow` template invoked at CHARACTER scope for this
- * one fighter (no opponent axis) — the same "any scope the template's own
- * logic can interpret" reuse plan 39.1-13 established for the pairing case.
- * Resolved once at module scope: the registry is a static, closed array.
- */
-const FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention (see `MatchupChart.tsx`'s `claimChipKindFor`). */
 function claimChipKindFor(kind: InsightKind): ClaimChipKind {
@@ -87,16 +71,6 @@ const CONFIDENCE_GLYPHS: Record<'high' | 'medium' | 'low' | 'none', string> = {
   low: '●○○',
   none: '○○○',
 };
-
-/** Builds the character-scoped `InsightScope` for this one fighter (D-09's "axis identity supplied at the boundary" discipline) — `filter` is the identity function because `fighterMatches` is already fighter-filtered by the host before it reaches this component. */
-function buildFighterScope(fighterId: number): InsightScope {
-  return {
-    kind: 'character',
-    key: `character:${fighterId}`,
-    axes: { fighter: fighterId },
-    filter: (matches: Match[]) => matches,
-  };
-}
 
 /**
  * UI-SPEC §7.10-adjacent (ported, not shared, from `MatchupChart.tsx`'s
@@ -187,6 +161,15 @@ export interface FighterHeroProps {
   setHorizon: (next: HorizonKey) => void;
   /** True while the match query is still in flight — a figure click performs no write in this state (T-39.1-14-03). */
   isLoading: boolean;
+  /**
+   * Plan 39.1-25 (gap closure, SC4/INS-04, D-12): the ONE `formNow`
+   * computation the host page shares with its own terminus
+   * (`resolveClaim`/`claimSummary`) — the hero no longer builds this itself.
+   * `null` before a fighter is resolved or when the fighter has no matches.
+   */
+  formNowInsight: Insight | null;
+  /** The SAME clock `formNowInsight` was built with — one clock, one insight (D-06, D-12). */
+  nowMs: number;
 }
 
 /**
@@ -205,24 +188,14 @@ export function FighterHero({
   horizon,
   setHorizon,
   isLoading,
+  formNowInsight,
+  nowMs,
 }: FighterHeroProps) {
   const { t, i18n } = useTranslation();
   const localizedName = useFighterName(fighter.id);
   const subjectPath = useSubjectPath();
-  // React Compiler forbids a bare `Date.now()` call in the render body (it's
-  // impure) — the lazy `useState` initializer is this codebase's established
-  // one-time-read escape hatch (see `MatchupChart.tsx`, `useHorizon.ts`).
-  const [nowMs] = useState(() => Date.now());
 
   const hasMatches = fighterMatches.length > 0;
-
-  const scope = useMemo(() => buildFighterScope(fighter.id), [fighter.id]);
-
-  const formNowInsight: Insight | null = useMemo(() => {
-    if (!hasMatches) return null;
-    const built = FORM_NOW_TEMPLATE.build({ matches: fighterMatches, scope, horizon, nowMs });
-    return built[0] ?? null;
-  }, [fighterMatches, scope, horizon, nowMs, hasMatches]);
 
   const baselineAllTime = useMemo(() => toRateValue(fighterMatches), [fighterMatches]);
   const sharePct =
@@ -450,7 +423,16 @@ export function FighterHero({
     void point;
   }
 
-  const gamesDoorHref = `${subjectPath('/fighter-analysis')}?${buildDrillDownSearch({ fighterId: fighter.id }).toString()}#games`;
+  // Plan 39.1-25 (gap closure, SC4/INS-04): the door is built by
+  // `buildInsightDoors` from the SAME `formNowInsight` the host's terminus
+  // resolves against — never a hand-built fighter-axis href. `undefined`
+  // whenever the insight has zero counted games (a zero-game window never
+  // prints "See the 0 games").
+  const gamesDoor = formNowInsight
+    ? buildInsightDoors({ insight: formNowInsight, subjectPath }).find(
+        (door) => door.kind === 'games',
+      )
+    : undefined;
 
   const confidenceLabel = allTimeTier
     ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
@@ -573,11 +555,11 @@ export function FighterHero({
         />
 
         {/* 7. doors */}
-        {formNowInsight && (
+        {gamesDoor && (
           <div className="flex flex-wrap gap-2" data-slot="fighter-hero-doors">
             <Button asChild size="sm">
-              <Link to={gamesDoorHref}>
-                {t('insights.door.seeGames', { count: formNowInsight.window.games })}
+              <Link to={gamesDoor.href}>
+                {t('insights.door.seeGames', { count: gamesDoor.count })}
               </Link>
             </Button>
           </div>

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ import {
   buildInsightVerdict,
   useFighterInsights,
 } from './components/FighterInsightRail';
+import { useFighterFormNow } from './lib/useFighterFormNow';
 import { VsCharactersList } from './components/VsCharactersList';
 import { VsPlayersList } from './components/VsPlayersList';
 import { StageMastery } from './components/StageMastery';
@@ -170,9 +171,27 @@ export function FighterAnalysisPage() {
     fighterMatches,
     horizon,
   });
+  // Plan 39.1-25 (gap closure, SC4/INS-04, D-12): the ONE `formNow`
+  // computation this page shares with the hero (verdict, strip, trend, the
+  // counted-games door) and its own terminus below — never a second,
+  // independently-built `formNow` insight (the hero no longer builds its
+  // own). Called unconditionally, above every early return, beside
+  // `useFighterInsights`.
+  const heroFormNow = useFighterFormNow({
+    fighterId: fighterIdForFilter,
+    fighterMatches,
+    horizon,
+  });
+  // The hero's own `formNow` insight leads `pageInsights` (so its
+  // `claim=<id>` door resolves through the SAME array the rail's insights
+  // already resolve through) — one array, one terminus resolver.
+  const pageInsights = useMemo(
+    () => (heroFormNow.insight ? [heroFormNow.insight, ...fighterInsights] : fighterInsights),
+    [heroFormNow.insight, fighterInsights],
+  );
   const insightById = useMemo(
-    () => new Map(fighterInsights.map((insight) => [insight.id, insight])),
-    [fighterInsights],
+    () => new Map(pageInsights.map((insight) => [insight.id, insight])),
+    [pageInsights],
   );
   // React Compiler forbids a bare fighter-name lookup with an `undefined` id
   // (`useFighterName` always needs a number) — a sentinel id resolves to the
@@ -191,12 +210,28 @@ export function FighterAnalysisPage() {
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render
   // (a horizon toggle, a background refetch) exactly like the un-memoized
   // `terminusAxes` object literal this file already fixed once. Memoized by
-  // `fighterInsights` alone — the only thing this closure actually reads.
+  // `pageInsights` alone — the only thing this closure actually reads
+  // (plan 39.1-24's D-16 memo lesson, now keyed on the shared array).
   const resolveClaimForTerminus = useCallback(
     (claimId: string, ms: Match[]) =>
-      resolveInsightClaim({ claimId, insights: fighterInsights, matches: ms }),
-    [fighterInsights],
+      resolveInsightClaim({ claimId, insights: pageInsights, matches: ms }),
+    [pageInsights],
   );
+
+  // Plan 39.1-25: `AppRouter.tsx` uses `BrowserRouter`, which performs no
+  // hash scroll of its own, and this terminus mounts conditionally — so an
+  // effect after mount is the only place the scroll can land. Fires once per
+  // navigation whenever the hash names this page's terminus AND the
+  // terminus is actually mounted (`hasDrillAxis`). No state update inside
+  // this effect (react-compiler lint rule).
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === `#${GAMES_ANCHOR_ID}` && hasDrillAxis) {
+      document
+        .getElementById(GAMES_ANCHOR_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.key, location.hash, hasDrillAxis]);
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
@@ -330,6 +365,8 @@ export function FighterAnalysisPage() {
               horizon={horizon}
               setHorizon={setHorizon}
               isLoading={horizonLoading || matchesLoading}
+              formNowInsight={heroFormNow.insight}
+              nowMs={heroFormNow.nowMs}
             />
           </GridCell>
 
