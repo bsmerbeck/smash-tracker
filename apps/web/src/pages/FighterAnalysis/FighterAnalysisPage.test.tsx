@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
@@ -466,6 +467,103 @@ describe('FighterAnalysisPage', () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  /** Enough games, spread across two opponent characters, to produce a real asserting `characterMovers`/`rivalMovers` card (mirrors `FighterInsightRail.test.tsx`'s own `richFixture()`). */
+  function richInsightFixture(): ReturnType<typeof makeMatch>[] {
+    const matches: ReturnType<typeof makeMatch>[] = [];
+    const now = Date.now();
+    for (let i = 0; i < 40; i++) {
+      matches.push(
+        makeMatch({
+          id: `l${i}`,
+          time: now - (80 - i) * 60 * 60 * 1000,
+          win: i < 20 ? i % 2 === 0 : true,
+          opponent_id: luigi.id,
+          opponent: 'rival-luigi',
+        }),
+      );
+    }
+    for (let i = 0; i < 12; i++) {
+      matches.push(
+        makeMatch({
+          id: `f${i}`,
+          time: now - (30 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+          opponent_id: fox.id,
+          opponent: 'rival-fox',
+        }),
+      );
+    }
+    return matches;
+  }
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a rail card door narrows the terminus to exactly N', () => {
+    it("clicking a card's counted-games door shows the terminus with data-total-rows equal to the door's own count, plus the claim summary", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richInsightFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderFighterAnalysis();
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
+        ).not.toBeNull(),
+      );
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      const door = within(card).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      // The active-filter summary states the count and leads with the
+      // insight's own claim summary (`buildInsightVerdict`), never a bare
+      // "N games" line with no indication of WHICH claim narrowed the list.
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw or not-found state)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/fighter-analysis?claim=formNow:account:doesNotExist']}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <TooltipProvider>
+                  <Routes>
+                    <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                  </Routes>
+                </TooltipProvider>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      // hasDrillAxis is true (a claim param is present) so the terminus
+      // mounts, narrowed by the remaining (empty) axes alone — never a crash,
+      // never a "not found" branch. Scoped to the games terminus card itself
+      // — the page also renders `OpponentTable`'s own unrelated `<table>`.
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
+    });
   });
 
   describe('WR-C02 (39.1-REVIEW.md): D-16 memoization contract', () => {

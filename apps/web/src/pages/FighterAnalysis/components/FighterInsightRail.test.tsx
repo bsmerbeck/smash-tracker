@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Match } from '@smash-tracker/shared';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
-import { FighterInsightRail } from './FighterInsightRail';
+import { FighterInsightRail, useFighterInsights } from './FighterInsightRail';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -57,6 +57,37 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
+/**
+ * Plan 39.1-24: `FighterInsightRail` no longer computes its own `insights` —
+ * a host calls `useFighterInsights` ONCE and hands the result down (so the
+ * page's `FilteredMatchList` terminus can share the SAME array for
+ * `resolveClaim`). This harness reproduces that real usage pattern for the
+ * rail's own isolated tests.
+ */
+function RailTestHarness({
+  fighterMatches,
+  horizon,
+}: {
+  fighterMatches: Match[];
+  horizon: HorizonKey;
+}) {
+  const { insights, dismissedIds, dismiss, restoreAll } = useFighterInsights({
+    fighterId: mario.id,
+    fighterMatches,
+    horizon,
+  });
+  return (
+    <FighterInsightRail
+      fighterId={mario.id}
+      insights={insights}
+      dismissedIds={dismissedIds}
+      dismiss={dismiss}
+      restoreAll={restoreAll}
+      horizon={horizon}
+    />
+  );
+}
+
 function renderRail(
   fighterMatches: Match[],
   horizon: 'last30' | 'lastEvent' | 'last90' = 'last30',
@@ -67,11 +98,7 @@ function renderRail(
       <MemoryRouter>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <FighterInsightRail
-              fighterId={mario.id}
-              fighterMatches={fighterMatches}
-              horizon={horizon}
-            />
+            <RailTestHarness fighterMatches={fighterMatches} horizon={horizon} />
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -271,6 +298,51 @@ describe('FighterInsightRail', () => {
       fireEvent.click(dismissButtons[0]!);
       const dismissedCountText = screen.queryByText(/1 dismissed on this device/i);
       expect(dismissedCountText).toBeInTheDocument();
+    });
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): counted-games doors reach the rendered card', () => {
+    it('every regular card shows a real counted-games door link (claim=<id>#games), primary and before the dismiss control', async () => {
+      const matches = richFixture();
+      list.mockResolvedValue(matches);
+      renderRail(matches);
+      await waitForSettled();
+
+      const cards = document.querySelectorAll(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      );
+      expect(cards.length).toBeGreaterThan(0);
+
+      for (const card of Array.from(cards)) {
+        const doors = within(card as HTMLElement).getAllByRole('link');
+        expect(doors.length).toBeGreaterThan(0);
+        expect(doors.length).toBeLessThanOrEqual(3);
+
+        const primary = doors[0]!;
+        const href = primary.getAttribute('href') ?? '';
+        expect(href).toMatch(/claim=/);
+        expect(href).toMatch(/#games$/);
+        expect(primary.textContent ?? '').toMatch(/see the \d+ games?/i);
+
+        // Doors stay before the dismiss control in DOM/tab order (UI-SPEC
+        // §14.5 rule 5) — the LAST door must precede the dismiss button.
+        const dismissButton = within(card as HTMLElement).getByRole('button', {
+          name: /dismiss/i,
+        });
+        const lastDoor = doors[doors.length - 1]!;
+        const relation = lastDoor.compareDocumentPosition(dismissButton);
+        expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      }
+    });
+
+    it('a card with zero counted games (the unlocks-next meter card) renders no counted-games door', async () => {
+      list.mockResolvedValue(thinFixture());
+      renderRail(thinFixture());
+      await waitForSettled();
+
+      const unlocksCard = document.querySelector('[data-card-kind="unlocks-next"]');
+      expect(unlocksCard).toBeInTheDocument();
+      expect(within(unlocksCard as HTMLElement).queryAllByRole('link')).toHaveLength(0);
     });
   });
 });
