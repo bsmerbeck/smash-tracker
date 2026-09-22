@@ -653,6 +653,159 @@ describe('OpponentHubPage', () => {
     });
   });
 
+  describe('T-39.1-26 (gap closure): the H2H formNow door lands on exactly N', () => {
+    /** 10 games, tag "rival", spread across the last 10 hours — well within DEFAULT_HORIZON (last30). */
+    function richFormNowFixture(overrides: Partial<Record<string, unknown>> = {}) {
+      const now = Date.now();
+      return Array.from({ length: 10 }, (_, i) =>
+        makeMatch({
+          id: `f${i}`,
+          time: now - (10 - i) * 60 * 60 * 1000,
+          opponent: 'rival',
+          win: i % 3 !== 0,
+          ...overrides,
+        }),
+      );
+    }
+
+    it('the H2H trend door narrows the hub terminus to exactly N, with the count in the summary', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub('/opponents/rival');
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(door.getAttribute('href') ?? '').toMatch(/#opponent-hub-list$/);
+
+      await user.click(door);
+
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => {
+        const table = within(listEl).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+      const summaryParagraph = listEl.querySelector('p.text-sm.text-muted-foreground');
+      expect(summaryParagraph?.textContent ?? '').toContain(String(expectedCount));
+    });
+
+    it('a vs+context-narrowed hub keeps those params on the door href, and the count after the click still matches', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture({ matchType: 'online-quickplay' }));
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub(`/opponents/rival?vs=${luigi.id}&context=online`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      const href = door.getAttribute('href') ?? '';
+      expect(href).toContain(`vs=${luigi.id}`);
+      expect(href).toContain('context=online');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => {
+        const table = within(listEl).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+    });
+
+    it('a matrix-drilled URL (fighter+vs+stage) never lets fighter/stage leak onto the door href, and the count after the click still matches', async () => {
+      listMatches.mockResolvedValue(
+        richFormNowFixture({
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+      );
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub(`/opponents/rival?fighter=${mario.id}&vs=${luigi.id}&stage=1`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      const href = door.getAttribute('href') ?? '';
+      expect(href).not.toContain('fighter=');
+      expect(href).not.toContain('stage=');
+      expect(href).toContain(`vs=${luigi.id}`);
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => {
+        const table = within(listEl).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+    });
+
+    it('clicking Clear filters after following the H2H door removes the claim axis', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderHub('/opponents/rival');
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      await user.click(door);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-probe').textContent).toContain('claim='),
+      );
+
+      const clearButton = await screen.findByRole('button', { name: 'Clear filters' });
+      await user.click(clearButton);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-probe').textContent).not.toContain('claim='),
+      );
+    });
+
+    it('clicking the H2H door scrolls #opponent-hub-list into view', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture());
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+      const user = userEvent.setup();
+
+      renderHub('/opponents/rival');
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+      );
+      const slot = document.querySelector('[data-slot="opponent-form-now"]') as HTMLElement;
+      const door = within(slot).getByRole('link');
+      await user.click(door);
+
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrollSpy.mock.instances).toContain(listEl);
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {

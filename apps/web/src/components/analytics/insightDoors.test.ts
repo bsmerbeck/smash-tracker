@@ -178,6 +178,63 @@ describe('buildInsightDoors', () => {
     },
   );
 
+  describe('T-39.1-26 (gap closure): carry preserves host context, drops filter axes', () => {
+    it('with no carry, the games door href is byte-identical to the pre-carry builder', () => {
+      const insight = makeInsight({ templateId: 'formNow', countedMatchIds: ['a'] });
+      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
+      expect(doors[0]!.href).toBe('?claim=formNow%3Aaccount%3Alast30#games');
+    });
+
+    it('a carry of fighter=1 and vs=5 with an anchor override keeps those params, sets the insight claim, and ends with the anchor', () => {
+      const insight = makeInsight({ templateId: 'matchupOrPlayer', countedMatchIds: ['a', 'b'] });
+      const carry = new URLSearchParams({ fighter: '1', vs: '5' });
+      const doors = buildInsightDoors({
+        insight,
+        subjectPath: identitySubjectPath,
+        anchor: '#matchup-table',
+        carry,
+      });
+      expect(doors[0]!.kind).toBe('games');
+      expect(doors[0]!.href).toContain('fighter=1');
+      expect(doors[0]!.href).toContain('vs=5');
+      expect(doors[0]!.href).toContain('claim=matchupOrPlayer%3Aaccount%3Alast30');
+      expect(doors[0]!.href).toMatch(/#matchup-table$/);
+    });
+
+    it('a carry holding stage/event/from/to and a foreign claim never lets any of them survive — the claim is always the insight own id', () => {
+      const insight = makeInsight({ templateId: 'formNow', countedMatchIds: ['a'] });
+      const carry = new URLSearchParams({
+        fighter: '1',
+        stage: '3',
+        event: 'evt',
+        from: '100',
+        to: '200',
+        claim: 'someone-elses-claim',
+      });
+      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath, carry });
+      const href = doors[0]!.href;
+      expect(href).toContain('fighter=1');
+      expect(href).not.toContain('stage=');
+      expect(href).not.toContain('event=');
+      expect(href).not.toContain('from=');
+      expect(href).not.toContain('to=');
+      expect(href).not.toContain('someone-elses-claim');
+      expect(href).toContain('claim=formNow%3Aaccount%3Alast30');
+    });
+
+    it('fallback doors are unaffected by carry', () => {
+      const insight = makeInsight({
+        templateId: 'matchupOrPlayer',
+        doors: [{ kind: 'opponent', axes: { fighter: 8, vs: 2 }, count: 3 }],
+        countedMatchIds: [],
+      });
+      const carry = new URLSearchParams({ fighter: '1', vs: '5' });
+      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath, carry });
+      expect(doors).toHaveLength(1);
+      expect(doors[0]!.kind).toBe('opponent');
+    });
+  });
+
   it('no second URL-building helper exists — every href funnels through buildDrillDownSearch', () => {
     const declarations = SOURCE_WITHOUT_COMMENTS.match(/function build\w*Search\s*\(/g) ?? [];
     expect(declarations).toHaveLength(0);

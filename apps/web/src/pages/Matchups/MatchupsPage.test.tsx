@@ -876,6 +876,203 @@ describe('MatchupsPage', () => {
     });
   });
 
+  describe('T-39.1-26 (gap closure): the chart formNow door lands on exactly N', () => {
+    /** 40 games, Mario vs Luigi, spread across the last 40 hours — well within `last30`. */
+    function richFormNowFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `f${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    it('a persisted pairing: the chart door narrows the terminus to exactly N, with the count and the formNow verdict in the summary', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      expect(formNowSlot).not.toBeNull();
+      const door = within(formNowSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(door.getAttribute('href') ?? '').toMatch(/#matchup-table$/);
+      const verdictText =
+        formNowSlot.querySelector('[data-slot="matchup-form-now-verdict"]')?.textContent ?? '';
+      expect(verdictText.length).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+      const summaryParagraph = gamesCard.querySelector('p.text-sm.text-muted-foreground');
+      expect(summaryParagraph?.textContent ?? '').toContain(String(expectedCount));
+      expect(summaryParagraph?.textContent ?? '').toContain(verdictText);
+    });
+
+    it('a URL-seeded pairing differing from the persisted one: the door href carries fighter/vs, and the click narrows to exactly N', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const defaultPairingMatches = [
+        makeMatch({ id: 'd1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ];
+      const urlPairingMatches = richFormNowFixture().map((m, i) => ({
+        ...m,
+        id: `u${i}`,
+        fighter_id: bowser.id,
+      }));
+      listMatches.mockResolvedValue([...defaultPairingMatches, ...urlPairingMatches]);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${bowser.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      expect(door.getAttribute('href') ?? '').toContain(`fighter=${bowser.id}`);
+      expect(door.getAttribute('href') ?? '').toContain(`vs=${luigi.id}`);
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+    });
+
+    it('clicking Clear filters after following the chart door removes the claim axis and restores the full pairing count', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      await user.click(door);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).toContain('claim='),
+      );
+
+      const clearButton = await screen.findByRole('button', { name: 'Clear filters' });
+      await user.click(clearButton);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).not.toContain('claim='),
+      );
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(matches.length);
+      });
+    });
+
+    it('clicking the chart door scrolls #matchup-table into view', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrollSpy.mock.instances).toContain(gamesCard);
+    });
+  });
+
+  describe('T-39.1-26 (gap closure): the matchupOrPlayer door survives a URL-seeded pairing', () => {
+    function richMatchupOrPlayerFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    it("a URL-seeded pairing differing from the persisted one keeps fighter/vs on the MatchupOrPlayer card's games door, and the click narrows to exactly N", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const defaultPairingMatches = [
+        makeMatch({ id: 'd1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ];
+      const urlPairingMatches = richMatchupOrPlayerFixture().map((m, i) => ({
+        ...m,
+        id: `u${i}`,
+        fighter_id: bowser.id,
+      }));
+      listMatches.mockResolvedValue([...defaultPairingMatches, ...urlPairingMatches]);
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${bowser.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const insightCard = document.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      expect(insightCard).not.toBeNull();
+      const door = within(insightCard).getAllByRole('link')[0]!;
+      expect(door.getAttribute('href') ?? '').toContain(`fighter=${bowser.id}`);
+      expect(door.getAttribute('href') ?? '').toContain(`vs=${luigi.id}`);
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
