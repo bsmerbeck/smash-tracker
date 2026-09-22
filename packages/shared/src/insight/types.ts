@@ -133,6 +133,23 @@ export interface Insight {
   doors: InsightDoor[];
   mark?: InsightMark;
   gamesNeeded?: number;
+  /**
+   * Plan 39.1-22 (gap closure, orchestrator Finding 8, INS-03/INS-06): the
+   * exact ids of the games THIS insight counted, newest-first
+   * (`horizon.ts`'s `countedMatchIdsOf`) — the single source of truth for
+   * "which games does this card's own number describe," recorded by the
+   * template at the SAME site it already iterates those games (the recent
+   * window for window-shaped reads; a pooled cohort for the cohort-
+   * comparison templates; a per-matchup/per-event slice for the subject
+   * templates). REQUIRED, not optional: an empty array is the honest value
+   * for a `hidden`/zero-games read, and making the field required forces
+   * every template author (and every test fixture) to state the answer
+   * rather than silently omitting it. `apps/web`'s `resolveInsightClaim`
+   * (39.1-22 Task 2) resolves a `claim=<Insight.id>` axis to exactly these
+   * ids — never a reconstruction from `window.fromMs`/`toMs` axes, which
+   * cannot express a non-contiguous game set.
+   */
+  countedMatchIds: string[];
 }
 
 /** The four scope kinds a template may be asked to assess. `account` is the whole-account view (no scoping, no D-15 recency bound); the other three are subject/cohort-scoped (D-15 applies). */
