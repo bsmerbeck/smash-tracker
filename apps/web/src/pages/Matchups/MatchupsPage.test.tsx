@@ -767,6 +767,21 @@ describe('MatchupsPage', () => {
       });
     });
 
+    it('WR-02 (39.1-REVIEW): a cold load of a door URL (#matchup-table) scrolls the terminus into view once the data lands', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: true }),
+      ]);
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}&claim=x:y:last30#matchup-table`);
+
+      await waitFor(() => expect(document.getElementById('matchup-table')).toBeInTheDocument());
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => expect(scrollSpy.mock.contexts).toContain(gamesCard));
+    });
+
     it('renders no browser-storage write whose key is the persisted-selection or analytics-filter key on a URL-seeded arrival', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue([

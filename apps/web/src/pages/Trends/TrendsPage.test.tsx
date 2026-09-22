@@ -259,6 +259,18 @@ describe('TrendsPage', () => {
     await waitFor(() => expect(document.getElementById('games')).not.toBeInTheDocument());
   });
 
+  it('WR-02 (39.1-REVIEW): a cold load of a door URL (#games) scrolls the terminus into view once the data lands', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+    const scrollSpy = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+    renderTrends('/trends?claim=ratingMove:account:last30#games');
+
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    const gamesCard = document.getElementById('games') as HTMLElement;
+    await waitFor(() => expect(scrollSpy.mock.contexts).toContain(gamesCard));
+  });
+
   describe('T-39.1-27 (gap closure): the Setting comparison door lands on exactly N', () => {
     /** 10 online (quickplay) + 10 offline (offline-tourney) games, well past `COHORT_MIN_SIDE_GAMES` (8) on each side — a real SettingGap games door, `countedMatchIds.length === 20`. */
     function settingGapDoorFixture() {

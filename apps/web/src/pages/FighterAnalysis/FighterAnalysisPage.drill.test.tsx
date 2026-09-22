@@ -402,6 +402,18 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     expect(probe.dataset.pathname).toBe('/coach/test-client/fighter-analysis');
   });
 
+  it('WR-02 (39.1-REVIEW): a cold load of a door URL (#games) scrolls the terminus into view once the data lands', async () => {
+    const scrollSpy = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollSpy;
+    renderFighterAnalysisAt(
+      `/fighter-analysis?claim=${encodeURIComponent(`formNow:character:${mario.id}:last30`)}#games`,
+    );
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    const gamesCard = document.getElementById('games') as HTMLElement;
+    await waitFor(() => expect(scrollSpy.mock.contexts).toContain(gamesCard));
+    expect(scrollSpy.mock.contexts.filter((el) => el === gamesCard)).toHaveLength(1);
+  });
+
   describe('WR-01 (39.1-REVIEW): the terminus can be reset, and a fighter/horizon change never leaves a stale axis', () => {
     it('Clear filters removes every drill axis and the #games hash, unmounting the terminus', async () => {
       const user = userEvent.setup();

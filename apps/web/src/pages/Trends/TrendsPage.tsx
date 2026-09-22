@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Insight, Match } from '@smash-tracker/shared';
@@ -13,6 +13,7 @@ import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
 import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { cn } from '@/lib/utils';
 import { stagesById } from '@/data/stages';
@@ -177,14 +178,11 @@ export function TrendsPage() {
   // terminus is actually mounted (`hasDrillAxis`). No state update inside
   // this effect (react-compiler lint rule). Mirrors
   // `FighterAnalysisPage.tsx`'s plan 39.1-25 landing effect.
+  //
+  // WR-02 (39.1-REVIEW): gated on `ready` (data landed, terminus mounted) so
+  // a cold load, refresh or shared door URL lands on the terminus too.
   const location = useLocation();
-  useEffect(() => {
-    if (location.hash === `#${GAMES_ANCHOR_ID}` && hasDrillAxis) {
-      document
-        .getElementById(GAMES_ANCHOR_ID)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [location.key, location.hash, hasDrillAxis]);
+  useLandingScroll({ anchorId: GAMES_ANCHOR_ID, ready: !isLoading && hasDrillAxis });
 
   // WR-01 (39.1-REVIEW): the terminus mounts only while a drill axis is in
   // the URL, and this page's doors write one — Clear filters drops every

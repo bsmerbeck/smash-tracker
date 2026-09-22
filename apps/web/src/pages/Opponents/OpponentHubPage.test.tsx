@@ -855,6 +855,18 @@ describe('OpponentHubPage', () => {
       expect(screen.getByTestId('location-probe').textContent).not.toContain('claim=');
     });
 
+    it('WR-02 (39.1-REVIEW): a cold load of a door URL (#opponent-hub-list) scrolls the terminus into view once the data lands', async () => {
+      listMatches.mockResolvedValue(richFormNowFixture());
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+      renderHub('/opponents/rival?claim=formNow%3Aplayer%3Arival%3Alast30#opponent-hub-list');
+
+      await waitFor(() => expect(document.getElementById('opponent-hub-list')).toBeInTheDocument());
+      const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+      await waitFor(() => expect(scrollSpy.mock.contexts).toContain(listEl));
+    });
+
     it('clicking the H2H door scrolls #opponent-hub-list into view', async () => {
       listMatches.mockResolvedValue(richFormNowFixture());
       const scrollSpy = vi.fn();

@@ -46,6 +46,7 @@ import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import {
   buildOpponentEvidence,
   buildOpponentProfile,
@@ -655,15 +656,13 @@ export function OpponentHubPage() {
   // Plan 39.1-26 (gap closure, Task 2): landing is real in a browser
   // (BrowserRouter performs no hash scroll of its own — `AppRouter.tsx`) —
   // this scrolls the terminus into view once per navigation whenever the
-  // hash names it, covering the H2H trend door click.
-  const location = useLocation();
-  useEffect(() => {
-    if (location.hash === `#${OPPONENT_HUB_LIST_ANCHOR_ID}`) {
-      document
-        .getElementById(OPPONENT_HUB_LIST_ANCHOR_ID)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [location.key, location.hash]);
+  // hash names it, covering the H2H trend door click. WR-02 (39.1-REVIEW):
+  // gated on the data having landed (the terminus lives inside the loaded
+  // profile branch), so a cold load / shared door URL lands there too.
+  useLandingScroll({
+    anchorId: OPPONENT_HUB_LIST_ANCHOR_ID,
+    ready: !isLoading && profile != null,
+  });
 
   // The twenty-tick set-grouped form strip above the trend plot, replacing
   // the header's ten-pip indicator (`ScoutingHeader.tsx`). Reuses Task 1's

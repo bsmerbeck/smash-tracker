@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
@@ -17,6 +17,7 @@ import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useHorizon } from '@/hooks/useHorizon';
 import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -245,20 +246,15 @@ export function FighterAnalysisPage() {
     [pageInsights],
   );
 
-  // Plan 39.1-25: `AppRouter.tsx` uses `BrowserRouter`, which performs no
-  // hash scroll of its own, and this terminus mounts conditionally — so an
-  // effect after mount is the only place the scroll can land. Fires once per
-  // navigation whenever the hash names this page's terminus AND the
-  // terminus is actually mounted (`hasDrillAxis`). No state update inside
-  // this effect (react-compiler lint rule).
+  // Plan 39.1-25 / WR-02 (39.1-REVIEW): scroll the terminus into view once
+  // per navigation whenever the hash names it — only once the data has
+  // landed and the terminus is actually mounted, so a cold load, refresh or
+  // shared door URL lands there too (not just an in-app door click).
   const location = useLocation();
-  useEffect(() => {
-    if (location.hash === `#${GAMES_ANCHOR_ID}` && hasDrillAxis) {
-      document
-        .getElementById(GAMES_ANCHOR_ID)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [location.key, location.hash, hasDrillAxis]);
+  useLandingScroll({
+    anchorId: GAMES_ANCHOR_ID,
+    ready: !fightersLoading && !matchesLoading && fighter != null && hasDrillAxis,
+  });
 
   // Plan 39.1-25 (gap closure, SC6/TRND-04): the ONE URL writer for a hero
   // trend-point or form-strip-set drill. A drill REPLACES any prior

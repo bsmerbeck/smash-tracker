@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router';
+import { useCallback, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Insight, Match } from '@smash-tracker/shared';
 import {
@@ -19,6 +19,7 @@ import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/i
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
@@ -368,15 +369,13 @@ export function MatchupsPage() {
   // Plan 39.1-26 (gap closure, Task 1): landing is real in a browser
   // (BrowserRouter performs no hash scroll of its own — `AppRouter.tsx`) —
   // this scrolls the terminus into view once per navigation whenever the
-  // hash names it, covering the chart door click.
-  const location = useLocation();
-  useEffect(() => {
-    if (location.hash === `#${MATCHUP_TABLE_ANCHOR_ID}`) {
-      document
-        .getElementById(MATCHUP_TABLE_ANCHOR_ID)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [location.key, location.hash]);
+  // hash names it, covering the chart door click. WR-02 (39.1-REVIEW):
+  // gated on the data having landed, so a cold load / shared door URL lands
+  // on the terminus too.
+  useLandingScroll({
+    anchorId: MATCHUP_TABLE_ANCHOR_ID,
+    ready: !fightersLoading && !matchesLoading,
+  });
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
