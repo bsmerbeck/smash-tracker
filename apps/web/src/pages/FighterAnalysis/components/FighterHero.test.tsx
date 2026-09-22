@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
+import { buildPeriodSeries } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { SpriteList } from '@/data/sprites';
 import { useFighterFormNow } from '../lib/useFighterFormNow';
@@ -55,6 +56,7 @@ function HeroHarness(props: {
       isLoading={props.isLoading ?? false}
       formNowInsight={insight}
       nowMs={nowMs}
+      periodSeries={buildPeriodSeries({ matches: props.fighterMatches })}
       onDrill={props.onDrill}
     />
   );

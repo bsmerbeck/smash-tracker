@@ -119,6 +119,43 @@ function drillFixture(): ReturnType<typeof makeMatch>[] {
   return matches;
 }
 
+/**
+ * CR-02 (39.1-REVIEW): 25 tournaments one day apart; each has three 3-game
+ * "Ultimate Singles" sets with one 3-game "Redemption" set interleaved
+ * between Singles sets 1 and 2 (100 sets > 60, so the ladder picks
+ * `eventSession`, 50 points). Every Singles point counts 9 games, but its
+ * `[startMs, endMs]` window also holds that tournament's 3 Redemption games.
+ */
+function interleavedEventFixture(): ReturnType<typeof makeMatch>[] {
+  const day = 24 * 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  const start = Date.now() - 30 * day;
+  const matches: ReturnType<typeof makeMatch>[] = [];
+  for (let t = 0; t < 25; t++) {
+    const base = start + t * day;
+    const sets = [
+      { event: `T${t} Ultimate Singles`, offsetH: 0 },
+      { event: `T${t} Redemption`, offsetH: 1 },
+      { event: `T${t} Ultimate Singles`, offsetH: 2 },
+      { event: `T${t} Ultimate Singles`, offsetH: 3 },
+    ];
+    sets.forEach(({ event, offsetH }, s) => {
+      for (let g = 0; g < 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `t${t}s${s}g${g}`,
+            time: base + offsetH * hour + g * 60 * 1000,
+            win: (t + s + g) % 2 === 0,
+            eventName: event,
+            externalId: `sgg:t${t}set${s}:g${g + 1}`,
+          }),
+        );
+      }
+    });
+  }
+  return matches;
+}
+
 function LocationProbe() {
   const location = useLocation();
   return (
@@ -197,7 +234,7 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     listMatches.mockResolvedValue(drillFixture());
   });
 
-  it("a period-point drill narrows the terminus to exactly the point's own games, writes from/to and the #games hash, and scrolls into view", async () => {
+  it("a period-point drill narrows the terminus to exactly the point's own games, writes event=<point.key> and the #games hash, and scrolls into view", async () => {
     const scrollIntoViewSpy = vi.fn();
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
@@ -222,8 +259,10 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
 
       const probe = locationProbe();
       const search = new URLSearchParams(probe.dataset.search ?? '');
-      expect(search.get('from')).toBe(String(point.startMs));
-      expect(search.get('to')).toBe(String(point.endMs));
+      // CR-02 (39.1-REVIEW): a point drills by its own key, never a window.
+      expect(search.get('event')).toBe(point.key);
+      expect(search.has('from')).toBe(false);
+      expect(search.has('to')).toBe(false);
       expect(probe.dataset.hash).toBe('#games');
 
       expect(scrollIntoViewSpy).toHaveBeenCalled();
@@ -232,6 +271,42 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     } finally {
       HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     }
+  });
+
+  it('CR-02 (39.1-REVIEW): an eventSession point over interleaved events lands on exactly its own total, not every game inside its time window', async () => {
+    const fixture = interleavedEventFixture();
+    listMatches.mockResolvedValue(fixture);
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    renderFighterAnalysisAt('/fighter-analysis');
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
+
+    const points = (capturedTrendLineProps as { points: PeriodPoint[] }).points;
+    expect(points).toHaveLength(50);
+    expect(points[0]!.grain).toBe('eventSession');
+    // Non-vacuous by construction: the chosen point's window holds MORE games
+    // than it counts (the pre-fix from/to drill listed 12, not 9), and its
+    // count differs from the page's unfiltered 300.
+    const point = points.find(
+      (p) => fixture.filter((m) => m.time >= p.startMs && m.time <= p.endMs).length > p.total,
+    )!;
+    expect(point).toBeDefined();
+    expect(point.total).toBe(9);
+    expect(point.total).not.toBe(fixture.length);
+
+    act(() => {
+      (capturedTrendLineProps as { onSelectPoint?: (p: PeriodPoint) => void }).onSelectPoint?.(
+        point,
+      );
+    });
+
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    const gamesCard = document.getElementById('games') as HTMLElement;
+    await waitFor(() => {
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(point.total);
+    });
   });
 
   it("clicking the newest form-strip set narrows the terminus to exactly that set's games and writes the event= axis", async () => {

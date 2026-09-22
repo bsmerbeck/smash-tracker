@@ -125,6 +125,7 @@ function ChartCardWrapper({
       <MatchupChart
         matchupMatches={matchupMatches}
         horizon={horizon}
+        periodSeries={buildPeriodSeries({ matches: matchupMatches })}
         width={width}
         height={height}
       />
@@ -175,6 +176,7 @@ function FighterHeroHarness({ fighterMatches }: { fighterMatches: Match[] }) {
       isLoading={false}
       formNowInsight={insight}
       nowMs={nowMs}
+      periodSeries={buildPeriodSeries({ matches: fighterMatches })}
       onDrill={vi.fn()}
     />
   );

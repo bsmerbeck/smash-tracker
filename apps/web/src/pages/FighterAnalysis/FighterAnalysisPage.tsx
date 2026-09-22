@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
+import { buildPeriodSeries, periodPointKeyByMatchId } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
@@ -158,6 +159,25 @@ export function FighterAnalysisPage() {
   const sortedFighterMatches = useMemo(
     () => sortMatchesNewestFirst(fighterMatches),
     [fighterMatches],
+  );
+
+  // CR-02 (39.1-REVIEW): the ONE period series the hero plots AND this
+  // page's terminus resolves a trend-point drill against. A point drills as
+  // `event=<point.key>`; each game resolves to BOTH its form-strip set key
+  // and its period key, so the one `event` axis narrows to exactly a set's
+  // games or exactly a point's games — never a reconstructed time window.
+  const periodSeries = useMemo(
+    () => buildPeriodSeries({ matches: fighterMatches }),
+    [fighterMatches],
+  );
+  const periodKeyByMatchId = useMemo(() => periodPointKeyByMatchId(periodSeries), [periodSeries]);
+  const eventKeysForMatch = useCallback(
+    (match: Match): string[] => {
+      const periodKey = periodKeyByMatchId.get(match.id);
+      const setKey = formStripEventKeyForMatch(match);
+      return periodKey != null ? [setKey, periodKey] : [setKey];
+    },
+    [periodKeyByMatchId],
   );
 
   // Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):
@@ -396,6 +416,7 @@ export function FighterAnalysisPage() {
               isLoading={horizonLoading || matchesLoading}
               formNowInsight={heroFormNow.insight}
               nowMs={heroFormNow.nowMs}
+              periodSeries={periodSeries}
               onDrill={handleHeroDrill}
             />
           </GridCell>
@@ -457,7 +478,7 @@ export function FighterAnalysisPage() {
                     axes={terminusAxes}
                     resolveClaim={resolveClaimForTerminus}
                     claimSummary={claimSummary}
-                    eventKeyForMatch={formStripEventKeyForMatch}
+                    eventKeyForMatch={eventKeysForMatch}
                     showDelete
                   />
                 </CardContent>

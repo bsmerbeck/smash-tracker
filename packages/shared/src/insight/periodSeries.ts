@@ -72,6 +72,16 @@ export interface PeriodPoint {
   total: number;
   rate: number;
   subFloor: boolean;
+  /**
+   * CR-02 (39.1-REVIEW): the ids of exactly the countable games this point
+   * counts (`total === matchIds.length`). A point's `[startMs, endMs]` is NOT
+   * its identity: `eventSession`/`set` groups are not contiguous in time (an
+   * interleaved Redemption bracket, an online session between pools and top
+   * 8), and `game` points tie on a shared timestamp — so a drill names a
+   * point by `key` and the terminus resolves membership through these ids
+   * (`periodPointKeyByMatchId`), never by reconstructing a time window.
+   */
+  matchIds: string[];
 }
 
 /** The chosen grain's full bucketed output, plus the inputs that produced it. */
@@ -133,6 +143,7 @@ function toPeriodPoint(input: {
     total,
     rate,
     subFloor: total < ABSTENTION_FLOOR_GAMES,
+    matchIds: matches.map((m) => m.id),
   };
 }
 
@@ -158,10 +169,28 @@ function tournamentEventName(match: Match): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** One session (from `splitIntoSessions`) or one tournament block, resolved down to its own `PeriodPoint`. */
-function sessionOrBlockToPoint(grain: PeriodGrain, group: Match[], label: string): PeriodPoint {
+/** One session (from `splitIntoSessions`), resolved down to its own `PeriodPoint`. Sessions are disjoint, so no two share a first-game timestamp. */
+function sessionToPoint(grain: PeriodGrain, group: Match[], label: string): PeriodPoint {
   const startMs = Math.min(...group.map((m) => m.time));
   return toPeriodPoint({ grain, key: `${grain}:session:${startMs}`, label, matches: group });
+}
+
+/**
+ * One tournament block, resolved down to its own `PeriodPoint`. CR-02
+ * (39.1-REVIEW): the key carries the event NAME as well as the block's
+ * first-game timestamp — two differently named events whose first games tie
+ * on one instant are two points, and a drill keyed on one must never also
+ * match the other (the key used to be `eventSession:session:<startMs>` for
+ * blocks too, which collided in exactly that case).
+ */
+function tournamentBlockToPoint(group: Match[], name: string): PeriodPoint {
+  const startMs = Math.min(...group.map((m) => m.time));
+  return toPeriodPoint({
+    grain: 'eventSession',
+    key: `eventSession:tournament:${name}:${startMs}`,
+    label: name,
+    matches: group,
+  });
 }
 
 /**
@@ -176,7 +205,7 @@ function buildSessionPoints(matches: Match[], grain: PeriodGrain): PeriodPoint[]
   return splitIntoSessions(matches)
     .filter((session) => session.length > 0)
     .map((session) =>
-      sessionOrBlockToPoint(
+      sessionToPoint(
         grain,
         session,
         new Date(Math.min(...session.map((m) => m.time))).toISOString(),
@@ -237,14 +266,14 @@ function buildEventSessionPoints(matches: Match[]): PeriodPoint[] {
     for (const match of sorted) {
       const previous = current[current.length - 1];
       if (previous && match.time - previous.time > EVENT_SESSION_PROXIMITY_MS) {
-        blockPoints.push(sessionOrBlockToPoint('eventSession', current, name));
+        blockPoints.push(tournamentBlockToPoint(current, name));
         current = [match];
       } else {
         current.push(match);
       }
     }
     if (current.length > 0) {
-      blockPoints.push(sessionOrBlockToPoint('eventSession', current, name));
+      blockPoints.push(tournamentBlockToPoint(current, name));
     }
   }
 
@@ -369,6 +398,24 @@ export function buildPeriodSeries(options: BuildPeriodSeriesOptions): PeriodSeri
     totalGames: countable.length,
     boundReached,
   };
+}
+
+/**
+ * CR-02 (39.1-REVIEW): the ONE index from a game to the period point that
+ * counts it — built from each point's own `matchIds`, never re-derived from
+ * a grain rule, so a drill writing `event=<point.key>` resolves (via a
+ * terminus's `eventKeyForMatch`) to exactly the `total` games that point
+ * counted, on every grain. Points partition the countable games, so each id
+ * maps to one key.
+ */
+export function periodPointKeyByMatchId(series: PeriodSeries): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const point of series.points) {
+    for (const id of point.matchIds) {
+      index.set(id, point.key);
+    }
+  }
+  return index;
 }
 
 /**

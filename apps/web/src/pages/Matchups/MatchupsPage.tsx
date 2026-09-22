@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Insight, Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  buildPeriodSeries,
+  periodPointKeyByMatchId,
+} from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartCard } from '@/components/charts/ChartCard';
@@ -275,6 +279,25 @@ export function MatchupsPage() {
     [matchupMatches],
   );
   const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
+
+  // CR-02 (39.1-REVIEW): the ONE period series `MatchupChart` plots AND this
+  // page's terminus resolves a trend-point drill (`event=<point.key>`)
+  // against — each game resolves to both its form-strip set key and its
+  // period key, so one `event` axis narrows to exactly the clicked mark's
+  // games. Above every early return (Rules of Hooks).
+  const periodSeries = useMemo(
+    () => buildPeriodSeries({ matches: matchupMatches }),
+    [matchupMatches],
+  );
+  const periodKeyByMatchId = useMemo(() => periodPointKeyByMatchId(periodSeries), [periodSeries]);
+  const eventKeysForMatch = useCallback(
+    (match: Match): string[] => {
+      const periodKey = periodKeyByMatchId.get(match.id);
+      const setKey = formStripEventKeyForMatch(match);
+      return periodKey != null ? [setKey, periodKey] : [setKey];
+    },
+    [periodKeyByMatchId],
+  );
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE
   // matchupOrPlayer insight this page shares with `MatchupOrPlayerCard`
@@ -571,7 +594,11 @@ export function MatchupsPage() {
                     : null
                 }
               >
-                <MatchupChart matchupMatches={matchupMatches} horizon={horizon} />
+                <MatchupChart
+                  matchupMatches={matchupMatches}
+                  horizon={horizon}
+                  periodSeries={periodSeries}
+                />
               </ChartCard>
             </div>
             <div className="col-span-12 xl:order-3 xl:col-span-8">
@@ -596,7 +623,7 @@ export function MatchupsPage() {
                 axes={terminusAxes}
                 resolveClaim={resolveClaimForTerminus}
                 claimSummary={claimSummary}
-                eventKeyForMatch={formStripEventKeyForMatch}
+                eventKeyForMatch={eventKeysForMatch}
                 onClearFilters={() => setDrillDown({})}
                 showDelete
               />

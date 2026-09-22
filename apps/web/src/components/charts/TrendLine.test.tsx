@@ -325,6 +325,7 @@ function makePeriodPoint(overrides: Partial<PeriodPoint> = {}): PeriodPoint {
     total: 5,
     rate: 0.6,
     subFloor: false,
+    matchIds: [],
     ...overrides,
   };
 }

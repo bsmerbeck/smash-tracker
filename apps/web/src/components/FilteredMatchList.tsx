@@ -32,7 +32,7 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { cn } from '@/lib/utils';
-import { matchesDrillDown, type DrillDownAxes } from '@/lib/drillDownParams';
+import { matchesDrillDown, type DrillDownAxes, type EventKeyResolver } from '@/lib/drillDownParams';
 
 /**
  * Phase 38 (D-07/D-08): the ONE terminus every drill-down in this milestone
@@ -153,8 +153,8 @@ export interface FilteredMatchListProps {
    * absent.
    */
   claimSummary?: string;
-  /** Resolves a per-match event key for the `eventKey` axis (mirrors the resolver the host's own predicate would use) — required only when a host narrows by event. */
-  eventKeyForMatch?: (match: Match) => string | undefined;
+  /** Resolves a per-match event key (or every key the match is anchored under) for the `eventKey` axis (mirrors the resolver the host's own predicate would use) — required only when a host narrows by event. */
+  eventKeyForMatch?: EventKeyResolver;
   /** Renders a human-readable label for a match's event, for the Event column. Falls back to the match's own tournament/event name field. */
   eventLabelForMatch?: (match: Match) => string | undefined;
   /** Renders a tournament-detail link for a match's inline expansion, when the host can resolve one. Omitted entirely (no tournament line) when not supplied. */

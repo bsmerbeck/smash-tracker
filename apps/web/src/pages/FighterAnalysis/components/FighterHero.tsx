@@ -9,11 +9,11 @@ import type {
   InsightKind,
   Match,
   PeriodPoint,
+  PeriodSeries,
 } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   PERIOD_TREND_MIN_PERIODS,
-  buildPeriodSeries,
   classify,
   confidenceTierFor,
   resolveWindow,
@@ -167,9 +167,11 @@ function buildFighterFormStripEvents(
  * point or a form-strip set) can write — a subset of `DrillDownAxes`, never
  * `fighterId`/`vsFighterId`/`stageId`/`claimId` (those are never written by
  * this drill; `FighterAnalysisPage.tsx`'s writer also clears any prior
- * `claim`/`stage`/`event`/`from`/`to` before applying these).
+ * `claim`/`stage`/`event`/`from`/`to` before applying these). CR-02
+ * (39.1-REVIEW): only `eventKey` — a time window is never a hero drill's
+ * identity.
  */
-export type FighterHeroDrillAxes = Partial<Pick<DrillDownAxes, 'eventKey' | 'from' | 'to'>>;
+export type FighterHeroDrillAxes = Partial<Pick<DrillDownAxes, 'eventKey'>>;
 
 export interface FighterHeroProps {
   fighter: Fighter;
@@ -190,10 +192,17 @@ export interface FighterHeroProps {
   /** The SAME clock `formNowInsight` was built with — one clock, one insight (D-06, D-12). */
   nowMs: number;
   /**
+   * CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over
+   * `fighterMatches` — the SAME series its terminus resolves a period
+   * drill's `event=<point.key>` against (`periodPointKeyByMatchId`), so the
+   * plotted points and the drill's resolution can never be two builds.
+   */
+  periodSeries: PeriodSeries;
+  /**
    * Plan 39.1-25 (gap closure, SC6/TRND-04): the host's ONE URL writer for a
-   * trend-point or form-strip-set drill — a trend point calls
-   * `onDrill({ from, to })`, a form-strip set calls
-   * `onDrill({ eventKey })`.
+   * trend-point or form-strip-set drill — both call `onDrill({ eventKey })`:
+   * a trend point with its own `PeriodPoint.key` (CR-02, 39.1-REVIEW), a
+   * form-strip set with its set key.
    */
   onDrill: (axes: FighterHeroDrillAxes) => void;
 }
@@ -216,6 +225,7 @@ export function FighterHero({
   isLoading,
   formNowInsight,
   nowMs,
+  periodSeries,
   onDrill,
 }: FighterHeroProps) {
   const { t, i18n } = useTranslation();
@@ -248,10 +258,6 @@ export function FighterHero({
     });
   }, [fighterMatches, baselineAllTime, nowMs]);
 
-  const periodSeries = useMemo(
-    () => buildPeriodSeries({ matches: fighterMatches }),
-    [fighterMatches],
-  );
   const overallRatePercent = baselineAllTime.rate * 100;
   const recentWindow = useMemo(
     () => ({
@@ -442,12 +448,14 @@ export function FighterHero({
     };
   });
 
-  // Plan 39.1-25 (gap closure, SC6/TRND-04): a period point's own bounds are
-  // the min/max timestamps of the period's own games — the terminus window
-  // is inclusive at both ends (UI-SPEC §10.1), so `from`/`to` reproduce
-  // exactly those games, never a wider period-grain bucket.
+  // CR-02 (39.1-REVIEW): a period point drills by its own KEY, never by its
+  // `[startMs, endMs]` bounds — `eventSession`/`set` groups are not
+  // contiguous in time (an interleaved Redemption bracket falls inside a
+  // Singles block's window) and `game` points tie on a shared timestamp, so
+  // a window listed more games than the point counted. The host's terminus
+  // resolves the key through the point's own `matchIds`.
   function handleSelectPeriodPoint(point: PeriodPoint): void {
-    onDrill({ from: point.startMs, to: point.endMs });
+    onDrill({ eventKey: point.key });
   }
 
   // Plan 39.1-25 (gap closure, SC4/INS-04): the door is built by

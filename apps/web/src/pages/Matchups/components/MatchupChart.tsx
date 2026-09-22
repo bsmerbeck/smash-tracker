@@ -2,10 +2,17 @@ import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { HorizonKey, Insight, InsightKind, InsightScope, Match } from '@smash-tracker/shared';
+import type {
+  HorizonKey,
+  Insight,
+  InsightKind,
+  InsightScope,
+  Match,
+  PeriodPoint,
+  PeriodSeries,
+} from '@smash-tracker/shared';
 import {
   INSIGHT_TEMPLATES,
-  buildPeriodSeries,
   confidenceTierFor,
   parseExternalId,
   toRateValue,
@@ -288,10 +295,14 @@ function computeCumulativeContextPercents(points: { wins: number; total: number 
  * supplies the frame, reading `useMatchupFormNow`/`renderFormNowHead` above
  * to build the `insight` prop.
  *
- * D-07/CHRT-02/Phase 38-04 (unchanged): a click on a trend point writes an
- * INCLUSIVE date window covering that period's own bounds to the URL (via
- * the Matchups context's `setDrillDown`) and scrolls to the results-table
- * anchor; a form-strip set click writes the `eventKey` axis the same way.
+ * D-07/CHRT-02/Phase 38-04: a click on a trend point writes that point's
+ * own `PeriodPoint.key` as the `eventKey` axis (CR-02, 39.1-REVIEW — never
+ * its `[startMs, endMs]` window, which over-counts on the non-contiguous
+ * `eventSession`/`set` grains and on tied `game` timestamps) via the
+ * Matchups context's `setDrillDown` and scrolls to the results-table
+ * anchor; a form-strip set click writes its set key the same way. The page
+ * supplies `periodSeries` — the SAME series its terminus resolves the key
+ * against.
  * Neither adds a second drill-down mechanism — both go through the existing
  * `setDrillDown` context method, which already preserves the ambient
  * `fighter`/`vs` character axes already present in the URL (Phase 38's own
@@ -300,11 +311,14 @@ function computeCumulativeContextPercents(points: { wins: number; total: number 
 export function MatchupChart({
   matchupMatches,
   horizon,
+  periodSeries,
   width,
   height,
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
+  /** CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over `matchupMatches` — plotted here, resolved by the host's terminus. */
+  periodSeries: PeriodSeries;
   width?: number;
   height?: number;
 }) {
@@ -312,11 +326,6 @@ export function MatchupChart({
   const { setDrillDown } = useMatchupsContext();
 
   const insight = useMatchupFormNow({ matchupMatches, horizon });
-
-  const periodSeries = useMemo(
-    () => buildPeriodSeries({ matches: matchupMatches }),
-    [matchupMatches],
-  );
 
   const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
 
@@ -335,8 +344,8 @@ export function MatchupChart({
     [matchupMatches, recentWindow, t],
   );
 
-  function handleSelectPeriodPoint(point: { startMs: number; endMs: number }) {
-    setDrillDown({ from: point.startMs, to: point.endMs });
+  function handleSelectPeriodPoint(point: PeriodPoint) {
+    setDrillDown({ eventKey: point.key });
     document
       .getElementById(MATCHUP_TABLE_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

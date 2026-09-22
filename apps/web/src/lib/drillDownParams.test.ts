@@ -179,6 +179,17 @@ describe('matchesDrillDown', () => {
     expect(matchesDrillDown(match, { eventKey: 'genesis-12' })).toBe(false);
   });
 
+  it('CR-02 (39.1-REVIEW): a multi-key resolver matches when the event axis equals ANY of its keys', () => {
+    const match = makeMatch({ id: 'm1' });
+    const resolver = () => ['set-77', 'eventSession:tournament:Genesis:1000'] as const;
+    expect(matchesDrillDown(match, { eventKey: 'set-77' }, resolver)).toBe(true);
+    expect(
+      matchesDrillDown(match, { eventKey: 'eventSession:tournament:Genesis:1000' }, resolver),
+    ).toBe(true);
+    expect(matchesDrillDown(match, { eventKey: 'set-78' }, resolver)).toBe(false);
+    expect(matchesDrillDown(match, { eventKey: 'set-77' }, () => [])).toBe(false);
+  });
+
   it('an inclusive window whose start equals its end returns EVERY game at that instant', () => {
     const axes: DrillDownAxes = { from: 5000, to: 5000 };
     const exact1 = makeMatch({ id: 'a', time: 5000 });
