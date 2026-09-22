@@ -379,16 +379,30 @@ export function FilteredMatchList({
   const [visibleCount, setVisibleCount] = useState(FILTERED_MATCH_LIST_ROW_CAP);
   const rootId = useId();
 
-  // A re-narrowing (a new `narrowedMatches` array — matches or axes changed)
-  // must not keep stale paging progress. "Adjusting state when a prop
-  // changes" (reset during render, not an Effect — mirrors
+  // A re-narrowing must not keep stale paging progress. WR-07 (39.1-REVIEW):
+  // "re-narrowing" means an axis VALUE changed — keyed on the axes' own
+  // values, never on the `narrowedMatches` array reference, which also
+  // changes on a refetch, a deleted row, or a host's claim resolver being
+  // rebuilt (a rail card dismissed) while the narrowing itself is the same;
+  // those used to snap the list back to the cap. A shrunken list needs no
+  // reset: `slice` below clamps to whatever remains. "Adjusting state when a
+  // prop changes" (reset during render, not an Effect — mirrors
   // `TimestampRow.tsx`'s `trackedIsEditing` pattern, and this codebase's own
   // react-compiler lint rule flags the equivalent
   // `useEffect(() => setState(...), [dep])` form as a
   // synchronous-setState-in-an-effect cascading-render risk).
-  const [trackedNarrowedMatches, setTrackedNarrowedMatches] = useState(narrowedMatches);
-  if (narrowedMatches !== trackedNarrowedMatches) {
-    setTrackedNarrowedMatches(narrowedMatches);
+  const narrowingKey = JSON.stringify([
+    axes.fighterId ?? null,
+    axes.vsFighterId ?? null,
+    axes.stageId ?? null,
+    axes.eventKey ?? null,
+    axes.from ?? null,
+    axes.to ?? null,
+    axes.claimId ?? null,
+  ]);
+  const [trackedNarrowingKey, setTrackedNarrowingKey] = useState(narrowingKey);
+  if (narrowingKey !== trackedNarrowingKey) {
+    setTrackedNarrowingKey(narrowingKey);
     setVisibleCount(FILTERED_MATCH_LIST_ROW_CAP);
   }
 

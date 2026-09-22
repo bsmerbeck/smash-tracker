@@ -749,6 +749,75 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     ).toBeInTheDocument();
   });
 
+  describe('WR-07 (39.1-REVIEW): paging survives changes that are not re-narrowings', () => {
+    type WrapperProps = {
+      matches: Match[];
+      axes: DrillDownAxes;
+      resolveClaim?: (claimId: string, ms: Match[]) => Match[] | undefined;
+    };
+    function renderPaged(initial: WrapperProps) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const Wrapper = (props: WrapperProps) => (
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/matchups']}>
+            <AuthProvider>
+              <Routes>
+                <Route path="/matchups" element={<FilteredMatchList {...props} layout="table" />} />
+              </Routes>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+      const result = render(<Wrapper {...initial} />);
+      return { ...result, Wrapper };
+    }
+    function mountedRows(): number {
+      return within(screen.getByRole('table')).getAllByRole('row').length - 1;
+    }
+    const PAGED = FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE;
+
+    it('a refetch (new matches array, same games) and a new-but-equal axes object keep the paging progress', () => {
+      const matches = makeManyMatches(1000);
+      const { rerender, Wrapper } = renderPaged({ matches, axes: {} });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(<Wrapper matches={[...matches]} axes={{}} />);
+      expect(mountedRows()).toBe(PAGED);
+    });
+
+    it('a deleted row (the list shrinks by one) keeps the paging progress instead of snapping back to the cap', () => {
+      const matches = makeManyMatches(1000);
+      const { rerender, Wrapper } = renderPaged({ matches, axes: {} });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(<Wrapper matches={matches.slice(1)} axes={{}} />);
+      expect(mountedRows()).toBe(PAGED);
+      expect(screen.getByRole('table')).toHaveAttribute('data-total-rows', '999');
+    });
+
+    it('a new claim-resolver reference that resolves the same claim (a rail card dismissed) keeps the paging progress', () => {
+      const matches = makeManyMatches(1000);
+      const axes: DrillDownAxes = { claimId: 'formNow:account:last30' };
+      const resolve = (_id: string, ms: Match[]) => ms.slice(0, 600);
+      const { rerender, Wrapper } = renderPaged({ matches, axes, resolveClaim: resolve });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(
+        <Wrapper matches={matches} axes={axes} resolveClaim={(id, ms) => resolve(id, ms)} />,
+      );
+      expect(mountedRows()).toBe(PAGED);
+    });
+  });
+
   it('the pre-existing single-page cases stay unaffected: a small narrowed set never shows the paging control or progress line', () => {
     renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
     expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
