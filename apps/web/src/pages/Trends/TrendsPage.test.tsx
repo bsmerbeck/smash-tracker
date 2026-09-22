@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -64,11 +64,11 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function renderTrends() {
+function renderTrends(initialEntry = '/trends') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/trends']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <TooltipProvider>
@@ -178,6 +178,72 @@ describe('TrendsPage', () => {
       expect(card.className).not.toMatch(/\bh-full\b/);
       expect(card.className).not.toMatch(/\bflex-1\b/);
     }
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a rail card door narrows a new page-level terminus to exactly N', () => {
+    /** No page-level terminus exists in the URL's absence — the games anchor never mounts. */
+    it('renders no #games terminus with no drill axis in the URL', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+
+      renderTrends();
+
+      await screen.findByText('Monthly Performance');
+      expect(document.getElementById('games')).not.toBeInTheDocument();
+    });
+
+    /** 5 small-sample games — clears `RatingMove`'s abstention floor (3) but stays below the trend floor (8), so it asserts a real "thin" fact card carrying a counted-games door. */
+    function ratingCardFixture() {
+      const now = Date.now();
+      return [
+        makeMatch({ id: 'g1', time: now - 5 * 60_000, win: true }),
+        makeMatch({ id: 'g2', time: now - 4 * 60_000, win: false }),
+        makeMatch({ id: 'g3', time: now - 3 * 60_000, win: true }),
+        makeMatch({ id: 'g4', time: now - 2 * 60_000, win: false }),
+        makeMatch({ id: 'g5', time: now - 1 * 60_000, win: true }),
+      ];
+    }
+
+    it("clicking the rating-move card's counted-games door mounts a new page-level terminus with data-total-rows equal to the door's own count", async () => {
+      const matches = ratingCardFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Monthly Performance');
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
+        ).not.toBeNull(),
+      );
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      const door = within(card).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw)', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+
+      renderTrends('/trends?claim=ratingMove:account:doesNotExist');
+
+      await screen.findByText('Monthly Performance');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
+    });
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.

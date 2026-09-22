@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
@@ -7,7 +7,7 @@ import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
-import { TrendsReadsRail } from './TrendsReadsRail';
+import { TrendsReadsRail, useTrendsInsights } from './TrendsReadsRail';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -125,6 +125,27 @@ function ratingCardFixture(): Match[] {
   ];
 }
 
+/**
+ * Plan 39.1-24 (gap closure, Task 2): `TrendsReadsRail` no longer computes
+ * its own `insights` — a host calls `useTrendsInsights` ONCE and hands the
+ * result down (so a page-level terminus can share the SAME array for
+ * `resolveClaim`), mirroring `FighterInsightRail`'s Task 1 pattern. This
+ * harness reproduces that real usage pattern for the rail's own isolated
+ * tests.
+ */
+function RailTestHarness({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
+  const { insights, dismissedIds, dismiss, restoreAll } = useTrendsInsights({ matches, horizon });
+  return (
+    <TrendsReadsRail
+      insights={insights}
+      dismissedIds={dismissedIds}
+      dismiss={dismiss}
+      restoreAll={restoreAll}
+      horizon={horizon}
+    />
+  );
+}
+
 function renderRail(matches: Match[], horizon: HorizonKey = 'last30') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -132,7 +153,7 @@ function renderRail(matches: Match[], horizon: HorizonKey = 'last30') {
       <MemoryRouter>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <TrendsReadsRail matches={matches} horizon={horizon} />
+            <RailTestHarness matches={matches} horizon={horizon} />
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -218,6 +239,32 @@ describe('TrendsReadsRail', () => {
     const cardKinds = [...container.querySelectorAll(RAIL_CARD_SELECTOR)];
     expect(cardKinds.length).toBe(1);
     expect(cardKinds[0]?.getAttribute('data-card-kind')).toBe('regular');
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): counted-games door reaches the rating-move card, ratingModel note stays secondary', () => {
+    it('renders a primary counted-games door followed by the rating-model note button, capped at 3', async () => {
+      renderRail(ratingCardFixture());
+      await waitForSettled();
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      expect(card).not.toBeNull();
+
+      const links = within(card).getAllByRole('link');
+      expect(links.length).toBe(1);
+      const href = links[0]!.getAttribute('href') ?? '';
+      expect(href).toMatch(/claim=/);
+      expect(href).toMatch(/#games$/);
+      expect(links[0]!.textContent ?? '').toMatch(/see the \d+ games?/i);
+
+      const ratingModelButton = within(card).getByRole('button', { name: 'Rating model note' });
+      expect(ratingModelButton).toBeInTheDocument();
+
+      // The games door precedes the rating-model button in DOM/tab order.
+      const relation = links[0]!.compareDocumentPosition(ratingModelButton);
+      expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    });
   });
 
   describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {
