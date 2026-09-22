@@ -34,6 +34,7 @@ import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { getMatchTypeRecords } from '@/lib/stats';
+import { formatPercent } from '@/lib/formatPercent';
 
 /**
  * The three recent-window figures the hero's `StatRow` renders as buttons —
@@ -205,7 +206,7 @@ export function FighterHero({
   setHorizon,
   isLoading,
 }: FighterHeroProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const localizedName = useFighterName(fighter.id);
   const subjectPath = useSubjectPath();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
@@ -291,7 +292,20 @@ export function FighterHero({
   const verdict = formNowInsight
     ? t(formNowInsight.copy.key, { ...formNowInsight.copy.values, entity })
     : '';
-  const recentRecord = `${formNowInsight?.copy.values.record ?? ''} · ${formNowInsight?.copy.values.rate ?? ''}`;
+  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
+  // `recent`/`baseline` claims and format it through the one shared,
+  // locale-aware percent formatter, rather than the engine's pre-formatted
+  // `copy.values.rate`/`.baselineRate` strings (always English-convention
+  // "42%", baked in before this component ever sees `i18n.language`).
+  const recentRateText =
+    formNowInsight && formNowInsight.recent.kind === 'evidenced'
+      ? formatPercent(formNowInsight.recent.value.rate, i18n.language)
+      : '';
+  const recentRecord = `${formNowInsight?.copy.values.record ?? ''} · ${recentRateText}`;
+  const baselineRateText =
+    formNowInsight && formNowInsight.baseline.kind === 'evidenced'
+      ? formatPercent(formNowInsight.baseline.value.rate, i18n.language)
+      : '';
   const evidenceCount =
     typeof formNowInsight?.copy.values.count === 'number' ? formNowInsight.copy.values.count : 0;
   const evidenceTier = confidenceTierFor(evidenceCount);
@@ -301,7 +315,7 @@ export function FighterHero({
   const evidence = formNowInsight
     ? t(`insights.evidence.twoHorizon.${horizon}`, {
         recentRecord,
-        baselineRate: formNowInsight.copy.values.baselineRate ?? '',
+        baselineRate: baselineRateText,
         baselineGames: formNowInsight.copy.values.baselineGames ?? 0,
         cue: evidenceCue,
       })

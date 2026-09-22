@@ -19,6 +19,7 @@ import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { formatPercent } from '@/lib/formatPercent';
 
 /**
  * The four Match Data roster reads (UI-SPEC §8.4's rail: "RosterCore ·
@@ -56,7 +57,7 @@ function claimChipKindFor(kind: Insight['kind']): ClaimChipKind {
   return 'fact';
 }
 
-/** Every one of the four rail templates supplies its own complete `copy.values` — the only gap is the engine's degenerate account-scope FALLBACK insight (`rail.ts`'s `FALLBACK_LOCKED_INSIGHT`, templateId `formNow`), whose `insights.formNow.locked` key needs a host-composed `{{entity}}`. */
+/** Every one of the four rail templates supplies its own complete `copy.values` — the only gap is the engine's degenerate account-scope FALLBACK insight (`rail.ts`'s `FALLBACK_LOCKED_INSIGHT`, templateId `formNow`, copy key `insights.rail.unavailable` as of WR-A03), which needs a host-composed `{{entity}}`. */
 function copyValuesWithEntity(
   insight: Insight,
   accountName: string,
@@ -64,18 +65,22 @@ function copyValuesWithEntity(
   return { entity: accountName, ...insight.copy.values };
 }
 
-function buildEvidenceLine(insight: Insight, t: TFunction): string {
+function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
     return '';
   }
   const record = `${claim.value.wins}–${claim.value.losses}`;
-  const rate = `${Math.round(claim.value.rate * 100)}%`;
+  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
+  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
+  // literal, which baked in the English convention (no space before `%`)
+  // inside every locale's translated evidence sentence.
+  const rate = formatPercent(claim.value.rate, locale);
   const tier = claim.sample.confidenceTier;
   const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
   const baselineClaim = insight.baseline;
   const baselineRate =
-    baselineClaim.kind === 'evidenced' ? `${Math.round(baselineClaim.value.rate * 100)}%` : '';
+    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
   const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
   return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
     recentRecord: `${record} · ${rate}`,
@@ -115,7 +120,7 @@ export interface MatchDataRailProps {
  * `TrendsReadsRail.tsx`'s established pattern).
  */
 export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
@@ -157,7 +162,7 @@ export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
   function insightToRailCard(insight: Insight): InsightRailCard {
     const chipKind = claimChipKindFor(insight.kind);
     const verdict = t(insight.copy.key, copyValuesWithEntity(insight, accountName));
-    const evidence = buildEvidenceLine(insight, t);
+    const evidence = buildEvidenceLine(insight, t, i18n.language);
     const span = buildSpan(insight, t);
     return {
       id: insight.id,
@@ -230,7 +235,7 @@ export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
     const unlocksNext = assembled.unlocksNext ? buildUnlocksNextCard(assembled.unlocksNext) : null;
     return { cards, unlocksNext, lines, promotionQueue };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assembled, insightById, t, accountName]);
+  }, [assembled, insightById, t, accountName, i18n.language]);
 
   const legend = (
     <>

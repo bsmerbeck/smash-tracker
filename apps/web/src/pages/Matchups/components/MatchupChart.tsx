@@ -14,6 +14,7 @@ import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent, type FormStripSet } from '@/components/charts/FormStrip';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { formatPercent } from '@/lib/formatPercent';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
 
@@ -100,18 +101,28 @@ export function renderFormNowHead(
   insight: Insight,
   opponentId: number,
   t: TFunction,
+  locale: string,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
   const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
 
-  const recentRecord = `${insight.copy.values.record ?? ''} · ${insight.copy.values.rate ?? ''}`;
+  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
+  // `recent`/`baseline` claims and format it through the one shared,
+  // locale-aware percent formatter, rather than the engine's pre-formatted
+  // `copy.values.rate`/`.baselineRate` strings (always English-convention
+  // "42%").
+  const recentRateText =
+    insight.recent.kind === 'evidenced' ? formatPercent(insight.recent.value.rate, locale) : '';
+  const baselineRateText =
+    insight.baseline.kind === 'evidenced' ? formatPercent(insight.baseline.value.rate, locale) : '';
+  const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
   const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
   const tier = confidenceTierFor(count);
   const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
   const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
     recentRecord,
-    baselineRate: insight.copy.values.baselineRate ?? '',
+    baselineRate: baselineRateText,
     baselineGames: insight.copy.values.baselineGames ?? 0,
     cue,
   });

@@ -69,6 +69,7 @@ import { SpriteList } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { alphaStageList } from '@/lib/stageOptions';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { formatPercent } from '@/lib/formatPercent';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
@@ -131,18 +132,28 @@ function renderOpponentFormNowHead(
   insight: Insight,
   opponentTag: string,
   t: TFunction,
+  locale: string,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const entity = `${t('matchups.vs')} ${opponentTag}`;
   const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
 
-  const recentRecord = `${insight.copy.values.record ?? ''} · ${insight.copy.values.rate ?? ''}`;
+  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
+  // `recent`/`baseline` claims and format it through the one shared,
+  // locale-aware percent formatter, rather than the engine's pre-formatted
+  // `copy.values.rate`/`.baselineRate` strings (always English-convention
+  // "42%").
+  const recentRateText =
+    insight.recent.kind === 'evidenced' ? formatPercent(insight.recent.value.rate, locale) : '';
+  const baselineRateText =
+    insight.baseline.kind === 'evidenced' ? formatPercent(insight.baseline.value.rate, locale) : '';
+  const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
   const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
   const tier = confidenceTierFor(count);
   const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
   const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
     recentRecord,
-    baselineRate: insight.copy.values.baselineRate ?? '',
+    baselineRate: baselineRateText,
     baselineGames: insight.copy.values.baselineGames ?? 0,
     cue,
   });
@@ -263,7 +274,7 @@ function matchSource(match: Match): HubSourceChip {
 const STAGE_IDS = new Set(stagesById.keys());
 
 export function OpponentHubPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -883,7 +894,11 @@ export function OpponentHubPage() {
           <ChartCard
             title={t('opponents.trend.title')}
             abstained={trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null}
-            insight={trendInsight ? renderOpponentFormNowHead(trendInsight, displayTag, t) : null}
+            insight={
+              trendInsight
+                ? renderOpponentFormNowHead(trendInsight, displayTag, t, i18n.language)
+                : null
+            }
           >
             <FormStrip
               events={formStripEvents}

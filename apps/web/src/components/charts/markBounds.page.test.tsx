@@ -103,7 +103,7 @@ function ChartCardWrapper({
   width?: number;
   height?: number;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insight = useMatchupFormNow({ matchupMatches, horizon });
   const opponentId = matchupMatches[0]?.opponent_id;
   return (
@@ -115,7 +115,11 @@ function ChartCardWrapper({
           ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
           : null
       }
-      insight={insight && opponentId != null ? renderFormNowHead(insight, opponentId, t) : null}
+      insight={
+        insight && opponentId != null
+          ? renderFormNowHead(insight, opponentId, t, i18n.language)
+          : null
+      }
     >
       <MatchupChart
         matchupMatches={matchupMatches}

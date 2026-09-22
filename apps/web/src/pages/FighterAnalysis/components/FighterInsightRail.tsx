@@ -19,6 +19,7 @@ import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/Unloc
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { formatPercent } from '@/lib/formatPercent';
 
 /**
  * The five cards this rail draws from — FormNow is excluded (it lives in
@@ -61,7 +62,7 @@ function buildFighterScope(fighterId: number): InsightScope {
   };
 }
 
-/** Every one of the three rail templates supplies its own complete `copy.values` (fighter/opponent/event names are already engine-composed) — the only gap is the engine's degenerate account-scope FALLBACK insight (`rail.ts`'s `FALLBACK_LOCKED_INSIGHT`, templateId `formNow`), whose `insights.formNow.locked` key needs a host-composed `{{entity}}`. Spread AFTER `entity` so a template that already supplies its own values never loses one. */
+/** Every one of the three rail templates supplies its own complete `copy.values` (fighter/opponent/event names are already engine-composed) — the only gap is the engine's degenerate account-scope FALLBACK insight (`rail.ts`'s `FALLBACK_LOCKED_INSIGHT`, templateId `formNow`, copy key `insights.rail.unavailable` as of WR-A03), which needs a host-composed `{{entity}}`. Spread AFTER `entity` so a template that already supplies its own values never loses one. */
 function copyValuesWithEntity(
   insight: Insight,
   fighterName: string,
@@ -69,13 +70,17 @@ function copyValuesWithEntity(
   return { entity: fighterName, ...insight.copy.values };
 }
 
-function buildEvidenceLine(insight: Insight, t: TFunction): string {
+function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
     return '';
   }
   const record = `${claim.value.wins}–${claim.value.losses}`;
-  const rate = `${Math.round(claim.value.rate * 100)}%`;
+  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
+  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
+  // literal, which baked in the English convention (no space before `%`)
+  // inside every locale's translated evidence sentence.
+  const rate = formatPercent(claim.value.rate, locale);
   const tier = claim.sample.confidenceTier;
   const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
   if (insight.templateId === 'lastEventRecap') {
@@ -83,7 +88,7 @@ function buildEvidenceLine(insight: Insight, t: TFunction): string {
   }
   const baselineClaim = insight.baseline;
   const baselineRate =
-    baselineClaim.kind === 'evidenced' ? `${Math.round(baselineClaim.value.rate * 100)}%` : '';
+    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
   const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
   return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
     recentRecord: `${record} · ${rate}`,
@@ -108,10 +113,15 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   });
 }
 
-function insightToRailCard(insight: Insight, t: TFunction, fighterName: string): InsightRailCard {
+function insightToRailCard(
+  insight: Insight,
+  t: TFunction,
+  fighterName: string,
+  locale: string,
+): InsightRailCard {
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = t(insight.copy.key, copyValuesWithEntity(insight, fighterName));
-  const evidence = buildEvidenceLine(insight, t);
+  const evidence = buildEvidenceLine(insight, t, locale);
   const span = buildSpan(insight, t);
   return {
     id: insight.id,
@@ -183,7 +193,7 @@ export function FighterInsightRail({
   fighterMatches,
   horizon,
 }: FighterInsightRailProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const fighterName = useFighterName(fighterId);
   const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
@@ -228,10 +238,10 @@ export function FighterInsightRail({
       !(assembled.unlocksNext && candidate.state === 'locked');
     const cards = assembled.cards
       .filter(dedupeLocked)
-      .map((i) => insightToRailCard(i, t, fighterName));
+      .map((i) => insightToRailCard(i, t, fighterName, i18n.language));
     const promotionQueue = assembled.promotionQueue
       .filter((i) => i.state !== 'locked')
-      .map((i) => insightToRailCard(i, t, fighterName));
+      .map((i) => insightToRailCard(i, t, fighterName, i18n.language));
     const lines = assembled.lines.map((insight) => (
       <InsightLine
         key={insight.id}
@@ -243,7 +253,7 @@ export function FighterInsightRail({
       ? buildUnlocksNextCard(assembled.unlocksNext, insightById, t, fighterName)
       : null;
     return { cards, unlocksNext, lines, promotionQueue };
-  }, [assembled, insightById, t, fighterName]);
+  }, [assembled, insightById, t, fighterName, i18n.language]);
 
   const legend = (
     <>

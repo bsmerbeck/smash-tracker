@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
+import i18n from '@/i18n';
 import { SpriteList } from '@/data/sprites';
 import { FighterHero } from './FighterHero';
 
@@ -193,5 +194,24 @@ describe('FighterHero', () => {
   it('shows the empty state with no crash when the fighter has no matches at all', () => {
     renderHero({ fighterMatches: [], allMatches: [] });
     expect(screen.getByText(mario.name)).toBeInTheDocument();
+  });
+
+  describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('renders the French percent convention (a space before the sign), never the English "42%" glued form', async () => {
+      await i18n.changeLanguage('fr');
+      renderHero({ fighterMatches: fortyGameFixture() });
+      const evidence = document.querySelector('[data-slot="fighter-hero-verdict-evidence"]');
+      expect(evidence).toBeInTheDocument();
+      const text = evidence!.textContent ?? '';
+      // At least one percent value is present, and every percent value in
+      // the sentence carries a space before the `%` sign (the "fr" CLDR
+      // convention) — never the bare English "NN%" glued form.
+      expect(text).toMatch(/\d+\s%/);
+      expect(text).not.toMatch(/\d+%/);
+    });
   });
 });

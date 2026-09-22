@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import i18n from '@/i18n';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
@@ -34,7 +35,7 @@ function ChartCardWrapper({
   width?: number;
   height?: number;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const insight = useMatchupFormNow({ matchupMatches, horizon });
   const opponentId = matchupMatches[0]?.opponent_id;
   return (
@@ -46,7 +47,11 @@ function ChartCardWrapper({
           ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
           : null
       }
-      insight={insight && opponentId != null ? renderFormNowHead(insight, opponentId, t) : null}
+      insight={
+        insight && opponentId != null
+          ? renderFormNowHead(insight, opponentId, t, i18n.language)
+          : null
+      }
     >
       <MatchupChart
         matchupMatches={matchupMatches}
@@ -194,6 +199,23 @@ describe('MatchupChart', () => {
       expect(fill).not.toMatch(/--primary\b/);
       expect(stroke).not.toMatch(/--primary\b/);
     }
+  });
+
+  describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('renders the French percent convention (a space before the sign), never the English "NN%" glued form', async () => {
+      await i18n.changeLanguage('fr');
+      const { container } = renderChart(recentSequence(10));
+      const evidence = container.querySelector('[data-slot="matchup-form-now-evidence"]');
+      expect(evidence).toBeInTheDocument();
+      const text = evidence!.textContent ?? '';
+      expect(text).toMatch(/%/);
+      expect(text).toMatch(/\d+\s%/);
+      expect(text).not.toMatch(/\d+%/);
+    });
   });
 });
 

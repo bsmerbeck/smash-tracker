@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
+import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -217,5 +218,27 @@ describe('TrendsReadsRail', () => {
     const cardKinds = [...container.querySelectorAll(RAIL_CARD_SELECTOR)];
     expect(cardKinds.length).toBe(1);
     expect(cardKinds[0]?.getAttribute('data-card-kind')).toBe('regular');
+  });
+
+  describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it('renders the French percent convention (a space before the sign), never the English "NN%" glued form', async () => {
+      await i18n.changeLanguage('fr');
+      renderRail(sessionFatigueFixture());
+      await waitForSettled();
+
+      const evidence = [...document.querySelectorAll('[data-slot="insight-card-evidence"]')].map(
+        (el) => el.textContent ?? '',
+      );
+      const withPercent = evidence.filter((text) => /%/.test(text));
+      expect(withPercent.length).toBeGreaterThan(0);
+      for (const text of withPercent) {
+        expect(text).toMatch(/\d+\s%/);
+        expect(text).not.toMatch(/\d+%/);
+      }
+    });
   });
 });

@@ -67,7 +67,7 @@ import { PairingOpponents } from './components/PairingOpponents';
  * real content.
  */
 export function MatchupsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
@@ -421,7 +421,7 @@ export function MatchupsPage() {
                 }
                 insight={
                   formNowInsight && effectiveOpponent
-                    ? renderFormNowHead(formNowInsight, effectiveOpponent.id, t)
+                    ? renderFormNowHead(formNowInsight, effectiveOpponent.id, t, i18n.language)
                     : null
                 }
               >
