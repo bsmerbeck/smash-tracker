@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
-import { MatchDataRail } from './MatchDataRail';
+import { MatchDataRail, useMatchDataInsights } from './MatchDataRail';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -162,6 +162,30 @@ function pocketsBelowFloorFixture(): Match[] {
   }));
 }
 
+/**
+ * Plan 39.1-24 Task 2: `MatchDataRail` no longer computes its own `insights`
+ * — a host calls `useMatchDataInsights` ONCE and hands the result down (so
+ * the page's `FilteredMatchList` terminus can share the SAME array for
+ * `resolveClaim`), mirroring `FighterInsightRail`'s Task 1 pattern. This
+ * harness reproduces that real usage pattern for the rail's own isolated
+ * tests.
+ */
+function RailTestHarness({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
+  const { insights, dismissedIds, dismiss, restoreAll } = useMatchDataInsights({
+    matches,
+    horizon,
+  });
+  return (
+    <MatchDataRail
+      insights={insights}
+      dismissedIds={dismissedIds}
+      dismiss={dismiss}
+      restoreAll={restoreAll}
+      horizon={horizon}
+    />
+  );
+}
+
 function renderRail(matches: Match[], horizon: HorizonKey = 'last30') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -169,7 +193,7 @@ function renderRail(matches: Match[], horizon: HorizonKey = 'last30') {
       <MemoryRouter>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <MatchDataRail matches={matches} horizon={horizon} />
+            <RailTestHarness matches={matches} horizon={horizon} />
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -237,5 +261,34 @@ describe('MatchDataRail', () => {
     const cardKinds = [...container.querySelectorAll(RAIL_CARD_SELECTOR)];
     expect(cardKinds.length).toBe(1);
     expect(cardKinds[0]?.getAttribute('data-card-kind')).toBe('regular');
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): counted-games doors reach the rendered card', () => {
+    it('every regular card shows a real counted-games door link (claim=<id>#games), primary and before the dismiss control', async () => {
+      const { container } = renderRail(allFourReadsFixture());
+      await waitForSettled();
+
+      const cards = container.querySelectorAll(`${RAIL_CARD_SELECTOR}[data-card-kind="regular"]`);
+      expect(cards.length).toBeGreaterThan(0);
+
+      for (const card of Array.from(cards)) {
+        const doors = within(card as HTMLElement).getAllByRole('link');
+        expect(doors.length).toBeGreaterThan(0);
+        expect(doors.length).toBeLessThanOrEqual(3);
+
+        const primary = doors[0]!;
+        const href = primary.getAttribute('href') ?? '';
+        expect(href).toMatch(/claim=/);
+        expect(href).toMatch(/#games$/);
+        expect(primary.textContent ?? '').toMatch(/see the \d+ games?/i);
+
+        const dismissButton = within(card as HTMLElement).getByRole('button', {
+          name: /dismiss/i,
+        });
+        const lastDoor = doors[doors.length - 1]!;
+        const relation = lastDoor.compareDocumentPosition(dismissButton);
+        expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      }
+    });
   });
 });

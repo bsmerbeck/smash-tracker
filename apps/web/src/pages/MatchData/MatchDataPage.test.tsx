@@ -1026,6 +1026,65 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
     );
   });
 
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a rail card door narrows the terminus to exactly N', () => {
+    /** 45 games, all Mario — clears `ROSTER_MAIN_MIN_GAMES` (20) so `rosterCore` produces a real, asserting fact card. */
+    function richRosterFixture() {
+      const now = Date.now();
+      return Array.from({ length: 45 }, (_, i) =>
+        makeMatch({
+          id: `roster-${i}`,
+          fighter_id: mario.id,
+          time: now - (45 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+        }),
+      );
+    }
+
+    it("clicking a card's counted-games door shows the terminus with data-total-rows equal to the door's own count", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richRosterFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderMatchData();
+
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
+        ).not.toBeNull(),
+      );
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      const door = within(card).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+
+      renderMatchData('/match-data?claim=rosterCore:account:doesNotExist');
+
+      await screen.findByText('Match History');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
