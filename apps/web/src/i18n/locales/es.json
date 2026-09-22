@@ -132,8 +132,10 @@
       "columnMyCharacter": "Mi personaje",
       "columnTheirCharacter": "Su personaje",
       "columnEvent": "Evento",
-      "showAll_one": "Mostrar {{count}} partida",
-      "showAll_other": "Mostrar todas las {{count}} partidas"
+      "showMore_one": "Mostrar {{count}} más",
+      "showMore_other": "Mostrar {{count}} más",
+      "showingOf_one": "Mostrando {{shown}} de {{count}} partida",
+      "showingOf_other": "Mostrando {{shown}} de {{count}} partidas"
     },
     "pips": {
       "empty": "Aún no hay partidas.",

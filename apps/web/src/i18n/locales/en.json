@@ -138,8 +138,10 @@
       "columnMyCharacter": "My character",
       "columnTheirCharacter": "Their character",
       "columnEvent": "Event",
-      "showAll_one": "Show all {{count}} game",
-      "showAll_other": "Show all {{count}} games"
+      "showMore_one": "Show {{count}} more",
+      "showMore_other": "Show {{count}} more",
+      "showingOf_one": "Showing {{shown}} of {{count}} game",
+      "showingOf_other": "Showing {{shown}} of {{count}} games"
     },
     "pips": {
       "empty": "No matches yet.",

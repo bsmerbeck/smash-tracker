@@ -132,8 +132,10 @@
       "columnMyCharacter": "Mein Charakter",
       "columnTheirCharacter": "Ihr Charakter",
       "columnEvent": "Event",
-      "showAll_one": "Alle {{count}} Spiel anzeigen",
-      "showAll_other": "Alle {{count}} Spiele anzeigen"
+      "showMore_one": "{{count}} weitere anzeigen",
+      "showMore_other": "{{count}} weitere anzeigen",
+      "showingOf_one": "{{shown}} von {{count}} Spiel angezeigt",
+      "showingOf_other": "{{shown}} von {{count}} Spielen angezeigt"
     },
     "pips": {
       "empty": "Noch keine Matches.",

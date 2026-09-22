@@ -132,8 +132,10 @@
       "columnMyCharacter": "自分のキャラクター",
       "columnTheirCharacter": "相手のキャラクター",
       "columnEvent": "大会",
-      "showAll_one": "{{count}}試合すべて表示",
-      "showAll_other": "{{count}}試合すべて表示"
+      "showMore_one": "さらに{{count}}件表示",
+      "showMore_other": "さらに{{count}}件表示",
+      "showingOf_one": "{{count}}件中{{shown}}件を表示",
+      "showingOf_other": "{{count}}件中{{shown}}件を表示"
     },
     "pips": {
       "empty": "まだ対戦がありません。",

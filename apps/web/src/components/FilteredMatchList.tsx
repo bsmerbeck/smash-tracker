@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -84,16 +84,29 @@ export function matchHasAttachedVideo(match: Match): boolean {
 export type FilteredMatchListLayout = 'table' | 'stack';
 
 /**
- * UIX-02 bound (plan 39.1-23, orchestrator Finding 9): Phase 38's narrow
- * drill-down axes (one event/opponent/stage) never mounted more than a
- * handful of rows, so the terminus mounted every narrowed match with no
- * bound. Phase 39.1's account-scoped insight doors (`settingGap`,
+ * UIX-02 bound (plan 39.1-28, owner decision 2026-09-22: "conform to spec" —
+ * UI-SPEC §6.4, "<= 100 rows per DOM pass + 'Show 50 more'"). Phase 38's
+ * narrow drill-down axes (one event/opponent/stage) never mounted more than
+ * a handful of rows, so the terminus mounted every narrowed match with no
+ * bound; Phase 39.1's account-scoped insight doors (`settingGap`,
  * `rosterCore`, the full-history roster reads) can narrow to thousands of
- * rows on a real account. This caps what MOUNTS, never what is PRINTED — the
- * active-filter summary and `data-total-rows` always state the full narrowed
- * count; only the DOM row count is bounded until "Show all" is clicked.
+ * rows on a real account. This caps what MOUNTS on first render, never what
+ * is PRINTED — the active-filter summary and `data-total-rows` always state
+ * the full narrowed count. Plan 39.1-23 originally shipped this bound at 200
+ * rows with a one-step "Show all" reveal; the owner rejected that as
+ * over-spec relative to REQUIREMENTS.md's "no list renders more than 100
+ * rows in one pass" and UI-SPEC §6.4's literal text, so this plan lowers the
+ * cap to 100 and replaces the one-step reveal with `FILTERED_MATCH_LIST_PAGE_SIZE`-row
+ * paging below.
  */
-export const FILTERED_MATCH_LIST_ROW_CAP = 200;
+export const FILTERED_MATCH_LIST_ROW_CAP = 100;
+
+/**
+ * UIX-02 bound (plan 39.1-28): the number of additional rows one activation
+ * of the "Show N more" paging control mounts. See `FILTERED_MATCH_LIST_ROW_CAP`
+ * above for the first-pass bound this pairs with.
+ */
+export const FILTERED_MATCH_LIST_PAGE_SIZE = 50;
 
 /** Tailwind's `sm` breakpoint (640px) — matches the UI-SPEC's "Mobile (<640px)" clause and `MatrixHeat.tsx`'s own constant. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -346,38 +359,66 @@ export function FilteredMatchList({
     };
   }, [matches, axes, eventKeyForMatch, resolveClaim]);
 
-  // Plan 39.1-23 (UIX-02): the row-cap ladder. `rootId` names whichever
-  // layout root actually mounts (table or stack are mutually exclusive) so
-  // the Show-all control's `aria-controls` always points at a real element.
-  const [expanded, setExpanded] = useState(false);
+  // Plan 39.1-28 (UIX-02, owner decision 2026-09-22): the paging ladder.
+  // `rootId` names whichever layout root actually mounts (table or stack are
+  // mutually exclusive) so the paging control's `aria-controls` always
+  // points at a real element. `visibleCount` replaces plan 39.1-23's
+  // one-step `expanded` boolean — the first pass mounts
+  // `FILTERED_MATCH_LIST_ROW_CAP` rows, and each activation of the paging
+  // control mounts up to `FILTERED_MATCH_LIST_PAGE_SIZE` more.
+  const [visibleCount, setVisibleCount] = useState(FILTERED_MATCH_LIST_ROW_CAP);
   const rootId = useId();
 
   // A re-narrowing (a new `narrowedMatches` array — matches or axes changed)
-  // must not keep a stale expansion. "Adjusting state when a prop changes"
-  // (reset during render, not an Effect — mirrors `TimestampRow.tsx`'s
-  // `trackedIsEditing` pattern, and this codebase's own react-compiler lint
-  // rule flags the equivalent `useEffect(() => setState(...), [dep])` form
-  // as a synchronous-setState-in-an-effect cascading-render risk).
+  // must not keep stale paging progress. "Adjusting state when a prop
+  // changes" (reset during render, not an Effect — mirrors
+  // `TimestampRow.tsx`'s `trackedIsEditing` pattern, and this codebase's own
+  // react-compiler lint rule flags the equivalent
+  // `useEffect(() => setState(...), [dep])` form as a
+  // synchronous-setState-in-an-effect cascading-render risk).
   const [trackedNarrowedMatches, setTrackedNarrowedMatches] = useState(narrowedMatches);
   if (narrowedMatches !== trackedNarrowedMatches) {
     setTrackedNarrowedMatches(narrowedMatches);
-    setExpanded(false);
+    setVisibleCount(FILTERED_MATCH_LIST_ROW_CAP);
   }
 
-  // The Show-all control unmounts itself once clicked (single one-way
-  // reveal); move focus to the (now-larger) list root so it never falls back
-  // to <body>.
+  const mountedMatches = narrowedMatches.slice(0, visibleCount);
+  const remaining = narrowedMatches.length - mountedMatches.length;
+  const nextPageSize = Math.min(FILTERED_MATCH_LIST_PAGE_SIZE, remaining);
+  const pagingControlVisible = remaining > 0;
+  // Shown whenever the FULL narrowed count exceeds the cap — including once
+  // the final page is revealed (`remaining === 0`) — so paging progress
+  // stays announced to assistive technology throughout, not just mid-page.
+  const progressVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP;
+
+  // The paging control unmounts itself once the activation that reveals the
+  // final page fires; move focus to the (now-larger) list root at exactly
+  // that point so it never falls back to <body>. Earlier activations leave
+  // focus on the control itself — it stays mounted (pages remain), so the
+  // browser keeps native post-click focus there with no extra handling.
+  // `shouldFocusRootRef` is set directly at the click that will exhaust the
+  // list (never inferred from a before/after `remaining` comparison), so a
+  // re-narrowing that happens to land exactly on a full final page never
+  // gets misread as "the paging control's own final activation". A ref
+  // (mutated, not `setState`) sidesteps the react-compiler lint rule that
+  // flags a synchronous `setState` inside an effect as a cascading-render
+  // risk — this effect runs after every commit but only ever ACTS on the
+  // one commit right after the exhausting click.
+  const shouldFocusRootRef = useRef(false);
   useEffect(() => {
-    if (expanded) {
+    if (shouldFocusRootRef.current) {
+      shouldFocusRootRef.current = false;
       document.getElementById(rootId)?.focus();
     }
-  }, [expanded, rootId]);
+  });
 
-  const mountedMatches =
-    expanded || narrowedMatches.length <= FILTERED_MATCH_LIST_ROW_CAP
-      ? narrowedMatches
-      : narrowedMatches.slice(0, FILTERED_MATCH_LIST_ROW_CAP);
-  const showAllControlVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP && !expanded;
+  function handleShowMore() {
+    const next = visibleCount + FILTERED_MATCH_LIST_PAGE_SIZE;
+    setVisibleCount(next);
+    if (next >= narrowedMatches.length) {
+      shouldFocusRootRef.current = true;
+    }
+  }
 
   if (loading) {
     return <div className="text-muted-foreground">{t('shared.filteredMatchList.loading')}</div>;
@@ -717,17 +758,28 @@ export function FilteredMatchList({
               </div>
             )}
           </div>
-          {showAllControlVisible && (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              aria-expanded={expanded}
-              aria-controls={rootId}
-              onClick={() => setExpanded(true)}
-            >
-              {t('shared.filteredMatchList.showAll', { count: narrowedMatches.length })}
-            </Button>
+          {(pagingControlVisible || progressVisible) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {pagingControlVisible && (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  aria-controls={rootId}
+                  onClick={handleShowMore}
+                >
+                  {t('shared.filteredMatchList.showMore', { count: nextPageSize })}
+                </Button>
+              )}
+              {progressVisible && (
+                <p aria-live="polite" className="text-sm text-muted-foreground">
+                  {t('shared.filteredMatchList.showingOf', {
+                    shown: mountedMatches.length,
+                    count: narrowedMatches.length,
+                  })}
+                </p>
+              )}
+            </div>
           )}
         </>
       )}

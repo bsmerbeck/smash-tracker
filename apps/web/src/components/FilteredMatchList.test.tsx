@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
@@ -646,8 +646,12 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     );
   });
 
-  it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', async () => {
-    const user = userEvent.setup();
+  it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', () => {
+    // `fireEvent.click` (not `userEvent.click`) — this loop clicks ~18 times
+    // for a 1000-row fixture; real-pointer-event simulation per click made
+    // this test time out at the 15s default. Focus at the end is asserted
+    // via the component's own `document.getElementById(rootId)?.focus()`
+    // effect, which `fireEvent.click` triggers identically to `userEvent`.
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
@@ -656,7 +660,7 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
 
     let button = screen.queryByRole('button', { name: /show \d+ more/i });
     while (button) {
-      await user.click(button);
+      fireEvent.click(button);
       const newMounted = within(table).getAllByRole('row').length - 1;
       expect(newMounted - mounted).toBeLessThanOrEqual(FILTERED_MATCH_LIST_PAGE_SIZE);
       mounted = newMounted;
@@ -670,7 +674,7 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     // count) even once the paging control itself has unmounted.
     const progress = document.querySelector('[aria-live="polite"]');
     expect(progress).toHaveTextContent(/1000 .* 1000/);
-  });
+  }, 30_000);
 
   it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
     const user = userEvent.setup();
