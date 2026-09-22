@@ -17,25 +17,19 @@ import { readDrillDownParams } from '@/lib/drillDownParams';
 import { buildInsightDoors, resolveInsightClaim, eventKeyOf } from './analytics/insightDoors';
 
 /**
- * Plan 39.1-19 Task 3 — UI-SPEC §13.13/§13.13a's same-n door test.
+ * Plan 39.1-19 Task 3, closed out by plan 39.1-22 (gap closure, orchestrator
+ * Finding 8) — UI-SPEC §13.13/§13.13a's same-n door test, now covering ALL
+ * 17 registered templates in ONE uniform branch (never a windowExpressible
+ * split): a counted-games door is present iff the built `Insight`'s
+ * `countedMatchIds` is non-empty, `door.count === countedMatchIds.length`,
+ * and the `FilteredMatchList` at the door's destination renders exactly that
+ * many rows — proven by actually rendering it, not just asserting the
+ * resolver's return value (see `insightDoors.test.ts` for the resolver-only
+ * unit coverage, including the tied-timestamp and elevation-of-privilege
+ * cases).
  *
- * Registry-driven, never a hand-written template-id array (asserted below):
- * `INSIGHT_TEMPLATES.filter((t) => t.windowExpressible)` derives the in-
- * scope set at run time and is compared against the current MEASURED split
- * (registry length 17, split 10/7 as of review finding CR-A05 — `settingGap`
- * moved from `true` to `false`; originally 11/6, recorded in
- * 39.1-05-SUMMARY.md, re-verified here from the built registry itself, never
- * recalled).
- *
- * See 39.1-19-SUMMARY.md's "Deviations from Plan" for why this guard's
- * in-scope set is `windowExpressible === true` templates under BOTH the
- * accepted and rejected DD-09 branches, rather than "registry length (17)
- * under accepted" as the plan's own prose states — the non-window-
- * expressible templates already ship (plans 39.1-03/04/05, plus `settingGap`
- * per CR-A05) with their OWN `insight.doors` hard-coded to the rejected-
- * branch fallback doors (or, for `settingGap`, no fallback door at all,
- * mirroring `tiltCost`/`volumeForm`), which this plan's `files_modified`
- * scope cannot touch.
+ * Registry-driven throughout: `INSIGHT_TEMPLATES` itself drives
+ * `describe.each` below, never a hand-written template-id array.
  */
 
 vi.mock('firebase/auth', async () => {
@@ -90,7 +84,7 @@ function pairingScope(fighterId: number, opponentFighterId: number): InsightScop
   };
 }
 
-/** The plain 8k synthetic fixture — 39.1-05 measured this to produce a non-empty, non-hidden result for 15 of the 17 templates directly (re-confirmed here at authoring time). */
+/** The plain 8k synthetic fixture — produces a non-empty, non-hidden result for most of the 17 templates directly. */
 const eightK = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
 const SUBJECT_FIGHTER_ID = 8; // Fox — a default main in EIGHT_K_FIXTURE_OPTIONS.
 const OPPONENT_FIGHTER_ID = 2;
@@ -179,9 +173,6 @@ const FIXTURES: Record<InsightTemplateId, { matches: Match[]; scope: InsightScop
   mixShift: { matches: buildMixShiftFixture(), scope: accountScope() },
   rosterCore: { matches: eightK, scope: accountScope() },
   rosterShift: { matches: buildRosterShiftFixture(), scope: accountScope() },
-  // Out-of-scope (non-window-expressible) — the plain 8k fixture already
-  // produces a real, non-null result for every one of these (re-confirmed
-  // at authoring time via a direct `template.build()` run).
   matchupOrPlayer: {
     matches: eightK,
     scope: pairingScope(SUBJECT_FIGHTER_ID, OPPONENT_FIGHTER_ID),
@@ -236,8 +227,24 @@ function renderFilteredMatchListAtDoor(insight: Insight, matches: Match[], doorH
   );
 }
 
+/**
+ * Plan 39.1-23 (next, sequential in this same wave) caps FilteredMatchList's
+ * rendered rows behind a "Show all" control. When that lands, the terminus
+ * is expected to expose the FULL row count via a `data-total-rows` attribute
+ * on the table even while only a capped subset is actually rendered — this
+ * helper reads that attribute when present. Until 39.1-23 lands, it falls
+ * back to counting rendered `<tr>` rows directly (today's exact behavior,
+ * since FilteredMatchList renders every matched row uncapped).
+ */
 function renderedRowCount(): number {
   const table = screen.getByRole('table');
+  const totalRowsAttr = table.getAttribute('data-total-rows');
+  if (totalRowsAttr !== null) {
+    const parsed = Number.parseInt(totalRowsAttr, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
   // Header + body rows — subtract the header row (matches this repo's own
   // established convention in FilteredMatchList.test.tsx).
   return within(table).getAllByRole('row').length - 1;
@@ -248,58 +255,50 @@ beforeEach(() => {
   setMockUser(makeMockUser());
 });
 
-describe('registry-driven scope derivation', () => {
-  it("the derived in-scope set (windowExpressible === true) is exactly 10 of the registry's 17 templates, matching the current MEASURED split (CR-A05 moved settingGap from true to false), under BOTH branches — see the SUMMARY for why", () => {
+describe('registry coverage', () => {
+  it("FIXTURES covers exactly the registry's 17 templates", () => {
     expect(INSIGHT_TEMPLATES).toHaveLength(17);
-    const inScope = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible);
-    expect(inScope).toHaveLength(10);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
-  });
-
-  it('every registered template declares windowExpressible as a boolean (never undefined)', () => {
-    for (const template of INSIGHT_TEMPLATES) {
-      expect(typeof template.windowExpressible).toBe('boolean');
-    }
   });
 });
 
 const SAME_N_DOOR_TIMEOUT_MS = 60_000;
 
 describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) => {
-  const template = INSIGHT_TEMPLATES.find((t) => t.id === templateId)!;
-
-  if (template.windowExpressible) {
-    it(
-      'renders the counted-games door, and the filtered match list at its destination shows exactly the printed count',
-      () => {
-        const insight = buildInsight(templateId);
-        const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
-        const gamesDoor = doors.find((d) => d.kind === 'games');
-        expect(
-          gamesDoor,
-          `${templateId} (window-expressible) must render a counted-games door`,
-        ).toBeDefined();
-
-        const { matches } = FIXTURES[templateId];
-        renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
-        expect(renderedRowCount()).toBe(gamesDoor!.count);
-        // Whole-history reads (settingGap, rosterCore) land on thousands of rows of the 8k
-        // fixture, and FilteredMatchList renders every one: ~5s alone, past the 15s default
-        // when `pnpm test` runs the shared/api/web suites concurrently.
-      },
-      SAME_N_DOOR_TIMEOUT_MS,
-    );
-  } else {
-    it('renders no counted-games door at all (out of scope)', () => {
+  it(
+    'counted-games door: present with the exact same-n row count iff the insight counted at least one game',
+    () => {
       const insight = buildInsight(templateId);
       const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
-      expect(doors.some((d) => d.kind === 'games')).toBe(false);
-    });
-  }
+      const gamesDoor = doors.find((d) => d.kind === 'games');
+
+      if (insight.countedMatchIds.length === 0) {
+        expect(
+          gamesDoor,
+          `${templateId} counted zero games (countedMatchIds is empty) — must render no counted-games door`,
+        ).toBeUndefined();
+        return;
+      }
+
+      expect(
+        gamesDoor,
+        `${templateId} counted ${insight.countedMatchIds.length} games — must render a counted-games door`,
+      ).toBeDefined();
+      expect(gamesDoor!.count).toBe(insight.countedMatchIds.length);
+
+      const { matches } = FIXTURES[templateId];
+      renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
+      expect(renderedRowCount()).toBe(gamesDoor!.count);
+      // Whole-history reads (settingGap, rosterCore) land on thousands of rows of the 8k
+      // fixture, and FilteredMatchList renders every one: ~5s alone, past the 15s default
+      // when `pnpm test` runs the shared/api/web suites concurrently.
+    },
+    SAME_N_DOOR_TIMEOUT_MS,
+  );
 });
 
-describe('named failing case: a tied edge timestamp', () => {
-  it('over-counts by one without the trim, and is exact with it (the shipped behavior)', () => {
+describe('named case: a tied edge timestamp is exact by construction, no trim needed', () => {
+  it('countedMatchIds names exactly the one intended game — the shipped behavior', () => {
     const tieMs = NOW_MS;
     const matches: Match[] = [
       {
@@ -359,18 +358,22 @@ describe('named failing case: a tied edge timestamp', () => {
       salience: 0,
       copy: { key: 'insights.formNow.fact', values: {} },
       doors: [{ kind: 'games', axes: {}, count: 1 }],
+      // The whole point: countedMatchIds names ONE id, never both tied games —
+      // no window/axis reconstruction, no trim, no ambiguity about which side
+      // of the tie was meant.
+      countedMatchIds: ['newest'],
     };
 
-    // PRE-FIX: reconstructing purely from the inclusive [fromMs, toMs] bound
-    // (no trim) returns BOTH tied games — the over-count UI-SPEC §13.13
-    // names as the guard's failing case.
+    // Documentation of what countedMatchIds makes unnecessary: a naive
+    // inclusive [fromMs, toMs] reconstruction over this tied boundary would
+    // have returned BOTH games (2) — the over-count UI-SPEC §13.13 named.
     const naive = matches.filter((m) => m.time >= tieMs && m.time <= tieMs);
     expect(naive.length).toBe(2);
-    expect(naive.length).not.toBe(insight.window.games);
+    expect(naive.length).not.toBe(insight.countedMatchIds.length);
 
-    // POST-FIX: the shipped resolveInsightClaim trims to exactly the count.
     const resolved = resolveInsightClaim({ claimId: insight.id, insights: [insight], matches });
     expect(resolved).toHaveLength(1);
+    expect(resolved![0]!.id).toBe('newest');
 
     const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
     const gamesDoor = doors.find((d) => d.kind === 'games')!;
