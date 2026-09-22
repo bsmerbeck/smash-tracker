@@ -11,6 +11,7 @@ import {
   FilteredMatchList,
   matchHasAttachedVideo,
   FILTERED_MATCH_LIST_ROW_CAP,
+  FILTERED_MATCH_LIST_PAGE_SIZE,
 } from './FilteredMatchList';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
 
@@ -574,10 +575,14 @@ describe('FilteredMatchList — overlay lift scope (phase 38-08 code review WR-0
 });
 
 /**
- * Plan 39.1-23 (UIX-02, orchestrator Finding 9): the terminus caps rows
- * mounted at `FILTERED_MATCH_LIST_ROW_CAP`, printing the full narrowed count
- * via the summary line and `data-total-rows`, revealing the rest through one
- * accessible "Show all" control.
+ * Plan 39.1-28 (UIX-02, owner decision 2026-09-22): the terminus caps rows
+ * MOUNTED at `FILTERED_MATCH_LIST_ROW_CAP` (100) on first render, printing
+ * the full narrowed count via `data-total-rows` and a polite live-region
+ * progress line, and reveals the rest through a "Show N more" paging control
+ * that mounts at most `FILTERED_MATCH_LIST_PAGE_SIZE` (50) rows per
+ * activation — replacing plan 39.1-23's one-step "Show all" reveal, which
+ * the owner rejected as over-spec (REQUIREMENTS.md UIX-02 / UI-SPEC §6.4:
+ * "<= 100 rows per pass + 'Show 50 more'").
  */
 function makeManyMatches(count: number): Match[] {
   return Array.from({ length: count }, (_, i) =>
@@ -585,41 +590,97 @@ function makeManyMatches(count: number): Match[] {
   );
 }
 
-describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Finding 9)', () => {
-  it('table layout: mounts exactly the cap, prints the full count, and exposes it via data-total-rows', () => {
+/** Matches an accessible name like "Show 50 more" for a given next-page size. */
+function showMoreName(n: number): RegExp {
+  return new RegExp(`show ${n} more`, 'i');
+}
+
+describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan 39.1-28, UIX-02)', () => {
+  it('table layout: mounts exactly the cap, exposes data-total-rows, and shows the first paging control + progress line', () => {
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
     // header row + capped body rows
     expect(within(table).getAllByRole('row')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 1);
     expect(table).toHaveAttribute('data-total-rows', '1000');
-    expect(screen.getByText(/1000 games/)).toBeInTheDocument();
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    expect(showAll).toHaveAttribute('aria-expanded', 'false');
-    expect(showAll).toHaveAttribute('aria-controls', table.id);
+
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    expect(showMore).toHaveAttribute('aria-controls', table.id);
     expect(table.id).not.toBe('');
+
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).not.toBeNull();
+    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
   });
 
-  it('stacked layout: same cap, count, data-total-rows and Show-all control against <li> rows', () => {
+  it('stacked layout: same cap, count, data-total-rows and paging control against <li> rows', () => {
     const matches = makeManyMatches(1000);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
     expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
     expect(stack).toHaveAttribute('data-total-rows', '1000');
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    expect(showAll).toHaveAttribute('aria-controls', stack.id);
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    expect(showMore).toHaveAttribute('aria-controls', stack.id);
   });
 
-  it('clicking Show all mounts every row, flips aria-expanded, removes the control, and never loses focus to <body>', async () => {
+  it('one activation mounts exactly one page more, leaving focus on the control while pages remain', async () => {
     const user = userEvent.setup();
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    await user.click(showAll);
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    await user.click(showMore);
     const table = screen.getByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(1001);
-    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
+    // Many pages remain (1000 total) — the control is still mounted and
+    // still holds native click focus.
+    expect(screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) })).toBe(
+      document.activeElement,
+    );
+  });
+
+  it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(1000);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const table = screen.getByRole('table');
+    let mounted = within(table).getAllByRole('row').length - 1;
+    expect(mounted).toBe(FILTERED_MATCH_LIST_ROW_CAP);
+
+    let button = screen.queryByRole('button', { name: /show \d+ more/i });
+    while (button) {
+      await user.click(button);
+      const newMounted = within(table).getAllByRole('row').length - 1;
+      expect(newMounted - mounted).toBeLessThanOrEqual(FILTERED_MATCH_LIST_PAGE_SIZE);
+      mounted = newMounted;
+      button = screen.queryByRole('button', { name: /show \d+ more/i });
+    }
+
+    expect(mounted).toBe(1000);
+    expect(document.activeElement).toBe(table);
     expect(document.activeElement).not.toBe(document.body);
+    // The progress line stays present (and states the final, exhausted
+    // count) even once the paging control itself has unmounted.
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/1000 .* 1000/);
+  });
+
+  it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(FILTERED_MATCH_LIST_ROW_CAP + 30);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const showMore = screen.getByRole('button', { name: showMoreName(30) });
+    await user.click(showMore);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 30 + 1);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
   });
 
   it.each([
@@ -627,16 +688,21 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
     [FILTERED_MATCH_LIST_ROW_CAP, false],
     [FILTERED_MATCH_LIST_ROW_CAP + 1, true],
   ])(
-    'Show-all button appears only once narrowed count exceeds the cap (n=%i)',
-    (n, expectButton) => {
+    'the paging control (named for 1) and the progress line appear only once narrowed count exceeds the cap (n=%i)',
+    (n, expectVisible) => {
       const matches = makeManyMatches(n);
       renderList({ matches, axes: {}, layout: 'table' });
-      const button = screen.queryByRole('button', { name: /show all/i });
-      expect(button !== null).toBe(expectButton);
+      const button = screen.queryByRole('button', { name: /show \d+ more/i });
+      expect(button !== null).toBe(expectVisible);
+      if (expectVisible) {
+        expect(button).toHaveAccessibleName(showMoreName(1));
+      }
+      const progress = document.querySelector('[aria-live="polite"]');
+      expect(progress !== null).toBe(expectVisible);
     },
   );
 
-  it('re-narrowing (a new narrowedMatches identity) collapses expansion back to the cap', async () => {
+  it('re-narrowing (a new narrowedMatches identity) resets paging back to the first cap rows', async () => {
     const user = userEvent.setup();
     const matches = makeManyMatches(1000);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -655,8 +721,12 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
       </QueryClientProvider>
     );
     const { rerender } = render(<Wrapper axes={{}} />);
-    await user.click(screen.getByRole('button', { name: /show all 1000/i }));
-    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(1001);
+    await user.click(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
 
     // `from: 0` excludes nothing (every fixture match has time >= 1000) but
     // is a genuinely different axes object, so `narrowedMatches` recomputes
@@ -665,12 +735,15 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
       FILTERED_MATCH_LIST_ROW_CAP + 1,
     );
-    expect(screen.getByRole('button', { name: /show all 1000/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    ).toBeInTheDocument();
   });
 
-  it('the 16+ pre-existing single-page cases stay unaffected: a small narrowed set never shows the Show-all control', () => {
+  it('the pre-existing single-page cases stay unaffected: a small narrowed set never shows the paging control or progress line', () => {
     renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
-    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
   });
 });
 
