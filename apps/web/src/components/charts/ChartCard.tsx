@@ -70,9 +70,31 @@ export function ChartCard({
       </CardHeader>
       <CardContent className={isCompact ? COMPACT_CONTENT_CLASSES : undefined}>
         {abstained ? (
-          <p className="text-sm text-muted-foreground">
-            {t('shared.evidence.abstained', { count: abstained.gamesNeeded })}
-          </p>
+          <>
+            <p className="text-sm text-muted-foreground">
+              {t('shared.evidence.abstained', { count: abstained.gamesNeeded })}
+            </p>
+            {/* WR-B01 (39.1-REVIEW.md): `hasInsightSlot` is computed from
+                whether the `insight` PROP was supplied at all (line 62), not
+                whether an insight actually exists this render, so a call
+                site that always passes `insight={someInsight ?? null}` (a
+                real, currently-shipping pattern — see `MatchupsPage.tsx`'s
+                win-rate-trend chart) makes `hasInsightSlot` permanently
+                true. The header's own caption is gated on `!hasInsightSlot`
+                just above, so before this fix the evidence-type caption's
+                ONLY other home was inside the non-abstained branch below —
+                an abstained card with this call-site pattern rendered the
+                caption NOWHERE. Mirrored here so it renders in this branch
+                too. */}
+            {caption && hasInsightSlot && (
+              <p
+                className="text-xs leading-4 text-muted-foreground tabular-nums"
+                data-slot="chart-card-caption-footer"
+              >
+                {caption}
+              </p>
+            )}
+          </>
         ) : (
           <>
             {hasInsightSlot && insight && <div data-slot="chart-card-insight">{insight}</div>}

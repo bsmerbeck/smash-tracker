@@ -216,6 +216,33 @@ describe('MatchupsPage', () => {
     expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
   });
 
+  it('WR-B01 (39.1-REVIEW.md): the win-rate-trend card shows its evidence-type caption even while abstained (a low-volume pairing, insight slot always reserved)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      // 1 recorded game < ABSTENTION_FLOOR_GAMES(3) -> the win-rate-trend
+      // ChartCard's own `abstained` prop is set. This page ALWAYS passes
+      // `insight={formNowInsight && effectiveOpponent ? ... : null}` —
+      // never `undefined` — so `ChartCard`'s `hasInsightSlot` is permanently
+      // true regardless of volume, exactly the call-site pattern WR-B01
+      // describes.
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+      }),
+    ]);
+
+    renderMatchups();
+
+    await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
+    const trendCardTitle = screen
+      .getAllByText('Win Rate Trend')
+      .find((el) => el.getAttribute('data-slot') === 'card-title');
+    const trendCard = trendCardTitle?.closest('[data-slot="card"]') as HTMLElement;
+    expect(within(trendCard).getByText('Recorded fact from your match log.')).toBeInTheDocument();
+  });
+
   it('still gates on choose-fighters when there is neither a selection nor a match to infer from', async () => {
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
     listMatches.mockResolvedValue([]);

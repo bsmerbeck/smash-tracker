@@ -99,6 +99,26 @@ describe('ChartCard — insight slot and density (UI-SPEC §7.9, §6.2)', () => 
     expect(screen.queryByTestId('chart-body')).not.toBeInTheDocument();
   });
 
+  it('WR-B01 (39.1-REVIEW.md): renders the evidence-type caption in the footer when the card is abstained AND the insight slot is merely reserved (insight={null}) — the MatchupsPage.tsx win-rate-trend call-site pattern', () => {
+    const { container } = render(
+      <ChartCard
+        title="Win Rate Trend"
+        caption="Recorded fact from your match log."
+        abstained={{ gamesNeeded: 2 }}
+        insight={null}
+      >
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    // Header CardDescription is suppressed once an insight slot is reserved
+    // (even an empty one) — the caption's only remaining home is the footer.
+    expect(container.querySelectorAll('[data-slot="card-description"]')).toHaveLength(0);
+    expect(container.querySelector('[data-slot="chart-card-caption-footer"]')).toBeInTheDocument();
+    expect(screen.getByText('Recorded fact from your match log.')).toBeInTheDocument();
+    // The abstention sentence itself still renders alongside it.
+    expect(screen.getByText(/2/)).toBeInTheDocument();
+  });
+
   it('compact density renders the 20px padding class and no shadow class; the installed card component is composed, never edited', () => {
     const { container } = render(
       <ChartCard title="Win Rate Trend" density="compact">
