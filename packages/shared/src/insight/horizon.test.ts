@@ -89,6 +89,35 @@ describe('resolveWindow', () => {
     expect(window.toMs).toBe(NOW_MS - 1 * DAY_MS);
   });
 
+  it('WR-A04: last30 selects the same games regardless of input array order for tied timestamps straddling the window boundary', () => {
+    const tieTime = NOW_MS - 1000 * DAY_MS;
+    const tieA = makeMatch({ id: 'aaa', time: tieTime });
+    const tieB = makeMatch({ id: 'zzz', time: tieTime });
+    // 29 later, distinct-time matches -> total 31 games; last30 drops exactly
+    // one of the two oldest (tied) games. Which one gets dropped must not
+    // depend on which order the tied pair appears in the INPUT array (only a
+    // non-total comparator relying on Array.sort's input-order-preserving
+    // stability would leak that dependency).
+    const rest: Match[] = Array.from({ length: 29 }, (_, i) =>
+      makeMatch({ id: `r${i}`, time: tieTime + (i + 1) * 60_000 }),
+    );
+
+    const orderA = resolveWindow({
+      matches: [tieA, tieB, ...rest],
+      horizon: 'last30',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    const orderB = resolveWindow({
+      matches: [tieB, tieA, ...rest],
+      horizon: 'last30',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+
+    expect(orderA.matches.map((m) => m.id).sort()).toEqual(orderB.matches.map((m) => m.id).sort());
+  });
+
   it('returns { fromMs: null, toMs: null } for an empty window', () => {
     const { window } = resolveWindow({
       matches: [],

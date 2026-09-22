@@ -13,8 +13,18 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Average month length used for the D-15 12-month scoped bound — a fixed 30-day month keeps the arithmetic simple and avoids calendar-boundary edge cases; a day either way at 12 months has no product-visible effect. */
 const MS_PER_SCOPED_MONTH = 30 * MS_PER_DAY;
 
+/**
+ * Review finding WR-A04: ties break on the match's own stable `id` (never
+ * caller-supplied array order), mirroring `periodSeries.ts`'s `sortPoints`
+ * discipline — so a reordered-but-otherwise-identical `Match[]` (a realistic
+ * case for bulk-logged manual entries or a start.gg set whose games share
+ * one API timestamp) always resolves to the SAME `last30`/window slice.
+ */
 function byTimeAsc(a: Match, b: Match): number {
-  return a.time - b.time;
+  if (a.time !== b.time) {
+    return a.time - b.time;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 /** The real first/last game timestamp in `matches`, or `{ fromMs: null, toMs: null }` for an empty window — never a synthesised or `Date.now()` fallback. */

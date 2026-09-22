@@ -21,8 +21,19 @@ export function isNotableRatingMove(deltaRating: number, currentRd: number): boo
   return Math.abs(deltaRating) >= currentRd;
 }
 
+/**
+ * Review finding WR-A04: ties break on the match's own stable `id`, mirroring
+ * `horizon.ts`'s identical comparator — hygiene fix for consistency (this
+ * sort feeds `computeRatingHistory`, whose per-session `updateRating` batches
+ * a period's results via order-independent sums, so a tie between two
+ * matches in the SAME session does not currently change the output; this
+ * guards against that ceasing to hold on a future glicko.ts change).
+ */
 function byTimeAsc(a: Match, b: Match): number {
-  return a.time - b.time;
+  if (a.time !== b.time) {
+    return a.time - b.time;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 function buildRatingMoveInsight(input: {
