@@ -9,11 +9,23 @@ import { fileURLToPath, URL } from 'node:url';
  * app (`d3-*`, `es-toolkit`, `victory-vendor`, `@reduxjs/toolkit`,
  * `react-redux`, `immer`, `reselect`, `decimal.js-light`, `eventemitter3`,
  * `tiny-invariant` — confirmed via `pnpm why` against every one of these
- * names, plan 37-01/37-02). `clsx`, `react`, `react-dom`, `react-is` and
- * `use-sync-external-store` are deliberately NOT matched here — this app (or
- * its already-eager deps, e.g. `class-variance-authority`'s use of `clsx`)
- * already reaches those modules eagerly, and capturing a shared module in
- * this chunk is the exact SCL-02 hazard this predicate exists to avoid.
+ * names, plan 37-01/37-02). `clsx`, `react` and `react-dom` are deliberately
+ * NOT matched here — this app (or its already-eager deps, e.g.
+ * `class-variance-authority`'s use of `clsx`) already reaches those modules
+ * eagerly, and capturing a shared module in this chunk is the exact SCL-02
+ * hazard this predicate exists to avoid.
+ *
+ * `redux`, `redux-thunk`, `internmap`, `react-is` and the `with-selector`
+ * entry points of `use-sync-external-store` ARE matched (production incident
+ * 2026-09-22): nothing eager imports them — they are reached only through
+ * recharts/react-redux/d3 — and leaving them unmatched let Rolldown place them
+ * in the lazy TrendLine chunk, which imports charts-vendor while charts-vendor
+ * imported them back. `use-sync-external-store/shim/index.js` itself stays
+ * unmatched: it IS eager (react-i18next's `useTranslation` chunk). That static cycle
+ * threw `undefined is not a function` evaluating charts-vendor on Matchups.
+ * `bundleIsolation.guard.test.ts` asserts charts-vendor is in no chunk cycle
+ * and that nothing forbidden reaches the eager graph, so a wrong call here
+ * fails either way.
  *
  * Plan 37-02 (bundleIsolation.guard.test.ts's first real run) measured this
  * exact leak: the legacy `output.manualChunks` function API (used by 37-01)
@@ -38,7 +50,7 @@ import { fileURLToPath, URL } from 'node:url';
  * absent from the eager closure, zero forbidden modules reachable from entry.
  */
 const CHARTS_VENDOR_TEST =
-  /node_modules[\\/](recharts|d3-[^\\/]*|es-toolkit|victory-vendor|@reduxjs[\\/]toolkit|react-redux|immer|reselect|decimal\.js-light|eventemitter3|tiny-invariant)[\\/]/;
+  /node_modules[\\/](?:(recharts|d3-[^\\/]*|internmap|es-toolkit|victory-vendor|@reduxjs[\\/]toolkit|react-redux|redux|redux-thunk|react-is|immer|reselect|decimal\.js-light|eventemitter3|tiny-invariant)[\\/]|use-sync-external-store[\\/].*with-selector)/;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

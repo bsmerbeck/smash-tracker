@@ -340,6 +340,47 @@ describe('chart bundle isolation — build-output guard (SCL-02, D-02, D-19)', (
     expect(eager.has(chartsVendorChunk.fileName)).toBe(false);
   });
 
+  /**
+   * Production incident 2026-09-22 (first deploy carrying Recharts): Matchups
+   * rendered the route error boundary — `TypeError: undefined is not a
+   * function` thrown while evaluating `charts-vendor-*.js`. With
+   * `includeDependenciesRecursively: false`, recharts-only runtime deps the
+   * predicate did not name (`redux`, `redux-thunk`, `internmap`, `react-is`,
+   * `use-sync-external-store`) fell into the lazy TrendLine chunk, which
+   * itself imports charts-vendor. That static cycle means whichever side a
+   * page loads first evaluates against the other's still-undefined bindings.
+   * jsdom/vitest never evaluate the built chunks, so only a build-output
+   * assertion catches it.
+   */
+  it('charts-vendor is not part of any static import cycle between chunks', () => {
+    const chunks = outputChunks();
+    const byFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
+    const chartsVendorChunk = chunks.find((chunk) => chunk.fileName.includes('charts-vendor'));
+    if (!chartsVendorChunk) {
+      throw new Error('expected a charts-vendor chunk (asserted in the sibling test above)');
+    }
+
+    // Everything charts-vendor statically reaches; if charts-vendor is among
+    // them, some chunk on the path imports it back.
+    const reachable = new Set<string>();
+    const queue = [...chartsVendorChunk.imports];
+    while (queue.length > 0) {
+      const fileName = queue.shift()!;
+      if (reachable.has(fileName)) continue;
+      reachable.add(fileName);
+      for (const imported of byFileName.get(fileName)?.imports ?? []) {
+        queue.push(imported);
+      }
+    }
+    const cycleMembers = chartsVendorChunk.imports.filter((fileName) =>
+      byFileName.get(fileName)?.imports.includes(chartsVendorChunk.fileName),
+    );
+    expect(
+      reachable.has(chartsVendorChunk.fileName),
+      `charts-vendor imports ${JSON.stringify(chartsVendorChunk.imports)}; direct back-edges from ${JSON.stringify(cycleMembers)}`,
+    ).toBe(false);
+  });
+
   it("no eager-path asset file contains a forbidden library's own bytes, verified by content — not module attribution (WR-01/CR-01)", () => {
     const chunks = outputChunks();
     const byFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]));
