@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -29,10 +29,16 @@ import {
   buildDrillDownSearch,
   readDrillDownParams,
   sortMatchesNewestFirst,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_CLAIM_PARAM,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
+import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
 import { SelectFighter } from './components/SelectFighter';
-import { FighterHero } from './components/FighterHero';
+import { FighterHero, type FighterHeroDrillAxes } from './components/FighterHero';
 import {
   FighterInsightRail,
   buildInsightVerdict,
@@ -233,6 +239,29 @@ export function FighterAnalysisPage() {
     }
   }, [location.key, location.hash, hasDrillAxis]);
 
+  // Plan 39.1-25 (gap closure, SC6/TRND-04): the ONE URL writer for a hero
+  // trend-point or form-strip-set drill. A drill REPLACES any prior
+  // narrowing or claim axis (never composes with a claim door someone
+  // followed earlier) — `pathname` is passed explicitly so a `/coach/
+  // :clientId` or `/workspace/:tenantId` prefix survives.
+  const navigate = useNavigate();
+  function handleHeroDrill(axes: FighterHeroDrillAxes): void {
+    const params = new URLSearchParams(searchParams);
+    params.delete(DRILL_DOWN_STAGE_PARAM);
+    params.delete(DRILL_DOWN_EVENT_PARAM);
+    params.delete(DRILL_DOWN_FROM_PARAM);
+    params.delete(DRILL_DOWN_TO_PARAM);
+    params.delete(DRILL_DOWN_CLAIM_PARAM);
+    for (const [key, value] of buildDrillDownSearch(axes)) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
   // rail(4)/vs-lists(12)/existing-cards(12) layout, so nothing shifts when
@@ -367,6 +396,7 @@ export function FighterAnalysisPage() {
               isLoading={horizonLoading || matchesLoading}
               formNowInsight={heroFormNow.insight}
               nowMs={heroFormNow.nowMs}
+              onDrill={handleHeroDrill}
             />
           </GridCell>
 
@@ -427,6 +457,7 @@ export function FighterAnalysisPage() {
                     axes={terminusAxes}
                     resolveClaim={resolveClaimForTerminus}
                     claimSummary={claimSummary}
+                    eventKeyForMatch={formStripEventKeyForMatch}
                     showDelete
                   />
                 </CardContent>

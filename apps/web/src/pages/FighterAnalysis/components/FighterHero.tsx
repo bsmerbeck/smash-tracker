@@ -2,7 +2,14 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { Fighter, HorizonKey, Insight, InsightKind, Match } from '@smash-tracker/shared';
+import type {
+  Fighter,
+  HorizonKey,
+  Insight,
+  InsightKind,
+  Match,
+  PeriodPoint,
+} from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   PERIOD_TREND_MIN_PERIODS,
@@ -11,6 +18,7 @@ import {
   confidenceTierFor,
   resolveWindow,
   toRateValue,
+  trimmedEventKey,
 } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,8 +31,10 @@ import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
+import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import type { DrillDownAxes } from '@/lib/drillDownParams';
 import { getMatchTypeRecords } from '@/lib/stats';
 import { formatPercent } from '@/lib/formatPercent';
 
@@ -73,12 +83,18 @@ const CONFIDENCE_GLYPHS: Record<'high' | 'medium' | 'low' | 'none', string> = {
 };
 
 /**
- * UI-SPEC §7.10-adjacent (ported, not shared, from `MatchupChart.tsx`'s
- * `buildFormStripEvents`, per the small-helper-duplication convention — this
- * plan's own dispatch notes cite plan 39.1-13's SUMMARY for this exact
- * pattern): event -> set -> game, oldest first, grouped only. `recentWindow`
- * marks each set `inRecentWindow` from the SAME `Insight.window` `formNow`
- * already resolved.
+ * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only. Plan
+ * 39.1-25 (gap closure, SC6/TRND-04): events group by `trimmedEventKey`
+ * (`eventSeries.ts`'s single name-priority rule — `eventName` first,
+ * `tournamentName` as fallback, ported here rather than the file's former
+ * hand-rolled `eventName ?? tournamentName` trim), and sets group by
+ * `formStripEventKeyForMatch` (the Matchups tracer's single set rule — a
+ * real parsed start.gg/parry.gg set id, else a per-game synthetic key, so a
+ * manual game is its own one-game set) — the SAME function
+ * `FighterAnalysisPage.tsx` hands `FilteredMatchList` as `eventKeyForMatch`,
+ * so a rendered set's own click narrows to precisely those games.
+ * `recentWindow` marks each set `inRecentWindow` from the SAME
+ * `Insight.window` `formNow` already resolved.
  */
 function buildFighterFormStripEvents(
   matches: Match[],
@@ -88,9 +104,7 @@ function buildFighterFormStripEvents(
   const sorted = [...matches].sort((a, b) => a.time - b.time);
   const byEvent = new Map<string, Match[]>();
   for (const match of sorted) {
-    const raw = match.eventName ?? match.tournamentName;
-    const trimmed = raw?.trim();
-    const key = trimmed && trimmed.length > 0 ? trimmed : '__manual__';
+    const key = trimmedEventKey(match) ?? '__manual__';
     const group = byEvent.get(key);
     if (group) {
       group.push(match);
@@ -109,11 +123,7 @@ function buildFighterFormStripEvents(
   for (const [key, eventMatches] of byEvent) {
     const bySet = new Map<string, Match[]>();
     for (const match of eventMatches) {
-      // No parseable set id is threaded here (unlike MatchupChart's
-      // formStripSetKey) — the hero's set click narrows only the event/window
-      // axes, never a per-set eventKey, so each event is its own one-set
-      // group for the strip's set-boundary rendering.
-      const setKey = key;
+      const setKey = formStripEventKeyForMatch(match);
       const group = bySet.get(setKey);
       if (group) {
         group.push(match);
@@ -152,6 +162,15 @@ function buildFighterFormStripEvents(
   return events;
 }
 
+/**
+ * Plan 39.1-25 (gap closure, SC6/TRND-04): the axes a hero drill (a trend
+ * point or a form-strip set) can write — a subset of `DrillDownAxes`, never
+ * `fighterId`/`vsFighterId`/`stageId`/`claimId` (those are never written by
+ * this drill; `FighterAnalysisPage.tsx`'s writer also clears any prior
+ * `claim`/`stage`/`event`/`from`/`to` before applying these).
+ */
+export type FighterHeroDrillAxes = Partial<Pick<DrillDownAxes, 'eventKey' | 'from' | 'to'>>;
+
 export interface FighterHeroProps {
   fighter: Fighter;
   fighterMatches: Match[];
@@ -170,6 +189,13 @@ export interface FighterHeroProps {
   formNowInsight: Insight | null;
   /** The SAME clock `formNowInsight` was built with — one clock, one insight (D-06, D-12). */
   nowMs: number;
+  /**
+   * Plan 39.1-25 (gap closure, SC6/TRND-04): the host's ONE URL writer for a
+   * trend-point or form-strip-set drill — a trend point calls
+   * `onDrill({ from, to })`, a form-strip set calls
+   * `onDrill({ eventKey })`.
+   */
+  onDrill: (axes: FighterHeroDrillAxes) => void;
 }
 
 /**
@@ -190,6 +216,7 @@ export function FighterHero({
   isLoading,
   formNowInsight,
   nowMs,
+  onDrill,
 }: FighterHeroProps) {
   const { t, i18n } = useTranslation();
   const localizedName = useFighterName(fighter.id);
@@ -415,12 +442,12 @@ export function FighterHero({
     };
   });
 
-  function handleSelectPeriodPoint(point: { startMs: number; endMs: number }): void {
-    // The hero currently has no page-level filter-axis writer of its own
-    // (Task 3 wires FighterAnalysisPage's `setDrillDown`) — the trend still
-    // renders a real click affordance; a future plan threads this through
-    // once the page owns a `setDrillDown` context the way MatchupsPage does.
-    void point;
+  // Plan 39.1-25 (gap closure, SC6/TRND-04): a period point's own bounds are
+  // the min/max timestamps of the period's own games — the terminus window
+  // is inclusive at both ends (UI-SPEC §10.1), so `from`/`to` reproduce
+  // exactly those games, never a wider period-grain bucket.
+  function handleSelectPeriodPoint(point: PeriodPoint): void {
+    onDrill({ from: point.startMs, to: point.endMs });
   }
 
   // Plan 39.1-25 (gap closure, SC4/INS-04): the door is built by
@@ -509,6 +536,7 @@ export function FighterHero({
                   ? t(`analytics.strip.windowEmpty.${horizon}`)
                   : undefined,
             }}
+            onSelectSet={(setKey) => onDrill({ eventKey: setKey })}
           />
         </div>
 

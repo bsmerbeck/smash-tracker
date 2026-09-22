@@ -175,6 +175,7 @@ function FighterHeroHarness({ fighterMatches }: { fighterMatches: Match[] }) {
       isLoading={false}
       formNowInsight={insight}
       nowMs={nowMs}
+      onDrill={vi.fn()}
     />
   );
 }
