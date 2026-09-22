@@ -1,22 +1,38 @@
-import { Link } from 'react-router';
+import { useCallback, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import type { Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { cn } from '@/lib/utils';
+import { stagesById } from '@/data/stages';
+import {
+  readDrillDownParams,
+  sortMatchesNewestFirst,
+  type DrillDownAxes,
+} from '@/lib/drillDownParams';
 import { TrendsHero } from './components/TrendsHero';
-import { TrendsReadsRail } from './components/TrendsReadsRail';
+import {
+  TrendsReadsRail,
+  buildTrendsVerdict,
+  useTrendsInsights,
+} from './components/TrendsReadsRail';
 import { CareerTimelineSlot } from './components/CareerTimelineSlot';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
+
+const GAMES_ANCHOR_ID = 'games';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -39,8 +55,90 @@ import { MatchTypeMix } from './components/MatchTypeMix';
  */
 export function TrendsPage() {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { horizon } = useHorizon();
+
+  const stageIds = useMemo(() => new Set(stagesById.keys()), []);
+  // D-05: a tolerant read of every drill-down axis currently in the URL —
+  // this page writes none of them itself today (only a rail card's
+  // counted-games door writes `claim=`), but the read side and the
+  // conditional terminus row are wired now so the read half of DD-09's
+  // contract matches every other insight-first surface (UI-SPEC §10.3).
+  const axesFromUrl = useMemo(
+    () => readDrillDownParams(searchParams, { stageIds }),
+    [searchParams, stageIds],
+  );
+  const hasDrillAxis =
+    axesFromUrl.fighterId != null ||
+    axesFromUrl.vsFighterId != null ||
+    axesFromUrl.stageId != null ||
+    axesFromUrl.eventKey != null ||
+    axesFromUrl.from != null ||
+    axesFromUrl.to != null ||
+    axesFromUrl.claimId != null;
+
+  // WR-C02 (39.1-REVIEW.md) precedent, applied here for the SAME reason as
+  // every other insight-first page: `FilteredMatchList`'s D-16 memo keys on
+  // reference identity, so both `terminusAxes` and `sortedMatches` must be
+  // memoized, declared BEFORE this component's `isLoading`/`allMatches`
+  // early returns below (Rules of Hooks).
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: axesFromUrl.fighterId,
+      vsFighterId: axesFromUrl.vsFighterId,
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+      claimId: axesFromUrl.claimId,
+    }),
+    [
+      axesFromUrl.fighterId,
+      axesFromUrl.vsFighterId,
+      axesFromUrl.stageId,
+      axesFromUrl.eventKey,
+      axesFromUrl.from,
+      axesFromUrl.to,
+      axesFromUrl.claimId,
+    ],
+  );
+  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+
+  // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
+  // computation this page shares with `TrendsReadsRail` (which takes the
+  // result as props below) and this page's own NEW page-level
+  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`) — mirrors
+  // `FighterAnalysisPage.tsx`'s Task 1 wiring. Called unconditionally, above
+  // every early return.
+  const {
+    insights: trendsInsights,
+    dismissedIds,
+    dismiss,
+    restoreAll,
+  } = useTrendsInsights({ matches, horizon });
+  const insightById = useMemo(
+    () => new Map(trendsInsights.map((insight) => [insight.id, insight])),
+    [trendsInsights],
+  );
+  const accountNameForClaim = t('trends.title');
+  const claimSummary =
+    axesFromUrl.claimId != null
+      ? (() => {
+          const insight = insightById.get(axesFromUrl.claimId!);
+          return insight ? buildTrendsVerdict(insight, t, accountNameForClaim) : undefined;
+        })()
+      : undefined;
+  // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
+  // passed as `resolveClaim` would be a NEW reference every render, breaking
+  // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
+  // Memoized by `trendsInsights` alone — the only thing this closure
+  // actually reads.
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: trendsInsights, matches: ms }),
+    [trendsInsights],
+  );
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded
@@ -125,13 +223,38 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={4}>
-          <TrendsReadsRail matches={matches} horizon={horizon} />
+          <TrendsReadsRail
+            insights={trendsInsights}
+            dismissedIds={dismissedIds}
+            dismiss={dismiss}
+            restoreAll={restoreAll}
+            horizon={horizon}
+          />
         </GridCell>
 
         <GridCell span={4} stack>
           <SettingComparison matches={matches} horizon={horizon} />
           <MatchTypeMix matches={matches} horizon={horizon} />
         </GridCell>
+
+        {hasDrillAxis && (
+          <GridCell span={12}>
+            <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
+              <CardHeader>
+                <CardTitle>{t('matchups.results')}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FilteredMatchList
+                  matches={sortedMatches}
+                  axes={terminusAxes}
+                  resolveClaim={resolveClaimForTerminus}
+                  claimSummary={claimSummary}
+                  showDelete
+                />
+              </CardContent>
+            </Card>
+          </GridCell>
+        )}
       </PageGrid>
     </PageShell>
   );

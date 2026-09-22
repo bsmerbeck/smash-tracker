@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
@@ -14,12 +15,14 @@ import {
   type InsightRailCard,
   type InsightRailShape,
 } from '@/components/analytics/InsightRail';
-import { InsightCard } from '@/components/analytics/InsightCard';
+import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatPercent } from '@/lib/formatPercent';
 
 /**
@@ -67,6 +70,50 @@ function copyValuesWithEntity(
   return { entity: accountName, ...insight.copy.values };
 }
 
+/**
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page can build the
+ * SAME rendered verdict sentence this rail uses on a card, for
+ * `FilteredMatchList`'s `claimSummary` prop — mirrors
+ * `FighterInsightRail.tsx`'s `buildInsightVerdict`.
+ */
+export function buildTrendsVerdict(insight: Insight, t: TFunction, accountName: string): string {
+  return t(insight.copy.key, copyValuesWithEntity(insight, accountName));
+}
+
+/** Duplicated per this codebase's small-helper-duplication convention (mirrors `FighterInsightRail.tsx`'s own precedent). */
+function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
+  if (door.kind === 'games') return t('insights.door.seeGames', { count: door.count });
+  if (door.kind === 'matchup') return t('insights.door.openMatchup');
+  if (door.kind === 'opponent') return t('insights.door.openOpponent');
+  return t('insights.door.openMatchup');
+}
+
+/**
+ * Plan 39.1-24 (gap closure, Task 2): the counted-games door (from
+ * `buildInsightDoors`) leads; `extraDoors` (the rating-move card's existing
+ * "Rating model note" toggle button, a LOCAL UI affordance never built by
+ * `buildInsightDoors` — its `'ratingModel'` kind has no
+ * `FALLBACK_ROUTE_BY_KIND` mapping) follow, capped at 3 total.
+ */
+function buildDoorNodes(
+  insight: Insight,
+  t: TFunction,
+  subjectPath: (personalPath: string) => string,
+  extraDoors: ReactNode[] = [],
+): InsightCardDoors | undefined {
+  const descriptors = buildInsightDoors({ insight, subjectPath });
+  const doorLinks = descriptors.map((door) => (
+    <Link key={door.kind} to={door.href}>
+      {insightDoorLabel(door, t)}
+    </Link>
+  ));
+  const nodes = [...doorLinks, ...extraDoors].slice(0, 3);
+  if (nodes.length === 0) return undefined;
+  if (nodes.length === 1) return [nodes[0]!] as const;
+  if (nodes.length === 2) return [nodes[0]!, nodes[1]!] as const;
+  return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
+}
+
 function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
@@ -103,30 +150,36 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   });
 }
 
-export interface TrendsReadsRailProps {
+export interface UseTrendsInsightsInput {
   matches: Match[];
   horizon: HorizonKey;
 }
 
+export interface UseTrendsInsightsResult {
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+}
+
 /**
- * The centre rail of the Trends Pro desk (UI-SPEC §8.2 Row 3, TRND-02,
- * INS-05): the closed `InsightRail` primitive wired to the real engine at
- * whole-account scope — `RatingMove`, `TiltCost` and `SessionFatigue`.
- * `RatingMove`'s card carries the rating-model door, demoting the page-level
- * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Session
- * fatigue always renders its standing caveat, in every rendered state — the
- * engine supplies it in `copy.values.caveat` and this rail must not drop it.
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page calls this
+ * ONCE and hands the result DOWN to both `TrendsReadsRail` (which renders
+ * the cards/doors) and its own page-level `FilteredMatchList` terminus
+ * (whose `resolveClaim` needs the SAME `Insight[]` a rendered door's
+ * `claim=<id>` was built from) — mirrors `FighterInsightRail.tsx`'s
+ * `useFighterInsights`. `TrendsReadsRail` itself no longer computes
+ * `insights`; it takes the result as props.
  */
-export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
-  const { t, i18n } = useTranslation();
+export function useTrendsInsights({
+  matches,
+  horizon,
+}: UseTrendsInsightsInput): UseTrendsInsightsResult {
   const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
-  const [showRatingModelNote, setShowRatingModelNote] = useState(false);
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
   // one-time-read escape hatch.
   const [nowMs] = useState(() => Date.now());
-
-  const accountName = t('trends.title');
 
   const insights = useMemo(() => {
     const built: Insight[] = [];
@@ -149,18 +202,63 @@ export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
     return built;
   }, [matches, horizon, nowMs, dismissedIds]);
 
+  return { insights, dismissedIds, dismiss, restoreAll };
+}
+
+export interface TrendsReadsRailProps {
+  /** The one shared computation — see `useTrendsInsights` above. */
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+  horizon: HorizonKey;
+}
+
+/**
+ * The centre rail of the Trends Pro desk (UI-SPEC §8.2 Row 3, TRND-02,
+ * INS-05): the closed `InsightRail` primitive wired to the real engine at
+ * whole-account scope — `RatingMove`, `TiltCost` and `SessionFatigue`.
+ * `RatingMove`'s card carries the rating-model door, demoting the page-level
+ * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Session
+ * fatigue always renders its standing caveat, in every rendered state — the
+ * engine supplies it in `copy.values.caveat` and this rail must not drop it.
+ */
+export function TrendsReadsRail({
+  insights,
+  dismissedIds,
+  dismiss,
+  restoreAll,
+  horizon,
+}: TrendsReadsRailProps) {
+  const { t, i18n } = useTranslation();
+  const subjectPath = useSubjectPath();
+  const [showRatingModelNote, setShowRatingModelNote] = useState(false);
+
+  const accountName = t('trends.title');
+
   const insightById = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
 
   const assembled = useMemo(() => assembleRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
 
   function insightToRailCard(insight: Insight): InsightRailCard {
     const chipKind = claimChipKindFor(insight.kind);
-    const verdict = t(insight.copy.key, copyValuesWithEntity(insight, accountName));
+    const verdict = buildTrendsVerdict(insight, t, accountName);
     const evidence = buildEvidenceLine(insight, t, i18n.language);
     const span = buildSpan(insight, t);
     const isRatingMove = insight.templateId === 'ratingMove';
     const isSessionFatigue = insight.templateId === 'sessionFatigue';
     const caveat = isSessionFatigue ? t('insights.sessionFatigue.caveat') : undefined;
+    const ratingModelButton = isRatingMove ? (
+      <button type="button" key="ratingModel" onClick={() => setShowRatingModelNote((v) => !v)}>
+        {t('insights.door.ratingModelNote')}
+      </button>
+    ) : null;
+    const doors = buildDoorNodes(
+      insight,
+      t,
+      subjectPath,
+      ratingModelButton ? [ratingModelButton] : [],
+    );
     return {
       id: insight.id,
       render: ({ onDismiss }) => (
@@ -172,19 +270,7 @@ export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
           evidence={evidence}
           span={span}
           caveat={caveat}
-          doors={
-            isRatingMove
-              ? [
-                  <button
-                    type="button"
-                    key="ratingModel"
-                    onClick={() => setShowRatingModelNote((v) => !v)}
-                  >
-                    {t('insights.door.ratingModelNote')}
-                  </button>,
-                ]
-              : undefined
-          }
+          doors={doors}
           onDismiss={onDismiss}
           dismissLabel={t('insights.rail.dismiss')}
         />
@@ -264,7 +350,7 @@ export function TrendsReadsRail({ matches, horizon }: TrendsReadsRailProps) {
     const unlocksNext = assembled.unlocksNext ? buildUnlocksNextCard(assembled.unlocksNext) : null;
     return { cards, unlocksNext, lines, promotionQueue };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assembled, insightById, t, accountName, i18n.language]);
+  }, [assembled, insightById, t, accountName, i18n.language, subjectPath]);
 
   const legend = (
     <>
