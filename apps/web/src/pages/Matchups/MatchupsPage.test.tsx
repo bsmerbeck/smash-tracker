@@ -717,6 +717,56 @@ describe('MatchupsPage', () => {
       });
     });
 
+    it('CR-03 (39.1-REVIEW): clicking a form-strip set narrows the results list to exactly that set', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // 3 real start.gg sets of 3 games each — 9 pairing games, so a set
+      // drill that silently does nothing (the pre-fix behaviour) shows 9,
+      // never the set's own 3.
+      const now = Date.now();
+      const matches = Array.from({ length: 9 }, (_, i) => {
+        const setIdx = Math.floor(i / 3);
+        return makeMatch({
+          id: `s${setIdx}g${i % 3}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (9 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+          eventName: 'Weekly',
+          externalId: `sgg:set${setIdx}:g${(i % 3) + 1}`,
+        });
+      });
+      listMatches.mockResolvedValue(matches);
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(9);
+      });
+
+      const sets = document.querySelectorAll('[data-slot="form-strip-set"]');
+      expect(sets.length).toBe(3);
+      const newestSet = sets[sets.length - 1] as HTMLElement;
+      const tickCount = newestSet.querySelectorAll('[data-slot="form-strip-tick"]').length;
+      expect(tickCount).toBe(3);
+
+      await user.click(newestSet);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).toContain('event=set2'),
+      );
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(tickCount);
+      });
+    });
+
     it('renders no browser-storage write whose key is the persisted-selection or analytics-filter key on a URL-seeded arrival', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue([

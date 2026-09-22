@@ -219,11 +219,16 @@ export function MatchupsPage() {
   // though `matchupMatches` below is already pairing-filtered (a harmless,
   // idempotent re-affirmation of membership, not a second narrowing
   // mechanism).
+  //
+  // CR-03 (39.1-REVIEW): `eventKey` is forwarded too — the chart's set drill
+  // writes `event=`, and without this axis the terminus ignored it (the list
+  // stayed on the whole pairing while the URL claimed a set).
   const terminusAxes: DrillDownAxes = useMemo(
     () => ({
       fighterId: effectiveFighter?.id,
       vsFighterId: effectiveOpponent?.id,
       stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
       from: axesFromUrl.from,
       to: axesFromUrl.to,
       claimId: axesFromUrl.claimId,
@@ -232,6 +237,7 @@ export function MatchupsPage() {
       effectiveFighter?.id,
       effectiveOpponent?.id,
       axesFromUrl.stageId,
+      axesFromUrl.eventKey,
       axesFromUrl.from,
       axesFromUrl.to,
       axesFromUrl.claimId,
