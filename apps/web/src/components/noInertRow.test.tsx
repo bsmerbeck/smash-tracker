@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, waitFor, within, type RenderResult } from '@testing-library/react';
+import { fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import fs from 'node:fs';
@@ -36,7 +36,7 @@ import { OpponentList } from '@/pages/Opponents/components/OpponentList';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from '@/pages/Opponents/components/ScoutingStagesCard';
 import { TournamentHistory } from '@/pages/Opponents/components/TournamentHistory';
-import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { FilteredMatchList, FILTERED_MATCH_LIST_ROW_CAP } from '@/components/FilteredMatchList';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { FullAnalysisSection } from '@/pages/Scout/components/FullAnalysisSection';
 import { SetTimeline } from '@/pages/Tournaments/components/SetTimeline';
@@ -80,6 +80,11 @@ import userEvent from '@testing-library/user-event';
  * new entry is named distinctly rather than duplicating that coverage). The
  * array is EXTENDED in place — no second enumeration file, per this task's
  * own instruction never to fork it.
+ *
+ * Plan 39.1-23 (UIX-02, gap closure) appends ONE more entry (25 -> 26): the
+ * terminus's row-cap Show-all expanded tail, proving no-inert-row holds past
+ * `FILTERED_MATCH_LIST_ROW_CAP`, not just in the capped head every other
+ * FilteredMatchList entry above exercises.
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -473,6 +478,25 @@ const SURFACES: Surface[] = [
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
   {
+    // Plan 39.1-23 (UIX-02): a narrowing over FILTERED_MATCH_LIST_ROW_CAP
+    // caps what mounts on first render; this entry proves the no-inert-row
+    // contract holds in the EXPANDED tail too, not just the capped head —
+    // clicking Show all (a synchronous fireEvent, so `render()` stays
+    // synchronous like every other entry's) mounts every remaining row
+    // before this file's shared row-interactivity check runs against them.
+    name: "The shared filtered match list's rows, over-cap Show-all expansion (the terminus)",
+    file: 'apps/web/src/components/FilteredMatchList.tsx',
+    render: () => {
+      const matches = Array.from({ length: FILTERED_MATCH_LIST_ROW_CAP + 5 }, (_, i) =>
+        makeMatch({ id: `cap-${i}`, time: i, win: true }),
+      );
+      const result = withRouterAndQuery(<FilteredMatchList matches={matches} axes={{}} />);
+      fireEvent.click(within(result.container).getByRole('button', { name: /show all/i }));
+      return result;
+    },
+    rows: (result) => dataRows(result.container),
+  },
+  {
     name: "The stage detail page's by-opponent and by-character tables",
     file: 'apps/web/src/pages/Stages/StageDetailPage.tsx',
     render: () => {
@@ -818,8 +842,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated TWENTY-FIVE entries (18 + this plan's 7)", () => {
-    expect(SURFACES.length).toBe(25);
+  it("the surface enumeration has the stated TWENTY-SIX entries (18 + 39.1-21's 7 + 39.1-23's 1)", () => {
+    expect(SURFACES.length).toBe(26);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

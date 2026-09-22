@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import {
@@ -12,7 +13,7 @@ import {
 import { generateSyntheticMatches, EIGHT_K_FIXTURE_OPTIONS } from '@smash-tracker/shared/testUtils';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
-import { FilteredMatchList } from './FilteredMatchList';
+import { FilteredMatchList, FILTERED_MATCH_LIST_ROW_CAP } from './FilteredMatchList';
 import { readDrillDownParams } from '@/lib/drillDownParams';
 import { buildInsightDoors, resolveInsightClaim, eventKeyOf } from './analytics/insightDoors';
 
@@ -228,13 +229,16 @@ function renderFilteredMatchListAtDoor(insight: Insight, matches: Match[], doorH
 }
 
 /**
- * Plan 39.1-23 (next, sequential in this same wave) caps FilteredMatchList's
- * rendered rows behind a "Show all" control. When that lands, the terminus
- * is expected to expose the FULL row count via a `data-total-rows` attribute
- * on the table even while only a capped subset is actually rendered — this
- * helper reads that attribute when present. Until 39.1-23 lands, it falls
- * back to counting rendered `<tr>` rows directly (today's exact behavior,
- * since FilteredMatchList renders every matched row uncapped).
+ * Plan 39.1-23: `FilteredMatchList` caps rendered rows at
+ * `FILTERED_MATCH_LIST_ROW_CAP` behind a "Show all" control, exposing the
+ * FULL row count via a `data-total-rows` attribute on the table even while
+ * only a capped subset is actually mounted. This helper reads that attribute
+ * when present (the normal case now) and falls back to counting rendered
+ * `<tr>` rows directly (a defensive fallback only — every template's fixture
+ * renders a real `<table>` with the attribute set). The describe block below
+ * named "same-n door guard: capped rendering still proves rendered ==
+ * printed" additionally clicks Show all for a template whose door exceeds
+ * the cap and counts real `<tr>`s, proving the attribute is not lying.
  */
 function renderedRowCount(): number {
   const table = screen.getByRole('table');
@@ -262,7 +266,20 @@ describe('registry coverage', () => {
   });
 });
 
-const SAME_N_DOOR_TIMEOUT_MS = 60_000;
+/**
+ * Plan 39.1-23: with the row cap in place, every per-template test in the
+ * `describe.each` loop below now renders at most FILTERED_MATCH_LIST_ROW_CAP
+ * rows and finishes in well under 200ms (measured: the previously-slowest
+ * cases — settingGap, volumeForm, tiltCost, rosterCore, pocketCost — dropped
+ * from 1.4–6.6s each to 80–120ms each). The one test that still renders every
+ * row (the real Show-all expansion below, deliberately proving
+ * `data-total-rows` isn't lying) measured ~5.5s alone. The pre-cap 60s bound
+ * was set because that same ~5s figure could exceed the 15s default under
+ * `pnpm test`'s full concurrent shared/api/web run; kept a smaller-but-safe
+ * 20s here rather than dropping all the way to the 15s default this exact
+ * scenario once blew past.
+ */
+const SAME_N_DOOR_TIMEOUT_MS = 20_000;
 
 describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) => {
   it(
@@ -289,9 +306,42 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
       const { matches } = FIXTURES[templateId];
       renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
       expect(renderedRowCount()).toBe(gamesDoor!.count);
-      // Whole-history reads (settingGap, rosterCore) land on thousands of rows of the 8k
-      // fixture, and FilteredMatchList renders every one: ~5s alone, past the 15s default
-      // when `pnpm test` runs the shared/api/web suites concurrently.
+      // Plan 39.1-23: `renderedRowCount()` reads `data-total-rows`, so this
+      // assertion holds even for whole-history reads (settingGap, rosterCore)
+      // whose doors land thousands of rows on the 8k fixture — FilteredMatchList
+      // now mounts at most FILTERED_MATCH_LIST_ROW_CAP of them, never all.
+    },
+    SAME_N_DOOR_TIMEOUT_MS,
+  );
+});
+
+describe('same-n door guard: capped rendering still proves rendered == printed (plan 39.1-23)', () => {
+  it(
+    'settingGap: a real Show-all click mounts every counted game, matching the door count exactly — not just the data-total-rows attribute',
+    async () => {
+      const user = userEvent.setup();
+      const insight = buildInsight('settingGap');
+      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
+      const gamesDoor = doors.find((d) => d.kind === 'games')!;
+      // Non-vacuity: this fixture must actually exceed the cap, or clicking
+      // Show all would prove nothing about the cap/expansion mechanism.
+      expect(gamesDoor.count).toBeGreaterThan(FILTERED_MATCH_LIST_ROW_CAP);
+
+      const { matches } = FIXTURES.settingGap;
+      renderFilteredMatchListAtDoor(insight, matches, gamesDoor.href);
+      const table = screen.getByRole('table');
+
+      // First render: capped, never the full count of real <tr>s.
+      const cappedRowCount = within(table).getAllByRole('row').length - 1;
+      expect(cappedRowCount).toBe(FILTERED_MATCH_LIST_ROW_CAP);
+
+      await user.click(screen.getByRole('button', { name: /show all/i }));
+
+      // Post-expansion: every counted game is a real mounted <tr>, counted
+      // directly — proving `data-total-rows` was never lying about what the
+      // rest of the guard, above, takes on the attribute's word alone.
+      const expandedRowCount = within(table).getAllByRole('row').length - 1;
+      expect(expandedRowCount).toBe(gamesDoor.count);
     },
     SAME_N_DOOR_TIMEOUT_MS,
   );
