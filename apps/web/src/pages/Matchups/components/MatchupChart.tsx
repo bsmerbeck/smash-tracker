@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, InsightKind, InsightScope, Match } from '@smash-tracker/shared';
@@ -10,6 +10,7 @@ import {
   parseExternalId,
   toRateValue,
 } from '@smash-tracker/shared';
+import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent, type FormStripSet } from '@/components/charts/FormStrip';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
@@ -89,23 +90,39 @@ export function useMatchupFormNow({
 }
 
 /**
+ * Plan 39.1-26 (gap closure): the ONE verdict composition for `formNow` at
+ * pairing scope — `entity` is never supplied by the engine (UI-SPEC §9.2
+ * rule 7), so this composes it itself before calling `t()`. Shared by
+ * `renderFormNowHead` (the slot) and `MatchupsPage.tsx`'s `claimSummary`
+ * (the terminus's active-filter summary), so the two never independently
+ * re-derive the same sentence.
+ */
+export function buildFormNowVerdict(insight: Insight, opponentId: number, t: TFunction): string {
+  const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
+  return t(insight.copy.key, { ...insight.copy.values, entity });
+}
+
+/**
  * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
  * chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
- * wrapper, no doors, no dismiss). `entity` is never supplied by the engine
- * (UI-SPEC §9.2 rule 7: the engine never localises a fighter name) — this
- * function composes it itself before calling `t()`, per plan 39.1-11's
- * documented convention. Called by `MatchupsPage.tsx` to build `ChartCard`'s
+ * wrapper, no dismiss). Called by `MatchupsPage.tsx` to build `ChartCard`'s
  * `insight` prop — `MatchupChart.tsx` itself never renders `ChartCard`.
+ *
+ * Plan 39.1-26 (gap closure): gains an optional trailing `door` — the
+ * counted-games door `MatchupsPage.tsx` builds via `buildInsightDoors`,
+ * rendered as a `Button asChild` wrapping the host's own `<Link>` inside
+ * `data-slot="matchup-form-now-doors"`. `undefined` renders no doors row at
+ * all (a zero-game window never prints "See the 0 games").
  */
 export function renderFormNowHead(
   insight: Insight,
   opponentId: number,
   t: TFunction,
   locale: string,
+  door?: ReactNode,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
-  const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
-  const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
+  const verdict = buildFormNowVerdict(insight, opponentId, t);
 
   // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
   // `recent`/`baseline` claims and format it through the one shared,
@@ -142,6 +159,13 @@ export function renderFormNowHead(
       >
         {evidence}
       </p>
+      {door && (
+        <div className="flex flex-wrap gap-2" data-slot="matchup-form-now-doors">
+          <Button asChild size="sm">
+            {door}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

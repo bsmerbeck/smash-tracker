@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useCallback, useEffect, useMemo } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Fighter, Match } from '@smash-tracker/shared';
+import type { Fighter, Insight, Match } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
-import { resolveInsightClaim } from '@/components/analytics/insightDoors';
+import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
@@ -22,6 +22,7 @@ import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_FROM_PARAM,
@@ -41,6 +42,7 @@ import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
 import {
   MatchupChart,
+  buildFormNowVerdict,
   formStripEventKeyForMatch,
   renderFormNowHead,
   useMatchupFormNow,
@@ -117,12 +119,19 @@ export function MatchupsPage() {
     opponentUsage,
   } = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
-  /** Clears the three filter-axis params from `next` in place — every writer below shares this so "which three params" has one spelling. */
+  /**
+   * Clears the filter-axis params from `next` in place — every writer below
+   * shares this so "which params" has one spelling. Plan 39.1-26 (gap
+   * closure): also clears the `claim` axis — "Clear filters" and every
+   * chart-point/set drill must drop a stale claim, never leave the list
+   * showing a silent intersection of an old claim with a new narrowing.
+   */
   function clearFilterAxes(next: URLSearchParams): void {
     next.delete(DRILL_DOWN_STAGE_PARAM);
     next.delete(DRILL_DOWN_EVENT_PARAM);
     next.delete(DRILL_DOWN_FROM_PARAM);
     next.delete(DRILL_DOWN_TO_PARAM);
+    next.delete(DRILL_DOWN_CLAIM_PARAM);
   }
 
   /**
@@ -264,23 +273,43 @@ export function MatchupsPage() {
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE
   // matchupOrPlayer insight this page shares with `MatchupOrPlayerCard`
   // (which takes the result as a prop below) and this page's own
-  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`) — this
-  // template only ever produces a single insight per pairing, so the
-  // "shared array" the other three surfaces build is just this one entry.
-  // Called unconditionally, above every early return (Rules of Hooks),
-  // mirroring `useMatchupFormNow` just above.
+  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`). Called
+  // unconditionally, above every early return (Rules of Hooks), mirroring
+  // `useMatchupFormNow` just above.
   const matchupOrPlayerInsight = useMatchupOrPlayerInsight({ matchupMatches, horizon });
-  const insightsForTerminus = useMemo(
-    () => (matchupOrPlayerInsight ? [matchupOrPlayerInsight] : []),
-    [matchupOrPlayerInsight],
+
+  // Plan 39.1-26 (gap closure, Task 1): the effective fighter/vs pairing
+  // this page's door hrefs must carry — the SAME pairing both insights above
+  // were computed over, never the persisted selection alone. A door is a
+  // plain relative `<Link>`, never routed through `setSearchParams` (which
+  // merges), so without this carry a followed door would drop a URL-seeded
+  // pairing entirely, reverting to whatever the persisted selection resolves
+  // to. Declared above every early return, mirroring `terminusAxes` above.
+  const pairingDoorCarry = useMemo(
+    () =>
+      buildDrillDownSearch({
+        fighterId: effectiveFighter?.id,
+        vsFighterId: effectiveOpponent?.id,
+      }),
+    [effectiveFighter?.id, effectiveOpponent?.id],
   );
-  const claimSummary =
-    axesFromUrl.claimId != null &&
-    matchupOrPlayerInsight != null &&
-    matchupOrPlayerInsight.id === axesFromUrl.claimId &&
-    effectiveOpponent != null
-      ? buildMatchupOrPlayerVerdict(matchupOrPlayerInsight, t, effectiveOpponent.id)
-      : undefined;
+
+  // Plan 39.1-26 (gap closure, Task 1): both this pairing's own insights now
+  // resolve a followed door's claim, not just `matchupOrPlayer` alone.
+  const insightsForTerminus = useMemo(
+    () => [formNowInsight, matchupOrPlayerInsight].filter((i): i is Insight => i != null),
+    [formNowInsight, matchupOrPlayerInsight],
+  );
+  const claimSummary = useMemo(() => {
+    if (axesFromUrl.claimId == null || effectiveOpponent == null) return undefined;
+    if (formNowInsight != null && formNowInsight.id === axesFromUrl.claimId) {
+      return buildFormNowVerdict(formNowInsight, effectiveOpponent.id, t);
+    }
+    if (matchupOrPlayerInsight != null && matchupOrPlayerInsight.id === axesFromUrl.claimId) {
+      return buildMatchupOrPlayerVerdict(matchupOrPlayerInsight, t, effectiveOpponent.id);
+    }
+    return undefined;
+  }, [axesFromUrl.claimId, effectiveOpponent, formNowInsight, matchupOrPlayerInsight, t]);
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
   // passed as `resolveClaim` would be a NEW reference every render, breaking
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
@@ -291,6 +320,34 @@ export function MatchupsPage() {
       resolveInsightClaim({ claimId, insights: insightsForTerminus, matches: ms }),
     [insightsForTerminus],
   );
+
+  // Plan 39.1-26 (gap closure, Task 1): the chart's counted-games door —
+  // built by `buildInsightDoors` from the SAME `formNowInsight` the
+  // terminus above resolves against, anchored to `#matchup-table` (this
+  // page's own terminus id, not the default `#games`) and carrying the
+  // effective pairing so a URL-seeded pairing survives the round trip.
+  // `undefined` whenever the insight has zero counted games.
+  const formNowGamesDoor = formNowInsight
+    ? buildInsightDoors({
+        insight: formNowInsight,
+        subjectPath,
+        anchor: `#${MATCHUP_TABLE_ANCHOR_ID}`,
+        carry: pairingDoorCarry,
+      }).find((door) => door.kind === 'games')
+    : undefined;
+
+  // Plan 39.1-26 (gap closure, Task 1): landing is real in a browser
+  // (BrowserRouter performs no hash scroll of its own — `AppRouter.tsx`) —
+  // this scrolls the terminus into view once per navigation whenever the
+  // hash names it, covering the chart door click.
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === `#${MATCHUP_TABLE_ANCHOR_ID}`) {
+      document
+        .getElementById(MATCHUP_TABLE_ANCHOR_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.key, location.hash]);
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
@@ -494,7 +551,17 @@ export function MatchupsPage() {
                 }
                 insight={
                   formNowInsight && effectiveOpponent
-                    ? renderFormNowHead(formNowInsight, effectiveOpponent.id, t, i18n.language)
+                    ? renderFormNowHead(
+                        formNowInsight,
+                        effectiveOpponent.id,
+                        t,
+                        i18n.language,
+                        formNowGamesDoor ? (
+                          <Link to={formNowGamesDoor.href}>
+                            {t('insights.door.seeGames', { count: formNowGamesDoor.count })}
+                          </Link>
+                        ) : undefined,
+                      )
                     : null
                 }
               >
@@ -508,6 +575,7 @@ export function MatchupsPage() {
               <MatchupOrPlayerCard
                 matchupMatches={matchupMatches}
                 insight={matchupOrPlayerInsight}
+                doorCarry={pairingDoorCarry}
               />
             </div>
           </PageGrid>

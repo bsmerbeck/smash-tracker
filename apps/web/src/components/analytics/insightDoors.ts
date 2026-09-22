@@ -12,6 +12,7 @@ import {
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FROM_PARAM,
   DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_CLAIM_PARAM,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
 
@@ -134,10 +135,29 @@ export function eventKeyOf(match: Match): string | undefined {
  * Phase 38's own drill-down tests reference that id, so it is never
  * renamed) can override it. The anchor is purely a same-page scroll target;
  * it never changes which games the resolver returns.
+ *
+ * Plan 39.1-26 (gap closure): `carry` is the host's own context — the params
+ * the host's insight input was computed over (a Matchups pairing, the hub's
+ * `context`/`source`/`vs` chips) — never a filter axis. This is what makes
+ * the door survive being followed from a URL-seeded state: since this href
+ * is a plain relative `?...` string (never routed through `setSearchParams`,
+ * which merges), a bare `<Link to="?claim=...#anchor">` REPLACES the entire
+ * search string on navigation, dropping anything not carried forward. The
+ * five drill-down FILTER params (stage/event/from/to/claim) are always
+ * dropped from `carry` — a door must never smuggle a stale filter axis or a
+ * foreign claim id through — and the claim is always THIS insight's own id.
  */
-function buildGamesDoorHref(insight: Insight, anchor = '#games'): string {
-  const axes: Partial<DrillDownAxes> = { claimId: insight.id };
-  const query = buildDrillDownSearch(axes).toString();
+function buildGamesDoorHref(insight: Insight, anchor = '#games', carry?: URLSearchParams): string {
+  const params = new URLSearchParams(carry ?? undefined);
+  params.delete(DRILL_DOWN_STAGE_PARAM);
+  params.delete(DRILL_DOWN_EVENT_PARAM);
+  params.delete(DRILL_DOWN_FROM_PARAM);
+  params.delete(DRILL_DOWN_TO_PARAM);
+  params.delete(DRILL_DOWN_CLAIM_PARAM);
+  for (const [key, value] of buildDrillDownSearch({ claimId: insight.id }).entries()) {
+    params.set(key, value);
+  }
+  const query = params.toString();
   return query ? `?${query}${anchor}` : anchor;
 }
 
@@ -175,8 +195,10 @@ export function buildInsightDoors(input: {
   subjectPath: (personalPath: string) => string;
   /** Plan 39.1-24 (gap closure, Task 2): overrides the games door's scroll anchor (default `'#games'`) — see `buildGamesDoorHref`'s doc comment. */
   anchor?: string;
+  /** Plan 39.1-26 (gap closure): the host's own context to carry onto the games door — see `buildGamesDoorHref`'s doc comment. */
+  carry?: URLSearchParams;
 }): InsightDoorDescriptor[] {
-  const { insight, subjectPath, anchor } = input;
+  const { insight, subjectPath, anchor, carry } = input;
 
   const fallbackDoors = insight.doors
     .map((door) => buildFallbackDoor(door, subjectPath))
@@ -188,7 +210,7 @@ export function buildInsightDoors(input: {
 
   const gamesDoor: InsightDoorDescriptor = {
     kind: 'games',
-    href: buildGamesDoorHref(insight, anchor),
+    href: buildGamesDoorHref(insight, anchor, carry),
     count: insight.countedMatchIds.length,
   };
   return [gamesDoor, ...fallbackDoors];
