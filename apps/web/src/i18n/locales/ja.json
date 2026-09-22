@@ -34,6 +34,8 @@
     "chunkLoadError": "ページの一部を読み込めませんでした。接続を確認して再試行してください。",
     "retry": "再試行",
     "language": "言語",
+    "collapseSidebarAria": "サイドバーを折りたたむ",
+    "expandSidebarAria": "サイドバーを展開",
     "languageChanged": "言語を{{language}}に設定しました — 上部バーからいつでも変更できます。"
   },
   "common": {
@@ -401,6 +403,23 @@
       "deleteMatch": "対戦を削除",
       "edited": "対戦を編集しました！",
       "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
+    },
+    "continueSet": {
+      "trigger": "セットを続ける",
+      "title": "セットを続ける",
+      "description": "このセットの続きのゲームを追加します。すでに保存済みのゲームは参考として表示され、変更されません。",
+      "saved": "保存済み",
+      "removeGame": "ゲーム{{number}}をこのセットから削除",
+      "clearContext": "代わりにゲーム1から始める",
+      "contextCleared": "以前のゲームを無視しました — 新しいゲームはゲーム1から始まります。",
+      "alreadyDecided": "このセットはすでに決着しています。ゲームを追加するにはBo5に切り替えてください。",
+      "loading": "このセットの以前のゲームを探しています…",
+      "loadFailed": "対戦を読み込めなかったため、このセットの以前のゲームは不明です。",
+      "continueWithoutContext": "以前のゲームなしで続ける",
+      "back": "戻る",
+      "save": "ゲームを保存",
+      "added_one": "{{count}}ゲームをセットに追加しました",
+      "added_other": "{{count}}ゲームをセットに追加しました"
     },
     "stageForm": {
       "label": "ステージ形態",

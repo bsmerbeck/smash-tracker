@@ -34,6 +34,8 @@
     "chunkLoadError": "Ein Teil der Seite konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
     "retry": "Erneut versuchen",
     "language": "Sprache",
+    "collapseSidebarAria": "Seitenleiste einklappen",
+    "expandSidebarAria": "Seitenleiste ausklappen",
     "languageChanged": "Sprache auf {{language}} gesetzt — jederzeit in der oberen Leiste änderbar."
   },
   "common": {
@@ -401,6 +403,23 @@
       "deleteMatch": "Match löschen",
       "edited": "Match bearbeitet!",
       "saveFailed": "Match konnte nicht gespeichert werden. Bitte erneut versuchen."
+    },
+    "continueSet": {
+      "trigger": "Set fortsetzen",
+      "title": "Set fortsetzen",
+      "description": "Füge die weiteren Spiele dieses Sets hinzu. Bereits gespeicherte Spiele werden nur zur Orientierung angezeigt und nicht verändert.",
+      "saved": "Gespeichert",
+      "removeGame": "Spiel {{number}} aus diesem Set entfernen",
+      "clearContext": "Stattdessen bei Spiel 1 beginnen",
+      "contextCleared": "Frühere Spiele ignoriert — neue Spiele beginnen bei Spiel 1.",
+      "alreadyDecided": "Dieses Set ist bereits entschieden. Wechsle zu Bo5, um weitere Spiele hinzuzufügen.",
+      "loading": "Suche nach den früheren Spielen dieses Sets…",
+      "loadFailed": "Deine Matches konnten nicht geladen werden, daher sind die früheren Spiele dieses Sets unbekannt.",
+      "continueWithoutContext": "Ohne frühere Spiele fortfahren",
+      "back": "Zurück",
+      "save": "Spiele speichern",
+      "added_one": "{{count}} Spiel zum Set hinzugefügt",
+      "added_other": "{{count}} Spiele zum Set hinzugefügt"
     },
     "stageForm": {
       "label": "Stage-Form",

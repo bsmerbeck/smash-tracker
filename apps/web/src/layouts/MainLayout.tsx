@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -8,6 +8,7 @@ import { useCoachAccessEjection } from '@/hooks/useCoachAccessEjection';
 import { useAutoWidenEmptyRange } from '@/hooks/useAutoWidenEmptyRange';
 import { GuidedPathCard } from '@/components/onboarding/GuidedPathCard';
 import { DemoAccountBanner } from '@/components/DemoAccountBanner';
+import { readStoredAppSidebarCollapsed, persistAppSidebarCollapsed } from './appSidebarPrefs';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
@@ -77,12 +78,24 @@ export function MainLayout({ children }: { children: ReactNode }) {
   // auto-widen — never duplicate this per page (see the hook doc for why a
   // second mount would double-evaluate/double-toast).
   useAutoWidenEmptyRange();
+  // Quick 260918-hro: the SINGLE owner of the app-shell rail collapse
+  // preference for all four rail variants (`SidebarContent`'s route-aware
+  // swap is untouched by design — collapse applies at the shell level, so
+  // it covers every authenticated window with zero per-page work).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    readStoredAppSidebarCollapsed(),
+  );
+  function handleToggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    persistAppSidebarCollapsed(next);
+  }
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">
         <Topbar />
         <div className="flex flex-1">
-          <Sidebar />
+          <Sidebar collapsed={sidebarCollapsed} onToggle={handleToggleSidebar} />
           <div className="flex min-w-0 flex-1 flex-col">
             <main className="flex-1 p-4 sm:p-6">
               {/* Above GuidedPathCard so the demo label is the first thing in

@@ -34,6 +34,8 @@
     "chunkLoadError": "Something failed to load. Check your connection and retry.",
     "retry": "Retry",
     "language": "Language",
+    "collapseSidebarAria": "Collapse sidebar",
+    "expandSidebarAria": "Expand sidebar",
     "languageChanged": "Language set to {{language}} — change it anytime from the top bar."
   },
   "common": {
@@ -401,6 +403,23 @@
       "deleteMatch": "Delete Match",
       "edited": "Match edited!",
       "saveFailed": "Failed to save match. Please try again."
+    },
+    "continueSet": {
+      "trigger": "Continue Set",
+      "title": "Continue Set",
+      "description": "Add the later games of this set. Games you already saved are shown for context and are not changed.",
+      "saved": "Saved",
+      "removeGame": "Remove game {{number}} from this set",
+      "clearContext": "Start from game 1 instead",
+      "contextCleared": "Earlier games ignored — new games start at game 1.",
+      "alreadyDecided": "This set is already decided. Switch to Bo5 to add more games.",
+      "loading": "Looking for the earlier games of this set…",
+      "loadFailed": "Couldn't load your matches, so the earlier games of this set are unknown.",
+      "continueWithoutContext": "Continue without earlier games",
+      "back": "Back",
+      "save": "Save Games",
+      "added_one": "{{count}} game added to the set",
+      "added_other": "{{count}} games added to the set"
     },
     "stageForm": {
       "label": "Stage Form",

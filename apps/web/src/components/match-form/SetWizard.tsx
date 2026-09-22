@@ -4,8 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Check, ChevronsUpDown } from 'lucide-react';
-import type { Fighter } from '@smash-tracker/shared';
+import { Check, ChevronsUpDown, X } from 'lucide-react';
+import type { CreateMatchInput, Fighter } from '@smash-tracker/shared';
 import { matchTypeValues, TOURNAMENT_LEGAL_STAGE_IDS } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,12 +38,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
+import { NO_SELECTION_STAGE } from '@/data/stages';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useAlphaFighters } from '@/hooks/useFighterName';
-import { getGroupedStageOptions } from '@/lib/stageOptions';
+import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { TournamentFields, matchTypeLabel } from './MatchForm';
+import { isFormatSelectable } from './continueSetLogic';
 import {
   setFormatValues,
   winsNeededFor,
@@ -52,7 +54,7 @@ import {
   isSetDecided,
   shouldShowGame,
   formatSetScore,
-  buildSetGamePayloads,
+  buildContinuationPayloads,
   buildDefaultGameValues,
   resolveSetFighterSelections,
   type SetFormat,
@@ -164,15 +166,31 @@ export function SetWizard({
   onGamesChange,
   onSubmit,
   footer,
+  lockedGames,
+  onDropLockedGame,
+  onClearLockedGames,
 }: {
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
   fighterSprites: Fighter[];
   form: UseFormReturn<SetSharedFormValues>;
   games: SetGameValues[];
   onGamesChange: (games: SetGameValues[]) => void;
-  onSubmit: (payloads: ReturnType<typeof buildSetGamePayloads>) => void | Promise<void>;
+  onSubmit: (payloads: CreateMatchInput[]) => void | Promise<void>;
   /** Rendered inside the wizard's own `<form>` (e.g. Cancel/Save buttons) so a submit button here triggers `onSubmit` via normal form submission. */
   footer?: ReactNode;
+  /**
+   * Continue Set mode: games already persisted for this set, rendered as
+   * read-only leading rows. Numbering, the score chip, `shouldShowGame` and
+   * the fighter forward-carry all read `[...lockedGames, ...games]`, so a
+   * continuation's next game inherits the last locked game's characters
+   * exactly as it would inside one sitting. Omitting this prop (AddMatchForm)
+   * degenerates to today's behavior byte-for-byte.
+   */
+  lockedGames?: SetGameValues[];
+  /** Drops one locked game from the LOCAL continuation context — never touches stored data. `index` is 0-based into `lockedGames`. */
+  onDropLockedGame?: (index: number) => void;
+  /** Drops every locked game from the LOCAL continuation context at once — never touches stored data. */
+  onClearLockedGames?: () => void;
 }) {
   const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
@@ -180,17 +198,27 @@ export function SetWizard({
   const alphaFighters = useAlphaFighters();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
 
+  const locked = lockedGames ?? [];
+  // Plain per-render computation, not useMemo — a fresh array every render
+  // regardless (see the `resolvedGamePadded` rationale below), so memoizing
+  // on it would be pointless. Passing no `lockedGames` (AddMatchForm) makes
+  // this identical in content to `games`.
+  const allGames = [...locked, ...games];
+
   const format = form.watch('format');
   // Read live (not via the games array) so game 1's per-game defaults
   // re-render the instant the set-level pickers change.
   const sharedFighterId = form.watch('fighterId');
   const sharedOpponentFighterId = form.watch('opponentFighterId');
-  const score = useMemo(() => getSetScore(games), [games]);
+  const score = getSetScore(allGames);
   const decided = isSetDecided(format, score);
   const needed = winsNeededFor(format);
   const maxGames = maxGamesFor(format);
 
-  const visibleGameNumbers = getVisibleGameNumbers(format, games, maxGames);
+  const visibleGameNumbers = getVisibleGameNumbers(format, allGames, maxGames);
+  // No editable row is visible when every visible game number is a locked
+  // one — the set is decided by already-saved games alone.
+  const noEditableRowVisible = visibleGameNumbers.length <= locked.length;
 
   // Per-game resolved character pair (SETFEAT-03), one entry per visible
   // game — padded so every visible row has an entry even before it has any
@@ -202,13 +230,16 @@ export function SetWizard({
   // it sidesteps a real conflict between React Compiler's manual-memoization
   // preservation check and `updateGame`'s array-index assignment below.
   const resolvedGamePadded = visibleGameNumbers.map(
-    (gameNumber) => games[gameNumber - 1] ?? buildDefaultGameValues(),
+    (gameNumber) => allGames[gameNumber - 1] ?? buildDefaultGameValues(),
   );
   const resolvedGameFighters = resolveSetFighterSelections(
     { fighterId: sharedFighterId, opponentFighterId: sharedOpponentFighterId },
     resolvedGamePadded,
   );
 
+  // Writes into the EDITABLE `games` array only — `index` is the offset
+  // index (see call sites below: `gameNumber - 1 - locked.length`), never a
+  // raw game number. Locked games are never written through this path.
   function updateGame(index: number, patch: Partial<SetGameValues>) {
     const next = [...games];
     next[index] = { ...(next[index] ?? buildDefaultGameValues()), ...patch };
@@ -218,14 +249,17 @@ export function SetWizard({
   function handleFormatChange(nextFormat: SetFormat) {
     form.setValue('format', nextFormat);
     // Trim any games that are no longer reachable under the new format
-    // (e.g. switching Bo5 -> Bo3 after game 4 was entered).
-    onGamesChange(games.slice(0, maxGamesFor(nextFormat)));
+    // (e.g. switching Bo5 -> Bo3 after game 4 was entered). A locked game is
+    // never dropped by a format change — only the EDITABLE budget shrinks.
+    onGamesChange(games.slice(0, Math.max(0, maxGamesFor(nextFormat) - locked.length)));
   }
 
   async function handleSubmit(values: SetSharedFormValues) {
     const shared = sharedFormToSetShared(values);
-    const playedGames = games.slice(0, visibleGameNumbers.length).filter((g) => g.result);
-    const payloads = buildSetGamePayloads(shared, playedGames);
+    const playedNewGames = games
+      .slice(0, Math.max(0, visibleGameNumbers.length - locked.length))
+      .filter((g) => g.result);
+    const payloads = buildContinuationPayloads(shared, locked, playedNewGames);
     await onSubmit(payloads);
   }
 
@@ -252,10 +286,18 @@ export function SetWizard({
                   if (value) handleFormatChange(value as SetFormat);
                 }}
               >
-                <ToggleGroupItem value="bo3" aria-label={t('matchForm.set.bestOf3')}>
+                <ToggleGroupItem
+                  value="bo3"
+                  aria-label={t('matchForm.set.bestOf3')}
+                  disabled={!isFormatSelectable('bo3', locked.length)}
+                >
                   Bo3
                 </ToggleGroupItem>
-                <ToggleGroupItem value="bo5" aria-label={t('matchForm.set.bestOf5')}>
+                <ToggleGroupItem
+                  value="bo5"
+                  aria-label={t('matchForm.set.bestOf5')}
+                  disabled={!isFormatSelectable('bo5', locked.length)}
+                >
                   Bo5
                 </ToggleGroupItem>
               </ToggleGroup>
@@ -438,198 +480,267 @@ export function SetWizard({
             </Badge>
           </div>
 
-          <div className="flex flex-col gap-4">
-            {visibleGameNumbers.map((gameNumber) => {
-              const index = gameNumber - 1;
-              const game = games[index] ?? buildDefaultGameValues();
-              const resolvedFighters = resolvedGameFighters[index];
-              return (
-                <div key={gameNumber} className="flex flex-col gap-3 rounded-md border p-3">
-                  <span className="text-sm font-semibold">
-                    {t('matchForm.set.game', { number: gameNumber })}
-                  </span>
+          {locked.length > 0 && decided && noEditableRowVisible && (
+            <p className="text-sm text-muted-foreground" data-testid="continue-set-already-decided">
+              {t('matchForm.continueSet.alreadyDecided')}
+            </p>
+          )}
 
-                  {resolvedFighters && (
+          <div className="flex flex-col gap-4">
+            {locked.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {locked.map((lockedGame, lockedIndex) => {
+                  const gameNumber = lockedIndex + 1;
+                  const stage =
+                    stageOptions.find((s) => s.id === lockedGame.stageId) ?? NO_SELECTION_STAGE;
+                  return (
+                    <div
+                      key={gameNumber}
+                      data-testid={`locked-game-${gameNumber}`}
+                      className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold">
+                          {t('matchForm.set.game', { number: gameNumber })}
+                        </span>
+                        <Badge variant={lockedGame.result === 'win' ? 'success' : 'secondary'}>
+                          {lockedGame.result === 'win' ? t('common.win') : t('common.loss')}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground">{stage.name}</span>
+                        <Badge variant="outline">{t('matchForm.continueSet.saved')}</Badge>
+                      </div>
+                      {onDropLockedGame && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('matchForm.continueSet.removeGame', {
+                            number: gameNumber,
+                          })}
+                          onClick={() => onDropLockedGame(gameNumber - 1)}
+                        >
+                          <X />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+                {onClearLockedGames && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onClick={onClearLockedGames}
+                  >
+                    {t('matchForm.continueSet.clearContext')}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {visibleGameNumbers
+              .filter((gameNumber) => gameNumber > locked.length)
+              .map((gameNumber) => {
+                const index = gameNumber - 1;
+                const editableIndex = gameNumber - 1 - locked.length;
+                const game = games[editableIndex] ?? buildDefaultGameValues();
+                const resolvedFighters = resolvedGameFighters[index];
+                return (
+                  <div key={gameNumber} className="flex flex-col gap-3 rounded-md border p-3">
+                    <span className="text-sm font-semibold">
+                      {t('matchForm.set.game', { number: gameNumber })}
+                    </span>
+
+                    {resolvedFighters && (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <FormItem>
+                          <FormLabel>{t('matchForm.set.gameYourFighter')}</FormLabel>
+                          <Select
+                            value={String(resolvedFighters.fighterId)}
+                            onValueChange={(v) =>
+                              updateGame(editableIndex, { fighterId: Number(v) })
+                            }
+                          >
+                            <FormControl>
+                              <SelectTrigger
+                                className="w-full"
+                                aria-label={t('matchForm.set.gameYourFighterAria', {
+                                  number: gameNumber,
+                                })}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {fighterSprites.map((s) => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  <img src={s.url} alt="" className="size-6 object-contain" />
+                                  {localizedFighterName(s.id, t)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                        <FormItem>
+                          <FormLabel>{t('matchForm.set.gameOpponentFighter')}</FormLabel>
+                          <Select
+                            value={String(resolvedFighters.opponentFighterId)}
+                            onValueChange={(v) =>
+                              updateGame(editableIndex, { opponentFighterId: Number(v) })
+                            }
+                          >
+                            <FormControl>
+                              <SelectTrigger
+                                className="w-full"
+                                aria-label={t('matchForm.set.gameOpponentFighterAria', {
+                                  number: gameNumber,
+                                })}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {alphaFighters.map((s) => (
+                                <SelectItem key={s.id} value={String(s.id)}>
+                                  <img src={s.url} alt="" className="size-6 object-contain" />
+                                  {localizedFighterName(s.id, t)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      </div>
+                    )}
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.result')}</FormLabel>
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        value={game.result ?? ''}
+                        onValueChange={(value) => {
+                          if (value) updateGame(editableIndex, { result: value as 'win' | 'loss' });
+                        }}
+                      >
+                        <ToggleGroupItem
+                          value="win"
+                          aria-label={t('matchForm.set.gameWinAria', { number: gameNumber })}
+                        >
+                          {t('common.win')}
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="loss"
+                          aria-label={t('matchForm.set.gameLossAria', { number: gameNumber })}
+                        >
+                          {t('common.loss')}
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </FormItem>
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.set.stage')}</FormLabel>
+                      <Select
+                        value={String(game.stageId)}
+                        onValueChange={(v) => updateGame(editableIndex, { stageId: Number(v) })}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <StageSelectValue stageId={game.stageId} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <StageSelectGroups
+                            groups={stageGroups}
+                            onToggleFavorite={toggleStageFavorite}
+                          />
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.stageForm.label')}</FormLabel>
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        value={game.stageForm ?? ''}
+                        onValueChange={(value) =>
+                          updateGame(editableIndex, {
+                            stageForm: value
+                              ? (value as 'normal' | 'battlefield' | 'omega')
+                              : undefined,
+                          })
+                        }
+                      >
+                        <ToggleGroupItem value="normal">
+                          {t('matchForm.stageForm.normal')}
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="battlefield">
+                          {t('matchForm.stageForm.battlefield')}
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="omega">
+                          {t('matchForm.stageForm.omega')}
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </FormItem>
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.stocksLeft')}</FormLabel>
+                      <Select
+                        value={game.stocksLeft === undefined ? 'unset' : String(game.stocksLeft)}
+                        onValueChange={(v) =>
+                          updateGame(editableIndex, {
+                            stocksLeft: v === 'unset' ? undefined : Number(v),
+                          })
+                        }
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder={t('matchForm.notTracked')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="unset">{t('matchForm.notTracked')}</SelectItem>
+                          {[0, 1, 2, 3].map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <FormItem>
-                        <FormLabel>{t('matchForm.set.gameYourFighter')}</FormLabel>
-                        <Select
-                          value={String(resolvedFighters.fighterId)}
-                          onValueChange={(v) => updateGame(index, { fighterId: Number(v) })}
-                        >
-                          <FormControl>
-                            <SelectTrigger
-                              className="w-full"
-                              aria-label={t('matchForm.set.gameYourFighterAria', {
-                                number: gameNumber,
-                              })}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {fighterSprites.map((s) => (
-                              <SelectItem key={s.id} value={String(s.id)}>
-                                <img src={s.url} alt="" className="size-6 object-contain" />
-                                {localizedFighterName(s.id, t)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>{t('matchForm.set.vodUrl')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="url"
+                            value={game.vodUrl ?? ''}
+                            onChange={(e) => updateGame(editableIndex, { vodUrl: e.target.value })}
+                            placeholder={t('matchForm.vodUrlPlaceholder')}
+                          />
+                        </FormControl>
                       </FormItem>
+
                       <FormItem>
-                        <FormLabel>{t('matchForm.set.gameOpponentFighter')}</FormLabel>
-                        <Select
-                          value={String(resolvedFighters.opponentFighterId)}
-                          onValueChange={(v) => updateGame(index, { opponentFighterId: Number(v) })}
-                        >
-                          <FormControl>
-                            <SelectTrigger
-                              className="w-full"
-                              aria-label={t('matchForm.set.gameOpponentFighterAria', {
-                                number: gameNumber,
-                              })}
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {alphaFighters.map((s) => (
-                              <SelectItem key={s.id} value={String(s.id)}>
-                                <img src={s.url} alt="" className="size-6 object-contain" />
-                                {localizedFighterName(s.id, t)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>{t('matchForm.set.vodStartTime')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            value={game.vodStartSeconds ?? ''}
+                            onChange={(e) =>
+                              updateGame(editableIndex, { vodStartSeconds: e.target.value })
+                            }
+                            disabled={!game.vodUrl?.trim()}
+                            placeholder={t('matchForm.vodStartSeconds.placeholder')}
+                          />
+                        </FormControl>
                       </FormItem>
                     </div>
-                  )}
-
-                  <FormItem>
-                    <FormLabel>{t('matchForm.result')}</FormLabel>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      value={game.result ?? ''}
-                      onValueChange={(value) => {
-                        if (value) updateGame(index, { result: value as 'win' | 'loss' });
-                      }}
-                    >
-                      <ToggleGroupItem
-                        value="win"
-                        aria-label={t('matchForm.set.gameWinAria', { number: gameNumber })}
-                      >
-                        {t('common.win')}
-                      </ToggleGroupItem>
-                      <ToggleGroupItem
-                        value="loss"
-                        aria-label={t('matchForm.set.gameLossAria', { number: gameNumber })}
-                      >
-                        {t('common.loss')}
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </FormItem>
-
-                  <FormItem>
-                    <FormLabel>{t('matchForm.set.stage')}</FormLabel>
-                    <Select
-                      value={String(game.stageId)}
-                      onValueChange={(v) => updateGame(index, { stageId: Number(v) })}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <StageSelectValue stageId={game.stageId} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <StageSelectGroups
-                          groups={stageGroups}
-                          onToggleFavorite={toggleStageFavorite}
-                        />
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-
-                  <FormItem>
-                    <FormLabel>{t('matchForm.stageForm.label')}</FormLabel>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      value={game.stageForm ?? ''}
-                      onValueChange={(value) =>
-                        updateGame(index, {
-                          stageForm: value
-                            ? (value as 'normal' | 'battlefield' | 'omega')
-                            : undefined,
-                        })
-                      }
-                    >
-                      <ToggleGroupItem value="normal">
-                        {t('matchForm.stageForm.normal')}
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="battlefield">
-                        {t('matchForm.stageForm.battlefield')}
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="omega">
-                        {t('matchForm.stageForm.omega')}
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </FormItem>
-
-                  <FormItem>
-                    <FormLabel>{t('matchForm.stocksLeft')}</FormLabel>
-                    <Select
-                      value={game.stocksLeft === undefined ? 'unset' : String(game.stocksLeft)}
-                      onValueChange={(v) =>
-                        updateGame(index, { stocksLeft: v === 'unset' ? undefined : Number(v) })
-                      }
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder={t('matchForm.notTracked')} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="unset">{t('matchForm.notTracked')}</SelectItem>
-                        {[0, 1, 2, 3].map((n) => (
-                          <SelectItem key={n} value={String(n)}>
-                            {n}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <FormItem>
-                      <FormLabel>{t('matchForm.set.vodUrl')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="url"
-                          value={game.vodUrl ?? ''}
-                          onChange={(e) => updateGame(index, { vodUrl: e.target.value })}
-                          placeholder={t('matchForm.vodUrlPlaceholder')}
-                        />
-                      </FormControl>
-                    </FormItem>
-
-                    <FormItem>
-                      <FormLabel>{t('matchForm.set.vodStartTime')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          value={game.vodStartSeconds ?? ''}
-                          onChange={(e) => updateGame(index, { vodStartSeconds: e.target.value })}
-                          disabled={!game.vodUrl?.trim()}
-                          placeholder={t('matchForm.vodStartSeconds.placeholder')}
-                        />
-                      </FormControl>
-                    </FormItem>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
 

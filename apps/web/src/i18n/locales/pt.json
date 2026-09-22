@@ -34,6 +34,8 @@
     "chunkLoadError": "Uma parte da página não pôde ser carregada. Verifique sua conexão e tente novamente.",
     "retry": "Tentar novamente",
     "language": "Idioma",
+    "collapseSidebarAria": "Recolher a barra lateral",
+    "expandSidebarAria": "Expandir a barra lateral",
     "languageChanged": "Idioma definido para {{language}} — mude quando quiser na barra superior."
   },
   "common": {
@@ -401,6 +403,23 @@
       "deleteMatch": "Excluir partida",
       "edited": "Partida editada!",
       "saveFailed": "Falha ao salvar a partida. Tente novamente."
+    },
+    "continueSet": {
+      "trigger": "Continuar set",
+      "title": "Continuar set",
+      "description": "Adicione as próximas partidas deste set. As partidas já salvas são mostradas apenas como contexto e não são alteradas.",
+      "saved": "Salva",
+      "removeGame": "Remover a partida {{number}} deste set",
+      "clearContext": "Começar da partida 1",
+      "contextCleared": "Partidas anteriores ignoradas — as novas partidas começam na partida 1.",
+      "alreadyDecided": "Este set já foi decidido. Mude para Bo5 para adicionar mais partidas.",
+      "loading": "Procurando as partidas anteriores deste set…",
+      "loadFailed": "Não foi possível carregar suas partidas, então as partidas anteriores deste set são desconhecidas.",
+      "continueWithoutContext": "Continuar sem as partidas anteriores",
+      "back": "Voltar",
+      "save": "Salvar partidas",
+      "added_one": "{{count}} partida adicionada ao set",
+      "added_other": "{{count}} partidas adicionadas ao set"
     },
     "stageForm": {
       "label": "Forma do stage",
