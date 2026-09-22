@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
@@ -14,11 +15,13 @@ import {
   type InsightRailCard,
   type InsightRailShape,
 } from '@/components/analytics/InsightRail';
-import { InsightCard } from '@/components/analytics/InsightCard';
+import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatPercent } from '@/lib/formatPercent';
 
 /**
@@ -65,6 +68,45 @@ function copyValuesWithEntity(
   return { entity: accountName, ...insight.copy.values };
 }
 
+/**
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page can build the
+ * SAME rendered verdict sentence this rail uses on a card, for
+ * `FilteredMatchList`'s `claimSummary` prop — mirrors
+ * `FighterInsightRail.tsx`'s `buildInsightVerdict`.
+ */
+export function buildMatchDataVerdict(insight: Insight, t: TFunction, accountName: string): string {
+  return t(insight.copy.key, copyValuesWithEntity(insight, accountName));
+}
+
+/**
+ * Plan 39.1-24: this rail's own door-label mapping — duplicated per this
+ * file's established small-helper-duplication convention (matches
+ * `FighterInsightRail.tsx`'s own precedent).
+ */
+function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
+  if (door.kind === 'games') return t('insights.door.seeGames', { count: door.count });
+  if (door.kind === 'matchup') return t('insights.door.openMatchup');
+  if (door.kind === 'opponent') return t('insights.door.openOpponent');
+  return t('insights.door.openMatchup');
+}
+
+function buildDoorNodes(
+  insight: Insight,
+  t: TFunction,
+  subjectPath: (personalPath: string) => string,
+): InsightCardDoors | undefined {
+  const descriptors = buildInsightDoors({ insight, subjectPath }).slice(0, 3);
+  if (descriptors.length === 0) return undefined;
+  const nodes = descriptors.map((door) => (
+    <Link key={door.kind} to={door.href}>
+      {insightDoorLabel(door, t)}
+    </Link>
+  ));
+  if (nodes.length === 1) return [nodes[0]!] as const;
+  if (nodes.length === 2) return [nodes[0]!, nodes[1]!] as const;
+  return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
+}
+
 function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
@@ -101,38 +143,36 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   });
 }
 
-export interface MatchDataRailProps {
+export interface UseMatchDataInsightsInput {
   matches: Match[];
   horizon: HorizonKey;
 }
 
+export interface UseMatchDataInsightsResult {
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+}
+
 /**
- * The Match Data roster rail (INS-05, UI-SPEC §8.4's rail table): the closed
- * `InsightRail` primitive (plan 39.1-07) wired to the real engine at
- * whole-account scope — `RosterCore`/`RosterShift`/`SecondaryPayoff`/
- * `PocketCost`, four candidates, top 3 by salience render (`RAIL_CARD_CAP`).
- * `SecondaryPayoff`/`PocketCost` return no candidate at all (`build()`
- * returns `[]`, or the engine's own `hidden` state, dropped by
- * `assembleRail`) when their group doesn't exist in the roster model —
- * absent, never rendered locked (UI-SPEC §8.4). Per-card error boundaries
- * and dismissal promotion both come from `InsightRail` itself — the host
- * never wires either separately (`FighterInsightRail.tsx`/
- * `TrendsReadsRail.tsx`'s established pattern).
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page calls this
+ * ONCE and hands the result DOWN to both `MatchDataRail` (which renders the
+ * cards/doors) and its own `FilteredMatchList` terminus (whose
+ * `resolveClaim` needs the SAME `Insight[]` a rendered door's `claim=<id>`
+ * was built from) — "one insight computation per page", mirroring
+ * `FighterInsightRail.tsx`'s `useFighterInsights`. `MatchDataRail` itself no
+ * longer computes `insights`; it takes the result as props.
  */
-export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
-  const { t, i18n } = useTranslation();
+export function useMatchDataInsights({
+  matches,
+  horizon,
+}: UseMatchDataInsightsInput): UseMatchDataInsightsResult {
   const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
   // one-time-read escape hatch.
   const [nowMs] = useState(() => Date.now());
-
-  // A dedicated name distinct from `matchData.title` ("Match History", the
-  // table card's own heading) — reusing that key would render the SAME text
-  // twice on the page (once as the table's CardTitle, once per rail card's
-  // `InsightCard` name slot), breaking every existing test that queries for
-  // it uniquely.
-  const accountName = t('matchData.roster.railName');
 
   const insights = useMemo(() => {
     const built: Insight[] = [];
@@ -155,15 +195,58 @@ export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
     return built;
   }, [matches, horizon, nowMs, dismissedIds]);
 
+  return { insights, dismissedIds, dismiss, restoreAll };
+}
+
+export interface MatchDataRailProps {
+  /** The one shared computation — see `useMatchDataInsights` above. */
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+  horizon: HorizonKey;
+}
+
+/**
+ * The Match Data roster rail (INS-05, UI-SPEC §8.4's rail table): the closed
+ * `InsightRail` primitive (plan 39.1-07) wired to the real engine at
+ * whole-account scope — `RosterCore`/`RosterShift`/`SecondaryPayoff`/
+ * `PocketCost`, four candidates, top 3 by salience render (`RAIL_CARD_CAP`).
+ * `SecondaryPayoff`/`PocketCost` return no candidate at all (`build()`
+ * returns `[]`, or the engine's own `hidden` state, dropped by
+ * `assembleRail`) when their group doesn't exist in the roster model —
+ * absent, never rendered locked (UI-SPEC §8.4). Per-card error boundaries
+ * and dismissal promotion both come from `InsightRail` itself — the host
+ * never wires either separately (`FighterInsightRail.tsx`/
+ * `TrendsReadsRail.tsx`'s established pattern).
+ */
+export function MatchDataRail({
+  insights,
+  dismissedIds,
+  dismiss,
+  restoreAll,
+  horizon,
+}: MatchDataRailProps) {
+  const { t, i18n } = useTranslation();
+  const subjectPath = useSubjectPath();
+
+  // A dedicated name distinct from `matchData.title` ("Match History", the
+  // table card's own heading) — reusing that key would render the SAME text
+  // twice on the page (once as the table's CardTitle, once per rail card's
+  // `InsightCard` name slot), breaking every existing test that queries for
+  // it uniquely.
+  const accountName = t('matchData.roster.railName');
+
   const insightById = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
 
   const assembled = useMemo(() => assembleRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
 
   function insightToRailCard(insight: Insight): InsightRailCard {
     const chipKind = claimChipKindFor(insight.kind);
-    const verdict = t(insight.copy.key, copyValuesWithEntity(insight, accountName));
+    const verdict = buildMatchDataVerdict(insight, t, accountName);
     const evidence = buildEvidenceLine(insight, t, i18n.language);
     const span = buildSpan(insight, t);
+    const doors = buildDoorNodes(insight, t, subjectPath);
     return {
       id: insight.id,
       render: ({ onDismiss }) => (
@@ -174,6 +257,7 @@ export function MatchDataRail({ matches, horizon }: MatchDataRailProps) {
           verdict={verdict}
           evidence={evidence}
           span={span}
+          doors={doors}
           onDismiss={onDismiss}
           dismissLabel={t('insights.rail.dismiss')}
         />

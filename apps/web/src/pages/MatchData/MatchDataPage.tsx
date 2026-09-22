@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Fighter } from '@smash-tracker/shared';
+import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -10,6 +10,7 @@ import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
@@ -29,7 +30,11 @@ import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
 import { MatchTable } from './components/MatchTable';
 import { RosterUsage } from './components/RosterUsage';
 import { StageBreakdown } from './components/StageBreakdown';
-import { MatchDataRail } from './components/MatchDataRail';
+import {
+  MatchDataRail,
+  buildMatchDataVerdict,
+  useMatchDataInsights,
+} from './components/MatchDataRail';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -80,7 +85,8 @@ export function MatchDataPage() {
     axesFromUrl.stageId != null ||
     axesFromUrl.eventKey != null ||
     axesFromUrl.from != null ||
-    axesFromUrl.to != null;
+    axesFromUrl.to != null ||
+    axesFromUrl.claimId != null;
 
   // WR-C02 (39.1-REVIEW.md): this object literal was rebuilt fresh every
   // render (a NEW reference even when every field's VALUE was unchanged),
@@ -99,6 +105,7 @@ export function MatchDataPage() {
       eventKey: axesFromUrl.eventKey,
       from: axesFromUrl.from,
       to: axesFromUrl.to,
+      claimId: axesFromUrl.claimId,
     }),
     [
       axesFromUrl.fighterId,
@@ -107,6 +114,7 @@ export function MatchDataPage() {
       axesFromUrl.eventKey,
       axesFromUrl.from,
       axesFromUrl.to,
+      axesFromUrl.claimId,
     ],
   );
   // Also moved above the early returns (and memoized), for the SAME reason
@@ -116,6 +124,43 @@ export function MatchDataPage() {
   // recomputation just as unfixed, for a different reason (mirrors
   // `OpponentHubPage.tsx`'s own `sortedOpponentMatches` useMemo).
   const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+
+  // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
+  // computation this page shares with `MatchDataRail` (which takes the
+  // result as props below) and this page's own `FilteredMatchList` terminus
+  // (`resolveClaim`/`claimSummary`) — mirrors `FighterAnalysisPage.tsx`'s
+  // Task 1 wiring. Called unconditionally, above every early return.
+  const {
+    insights: matchDataInsights,
+    dismissedIds,
+    dismiss,
+    restoreAll,
+  } = useMatchDataInsights({ matches, horizon });
+  const insightById = useMemo(
+    () => new Map(matchDataInsights.map((insight) => [insight.id, insight])),
+    [matchDataInsights],
+  );
+  // A dedicated name distinct from `matchData.title` — matches
+  // `MatchDataRail.tsx`'s own `accountName` derivation so the claim summary
+  // reads the same entity the rail card itself rendered.
+  const accountNameForClaim = t('matchData.roster.railName');
+  const claimSummary =
+    axesFromUrl.claimId != null
+      ? (() => {
+          const insight = insightById.get(axesFromUrl.claimId!);
+          return insight ? buildMatchDataVerdict(insight, t, accountNameForClaim) : undefined;
+        })()
+      : undefined;
+  // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
+  // passed as `resolveClaim` would be a NEW reference every render, breaking
+  // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
+  // Memoized by `matchDataInsights` alone — the only thing this closure
+  // actually reads.
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: matchDataInsights, matches: ms }),
+    [matchDataInsights],
+  );
 
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
@@ -240,7 +285,13 @@ export function MatchDataPage() {
         </GridCell>
 
         <GridCell span={4}>
-          <MatchDataRail matches={matches} horizon={horizon} />
+          <MatchDataRail
+            insights={matchDataInsights}
+            dismissedIds={dismissedIds}
+            dismiss={dismiss}
+            restoreAll={restoreAll}
+            horizon={horizon}
+          />
         </GridCell>
 
         {hasDrillAxis && (
@@ -250,7 +301,13 @@ export function MatchDataPage() {
                 <CardTitle>{t('matchups.results')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <FilteredMatchList matches={sortedMatches} axes={terminusAxes} showDelete />
+                <FilteredMatchList
+                  matches={sortedMatches}
+                  axes={terminusAxes}
+                  resolveClaim={resolveClaimForTerminus}
+                  claimSummary={claimSummary}
+                  showDelete
+                />
               </CardContent>
             </Card>
           </GridCell>
