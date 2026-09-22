@@ -124,6 +124,45 @@ describe('assembleRail', () => {
     expect(result.unlocksNext!.meters).toHaveLength(3);
   });
 
+  it("CR-A01: a merged UnlocksNext meter uses EACH locked insight's own requirement, never a hardcoded floor", () => {
+    // `lockedInsight`'s `eligibleDenominator` is `3 - gamesNeeded` (this
+    // fixture's own baked-in "floor is always 3" assumption) — to exercise a
+    // DIFFERENT floor (e.g. COHORT_MIN_SIDE_GAMES = 8), override
+    // `recent.sample.eligibleDenominator` directly on top of `lockedInsight`.
+    const threeFloor = lockedInsight('l1', 30, 1); // eligibleDenominator: 2, gamesNeeded: 1 -> need 3
+    const eightFloor = makeInsight({
+      id: 'l2',
+      templateId: 'tiltCost',
+      scopeKey: 'l2',
+      state: 'locked',
+      deltaPoints: null,
+      gamesNeeded: 3,
+      salience: 20,
+      recent: {
+        kind: 'abstained',
+        claimType: 'fact',
+        reason: 'insufficient-sample',
+        sample: {
+          rawSampleSize: 5,
+          eligibleDenominator: 5,
+          knownFieldCoverage: 1,
+          dateRange: null,
+          refreshedAt: NOW_MS,
+          evidencePolicyVersion: 1,
+          recencyTreatment: 'unweighted',
+          confidenceTier: null,
+        },
+        gamesNeeded: 3,
+      },
+    }); // eligibleDenominator: 5, gamesNeeded: 3 -> need 8
+
+    const result = assembleRail({ insights: [threeFloor, eightFloor] });
+    expect(result.unlocksNext).not.toBeNull();
+    const byKey = new Map(result.unlocksNext!.meters.map((m) => [m.key, m]));
+    expect(byKey.get('l1')).toMatchObject({ have: 2, need: 3 });
+    expect(byKey.get('l2')).toMatchObject({ have: 5, need: 8 });
+  });
+
   it('never returns an empty cards array — 0 candidates of any kind yields exactly 1 card', () => {
     const result = assembleRail({ insights: [] });
     expect(result.cards).toHaveLength(1);

@@ -151,10 +151,28 @@ export function assembleRail(input: { insights: Insight[]; cap?: number }): Asse
     const chosen = locked.slice(0, UNLOCKS_NEXT_METER_CAP);
     const overflow = locked.slice(UNLOCKS_NEXT_METER_CAP);
     unlocksNext = {
+      // Review finding CR-A01: `need` used to be hardcoded to
+      // `ABSTENTION_FLOOR_GAMES` (3) regardless of which threshold actually
+      // produced a `locked` insight's `locked` state — but `locked` is
+      // reached via several different floors across templates
+      // (`ABSTENTION_FLOOR_GAMES` for formNow/characterMovers/rivalMovers/
+      // ratingMove, `COHORT_MIN_SIDE_GAMES` for tiltCost/settingGap/
+      // secondaryPayoff, `VOLUME_MIN_MONTHS` for volumeForm). Every template
+      // already computes its own requirement and attaches it as the
+      // top-level `Insight.gamesNeeded` field (the single source of truth
+      // both the template's own locked copy and this merged meter now read)
+      // — `need` is simply "what's already banked" plus "what's still
+      // needed", in the SAME unit the template itself used to compute
+      // `gamesNeeded` (games for most templates; volumeForm's own
+      // `gamesNeeded` is a MONTHS count, a known pre-existing unit mismatch
+      // this fix does not newly introduce — see 39.1-REVIEW-FIX-part-A.md).
       meters: chosen.map((insight) => ({
         key: insight.id,
         have: insight.recent.sample.eligibleDenominator,
-        need: ABSTENTION_FLOOR_GAMES,
+        need:
+          insight.gamesNeeded !== undefined
+            ? insight.recent.sample.eligibleDenominator + insight.gamesNeeded
+            : ABSTENTION_FLOOR_GAMES,
         unit: 'games',
       })),
       scopeKeys: chosen.map((insight) => insight.scopeKey),
