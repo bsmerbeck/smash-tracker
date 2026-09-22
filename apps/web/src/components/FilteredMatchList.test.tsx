@@ -652,6 +652,11 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     // this test time out at the 15s default. Focus at the end is asserted
     // via the component's own `document.getElementById(rootId)?.focus()`
     // effect, which `fireEvent.click` triggers identically to `userEvent`.
+    // Measured standalone: ~18-24s. Under `pnpm --filter @smash-tracker/web
+    // test`'s full concurrent run it measured ~31s (timed out once at the
+    // 30s bound) — the explicit 60s timeout below keeps ~2x headroom over
+    // that measurement, the same margin `insightDoorSameN.test.tsx`'s
+    // SAME_N_DOOR_TIMEOUT_MS uses for its own slow-render cases.
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
@@ -674,7 +679,7 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     // count) even once the paging control itself has unmounted.
     const progress = document.querySelector('[aria-live="polite"]');
     expect(progress).toHaveTextContent(/1000 .* 1000/);
-  }, 30_000);
+  }, 60_000);
 
   it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
     const user = userEvent.setup();

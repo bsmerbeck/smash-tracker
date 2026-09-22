@@ -478,20 +478,26 @@ const SURFACES: Surface[] = [
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
   {
-    // Plan 39.1-23 (UIX-02): a narrowing over FILTERED_MATCH_LIST_ROW_CAP
-    // caps what mounts on first render; this entry proves the no-inert-row
-    // contract holds in the EXPANDED tail too, not just the capped head —
-    // clicking Show all (a synchronous fireEvent, so `render()` stays
-    // synchronous like every other entry's) mounts every remaining row
-    // before this file's shared row-interactivity check runs against them.
-    name: "The shared filtered match list's rows, over-cap Show-all expansion (the terminus)",
+    // Plan 39.1-23 (UIX-02), replaced by plan 39.1-28's paging mechanism: a
+    // narrowing over FILTERED_MATCH_LIST_ROW_CAP caps what mounts on first
+    // render; this entry proves the no-inert-row contract holds in the
+    // EXPANDED tail too, not just the capped head — activating the "Show N
+    // more" paging control (synchronous fireEvents, so `render()` stays
+    // synchronous like every other entry's) until it disappears mounts every
+    // remaining row before this file's shared row-interactivity check runs
+    // against them.
+    name: "The shared filtered match list's rows, over-cap paging expansion (the terminus)",
     file: 'apps/web/src/components/FilteredMatchList.tsx',
     render: () => {
       const matches = Array.from({ length: FILTERED_MATCH_LIST_ROW_CAP + 5 }, (_, i) =>
         makeMatch({ id: `cap-${i}`, time: i, win: true }),
       );
       const result = withRouterAndQuery(<FilteredMatchList matches={matches} axes={{}} />);
-      fireEvent.click(within(result.container).getByRole('button', { name: /show all/i }));
+      let button = within(result.container).queryByRole('button', { name: /show \d+ more/i });
+      while (button) {
+        fireEvent.click(button);
+        button = within(result.container).queryByRole('button', { name: /show \d+ more/i });
+      }
       return result;
     },
     rows: (result) => dataRows(result.container),
