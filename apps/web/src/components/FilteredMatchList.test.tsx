@@ -7,7 +7,11 @@ import type { Match } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
-import { FilteredMatchList, matchHasAttachedVideo } from './FilteredMatchList';
+import {
+  FilteredMatchList,
+  matchHasAttachedVideo,
+  FILTERED_MATCH_LIST_ROW_CAP,
+} from './FilteredMatchList';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
 
 /**
@@ -566,6 +570,107 @@ describe('FilteredMatchList — overlay lift scope (phase 38-08 code review WR-0
     expect(badge).not.toBeNull();
     expect(relativeAncestorsBetween(badge as HTMLElement, row)).toHaveLength(0);
     expect(relativeAncestorsBetween(deleteButton, row).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Plan 39.1-23 (UIX-02, orchestrator Finding 9): the terminus caps rows
+ * mounted at `FILTERED_MATCH_LIST_ROW_CAP`, printing the full narrowed count
+ * via the summary line and `data-total-rows`, revealing the rest through one
+ * accessible "Show all" control.
+ */
+function makeManyMatches(count: number): Match[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeMatch({ id: `bulk-${i}`, time: 1000 + i, vodUrl: undefined }),
+  );
+}
+
+describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Finding 9)', () => {
+  it('table layout: mounts exactly the cap, prints the full count, and exposes it via data-total-rows', () => {
+    const matches = makeManyMatches(1000);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const table = screen.getByRole('table');
+    // header row + capped body rows
+    expect(within(table).getAllByRole('row')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 1);
+    expect(table).toHaveAttribute('data-total-rows', '1000');
+    expect(screen.getByText(/1000 games/)).toBeInTheDocument();
+    const showAll = screen.getByRole('button', { name: /show all 1000/i });
+    expect(showAll).toHaveAttribute('aria-expanded', 'false');
+    expect(showAll).toHaveAttribute('aria-controls', table.id);
+    expect(table.id).not.toBe('');
+  });
+
+  it('stacked layout: same cap, count, data-total-rows and Show-all control against <li> rows', () => {
+    const matches = makeManyMatches(1000);
+    const { container } = renderList({ matches, axes: {}, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    expect(stack).toHaveAttribute('data-total-rows', '1000');
+    const showAll = screen.getByRole('button', { name: /show all 1000/i });
+    expect(showAll).toHaveAttribute('aria-controls', stack.id);
+  });
+
+  it('clicking Show all mounts every row, flips aria-expanded, removes the control, and never loses focus to <body>', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(1000);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const showAll = screen.getByRole('button', { name: /show all 1000/i });
+    await user.click(showAll);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(1001);
+    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it.each([
+    [FILTERED_MATCH_LIST_ROW_CAP - 1, false],
+    [FILTERED_MATCH_LIST_ROW_CAP, false],
+    [FILTERED_MATCH_LIST_ROW_CAP + 1, true],
+  ])(
+    'Show-all button appears only once narrowed count exceeds the cap (n=%i)',
+    (n, expectButton) => {
+      const matches = makeManyMatches(n);
+      renderList({ matches, axes: {}, layout: 'table' });
+      const button = screen.queryByRole('button', { name: /show all/i });
+      expect(button !== null).toBe(expectButton);
+    },
+  );
+
+  it('re-narrowing (a new narrowedMatches identity) collapses expansion back to the cap', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(1000);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const Wrapper = ({ axes }: { axes: DrillDownAxes }) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/matchups"
+                element={<FilteredMatchList matches={matches} axes={axes} layout="table" />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(<Wrapper axes={{}} />);
+    await user.click(screen.getByRole('button', { name: /show all 1000/i }));
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(1001);
+
+    // `from: 0` excludes nothing (every fixture match has time >= 1000) but
+    // is a genuinely different axes object, so `narrowedMatches` recomputes
+    // to a new array reference — a real re-narrowing, not just a re-render.
+    rerender(<Wrapper axes={{ from: 0 }} />);
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + 1,
+    );
+    expect(screen.getByRole('button', { name: /show all 1000/i })).toBeInTheDocument();
+  });
+
+  it('the 16+ pre-existing single-page cases stay unaffected: a small narrowed set never shows the Show-all control', () => {
+    renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
+    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
   });
 });
 
