@@ -90,7 +90,22 @@ describe('settingGapTemplate', () => {
     expect(firstOnlineIndex).toBeLessThan(firstOfflineIndex);
   });
 
-  it('windowExpressible is true — a setting cohort is a contiguous scoped window the existing axes express', () => {
-    expect(settingGapTemplate.windowExpressible).toBe(true);
+  it('windowExpressible is false (CR-A05) — a setting cohort is a same-scope matchType PARTITION, not a contiguous window; DrillDownAxes has no online/offline axis to reconstruct it from', () => {
+    // This test used to assert `true`, locking in the bug the review found:
+    // with no matchType axis, `resolveInsightClaim` reconstructed "which
+    // games" from `[window.fromMs, window.toMs]` alone — a span that
+    // includes every scoped match (including `unspecified`-type games this
+    // template's own count excludes), silently returning the wrong game set.
+    expect(settingGapTemplate.windowExpressible).toBe(false);
+  });
+
+  it("CR-A05: emits no counted-games door (doors is empty, mirroring tiltCost/volumeForm's identical non-window-expressible treatment)", () => {
+    const matches = [
+      ...matchesOfType(20, 'online-tourney', 12, 0),
+      ...matchesOfType(20, 'offline-tourney', 10, 100),
+    ];
+    const insight = buildInsight(matches)!;
+    expect(insight).not.toBeNull();
+    expect(insight.doors).toEqual([]);
   });
 });

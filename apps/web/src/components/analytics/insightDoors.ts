@@ -42,25 +42,28 @@ import {
  * `windowExpressible` — read HERE off the registry, never a hand-written
  * template-id list — decides "in scope" for BOTH branches identically. This
  * differs from UI-SPEC §13.13a's ACCEPTED-branch prose ("the guard covers
- * every template — all 17"): the six non-window-expressible templates
+ * every template — all 17"): the seven non-window-expressible templates
  * (`tiltCost`, `sessionFatigue`, `volumeForm`, `secondaryPayoff`,
- * `pocketCost`, `matchupOrPlayer`) ALREADY ship, from plans 39.1-03/04/05,
- * with their own `insight.doors` hard-coded to the REJECTED-branch fallback
- * doors (a `matchup` door, an `opponent` door, or none) — see each file's
- * own doc comment (e.g. `tiltCost.ts`: "plan 39.1-19 gives this template a
- * fallback route door instead"). Reconstructing an EXACT game set for these
- * six from a `claim=` id would require duplicating each template's own
- * bespoke selection algorithm (a post-streak-spot walk, a session-bucket
- * split, a main-vs-secondary pairing, …) outside the engine module that owns
- * it — forbidden by this plan's own `files_modified` scope (no
- * `packages/shared` file is touched) and by this codebase's "no page
+ * `pocketCost`, `matchupOrPlayer`, and — per review finding CR-A05 —
+ * `settingGap`) ship with their own `insight.doors` hard-coded to the
+ * REJECTED-branch fallback doors (a `matchup` door, an `opponent` door, or
+ * none) — see each file's own doc comment (e.g. `tiltCost.ts`: "plan 39.1-19
+ * gives this template a fallback route door instead"; `settingGap.ts`: no
+ * natural single-route fallback for an online/offline PARTITION, same as
+ * `tiltCost`/`volumeForm`). Reconstructing an EXACT game set for these seven
+ * from a `claim=` id would require duplicating each template's own bespoke
+ * selection algorithm (a post-streak-spot walk, a session-bucket split, a
+ * main-vs-secondary pairing, a matchType partition, …) outside the engine
+ * module that owns it — forbidden by this plan's own `files_modified` scope
+ * (no `packages/shared` file is touched) and by this codebase's "no page
  * computes these outside the engine" convention. So: `claim=` IS accepted
- * into the contract (Tasks 2/3 below prove it resolves exactly for the
- * eleven window-expressible templates, including the tied-timestamp edge
- * case), but this plan does not — and, without touching the six templates'
- * own files, cannot — extend it to the six. `docs/adr` follow-up: a later
- * plan revisiting those six templates could export a companion
- * "which games" resolver per template and wire it in here.
+ * into the contract (Tasks 2/3 below prove it resolves exactly for the ten
+ * window-expressible templates, including the tied-timestamp edge case),
+ * but this plan does not — and, without touching those templates' own
+ * files, cannot — extend it to the seven. `docs/adr` follow-up: a later plan
+ * could export a companion "which games" resolver per template (or a
+ * `matchType`/setting `DrillDownAxes` axis for `settingGap` specifically)
+ * and wire it in here.
  */
 
 /** Task 1's decision (see the module doc comment above). */
@@ -169,7 +172,8 @@ function buildFallbackDoor(
  * `windowExpressible`, otherwise whatever named fallback door(s) the
  * template's OWN engine output already carries (matchup for
  * `secondaryPayoff`, opponent for `matchupOrPlayer`, none for
- * `tiltCost`/`sessionFatigue`/`volumeForm`/`pocketCost`). Never mutates
+ * `tiltCost`/`sessionFatigue`/`volumeForm`/`pocketCost`/`settingGap`
+ * (CR-A05)). Never mutates
  * persisted state — every entry is a plain href a caller renders as a real
  * `<Link>`.
  */

@@ -21,17 +21,21 @@ import { buildInsightDoors, resolveInsightClaim, eventKeyOf } from './analytics/
  *
  * Registry-driven, never a hand-written template-id array (asserted below):
  * `INSIGHT_TEMPLATES.filter((t) => t.windowExpressible)` derives the in-
- * scope set at run time and is compared against plan 39.1-05's MEASURED
- * record (registry length 17, split 11/6 — recorded in 39.1-05-SUMMARY.md,
- * re-verified here from the built registry itself, never recalled).
+ * scope set at run time and is compared against the current MEASURED split
+ * (registry length 17, split 10/7 as of review finding CR-A05 — `settingGap`
+ * moved from `true` to `false`; originally 11/6, recorded in
+ * 39.1-05-SUMMARY.md, re-verified here from the built registry itself, never
+ * recalled).
  *
  * See 39.1-19-SUMMARY.md's "Deviations from Plan" for why this guard's
- * in-scope set is `windowExpressible === true` templates (11) under BOTH
- * the accepted and rejected DD-09 branches, rather than "registry length
- * (17) under accepted" as the plan's own prose states — the six non-
- * window-expressible templates already ship (plans 39.1-03/04/05) with
- * their OWN `insight.doors` hard-coded to the rejected-branch fallback
- * doors, which this plan's `files_modified` scope cannot touch.
+ * in-scope set is `windowExpressible === true` templates under BOTH the
+ * accepted and rejected DD-09 branches, rather than "registry length (17)
+ * under accepted" as the plan's own prose states — the non-window-
+ * expressible templates already ship (plans 39.1-03/04/05, plus `settingGap`
+ * per CR-A05) with their OWN `insight.doors` hard-coded to the rejected-
+ * branch fallback doors (or, for `settingGap`, no fallback door at all,
+ * mirroring `tiltCost`/`volumeForm`), which this plan's `files_modified`
+ * scope cannot touch.
  */
 
 vi.mock('firebase/auth', async () => {
@@ -245,10 +249,10 @@ beforeEach(() => {
 });
 
 describe('registry-driven scope derivation', () => {
-  it("the derived in-scope set (windowExpressible === true) is exactly 11 of the registry's 17 templates, matching 39.1-05's MEASURED split, under BOTH branches — see the SUMMARY for why", () => {
+  it("the derived in-scope set (windowExpressible === true) is exactly 10 of the registry's 17 templates, matching the current MEASURED split (CR-A05 moved settingGap from true to false), under BOTH branches — see the SUMMARY for why", () => {
     expect(INSIGHT_TEMPLATES).toHaveLength(17);
     const inScope = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible);
-    expect(inScope).toHaveLength(11);
+    expect(inScope).toHaveLength(10);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
   });
 

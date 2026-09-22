@@ -152,16 +152,23 @@ function buildSettingGapInsight(input: {
 
 /**
  * `SettingGap` (TRND-02, DD-12): online vs offline win rate, a two-proportion
- * cohort comparison — never the D-07 recency ladder. `windowExpressible:
- * true`: a setting cohort is a contiguous scoped window (the current horizon
- * intersected with a matchType filter) the existing drill-down axes express
- * (UI-SPEC §13.13a).
+ * cohort comparison — never the D-07 recency ladder. Review finding CR-A05:
+ * `windowExpressible: false` — a setting cohort is a same-scope PARTITION by
+ * `matchType`, not a contiguous time span; `DrillDownAxes` has no
+ * online/offline (or `matchType`) axis at all (`drillDownParams.ts`), so
+ * `resolveInsightClaim` cannot reconstruct "which games" from `[fromMs,
+ * toMs]` alone without silently including `unspecified`-type games the
+ * template itself excluded from its own count. `doors: []` (no natural
+ * single-route fallback for a same-scope partition, mirroring
+ * `tiltCost.ts`/`volumeForm.ts`'s identical treatment) until a matchType/
+ * setting axis is added to `DrillDownAxes` and threaded through
+ * `doorAxesToDrillDownAxes`/`matchesDrillDown`.
  */
 export const settingGapTemplate: InsightTemplate = {
   id: TEMPLATE_ID,
   scopeKind: 'account',
   assertsDirection: true,
-  windowExpressible: true,
+  windowExpressible: false,
   build(input): Insight[] {
     const insight = buildSettingGapInsight(input);
     return insight === null ? [] : [insight];

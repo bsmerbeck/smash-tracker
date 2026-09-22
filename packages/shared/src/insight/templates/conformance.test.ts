@@ -84,13 +84,16 @@ const COPY_KEY_PATTERN = /^insights\.[a-zA-Z]+\./;
 const MAX_COPY_VALUE_STRING_LENGTH = 40;
 
 /**
- * UI-SPEC §13.13a's non-window-expressible list, review finding C1-H2: the
- * six templates whose games are a non-contiguous subset (post-streak spots,
- * in-session buckets, high-volume months, a pooled pocket group, a
- * main-vs-secondary pairing, one opponent's share of losses). Named here
- * ONCE, used only to cross-check the MEASURED split below — never to skip a
- * template inside the iteration loops (every assertion loop below iterates
- * `INSIGHT_TEMPLATES` unconditionally).
+ * UI-SPEC §13.13a's non-window-expressible list, review finding C1-H2 plus
+ * CR-A05 (`settingGap` added — a same-scope matchType PARTITION, not a
+ * contiguous window; `DrillDownAxes` has no online/offline axis to
+ * reconstruct it from): the seven templates whose games are a non-contiguous
+ * subset or an unexpressible partition (post-streak spots, in-session
+ * buckets, high-volume months, a pooled pocket group, a main-vs-secondary
+ * pairing, one opponent's share of losses, an online/offline split). Named
+ * here ONCE, used only to cross-check the MEASURED split below — never to
+ * skip a template inside the iteration loops (every assertion loop below
+ * iterates `INSIGHT_TEMPLATES` unconditionally).
  */
 const DOCUMENTED_NON_WINDOW_EXPRESSIBLE_IDS: readonly InsightTemplateId[] = [
   'tiltCost',
@@ -99,6 +102,7 @@ const DOCUMENTED_NON_WINDOW_EXPRESSIBLE_IDS: readonly InsightTemplateId[] = [
   'secondaryPayoff',
   'pocketCost',
   'matchupOrPlayer',
+  'settingGap',
 ];
 
 const THIN_FIXTURES: ReadonlyArray<readonly [string, () => Match[]]> = [
@@ -274,12 +278,12 @@ describe('assertion 6: doors are honest', () => {
     }
   });
 
-  it('the expressible/non-expressible split is measured at exactly 11/6, matching the six documented ids', () => {
+  it('the expressible/non-expressible split is measured at exactly 10/7, matching the seven documented ids (CR-A05 moved settingGap from true to false)', () => {
     const trueCount = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible === true).length;
     const falseIds = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible === false)
       .map((t) => t.id)
       .sort();
-    expect(trueCount).toBe(11);
+    expect(trueCount).toBe(10);
     expect(falseIds).toEqual([...DOCUMENTED_NON_WINDOW_EXPRESSIBLE_IDS].sort());
   });
 
