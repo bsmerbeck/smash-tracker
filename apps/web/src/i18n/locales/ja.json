@@ -129,7 +129,9 @@
       "rowExpand": "{{opponent}} — {{stage}}、{{result}}、詳細を表示",
       "columnMyCharacter": "自分のキャラクター",
       "columnTheirCharacter": "相手のキャラクター",
-      "columnEvent": "大会"
+      "columnEvent": "大会",
+      "showAll_one": "{{count}}試合すべて表示",
+      "showAll_other": "{{count}}試合すべて表示"
     },
     "pips": {
       "empty": "まだ対戦がありません。",

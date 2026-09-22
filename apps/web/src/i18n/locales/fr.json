@@ -129,7 +129,9 @@
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, afficher les détails",
       "columnMyCharacter": "Mon personnage",
       "columnTheirCharacter": "Son personnage",
-      "columnEvent": "Événement"
+      "columnEvent": "Événement",
+      "showAll_one": "Afficher {{count}} partie",
+      "showAll_other": "Afficher les {{count}} parties"
     },
     "pips": {
       "empty": "Pas encore de matchs.",

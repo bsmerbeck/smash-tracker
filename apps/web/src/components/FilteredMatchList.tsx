@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -82,6 +82,18 @@ export function matchHasAttachedVideo(match: Match): boolean {
 }
 
 export type FilteredMatchListLayout = 'table' | 'stack';
+
+/**
+ * UIX-02 bound (plan 39.1-23, orchestrator Finding 9): Phase 38's narrow
+ * drill-down axes (one event/opponent/stage) never mounted more than a
+ * handful of rows, so the terminus mounted every narrowed match with no
+ * bound. Phase 39.1's account-scoped insight doors (`settingGap`,
+ * `rosterCore`, the full-history roster reads) can narrow to thousands of
+ * rows on a real account. This caps what MOUNTS, never what is PRINTED — the
+ * active-filter summary and `data-total-rows` always state the full narrowed
+ * count; only the DOM row count is bounded until "Show all" is clicked.
+ */
+export const FILTERED_MATCH_LIST_ROW_CAP = 200;
 
 /** Tailwind's `sm` breakpoint (640px) — matches the UI-SPEC's "Mobile (<640px)" clause and `MatrixHeat.tsx`'s own constant. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -334,6 +346,39 @@ export function FilteredMatchList({
     };
   }, [matches, axes, eventKeyForMatch, resolveClaim]);
 
+  // Plan 39.1-23 (UIX-02): the row-cap ladder. `rootId` names whichever
+  // layout root actually mounts (table or stack are mutually exclusive) so
+  // the Show-all control's `aria-controls` always points at a real element.
+  const [expanded, setExpanded] = useState(false);
+  const rootId = useId();
+
+  // A re-narrowing (a new `narrowedMatches` array — matches or axes changed)
+  // must not keep a stale expansion. "Adjusting state when a prop changes"
+  // (reset during render, not an Effect — mirrors `TimestampRow.tsx`'s
+  // `trackedIsEditing` pattern, and this codebase's own react-compiler lint
+  // rule flags the equivalent `useEffect(() => setState(...), [dep])` form
+  // as a synchronous-setState-in-an-effect cascading-render risk).
+  const [trackedNarrowedMatches, setTrackedNarrowedMatches] = useState(narrowedMatches);
+  if (narrowedMatches !== trackedNarrowedMatches) {
+    setTrackedNarrowedMatches(narrowedMatches);
+    setExpanded(false);
+  }
+
+  // The Show-all control unmounts itself once clicked (single one-way
+  // reveal); move focus to the (now-larger) list root so it never falls back
+  // to <body>.
+  useEffect(() => {
+    if (expanded) {
+      document.getElementById(rootId)?.focus();
+    }
+  }, [expanded, rootId]);
+
+  const mountedMatches =
+    expanded || narrowedMatches.length <= FILTERED_MATCH_LIST_ROW_CAP
+      ? narrowedMatches
+      : narrowedMatches.slice(0, FILTERED_MATCH_LIST_ROW_CAP);
+  const showAllControlVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP && !expanded;
+
   if (loading) {
     return <div className="text-muted-foreground">{t('shared.filteredMatchList.loading')}</div>;
   }
@@ -384,239 +429,102 @@ export function FilteredMatchList({
           <span className="text-muted-foreground">{t('shared.filteredMatchList.empty')}</span>
         </div>
       ) : (
-        <div className="max-h-[500px] overflow-y-auto">
-          {resolvedLayout === 'stack' ? (
-            <ul className="flex flex-col gap-2" data-slot="filtered-match-stack">
-              {narrowedMatches.map((match) => {
-                const facts = buildMatchRowFacts(
-                  match,
-                  t,
-                  eventLabelForMatch,
-                  tournamentLinkForMatch,
-                );
-                const isExpanded = expandedId === match.id;
+        <>
+          <div className="max-h-[500px] overflow-y-auto">
+            {resolvedLayout === 'stack' ? (
+              <ul
+                id={rootId}
+                tabIndex={-1}
+                data-total-rows={narrowedMatches.length}
+                className="flex flex-col gap-2"
+                data-slot="filtered-match-stack"
+              >
+                {mountedMatches.map((match) => {
+                  const facts = buildMatchRowFacts(
+                    match,
+                    t,
+                    eventLabelForMatch,
+                    tournamentLinkForMatch,
+                  );
+                  const isExpanded = expandedId === match.id;
 
-                return (
-                  <Fragment key={match.id}>
-                    <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
-                      <MatchRowOverlay
-                        matchId={match.id}
-                        facts={facts}
-                        isExpanded={isExpanded}
-                        onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
-                        subjectPath={subjectPath}
-                        t={t}
-                      />
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(match.time).toLocaleDateString(i18n.language)}
-                        </span>
-                        <span className="text-sm">{facts.opponentTag}</span>
-                        {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
-                          <span className="flex items-center gap-1 text-sm">
-                            {!hideMyCharacterColumn && (
-                              <>
-                                {facts.fighterSprite?.url && (
-                                  <img
-                                    src={facts.fighterSprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {facts.fighterSprite
-                                  ? localizedFighterName(match.fighter_id, t)
-                                  : '—'}
-                              </>
-                            )}
-                            {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
-                              <span className="text-xs text-muted-foreground">
-                                {t('matchups.vs')}
-                              </span>
-                            )}
-                            {!hideTheirCharacterColumn && (
-                              <>
-                                {facts.opponentSprite?.url && (
-                                  <img
-                                    src={facts.opponentSprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {facts.opponentSprite
-                                  ? localizedFighterName(match.opponent_id, t)
-                                  : '—'}
-                              </>
-                            )}
-                          </span>
-                        )}
-                        {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
-                        {facts.eventLabel && (
-                          <span className="text-xs text-muted-foreground">{facts.eventLabel}</span>
-                        )}
-                      </div>
-                      <span className="flex items-center gap-2">
-                        <Badge variant={match.win ? 'success' : 'destructive'}>
-                          {facts.resultText}
-                        </Badge>
-                        {facts.hasVideo ? (
-                          <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                        ) : (
-                          <ChevronDown
-                            className={cn(
-                              'size-4 shrink-0 text-muted-foreground transition-transform',
-                              isExpanded && 'rotate-180',
-                            )}
-                            aria-hidden="true"
-                          />
-                        )}
-                        {showDelete && (
-                          <span className="relative">
-                            <Button
-                              variant="outline"
-                              size="icon-sm"
-                              aria-label={t('shared.matchDelete.aria')}
-                              onClick={() => setPendingDelete(match)}
-                            >
-                              <Trash2 />
-                            </Button>
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                    {isExpanded && !facts.hasVideo && (
-                      <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
-                        <p>
-                          {facts.fighterSprite
-                            ? localizedFighterName(match.fighter_id, t)
-                            : t('common.unknown')}{' '}
-                          {t('matchups.vs')}{' '}
-                          {facts.opponentSprite
-                            ? localizedFighterName(match.opponent_id, t)
-                            : t('common.unknown')}
-                        </p>
-                        <p>{facts.stageName}</p>
-                        <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
-                        {facts.tournamentLink && (
-                          <Link
-                            to={facts.tournamentLink.href}
-                            className="text-primary hover:underline"
-                          >
-                            {facts.tournamentLink.label}
-                          </Link>
-                        )}
-                      </li>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </ul>
-          ) : (
-            <div data-slot="filtered-match-table">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('matchups.table.date')}</TableHead>
-                    <TableHead>{t('matchups.opponent')}</TableHead>
-                    {!hideMyCharacterColumn && (
-                      <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
-                    )}
-                    {!hideTheirCharacterColumn && (
-                      <TableHead>{t('shared.filteredMatchList.columnTheirCharacter')}</TableHead>
-                    )}
-                    {!hideStageColumn && <TableHead>{t('matchups.stageTable.stage')}</TableHead>}
-                    <TableHead>{t('shared.filteredMatchList.columnEvent')}</TableHead>
-                    <TableHead>{t('matchups.table.result')}</TableHead>
-                    {showDelete && (
-                      <TableHead className="text-right">{t('matchups.table.manage')}</TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {narrowedMatches.map((match) => {
-                    const facts = buildMatchRowFacts(
-                      match,
-                      t,
-                      eventLabelForMatch,
-                      tournamentLinkForMatch,
-                    );
-                    const isExpanded = expandedId === match.id;
-
-                    return (
-                      <Fragment key={match.id}>
-                        <TableRow className="relative hover:bg-accent">
-                          <TableCell className="text-sm text-muted-foreground">
-                            <MatchRowOverlay
-                              matchId={match.id}
-                              facts={facts}
-                              isExpanded={isExpanded}
-                              onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
-                              subjectPath={subjectPath}
-                              t={t}
-                            />
+                  return (
+                    <Fragment key={match.id}>
+                      <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
+                        <MatchRowOverlay
+                          matchId={match.id}
+                          facts={facts}
+                          isExpanded={isExpanded}
+                          onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
+                          subjectPath={subjectPath}
+                          t={t}
+                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-sm text-muted-foreground">
                             {new Date(match.time).toLocaleDateString(i18n.language)}
-                          </TableCell>
-                          <TableCell className="text-sm">{facts.opponentTag}</TableCell>
-                          {!hideMyCharacterColumn && (
-                            <TableCell>
-                              <span className="flex items-center gap-1 text-sm">
-                                {facts.fighterSprite?.url && (
-                                  <img
-                                    src={facts.fighterSprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {facts.fighterSprite
-                                  ? localizedFighterName(match.fighter_id, t)
-                                  : '—'}
-                              </span>
-                            </TableCell>
-                          )}
-                          {!hideTheirCharacterColumn && (
-                            <TableCell>
-                              <span className="flex items-center gap-1 text-sm">
-                                {facts.opponentSprite?.url && (
-                                  <img
-                                    src={facts.opponentSprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {facts.opponentSprite
-                                  ? localizedFighterName(match.opponent_id, t)
-                                  : '—'}
-                              </span>
-                            </TableCell>
-                          )}
-                          {!hideStageColumn && (
-                            <TableCell className="text-sm">{facts.stageName}</TableCell>
-                          )}
-                          <TableCell className="text-sm text-muted-foreground">
-                            {facts.eventLabel}
-                          </TableCell>
-                          <TableCell>
-                            <span className="flex items-center gap-2">
-                              <Badge variant={match.win ? 'success' : 'destructive'}>
-                                {facts.resultText}
-                              </Badge>
-                              {facts.hasVideo ? (
-                                <Video
-                                  className="size-3.5 text-muted-foreground"
-                                  aria-hidden="true"
-                                />
-                              ) : (
-                                <ChevronDown
-                                  className={cn(
-                                    'size-4 shrink-0 text-muted-foreground transition-transform',
-                                    isExpanded && 'rotate-180',
+                          </span>
+                          <span className="text-sm">{facts.opponentTag}</span>
+                          {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
+                            <span className="flex items-center gap-1 text-sm">
+                              {!hideMyCharacterColumn && (
+                                <>
+                                  {facts.fighterSprite?.url && (
+                                    <img
+                                      src={facts.fighterSprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
                                   )}
-                                  aria-hidden="true"
-                                />
+                                  {facts.fighterSprite
+                                    ? localizedFighterName(match.fighter_id, t)
+                                    : '—'}
+                                </>
+                              )}
+                              {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
+                                <span className="text-xs text-muted-foreground">
+                                  {t('matchups.vs')}
+                                </span>
+                              )}
+                              {!hideTheirCharacterColumn && (
+                                <>
+                                  {facts.opponentSprite?.url && (
+                                    <img
+                                      src={facts.opponentSprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
+                                  )}
+                                  {facts.opponentSprite
+                                    ? localizedFighterName(match.opponent_id, t)
+                                    : '—'}
+                                </>
                               )}
                             </span>
-                          </TableCell>
+                          )}
+                          {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
+                          {facts.eventLabel && (
+                            <span className="text-xs text-muted-foreground">
+                              {facts.eventLabel}
+                            </span>
+                          )}
+                        </div>
+                        <span className="flex items-center gap-2">
+                          <Badge variant={match.win ? 'success' : 'destructive'}>
+                            {facts.resultText}
+                          </Badge>
+                          {facts.hasVideo ? (
+                            <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                          ) : (
+                            <ChevronDown
+                              className={cn(
+                                'size-4 shrink-0 text-muted-foreground transition-transform',
+                                isExpanded && 'rotate-180',
+                              )}
+                              aria-hidden="true"
+                            />
+                          )}
                           {showDelete && (
-                            <TableCell className="relative text-right">
+                            <span className="relative">
                               <Button
                                 variant="outline"
                                 size="icon-sm"
@@ -625,44 +533,203 @@ export function FilteredMatchList({
                               >
                                 <Trash2 />
                               </Button>
-                            </TableCell>
+                            </span>
                           )}
-                        </TableRow>
-                        {isExpanded && !facts.hasVideo && (
-                          <TableRow>
-                            <TableCell colSpan={columnCount}>
-                              <div className="flex flex-col gap-1 py-2 text-sm text-muted-foreground">
-                                <p>
+                        </span>
+                      </li>
+                      {isExpanded && !facts.hasVideo && (
+                        <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
+                          <p>
+                            {facts.fighterSprite
+                              ? localizedFighterName(match.fighter_id, t)
+                              : t('common.unknown')}{' '}
+                            {t('matchups.vs')}{' '}
+                            {facts.opponentSprite
+                              ? localizedFighterName(match.opponent_id, t)
+                              : t('common.unknown')}
+                          </p>
+                          <p>{facts.stageName}</p>
+                          <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
+                          {facts.tournamentLink && (
+                            <Link
+                              to={facts.tournamentLink.href}
+                              className="text-primary hover:underline"
+                            >
+                              {facts.tournamentLink.label}
+                            </Link>
+                          )}
+                        </li>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div data-slot="filtered-match-table">
+                <Table id={rootId} tabIndex={-1} data-total-rows={narrowedMatches.length}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('matchups.table.date')}</TableHead>
+                      <TableHead>{t('matchups.opponent')}</TableHead>
+                      {!hideMyCharacterColumn && (
+                        <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
+                      )}
+                      {!hideTheirCharacterColumn && (
+                        <TableHead>{t('shared.filteredMatchList.columnTheirCharacter')}</TableHead>
+                      )}
+                      {!hideStageColumn && <TableHead>{t('matchups.stageTable.stage')}</TableHead>}
+                      <TableHead>{t('shared.filteredMatchList.columnEvent')}</TableHead>
+                      <TableHead>{t('matchups.table.result')}</TableHead>
+                      {showDelete && (
+                        <TableHead className="text-right">{t('matchups.table.manage')}</TableHead>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {mountedMatches.map((match) => {
+                      const facts = buildMatchRowFacts(
+                        match,
+                        t,
+                        eventLabelForMatch,
+                        tournamentLinkForMatch,
+                      );
+                      const isExpanded = expandedId === match.id;
+
+                      return (
+                        <Fragment key={match.id}>
+                          <TableRow className="relative hover:bg-accent">
+                            <TableCell className="text-sm text-muted-foreground">
+                              <MatchRowOverlay
+                                matchId={match.id}
+                                facts={facts}
+                                isExpanded={isExpanded}
+                                onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
+                                subjectPath={subjectPath}
+                                t={t}
+                              />
+                              {new Date(match.time).toLocaleDateString(i18n.language)}
+                            </TableCell>
+                            <TableCell className="text-sm">{facts.opponentTag}</TableCell>
+                            {!hideMyCharacterColumn && (
+                              <TableCell>
+                                <span className="flex items-center gap-1 text-sm">
+                                  {facts.fighterSprite?.url && (
+                                    <img
+                                      src={facts.fighterSprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
+                                  )}
                                   {facts.fighterSprite
                                     ? localizedFighterName(match.fighter_id, t)
-                                    : t('common.unknown')}{' '}
-                                  {t('matchups.vs')}{' '}
+                                    : '—'}
+                                </span>
+                              </TableCell>
+                            )}
+                            {!hideTheirCharacterColumn && (
+                              <TableCell>
+                                <span className="flex items-center gap-1 text-sm">
+                                  {facts.opponentSprite?.url && (
+                                    <img
+                                      src={facts.opponentSprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
+                                  )}
                                   {facts.opponentSprite
                                     ? localizedFighterName(match.opponent_id, t)
-                                    : t('common.unknown')}
-                                </p>
-                                <p>{facts.stageName}</p>
-                                <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
-                                {facts.tournamentLink && (
-                                  <Link
-                                    to={facts.tournamentLink.href}
-                                    className="text-primary hover:underline"
-                                  >
-                                    {facts.tournamentLink.label}
-                                  </Link>
-                                )}
-                              </div>
+                                    : '—'}
+                                </span>
+                              </TableCell>
+                            )}
+                            {!hideStageColumn && (
+                              <TableCell className="text-sm">{facts.stageName}</TableCell>
+                            )}
+                            <TableCell className="text-sm text-muted-foreground">
+                              {facts.eventLabel}
                             </TableCell>
+                            <TableCell>
+                              <span className="flex items-center gap-2">
+                                <Badge variant={match.win ? 'success' : 'destructive'}>
+                                  {facts.resultText}
+                                </Badge>
+                                {facts.hasVideo ? (
+                                  <Video
+                                    className="size-3.5 text-muted-foreground"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <ChevronDown
+                                    className={cn(
+                                      'size-4 shrink-0 text-muted-foreground transition-transform',
+                                      isExpanded && 'rotate-180',
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </span>
+                            </TableCell>
+                            {showDelete && (
+                              <TableCell className="relative text-right">
+                                <Button
+                                  variant="outline"
+                                  size="icon-sm"
+                                  aria-label={t('shared.matchDelete.aria')}
+                                  onClick={() => setPendingDelete(match)}
+                                >
+                                  <Trash2 />
+                                </Button>
+                              </TableCell>
+                            )}
                           </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                          {isExpanded && !facts.hasVideo && (
+                            <TableRow>
+                              <TableCell colSpan={columnCount}>
+                                <div className="flex flex-col gap-1 py-2 text-sm text-muted-foreground">
+                                  <p>
+                                    {facts.fighterSprite
+                                      ? localizedFighterName(match.fighter_id, t)
+                                      : t('common.unknown')}{' '}
+                                    {t('matchups.vs')}{' '}
+                                    {facts.opponentSprite
+                                      ? localizedFighterName(match.opponent_id, t)
+                                      : t('common.unknown')}
+                                  </p>
+                                  <p>{facts.stageName}</p>
+                                  <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
+                                  {facts.tournamentLink && (
+                                    <Link
+                                      to={facts.tournamentLink.href}
+                                      className="text-primary hover:underline"
+                                    >
+                                      {facts.tournamentLink.label}
+                                    </Link>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          {showAllControlVisible && (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              aria-expanded={expanded}
+              aria-controls={rootId}
+              onClick={() => setExpanded(true)}
+            >
+              {t('shared.filteredMatchList.showAll', { count: narrowedMatches.length })}
+            </Button>
           )}
-        </div>
+        </>
       )}
 
       {showDelete && (
