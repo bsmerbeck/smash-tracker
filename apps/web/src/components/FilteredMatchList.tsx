@@ -312,17 +312,26 @@ export function FilteredMatchList({
   // touching no insight-engine concern). A resolver that returns `undefined`
   // (no resolver supplied, or the id is stale/unknown) leaves the list
   // showing whatever the remaining axes alone narrow to.
-  const narrowedMatches = useMemo(() => {
+  // WR-B02 (39.1-REVIEW.md): `claimResolvedOk` is threaded out of this SAME
+  // computation (never a second `resolveClaim` call) so the summary bar
+  // below can tell "the claim resolved, `claimSummary` describes what's
+  // shown" apart from "a stale/unknown claim id fell back to the remaining
+  // axes" — in the fallback case `claimSummary` still describes the ORIGINAL
+  // claim, not the narrower set actually rendered, so it must not be shown.
+  const { narrowedMatches, claimResolvedOk } = useMemo(() => {
     const axisNarrowed = matches.filter((match) => matchesDrillDown(match, axes, eventKeyForMatch));
     if (axes.claimId == null || !resolveClaim) {
-      return axisNarrowed;
+      return { narrowedMatches: axisNarrowed, claimResolvedOk: true };
     }
     const claimResolved = resolveClaim(axes.claimId, matches);
     if (claimResolved == null) {
-      return axisNarrowed;
+      return { narrowedMatches: axisNarrowed, claimResolvedOk: false };
     }
     const claimedIds = new Set(claimResolved.map((match) => match.id));
-    return axisNarrowed.filter((match) => claimedIds.has(match.id));
+    return {
+      narrowedMatches: axisNarrowed.filter((match) => claimedIds.has(match.id)),
+      claimResolvedOk: true,
+    };
   }, [matches, axes, eventKeyForMatch, resolveClaim]);
 
   if (loading) {
@@ -359,7 +368,7 @@ export function FilteredMatchList({
           <p className="text-sm text-muted-foreground">
             {t('shared.filteredMatchList.summary', {
               count: narrowedMatches.length,
-              filters: buildFilterSummaryText(axes, t, claimSummary),
+              filters: buildFilterSummaryText(axes, t, claimResolvedOk ? claimSummary : undefined),
             })}
           </p>
           {onClearFilters && (

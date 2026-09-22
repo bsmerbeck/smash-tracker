@@ -263,6 +263,25 @@ describe('FilteredMatchList', () => {
     expect(screen.getByText(/vs Terry · last 30 games/)).toBeInTheDocument();
   });
 
+  it('WR-B02 (39.1-REVIEW.md): a stale claim id (resolver returns undefined) hides claimSummary from the active-filter summary too, even when supplied — it would describe content the fallback axes no longer show', () => {
+    const matches = [
+      makeMatch({ id: 'a', map: { id: 1, name: 'Battlefield' } }),
+      makeMatch({ id: 'b', map: { id: 2, name: 'Pokemon Stadium 2' } }),
+    ];
+    const resolveClaim = vi.fn(() => undefined);
+    renderList({
+      matches,
+      axes: { claimId: 'stale:id:last30', stageId: 1 },
+      resolveClaim,
+      claimSummary: 'vs Terry · last 30 games',
+    });
+    // Falls back to the remaining axis (stageId 1 -> "a" only).
+    expect(screen.getByText(/1 game/)).toBeInTheDocument();
+    // The stale claim's summary text must NOT appear — it describes a claim
+    // that did not resolve, not the "Battlefield" set actually rendered.
+    expect(screen.queryByText(/vs Terry · last 30 games/)).not.toBeInTheDocument();
+  });
+
   it('never re-sorts the given array — renders rows in the exact order passed', () => {
     const outOfOrder = [
       makeMatch({ id: 'older', time: 100, vodUrl: undefined }),
