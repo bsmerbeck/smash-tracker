@@ -36,6 +36,10 @@ describe('formNowTemplate (Task 1 tracer: a Match[] plus a horizon become one ho
     expect(insights[0]!.state).toBe('locked');
     expect(insights[0]!.deltaPoints).toBeNull();
     expect(insights[0]!.gamesNeeded).toBe(2);
+    // Review finding CR-A02: `insights.formNow.locked_other`'s `{{count}}`
+    // is "games STILL NEEDED" — must equal `gamesNeeded`, never the 1 game
+    // already played.
+    expect(insights[0]!.copy.values.count).toBe(2);
   });
 
   it('over an 8k synthetic fixture returns one Insight whose window.games equals the n its primary door carries', () => {

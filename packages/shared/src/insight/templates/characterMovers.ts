@@ -260,7 +260,10 @@ function buildCharacterMoversInsight(input: {
       values: {
         fighter: fighterNameFor(headline.opponentFighterId),
         points: deltaPoints !== null ? Math.abs(deltaPoints) : 0,
-        count: headline.recentRate.total,
+        // Review finding CR-A02: `insights.characterMovers.locked_one/_other`
+        // reads `{{count}}` as "how many MORE games are needed" — must be
+        // `gamesNeeded`, never the games already played.
+        count: state === 'locked' ? gamesNeeded! : headline.recentRate.total,
         recentRecord: `${headline.recentRate.wins}–${headline.recentRate.losses}`,
         baselineRate: `${Math.round(headline.baselineRate.rate * 100)}%`,
         baselineGames: headline.baselineRate.total,

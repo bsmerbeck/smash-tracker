@@ -223,6 +223,39 @@ describe('characterMoversTemplate (Task 1 tracer: "vs which characters is form m
     expect(source).not.toMatch(/Intl\s*\(/);
   });
 
+  it('CR-A02: locked copy.values.count is games STILL NEEDED (gamesNeeded), never the games already played', () => {
+    const opponentFighterId = 2;
+    const matches: Match[] = [
+      {
+        id: 'cm-locked-0',
+        fighter_id: SUBJECT_FIGHTER_ID,
+        opponent_id: opponentFighterId,
+        time: NOW_MS - 2 * ONE_HOUR_MS,
+        win: true,
+        matchType: 'offline-tourney',
+      },
+      {
+        id: 'cm-locked-1',
+        fighter_id: SUBJECT_FIGHTER_ID,
+        opponent_id: opponentFighterId,
+        time: NOW_MS - 1 * ONE_HOUR_MS,
+        win: false,
+        matchType: 'offline-tourney',
+      },
+    ];
+    const insights = characterMoversTemplate.build({
+      matches,
+      scope: subjectScope(),
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insights).toHaveLength(1);
+    const insight = insights[0]!;
+    expect(insight.state).toBe('locked');
+    expect(insight.gamesNeeded).toBe(1);
+    expect(insight.copy.values.count).toBe(1);
+  });
+
   describe('the multiple-comparisons false-positive-rate proof (review finding C1-M7)', () => {
     const SEEDS = Array.from({ length: 20 }, (_, i) => 1_000 + i);
     const COHORT_COUNT = 40;

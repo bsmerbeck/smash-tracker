@@ -43,6 +43,36 @@ describe('rivalMoversTemplate (Task 2: the opponent-player mover read)', () => {
     expect(rivalMoversTemplate.windowExpressible).toBe(true);
   });
 
+  it('CR-A02: locked copy.values.count is games STILL NEEDED (gamesNeeded), never the games already played', () => {
+    const matches: Match[] = [
+      buildRow({
+        id: 'rm-locked-0',
+        time: NOW_MS - 2 * ONE_HOUR_MS,
+        opponentFighterId: 2,
+        opponent: 'onlyrival',
+        win: true,
+      }),
+      buildRow({
+        id: 'rm-locked-1',
+        time: NOW_MS - 1 * ONE_HOUR_MS,
+        opponentFighterId: 2,
+        opponent: 'onlyrival',
+        win: false,
+      }),
+    ];
+    const insights = rivalMoversTemplate.build({
+      matches,
+      scope: subjectScope(),
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insights).toHaveLength(1);
+    const insight = insights[0]!;
+    expect(insight.state).toBe('locked');
+    expect(insight.gamesNeeded).toBe(1);
+    expect(insight.copy.values.count).toBe(1);
+  });
+
   it('treats two tags bound to the same slug as one opponent, asserted by the returned window game count equalling the union of both tags’ games', () => {
     const matches: Match[] = [];
     // Tag A: 20 games, no slug.

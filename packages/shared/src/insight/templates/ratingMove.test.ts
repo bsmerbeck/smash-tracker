@@ -94,6 +94,15 @@ describe('ratingMoveTemplate', () => {
     expect(insight.deltaPoints).toBeNull();
   });
 
+  it('CR-A02: locked copy.values.count is games STILL NEEDED (gamesNeeded), never the games already played', () => {
+    const matches = buildMatches(Array(2).fill(true));
+    const insight = buildInsight(matches)!;
+    expect(insight).not.toBeNull();
+    expect(insight.state).toBe('locked');
+    expect(insight.gamesNeeded).toBe(1);
+    expect(insight.copy.values.count).toBe(1);
+  });
+
   it('windowExpressible is true — a rating window is a contiguous scoped window the existing axes express', () => {
     expect(ratingMoveTemplate.windowExpressible).toBe(true);
   });

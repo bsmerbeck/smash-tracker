@@ -113,7 +113,11 @@ function buildFormNowInsight(input: {
       values: {
         record: `${recentRate.wins}–${recentRate.losses}`,
         rate: `${Math.round(recentRate.rate * 100)}%`,
-        count: recentRate.total,
+        // Review finding CR-A02: `insights.formNow.locked_one/_other` reads
+        // `{{count}}` as "how many MORE games are needed" — must be
+        // `gamesNeeded`, never the games already played (which is always
+        // below the floor by construction whenever `state === 'locked'`).
+        count: state === 'locked' ? gamesNeeded! : recentRate.total,
         points: deltaPoints !== null ? Math.abs(deltaPoints) : 0,
         baselineRate: `${Math.round(baselineRate.rate * 100)}%`,
         baselineGames: baselineRate.total,

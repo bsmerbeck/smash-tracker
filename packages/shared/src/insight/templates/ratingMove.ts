@@ -129,7 +129,10 @@ function buildRatingMoveInsight(input: {
         startRating: Math.round(startRating),
         endRating: Math.round(endRating),
         band: Math.round(endRd),
-        count: window.games,
+        // Review finding CR-A02: `insights.ratingMove.locked_one/_other`
+        // reads `{{count}}` as "how many MORE games are needed" — must be
+        // `gamesNeeded`, never the games already played.
+        count: gamesNeeded !== undefined ? gamesNeeded : window.games,
         points: deltaPoints !== null ? Math.abs(deltaPoints) : 0,
         ...(gamesNeeded !== undefined ? { gamesNeeded } : {}),
       },
