@@ -1,5 +1,4 @@
 import {
-  INSIGHT_TEMPLATES,
   type Insight,
   type InsightDoor,
   type InsightDoorKind,
@@ -7,8 +6,6 @@ import {
 } from '@smash-tracker/shared';
 import {
   buildDrillDownSearch,
-  matchesDrillDown,
-  sortMatchesNewestFirst,
   DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_VS_PARAM,
   DRILL_DOWN_STAGE_PARAM,
@@ -31,39 +28,32 @@ import {
  * UI-SPEC §13.13a's checkpoint — whether `claim=<Insight.id>` joins Phase
  * 38's drill-down contract — was ACCEPTED by the owner (Option A) before any
  * source file in this plan was touched. `DD09_CLAIM_AXIS_ACCEPTED` below
- * records that decision; only the ACCEPTED branch is implemented (the
- * REJECTED branch's window-widening mechanism is intentionally absent code,
- * per the plan's own "the executor changes Task 2's implementation branch...
- * nothing else").
+ * records that decision.
  *
- * ## Which templates get the counted-games door (a documented plan
- * correction — see the SUMMARY's "Deviations from Plan")
+ * ## Plan 39.1-22 (gap closure, orchestrator Finding 8): all 17, not 10
  *
- * `windowExpressible` — read HERE off the registry, never a hand-written
- * template-id list — decides "in scope" for BOTH branches identically. This
- * differs from UI-SPEC §13.13a's ACCEPTED-branch prose ("the guard covers
- * every template — all 17"): the seven non-window-expressible templates
- * (`tiltCost`, `sessionFatigue`, `volumeForm`, `secondaryPayoff`,
- * `pocketCost`, `matchupOrPlayer`, and — per review finding CR-A05 —
- * `settingGap`) ship with their own `insight.doors` hard-coded to the
- * REJECTED-branch fallback doors (a `matchup` door, an `opponent` door, or
- * none) — see each file's own doc comment (e.g. `tiltCost.ts`: "plan 39.1-19
- * gives this template a fallback route door instead"; `settingGap.ts`: no
- * natural single-route fallback for an online/offline PARTITION, same as
- * `tiltCost`/`volumeForm`). Reconstructing an EXACT game set for these seven
- * from a `claim=` id would require duplicating each template's own bespoke
- * selection algorithm (a post-streak-spot walk, a session-bucket split, a
- * main-vs-secondary pairing, a matchType partition, …) outside the engine
- * module that owns it — forbidden by this plan's own `files_modified` scope
- * (no `packages/shared` file is touched) and by this codebase's "no page
- * computes these outside the engine" convention. So: `claim=` IS accepted
- * into the contract (Tasks 2/3 below prove it resolves exactly for the ten
- * window-expressible templates, including the tied-timestamp edge case),
- * but this plan does not — and, without touching those templates' own
- * files, cannot — extend it to the seven. `docs/adr` follow-up: a later plan
- * could export a companion "which games" resolver per template (or a
- * `matchType`/setting `DrillDownAxes` axis for `settingGap` specifically)
- * and wire it in here.
+ * `windowExpressible` USED to be read here off the registry to decide "in
+ * scope" for the counted-games door — plan 39.1-19 gave only the 11 (later
+ * 10, per CR-A05) `windowExpressible: true` templates an exact door, because
+ * reconstructing a game set from `[window.fromMs, window.toMs]` + identity
+ * axes cannot express a non-contiguous selection (post-streak spots,
+ * in-session buckets, high-volume months, a pooled pocket group, a
+ * main-vs-secondary pairing, one opponent's share of losses, an
+ * online/offline split).
+ *
+ * Plan 39.1-22 closes that gap at the SOURCE instead of at this consumer:
+ * every template now records `Insight.countedMatchIds` — the exact ids of
+ * the games it counted — at the site it already iterates them
+ * (`packages/shared/src/insight/templates/*.ts`). This module no longer
+ * needs `windowExpressible`, `matchesDrillDown`, or a window/axis
+ * reconstruction at all: `buildInsightDoors` emits the games door whenever
+ * `countedMatchIds.length > 0`, and `resolveInsightClaim` is a plain id-set
+ * lookup. Exactness is a property of CONSTRUCTION (proven once, per
+ * template, by `countedGames.test.ts`) rather than of RECONSTRUCTION (proven
+ * per-consumer, with a timestamp-tie trim as a defensive patch) — so the
+ * tied-timestamp edge case UI-SPEC §13.13 named no longer needs a trim step:
+ * the recorded id set was never ambiguous about which side of a tie it
+ * meant.
  */
 
 /** Task 1's decision (see the module doc comment above). */
@@ -109,10 +99,6 @@ function doorAxesToDrillDownAxes(axes: InsightDoor['axes']): Partial<DrillDownAx
     result.to = to;
   }
   return result;
-}
-
-function templateFor(insight: Insight) {
-  return INSIGHT_TEMPLATES.find((candidate) => candidate.id === insight.templateId);
 }
 
 /**
@@ -168,56 +154,60 @@ function buildFallbackDoor(
 
 /**
  * Returns the ordered door list for one insight card (UI-SPEC §7.8's DOORS
- * row): the counted-games door (`claim=`) when the template is
- * `windowExpressible`, otherwise whatever named fallback door(s) the
- * template's OWN engine output already carries (matchup for
- * `secondaryPayoff`, opponent for `matchupOrPlayer`, none for
- * `tiltCost`/`sessionFatigue`/`volumeForm`/`pocketCost`/`settingGap`
- * (CR-A05)). Never mutates
- * persisted state — every entry is a plain href a caller renders as a real
- * `<Link>`.
+ * row): the counted-games door (`claim=`) whenever the insight actually
+ * counted at least one game (plan 39.1-22: `countedMatchIds.length > 0` —
+ * never `windowExpressible`, which no longer gates anything here), followed
+ * by whatever named fallback door(s) the template's OWN engine output also
+ * carries (a `matchup` door for `secondaryPayoff`, an `opponent` door for
+ * `matchupOrPlayer` — both stay useful alongside the exact games door now
+ * that every template can have one). Never mutates persisted state — every
+ * entry is a plain href a caller renders as a real `<Link>`.
  */
 export function buildInsightDoors(input: {
   insight: Insight;
   subjectPath: (personalPath: string) => string;
 }): InsightDoorDescriptor[] {
   const { insight, subjectPath } = input;
-  const template = templateFor(insight);
-  const inScope = template?.windowExpressible ?? false;
 
-  if (inScope) {
-    return [{ kind: 'games', href: buildGamesDoorHref(insight), count: insight.window.games }];
-  }
-
-  return insight.doors
+  const fallbackDoors = insight.doors
     .map((door) => buildFallbackDoor(door, subjectPath))
     .filter((descriptor): descriptor is InsightDoorDescriptor => descriptor !== null);
+
+  if (insight.countedMatchIds.length === 0) {
+    return fallbackDoors;
+  }
+
+  const gamesDoor: InsightDoorDescriptor = {
+    kind: 'games',
+    href: buildGamesDoorHref(insight),
+    count: insight.countedMatchIds.length,
+  };
+  return [gamesDoor, ...fallbackDoors];
 }
 
 /**
- * Resolves a `claim=<Insight.id>` axis back to the predicate the insight
- * actually counted — the consumer-side half of DD-09 (this module never
- * imports anything from `drillDownParams.ts` beyond its own exports; this
- * function is what a host closes over `insights`/hands to
- * `FilteredMatchList`'s `resolveClaim` prop as
+ * Resolves a `claim=<Insight.id>` axis back to the exact games the insight
+ * counted — the consumer-side half of DD-09 (this module never imports
+ * anything from `drillDownParams.ts` beyond its own exports; this function
+ * is what a host closes over `insights`/hands to `FilteredMatchList`'s
+ * `resolveClaim` prop as
  * `(claimId, matches) => resolveInsightClaim({ claimId, insights, matches })`).
  *
- * Reuses the SAME `door.axes` the template itself already computed (an
- * identity narrowing — `fighter=`, `vs=`, `event=` — that the engine's own
- * pre-39.1-19 door mechanism already relied on to be exact) and adds the
- * insight's own recorded `[window.fromMs, window.toMs]` bound whenever the
- * door doesn't already carry an explicit `from`/`to`. When the resulting
- * candidate set is LARGER than the door's own `count` (the timestamp-tie-
- * at-the-window-edge case named by UI-SPEC §13.13), it is trimmed to
- * exactly `count` using the SAME deterministic newest-first tiebreak every
- * other drill-down terminus uses (`sortMatchesNewestFirst`) — so the
- * rendered row count always equals the door's printed number, by
- * construction, regardless of which side of the tie the reconstruction
- * lands on.
+ * Plan 39.1-22: a plain id-set lookup against `insight.countedMatchIds` — no
+ * axis reconstruction, no window bound, no timestamp-tie trim. Exactness is
+ * a property of how the template BUILT `countedMatchIds` (proven once, per
+ * template, by `packages/shared`'s `countedGames.test.ts`), not of how this
+ * consumer reconstructs a candidate set from `matches`. Returns the counted
+ * matches in `countedMatchIds`' own recorded (newest-first) order — a plain
+ * `matches.filter(...)` would instead follow `matches`' OWN order, which a
+ * caller is never required to have pre-sorted.
  *
- * Returns `undefined` (never throws) for an unknown id, a non-window-
- * expressible template, or an insight with no games door — `matchesDrillDown`'s
- * own tolerance rule, applied one layer up.
+ * Returns `undefined` (never throws) for an unknown id or an insight with an
+ * empty `countedMatchIds` (nothing to resolve to) — `matchesDrillDown`'s own
+ * "tolerant absence" rule, applied one layer up. An id present in
+ * `countedMatchIds` but absent from the caller's own `matches` array (a
+ * stale/partial load) is silently skipped, never a throw and never a
+ * fabricated `Match`.
  */
 export function resolveInsightClaim(input: {
   claimId: string;
@@ -226,28 +216,17 @@ export function resolveInsightClaim(input: {
 }): Match[] | undefined {
   const { claimId, insights, matches } = input;
   const insight = insights.find((candidate) => candidate.id === claimId);
-  if (!insight) {
-    return undefined;
-  }
-  const template = templateFor(insight);
-  if (!template?.windowExpressible) {
+  if (!insight || insight.countedMatchIds.length === 0) {
     return undefined;
   }
 
-  const gamesDoor = insight.doors.find((door) => door.kind === 'games');
-  const baseAxes = gamesDoor ? doorAxesToDrillDownAxes(gamesDoor.axes) : {};
-  const axes: Partial<DrillDownAxes> = {
-    ...baseAxes,
-    ...(baseAxes.from == null && insight.window.fromMs != null
-      ? { from: insight.window.fromMs }
-      : {}),
-    ...(baseAxes.to == null && insight.window.toMs != null ? { to: insight.window.toMs } : {}),
-  };
-  const expectedCount = gamesDoor?.count ?? insight.window.games;
-
-  const candidates = matches.filter((match) => matchesDrillDown(match, axes, eventKeyOf));
-  if (candidates.length <= expectedCount) {
-    return candidates;
+  const byId = new Map(matches.map((match) => [match.id, match] as const));
+  const resolved: Match[] = [];
+  for (const id of insight.countedMatchIds) {
+    const match = byId.get(id);
+    if (match) {
+      resolved.push(match);
+    }
   }
-  return sortMatchesNewestFirst(candidates).slice(0, expectedCount);
+  return resolved;
 }
