@@ -1,10 +1,16 @@
 import type { Match } from '../../match.js';
+import { getFighterById } from '../../fighterData.js';
 import { isUnknownCharacter } from '../../evidence/predicate.js';
 import { ABSTENTION_FLOOR_GAMES } from '../../evidence/policy.js';
 import { wilsonLowerBound } from '../../evidence/rank.js';
 import { toRateValue, matchDateRange, buildRateClaim } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
+
+/** Review finding CR-A03: mirrors `secondaryPayoff.ts`/`rosterCore.ts`'s identical helper (duplicated locally per this codebase's small-helper-duplication convention) — resolves a fighter id to its display name before it ever reaches `copy.values`, never a raw numeric id. */
+function fighterNameFor(id: number): string {
+  return getFighterById(id)?.name ?? String(id);
+}
 
 /** Groups a scope's matches by opponent CHARACTER, excluding `isUnknownCharacter` rows — mirrors `characterMovers.ts`'s identical helper (no shared file between the two; both templates duplicate this small grouping loop independently per this plan's own action text). */
 function groupByOpponentCharacter(matches: Match[]): Map<number, Match[]> {
@@ -131,7 +137,7 @@ function buildBackfillInsight(input: {
     copy: {
       key: `insights.${templateId}.fact`,
       values: {
-        vs: winner.opponentFighterId,
+        vs: fighterNameFor(winner.opponentFighterId),
         record: `${winner.rate.wins}–${winner.rate.losses}`,
         count: winner.rate.total,
       },

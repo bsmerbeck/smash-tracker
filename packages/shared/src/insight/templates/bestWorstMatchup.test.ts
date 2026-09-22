@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bestMatchupTemplate, worstMatchupTemplate } from './bestWorstMatchup.js';
+import { getFighterById } from '../../fighterData.js';
 import type { InsightScope } from '../types.js';
 import type { Match } from '../../match.js';
 
@@ -57,7 +58,12 @@ describe('bestMatchupTemplate / worstMatchupTemplate (Task 3: direction-free bac
       nowMs: NOW_MS,
     });
     expect(insights).toHaveLength(1);
-    expect(insights[0]!.copy.values.vs).toBe(3);
+    // Review finding CR-A03: this test used to lock in the raw numeric fighter
+    // id (`toBe(3)`) as the correct behaviour — `copy.values.vs` must instead
+    // be the resolved, human-readable fighter NAME (mirrors every other
+    // template's `fighterNameFor` treatment), never a bare id.
+    expect(insights[0]!.copy.values.vs).toBe(getFighterById(3)!.name);
+    expect(typeof insights[0]!.copy.values.vs).toBe('string');
     expect(insights[0]!.copy.values.record).toBe('41–6');
   });
 
@@ -107,6 +113,6 @@ describe('bestMatchupTemplate / worstMatchupTemplate (Task 3: direction-free bac
       nowMs: NOW_MS,
     });
     expect(insights).toHaveLength(1);
-    expect(insights[0]!.copy.values.vs).toBe(5);
+    expect(insights[0]!.copy.values.vs).toBe(getFighterById(5)!.name);
   });
 });
