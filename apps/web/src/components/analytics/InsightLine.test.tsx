@@ -35,4 +35,40 @@ describe('InsightLine', () => {
     expect(steadyContainer.querySelector('button')).toBeNull();
     expect(notableContainer.querySelector('button')).toBeNull();
   });
+
+  describe('T-39.1-27 (gap closure): an optional single door', () => {
+    it('with a door node, renders exactly one link inside [data-slot="insight-line-door"], in both tones', () => {
+      const door = <a href="/foo?claim=settingGap#games">See the 3 games</a>;
+
+      const { container: steadyContainer } = render(
+        <InsightLine text="steady text" tone="steady" door={door} />,
+      );
+      const steadyDoorSlot = steadyContainer.querySelector('[data-slot="insight-line-door"]');
+      expect(steadyDoorSlot).not.toBeNull();
+      expect(steadyDoorSlot!.querySelectorAll('a').length).toBe(1);
+
+      const { container: notableContainer } = render(
+        <InsightLine text="notable text" tone="notable" chip={<span>chip</span>} door={door} />,
+      );
+      const notableDoorSlot = notableContainer.querySelector('[data-slot="insight-line-door"]');
+      expect(notableDoorSlot).not.toBeNull();
+      expect(notableDoorSlot!.querySelectorAll('a').length).toBe(1);
+    });
+
+    it('with no door, the rendered markup carries no door slot and no flex-wrap class (byte-identical to the no-door render)', () => {
+      const { container: steadyContainer } = render(
+        <InsightLine text="steady text" tone="steady" />,
+      );
+      expect(steadyContainer.querySelector('[data-slot="insight-line-door"]')).toBeNull();
+      const steadyLine = steadyContainer.querySelector('[data-slot="insight-line"]')!;
+      expect(steadyLine.className).not.toMatch(/flex-wrap/);
+
+      const { container: notableContainer } = render(
+        <InsightLine text="notable text" tone="notable" chip={<span>chip</span>} />,
+      );
+      expect(notableContainer.querySelector('[data-slot="insight-line-door"]')).toBeNull();
+      const notableLine = notableContainer.querySelector('[data-slot="insight-line"]')!;
+      expect(notableLine.className).not.toMatch(/flex-wrap/);
+    });
+  });
 });

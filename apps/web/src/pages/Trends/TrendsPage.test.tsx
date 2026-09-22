@@ -246,6 +246,105 @@ describe('TrendsPage', () => {
     });
   });
 
+  describe('T-39.1-27 (gap closure): the Setting comparison door lands on exactly N', () => {
+    /** 10 online (quickplay) + 10 offline (offline-tourney) games, well past `COHORT_MIN_SIDE_GAMES` (8) on each side — a real SettingGap games door, `countedMatchIds.length === 20`. */
+    function settingGapDoorFixture() {
+      const now = Date.now();
+      const online = Array.from({ length: 10 }, (_, i) =>
+        makeMatch({
+          id: `on${i}`,
+          time: now - (10 - i) * 60_000,
+          win: true,
+          matchType: 'quickplay',
+        }),
+      );
+      const offline = Array.from({ length: 10 }, (_, i) =>
+        makeMatch({
+          id: `off${i}`,
+          time: now - (10 - i) * 60_000,
+          win: false,
+          matchType: 'offline-tourney',
+        }),
+      );
+      return [...online, ...offline];
+    }
+
+    /**
+     * The base fixture plus 5 `unspecified`-type games — settingGap only
+     * ever pools online+offline into `countedMatchIds` (never
+     * `unspecified`), so the door's own count (20) stays LESS than the
+     * page's total match count (25). This is what makes "resolves via the
+     * claim id" a real, falsifiable proof rather than a fixture where
+     * "resolved" and "unresolved-fallback-shows-everything" happen to print
+     * the same number.
+     */
+    function settingGapDoorFixtureWithFiller() {
+      const now = Date.now();
+      const filler = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ id: `unspec${i}`, time: now - (5 - i) * 60_000, win: true, matchType: 'none' }),
+      );
+      return [...settingGapDoorFixture(), ...filler];
+    }
+
+    it("clicking the Setting comparison card's counted-games door mounts #games with data-total-rows equal to the door's own count, states the count and the SettingGap sentence in the summary, and scrolls #games into view", async () => {
+      const matches = settingGapDoorFixtureWithFiller();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+      const scrollIntoViewSpy = vi.fn();
+      const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+      try {
+        renderTrends();
+
+        await screen.findByText('Setting Comparison');
+        const settingCard = screen
+          .getByText('Setting Comparison')
+          .closest('[data-slot="card"]') as HTMLElement;
+        const doorSlot = settingCard.querySelector(
+          '[data-slot="insight-line-door"]',
+        ) as HTMLElement;
+        expect(doorSlot).not.toBeNull();
+        const door = within(doorSlot).getByRole('link');
+        const doorLabel = door.textContent ?? '';
+        const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+        expect(expectedCount).toBe(20);
+
+        await user.click(door);
+
+        await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+        const gamesCard = document.getElementById('games') as HTMLElement;
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+        expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+
+        expect(scrollIntoViewSpy).toHaveBeenCalled();
+        const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;
+        expect(scrollIntoViewSpy.mock.contexts[lastCallIndex]).toBe(gamesCard);
+      } finally {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      }
+    });
+
+    it('a hand-typed ?claim=<settingGap id> resolves to exactly the door count — never the unresolved-fallback "everything" count', async () => {
+      const matches = settingGapDoorFixtureWithFiller();
+      listMatches.mockResolvedValue(matches);
+
+      // Insight.id === `${templateId}:${scopeKey}:${horizon}`; ACCOUNT_SCOPE's
+      // key is the literal string 'account'; DEFAULT_HORIZON is 'last30'
+      // (useHorizon.ts) — this page's own default before any switch press.
+      renderTrends('/trends?claim=settingGap:account:last30');
+
+      await screen.findByText('Setting Comparison');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      // 20 (the door's own count) — NOT 25 (the page's full match total,
+      // which an unresolved claim's tolerant fallback would show instead).
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(20);
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {

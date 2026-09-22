@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import type { Match } from '@smash-tracker/shared';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { SettingComparison } from './SettingComparison';
+import { useTrendsCardInsights } from '../lib/useTrendsCardInsights';
 
 const NOW = Date.now();
 
@@ -18,10 +19,21 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
+/**
+ * Plan 39.1-27 (gap closure, SC4/INS-04): the harness obtains
+ * `settingGapInsight` from the SAME `useTrendsCardInsights` hook the host
+ * page (`TrendsPage.tsx`) calls once — never a hand-built `Insight` literal
+ * — mirroring `FighterAnalysisPage.test.tsx`'s own harness precedent.
+ */
+function SettingComparisonHarness({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
+  const { settingGap } = useTrendsCardInsights({ matches, horizon });
+  return <SettingComparison matches={matches} horizon={horizon} settingGapInsight={settingGap} />;
+}
+
 function renderCard(matches: Match[], horizon: 'last30' | 'lastEvent' | 'last90' = 'last30') {
   return render(
     <MemoryRouter>
-      <SettingComparison matches={matches} horizon={horizon} />
+      <SettingComparisonHarness matches={matches} horizon={horizon} />
     </MemoryRouter>,
   );
 }
@@ -126,5 +138,33 @@ describe('SettingComparison', () => {
     );
     expect(labels).not.toContain('Unspecified');
     expect(screen.getByText('1 unspecified game not counted.')).toBeInTheDocument();
+  });
+
+  describe('T-39.1-27 (gap closure, SC4/INS-04): the SettingGap door via buildInsightDoors', () => {
+    it('renders a games door whose href carries claim=settingGap and #games, with a count equal to countedMatchIds.length', () => {
+      const { container } = renderCard(buildSplit(10, 10, true));
+
+      const doorSlot = container.querySelector('[data-slot="insight-line-door"]');
+      expect(doorSlot).not.toBeNull();
+      const door = doorSlot!.querySelector('a') as HTMLAnchorElement;
+      expect(door).not.toBeNull();
+
+      const href = door.getAttribute('href') ?? '';
+      expect(href).toContain('claim=settingGap');
+      expect(href).toContain('#games');
+
+      const labelCount = Number((door.textContent ?? '').match(/\d+/)?.[0] ?? '0');
+      expect(labelCount).toBe(20);
+    });
+
+    it('renders no door when the insight counted zero games (unspecified-only matches — settingGap.state "thin" with an empty countedMatchIds)', () => {
+      const games = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ id: `u${i}`, time: NOW - (5 - i) * 60_000, win: true, matchType: 'none' }),
+      );
+
+      const { container } = renderCard(games);
+
+      expect(container.querySelector('[data-slot="insight-line-door"]')).toBeNull();
+    });
   });
 });
