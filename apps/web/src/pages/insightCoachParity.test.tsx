@@ -603,6 +603,53 @@ describe('Fighter Analysis coach parity', () => {
     );
     expect(normalisedText(coachContainer)).toBe(personalText);
   });
+
+  it('T-39.1-24 (gap closure, DD-09 reachability): the counted-games door resolves to the CURRENT route on both mounts, never a second/different subject prefix layered on top', async () => {
+    // Every rendered counted-games door (identified by its `claim=` query
+    // param, the same signature `insightDoorSameN.test.tsx` uses) is built
+    // with a relative `to="?claim=...#games"` — `buildGamesDoorHref` never
+    // routes through `subjectPath` (insightDoors.ts's own doc comment), so
+    // react-router resolves it against whatever route it's rendered on.
+    // Resolving to `/coach/test-client/...` under the coach mount is
+    // CORRECT (it keeps the coach on their own route) — the regression this
+    // guards is `buildGamesDoorHref` gaining a `subjectPath` call that
+    // double-prefixes it, or misroutes it to a different page entirely.
+    // `domSignature`'s own whole-page comparison strips the subject prefix
+    // before comparing, which would otherwise mask exactly that regression.
+    const { container: personalContainer, unmount: unmountPersonal } =
+      renderFighterAnalysisAt('/fighter-analysis');
+    await waitFor(() =>
+      expect(personalContainer.querySelector('[data-slot="insight-rail-card"]')).not.toBeNull(),
+    );
+    const personalDoorLinks = within(personalContainer)
+      .getAllByRole('link')
+      .filter((link) => (link.getAttribute('href') ?? '').includes('claim='));
+    expect(personalDoorLinks.length).toBeGreaterThan(0);
+    for (const link of personalDoorLinks) {
+      const href = link.getAttribute('href') ?? '';
+      expect(href).not.toContain('/coach');
+      expect(href).toMatch(/^\/fighter-analysis\?.*claim=[^#]+#games$/);
+    }
+    unmountPersonal();
+
+    const { container: coachContainer } = renderFighterAnalysisAt(
+      '/coach/test-client/fighter-analysis',
+    );
+    await waitFor(() =>
+      expect(coachContainer.querySelector('[data-slot="insight-rail-card"]')).not.toBeNull(),
+    );
+    const coachDoorLinks = within(coachContainer)
+      .getAllByRole('link')
+      .filter((link) => (link.getAttribute('href') ?? '').includes('claim='));
+    expect(coachDoorLinks.length).toBeGreaterThan(0);
+    for (const link of coachDoorLinks) {
+      const href = link.getAttribute('href') ?? '';
+      // Exactly one `/coach/test-client` segment — never doubled, never a
+      // different route.
+      expect(href.match(/\/coach\/test-client/g)?.length).toBe(1);
+      expect(href).toMatch(/^\/coach\/test-client\/fighter-analysis\?.*claim=[^#]+#games$/);
+    }
+  });
 });
 
 describe('Matchups coach parity', () => {
@@ -697,6 +744,91 @@ describe('Match Data coach parity', () => {
     const { container: coachContainer } = renderMatchDataAt('/coach/test-client/match-data');
     await waitFor(() => expect(normalisedText(coachContainer).length).toBeGreaterThan(0));
     expect(normalisedText(coachContainer)).toBe(personalText);
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): fallback door coach parity', () => {
+    /**
+     * Unlike Fighter Analysis's five templates (never a fallback door), Match
+     * Data's `secondaryPayoff` template DOES carry a `matchup`-kind fallback
+     * door with a `FALLBACK_ROUTE_BY_KIND` mapping — the one door kind on
+     * these two coach-mounted surfaces that actually routes through
+     * `subjectPath` (`insightDoors.ts`'s `buildFallbackDoor`), so it is the
+     * real exercise of the subject-prefix branch this parity oracle needs.
+     * The whole-milestone `analyticsFixture()` (module scope) deliberately
+     * sets `mainFighterShare: 1` (single-fighter-only) so it can never
+     * produce a secondary — this fixture is local to this describe block for
+     * that reason, mirroring `MatchDataRail.test.tsx`'s own
+     * `allFourReadsFixture()` shape (same fighter/opponent ids).
+     */
+    const MAIN_ID = 1; // Mario
+    const SECONDARY_ID = 2; // Donkey Kong
+    const OPPONENT_ID = 50; // Wii Fit Trainer
+    const MAIN_FILLER_OPPONENT = 90;
+    const SECONDARY_FILLER_OPPONENT = 91;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+
+    function block(
+      fighterId: number,
+      wins: number,
+      losses: number,
+      opponentId: number,
+    ): { fighterId: number; opponentId: number; win: boolean }[] {
+      const out: { fighterId: number; opponentId: number; win: boolean }[] = [];
+      for (let i = 0; i < wins; i++) out.push({ fighterId, win: true, opponentId });
+      for (let i = 0; i < losses; i++) out.push({ fighterId, win: false, opponentId });
+      return out;
+    }
+
+    function secondaryPayoffFixture(): Match[] {
+      const mainBlock = [
+        ...block(MAIN_ID, 15, 15, OPPONENT_ID),
+        ...block(MAIN_ID, 30, 0, MAIN_FILLER_OPPONENT),
+      ];
+      const secondaryBlock = [
+        ...block(SECONDARY_ID, 18, 2, OPPONENT_ID),
+        ...block(SECONDARY_ID, 5, 0, SECONDARY_FILLER_OPPONENT),
+      ];
+      const ordered = [...mainBlock, ...secondaryBlock];
+      const total = ordered.length;
+      return ordered.map(
+        (g, i) =>
+          ({
+            id: `sp-${i}`,
+            fighter_id: g.fighterId,
+            opponent_id: g.opponentId,
+            time: FIXTURE_NOW_MS - (total - i) * ONE_HOUR_MS,
+            win: g.win,
+          }) as Match,
+      );
+    }
+
+    it("the secondaryPayoff card's matchup fallback door carries the subject prefix under /coach/:clientId/match-data, and none under /match-data", async () => {
+      getFighters.mockResolvedValue({ primary: [MAIN_ID], secondary: [] });
+      listMatches.mockResolvedValue(secondaryPayoffFixture());
+
+      const { container: personalContainer, unmount: unmountPersonal } =
+        renderMatchDataAt('/match-data');
+      await waitFor(() =>
+        expect(personalContainer.querySelector('[data-slot="match-data-rail"]')).not.toBeNull(),
+      );
+      const personalDoor = await within(personalContainer).findByRole('link', {
+        name: /open matchup/i,
+      });
+      const personalHref = personalDoor.getAttribute('href') ?? '';
+      expect(personalHref.startsWith('/coach')).toBe(false);
+      expect(personalHref.startsWith('/matchups')).toBe(true);
+      unmountPersonal();
+
+      const { container: coachContainer } = renderMatchDataAt('/coach/test-client/match-data');
+      await waitFor(() =>
+        expect(coachContainer.querySelector('[data-slot="match-data-rail"]')).not.toBeNull(),
+      );
+      const coachDoor = await within(coachContainer).findByRole('link', {
+        name: /open matchup/i,
+      });
+      const coachHref = coachDoor.getAttribute('href') ?? '';
+      expect(coachHref.startsWith('/coach/test-client/matchups')).toBe(true);
+    });
   });
 });
 
