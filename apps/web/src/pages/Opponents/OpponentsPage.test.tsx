@@ -167,6 +167,17 @@ function renderOpponents(initialEntry = '/opponents') {
                 route list now mounts /opponents here too. */}
               <Route path="/workspace/:tenantId/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              {/* WR-C04 (39.1-REVIEW.md): the coach/workspace-scoped
+                destinations the two empty-state "Go to Dashboard" links must
+                land on instead of the bare personal `/dashboard` above. */}
+              <Route
+                path="/coach/:clientId/dashboard"
+                element={<div>Coach client dashboard page</div>}
+              />
+              <Route
+                path="/workspace/:tenantId/dashboard"
+                element={<div>Workspace dashboard page</div>}
+              />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
               <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
               {/* Plan 38-05 (D-02): the legacy query-hint redirect's destination — a
@@ -226,6 +237,29 @@ describe('OpponentsPage', () => {
     );
   });
 
+  // WR-C04 (39.1-REVIEW.md): under a coach/workspace subject route, both
+  // empty-state "Go to Dashboard" links must route through `subjectPath` —
+  // previously hardcoded to the bare personal `/dashboard`, they bounced a
+  // coach viewing a client with zero recorded (or zero named-opponent)
+  // matches to the COACH's own dashboard instead of `/coach/:clientId/...`.
+  // `/settings/integrations` has no coach-scoped equivalent (start.gg
+  // connection is own-account-only) and stays absolute in every mode.
+  it('WR-C04: the "no matches" empty state links to the coach-scoped dashboard under a coach client-subject route', async () => {
+    listMatches.mockResolvedValue([]);
+
+    renderOpponents('/coach/client-a/opponents');
+
+    expect(await screen.findByText('No matches to scout yet!')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Dashboard' })).toHaveAttribute(
+      'href',
+      '/coach/client-a/dashboard',
+    );
+    expect(screen.getByRole('link', { name: 'Connect start.gg' })).toHaveAttribute(
+      'href',
+      '/settings/integrations',
+    );
+  });
+
   it('shows an explanatory empty state when no matches have an opponent tag', async () => {
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: undefined })]);
 
@@ -234,6 +268,20 @@ describe('OpponentsPage', () => {
     expect(
       await screen.findByText('None of your matches have an opponent tag recorded.'),
     ).toBeInTheDocument();
+  });
+
+  it('WR-C04: the "no named opponent" empty state links to the coach-scoped dashboard under a coach client-subject route', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: undefined })]);
+
+    renderOpponents('/coach/client-a/opponents');
+
+    expect(
+      await screen.findByText('None of your matches have an opponent tag recorded.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Dashboard' })).toHaveAttribute(
+      'href',
+      '/coach/client-a/dashboard',
+    );
   });
 
   it('shows a clear-filters notice when the global filter empties an existing match set', async () => {

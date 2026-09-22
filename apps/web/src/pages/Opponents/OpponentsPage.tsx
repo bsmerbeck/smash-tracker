@@ -216,8 +216,12 @@ export function OpponentsPage() {
           <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
           <div className="flex flex-wrap justify-center gap-2">
             <Button asChild>
-              <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+              <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
             </Button>
+            {/* WR-C04 (39.1-REVIEW.md): `/settings/integrations` has no
+                coach/workspace-scoped equivalent (start.gg connection is an
+                own-account-only setting), so it stays an absolute personal
+                route — only the "/dashboard" links below need `subjectPath`. */}
             <Button asChild variant="outline">
               <Link to="/settings/integrations">{t('opponents.empty.connectStartgg')}</Link>
             </Button>
@@ -241,7 +245,7 @@ export function OpponentsPage() {
           <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
           <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
           <Button asChild className="mt-2">
-            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+            <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
           </Button>
         </div>
       </div>
