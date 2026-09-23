@@ -435,7 +435,13 @@ export function FilteredMatchList({
   useEffect(() => {
     if (shouldFocusRootRef.current) {
       shouldFocusRootRef.current = false;
-      document.getElementById(rootId)?.focus();
+      // Plan 39.1-32 (item 13): `preventScroll` for BOTH layouts. The
+      // stacked layout no longer renders inside the 500px scroll wrapper
+      // below — without it, a plain `focus()` on a long list would scroll
+      // the whole phone page back to the top instead of staying put (the
+      // removed wrapper used to contain that jump). The `aria-live="polite"`
+      // progress announcement (below) remains the screen-reader feedback.
+      document.getElementById(rootId)?.focus({ preventScroll: true });
     }
   });
 
@@ -564,143 +570,151 @@ export function FilteredMatchList({
         </div>
       ) : (
         <>
-          <div className="max-h-[500px] overflow-y-auto">
-            {resolvedLayout === 'stack' ? (
-              <ul
-                id={rootId}
-                tabIndex={-1}
-                data-total-rows={narrowedMatches.length}
-                className="flex flex-col gap-2"
-                data-slot="filtered-match-stack"
-              >
-                {mountedMatches.map((match) => {
-                  const facts = buildMatchRowFacts(
-                    match,
-                    t,
-                    eventLabelForMatch,
-                    tournamentLinkForMatch,
-                  );
-                  const isExpanded = expandedId === match.id;
+          {/*
+            Plan 39.1-32 (item 13, UI-SPEC §6.4 exemption 2 narrowed to the
+            table layout only): below 640px (the stacked phone layout) the
+            list flows in the PAGE, because §6.4 bans nested vertical
+            scrollers and exemption 2's original reason — a Phase 38
+            unbounded list — no longer holds once plan 39.1-28 bounds every
+            DOM pass at FILTERED_MATCH_LIST_ROW_CAP rows + "Show 50 more"
+            paging. The table layout (640px and up) keeps the grandfathered
+            max-h-[500px] overflow-y-auto wrapper exactly as before.
+          */}
+          {resolvedLayout === 'stack' ? (
+            <ul
+              id={rootId}
+              tabIndex={-1}
+              data-total-rows={narrowedMatches.length}
+              className="flex flex-col gap-2"
+              data-slot="filtered-match-stack"
+            >
+              {mountedMatches.map((match) => {
+                const facts = buildMatchRowFacts(
+                  match,
+                  t,
+                  eventLabelForMatch,
+                  tournamentLinkForMatch,
+                );
+                const isExpanded = expandedId === match.id;
 
-                  return (
-                    <Fragment key={match.id}>
-                      <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
-                        <MatchRowOverlay
-                          matchId={match.id}
-                          facts={facts}
-                          isExpanded={isExpanded}
-                          onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
-                          subjectPath={subjectPath}
-                          t={t}
-                        />
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(match.time).toLocaleDateString(i18n.language)}
-                          </span>
-                          <span className="text-sm">{facts.opponentTag}</span>
-                          {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
-                            <span className="flex items-center gap-1 text-sm">
-                              {!hideMyCharacterColumn && (
-                                <>
-                                  {facts.fighterSprite?.url && (
-                                    <img
-                                      src={facts.fighterSprite.url}
-                                      alt=""
-                                      className="size-5 object-contain"
-                                    />
-                                  )}
-                                  {facts.fighterSprite
-                                    ? localizedFighterName(match.fighter_id, t)
-                                    : '—'}
-                                </>
-                              )}
-                              {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
-                                <span className="text-xs text-muted-foreground">
-                                  {t('matchups.vs')}
-                                </span>
-                              )}
-                              {!hideTheirCharacterColumn && (
-                                <>
-                                  {facts.opponentSprite?.url && (
-                                    <img
-                                      src={facts.opponentSprite.url}
-                                      alt=""
-                                      className="size-5 object-contain"
-                                    />
-                                  )}
-                                  {facts.opponentSprite
-                                    ? localizedFighterName(match.opponent_id, t)
-                                    : '—'}
-                                </>
-                              )}
-                            </span>
-                          )}
-                          {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
-                          {facts.eventLabel && (
-                            <span className="text-xs text-muted-foreground">
-                              {facts.eventLabel}
-                            </span>
-                          )}
-                        </div>
-                        <span className="flex items-center gap-2">
-                          <Badge variant={match.win ? 'success' : 'destructive'}>
-                            {facts.resultText}
-                          </Badge>
-                          {facts.hasVideo ? (
-                            <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                          ) : (
-                            <ChevronDown
-                              className={cn(
-                                'size-4 shrink-0 text-muted-foreground transition-transform',
-                                isExpanded && 'rotate-180',
-                              )}
-                              aria-hidden="true"
-                            />
-                          )}
-                          {showDelete && (
-                            <span className="relative">
-                              <Button
-                                variant="outline"
-                                size="icon-sm"
-                                aria-label={t('shared.matchDelete.aria')}
-                                data-slot="filtered-match-delete"
-                                data-match-id={match.id}
-                                onClick={() => openDeleteDialog(match)}
-                              >
-                                <Trash2 />
-                              </Button>
-                            </span>
-                          )}
+                return (
+                  <Fragment key={match.id}>
+                    <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
+                      <MatchRowOverlay
+                        matchId={match.id}
+                        facts={facts}
+                        isExpanded={isExpanded}
+                        onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
+                        subjectPath={subjectPath}
+                        t={t}
+                      />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm text-muted-foreground">
+                          {new Date(match.time).toLocaleDateString(i18n.language)}
                         </span>
-                      </li>
-                      {isExpanded && !facts.hasVideo && (
-                        <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
-                          <p>
-                            {facts.fighterSprite
-                              ? localizedFighterName(match.fighter_id, t)
-                              : t('common.unknown')}{' '}
-                            {t('matchups.vs')}{' '}
-                            {facts.opponentSprite
-                              ? localizedFighterName(match.opponent_id, t)
-                              : t('common.unknown')}
-                          </p>
-                          <p>{facts.stageName}</p>
-                          <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
-                          {facts.tournamentLink && (
-                            <Link
-                              to={facts.tournamentLink.href}
-                              className="text-primary hover:underline"
+                        <span className="text-sm">{facts.opponentTag}</span>
+                        {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
+                          <span className="flex items-center gap-1 text-sm">
+                            {!hideMyCharacterColumn && (
+                              <>
+                                {facts.fighterSprite?.url && (
+                                  <img
+                                    src={facts.fighterSprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {facts.fighterSprite
+                                  ? localizedFighterName(match.fighter_id, t)
+                                  : '—'}
+                              </>
+                            )}
+                            {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
+                              <span className="text-xs text-muted-foreground">
+                                {t('matchups.vs')}
+                              </span>
+                            )}
+                            {!hideTheirCharacterColumn && (
+                              <>
+                                {facts.opponentSprite?.url && (
+                                  <img
+                                    src={facts.opponentSprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {facts.opponentSprite
+                                  ? localizedFighterName(match.opponent_id, t)
+                                  : '—'}
+                              </>
+                            )}
+                          </span>
+                        )}
+                        {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
+                        {facts.eventLabel && (
+                          <span className="text-xs text-muted-foreground">{facts.eventLabel}</span>
+                        )}
+                      </div>
+                      <span className="flex items-center gap-2">
+                        <Badge variant={match.win ? 'success' : 'destructive'}>
+                          {facts.resultText}
+                        </Badge>
+                        {facts.hasVideo ? (
+                          <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown
+                            className={cn(
+                              'size-4 shrink-0 text-muted-foreground transition-transform',
+                              isExpanded && 'rotate-180',
+                            )}
+                            aria-hidden="true"
+                          />
+                        )}
+                        {showDelete && (
+                          <span className="relative">
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              aria-label={t('shared.matchDelete.aria')}
+                              data-slot="filtered-match-delete"
+                              data-match-id={match.id}
+                              onClick={() => openDeleteDialog(match)}
                             >
-                              {facts.tournamentLink.label}
-                            </Link>
-                          )}
-                        </li>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </ul>
-            ) : (
+                              <Trash2 />
+                            </Button>
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                    {isExpanded && !facts.hasVideo && (
+                      <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
+                        <p>
+                          {facts.fighterSprite
+                            ? localizedFighterName(match.fighter_id, t)
+                            : t('common.unknown')}{' '}
+                          {t('matchups.vs')}{' '}
+                          {facts.opponentSprite
+                            ? localizedFighterName(match.opponent_id, t)
+                            : t('common.unknown')}
+                        </p>
+                        <p>{facts.stageName}</p>
+                        <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
+                        {facts.tournamentLink && (
+                          <Link
+                            to={facts.tournamentLink.href}
+                            className="text-primary hover:underline"
+                          >
+                            {facts.tournamentLink.label}
+                          </Link>
+                        )}
+                      </li>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto">
               <div data-slot="filtered-match-table">
                 <Table id={rootId} tabIndex={-1} data-total-rows={narrowedMatches.length}>
                   <TableHeader>
@@ -853,8 +867,8 @@ export function FilteredMatchList({
                   </TableBody>
                 </Table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
           {(pagingControlVisible || progressVisible) && (
             <div className="flex flex-wrap items-center gap-3">
               {pagingControlVisible && (
