@@ -933,6 +933,7 @@
       "setState": {
         "summary": "前提: {{phase}} ・ {{role}} ・ {{priorSummary}}",
         "editAria": "ゲーム数、役割、これまでのステージとバンの前提を変更する",
+        "editLabel": "前提を変更",
         "phase": {
           "game1": "1ゲーム目",
           "game2plus": "2ゲーム目以降"

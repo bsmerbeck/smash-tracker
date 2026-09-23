@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { MatchupInsights } from './MatchupInsights';
@@ -104,5 +105,55 @@ describe('MatchupInsights — WR-02 single-qualifying-stage worst-stage copy', (
     expect(screen.getByText('Final Destination')).toBeInTheDocument();
     expect(screen.queryByText(/not enough distinct stages/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/more games? needed/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 6)', () => {
+  it('the card header holds no combobox — the Min matches per stage control is not in [data-slot="card-header"]', () => {
+    const matches = [
+      ...matchesOnStage(BATTLEFIELD, 3, 0),
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2),
+    ];
+    const { container } = renderInsights(matches);
+    const header = container.querySelector('[data-slot="card-header"]');
+    expect(header).not.toBeNull();
+    expect(header!.querySelector('[role="combobox"]')).not.toBeInTheDocument();
+  });
+
+  it('the Min matches per stage select is labelled by a visible label, sits before the best/worst stage list, and changing it changes the best-stage line (same shared useMinStageMatches value)', async () => {
+    const user = userEvent.setup();
+    const matches = [
+      ...matchesOnStage(BATTLEFIELD, 3, 0), // exactly 3 games — drops out once threshold rises to 5
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2), // 5 games — qualifies at both thresholds
+    ];
+    const { container } = renderInsights(matches);
+
+    const label = screen.getByText('Min matches per stage');
+    const select = screen.getByRole('combobox', { name: 'Minimum matches per stage' });
+    expect(label.tagName.toLowerCase()).toBe('label');
+    expect(label.getAttribute('for')).toBe(select.id);
+
+    // The control sits in the card BODY, before the best/worst stage list —
+    // never in the header.
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.contains(select)).toBe(true);
+    const bestHeading = screen.getByText('Best Stage');
+    expect(content!.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(0);
+    expect(select.compareDocumentPosition(bestHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
+
+    expect(screen.getByText('Battlefield')).toBeInTheDocument();
+
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: '5' }));
+
+    // Battlefield (3 games) no longer qualifies at the 5-game floor — only
+    // Final Destination remains, which is the single-qualifying-stage case
+    // (best-stage line shows Final Destination, worst shows the dedicated
+    // "not enough distinct stages" copy).
+    expect(screen.queryByText('Battlefield')).not.toBeInTheDocument();
+    expect(screen.getByText('Final Destination')).toBeInTheDocument();
   });
 });

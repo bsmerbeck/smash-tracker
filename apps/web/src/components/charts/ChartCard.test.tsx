@@ -141,3 +141,46 @@ describe('ChartCard — insight slot and density (UI-SPEC §7.9, §6.2)', () => 
     expect(card?.className).not.toMatch(/shadow-none/);
   });
 });
+
+describe('ChartCard — toolbar slot (plan 39.1-30, item 1: header holds only title/caption)', () => {
+  it('with a toolbar supplied, one [data-slot="chart-card-toolbar"] renders as the first child of the card content in the POPULATED branch', () => {
+    const { container } = render(
+      <ChartCard
+        title="Counterpick Advisor"
+        toolbar={<div data-testid="toolbar-body">controls</div>}
+      >
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.firstElementChild?.getAttribute('data-slot')).toBe('chart-card-toolbar');
+    expect(screen.getByTestId('toolbar-body')).toBeInTheDocument();
+  });
+
+  it('with a toolbar supplied AND the card abstained, the toolbar STILL renders as the first child of the card content (EVID-05 always-visible)', () => {
+    const { container } = render(
+      <ChartCard
+        title="Counterpick Advisor"
+        abstained={{ gamesNeeded: 2 }}
+        toolbar={<div data-testid="toolbar-body">controls</div>}
+      >
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.firstElementChild?.getAttribute('data-slot')).toBe('chart-card-toolbar');
+    expect(screen.getByTestId('toolbar-body')).toBeInTheDocument();
+    expect(screen.getByText(/2/)).toBeInTheDocument();
+  });
+
+  it('without a toolbar prop, no [data-slot="chart-card-toolbar"] element renders — existing markup is byte-identical', () => {
+    const { container } = render(
+      <ChartCard title="Win Rate Trend" caption="Recorded fact from your match log.">
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    expect(container.querySelector('[data-slot="chart-card-toolbar"]')).not.toBeInTheDocument();
+  });
+});

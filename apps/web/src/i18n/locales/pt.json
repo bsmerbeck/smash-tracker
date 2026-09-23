@@ -933,6 +933,7 @@
       "setState": {
         "summary": "Assumindo {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Alterar a fase do jogo, o papel, os stages anteriores e os banimentos assumidos",
+        "editLabel": "Alterar suposição",
         "phase": {
           "game1": "Jogo 1",
           "game2plus": "Jogo 2+"

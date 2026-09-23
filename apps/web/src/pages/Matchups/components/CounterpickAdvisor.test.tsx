@@ -11,7 +11,14 @@ import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
-const SET_STATE_EDIT_ARIA = 'Change the game-phase, role, prior-stages and bans assumption';
+// Plan 39.1-30 (item 1): the trigger's accessible name is now its VISIBLE
+// label ("Change assumption", `matchups.counterpick.setState.editLabel`) —
+// WCAG 2.5.3, no explicit `aria-label` any more. The old sentence-length
+// `aria-label` still exists as the POPOVER TITLE text, not the trigger's
+// accessible name — so this constant's value changing is itself the RED
+// signal against the shipped 9abcac76 component (its trigger's accessible
+// name is still the sentence-length aria-label until Task 2's GREEN lands).
+const SET_STATE_EDIT_ARIA = 'Change assumption';
 
 /**
  * D-07/Phase 38-04: `CounterpickAdvisor` now reads `useMatchupsContext()` for
@@ -415,19 +422,70 @@ describe('CounterpickAdvisor', () => {
       expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
     });
 
-    it('the set-state trigger text is present without any pointer interaction, reading the game-one/striking/no-bans default', () => {
+    it('REWRITTEN (plan 39.1-30 item 1): the trigger shows the short "Change assumption" label — the composed sentence is stated exactly once, on the always-visible under-title line, not duplicated on the trigger', () => {
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
-      // Both the trigger button AND the always-visible under-title line
-      // render the same composed sentence (D-11) — assert on the trigger
-      // button specifically, since that is the "never hover-only" surface
-      // the acceptance criterion targets.
+      // The trigger's accessible name equals its VISIBLE text (WCAG 2.5.3) —
+      // a short, constant label, never the composed sentence (that would
+      // restate it a second time, the exact duplication the owner audit
+      // flagged). The sentence lives ONLY on the always-visible under-title
+      // line.
       const trigger = screen.getByRole('button', { name: SET_STATE_EDIT_ARIA });
-      expect(trigger.textContent).toContain(
-        'Assuming Game 1 · Striking · no stages played yet, no bans',
-      );
+      expect(trigger.textContent).toContain('Change assumption');
+      expect(trigger.textContent).not.toContain('Assuming');
       expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
         'Assuming Game 1 · Striking · no stages played yet, no bans',
       );
+      // Exactly once anywhere in the document — never a duplicate copy on
+      // the trigger or anywhere else.
+      expect(
+        screen.getAllByText('Assuming Game 1 · Striking · no stages played yet, no bans'),
+      ).toHaveLength(1);
+    });
+
+    it('plan 39.1-30 item 1: the trigger is described by the assumption line (aria-describedby)', () => {
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      const trigger = screen.getByRole('button', { name: SET_STATE_EDIT_ARIA });
+      const assumptionLine = screen.getByTestId('set-state-assumption-line');
+      expect(assumptionLine.id).toBeTruthy();
+      expect(trigger.getAttribute('aria-describedby')).toBe(assumptionLine.id);
+    });
+
+    it('plan 39.1-30 item 1: the card header holds no button and no sample cue — controls live in a toolbar row below it', () => {
+      const { container } = render(
+        <MemoryRouter initialEntries={['/matchups']}>
+          <div id={MATCHUP_TABLE_ANCHOR_ID} />
+          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
+          </MatchupsContext.Provider>
+        </MemoryRouter>,
+      );
+      const header = container.querySelector('[data-slot="card-header"]');
+      expect(header).not.toBeNull();
+      expect(header!.querySelector('button')).not.toBeInTheDocument();
+      const toolbar = container.querySelector('[data-slot="chart-card-toolbar"]');
+      expect(toolbar).not.toBeNull();
+      expect(toolbar!.querySelector('[data-slot="counterpick-controls"]')).toBeInTheDocument();
+      expect(toolbar!.querySelectorAll('button').length).toBeGreaterThan(0);
+    });
+
+    it('plan 39.1-30 item 1: the toolbar (and the assumption sentence) still render when the claim is abstained — EVID-05 always-visible', () => {
+      const { container } = render(
+        <MemoryRouter initialEntries={['/matchups']}>
+          <div id={MATCHUP_TABLE_ANCHOR_ID} />
+          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 1, 0)} />
+          </MatchupsContext.Provider>
+        </MemoryRouter>,
+      );
+      expect(
+        container.querySelector(
+          '[data-slot="chart-card-toolbar"] [data-slot="counterpick-controls"]',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('set-state-assumption-line')).toBeInTheDocument();
+      expect(
+        screen.getAllByText('Assuming Game 1 · Striking · no stages played yet, no bans'),
+      ).toHaveLength(1);
     });
 
     it('a counterpick stage with a fully qualifying record is absent at game one and present from game two', async () => {

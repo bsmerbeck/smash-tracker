@@ -933,6 +933,7 @@
       "setState": {
         "summary": "Angenommen {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Spielphase, Rolle, vorherige Stages und Bans der Annahme ändern",
+        "editLabel": "Annahme ändern",
         "phase": {
           "game1": "Spiel 1",
           "game2plus": "Spiel 2+"

@@ -933,6 +933,7 @@
       "setState": {
         "summary": "Assuming {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Change the game-phase, role, prior-stages and bans assumption",
+        "editLabel": "Change assumption",
         "phase": {
           "game1": "Game 1",
           "game2plus": "Game 2+"

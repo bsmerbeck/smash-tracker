@@ -933,6 +933,7 @@
       "setState": {
         "summary": "En supposant {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Modifier la phase de jeu, le rôle, les stages précédents et les bans supposés",
+        "editLabel": "Modifier l'hypothèse",
         "phase": {
           "game1": "Manche 1",
           "game2plus": "Manche 2+"

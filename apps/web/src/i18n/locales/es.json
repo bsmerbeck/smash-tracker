@@ -933,6 +933,7 @@
       "setState": {
         "summary": "Suponiendo {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Cambiar la fase de partida, el rol, los escenarios previos y los baneos asumidos",
+        "editLabel": "Cambiar la suposición",
         "phase": {
           "game1": "Partida 1",
           "game2plus": "Partida 2+"
