@@ -204,6 +204,134 @@ describe('FormStrip', () => {
   });
 });
 
+describe('FormStrip — legend, narrow tick geometry, and centred single-game sets (plan 39.1-32, item 11)', () => {
+  it("legend 'a · b · c' renders three whole-token legend items in a flex-wrap row (never justify-between)", () => {
+    const { container } = render(
+      <FormStrip
+        events={twoEventFixture()}
+        limit={60}
+        labels={{ ...emptyLabels, legend: 'a · b · c' }}
+      />,
+    );
+    const items = container.querySelectorAll('[data-slot="form-strip-legend-item"]');
+    expect(items).toHaveLength(3);
+    for (const item of Array.from(items)) {
+      expect((item as HTMLElement).className).toMatch(/whitespace-nowrap/);
+    }
+    expect(['a', 'b', 'c']).toEqual(Array.from(items).map((el) => el.textContent));
+    const legendRow = items[0]!.parentElement as HTMLElement;
+    expect(legendRow.className).toMatch(/\bflex-wrap\b/);
+    expect(legendRow.className).not.toMatch(/justify-between/);
+  });
+
+  it('shownOfTotal renders as its own whitespace-nowrap token', () => {
+    const { container } = render(
+      <FormStrip
+        events={ninetyGameFixture()}
+        limit={60}
+        labels={{ ...emptyLabels, shownOfTotal: '60 of 90 games shown' }}
+      />,
+    );
+    const token = container.querySelector('[data-slot="form-strip-shown-of-total"]');
+    expect(token).not.toBeNull();
+    expect((token as HTMLElement).className).toMatch(/whitespace-nowrap/);
+    expect(token!.textContent).toBe('60 of 90 games shown');
+  });
+
+  it("a legend with no separator ('legend') renders one legend item WITHOUT whitespace-nowrap", () => {
+    const { container } = render(
+      <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
+    );
+    const items = container.querySelectorAll('[data-slot="form-strip-legend-item"]');
+    expect(items).toHaveLength(1);
+    expect((items[0] as HTMLElement).className).not.toMatch(/whitespace-nowrap/);
+    expect(items[0]!.textContent).toBe('legend');
+  });
+
+  it.each(['en', 'es', 'fr', 'de', 'pt', 'ja'] as const)(
+    "each locale's analytics.strip.legend renders exactly four legend items (%s)",
+    (locale) => {
+      const json = JSON.parse(
+        fs.readFileSync(resolve(process.cwd(), `src/i18n/locales/${locale}.json`), 'utf8'),
+      ) as { analytics: { strip: { legend: string } } };
+      const { container } = render(
+        <FormStrip
+          events={twoEventFixture()}
+          limit={60}
+          labels={{ ...emptyLabels, legend: json.analytics.strip.legend }}
+        />,
+      );
+      expect(container.querySelectorAll('[data-slot="form-strip-legend-item"]')).toHaveLength(4);
+    },
+  );
+
+  it('every tick carries the narrow-geometry classes and no inline width/height', () => {
+    const { container } = render(
+      <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
+    );
+    const tick = container.querySelector('[data-slot="form-strip-tick"]') as HTMLElement;
+    for (const cls of ['w-2', 'h-8', 'max-sm:w-1.5', 'max-sm:h-7']) {
+      expect(tick.className).toContain(cls);
+    }
+    expect(tick.style.width).toBe('');
+    expect(tick.style.height).toBe('');
+    const bar = tick.firstElementChild as HTMLElement;
+    for (const cls of ['h-3.5', 'max-sm:h-3']) {
+      expect(bar.className).toContain(cls);
+    }
+    expect(bar.style.width).toBe('');
+    expect(bar.style.height).toBe('');
+  });
+
+  it('the existing alignItems/opacity inline-style cases stay inline (unaffected by the class move)', () => {
+    const { container } = render(
+      <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
+    );
+    const winTick = container.querySelector('[data-slot="form-strip-tick"][title^="win"]');
+    expect((winTick as HTMLElement).style.alignItems).toBe('flex-start');
+  });
+
+  it("a single-game set's form-strip-set carries justify-center, and its rule sits inside a form-strip-tick-run alongside its one tick", () => {
+    const events: FormStripEvent[] = [
+      {
+        key: 'evt-1',
+        label: 'Solo Event',
+        record: '1-0',
+        sets: [
+          { key: 'set-1', label: 'solo set', inRecentWindow: true, games: [game('g1', true)] },
+        ],
+      },
+    ];
+    const { container } = render(<FormStrip events={events} limit={30} labels={emptyLabels} />);
+    const set = container.querySelector('[data-slot="form-strip-set"]') as HTMLElement;
+    expect(set.className).toMatch(/justify-center/);
+    const tickRun = set.querySelector('[data-slot="form-strip-tick-run"]') as HTMLElement;
+    expect(tickRun).not.toBeNull();
+    expect(tickRun.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(1);
+  });
+
+  it("a three-game set's tick-run holds its rule and all three ticks", () => {
+    const events: FormStripEvent[] = [
+      {
+        key: 'evt-1',
+        label: 'Trio Event',
+        record: '2-1',
+        sets: [
+          {
+            key: 'set-1',
+            label: 'trio set',
+            inRecentWindow: true,
+            games: [game('g1', true), game('g2', false), game('g3', true)],
+          },
+        ],
+      },
+    ];
+    const { container } = render(<FormStrip events={events} limit={30} labels={emptyLabels} />);
+    const tickRun = container.querySelector('[data-slot="form-strip-tick-run"]') as HTMLElement;
+    expect(tickRun.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(3);
+  });
+});
+
 describe('FormStrip source-tree guards (UIX-05, VIZ-02)', () => {
   const source = fs.readFileSync(
     resolve(process.cwd(), 'src/components/charts/FormStrip.tsx'),

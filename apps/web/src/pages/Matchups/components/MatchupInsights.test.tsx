@@ -170,3 +170,61 @@ describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 
     expect(screen.getByText('Final Destination')).toBeInTheDocument();
   });
 });
+
+describe('MatchupInsights — streak StatRow (plan 39.1-32, item 10)', () => {
+  it('the streak block is one fixedColumns StatRow carrying grid-cols-3, with the three labels at the overline role', () => {
+    const matches = matchesOnStage(BATTLEFIELD, 3, 0);
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]');
+    expect(statRow).not.toBeNull();
+    expect((statRow as HTMLElement).className).toContain('grid-cols-3');
+    const children = Array.from(statRow!.children) as HTMLElement[];
+    expect(children).toHaveLength(3);
+    const overlineClasses = [
+      'text-[0.6875rem]',
+      'leading-4',
+      'font-semibold',
+      'tracking-wider',
+      'text-muted-foreground',
+      'uppercase',
+    ];
+    const expectedLabels = ['Current Streak', 'Longest Win Streak', 'Longest Loss Streak'];
+    children.forEach((child, i) => {
+      const label = child.firstElementChild as HTMLElement;
+      expect(label.textContent).toBe(expectedLabels[i]);
+      for (const cls of overlineClasses) {
+        expect(label.className).toContain(cls);
+      }
+    });
+  });
+
+  it('a single win after a loss renders the current streak as "1" with unit "win"; no streak element carries a colour token', () => {
+    // Newest-first: a win (id 'w1'), then a loss — current streak is 1 win.
+    const matches = [
+      makeMatch({ id: 'w1', time: 2000, win: true }),
+      makeMatch({ id: 'l1', time: 1000, win: false }),
+    ];
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]')!;
+    const currentStreakFigure = statRow.children[0] as HTMLElement;
+    expect(currentStreakFigure.textContent).toContain('1');
+    expect(currentStreakFigure.textContent).toContain('win');
+    expect(statRow.querySelector('.text-emerald-500')).toBeNull();
+    expect(statRow.querySelector('.text-destructive')).toBeNull();
+  });
+
+  it('three straight newest losses render the current streak as "3" with unit "losses"', () => {
+    const matches = [
+      makeMatch({ id: 'l1', time: 3000, win: false }),
+      makeMatch({ id: 'l2', time: 2000, win: false }),
+      makeMatch({ id: 'l3', time: 1000, win: false }),
+    ];
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]')!;
+    const currentStreakFigure = statRow.children[0] as HTMLElement;
+    expect(currentStreakFigure.textContent).toContain('3');
+    expect(currentStreakFigure.textContent).toContain('losses');
+    expect(statRow.querySelector('.text-emerald-500')).toBeNull();
+    expect(statRow.querySelector('.text-destructive')).toBeNull();
+  });
+});

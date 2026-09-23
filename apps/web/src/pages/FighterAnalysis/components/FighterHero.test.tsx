@@ -140,7 +140,7 @@ describe('FighterHero', () => {
     expect(slots).toEqual([
       'fighter-hero-identity',
       'fighter-hero-verdict',
-      null, // StatRow root carries no data-slot
+      'stat-row', // Plan 39.1-32 (item 10): StatRow now always carries data-slot="stat-row"
       'fighter-hero-strip',
       'fighter-hero-trend',
       'share-bar-root',

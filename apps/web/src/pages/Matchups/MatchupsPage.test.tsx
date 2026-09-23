@@ -334,8 +334,16 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
-    // Current streak: 1 loss (most recent match lost)
-    expect(screen.getByText('1 losses')).toBeInTheDocument();
+    // Current streak: 1 loss (most recent match lost). Plan 39.1-32 (item
+    // 10): the count and unit word render as two separate StatFigure
+    // elements now (a fixedColumns StatRow), and the non-plural
+    // "{{count}} losses" key (which used to render "1 losses" even for a
+    // single loss) was replaced by the plural streakUnit.loss key — "1"
+    // singularizes correctly to "loss".
+    const currentStreakFigure = screen.getByText('Current Streak').closest('div')!;
+    expect(currentStreakFigure).toHaveTextContent('1');
+    expect(currentStreakFigure).toHaveTextContent('loss');
+    expect(currentStreakFigure).not.toHaveTextContent('losses');
     // Plan 39.1-13 (UIX-04): the record card's trend row is now a `MiniStrip`
     // (role="img", a different accessible-name shape), not `WinLossPips` —
     // `WinLossPips`'s "Last N results" aria-label survives only on
