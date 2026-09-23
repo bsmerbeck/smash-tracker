@@ -1416,6 +1416,71 @@ describe('MatchupsPage', () => {
     });
   });
 
+  describe('Task 2 (plan 39.1-32, item 9): aligned pairing picker grid', () => {
+    async function renderLoadedPairingForPicker() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const now = Date.now();
+      listMatches.mockResolvedValue(
+        Array.from({ length: 10 }, (_, i) =>
+          makeMatch({
+            id: `picker-m${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (10 - i) * 60 * 60 * 1000,
+            opponent: 'alice',
+            win: i % 2 === 0,
+          }),
+        ),
+      );
+      renderMatchups();
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+    }
+
+    it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same filter card, after the picker', async () => {
+      await renderLoadedPairingForPicker();
+      const picker = document.querySelector('[data-slot="matchup-pairing-picker"]');
+      expect(picker).not.toBeNull();
+      const pickerEl = picker as HTMLElement;
+      expect(pickerEl.className).toMatch(/\bgrid\b/);
+      expect(pickerEl.className).toMatch(/\bgrid-cols-1\b/);
+      expect(pickerEl.className).toMatch(/sm:grid-cols-\[15rem_auto_15rem\]/);
+
+      const children = Array.from(pickerEl.children) as HTMLElement[];
+      expect(children).toHaveLength(3);
+      const [fighterCol, vsEl, opponentCol] = children;
+      expect(vsEl!.getAttribute('data-slot')).toBe('matchup-pairing-vs');
+
+      const overlineClasses = [
+        'text-[0.6875rem]',
+        'leading-4',
+        'font-semibold',
+        'tracking-wider',
+        'text-muted-foreground',
+        'uppercase',
+      ];
+      for (const col of [fighterCol!, opponentCol!]) {
+        const label = col.firstElementChild as HTMLElement;
+        expect(label.getAttribute('data-slot')).toBe('matchup-pairing-label');
+        for (const cls of overlineClasses) {
+          expect(label.className).toContain(cls);
+        }
+        const trigger = col.querySelector('[data-slot="select-trigger"]');
+        expect(trigger).not.toBeNull();
+        expect(trigger!.className).toMatch(/\bw-full\b/);
+        expect(trigger!.className).not.toMatch(/w-\[220px\]/);
+      }
+
+      const card = pickerEl.closest('[data-slot="card"]')!;
+      const horizonSwitch = card.querySelector('[data-slot="horizon-switch"]');
+      expect(horizonSwitch).not.toBeNull();
+      const pickerFollowedByHorizon =
+        pickerEl.compareDocumentPosition(horizonSwitch!) & Node.DOCUMENT_POSITION_FOLLOWING;
+      expect(pickerFollowedByHorizon).not.toBe(0);
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
