@@ -45,6 +45,14 @@ export interface GuardHarnessRouteEntry {
   element: ReactNode;
   /** The page-loaded-marker CSS selector — see the contract note above. Never a skeleton block. */
   loadedMarker: string;
+  /**
+   * Plan 39.1-30 (T-39.1-30-01): opts this route into the harness's
+   * MainLayout-geometry wrapper (`GuardAppShell.tsx`) so its content is
+   * measured at production content widths, not the harness's default raw
+   * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
+   * route except `matchups`.
+   */
+  shell?: 'app';
 }
 
 /**
@@ -101,6 +109,7 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/matchups',
     element: <MatchupsPage />,
     loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
   },
   {
     id: 'match-data',

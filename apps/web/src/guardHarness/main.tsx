@@ -9,6 +9,7 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { fakeGuardAuthContextValue } from './fakeGuardAuthContextValue';
 import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoutes';
+import { GuardAppShell } from './GuardAppShell';
 
 /**
  * DEV-ONLY layout-oracle harness entry (Phase 39.1 Plan 09, UIX-01/UIX-06,
@@ -49,6 +50,11 @@ if (!route) {
   rootElement.textContent = `guard-layout harness: unknown route id "${routeId ?? ''}" (known ids: ${GUARD_HARNESS_ROUTES.map((r) => r.id).join(', ')})`;
 } else {
   const queryClient = createQueryClient();
+  // Plan 39.1-30: routes carrying `shell: 'app'` are measured inside the
+  // MainLayout-geometry wrapper so their content is measured at production
+  // content widths — every other route mounts unwrapped, unchanged.
+  const routedElement =
+    route.shell === 'app' ? <GuardAppShell>{route.element}</GuardAppShell> : route.element;
 
   createRoot(rootElement).render(
     <QueryClientProvider client={queryClient}>
@@ -57,7 +63,7 @@ if (!route) {
           <TooltipProvider>
             <MemoryRouter initialEntries={[route.initialEntry]}>
               <Routes>
-                <Route path={route.path} element={route.element} />
+                <Route path={route.path} element={routedElement} />
               </Routes>
             </MemoryRouter>
           </TooltipProvider>

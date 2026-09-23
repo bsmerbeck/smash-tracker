@@ -34,7 +34,14 @@ import {
   evaluateScrollBudget,
   evaluateHorizontalOverflow,
   evaluateTruncation,
+  evaluateCardContentOverflow,
+  evaluateHeaderSqueeze,
+  evaluateAxisTicks,
+  evaluateAxisPresence,
+  evaluateGridBalance,
+  evaluateFamilyPresence,
   LAYOUT_ORACLE_VIEWPORTS,
+  EXTRA_ORACLE_VIEWPORTS,
 } from './guardLayoutCore.mjs';
 
 /**
@@ -51,7 +58,15 @@ export const LAYOUT_ORACLE_ROUTES = [
   },
   { id: 'dashboard', loadedMarker: '[data-slot="dashboard-body"]' },
   { id: 'fighter-analysis', loadedMarker: '[data-slot="fighter-hero-body"]' },
-  { id: 'matchups', loadedMarker: '[data-slot="matchup-chart-body"]' },
+  {
+    id: 'matchups',
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    // Plan 39.1-30: the only route opted into the four new oracle families
+    // and the two extra viewports — every other route's measurement stays
+    // byte-unchanged (three viewports, zero new checks).
+    checks: ['content-overflow', 'header-squeeze', 'axis-ticks', 'grid-balance'],
+    extraViewports: ['1024x768', '1280x800'],
+  },
   { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
   { id: 'trends', loadedMarker: '[data-slot="trends-hero-body"]' },
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
@@ -70,8 +85,19 @@ function withHardTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Runs entirely inside the browser context — no closures over outer scope. */
-function collectPageMeasurements() {
+/**
+ * Runs entirely inside the browser context — no closures over outer scope.
+ * `checks` (plan 39.1-30) is the requesting route's opted-in family list
+ * (`[]` for every route except `matchups`); the four new measurement
+ * categories below are only collected — at real DOM/CSS-computation cost —
+ * for a route that actually asked for them.
+ */
+function collectPageMeasurements(checks) {
+  const wantContentOverflow = checks.includes('content-overflow');
+  const wantHeaderSqueeze = checks.includes('header-squeeze');
+  const wantAxisTicks = checks.includes('axis-ticks');
+  const wantGridBalance = checks.includes('grid-balance');
+
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
       return `[data-testid="${el.getAttribute('data-testid')}"]`;
@@ -123,9 +149,172 @@ function collectPageMeasurements() {
     }),
   );
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-30: the four new measurement categories, collected only for
+  // a requesting route's opted-in families (see `wantX` flags above).
+  // -------------------------------------------------------------------
+
+  function isVisuallyHidden(el) {
+    const style = window.getComputedStyle(el);
+    if (style.position === 'fixed') return true;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return true;
+    if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return true;
+    if ((el.offsetWidth <= 1 && el.offsetHeight <= 1) || style.visibility === 'hidden') return true;
+    return false;
+  }
+
+  function isOverflowContainer(el) {
+    const style = window.getComputedStyle(el);
+    return ['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX);
+  }
+
+  const overflowCards = [];
+  if (wantContentOverflow) {
+    for (const cardEl of document.querySelectorAll('[data-slot="card"]')) {
+      const rect = cardEl.getBoundingClientRect();
+      const style = window.getComputedStyle(cardEl);
+      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+      const borderRight = parseFloat(style.borderRightWidth) || 0;
+      const innerLeft = rect.left + borderLeft;
+      const innerRight = rect.right - borderRight;
+
+      const offenders = [];
+      const stack = Array.from(cardEl.children);
+      while (stack.length > 0) {
+        const el = stack.shift();
+        const isSvg = el.tagName === 'svg';
+        const overflowContainer = isOverflowContainer(el);
+        if (!isVisuallyHidden(el)) {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.left < innerLeft - 1 || elRect.right > innerRight + 1) {
+            offenders.push({
+              selectorPath: describeElement(el),
+              left: elRect.left,
+              right: elRect.right,
+            });
+          }
+        }
+        // Never descend into SVG internals, and never past an
+        // overflow/scroll/clip container's own boundary (UI-SPEC §6.5: a
+        // horizontal scroll/clip container is the one enumerated
+        // content-overflow exemption).
+        if (!isSvg && !overflowContainer) {
+          for (const child of el.children) stack.push(child);
+        }
+      }
+      overflowCards.push({ selectorPath: describeElement(cardEl), innerLeft, innerRight, offenders });
+    }
+  }
+
+  const headers = [];
+  if (wantHeaderSqueeze) {
+    for (const headerEl of document.querySelectorAll('[data-slot="card-header"]')) {
+      const style = window.getComputedStyle(headerEl);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingRight = parseFloat(style.paddingRight) || 0;
+      const contentWidth = headerEl.clientWidth - paddingLeft - paddingRight;
+      const parts = [];
+      for (const role of ['card-title', 'card-description']) {
+        for (const partEl of headerEl.querySelectorAll(`[data-slot="${role}"]`)) {
+          const partRect = partEl.getBoundingClientRect();
+          const partStyle = window.getComputedStyle(partEl);
+          let lineHeight = parseFloat(partStyle.lineHeight);
+          if (!Number.isFinite(lineHeight)) {
+            lineHeight = (parseFloat(partStyle.fontSize) || 14) * 1.2;
+          }
+          parts.push({
+            role: role === 'card-title' ? 'title' : 'description',
+            width: partRect.width,
+            height: partRect.height,
+            lineHeight,
+          });
+        }
+      }
+      if (parts.length > 0) {
+        headers.push({ selectorPath: describeElement(headerEl), contentWidth, parts });
+      }
+    }
+  }
+
+  const axisSurfaces = [];
+  if (wantAxisTicks) {
+    for (const surfaceEl of document.querySelectorAll('svg.recharts-surface')) {
+      const rect = surfaceEl.getBoundingClientRect();
+
+      function tickRects(containerSelector) {
+        const out = [];
+        const container = surfaceEl.querySelector(containerSelector);
+        if (!container) return out;
+        for (const g of container.querySelectorAll('.recharts-cartesian-axis-tick-label')) {
+          const r = g.getBoundingClientRect();
+          out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, text: g.textContent ?? '' });
+        }
+        return out;
+      }
+
+      const xTicks = tickRects('.recharts-xAxis-tick-labels');
+      const yTicks = tickRects('.recharts-yAxis-tick-labels');
+
+      const valueLabels = Array.from(
+        surfaceEl.querySelectorAll('[data-slot="trend-period-value-label"]'),
+      ).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, text: el.textContent ?? '' };
+      });
+
+      const dots = Array.from(surfaceEl.querySelectorAll('[data-slot="trend-period-dot"]')).map(
+        (el) => {
+          const r = el.getBoundingClientRect();
+          return { selectorPath: describeElement(el), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        },
+      );
+
+      function axisLineRect(axisSelector) {
+        const line = surfaceEl.querySelector(`${axisSelector} .recharts-cartesian-axis-line`);
+        if (!line) return null;
+        const r = line.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      }
+
+      axisSurfaces.push({
+        selectorPath: describeElement(surfaceEl),
+        rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+        xTicks,
+        yTicks,
+        valueLabels,
+        dots,
+        xAxisLine: axisLineRect('.recharts-xAxis'),
+        yAxisLine: axisLineRect('.recharts-yAxis'),
+      });
+    }
+  }
+
+  const grids = [];
+  if (wantGridBalance) {
+    for (const gridEl of document.querySelectorAll('*')) {
+      const display = window.getComputedStyle(gridEl).display;
+      if (display !== 'grid' && display !== 'inline-grid') continue;
+      const cardBearingChildren = Array.from(gridEl.children).filter(
+        (child) => child.matches('[data-slot="card"]') || child.querySelector('[data-slot="card"]'),
+      );
+      if (cardBearingChildren.length < 2) continue;
+      const rowGapPx = parseFloat(window.getComputedStyle(gridEl).rowGap) || 0;
+      const items = cardBearingChildren.map((child) => {
+        const r = child.getBoundingClientRect();
+        return { selectorPath: describeElement(child), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+      grids.push({ selectorPath: describeElement(gridEl), rowGapPx, items });
+    }
+  }
+
   return {
     cards,
     truncationElements,
+    overflowCards,
+    headers,
+    axisSurfaces,
+    grids,
     scrollHeight: document.documentElement.scrollHeight,
     scrollWidth: document.documentElement.scrollWidth,
     innerHeight: window.innerHeight,
@@ -150,7 +339,8 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       };
     }
 
-    const measurements = await page.evaluate(collectPageMeasurements);
+    const checks = route.checks ?? [];
+    const measurements = await page.evaluate(collectPageMeasurements, checks);
 
     const violations = [
       ...evaluateStretch(measurements.cards),
@@ -165,6 +355,27 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       }),
       ...evaluateTruncation(measurements.truncationElements),
     ];
+
+    // Plan 39.1-30: the four new families, only for a route's opted-in
+    // checks — each requested family also runs its own non-vacuity presence
+    // check (a selector/structure drift must fail loudly, never silently
+    // report zero violations).
+    if (checks.includes('content-overflow')) {
+      violations.push(...evaluateCardContentOverflow(measurements.overflowCards));
+      violations.push(...evaluateFamilyPresence('content-overflow', measurements.overflowCards));
+    }
+    if (checks.includes('header-squeeze')) {
+      violations.push(...evaluateHeaderSqueeze(measurements.headers));
+      violations.push(...evaluateFamilyPresence('header-squeeze', measurements.headers));
+    }
+    if (checks.includes('axis-ticks')) {
+      violations.push(...evaluateAxisTicks(measurements.axisSurfaces));
+      violations.push(...evaluateAxisPresence(measurements.axisSurfaces));
+    }
+    if (checks.includes('grid-balance')) {
+      violations.push(...evaluateGridBalance(measurements.grids));
+      violations.push(...evaluateFamilyPresence('grid-balance', measurements.grids));
+    }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
     // output contract requires the measured maximum card stretch and the
@@ -275,7 +486,15 @@ async function main() {
     await withHardTimeout(
       (async () => {
         for (const route of LAYOUT_ORACLE_ROUTES) {
-          for (const viewport of LAYOUT_ORACLE_VIEWPORTS) {
+          // Plan 39.1-30: a route's own `extraViewports` (keys of
+          // `EXTRA_ORACLE_VIEWPORTS`) are measured IN ADDITION TO the three
+          // standard viewports — every other route's viewport set is
+          // unchanged (`extraViewports` is `undefined` for them).
+          const routeViewports = [
+            ...LAYOUT_ORACLE_VIEWPORTS,
+            ...(route.extraViewports ?? []).map((key) => EXTRA_ORACLE_VIEWPORTS[key]),
+          ];
+          for (const viewport of routeViewports) {
             const result = await measureRouteAtViewport(browser, baseUrl, route, viewport);
             if (result.unmeasured) {
               console.log(

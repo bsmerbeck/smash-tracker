@@ -26,6 +26,26 @@ export const LAYOUT_ORACLE_VIEWPORTS = [
 ];
 
 /**
+ * Plan 39.1-30: the two extra viewports Matchups opts into so the harness's
+ * MainLayout-geometry app shell (`GuardAppShell.tsx`) is measured at the
+ * exact tiers UI-SPEC §6.6 names — 1024x768 (the 1024-1279 tier) and 1280x800
+ * (the narrowest >=1280 rail width) — never measured for any other route.
+ */
+export const EXTRA_ORACLE_VIEWPORTS = {
+  '1024x768': { name: '1024x768', width: 1024, height: 768 },
+  '1280x800': { name: '1280x800', width: 1280, height: 800 },
+};
+
+/** UI-SPEC §6.1 "No orphan half": a side-by-side item shorter than this fraction of its taller sibling is an orphan half. */
+export const ORPHAN_HALF_MIN_RATIO = 0.5;
+
+/** UI-SPEC §6.5 rule 1 (header-squeeze family): a header title/description narrower than this fraction of its header's content width, while wrapping, is squeezed. */
+export const HEADER_SQUEEZE_MIN_SHARE = 0.5;
+
+/** The minimum legible gap (px) between two adjacent x-axis tick labels before they are considered overlapping. */
+export const MIN_TICK_GAP_PX = 4;
+
+/**
  * UI-SPEC §13.1's stretch condition:
  * `card.height − (lastChild.bottom − card.top + paddingBottom) > 24px`.
  * Each `card` is `{ selectorPath, height, lastChildBottom, top, paddingBottom }`.
@@ -93,4 +113,226 @@ export function evaluateTruncation(elements) {
     }
   }
   return violations;
+}
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-30: the four Matchups gap-closure oracle families
+// (content-overflow, header-squeeze, axis-ticks, grid-balance). Every
+// evaluator returns a LIST of ALL offenders, never a boolean and never only
+// the first — same discipline as the four evaluators above.
+// ---------------------------------------------------------------------------
+
+/**
+ * UI-SPEC §6.5: a card whose descendant extends past the card's own inner
+ * horizontal edges (excluding descendants inside a horizontal scroll/clip
+ * container, and SVG internals — the collector in `guardLayout.mjs` already
+ * excludes those from `offenders`). Each `card` is
+ * `{ selectorPath, innerLeft, innerRight, offenders: [{ selectorPath, left, right }] }`.
+ */
+export function evaluateCardContentOverflow(cards, tolerancePx = 1) {
+  const violations = [];
+  for (const card of cards) {
+    const { selectorPath, innerLeft, innerRight, offenders } = card;
+    for (const offender of offenders) {
+      const { left, right } = offender;
+      const overflowLeft = innerLeft - left;
+      const overflowRight = right - innerRight;
+      const overflowPx = Math.max(overflowLeft, overflowRight);
+      if (left < innerLeft - tolerancePx || right > innerRight + tolerancePx) {
+        violations.push({
+          type: 'content-overflow',
+          selectorPath,
+          offender: offender.selectorPath,
+          overflowPx,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §6.5: a card-header title/description narrower than
+ * `minShare` of the header's own content width WHILE wrapping onto 2+ lines
+ * (a single-line short string is never squeezed, even if it's narrow — that's
+ * just short text). Each `header` is
+ * `{ selectorPath, contentWidth, parts: [{ role, width, height, lineHeight }] }`.
+ */
+export function evaluateHeaderSqueeze(headers, minShare = HEADER_SQUEEZE_MIN_SHARE) {
+  const violations = [];
+  for (const header of headers) {
+    const { selectorPath, contentWidth, parts } = header;
+    for (const part of parts) {
+      const { role, width, height, lineHeight } = part;
+      const lines = lineHeight > 0 ? Math.round(height / lineHeight) : 1;
+      if (width < minShare * contentWidth && lines >= 2) {
+        violations.push({ type: 'header-squeeze', selectorPath, role, width, contentWidth, lines });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §7.13/§11: x-axis tick clipping, tick-label overlap, a value label
+ * or period dot colliding with a tick or axis line. Each `surface` is
+ * `{ selectorPath, rect, xTicks: [{ left, right, top, bottom, text }], yTicks: [...],
+ * valueLabels: [...], dots: [...], xAxisLine: rect|null, yAxisLine: rect|null }`.
+ * Rect intersection is a standard AABB overlap test (both axes must overlap).
+ */
+function rectsIntersect(a, b, expandPx = 0) {
+  const aLeft = a.left - expandPx;
+  const aRight = a.right + expandPx;
+  const aTop = a.top - expandPx;
+  const aBottom = a.bottom + expandPx;
+  return aLeft < b.right && aRight > b.left && aTop < b.bottom && aBottom > b.top;
+}
+
+export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
+  const violations = [];
+  for (const surface of surfaces) {
+    const { selectorPath, rect, xTicks, yTicks, valueLabels, dots, xAxisLine, yAxisLine } = surface;
+
+    for (const tick of xTicks) {
+      if (tick.left < rect.left - 0.5 || tick.right > rect.right + 0.5) {
+        violations.push({ type: 'tick-clipped', selectorPath, tick: tick.text });
+      }
+    }
+
+    const sortedXTicks = [...xTicks].sort((a, b) => a.left - b.left);
+    for (let i = 1; i < sortedXTicks.length; i += 1) {
+      const prev = sortedXTicks[i - 1];
+      const next = sortedXTicks[i];
+      const gap = next.left - prev.right;
+      if (gap < minGapPx) {
+        violations.push({
+          type: 'tick-overlap',
+          selectorPath,
+          a: prev.text,
+          b: next.text,
+          gap,
+        });
+      }
+    }
+
+    const allTicks = [...xTicks, ...yTicks];
+    for (const label of valueLabels) {
+      for (const tick of allTicks) {
+        if (rectsIntersect(label, tick)) {
+          violations.push({
+            type: 'value-label-collision',
+            selectorPath,
+            label: label.text,
+            tick: tick.text,
+          });
+          break;
+        }
+      }
+    }
+
+    const axisLines = [xAxisLine, yAxisLine].filter((line) => line != null);
+    for (const dot of dots) {
+      for (const line of axisLines) {
+        if (rectsIntersect(dot, line, 0.5)) {
+          violations.push({ type: 'mark-on-axis', selectorPath, dot: dot.selectorPath });
+          break;
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * Non-vacuity check for the axis-ticks family: a route opted into the family
+ * whose collected `surfaces` carry NO x tick anywhere fails with
+ * `axis-unmeasured` — a selector or structure drift must fail loudly rather
+ * than silently reporting zero violations.
+ */
+export function evaluateAxisPresence(surfaces) {
+  const hasAnyXTick = surfaces.some((surface) => surface.xTicks.length > 0);
+  if (!hasAnyXTick) {
+    return [{ type: 'axis-unmeasured' }];
+  }
+  return [];
+}
+
+/**
+ * UI-SPEC §6.1 "No orphan half" + dead-gap: `orphan-half` when two
+ * horizontally-non-overlapping items at (nearly) the same top have a
+ * height ratio under `minHeightRatio`; `dead-gap` when the vertical space
+ * between a horizontally-overlapping item and the nearest item below it
+ * exceeds the grid's own row-gap plus `deadGapTolerancePx`. Each `grid` is
+ * `{ selectorPath, rowGapPx, items: [{ selectorPath, left, right, top, bottom }] }`
+ * (card-bearing direct children only — the collector filters).
+ */
+export function evaluateGridBalance(
+  grids,
+  { minHeightRatio = ORPHAN_HALF_MIN_RATIO, deadGapTolerancePx = STRETCH_TOLERANCE_PX } = {},
+) {
+  const violations = [];
+  for (const grid of grids) {
+    const { selectorPath, rowGapPx, items } = grid;
+
+    for (let i = 0; i < items.length; i += 1) {
+      for (let j = i + 1; j < items.length; j += 1) {
+        const a = items[i];
+        const b = items[j];
+        const sameRow = Math.abs(a.top - b.top) <= 2;
+        const horizontallyOverlap = a.left < b.right && b.left < a.right;
+        if (!sameRow || horizontallyOverlap) continue;
+        const aHeight = a.bottom - a.top;
+        const bHeight = b.bottom - b.top;
+        const ratio = Math.min(aHeight, bHeight) / Math.max(aHeight, bHeight);
+        if (ratio < minHeightRatio) {
+          violations.push({
+            type: 'orphan-half',
+            selectorPath,
+            a: a.selectorPath,
+            b: b.selectorPath,
+            ratio,
+          });
+        }
+      }
+    }
+
+    for (const item of items) {
+      let nearestBelow;
+      for (const other of items) {
+        if (other === item) continue;
+        const horizontallyOverlap = item.left < other.right && other.left < item.right;
+        const overlapPx = Math.min(item.right, other.right) - Math.max(item.left, other.left);
+        if (!horizontallyOverlap || overlapPx <= 1) continue;
+        if (other.top < item.bottom - 1) continue; // not below
+        if (!nearestBelow || other.top < nearestBelow.top) {
+          nearestBelow = other;
+        }
+      }
+      if (!nearestBelow) continue;
+      const gap = nearestBelow.top - item.bottom;
+      if (gap > rowGapPx + deadGapTolerancePx) {
+        violations.push({
+          type: 'dead-gap',
+          selectorPath,
+          a: item.selectorPath,
+          b: nearestBelow.selectorPath,
+          gap,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * Non-vacuity check shared by three families (content-overflow,
+ * header-squeeze, grid-balance): an opted-in route whose collector returned
+ * an EMPTY list for that family (selectors never matched) fails loudly with
+ * `<family>-unmeasured` instead of silently reporting zero violations.
+ */
+export function evaluateFamilyPresence(family, items) {
+  if (items.length === 0) {
+    return [{ type: `${family}-unmeasured` }];
+  }
+  return [];
 }

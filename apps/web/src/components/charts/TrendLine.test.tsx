@@ -8,6 +8,7 @@ import {
 } from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
+import { formatPeriodRowLabel } from './periodTicks';
 import type { PeriodPoint } from '@smash-tracker/shared';
 import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import fs from 'node:fs';
@@ -499,7 +500,15 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     rows.forEach((row, i) => {
       const point = points[i]!;
       const cells = row.querySelectorAll('td');
-      expect(cells[0]?.textContent).toBe(point.label);
+      // Plan 39.1-30: the row label now goes through `formatPeriodRowLabel`
+      // (the same period-ticks module the axis reads), not the engine's raw
+      // `point.label` directly — byte-identical here since these fixture
+      // points are week-grain (formatPeriodRowLabel keeps a week/quarter/
+      // year point's engine label unchanged), but the CONTRACT is now the
+      // formatter, not the raw field, so a future non-date-shaped label
+      // change here is caught by this module's own tests, not silently
+      // absorbed by an assertion that duplicated the raw value.
+      expect(cells[0]?.textContent).toBe(formatPeriodRowLabel(point, 'en'));
       expect(cells[1]?.textContent).toBe(`${point.wins}–${point.losses}`);
       expect(cells[2]?.textContent).toBe(`${Math.round(point.rate * 100)}%`);
       expect(cells[3]?.textContent).toBe(String(point.total));
@@ -556,5 +565,66 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
     );
     expect(container.querySelectorAll('circle')).toHaveLength(60);
+  });
+});
+
+/** 8 daily game-grain points with ISO engine labels — the shape a small account's period series actually takes (`periodSeries.ts` `buildGamePoints`). */
+function makeGamePeriodSeries(count: number): PeriodPoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    const startMs = Date.UTC(2023, 10, 1 + i);
+    return makePeriodPoint({
+      grain: 'game',
+      key: `game:${i}`,
+      label: new Date(startMs).toISOString(),
+      startMs,
+      endMs: startMs + 1,
+      rate: 0.5,
+    });
+  });
+}
+
+describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', () => {
+  it('no rendered x-tick text is a raw ISO timestamp', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const tickTexts = Array.from(
+      container.querySelectorAll('.recharts-xAxis-tick-labels text'),
+    ).map((el) => el.textContent ?? '');
+    expect(tickTexts.length).toBeGreaterThan(0);
+    for (const text of tickTexts) {
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it('the first rendered x tick is start-anchored and the last is end-anchored', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const ticks = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'));
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    const sorted = [...ticks].sort(
+      (a, b) => Number(a.getAttribute('x')) - Number(b.getAttribute('x')),
+    );
+    expect(sorted[0]!.getAttribute('text-anchor')).toBe('start');
+    expect(sorted[sorted.length - 1]!.getAttribute('text-anchor')).toBe('end');
+  });
+
+  it('every period circle carries data-slot "trend-period-dot" and every direct value label carries data-slot "trend-period-value-label"', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const circles = Array.from(container.querySelectorAll('circle'));
+    expect(circles.length).toBe(8);
+    for (const circle of circles) {
+      expect(circle.getAttribute('data-slot')).toBe('trend-period-dot');
+    }
+    const valueLabels = Array.from(
+      container.querySelectorAll('[data-slot="trend-period-value-label"]'),
+    );
+    expect(valueLabels.length).toBeGreaterThan(0);
   });
 });
