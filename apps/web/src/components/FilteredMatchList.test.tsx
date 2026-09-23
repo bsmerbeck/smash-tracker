@@ -523,10 +523,32 @@ describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () =
     expect(link.getAttribute('href')).toContain('vid-3');
   });
 
-  it('scroll-cap parity: the stacked list renders inside the shared max-height scroll wrapper', () => {
+  /**
+   * Plan 39.1-32 (item 13, UI-SPEC §6.4 exemption 2 narrowed to the table
+   * layout only): supersedes the Phase 38-08 "scroll-cap parity" case above,
+   * which pinned the stacked layout INSIDE the shared `max-h-[500px]
+   * overflow-y-auto` wrapper. That exemption existed because Phase 38's list
+   * was unbounded; plan 39.1-28 now bounds every DOM pass at
+   * `FILTERED_MATCH_LIST_ROW_CAP` rows + "Show 50 more" paging, so the
+   * stacked (phone) layout drops the inner scroller and flows in the page —
+   * the table layout keeps the grandfathered wrapper (next case).
+   */
+  it('stacked layout: no ancestor between the root and the list carries a max-height or overflow-y utility (item 13)', () => {
     const { container } = renderList({ matches: [makeMatch()], layout: 'stack' });
-    const stack = container.querySelector('[data-slot="filtered-match-stack"]');
-    expect(stack?.closest('.max-h-\\[500px\\]')).not.toBeNull();
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(stack).not.toBeNull();
+    let node: HTMLElement | null = stack.parentElement;
+    while (node && node !== container) {
+      expect(node.className).not.toMatch(/max-h-|overflow-y-auto|overflow-y-scroll/);
+      node = node.parentElement;
+    }
+  });
+
+  it('table layout: the wrapper around the table still carries the grandfathered 500px scroll box (exemption 2 unchanged)', () => {
+    const { container } = renderList({ matches: [makeMatch()], layout: 'table' });
+    const table = container.querySelector('[data-slot="filtered-match-table"]');
+    expect(table?.closest('.max-h-\\[500px\\]')).not.toBeNull();
+    expect(table?.closest('.overflow-y-auto')).not.toBeNull();
   });
 });
 
@@ -822,6 +844,55 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
     expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+  });
+});
+
+/**
+ * Plan 39.1-32 (item 13): the DOM bound (100-row first pass + "Show 50 more"
+ * paging) holds identically for the stacked layout once the inner scroll
+ * wrapper is gone — the cap was never coupled to the 500px box, it just
+ * happened to render inside it. The last-page activation's focus move must
+ * use `{ preventScroll: true }` on a phone: without the removed 500px box
+ * that jump used to be contained inside it, so a plain `focus()` would
+ * scroll the whole page back to the top of a long list.
+ */
+describe('FilteredMatchList — stacked layout paging bound + last-page focus (plan 39.1-32, item 13)', () => {
+  it('stacked layout: 150 matches mount exactly 100 rows, data-total-rows is 150, and "Show 50 more" renders', () => {
+    const matches = makeManyMatches(150);
+    const { container } = renderList({ matches, axes: {}, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    expect(stack).toHaveAttribute('data-total-rows', '150');
+    expect(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    ).toBeInTheDocument();
+  });
+
+  it('stacked layout: 160 matches, the final "Show 50 more" activation moves focus to the list root with preventScroll, unmounts the control, and the progress line announces the full count', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    const matches = makeManyMatches(160);
+    const { container } = renderList({ matches, axes: {}, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+
+    // First activation: 100 -> 150, control remains (10 rows left).
+    fireEvent.click(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(150);
+
+    // Second (final) activation: 150 -> 160, exhausts the list.
+    focusSpy.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: showMoreName(10) }));
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(160);
+
+    expect(document.activeElement).toBe(stack);
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/160 .* 160/);
+
+    focusSpy.mockRestore();
   });
 });
 

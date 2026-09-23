@@ -18,6 +18,11 @@ import {
   ORPHAN_HALF_MIN_RATIO,
   HEADER_SQUEEZE_MIN_SHARE,
   MIN_TICK_GAP_PX,
+  PICKER_ALIGN_TOLERANCE_PX,
+  VS_CENTER_TOLERANCE_PX,
+  ROW_COHESION_TOP_TOLERANCE_PX,
+  TAG_MIN_ROW_SHARE,
+  NARROW_VIEWPORT_MAX_WIDTH_PX,
   evaluateStretch,
   evaluateScrollBudget,
   evaluateHorizontalOverflow,
@@ -28,6 +33,10 @@ import {
   evaluateAxisPresence,
   evaluateGridBalance,
   evaluateFamilyPresence,
+  evaluatePickerAlignment,
+  evaluateRowCohesion,
+  evaluateRowTagLegibility,
+  evaluateNestedScrollers,
 } from './guardLayoutCore.mjs';
 
 test('a card exactly at the 24px tolerance passes', () => {
@@ -394,5 +403,304 @@ test('evaluateFamilyPresence: an empty grid-balance list fails non-vacuously', (
 
 test('evaluateFamilyPresence: a one-grid grid-balance list passes', () => {
   const violations = evaluateFamilyPresence('grid-balance', [{ selectorPath: '#a' }]);
+  assert.equal(violations.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-32: the four mobile gap-closure families (picker-alignment,
+// row-cohesion, row-tag-legibility, nested-scroll) + their family-presence
+// non-vacuity cases.
+// ---------------------------------------------------------------------------
+
+test('the plan 39.1-32 family constants are exactly the documented values', () => {
+  assert.equal(PICKER_ALIGN_TOLERANCE_PX, 1);
+  assert.equal(VS_CENTER_TOLERANCE_PX, 2);
+  assert.equal(ROW_COHESION_TOP_TOLERANCE_PX, 2);
+  assert.equal(TAG_MIN_ROW_SHARE, 0.6);
+  assert.equal(NARROW_VIEWPORT_MAX_WIDTH_PX, 639);
+});
+
+// --- picker-alignment ---
+
+function makeStackedPicker(overrides = {}) {
+  return {
+    selectorPath: '#picker',
+    controls: [
+      { left: 23, right: 243, top: 40, bottom: 76 },
+      { left: 23, right: 243, top: 120, bottom: 156 },
+    ],
+    labels: [
+      { left: 23, right: 100, top: 20, bottom: 36 },
+      { left: 23, right: 100, top: 100, bottom: 116 },
+    ],
+    vs: { left: 128, right: 138, top: 82, bottom: 94 },
+    ...overrides,
+  };
+}
+
+test('picker-alignment: a stacked picker with two 220px controls at lefts 23 and 45 fails with picker-control-offset', () => {
+  const picker = makeStackedPicker({
+    controls: [
+      { left: 23, right: 243, top: 40, bottom: 76 },
+      { left: 45, right: 265, top: 120, bottom: 156 },
+    ],
+    labels: [
+      { left: 23, right: 100, top: 20, bottom: 36 },
+      { left: 45, right: 122, top: 100, bottom: 116 },
+    ],
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-control-offset').length, 1);
+});
+
+test('picker-alignment: the same stacked picker with equal control lefts has no offset violation', () => {
+  const violations = evaluatePickerAlignment([makeStackedPicker()]);
+  assert.equal(violations.filter((v) => v.type === 'picker-control-offset').length, 0);
+});
+
+test('picker-alignment: controls 240 and 238 wide fail picker-control-width', () => {
+  const picker = makeStackedPicker({
+    controls: [
+      { left: 0, right: 240, top: 40, bottom: 76 },
+      { left: 0, right: 238, top: 120, bottom: 156 },
+    ],
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-control-width').length, 1);
+});
+
+test('picker-alignment: controls 240 and 239 wide (1px boundary) pass', () => {
+  const picker = makeStackedPicker({
+    controls: [
+      { left: 0, right: 240, top: 40, bottom: 76 },
+      { left: 0, right: 239, top: 120, bottom: 156 },
+    ],
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-control-width').length, 0);
+});
+
+test('picker-alignment: a label 60px right of its control fails picker-label-offset once per label', () => {
+  const picker = makeStackedPicker({
+    labels: [
+      { left: 83, right: 160, top: 20, bottom: 36 },
+      { left: 23, right: 100, top: 100, bottom: 116 },
+    ],
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-label-offset').length, 1);
+});
+
+test('picker-alignment: a stacked vs box sharing control 0\'s row fails picker-vs-misplaced', () => {
+  const picker = makeStackedPicker({
+    vs: { left: 128, right: 138, top: 60, bottom: 72 },
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-vs-misplaced').length, 1);
+});
+
+test('picker-alignment: a stacked vs box between control 0 and label 1, centred within 2px, passes', () => {
+  const violations = evaluatePickerAlignment([makeStackedPicker()]);
+  assert.equal(violations.filter((v) => v.type === 'picker-vs-misplaced').length, 0);
+});
+
+test('picker-alignment: a stacked vs box 3px off-centre fails picker-vs-misplaced', () => {
+  const picker = makeStackedPicker({
+    vs: { left: 131, right: 141, top: 82, bottom: 94 },
+  });
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-vs-misplaced').length, 1);
+});
+
+test('picker-alignment: a 2-up picker with vs between the controls, vertically centred on control 0, passes', () => {
+  const picker = {
+    selectorPath: '#picker',
+    controls: [
+      { left: 0, right: 240, top: 40, bottom: 76 },
+      { left: 280, right: 520, top: 40, bottom: 76 },
+    ],
+    labels: [
+      { left: 0, right: 80, top: 20, bottom: 36 },
+      { left: 280, right: 380, top: 20, bottom: 36 },
+    ],
+    vs: { left: 250, right: 270, top: 50, bottom: 66 },
+  };
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-vs-misplaced').length, 0);
+});
+
+test('picker-alignment: a 2-up vs overlapping control 1 fails picker-vs-misplaced', () => {
+  const picker = {
+    selectorPath: '#picker',
+    controls: [
+      { left: 0, right: 240, top: 40, bottom: 76 },
+      { left: 280, right: 520, top: 40, bottom: 76 },
+    ],
+    labels: [
+      { left: 0, right: 80, top: 20, bottom: 36 },
+      { left: 280, right: 380, top: 20, bottom: 36 },
+    ],
+    vs: { left: 250, right: 290, top: 50, bottom: 66 },
+  };
+  const violations = evaluatePickerAlignment([picker]);
+  assert.equal(violations.filter((v) => v.type === 'picker-vs-misplaced').length, 1);
+});
+
+// --- row-cohesion ---
+
+test('row-cohesion: items with tops 100 / 100 / 101.5 pass (2px tolerance)', () => {
+  const violations = evaluateRowCohesion([
+    {
+      selectorPath: '#row',
+      items: [
+        { selectorPath: '#a', top: 100, scrollWidth: 50, clientWidth: 60 },
+        { selectorPath: '#b', top: 100, scrollWidth: 50, clientWidth: 60 },
+        { selectorPath: '#c', top: 101.5, scrollWidth: 50, clientWidth: 60 },
+      ],
+    },
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'row-wrapped').length, 0);
+});
+
+test('row-cohesion: items with tops 100 / 100 / 180 fail row-wrapped', () => {
+  const violations = evaluateRowCohesion([
+    {
+      selectorPath: '#row',
+      items: [
+        { selectorPath: '#a', top: 100, scrollWidth: 50, clientWidth: 60 },
+        { selectorPath: '#b', top: 100, scrollWidth: 50, clientWidth: 60 },
+        { selectorPath: '#c', top: 180, scrollWidth: 50, clientWidth: 60 },
+      ],
+    },
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'row-wrapped').length, 1);
+});
+
+test('row-cohesion: an item with scrollWidth 120 over clientWidth 87 fails row-item-overflow', () => {
+  const violations = evaluateRowCohesion([
+    {
+      selectorPath: '#row',
+      items: [{ selectorPath: '#a', top: 100, scrollWidth: 120, clientWidth: 87 }],
+    },
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'row-item-overflow').length, 1);
+});
+
+test('row-cohesion: scrollWidth 88 over clientWidth 87 (1px boundary) passes', () => {
+  const violations = evaluateRowCohesion([
+    {
+      selectorPath: '#row',
+      items: [{ selectorPath: '#a', top: 100, scrollWidth: 88, clientWidth: 87 }],
+    },
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'row-item-overflow').length, 0);
+});
+
+// --- row-tag-legibility ---
+
+test('row-tag-legibility: scrollWidth 75 / clientWidth 50 / row content 294 fails tag-truncated', () => {
+  const violations = evaluateRowTagLegibility([
+    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 75, clientWidth: 50, rowContentWidth: 294 },
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'tag-truncated');
+});
+
+test('row-tag-legibility: the same truncation with clientWidth 270 (share 0.92) passes — a tag owning its line may truncate', () => {
+  const violations = evaluateRowTagLegibility([
+    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 280, clientWidth: 270, rowContentWidth: 294 },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+test('row-tag-legibility: scrollWidth equal to clientWidth + 1 passes', () => {
+  const violations = evaluateRowTagLegibility([
+    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 51, clientWidth: 50, rowContentWidth: 294 },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+// --- nested-scroll ---
+
+test('nested-scroll: overflowY auto with scrollHeight 4600 over clientHeight 500 fails nested-vertical-scroller', () => {
+  const violations = evaluateNestedScrollers([
+    { selectorPath: '#list', overflowY: 'auto', scrollHeight: 4600, clientHeight: 500 },
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'nested-vertical-scroller');
+});
+
+test('nested-scroll: overflowY scroll also fails', () => {
+  const violations = evaluateNestedScrollers([
+    { selectorPath: '#list', overflowY: 'scroll', scrollHeight: 4600, clientHeight: 500 },
+  ]);
+  assert.equal(violations.length, 1);
+});
+
+test('nested-scroll: overflowY auto with scrollHeight equal to clientHeight + 1 passes', () => {
+  const violations = evaluateNestedScrollers([
+    { selectorPath: '#list', overflowY: 'auto', scrollHeight: 501, clientHeight: 500 },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+test('nested-scroll: overflowY visible or hidden with taller content passes', () => {
+  const violations = evaluateNestedScrollers([
+    { selectorPath: '#list', overflowY: 'visible', scrollHeight: 4600, clientHeight: 500 },
+    { selectorPath: '#list2', overflowY: 'hidden', scrollHeight: 4600, clientHeight: 500 },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+test('nested-scroll: a horizontal-only scroller (overflow-y auto but scrollHeight === clientHeight) passes', () => {
+  const violations = evaluateNestedScrollers([
+    { selectorPath: '#table-container', overflowY: 'auto', scrollHeight: 40, clientHeight: 40 },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+// --- family presence (one case per new family) ---
+
+test('evaluateFamilyPresence: an empty picker-alignment list fails non-vacuously', () => {
+  const violations = evaluateFamilyPresence('picker-alignment', []);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'picker-alignment-unmeasured');
+});
+
+test('evaluateFamilyPresence: a one-picker picker-alignment list passes', () => {
+  const violations = evaluateFamilyPresence('picker-alignment', [{ selectorPath: '#a' }]);
+  assert.equal(violations.length, 0);
+});
+
+test('evaluateFamilyPresence: an empty row-cohesion list fails non-vacuously', () => {
+  const violations = evaluateFamilyPresence('row-cohesion', []);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'row-cohesion-unmeasured');
+});
+
+test('evaluateFamilyPresence: a one-row row-cohesion list passes', () => {
+  const violations = evaluateFamilyPresence('row-cohesion', [{ selectorPath: '#a' }]);
+  assert.equal(violations.length, 0);
+});
+
+test('evaluateFamilyPresence: an empty row-tag-legibility list fails non-vacuously', () => {
+  const violations = evaluateFamilyPresence('row-tag-legibility', []);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'row-tag-legibility-unmeasured');
+});
+
+test('evaluateFamilyPresence: a one-tag row-tag-legibility list passes', () => {
+  const violations = evaluateFamilyPresence('row-tag-legibility', [{ selectorPath: '#a' }]);
+  assert.equal(violations.length, 0);
+});
+
+test('evaluateFamilyPresence: an empty nested-scroll list fails non-vacuously', () => {
+  const violations = evaluateFamilyPresence('nested-scroll', []);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'nested-scroll-unmeasured');
+});
+
+test('evaluateFamilyPresence: a one-scroller nested-scroll list passes', () => {
+  const violations = evaluateFamilyPresence('nested-scroll', [{ selectorPath: '#a' }]);
   assert.equal(violations.length, 0);
 });

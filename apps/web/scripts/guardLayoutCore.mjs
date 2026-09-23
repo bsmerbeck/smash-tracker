@@ -336,3 +336,169 @@ export function evaluateFamilyPresence(family, items) {
   }
   return [];
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-32: the four mobile gap-closure oracle families (picker-alignment,
+// row-cohesion, row-tag-legibility, nested-scroll). Every evaluator returns a
+// LIST of ALL offenders, never a boolean and never only the first — same
+// discipline as every family above.
+// ---------------------------------------------------------------------------
+
+/** UI-SPEC §10.4/§6.6: the picker's two controls must align within this many px. */
+export const PICKER_ALIGN_TOLERANCE_PX = 1;
+/** UI-SPEC §10.4: the 'vs' element must be centred on the controls within this many px. */
+export const VS_CENTER_TOLERANCE_PX = 2;
+/** UI-SPEC §8.5/§6.5: sibling items in a fixed-columns row must share a top within this many px. */
+export const ROW_COHESION_TOP_TOLERANCE_PX = 2;
+/** UI-SPEC §6.5 rule 1: a tag owning at least this share of its row's content width may legitimately truncate (with its title). */
+export const TAG_MIN_ROW_SHARE = 0.6;
+/** UI-SPEC §6.6 "below 640" — the widest viewport the narrow-only families (row-tag-legibility, nested-scroll) are evaluated at. */
+export const NARROW_VIEWPORT_MAX_WIDTH_PX = 639;
+
+/**
+ * UI-SPEC §10.4 (one filter row), §6.6 (below-640 single column / 640+ 2-up):
+ * a two-control picker (fighter/opponent select, with a 'vs' element between
+ * them) must have equal-width controls, labels flush with their own control's
+ * left edge, and a 'vs' element correctly placed for whichever layout the
+ * picker is currently in (stacked below 640px, 2-up from 640px — detected
+ * from the controls' own top positions, never from viewport width, so the
+ * evaluator has no knowledge of breakpoints). Each `picker` is
+ * `{ selectorPath, controls: [rect, rect], labels: [rect, rect], vs: rect }`.
+ */
+export function evaluatePickerAlignment(
+  pickers,
+  { tolerancePx = PICKER_ALIGN_TOLERANCE_PX, vsCenterTolerancePx = VS_CENTER_TOLERANCE_PX } = {},
+) {
+  const violations = [];
+  for (const picker of pickers) {
+    const { selectorPath, controls, labels, vs } = picker;
+    const [control0, control1] = controls;
+    const [, label1] = labels;
+
+    const width0 = control0.right - control0.left;
+    const width1 = control1.right - control1.left;
+    if (Math.abs(width0 - width1) > tolerancePx) {
+      violations.push({ type: 'picker-control-width', selectorPath, width0, width1 });
+    }
+
+    labels.forEach((label, index) => {
+      const control = controls[index];
+      if (Math.abs(label.left - control.left) > tolerancePx) {
+        violations.push({
+          type: 'picker-label-offset',
+          selectorPath,
+          index,
+          labelLeft: label.left,
+          controlLeft: control.left,
+        });
+      }
+    });
+
+    const stacked = Math.abs(control0.top - control1.top) > tolerancePx;
+    if (stacked) {
+      if (Math.abs(control0.left - control1.left) > tolerancePx) {
+        violations.push({
+          type: 'picker-control-offset',
+          selectorPath,
+          left0: control0.left,
+          left1: control1.left,
+        });
+      }
+      const control0CenterX = (control0.left + control0.right) / 2;
+      const vsCenterX = (vs.left + vs.right) / 2;
+      const positioned =
+        vs.top >= control0.bottom - tolerancePx &&
+        vs.bottom <= label1.top + tolerancePx &&
+        Math.abs(vsCenterX - control0CenterX) <= vsCenterTolerancePx;
+      if (!positioned) {
+        violations.push({ type: 'picker-vs-misplaced', selectorPath, layout: 'stacked' });
+      }
+    } else {
+      const vsCenterY = (vs.top + vs.bottom) / 2;
+      const positioned =
+        vs.left >= control0.right - tolerancePx &&
+        vs.right <= control1.left + tolerancePx &&
+        vsCenterY >= control0.top &&
+        vsCenterY <= control0.bottom;
+      if (!positioned) {
+        violations.push({ type: 'picker-vs-misplaced', selectorPath, layout: '2-up' });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §8.5/§6.5: a fixed-columns row's items must share a top (never
+ * wrap onto separate lines) and never overflow their own column. Each `row`
+ * is `{ selectorPath, items: [{ selectorPath, top, scrollWidth, clientWidth }] }`.
+ */
+export function evaluateRowCohesion(rows, topTolerancePx = ROW_COHESION_TOP_TOLERANCE_PX) {
+  const violations = [];
+  for (const row of rows) {
+    const { selectorPath, items } = row;
+    if (items.length === 0) continue;
+    const firstTop = items[0].top;
+    const wrapped = items.some((item) => Math.abs(item.top - firstTop) > topTolerancePx);
+    if (wrapped) {
+      violations.push({ type: 'row-wrapped', selectorPath });
+    }
+    for (const item of items) {
+      if (item.scrollWidth > item.clientWidth + 1) {
+        violations.push({ type: 'row-item-overflow', selectorPath: item.selectorPath });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §6.5 rule 1: a tag squeezed onto less than `minShare` of its row's
+ * content width, while also overflowing, is truncated illegibly — a tag that
+ * already owns most of its row (its title still supplies the full text) may
+ * legitimately truncate. Each `tag` is
+ * `{ selectorPath, text, scrollWidth, clientWidth, rowContentWidth }`.
+ */
+export function evaluateRowTagLegibility(tags, minShare = TAG_MIN_ROW_SHARE) {
+  const violations = [];
+  for (const tag of tags) {
+    const { selectorPath, text, scrollWidth, clientWidth, rowContentWidth } = tag;
+    if (scrollWidth > clientWidth + 1 && clientWidth < minShare * rowContentWidth) {
+      violations.push({
+        type: 'tag-truncated',
+        selectorPath,
+        text,
+        scrollWidth,
+        clientWidth,
+        rowContentWidth,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §6.4: a nested vertical scroller (an element that scrolls its own
+ * content, inside the page's own scroll) is banned below 640px. Each
+ * `scroller` is `{ selectorPath, overflowY, scrollHeight, clientHeight }`.
+ * A horizontal-only scroller (e.g. a `table-container`, whose computed
+ * `overflow-y` is `auto` too) is exempt by construction because it is judged
+ * ONLY on `scrollHeight` exceeding `clientHeight` — never on `overflowY`
+ * alone — so a wide-but-not-tall element never fires this family.
+ */
+export function evaluateNestedScrollers(scrollers) {
+  const violations = [];
+  for (const scroller of scrollers) {
+    const { selectorPath, overflowY, scrollHeight, clientHeight } = scroller;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && scrollHeight > clientHeight + 1) {
+      violations.push({
+        type: 'nested-vertical-scroller',
+        selectorPath,
+        overflowY,
+        scrollHeight,
+        clientHeight,
+      });
+    }
+  }
+  return violations;
+}

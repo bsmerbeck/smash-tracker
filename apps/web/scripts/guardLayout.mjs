@@ -40,8 +40,13 @@ import {
   evaluateAxisPresence,
   evaluateGridBalance,
   evaluateFamilyPresence,
+  evaluatePickerAlignment,
+  evaluateRowCohesion,
+  evaluateRowTagLegibility,
+  evaluateNestedScrollers,
   LAYOUT_ORACLE_VIEWPORTS,
   EXTRA_ORACLE_VIEWPORTS,
+  NARROW_VIEWPORT_MAX_WIDTH_PX,
 } from './guardLayoutCore.mjs';
 
 /**
@@ -64,8 +69,19 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-30: the only route opted into the four new oracle families
     // and the two extra viewports — every other route's measurement stays
     // byte-unchanged (three viewports, zero new checks).
-    checks: ['content-overflow', 'header-squeeze', 'axis-ticks', 'grid-balance'],
+    checks: [
+      'content-overflow',
+      'header-squeeze',
+      'axis-ticks',
+      'grid-balance',
+      'picker-alignment',
+      'row-cohesion',
+    ],
     extraViewports: ['1024x768', '1280x800'],
+    // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
+    // wide (UI-SPEC §6.6 "below 640") — every other route's `narrowChecks` is
+    // `undefined`, so `measureRouteAtViewport` requests none for them.
+    narrowChecks: ['row-tag-legibility', 'nested-scroll'],
   },
   { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
   { id: 'trends', loadedMarker: '[data-slot="trends-hero-body"]' },
@@ -111,6 +127,10 @@ function collectPageMeasurements(checks) {
   const wantHeaderSqueeze = checks.includes('header-squeeze');
   const wantAxisTicks = checks.includes('axis-ticks');
   const wantGridBalance = checks.includes('grid-balance');
+  const wantPickerAlignment = checks.includes('picker-alignment');
+  const wantRowCohesion = checks.includes('row-cohesion');
+  const wantRowTagLegibility = checks.includes('row-tag-legibility');
+  const wantNestedScroll = checks.includes('nested-scroll');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -340,6 +360,107 @@ function collectPageMeasurements(checks) {
     }
   }
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-32: the four mobile gap-closure measurement categories,
+  // collected only for a requesting route's opted-in families.
+  // -------------------------------------------------------------------
+
+  const pickers = [];
+  if (wantPickerAlignment) {
+    for (const pickerEl of document.querySelectorAll('[data-slot="matchup-pairing-picker"]')) {
+      const controls = Array.from(
+        pickerEl.querySelectorAll('[data-slot="select-trigger"]'),
+      ).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+      const labels = Array.from(
+        pickerEl.querySelectorAll('[data-slot="matchup-pairing-label"]'),
+      ).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+      const vsEls = pickerEl.querySelectorAll('[data-slot="matchup-pairing-vs"]');
+      // Structure drift (not exactly 2 controls / 2 labels / 1 vs) is left
+      // OUT of `pickers` on purpose — `evaluateFamilyPresence` then reports
+      // `picker-alignment-unmeasured` rather than the evaluator indexing
+      // into a missing array slot.
+      if (controls.length === 2 && labels.length === 2 && vsEls.length === 1) {
+        const vsRect = vsEls[0].getBoundingClientRect();
+        pickers.push({
+          selectorPath: describeElement(pickerEl),
+          controls,
+          labels,
+          vs: { left: vsRect.left, right: vsRect.right, top: vsRect.top, bottom: vsRect.bottom },
+        });
+      }
+    }
+  }
+
+  const rowCohesionRows = [];
+  if (wantRowCohesion) {
+    for (const rowEl of document.querySelectorAll('[data-fixed-columns]')) {
+      const items = Array.from(rowEl.children).map((child) => {
+        const r = child.getBoundingClientRect();
+        return {
+          selectorPath: describeElement(child),
+          top: r.top,
+          scrollWidth: child.scrollWidth,
+          clientWidth: child.clientWidth,
+        };
+      });
+      rowCohesionRows.push({ selectorPath: describeElement(rowEl), items });
+    }
+  }
+
+  const rowTags = [];
+  if (wantRowTagLegibility) {
+    for (const tagEl of document.querySelectorAll('[data-slot="pairing-opponent-tag"]')) {
+      const li = tagEl.closest('li');
+      let rowContentWidth = tagEl.clientWidth;
+      if (li) {
+        const liStyle = window.getComputedStyle(li);
+        const paddingLeft = parseFloat(liStyle.paddingLeft) || 0;
+        const paddingRight = parseFloat(liStyle.paddingRight) || 0;
+        rowContentWidth = li.clientWidth - paddingLeft - paddingRight;
+      }
+      rowTags.push({
+        selectorPath: describeElement(tagEl),
+        text: tagEl.textContent ?? '',
+        scrollWidth: tagEl.scrollWidth,
+        clientWidth: tagEl.clientWidth,
+        rowContentWidth,
+      });
+    }
+  }
+
+  const nestedScrollers = [];
+  if (wantNestedScroll) {
+    // Layout reads (scrollHeight/clientHeight) first — cheap; `getComputedStyle`
+    // (a forced style recalculation) only for the few candidates that already
+    // scroll taller than their box, mirroring the grid-balance perf lesson
+    // above (plan 39.1-30 first_fix).
+    for (const el of document.body.getElementsByTagName('*')) {
+      if (el.scrollHeight > el.clientHeight + 1) {
+        const overflowY = window.getComputedStyle(el).overflowY;
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          nestedScrollers.push({
+            selectorPath: describeElement(el),
+            overflowY,
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+          });
+        }
+      }
+    }
+  }
+  // Non-vacuity presence list (plan 39.1-32): the page's terminus list roots
+  // — a missing results list is nested-scroll-unmeasured, never a silent
+  // zero-violation pass.
+  const nestedScrollPresenceList = wantNestedScroll
+    ? Array.from(document.querySelectorAll('[data-total-rows]'))
+    : [];
+
   return {
     cards,
     truncationElements,
@@ -347,6 +468,11 @@ function collectPageMeasurements(checks) {
     headers,
     axisSurfaces,
     grids,
+    pickers,
+    rowCohesionRows,
+    rowTags,
+    nestedScrollers,
+    nestedScrollPresenceList: nestedScrollPresenceList.length,
     scrollHeight: document.documentElement.scrollHeight,
     scrollWidth: document.documentElement.scrollWidth,
     innerHeight: window.innerHeight,
@@ -371,7 +497,14 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       };
     }
 
-    const checks = route.checks ?? [];
+    // Plan 39.1-32: a route's `narrowChecks` (row-tag-legibility, nested-scroll)
+    // are requested ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX wide
+    // (UI-SPEC §6.6 "below 640") — every other route's `narrowChecks` is
+    // `undefined`, so this adds nothing for them at any viewport.
+    const checks = [
+      ...(route.checks ?? []),
+      ...(viewport.width <= NARROW_VIEWPORT_MAX_WIDTH_PX ? (route.narrowChecks ?? []) : []),
+    ];
     const measurements = await page.evaluate(collectPageMeasurements, checks);
 
     const violations = [
@@ -407,6 +540,29 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     if (checks.includes('grid-balance')) {
       violations.push(...evaluateGridBalance(measurements.grids));
       violations.push(...evaluateFamilyPresence('grid-balance', measurements.grids));
+    }
+    // Plan 39.1-32: the four mobile gap-closure families, same opt-in
+    // discipline (requested + presence check together).
+    if (checks.includes('picker-alignment')) {
+      violations.push(...evaluatePickerAlignment(measurements.pickers));
+      violations.push(...evaluateFamilyPresence('picker-alignment', measurements.pickers));
+    }
+    if (checks.includes('row-cohesion')) {
+      violations.push(...evaluateRowCohesion(measurements.rowCohesionRows));
+      violations.push(...evaluateFamilyPresence('row-cohesion', measurements.rowCohesionRows));
+    }
+    if (checks.includes('row-tag-legibility')) {
+      violations.push(...evaluateRowTagLegibility(measurements.rowTags));
+      violations.push(...evaluateFamilyPresence('row-tag-legibility', measurements.rowTags));
+    }
+    if (checks.includes('nested-scroll')) {
+      violations.push(...evaluateNestedScrollers(measurements.nestedScrollers));
+      violations.push(
+        ...evaluateFamilyPresence(
+          'nested-scroll',
+          Array.from({ length: measurements.nestedScrollPresenceList }),
+        ),
+      );
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own

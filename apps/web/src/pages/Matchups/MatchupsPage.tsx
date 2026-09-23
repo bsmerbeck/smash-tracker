@@ -528,14 +528,27 @@ export function MatchupsPage() {
               page's single HorizonSwitch (INS-02). Never a per-chart control. */}
           <Card>
             <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
-              <div className="flex flex-1 flex-wrap items-center justify-center gap-6">
+              <div
+                data-slot="matchup-pairing-picker"
+                className="flex flex-1 flex-wrap items-center justify-center gap-6"
+              >
                 <div className="flex flex-col items-center gap-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">{t('matchups.you')}</h3>
+                  <h3
+                    data-slot="matchup-pairing-label"
+                    className="text-sm font-medium text-muted-foreground"
+                  >
+                    {t('matchups.you')}
+                  </h3>
                   <SelectFighter />
                 </div>
-                <span className="text-xl font-semibold">{t('matchups.vs')}</span>
+                <span data-slot="matchup-pairing-vs" className="text-xl font-semibold">
+                  {t('matchups.vs')}
+                </span>
                 <div className="flex flex-col items-center gap-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">
+                  <h3
+                    data-slot="matchup-pairing-label"
+                    className="text-sm font-medium text-muted-foreground"
+                  >
                     {t('matchups.opponent')}
                   </h3>
                   <SelectOpponent />

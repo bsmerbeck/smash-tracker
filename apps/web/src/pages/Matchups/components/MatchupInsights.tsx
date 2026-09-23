@@ -93,7 +93,11 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
           <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div
+              data-slot="stat-row"
+              data-fixed-columns=""
+              className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            >
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground">
                   {t('matchups.insights.currentStreak')}
