@@ -439,6 +439,47 @@ export function FilteredMatchList({
     }
   });
 
+  // WR-04 (39.1-REVIEW iteration 2): after a confirmed delete the deleted
+  // row and its trigger unmount, dropping keyboard/screen-reader focus to
+  // <body>. The row usually disappears only once the matches refetch lands
+  // (`useDeleteMatch` awaits invalidation), i.e. AFTER the dialog has closed
+  // and `onCloseAutoFocus` (below) has returned focus to the still-mounted
+  // trigger, so the close handler alone cannot fix it. The deleted row's
+  // position is recorded instead, and as soon as its trigger is gone focus
+  // moves to the delete trigger now at that position (the next row), else
+  // the previous row's, else the list container. Checked on every commit
+  // and right after the mutation settles, whichever sees the row gone
+  // first. DOM order is row order in both layouts.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const focusAfterDeleteRef = useRef<{ matchId: string; index: number } | null>(null);
+  // The row whose trigger opened the confirm dialog. The dialog is opened
+  // through its controlled `open` prop, not an `AlertDialogTrigger`, so
+  // Radix has no trigger to return focus to on close (it would land on
+  // <body> even on Cancel) — `onCloseAutoFocus` below returns it here.
+  const dialogOpenerIdRef = useRef<string | null>(null);
+  function openDeleteDialog(match: Match): void {
+    dialogOpenerIdRef.current = match.id;
+    setPendingDelete(match);
+  }
+  function deleteTriggers(): HTMLElement[] {
+    return Array.from(
+      containerRef.current?.querySelectorAll<HTMLElement>('[data-slot="filtered-match-delete"]') ??
+        [],
+    );
+  }
+  function restoreFocusAfterDelete(): void {
+    const pending = focusAfterDeleteRef.current;
+    if (!pending || !containerRef.current) return;
+    const triggers = deleteTriggers();
+    if (triggers.some((el) => el.dataset.matchId === pending.matchId)) return;
+    focusAfterDeleteRef.current = null;
+    const target = triggers[pending.index] ?? triggers[pending.index - 1] ?? containerRef.current;
+    target.focus({ preventScroll: true });
+  }
+  useEffect(() => {
+    restoreFocusAfterDelete();
+  });
+
   function handleShowMore() {
     const next = visibleCount + FILTERED_MATCH_LIST_PAGE_SIZE;
     setVisibleCount(next);
@@ -464,10 +505,18 @@ export function FilteredMatchList({
 
   async function confirmDelete() {
     if (!pendingDelete) return;
+    const deletedId = pendingDelete.id;
+    const deletedIndex = deleteTriggers().findIndex((el) => el.dataset.matchId === deletedId);
+    // WR-04: see `restoreFocusAfterDelete` above. Armed before the request —
+    // the row can only unmount once the delete has succeeded and the list
+    // refetched — and disarmed on failure, where the row stays.
+    focusAfterDeleteRef.current = { matchId: deletedId, index: Math.max(0, deletedIndex) };
     try {
-      await deleteMatch.mutateAsync(pendingDelete.id);
+      await deleteMatch.mutateAsync(deletedId);
       toast.success(t('shared.matchDelete.deleted'));
+      restoreFocusAfterDelete();
     } catch {
+      focusAfterDeleteRef.current = null;
       toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
@@ -475,7 +524,7 @@ export function FilteredMatchList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={containerRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
       {activeAxes && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/50 p-3">
           <div className="flex flex-col gap-1">
@@ -614,7 +663,9 @@ export function FilteredMatchList({
                                 variant="outline"
                                 size="icon-sm"
                                 aria-label={t('shared.matchDelete.aria')}
-                                onClick={() => setPendingDelete(match)}
+                                data-slot="filtered-match-delete"
+                                data-match-id={match.id}
+                                onClick={() => openDeleteDialog(match)}
                               >
                                 <Trash2 />
                               </Button>
@@ -760,7 +811,9 @@ export function FilteredMatchList({
                                   variant="outline"
                                   size="icon-sm"
                                   aria-label={t('shared.matchDelete.aria')}
-                                  onClick={() => setPendingDelete(match)}
+                                  data-slot="filtered-match-delete"
+                                  data-match-id={match.id}
+                                  onClick={() => openDeleteDialog(match)}
                                 >
                                   <Trash2 />
                                 </Button>
@@ -833,7 +886,26 @@ export function FilteredMatchList({
           open={pendingDelete != null}
           onOpenChange={(open) => !open && setPendingDelete(null)}
         >
-          <AlertDialogContent>
+          <AlertDialogContent
+            onCloseAutoFocus={(event) => {
+              // WR-04: return focus to the row trigger that opened the
+              // dialog while it is still mounted (Cancel, a failed delete, or
+              // a delete whose refetch has not landed yet — the post-commit
+              // check then moves focus once the row goes). If the deleted
+              // row is already gone, move straight to the next row.
+              event.preventDefault();
+              const opener = deleteTriggers().find(
+                (el) => el.dataset.matchId === dialogOpenerIdRef.current,
+              );
+              if (opener) {
+                opener.focus({ preventScroll: true });
+              } else if (focusAfterDeleteRef.current) {
+                restoreFocusAfterDelete();
+              } else {
+                containerRef.current?.focus({ preventScroll: true });
+              }
+            }}
+          >
             <AlertDialogHeader>
               <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
               <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>

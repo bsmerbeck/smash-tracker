@@ -59,6 +59,8 @@ function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
   };
 }
 
+const removeMatch = vi.fn();
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
@@ -68,6 +70,7 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+      remove: (...args: unknown[]) => removeMatch(...args),
     },
   },
 }));
@@ -817,6 +820,41 @@ describe('MatchupsPage', () => {
 
       localStorageSpy.mockRestore();
       sessionStorageSpy.mockRestore();
+    });
+
+    // 39.1-REVIEW iteration 2 WR-04: after a confirmed delete the deleted
+    // row and its trigger unmount once the list refetches; focus used to
+    // fall to <body>. It must land on the next row's delete trigger.
+    it('WR-04: deleting a row moves focus to the next row, never to <body>', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const rows = [1, 2, 3].map((n) =>
+        makeMatch({ id: `m${n}`, time: n * 1000, fighter_id: mario.id, opponent_id: luigi.id }),
+      );
+      listMatches.mockResolvedValue(rows);
+      removeMatch.mockImplementation(async () => {
+        listMatches.mockResolvedValue(rows.filter((m) => m.id !== 'm2'));
+      });
+
+      renderMatchups();
+
+      await waitFor(() =>
+        expect(screen.getAllByRole('button', { name: 'Delete match' })).toHaveLength(3),
+      );
+      // Newest first: m3, m2, m1 — delete the middle row.
+      const middle = screen.getAllByRole('button', { name: 'Delete match' })[1]!;
+      await user.click(middle);
+      await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+      await waitFor(() =>
+        expect(screen.getAllByRole('button', { name: 'Delete match' })).toHaveLength(2),
+      );
+      await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+      // The next row (m1) now sits where m2 was.
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      );
+      expect(removeMatch).toHaveBeenCalledWith('m2');
     });
 
     it('the delete confirm dialog still opens from the results list with the existing confirm-title string', async () => {

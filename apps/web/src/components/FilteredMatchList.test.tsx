@@ -847,3 +847,110 @@ describe('waitFor smoke (loading -> populated transition is not tested elsewhere
     expect(within(screen.getByRole('table')).getAllByRole('row').length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * 39.1-REVIEW iteration 2 WR-04: after a confirmed delete the deleted row
+ * (and the trigger the dialog returns focus to) unmounts once the host's
+ * list refetches, dropping focus to <body>. Here the host re-renders with
+ * the row gone only AFTER the mutation settled — the order the dialog's own
+ * focus return cannot cover.
+ */
+describe('WR-04: focus after a row delete', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    removeMatch.mockResolvedValue(undefined);
+    setMockUser(makeMockUser());
+  });
+
+  function renderDeletable(matches: Match[], layout: 'table' | 'stack') {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (ms: Match[]) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/matchups"
+                element={<FilteredMatchList matches={ms} axes={{}} showDelete layout={layout} />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const result = render(tree(matches));
+    return { ...result, rerenderWith: (ms: Match[]) => result.rerender(tree(ms)) };
+  }
+
+  async function confirmDeleteAt(index: number) {
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole('button', { name: 'Delete match' })[index]!);
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(removeMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('Delete this match?')).toBeNull());
+  }
+
+  const rows = ['a', 'b', 'c'].map((id, i) =>
+    makeMatch({ id, time: 3000 - i * 1000, vodUrl: undefined }),
+  );
+
+  it.each(['table', 'stack'] as const)(
+    '%s: deleting a middle row focuses the next row’s delete trigger',
+    async (layout) => {
+      const { rerenderWith } = renderDeletable(rows, layout);
+      await confirmDeleteAt(1);
+      rerenderWith(rows.filter((m) => m.id !== 'b'));
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getAllByRole('button', { name: 'Delete match' })[1],
+        ),
+      );
+      expect(removeMatch).toHaveBeenCalledWith('b');
+    },
+  );
+
+  it('deleting the last row focuses the previous row’s delete trigger', async () => {
+    const { rerenderWith } = renderDeletable(rows, 'table');
+    await confirmDeleteAt(2);
+    rerenderWith(rows.filter((m) => m.id !== 'c'));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      ),
+    );
+  });
+
+  it('deleting the only row focuses the list container, never <body>', async () => {
+    const { container, rerenderWith } = renderDeletable([rows[0]!], 'table');
+    await confirmDeleteAt(0);
+    rerenderWith([]);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(container.contains(document.activeElement)).toBe(true);
+  });
+
+  it('Cancel returns focus to the row trigger that opened the dialog', async () => {
+    const user = userEvent.setup();
+    renderDeletable(rows, 'table');
+    await user.click(screen.getAllByRole('button', { name: 'Delete match' })[1]!);
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Delete this match?')).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      ),
+    );
+    expect(removeMatch).not.toHaveBeenCalled();
+  });
+
+  it('a failed delete leaves the row and focus on its own trigger', async () => {
+    removeMatch.mockRejectedValueOnce(new Error('nope'));
+    const { rerenderWith } = renderDeletable(rows, 'table');
+    await confirmDeleteAt(1);
+    rerenderWith([...rows]);
+    const triggers = screen.getAllByRole('button', { name: 'Delete match' });
+    expect(triggers).toHaveLength(3);
+    await waitFor(() => expect(document.activeElement).toBe(triggers[1]));
+  });
+});
