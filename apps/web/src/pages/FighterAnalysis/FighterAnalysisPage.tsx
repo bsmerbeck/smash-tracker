@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
-import { buildPeriodSeries, periodPointKeyByMatchId } from '@smash-tracker/shared';
+import { buildPeriodSeries, periodPointMatchIdsForKey } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
@@ -177,14 +177,25 @@ export function FighterAnalysisPage() {
     () => buildPeriodSeries({ matches: fighterMatches }),
     [fighterMatches],
   );
-  const periodKeyByMatchId = useMemo(() => periodPointKeyByMatchId(periodSeries), [periodSeries]);
+  // WR-02 (39.1-REVIEW iteration 2): the URL's `event=` period key resolves
+  // by the key's OWN grain rule over this same base, not through whichever
+  // grain the ladder picks right now — a key drawn at `week` still lands on
+  // its week after a range filter or a sync moves the ladder to `month`.
+  // While the grain is unchanged this is exactly the plotted point's games.
+  const drillEventKey = axesFromUrl.eventKey;
+  const periodEventMatchIds = useMemo(() => {
+    if (drillEventKey == null) return undefined;
+    const ids = periodPointMatchIdsForKey(drillEventKey, fighterMatches);
+    return ids ? new Set(ids) : undefined;
+  }, [drillEventKey, fighterMatches]);
   const eventKeysForMatch = useCallback(
     (match: Match): string[] => {
-      const periodKey = periodKeyByMatchId.get(match.id);
       const setKey = formStripEventKeyForMatch(match);
-      return periodKey != null ? [setKey, periodKey] : [setKey];
+      return drillEventKey != null && periodEventMatchIds?.has(match.id)
+        ? [setKey, drillEventKey]
+        : [setKey];
     },
-    [periodKeyByMatchId],
+    [drillEventKey, periodEventMatchIds],
   );
 
   // Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):

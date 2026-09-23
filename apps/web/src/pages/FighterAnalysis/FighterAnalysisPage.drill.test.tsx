@@ -433,6 +433,48 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
     expect(scrollSpy.mock.contexts.filter((el) => el === gamesCard)).toHaveLength(1);
   });
 
+  // 39.1-REVIEW iteration 2 WR-02: a period key is only the plotted
+  // series' key for the grain the ladder chose at click time. This fixture's
+  // ladder sits at `set` (70 games > 60), so a URL written while the ladder
+  // was at `game` or at a calendar grain (a range filter, a sync, another
+  // viewer's filter on a coach URL) used to resolve to nothing: "0 games ·
+  // Mario · Unknown". Each key must resolve by its own grain rule.
+  describe('WR-02 (iteration 2): a period key from another grain still resolves on this base', () => {
+    function rowsIn(gamesCard: HTMLElement): number {
+      return Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'));
+    }
+
+    it('a game-grain key for a start.gg game lands on exactly that one game', async () => {
+      renderFighterAnalysisAt('/fighter-analysis?event=game%3As3g2#games');
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
+      expect((capturedTrendLineProps as { points: PeriodPoint[] }).points[0]!.grain).toBe('set');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      await waitFor(() => expect(rowsIn(gamesCard)).toBe(1));
+      expect(gamesCard.querySelector('p.text-sm.text-muted-foreground')?.textContent).toMatch(
+        /^1 game · /,
+      );
+    });
+
+    it("a calendar key lands on exactly that bucket's games", async () => {
+      const fixture = drillFixture();
+      const monthOf = (ms: number) => new Date(ms).toISOString().slice(0, 7);
+      const month = monthOf(fixture[fixture.length - 1]!.time);
+      const expected = fixture.filter((m) => monthOf(m.time) === month).length;
+      expect(expected).toBeGreaterThan(0);
+      expect(expected).toBeLessThanOrEqual(fixture.length);
+
+      renderFighterAnalysisAt(
+        `/fighter-analysis?event=${encodeURIComponent(`month:${month}`)}#games`,
+      );
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      await waitFor(() => expect(rowsIn(gamesCard)).toBe(expected));
+    });
+  });
+
   describe('WR-01 (39.1-REVIEW): the terminus can be reset, and a fighter/horizon change never leaves a stale axis', () => {
     it('Clear filters removes every drill axis and the #games hash, unmounting the terminus', async () => {
       const user = userEvent.setup();

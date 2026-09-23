@@ -429,3 +429,30 @@ export function periodPointKeyByMatchId(series: PeriodSeries): Map<string, strin
 export function regrainFor(options: BuildPeriodSeriesOptions & { target: number }): PeriodSeries {
   return buildPeriodSeries(options);
 }
+
+/**
+ * WR-02 (39.1-REVIEW iteration 2): resolves a period-point key by the key's
+ * OWN grain rule, independent of the grain the ladder happens to pick for
+ * `matches` right now. A point key names its grain (`game:<id>`,
+ * `set:<setId>`, `<grain>:session:<startMs>`,
+ * `eventSession:tournament:<name>:<startMs>`, `week|month|quarter|year:<bucket>`),
+ * so rebuilding just that grain's points over the same countable games and
+ * picking the point with that key gives exactly the games the point counted
+ * when it was drawn — and keeps resolving after the ladder moves (a range
+ * filter, a sync adding games, a different viewer's filter on a coach URL).
+ * Calendar buckets are exact under any base change; set/session/tournament
+ * blocks are exact whenever their own games are unchanged.
+ *
+ * Returns `undefined` for a key that is not a period-point key at all (e.g. a
+ * form-strip set id, which the caller resolves its own way), and `[]` for a
+ * period key no point matches any more.
+ */
+export function periodPointMatchIdsForKey(key: string, matches: Match[]): string[] | undefined {
+  const grain = key.slice(0, key.indexOf(':'));
+  if (!(PERIOD_GRAIN_LADDER as readonly string[]).includes(grain)) {
+    return undefined;
+  }
+  const countable = matches.filter(isCountableGame);
+  const point = buildPointsForGrain(grain as PeriodGrain, countable).find((p) => p.key === key);
+  return point ? point.matchIds : [];
+}

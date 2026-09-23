@@ -5,7 +5,7 @@ import type { Fighter, Insight, Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   buildPeriodSeries,
-  periodPointKeyByMatchId,
+  periodPointMatchIdsForKey,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -295,14 +295,25 @@ export function MatchupsPage() {
     () => buildPeriodSeries({ matches: matchupMatches }),
     [matchupMatches],
   );
-  const periodKeyByMatchId = useMemo(() => periodPointKeyByMatchId(periodSeries), [periodSeries]);
+  // WR-02 (39.1-REVIEW iteration 2): the URL's `event=` period key resolves
+  // by the key's OWN grain rule over this same base, not through whichever
+  // grain the ladder picks right now — a key drawn at `week` still lands on
+  // its week after a range filter or a sync moves the ladder to `month`.
+  // While the grain is unchanged this is exactly the plotted point's games.
+  const drillEventKey = axesFromUrl.eventKey;
+  const periodEventMatchIds = useMemo(() => {
+    if (drillEventKey == null) return undefined;
+    const ids = periodPointMatchIdsForKey(drillEventKey, matchupMatches);
+    return ids ? new Set(ids) : undefined;
+  }, [drillEventKey, matchupMatches]);
   const eventKeysForMatch = useCallback(
     (match: Match): string[] => {
-      const periodKey = periodKeyByMatchId.get(match.id);
       const setKey = formStripEventKeyForMatch(match);
-      return periodKey != null ? [setKey, periodKey] : [setKey];
+      return drillEventKey != null && periodEventMatchIds?.has(match.id)
+        ? [setKey, drillEventKey]
+        : [setKey];
     },
-    [periodKeyByMatchId],
+    [drillEventKey, periodEventMatchIds],
   );
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE

@@ -22,6 +22,7 @@ import {
 import {
   buildPeriodSeries,
   periodPointKeyByMatchId,
+  periodPointMatchIdsForKey,
   regrainFor,
   type PeriodGrain,
 } from './periodSeries.js';
@@ -464,6 +465,50 @@ describe('buildPeriodSeries — CR-02 (39.1-REVIEW) point identity', () => {
     const series = buildPeriodSeries({ matches: [makeMatch('x', at), makeMatch('y', at)] });
     expect(series.grain).toBe('game');
     expect(series.points.map((p) => p.matchIds)).toEqual([['x'], ['y']]);
+  });
+});
+
+describe('periodPointMatchIdsForKey — WR-02 (39.1-REVIEW iteration 2) grain-independent resolution', () => {
+  it("resolves every point of EVERY grain to exactly that point's games, whichever grain the default ladder picks", () => {
+    const matches = buildInterleavedEventFixture();
+    const defaultGrain = buildPeriodSeries({ matches }).grain;
+    const grainsSeen = new Set<PeriodGrain>();
+    for (const target of [1000, 100, 60, 10, 1]) {
+      const series = buildPeriodSeries({ matches, target });
+      grainsSeen.add(series.grain);
+      for (const point of series.points) {
+        expect([...(periodPointMatchIdsForKey(point.key, matches) ?? [])].sort()).toEqual(
+          [...point.matchIds].sort(),
+        );
+      }
+    }
+    // The fixture really exercises keys from grains other than the default.
+    expect([...grainsSeen]).toEqual(expect.arrayContaining(['game', 'set', 'week', 'month']));
+    expect(grainsSeen.size).toBeGreaterThan(1);
+    expect(grainsSeen.has(defaultGrain)).toBe(true);
+  });
+
+  it('a calendar key keeps resolving to its own games after the base grows and the ladder moves', () => {
+    const matches = buildInterleavedEventFixture();
+    const weekSeries = buildPeriodSeries({ matches, target: 10 });
+    expect(weekSeries.grain).toBe('week');
+    const drawn = weekSeries.points[0]!;
+    const later = [
+      ...matches,
+      ...Array.from({ length: 80 }, (_, i) => makeMatch(`later-${i}`, Date.UTC(2025, 0, 1 + i))),
+    ];
+    expect(buildPeriodSeries({ matches: later, target: 10 }).grain).not.toBe('week');
+    expect([...(periodPointMatchIdsForKey(drawn.key, later) ?? [])].sort()).toEqual(
+      [...drawn.matchIds].sort(),
+    );
+  });
+
+  it('returns undefined for a non-period key and [] for a period key no point matches', () => {
+    const matches = buildInterleavedEventFixture();
+    expect(periodPointMatchIdsForKey('t0set0', matches)).toBeUndefined();
+    expect(periodPointMatchIdsForKey('nonsense', matches)).toBeUndefined();
+    expect(periodPointMatchIdsForKey('week:1999-W01', matches)).toEqual([]);
+    expect(periodPointMatchIdsForKey('game:missing', matches)).toEqual([]);
   });
 });
 

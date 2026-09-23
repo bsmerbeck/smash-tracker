@@ -211,4 +211,25 @@ describe('MatchupsPage period-point drill (CR-02, 39.1-REVIEW)', () => {
     expect(search.has('from')).toBe(false);
     expect(search.has('to')).toBe(false);
   });
+
+  // 39.1-REVIEW iteration 2 WR-02: the ladder sits at `eventSession` here,
+  // so a `set:` key (written while the pairing had <= 100 sets and the
+  // ladder sat at `set`) used to resolve to nothing: an empty terminus.
+  it('WR-02: a set-grain key written at another grain still lands on exactly that set', async () => {
+    listMatches.mockResolvedValue(interleavedEventFixture());
+
+    renderMatchupsAt(
+      `/matchups?fighter=${mario.id}&vs=${luigi.id}&event=${encodeURIComponent('set:t3set1')}#matchup-table`,
+    );
+
+    await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
+    expect((capturedTrendLineProps as { points: PeriodPoint[] }).points[0]!.grain).toBe(
+      'eventSession',
+    );
+    const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+    await waitFor(() => {
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(3);
+    });
+  });
 });

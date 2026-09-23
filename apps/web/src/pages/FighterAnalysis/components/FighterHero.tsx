@@ -193,9 +193,11 @@ export interface FighterHeroProps {
   nowMs: number;
   /**
    * CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over
-   * `fighterMatches` — the SAME series its terminus resolves a period
-   * drill's `event=<point.key>` against (`periodPointKeyByMatchId`), so the
-   * plotted points and the drill's resolution can never be two builds.
+   * `fighterMatches`. The host's terminus resolves a period drill's
+   * `event=<point.key>` over the SAME base by the key's own grain rule
+   * (`periodPointMatchIdsForKey`, WR-02 iteration 2), which is exactly this
+   * series' point while the grain is unchanged and keeps resolving after
+   * the ladder moves.
    */
   periodSeries: PeriodSeries;
   /**
