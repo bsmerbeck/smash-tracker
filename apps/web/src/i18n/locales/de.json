@@ -907,8 +907,12 @@
       "minMatchesAria": "Minimale Matches pro Stage",
       "empty": "Für dieses Matchup sind noch keine Matches erfasst.",
       "currentStreak": "Aktuelle Serie",
-      "streakWins": "{{count}} Siege",
-      "streakLosses": "{{count}} Niederlagen",
+      "streakUnit": {
+        "win_one": "Sieg",
+        "win_other": "Siege",
+        "loss_one": "Niederlage",
+        "loss_other": "Niederlagen"
+      },
       "longestWin": "Längste Siegesserie",
       "longestLoss": "Längste Niederlagenserie",
       "recentForm": "Aktuelle Form (neueste zuerst)",

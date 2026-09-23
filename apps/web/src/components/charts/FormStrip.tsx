@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { CHART_TOKENS } from './tokens';
 
 /**
@@ -78,17 +78,40 @@ export interface FormStripProps {
 /** The mark-role colour lookup — the ONE source this file reads a mark colour from (UIX-05). */
 const MARK_COLOR = { win: CHART_TOKENS.win, loss: CHART_TOKENS.loss };
 
-const TICK_WIDTH_PX = 8;
-const TICK_HEIGHT_PX = 32;
-const TICK_BAR_HEIGHT_PX = 14;
 const TICK_BAR_RADIUS_PX = 2;
 const DIMMED_OPACITY = 0.32;
+/**
+ * Plan 39.1-32 (item 11, UI-SPEC §3 exceptions / §6.6: 6x28 ticks below
+ * 640px, spec text never previously implemented). The 8x32/14px sizes below
+ * `sm` (640px) shrink to 6x28/12px via Tailwind classes — `alignItems`,
+ * `opacity`, `backgroundColor` and `borderRadius` stay inline (read by this
+ * file's own tests and the UIX-05 colour lookup).
+ */
+const TICK_SLOT_CLASS = 'inline-flex w-2 h-8 max-sm:w-1.5 max-sm:h-7';
+const TICK_BAR_CLASS = 'w-2 h-3.5 max-sm:w-1.5 max-sm:h-3';
 const EVENT_MIN_WIDTH_PX = 104;
 const SET_MIN_HIT_WIDTH_PX = 24;
 const SET_MIN_HIT_HEIGHT_PX = 32;
 const SET_STRIP_TICK_WIDTH_PX = 12;
 const SET_STRIP_TICK_HEIGHT_PX = 24;
 const SET_STRIP_TICK_BAR_HEIGHT_PX = 10;
+
+/** UI-SPEC §5.2's separator (U+00B7 surrounded by spaces). */
+const LEGEND_SEPARATOR = ' · ';
+
+/**
+ * Plan 39.1-32 (item 11, UI-SPEC §7.10 legend, §6.5 rule 2): splits a legend
+ * string on the spec's own ' · ' separator into trimmed, non-empty parts —
+ * a legend without the separator (any future locale) returns exactly one
+ * part, so the caller can render it as one normally-wrapping span instead
+ * of a whole-token that could still overflow.
+ */
+function splitLegendParts(legend: string): string[] {
+  return legend
+    .split(LEGEND_SEPARATOR)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
 
 function countGames(events: FormStripEvent[]): number {
   return events.reduce(
@@ -138,19 +161,16 @@ function Tick({ game, dimmed }: { game: FormStripGame; dimmed: boolean }) {
     <span
       data-slot="form-strip-tick"
       title={game.label}
+      className={TICK_SLOT_CLASS}
       style={{
-        display: 'inline-flex',
-        width: TICK_WIDTH_PX,
-        height: TICK_HEIGHT_PX,
         alignItems: game.won ? 'flex-start' : 'flex-end',
         opacity: dimmed ? DIMMED_OPACITY : 1,
       }}
     >
       <span
         data-slot={game.won ? 'form-strip-tick-win' : 'form-strip-tick-loss'}
+        className={TICK_BAR_CLASS}
         style={{
-          width: TICK_WIDTH_PX,
-          height: TICK_BAR_HEIGHT_PX,
           backgroundColor: color,
           borderRadius: TICK_BAR_RADIUS_PX,
         }}
@@ -172,7 +192,7 @@ function SetGroup({
       data-slot="form-strip-set"
       tabIndex={0}
       aria-label={set.label}
-      className="relative flex items-center gap-0.5 rounded-sm hover:bg-muted/40 focus:bg-muted/40"
+      className="relative flex items-center justify-center gap-0.5 rounded-sm hover:bg-muted/40 focus:bg-muted/40"
       style={{ minWidth: SET_MIN_HIT_WIDTH_PX, minHeight: SET_MIN_HIT_HEIGHT_PX }}
       onClick={onSelectSet ? activate : undefined}
       onKeyDown={
@@ -186,14 +206,25 @@ function SetGroup({
           : undefined
       }
     >
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"
-        style={{ height: 1, backgroundColor: CHART_TOKENS.deemphasisStrong }}
-      />
-      {set.games.map((game) => (
-        <Tick key={game.key} game={game} dimmed={!set.inRecentWindow} />
-      ))}
+      {/*
+        Plan 39.1-32 (item 11, UI-SPEC §7.10 rule through the middle of each
+        set, §14.6 pads the HIT box not the set): the tick-run holds ONLY the
+        ticks and the rule that spans them — the SetGroup above stays the
+        (larger) focusable/hoverable hit box, centred via `justify-center`.
+        A single-game set now shows a centred tick on its own short rule
+        instead of a left-hugging tick trailing an over-wide rule stub, and
+        a wrapped strip reads as an evenly spaced sequence.
+      */}
+      <span data-slot="form-strip-tick-run" className="relative inline-flex items-center gap-0.5">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2"
+          style={{ height: 1, backgroundColor: CHART_TOKENS.deemphasisStrong }}
+        />
+        {set.games.map((game) => (
+          <Tick key={game.key} game={game} dimmed={!set.inRecentWindow} />
+        ))}
+      </span>
     </div>
   );
 }
@@ -206,6 +237,7 @@ export function FormStrip({ events, limit, labels, onSelectSet }: FormStripProps
   }
 
   const trimmedEvents = trimToLimit(events, limit);
+  const legendParts = splitLegendParts(labels.legend);
 
   return (
     // Plan 39.1-20 Task 3 [Rule 1]: `min-w-0` on both this flex-column root
@@ -252,9 +284,35 @@ export function FormStrip({ events, limit, labels, onSelectSet }: FormStripProps
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>{labels.legend}</span>
-        {labels.shownOfTotal && <span>{labels.shownOfTotal}</span>}
+      {/*
+        Plan 39.1-32 (item 11, UI-SPEC §7.10 legend, §6.5 rule 2): a
+        `justify-between` two-item row squeezes the legend into whatever
+        space the shown-of-total token leaves. `flex-wrap` lets the legend's
+        own whole-token parts (never mid-word) wrap onto their own lines
+        while shown-of-total keeps `ms-auto` to stay right-aligned when it
+        fits on the legend's line.
+      */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-4 text-muted-foreground">
+        {legendParts.length >= 2 ? (
+          legendParts.map((part, index) => (
+            <Fragment key={index}>
+              {index > 0 && <span aria-hidden="true">{'·'}</span>}
+              <span data-slot="form-strip-legend-item" className="whitespace-nowrap">
+                {part}
+              </span>
+            </Fragment>
+          ))
+        ) : (
+          <span data-slot="form-strip-legend-item">{labels.legend}</span>
+        )}
+        {labels.shownOfTotal && (
+          <span
+            data-slot="form-strip-shown-of-total"
+            className="ms-auto whitespace-nowrap tabular-nums"
+          >
+            {labels.shownOfTotal}
+          </span>
+        )}
       </div>
       {labels.windowEmpty && <p className="text-xs text-muted-foreground">{labels.windowEmpty}</p>}
     </div>

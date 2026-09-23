@@ -907,8 +907,12 @@
       "minMatchesAria": "ステージごとの最低対戦数",
       "empty": "この相性の対戦はまだ記録されていません。",
       "currentStreak": "現在の連続記録",
-      "streakWins": "{{count}}連勝",
-      "streakLosses": "{{count}}連敗",
+      "streakUnit": {
+        "win_one": "連勝",
+        "win_other": "連勝",
+        "loss_one": "連敗",
+        "loss_other": "連敗"
+      },
       "longestWin": "最長連勝",
       "longestLoss": "最長連敗",
       "recentForm": "最近の調子（新しい順）",

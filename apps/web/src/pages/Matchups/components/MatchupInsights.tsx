@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -93,36 +94,40 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
           <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
         ) : (
           <>
-            <div
-              data-slot="stat-row"
-              data-fixed-columns=""
-              className="grid grid-cols-1 gap-4 sm:grid-cols-3"
-            >
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.currentStreak')}
-                </h3>
-                <p
-                  className={`text-lg font-semibold ${streaks.currentStreakIsWin ? 'text-emerald-500' : 'text-destructive'}`}
-                >
-                  {streaks.currentStreakIsWin
-                    ? t('matchups.insights.streakWins', { count: streaks.currentStreak })
-                    : t('matchups.insights.streakLosses', { count: streaks.currentStreak })}
-                </p>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.longestWin')}
-                </h3>
-                <p className="text-lg font-semibold">{streaks.bestWinStreak}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.longestLoss')}
-                </h3>
-                <p className="text-lg font-semibold">{streaks.worstLossStreak}</p>
-              </div>
-            </div>
+            {/*
+              Plan 39.1-32 (item 10, UI-SPEC §7.3 StatRow, §4.3 rule 2): one
+              fixedColumns StatRow — the kit's 860px two-column collapse
+              would otherwise orphan the third of these three short counts
+              (2+1). The current streak's direction is carried by the unit
+              WORD ("win"/"loss"), never by a coloured value — no chip, no
+              delta (D-07: no insight asserts a direction here).
+            */}
+            <StatRow
+              fixedColumns
+              figures={[
+                <StatFigure
+                  key="current"
+                  label={t('matchups.insights.currentStreak')}
+                  value={streaks.currentStreak}
+                  unitSuffix={t(
+                    streaks.currentStreakIsWin
+                      ? 'matchups.insights.streakUnit.win'
+                      : 'matchups.insights.streakUnit.loss',
+                    { count: streaks.currentStreak },
+                  )}
+                />,
+                <StatFigure
+                  key="longestWin"
+                  label={t('matchups.insights.longestWin')}
+                  value={streaks.bestWinStreak}
+                />,
+                <StatFigure
+                  key="longestLoss"
+                  label={t('matchups.insights.longestLoss')}
+                  value={streaks.worstLossStreak}
+                />,
+              ]}
+            />
 
             <div>
               <h3 className="mb-2 text-sm font-medium text-muted-foreground">

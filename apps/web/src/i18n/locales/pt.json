@@ -907,8 +907,12 @@
       "minMatchesAria": "Mínimo de partidas por stage",
       "empty": "Nenhuma partida registrada para este confronto ainda.",
       "currentStreak": "Sequência atual",
-      "streakWins": "{{count}} vitórias",
-      "streakLosses": "{{count}} derrotas",
+      "streakUnit": {
+        "win_one": "vitória",
+        "win_other": "vitórias",
+        "loss_one": "derrota",
+        "loss_other": "derrotas"
+      },
       "longestWin": "Maior sequência de vitórias",
       "longestLoss": "Maior sequência de derrotas",
       "recentForm": "Forma recente (mais recente primeiro)",
