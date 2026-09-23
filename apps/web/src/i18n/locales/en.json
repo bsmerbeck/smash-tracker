@@ -3216,12 +3216,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Those {{count}} games span {{from}} – {{to}}.",
-      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}})."
+      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "The last 30 games are the whole record — one figure, no comparison.",
         "last90": "The last 90 days are the whole record — one figure, no comparison."
+      },
+      "noneRecent": {
+        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime."
       },
       "thinRecent": {
         "scoped_one": "Only {{count}} game vs {{fighter}} in the last 12 months — showing lifetime.",
@@ -3394,6 +3398,7 @@
       "legend": "up = win · down = loss · gap = new set · label = event",
       "aria": "Form strip, {{count}} games",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {
         "last30": "Last 30 games highlighted",
         "lastEvent": "Last event highlighted",

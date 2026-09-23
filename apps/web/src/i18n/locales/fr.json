@@ -3216,12 +3216,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Ces {{count}} matchs s'étendent de {{from}} à {{to}}.",
-      "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}})."
+      "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} historique · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "Les 30 derniers matchs sont tout l'historique — un seul chiffre, pas de comparaison.",
         "last90": "Les 90 derniers jours sont tout l'historique — un seul chiffre, pas de comparaison."
+      },
+      "noneRecent": {
+        "scoped": "Aucun match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché."
       },
       "thinRecent": {
         "scoped_one": "Seulement {{count}} match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
@@ -3394,6 +3398,7 @@
       "legend": "haut = victoire · bas = défaite · espace = nouveau set · étiquette = événement",
       "aria": "Frise de forme, {{count}} matchs",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {
         "last30": "30 derniers matchs surlignés",
         "lastEvent": "Dernier événement surligné",

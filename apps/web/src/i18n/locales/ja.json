@@ -3216,12 +3216,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "この{{count}}試合の期間は{{from}}〜{{to}}です。",
-      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。"
+      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
+      "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "直近30試合が記録の全体です — 比較対象のない単一の数値です。",
         "last90": "直近90日間が記録の全体です — 比較対象のない単一の数値です。"
+      },
+      "noneRecent": {
+        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。"
       },
       "thinRecent": {
         "scoped_one": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
@@ -3394,6 +3398,7 @@
       "legend": "上 = 勝利 · 下 = 敗北 · 間隔 = 新しいセット · ラベル = イベント",
       "aria": "調子ストリップ、{{count}}試合",
       "setAria": "vs {{opponent}}のセット、{{record}}",
+      "sessionLabel": "セッション · {{date}}",
       "windowHighlighted": {
         "last30": "直近30試合を強調表示",
         "lastEvent": "直近のイベントを強調表示",

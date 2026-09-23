@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES, buildPeriodSeries } from '@smash-tracker/shared';
@@ -89,6 +89,32 @@ function recentSequence(count: number, results?: boolean[]): Match[] {
     const win = results ? results[i % results.length]! : i % 3 !== 0;
     return makeMatch({ id: `m${i}`, time: now - (count - i) * dayMs, win });
   });
+}
+
+/**
+ * `count` games older than 12 months (well past D-15's 360-day scoped
+ * bound) — every game lands OUTSIDE `last30`'s scoped window but INSIDE
+ * `scopedMatches` (the pairing's lifetime baseline). The first `wins` games
+ * (by array position, not time) win; the rest lose — order doesn't matter
+ * for `toRateValue`'s win/loss totals.
+ */
+function oldSequence(count: number, wins: number, opponentId = 1): Match[] {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const base = now - 400 * dayMs;
+  return Array.from({ length: count }, (_, i) =>
+    makeMatch({ id: `o${i}`, opponent_id: opponentId, time: base + i * dayMs, win: i < wins }),
+  );
+}
+
+/** Two games inside both D-15's 12-month scoped bound and the `last30` window. */
+function recentPair(opponentId = 1): Match[] {
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  return [
+    makeMatch({ id: 'r1', opponent_id: opponentId, time: now - 2 * dayMs, win: true }),
+    makeMatch({ id: 'r2', opponent_id: opponentId, time: now - 1 * dayMs, win: false }),
+  ];
 }
 
 function renderChart(
@@ -217,6 +243,93 @@ describe('MatchupChart', () => {
       expect(text).toMatch(/\d+\s%/);
       expect(text).not.toMatch(/\d+%/);
     });
+  });
+});
+
+describe('D-15 scoped-window head (39.1-31, item 7)', () => {
+  it('renders the D-15 "no games" sentence and a lifetime-only evidence line when the pairing has history but nothing within 12 months', () => {
+    const matches = oldSequence(20, 12);
+    const { container } = renderChart(matches, { horizon: 'last30' });
+
+    const verdict = container.querySelector('[data-slot="matchup-form-now-verdict"]');
+    expect(verdict?.textContent).toBe(
+      'No games vs Mario in the last 12 months — showing lifetime.',
+    );
+
+    const evidence = container.querySelector('[data-slot="matchup-form-now-evidence"]');
+    expect(evidence).toBeInTheDocument();
+    const text = evidence!.textContent ?? '';
+    expect(text).toContain('12–8');
+    expect(text).toContain('all time');
+    expect(text).toContain('high confidence, 20 games');
+    expect(text).not.toContain('0–0');
+    expect(text).not.toContain('low confidence');
+  });
+
+  it('renders the D-15 "only N games" sentence once a couple of recent games exist inside the scoped bound', () => {
+    const matches = [...oldSequence(20, 12), ...recentPair()];
+    const { container } = renderChart(matches, { horizon: 'last30' });
+
+    const verdict = container.querySelector('[data-slot="matchup-form-now-verdict"]');
+    expect(verdict?.textContent).toBe(
+      'Only 2 games vs Mario in the last 12 months — showing lifetime.',
+    );
+  });
+
+  it('suppresses the form strip\'s duplicate "No games in the last 30" note when the head already states the scoped-empty window, but keeps the note for a time-bounded horizon whose empty window is unrelated to D-15', () => {
+    const matches = oldSequence(20, 12);
+
+    const { container: last30Container } = renderChart(matches, { horizon: 'last30' });
+    expect(
+      within(last30Container).queryByText('No games in the last 30 — showing all time.'),
+    ).toBeNull();
+
+    const { container: lastEventContainer } = renderChart(matches, { horizon: 'lastEvent' });
+    expect(
+      within(lastEventContainer).getByText('No games at the last event — showing all time.'),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the unchanged two-horizon evidence line, with its confidence cue drawn from the window's own game count, once the recent window is evidenced", () => {
+    const { container } = renderChart(recentSequence(30));
+    const evidence = container.querySelector('[data-slot="matchup-form-now-evidence"]');
+    expect(evidence).toBeInTheDocument();
+    expect(evidence!.textContent ?? '').toMatch(/high confidence, 30 games/);
+  });
+});
+
+describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', () => {
+  it('groups manual games with no named event into 3-hour sessions labelled "Session · <date>", ordered by first game time alongside a named event, and never labels a group "Unknown"', () => {
+    const hourMs = 60 * 60 * 1000;
+    const base = Date.now() - 2 * 24 * hourMs;
+    const sessionA = [
+      makeMatch({ id: 'sA1', time: base, win: true }),
+      makeMatch({ id: 'sA2', time: base + 30 * 60 * 1000, win: false }),
+    ];
+    const namedEvent = [
+      makeMatch({ id: 'ev1', time: base + 2 * hourMs, win: true, eventName: 'Genesis 9' }),
+    ];
+    const sessionB = [
+      makeMatch({ id: 'sB1', time: base + 10 * hourMs, win: true }),
+      makeMatch({ id: 'sB2', time: base + 10.5 * hourMs, win: false }),
+    ];
+    const matches = [...sessionA, ...namedEvent, ...sessionB];
+
+    const { container } = renderChart(matches);
+    const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
+    expect(groups.length).toBe(3);
+
+    const labels = groups.map((g) => g.querySelector('span[title]')?.getAttribute('title'));
+    const expectedDate = new Intl.DateTimeFormat('en', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(base));
+
+    expect(labels[0]).toBe(`Session · ${expectedDate}`);
+    expect(labels[1]).toBe('Genesis 9');
+    expect(labels[2]).toMatch(/^Session · /);
+    expect(labels.some((l) => l === 'Unknown')).toBe(false);
   });
 });
 

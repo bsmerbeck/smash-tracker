@@ -3216,12 +3216,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Esas {{count}} partidas van de {{from}} a {{to}}.",
-      "range": "{{rate}} sobre {{count}}, dentro del rango habitual ({{lower}}–{{upper}})."
+      "range": "{{rate}} sobre {{count}}, dentro del rango habitual ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "Las últimas 30 partidas son todo el historial — una sola cifra, sin comparación.",
         "last90": "Los últimos 90 días son todo el historial — una sola cifra, sin comparación."
+      },
+      "noneRecent": {
+        "scoped": "Sin partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico."
       },
       "thinRecent": {
         "scoped_one": "Solo {{count}} partida vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
@@ -3394,6 +3398,7 @@
       "legend": "arriba = victoria · abajo = derrota · hueco = set nuevo · etiqueta = evento",
       "aria": "Franja de forma, {{count}} partidas",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Sesión · {{date}}",
       "windowHighlighted": {
         "last30": "Últimas 30 partidas resaltadas",
         "lastEvent": "Último evento resaltado",

@@ -3216,12 +3216,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Diese {{count}} Matches erstrecken sich von {{from}} bis {{to}}.",
-      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}})."
+      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} gesamt · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "Die letzten 30 Matches sind der gesamte Datensatz — eine Zahl, kein Vergleich.",
         "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
+      },
+      "noneRecent": {
+        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
       },
       "thinRecent": {
         "scoped_one": "Nur {{count}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
@@ -3394,6 +3398,7 @@
       "legend": "oben = Sieg · unten = Niederlage · Lücke = neuer Satz · Label = Event",
       "aria": "Formleiste, {{count}} Matches",
       "setAria": "Satz vs. {{opponent}}, {{record}}",
+      "sessionLabel": "Sitzung · {{date}}",
       "windowHighlighted": {
         "last30": "Letzte 30 Matches hervorgehoben",
         "lastEvent": "Letztes Event hervorgehoben",
