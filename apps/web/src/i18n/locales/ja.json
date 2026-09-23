@@ -874,6 +874,7 @@
     "you": "自分",
     "opponent": "相手",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "勝率の推移",
     "results": "対戦結果",
     "selectFighterAria": "自分のファイターを選択",

@@ -874,6 +874,7 @@
     "you": "Du",
     "opponent": "Gegner",
     "vs": "vs.",
+    "pairingHeading": "{{fighter}} vs. {{opponent}}",
     "winRateTrend": "Winrate-Verlauf",
     "results": "Matchup-Ergebnisse",
     "selectFighterAria": "Deinen Kämpfer auswählen",

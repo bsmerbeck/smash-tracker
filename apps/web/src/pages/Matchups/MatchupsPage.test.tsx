@@ -1272,6 +1272,150 @@ describe('MatchupsPage', () => {
     });
   });
 
+  describe('Task 3 (plan 39.1-30, items 3/5): PageShell + two-stack pairing block + section-label identity', () => {
+    /** 40 games, Mario vs Luigi, 4 distinct opponent tags — clears MatchupOrPlayer's floors so the rail's fourth card actually renders. */
+    function richPairingFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    async function renderLoadedPairing() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(richPairingFixture());
+      const { container } = renderMatchups();
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      return container;
+    }
+
+    it('the loaded page is capped at the PageShell max-width', async () => {
+      const container = await renderLoadedPairing();
+      const shell = Array.from(container.querySelectorAll('div')).find((el) =>
+        el.className.includes('max-w-[1440px]'),
+      );
+      expect(shell).toBeTruthy();
+    });
+
+    it('the pairing heading is a left-aligned h2 naming the pairing with 24px sprites, precedes the ONE page-grid inside #matchup-detail', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]');
+      expect(heading).not.toBeNull();
+      expect(heading!.tagName.toLowerCase()).toBe('h2');
+      expect(heading!.textContent).toContain('Mario');
+      expect(heading!.textContent).toContain('Luigi');
+      expect(heading!.className).not.toMatch(/justify-center/);
+      const sprites = heading!.querySelectorAll('img');
+      expect(sprites.length).toBeGreaterThan(0);
+      for (const sprite of Array.from(sprites)) {
+        expect(sprite.className).toMatch(/size-6/);
+      }
+
+      const grids = detail.querySelectorAll('[data-slot="page-grid"]');
+      expect(grids).toHaveLength(1);
+      const headingFollowedByGrid =
+        heading!.compareDocumentPosition(grids[0]!) & Node.DOCUMENT_POSITION_FOLLOWING;
+      expect(headingFollowedByGrid).not.toBe(0);
+    });
+
+    it('the page-grid holds exactly two direct children, data-span "4" then "8", each a column stack', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const children = Array.from(grid.children);
+      expect(children).toHaveLength(2);
+      expect(children[0]!.getAttribute('data-span')).toBe('4');
+      expect(children[1]!.getAttribute('data-span')).toBe('8');
+    });
+
+    it('the rail (span 4) holds Record, Matchup Insights, MatchupOrPlayer and Counterpick Advisor in document order', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const rail = grid.children[0] as HTMLElement;
+
+      const recordTitle = within(rail)
+        .getAllByText('Record')
+        .find((el) => el.getAttribute('data-slot') === 'card-title')!;
+      const insightsHeading = within(rail).getByText('Matchup Insights');
+      const insightCard = rail.querySelector('[data-slot="insight-card"]')!;
+      const advisorHeading = within(rail).getByText('Counterpick Advisor');
+      expect(insightCard).not.toBeNull();
+
+      const order = [recordTitle, insightsHeading, insightCard, advisorHeading];
+      for (let i = 1; i < order.length; i += 1) {
+        const prev = order[i - 1]!;
+        const cur = order[i]!;
+        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    it('the chart stack (span 8) holds Win Rate Trend, By Opponent and Stage Breakdown in document order', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const chart = grid.children[1] as HTMLElement;
+
+      const trendTitle = within(chart).getByText('Win Rate Trend');
+      const byOpponentTitle = within(chart).getByText('By Opponent');
+      const stageBreakdownTitle = within(chart).getByText('Stage Breakdown');
+
+      const order = [trendTitle, byOpponentTitle, stageBreakdownTitle];
+      for (let i = 1; i < order.length; i += 1) {
+        const prev = order[i - 1]!;
+        const cur = order[i]!;
+        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    it('no other grid inside #matchup-detail holds two card-bearing children — the old advisor/stage-table and record/insights 2-ups are gone', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const cardBearingGrids: Element[] = [];
+      for (const el of Array.from(detail.querySelectorAll('*'))) {
+        const cls = typeof el.className === 'string' ? el.className : '';
+        if (!/\bgrid\b/.test(cls)) continue;
+        const cardBearingChildren = Array.from(el.children).filter(
+          (child) =>
+            child.matches('[data-slot="card"]') || child.querySelector('[data-slot="card"]'),
+        );
+        if (cardBearingChildren.length >= 2) cardBearingGrids.push(el);
+      }
+      // Exactly the one [data-slot="page-grid"] — its own two GridCell
+      // stacks are themselves card-bearing (they wrap multiple cards each).
+      expect(cardBearingGrids).toHaveLength(1);
+      expect(cardBearingGrids[0]!.getAttribute('data-slot')).toBe('page-grid');
+    });
+
+    it('mirrors the two-stack composition in the loading skeleton: PageGrid children carry data-span "4" then "8"', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderMatchups();
+      const shell = Array.from(container.querySelectorAll('div')).find((el) =>
+        el.className.includes('max-w-[1440px]'),
+      );
+      expect(shell).toBeTruthy();
+      const grid = container.querySelector('[data-slot="page-grid"]')!;
+      expect(grid).not.toBeNull();
+      const children = Array.from(grid.children);
+      expect(children).toHaveLength(2);
+      expect(children[0]!.getAttribute('data-span')).toBe('4');
+      expect(children[1]!.getAttribute('data-span')).toBe('8');
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {

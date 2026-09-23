@@ -874,6 +874,7 @@
     "you": "You",
     "opponent": "Opponent",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "Win Rate Trend",
     "results": "Matchup Results",
     "selectFighterAria": "Select your fighter",

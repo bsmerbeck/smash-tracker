@@ -874,6 +874,7 @@
     "you": "Tú",
     "opponent": "Rival",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "Tendencia del % de victorias",
     "results": "Resultados del enfrentamiento",
     "selectFighterAria": "Seleccionar tu luchador",
