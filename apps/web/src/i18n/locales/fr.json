@@ -921,7 +921,9 @@
       "title": "Détail par stage",
       "stage": "Stage",
       "record": "Bilan",
-      "winRate": "Taux de victoire"
+      "winRate": "Taux de victoire",
+      "noStage_one": "{{count}} partie sans stage enregistré",
+      "noStage_other": "{{count}} parties sans stage enregistré"
     },
     "counterpick": {
       "title": "Conseiller de counterpick",

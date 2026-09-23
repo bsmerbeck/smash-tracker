@@ -921,7 +921,9 @@
       "title": "Desglose por escenario",
       "stage": "Escenario",
       "record": "Historial",
-      "winRate": "% de victorias"
+      "winRate": "% de victorias",
+      "noStage_one": "{{count}} partida sin escenario registrado",
+      "noStage_other": "{{count}} partidas sin escenario registrado"
     },
     "counterpick": {
       "title": "Asesor de counterpicks",

@@ -921,7 +921,9 @@
       "title": "Stage-Auswertung",
       "stage": "Stage",
       "record": "Bilanz",
-      "winRate": "Winrate"
+      "winRate": "Winrate",
+      "noStage_one": "{{count}} Spiel ohne erfassten Stage",
+      "noStage_other": "{{count}} Spiele ohne erfassten Stage"
     },
     "counterpick": {
       "title": "Counterpick-Berater",

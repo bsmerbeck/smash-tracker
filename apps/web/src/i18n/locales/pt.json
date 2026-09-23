@@ -921,7 +921,9 @@
       "title": "Detalhamento por stage",
       "stage": "Stage",
       "record": "Retrospecto",
-      "winRate": "Taxa de vitórias"
+      "winRate": "Taxa de vitórias",
+      "noStage_one": "{{count}} partida sem stage registrado",
+      "noStage_other": "{{count}} partidas sem stage registrado"
     },
     "counterpick": {
       "title": "Conselheiro de counterpick",

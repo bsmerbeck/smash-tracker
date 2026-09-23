@@ -921,7 +921,9 @@
       "title": "ステージ別集計",
       "stage": "ステージ",
       "record": "戦績",
-      "winRate": "勝率"
+      "winRate": "勝率",
+      "noStage_one": "ステージが未記録の試合が{{count}}戦あります",
+      "noStage_other": "ステージが未記録の試合が{{count}}戦あります"
     },
     "counterpick": {
       "title": "カウンターピック指南",

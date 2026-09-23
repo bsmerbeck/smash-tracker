@@ -921,7 +921,9 @@
       "title": "Stage Breakdown",
       "stage": "Stage",
       "record": "Record",
-      "winRate": "Win Rate"
+      "winRate": "Win Rate",
+      "noStage_one": "{{count}} game with no stage recorded",
+      "noStage_other": "{{count}} games with no stage recorded"
     },
     "counterpick": {
       "title": "Counterpick Advisor",
