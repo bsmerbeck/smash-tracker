@@ -46,7 +46,7 @@ export function SelectOpponent() {
 
   return (
     <Select value={opponent ? String(opponent.id) : undefined} onValueChange={selectById}>
-      <SelectTrigger aria-label={t('matchups.selectOpponentAria')} className="w-[220px]">
+      <SelectTrigger aria-label={t('matchups.selectOpponentAria')} className="w-full">
         <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>

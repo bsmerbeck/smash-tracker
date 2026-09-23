@@ -31,7 +31,7 @@ export function SelectFighter() {
         }
       }}
     >
-      <SelectTrigger aria-label={t('matchups.selectFighterAria')} className="w-[220px]">
+      <SelectTrigger aria-label={t('matchups.selectFighterAria')} className="w-full">
         <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>

@@ -527,27 +527,38 @@ export function MatchupsPage() {
           {/* UI-SPEC §10.4: one filter row — the fighter picker, a spacer, then the
               page's single HorizonSwitch (INS-02). Never a per-chart control. */}
           <Card>
-            <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
+            <CardContent className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-6">
+              {/*
+                Plan 39.1-32 (item 9, UI-SPEC §10.4 one filter row, §6.6 below
+                640): a grid picker — one column below 640px (label over a
+                full-width control, 'vs' centred between), fixed EQUAL 15rem
+                tracks from 640px up (so both controls stay the same width
+                regardless of the selected fighter name's length), 'vs' in the
+                auto track between them on the controls' centre line.
+              */}
               <div
                 data-slot="matchup-pairing-picker"
-                className="flex flex-1 flex-wrap items-center justify-center gap-6"
+                className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[15rem_auto_15rem] sm:items-end sm:gap-x-3"
               >
-                <div className="flex flex-col items-center gap-2">
+                <div className="flex min-w-0 flex-col gap-1">
                   <h3
                     data-slot="matchup-pairing-label"
-                    className="text-sm font-medium text-muted-foreground"
+                    className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
                   >
                     {t('matchups.you')}
                   </h3>
                   <SelectFighter />
                 </div>
-                <span data-slot="matchup-pairing-vs" className="text-xl font-semibold">
+                <span
+                  data-slot="matchup-pairing-vs"
+                  className="justify-self-center text-sm text-muted-foreground sm:flex sm:h-9 sm:items-center sm:justify-self-auto"
+                >
                   {t('matchups.vs')}
                 </span>
-                <div className="flex flex-col items-center gap-2">
+                <div className="flex min-w-0 flex-col gap-1">
                   <h3
                     data-slot="matchup-pairing-label"
-                    className="text-sm font-medium text-muted-foreground"
+                    className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
                   >
                     {t('matchups.opponent')}
                   </h3>
