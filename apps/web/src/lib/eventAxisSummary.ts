@@ -15,8 +15,12 @@ function formatDateRange(games: Match[]): string {
  * trend `PeriodPoint.key` — so it must never be printed as-is. This
  * describes the GAMES the axis resolved to instead, from their own fields:
  *
- * 1. one parsed set -> "Set vs <opponent> at <event>" (or without the event);
- * 2. one game -> "Game vs <opponent> on <date>";
+ * 1. one game -> "Game vs <opponent> on <date>" — checked FIRST (WR-03,
+ *    iteration 2): a game-grain trend point, or a one-game slice of a set,
+ *    is one game, and the set sentence would name games the list does not
+ *    show;
+ * 2. one parsed set (2+ of its games) -> "Set vs <opponent> at <event>" (or
+ *    without the event);
  * 3. games sharing one event name -> that name (`trimmedEventKey`, the one
  *    name-priority rule);
  * 4. anything else (a session, a calendar period) -> its date range.
@@ -29,19 +33,19 @@ export function describeEventAxisGames(games: Match[], t: TFunction): string | u
   if (!first) return undefined;
   const opponent = first.opponent?.trim() || t('common.unknown');
 
+  if (games.length === 1) {
+    return t('shared.filteredMatchList.eventSummary.game', {
+      opponent,
+      date: new Date(first.time).toLocaleDateString(),
+    });
+  }
+
   const setIds = new Set(games.map((m) => parseExternalId(m.externalId)?.setId ?? null));
   if (setIds.size === 1 && !setIds.has(null)) {
     const event = trimmedEventKey(first);
     return event
       ? t('shared.filteredMatchList.eventSummary.set', { opponent, event })
       : t('shared.filteredMatchList.eventSummary.setUnnamed', { opponent });
-  }
-
-  if (games.length === 1) {
-    return t('shared.filteredMatchList.eventSummary.game', {
-      opponent,
-      date: new Date(first.time).toLocaleDateString(),
-    });
   }
 
   const names = new Set(games.map((m) => trimmedEventKey(m)));

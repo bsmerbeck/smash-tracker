@@ -20,8 +20,23 @@ describe('describeEventAxisGames (WR-03, 39.1-REVIEW)', () => {
   });
 
   it('describes one set with no event name without an "at" clause', () => {
-    const games = [makeMatch({ id: 'a', time: 1, externalId: 'pgg-abc-g1' })];
+    const games = [
+      makeMatch({ id: 'a', time: 1, externalId: 'pgg-abc-g1' }),
+      makeMatch({ id: 'b', time: 2, externalId: 'pgg-abc-g2' }),
+    ];
     expect(describeEventAxisGames(games, t)).toBe('Set vs rival');
+  });
+
+  // Iteration 2 WR-03: a game-grain trend point (or a one-game slice of a
+  // set) resolves to ONE start.gg game. Describing it as the whole set named
+  // games the list does not show.
+  it('describes a single start.gg game as a game, never as its whole set', () => {
+    const at = Date.UTC(2024, 2, 5);
+    const text = describeEventAxisGames(
+      [makeMatch({ id: 'g2', time: at, eventName: 'Genesis', externalId: 'sgg:78234561:g2' })],
+      t,
+    );
+    expect(text).toBe(`Game vs rival on ${new Date(at).toLocaleDateString()}`);
   });
 
   it('describes a single manual game by opponent and date, never game:<id>', () => {

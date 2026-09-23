@@ -457,6 +457,20 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
       );
     });
 
+    // Iteration 2 WR-03: that one game is described as a game, not as the
+    // 7-game set it belongs to ("Set vs … at Event 3" named 6 games the list
+    // does not show).
+    it('WR-03: the one-game landing is summarised as a game, never as its whole set', async () => {
+      renderFighterAnalysisAt('/fighter-analysis?event=game%3As3g2#games');
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      await waitFor(() => expect(rowsIn(gamesCard)).toBe(1));
+      const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground')?.textContent ?? '';
+      expect(summary).toMatch(/^1 game · Mario · Game vs /);
+      expect(summary).not.toMatch(/Set vs/);
+    });
+
     it("a calendar key lands on exactly that bucket's games", async () => {
       const fixture = drillFixture();
       const monthOf = (ms: number) => new Date(ms).toISOString().slice(0, 7);
