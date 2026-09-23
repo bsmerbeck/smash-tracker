@@ -58,17 +58,23 @@ export function SetStateControl({
   ruleset,
   setState,
   onChange,
+  describedById,
 }: {
   ruleset: Ruleset;
   setState: SetState;
   onChange: (next: SetState) => void;
+  /**
+   * Plan 39.1-30 (item 1): the id of the element that STATES the composed
+   * assumption sentence (`CounterpickAdvisor`'s always-visible under-title
+   * line) — wired to the trigger's `aria-describedby` so the sentence isn't
+   * restated a second time as the trigger's own accessible name.
+   */
+  describedById?: string;
 }) {
   const { t } = useTranslation();
   const allRulesetStageIds = [...ruleset.starterStageIds, ...ruleset.counterpickStageIds].sort(
     (a, b) => a - b,
   );
-
-  const triggerLabel = describeSetStateAssumption(t, setState);
 
   function togglePriorStage(stageId: number, checked: boolean) {
     if (checked) {
@@ -100,13 +106,8 @@ export function SetStateControl({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label={t('matchups.counterpick.setState.editAria')}
-        >
-          {triggerLabel}
+        <Button type="button" variant="outline" size="sm" aria-describedby={describedById}>
+          {t('matchups.counterpick.setState.editLabel')}
           <ChevronDown className="size-3" />
         </Button>
       </PopoverTrigger>

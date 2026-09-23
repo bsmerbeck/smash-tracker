@@ -1,9 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { MatchupInsights } from './MatchupInsights';
+
+/**
+ * `useMinStageMatches` is a no-op on write when unauthenticated
+ * (`persistSelection`'s documented D-06 unauthenticated-no-persist
+ * contract) — this file renders with no `AuthProvider` at all, matching
+ * every other test here. Mocked to a plain in-memory `useState` (same
+ * default, 3) so the reactivity test below can drive the control without
+ * pulling in the whole auth/localStorage stack just to prove the select
+ * and the best-stage line share one value.
+ */
+vi.mock('@/hooks/useMinStageMatches', () => ({
+  useMinStageMatches: () => useState(3),
+}));
 
 /**
  * WR-02 regression: `MatchupInsights` reused the generic
@@ -139,10 +153,9 @@ describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 
     expect(content).not.toBeNull();
     expect(content!.contains(select)).toBe(true);
     const bestHeading = screen.getByText('Best Stage');
-    expect(content!.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(0);
-    expect(select.compareDocumentPosition(bestHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
-      0,
-    );
+    const bestHeadingFollowsSelect =
+      select.compareDocumentPosition(bestHeading) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(bestHeadingFollowsSelect).not.toBe(0);
 
     expect(screen.getByText('Battlefield')).toBeInTheDocument();
 

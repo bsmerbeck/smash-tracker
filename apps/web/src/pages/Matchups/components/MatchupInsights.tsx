@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -54,6 +55,11 @@ function matchTypeLabel(matchType: string, t: TFunction): string {
 export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [threshold, setThreshold] = useMinStageMatches();
+  // Plan 39.1-30 (item 6): the "Min matches per stage" select moved out of
+  // the header into the card body, directly above the best/worst stage list
+  // it governs — a stable id (`useId`) associates the visible `<Label>`
+  // with the select trigger.
+  const minMatchesSelectId = useId();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
@@ -75,29 +81,12 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <CardTitle>{t('matchups.insights.title')}</CardTitle>
-            <MixedContextBadge cohort={cohort} />
-          </div>
-          <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
-        </div>
+      <CardHeader>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('matchups.insights.minMatches')}</span>
-          <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-            <SelectTrigger className="w-[72px]" aria-label={t('matchups.insights.minMatchesAria')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CardTitle>{t('matchups.insights.title')}</CardTitle>
+          <MixedContextBadge cohort={cohort} />
         </div>
+        <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {matchupMatches.length === 0 ? (
@@ -136,6 +125,28 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
                 {t('matchups.insights.recentForm')}
               </h3>
               <WinLossPips matches={matchupMatches} limit={10} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor={minMatchesSelectId} className="text-sm text-muted-foreground">
+                {t('matchups.insights.minMatches')}
+              </Label>
+              <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
+                <SelectTrigger
+                  id={minMatchesSelectId}
+                  className="w-[72px]"
+                  aria-label={t('matchups.insights.minMatchesAria')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
