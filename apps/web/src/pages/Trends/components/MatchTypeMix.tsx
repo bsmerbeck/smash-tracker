@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { HorizonKey, Match } from '@smash-tracker/shared';
-import {
-  ACCOUNT_SCOPE,
-  INSIGHT_TEMPLATES,
-  resolveWindow,
-  toRateValue,
-} from '@smash-tracker/shared';
+import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
+import { resolveWindow, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { ClaimChip } from '@/components/analytics/ClaimChip';
 import { Record } from '@/components/analytics/Record';
+import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import { ShareBar, type ShareBarSegment } from '@/components/charts/inlineMarks';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildMixShiftVerdict } from '../lib/useTrendsCardInsights';
 
 /** The four buckets matches are grouped into for the mix read, in stack/legend/fixed-fill order. */
 export const MATCH_TYPE_BUCKETS = ['tourney', 'friendly', 'quickplay', 'unspecified'] as const;
@@ -23,9 +22,6 @@ const BUCKET_LABEL_KEYS: Record<MatchTypeBucket, string> = {
   quickplay: 'trends.mix.quickplay',
   unspecified: 'trends.mix.unspecified',
 };
-
-const MIX_SHIFT_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'mixShift')!;
-const VOLUME_FORM_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'volumeForm')!;
 
 /** Buckets a stored `matchType` literal into one of the four mix categories. */
 export function bucketMatchType(matchType: Match['matchType']): MatchTypeBucket {
@@ -65,19 +61,34 @@ function buildSegments(matches: Match[], t: (key: string) => string): ShareBarSe
 export interface MatchTypeMixProps {
   matches: Match[];
   horizon: HorizonKey;
+  /**
+   * Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `mixShift`/`volumeForm`
+   * computation this card shares with `TrendsPage.tsx`'s own page-level
+   * terminus — the host page calls `useTrendsCardInsights` once, above
+   * every early return, and hands the result down. This card no longer
+   * builds either insight itself.
+   */
+  mixShiftInsight: Insight | null;
+  volumeFormInsight: Insight | null;
 }
 
 /**
  * The Pro desk's right rail, bottom card (UI-SPEC §8.2 Row 3, DD-10, DD-15):
  * an optional `MixShift` fact line, two stacked `ShareBar`s (all time and
  * the active recent horizon, each with localised labels and per-bucket
- * records), then the `VolumeForm` read as an insight line. The legacy
- * canvas bar chart is gone — this file leaves BOTH the chart-kit boundary
- * guard's allowlist and the ESLint restricted-import ignore array in the
- * SAME commit (DD-10).
+ * records), then the `VolumeForm` read as an insight line — each carrying a
+ * counted-games door (plan 39.1-27). The legacy canvas bar chart is gone —
+ * this file leaves BOTH the chart-kit boundary guard's allowlist and the
+ * ESLint restricted-import ignore array in the SAME commit (DD-10).
  */
-export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
+export function MatchTypeMix({
+  matches,
+  horizon,
+  mixShiftInsight,
+  volumeFormInsight,
+}: MatchTypeMixProps) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
   // one-time-read escape hatch.
@@ -90,16 +101,32 @@ export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
   );
   const recentSegments = useMemo(() => buildSegments(recentMatches, t), [recentMatches, t]);
 
-  const mixShiftInsight = useMemo(
-    () => MIX_SHIFT_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
-    [matches, horizon, nowMs],
-  );
-  const volumeFormInsight = useMemo(
-    () => VOLUME_FORM_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
-    [matches, horizon, nowMs],
-  );
-
   const showMixShift = mixShiftInsight != null && mixShiftInsight.state !== 'hidden';
+
+  // Plan 39.1-27 (gap closure, SC4/INS-04): each line's own counted-games
+  // door — the games descriptor from `buildInsightDoors`, present only when
+  // the insight actually counted at least one game.
+  const mixShiftGamesDoor = mixShiftInsight
+    ? buildInsightDoors({ insight: mixShiftInsight, subjectPath }).find(
+        (door) => door.kind === 'games',
+      )
+    : undefined;
+  const mixShiftDoorNode = mixShiftGamesDoor ? (
+    <Link to={mixShiftGamesDoor.href}>
+      {t('insights.door.seeGames', { count: mixShiftGamesDoor.count })}
+    </Link>
+  ) : undefined;
+
+  const volumeFormGamesDoor = volumeFormInsight
+    ? buildInsightDoors({ insight: volumeFormInsight, subjectPath }).find(
+        (door) => door.kind === 'games',
+      )
+    : undefined;
+  const volumeFormDoorNode = volumeFormGamesDoor ? (
+    <Link to={volumeFormGamesDoor.href}>
+      {t('insights.door.seeGames', { count: volumeFormGamesDoor.count })}
+    </Link>
+  ) : undefined;
 
   return (
     <Card>
@@ -113,26 +140,10 @@ export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
           <>
             {showMixShift && (
               <InsightLine
-                text={t(mixShiftInsight!.copy.key, {
-                  ...mixShiftInsight!.copy.values,
-                  // Review finding WR-A02: `mixShiftTemplate` (packages/shared,
-                  // which never localises, D-11) emits the stable, raw
-                  // `matchType` key (e.g. 'online-tourney') — the same key
-                  // shape already localised under `matchForm.matchTypes.*`
-                  // (`MatchForm.tsx`'s identical `t(\`matchForm.matchTypes.${value}\`)`
-                  // pattern) in all six locale files. Resolve it here, at the
-                  // UI layer, rather than leaking the raw enum literal into a
-                  // translated sentence.
-                  ...(typeof mixShiftInsight!.copy.values.matchType === 'string'
-                    ? {
-                        matchType: t(
-                          `matchForm.matchTypes.${mixShiftInsight!.copy.values.matchType}`,
-                        ),
-                      }
-                    : {}),
-                })}
+                text={buildMixShiftVerdict(mixShiftInsight!, t)}
                 tone="notable"
                 chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
+                door={mixShiftDoorNode}
               />
             )}
 
@@ -163,6 +174,7 @@ export function MatchTypeMix({ matches, horizon }: MatchTypeMixProps) {
                     <ClaimChip kind="trend" label={t('insights.kind.trend')} />
                   ) : undefined
                 }
+                door={volumeFormDoorNode}
               />
             )}
           </>

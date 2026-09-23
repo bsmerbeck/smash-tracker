@@ -1,25 +1,18 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { HorizonKey, InsightState, Match } from '@smash-tracker/shared';
-import {
-  ACCOUNT_SCOPE,
-  INSIGHT_TEMPLATES,
-  classify,
-  resolveWindow,
-  toRateValue,
-  wilsonInterval,
-} from '@smash-tracker/shared';
+import type { HorizonKey, Insight, InsightState, Match } from '@smash-tracker/shared';
+import { classify, resolveWindow, toRateValue, wilsonInterval } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { InsightLine } from '@/components/analytics/InsightLine';
+import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-
-const SETTING_GAP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'settingGap')!;
 
 /** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union (duplicated per this codebase's small-helper-duplication convention). */
 function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
@@ -59,6 +52,13 @@ function partitionBySetting(matches: Match[]): SettingPartition {
 export interface SettingComparisonProps {
   matches: Match[];
   horizon: HorizonKey;
+  /**
+   * Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `settingGap` computation
+   * this card shares with `TrendsPage.tsx`'s own page-level terminus — the
+   * host page calls `useTrendsCardInsights` once, above every early return,
+   * and hands the result down. This card no longer builds its own insight.
+   */
+  settingGapInsight: Insight | null;
 }
 
 /**
@@ -66,13 +66,14 @@ export interface SettingComparisonProps {
  * a two-figure `StatRow` (online then offline, ALWAYS in that fixed order),
  * a two-row dumbbell (baseline = that side's all-time rate, recent = that
  * side's rate within the active horizon), then the `SettingGap` engine read
- * as an insight line. Replaces the three concatenated second-person
- * fragments and the bordered `SettingBlock` tiles this file used to declare
- * (UI-SPEC §9.6) — both are deleted in this commit, along with the five
+ * as an insight line carrying a counted-games door (plan 39.1-27). Replaces
+ * the three concatenated second-person fragments and the bordered
+ * `SettingBlock` tiles this file used to declare (UI-SPEC §9.6) — both are
+ * deleted in this commit, along with the five
  * `trends.setting.{youWin,moreOnline,moreOffline,even,smallSample}` locale
  * keys (in all six locale files, in the SAME commit).
  */
-export function SettingComparison({ matches, horizon }: SettingComparisonProps) {
+export function SettingComparison({ matches, horizon, settingGapInsight }: SettingComparisonProps) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
@@ -108,11 +109,6 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
         hasAction: false,
       }),
     [offlineRecent, offlineBaseline],
-  );
-
-  const settingGapInsight = useMemo(
-    () => SETTING_GAP_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
-    [matches, horizon, nowMs],
   );
 
   function buildFigure(
@@ -245,6 +241,18 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
     : null;
   const gapChipKind: ClaimChipKind = settingGapInsight?.kind === 'inference' ? 'trend' : 'fact';
 
+  // Plan 39.1-27 (gap closure, SC4/INS-04): the SettingGap line's own
+  // counted-games door — the games descriptor from `buildInsightDoors`,
+  // present only when the insight actually counted at least one game.
+  const gapGamesDoor = settingGapInsight
+    ? buildInsightDoors({ insight: settingGapInsight, subjectPath }).find(
+        (door) => door.kind === 'games',
+      )
+    : undefined;
+  const gapDoorNode = gapGamesDoor ? (
+    <Link to={gapGamesDoor.href}>{t('insights.door.seeGames', { count: gapGamesDoor.count })}</Link>
+  ) : undefined;
+
   return (
     <Card>
       <CardHeader>
@@ -321,6 +329,7 @@ export function SettingComparison({ matches, horizon }: SettingComparisonProps) 
                     <ClaimChip kind={gapChipKind} label={t(`insights.kind.${gapChipKind}`)} />
                   ) : undefined
                 }
+                door={gapDoorNode}
               />
             )}
 

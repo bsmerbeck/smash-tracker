@@ -1,8 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Fighter, Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import type { Fighter, Insight, Match } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  buildPeriodSeries,
+  periodPointMatchIdsForKey,
+} from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartCard } from '@/components/charts/ChartCard';
@@ -11,10 +15,12 @@ import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
-import { resolveInsightClaim } from '@/components/analytics/insightDoors';
+import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
@@ -22,6 +28,7 @@ import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_FROM_PARAM,
@@ -41,6 +48,7 @@ import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
 import {
   MatchupChart,
+  buildFormNowVerdict,
   formStripEventKeyForMatch,
   renderFormNowHead,
   useMatchupFormNow,
@@ -83,7 +91,11 @@ export function MatchupsPage() {
     isFetching: matchesFetching,
     filterActive,
   } = useFilteredMatches();
-  const { horizon } = useHorizon();
+  const {
+    horizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: tolerant read of every drill-down axis currently in the URL. A URL
@@ -117,12 +129,19 @@ export function MatchupsPage() {
     opponentUsage,
   } = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
-  /** Clears the three filter-axis params from `next` in place — every writer below shares this so "which three params" has one spelling. */
+  /**
+   * Clears the filter-axis params from `next` in place — every writer below
+   * shares this so "which params" has one spelling. Plan 39.1-26 (gap
+   * closure): also clears the `claim` axis — "Clear filters" and every
+   * chart-point/set drill must drop a stale claim, never leave the list
+   * showing a silent intersection of an old claim with a new narrowing.
+   */
   function clearFilterAxes(next: URLSearchParams): void {
     next.delete(DRILL_DOWN_STAGE_PARAM);
     next.delete(DRILL_DOWN_EVENT_PARAM);
     next.delete(DRILL_DOWN_FROM_PARAM);
     next.delete(DRILL_DOWN_TO_PARAM);
+    next.delete(DRILL_DOWN_CLAIM_PARAM);
   }
 
   /**
@@ -210,11 +229,16 @@ export function MatchupsPage() {
   // though `matchupMatches` below is already pairing-filtered (a harmless,
   // idempotent re-affirmation of membership, not a second narrowing
   // mechanism).
+  //
+  // CR-03 (39.1-REVIEW): `eventKey` is forwarded too — the chart's set drill
+  // writes `event=`, and without this axis the terminus ignored it (the list
+  // stayed on the whole pairing while the URL claimed a set).
   const terminusAxes: DrillDownAxes = useMemo(
     () => ({
       fighterId: effectiveFighter?.id,
       vsFighterId: effectiveOpponent?.id,
       stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
       from: axesFromUrl.from,
       to: axesFromUrl.to,
       claimId: axesFromUrl.claimId,
@@ -223,6 +247,7 @@ export function MatchupsPage() {
       effectiveFighter?.id,
       effectiveOpponent?.id,
       axesFromUrl.stageId,
+      axesFromUrl.eventKey,
       axesFromUrl.from,
       axesFromUrl.to,
       axesFromUrl.claimId,
@@ -261,26 +286,76 @@ export function MatchupsPage() {
   );
   const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
 
+  // CR-02 (39.1-REVIEW): the ONE period series `MatchupChart` plots AND this
+  // page's terminus resolves a trend-point drill (`event=<point.key>`)
+  // against — each game resolves to both its form-strip set key and its
+  // period key, so one `event` axis narrows to exactly the clicked mark's
+  // games. Above every early return (Rules of Hooks).
+  const periodSeries = useMemo(
+    () => buildPeriodSeries({ matches: matchupMatches }),
+    [matchupMatches],
+  );
+  // WR-02 (39.1-REVIEW iteration 2): the URL's `event=` period key resolves
+  // by the key's OWN grain rule over this same base, not through whichever
+  // grain the ladder picks right now — a key drawn at `week` still lands on
+  // its week after a range filter or a sync moves the ladder to `month`.
+  // While the grain is unchanged this is exactly the plotted point's games.
+  const drillEventKey = axesFromUrl.eventKey;
+  const periodEventMatchIds = useMemo(() => {
+    if (drillEventKey == null) return undefined;
+    const ids = periodPointMatchIdsForKey(drillEventKey, matchupMatches);
+    return ids ? new Set(ids) : undefined;
+  }, [drillEventKey, matchupMatches]);
+  const eventKeysForMatch = useCallback(
+    (match: Match): string[] => {
+      const setKey = formStripEventKeyForMatch(match);
+      return drillEventKey != null && periodEventMatchIds?.has(match.id)
+        ? [setKey, drillEventKey]
+        : [setKey];
+    },
+    [drillEventKey, periodEventMatchIds],
+  );
+
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE
   // matchupOrPlayer insight this page shares with `MatchupOrPlayerCard`
   // (which takes the result as a prop below) and this page's own
-  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`) — this
-  // template only ever produces a single insight per pairing, so the
-  // "shared array" the other three surfaces build is just this one entry.
-  // Called unconditionally, above every early return (Rules of Hooks),
-  // mirroring `useMatchupFormNow` just above.
+  // `FilteredMatchList` terminus (`resolveClaim`/`claimSummary`). Called
+  // unconditionally, above every early return (Rules of Hooks), mirroring
+  // `useMatchupFormNow` just above.
   const matchupOrPlayerInsight = useMatchupOrPlayerInsight({ matchupMatches, horizon });
-  const insightsForTerminus = useMemo(
-    () => (matchupOrPlayerInsight ? [matchupOrPlayerInsight] : []),
-    [matchupOrPlayerInsight],
+
+  // Plan 39.1-26 (gap closure, Task 1): the effective fighter/vs pairing
+  // this page's door hrefs must carry — the SAME pairing both insights above
+  // were computed over, never the persisted selection alone. A door is a
+  // plain relative `<Link>`, never routed through `setSearchParams` (which
+  // merges), so without this carry a followed door would drop a URL-seeded
+  // pairing entirely, reverting to whatever the persisted selection resolves
+  // to. Declared above every early return, mirroring `terminusAxes` above.
+  const pairingDoorCarry = useMemo(
+    () =>
+      buildDrillDownSearch({
+        fighterId: effectiveFighter?.id,
+        vsFighterId: effectiveOpponent?.id,
+      }),
+    [effectiveFighter?.id, effectiveOpponent?.id],
   );
-  const claimSummary =
-    axesFromUrl.claimId != null &&
-    matchupOrPlayerInsight != null &&
-    matchupOrPlayerInsight.id === axesFromUrl.claimId &&
-    effectiveOpponent != null
-      ? buildMatchupOrPlayerVerdict(matchupOrPlayerInsight, t, effectiveOpponent.id)
-      : undefined;
+
+  // Plan 39.1-26 (gap closure, Task 1): both this pairing's own insights now
+  // resolve a followed door's claim, not just `matchupOrPlayer` alone.
+  const insightsForTerminus = useMemo(
+    () => [formNowInsight, matchupOrPlayerInsight].filter((i): i is Insight => i != null),
+    [formNowInsight, matchupOrPlayerInsight],
+  );
+  const claimSummary = useMemo(() => {
+    if (axesFromUrl.claimId == null || effectiveOpponent == null) return undefined;
+    if (formNowInsight != null && formNowInsight.id === axesFromUrl.claimId) {
+      return buildFormNowVerdict(formNowInsight, effectiveOpponent.id, t);
+    }
+    if (matchupOrPlayerInsight != null && matchupOrPlayerInsight.id === axesFromUrl.claimId) {
+      return buildMatchupOrPlayerVerdict(matchupOrPlayerInsight, t, effectiveOpponent.id);
+    }
+    return undefined;
+  }, [axesFromUrl.claimId, effectiveOpponent, formNowInsight, matchupOrPlayerInsight, t]);
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
   // passed as `resolveClaim` would be a NEW reference every render, breaking
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
@@ -291,6 +366,51 @@ export function MatchupsPage() {
       resolveInsightClaim({ claimId, insights: insightsForTerminus, matches: ms }),
     [insightsForTerminus],
   );
+
+  // WR-01 (39.1-REVIEW iteration 2): the same claim-follows-horizon rule as
+  // Fighter Analysis and Trends — now that the HorizonSwitch drives this
+  // page (CR-01), a switch press re-points a followed door's claim to the
+  // same insight at the new horizon; one that cannot resolve is shown as
+  // not applied by the terminus. Above every early return (Rules of Hooks).
+  const hasPageClaim = useCallback(
+    (id: string) => insightsForTerminus.some((insight) => insight.id === id),
+    [insightsForTerminus],
+  );
+  const rewriteClaim = useUrlClaimRewriter();
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    horizonChangeCount,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
+
+  // Plan 39.1-26 (gap closure, Task 1): the chart's counted-games door —
+  // built by `buildInsightDoors` from the SAME `formNowInsight` the
+  // terminus above resolves against, anchored to `#matchup-table` (this
+  // page's own terminus id, not the default `#games`) and carrying the
+  // effective pairing so a URL-seeded pairing survives the round trip.
+  // `undefined` whenever the insight has zero counted games.
+  const formNowGamesDoor = formNowInsight
+    ? buildInsightDoors({
+        insight: formNowInsight,
+        subjectPath,
+        anchor: `#${MATCHUP_TABLE_ANCHOR_ID}`,
+        carry: pairingDoorCarry,
+      }).find((door) => door.kind === 'games')
+    : undefined;
+
+  // Plan 39.1-26 (gap closure, Task 1): landing is real in a browser
+  // (BrowserRouter performs no hash scroll of its own — `AppRouter.tsx`) —
+  // this scrolls the terminus into view once per navigation whenever the
+  // hash names it, covering the chart door click. WR-02 (39.1-REVIEW):
+  // gated on the data having landed, so a cold load / shared door URL lands
+  // on the terminus too.
+  useLandingScroll({
+    anchorId: MATCHUP_TABLE_ANCHOR_ID,
+    ready: !fightersLoading && !matchesLoading,
+  });
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
@@ -494,11 +614,25 @@ export function MatchupsPage() {
                 }
                 insight={
                   formNowInsight && effectiveOpponent
-                    ? renderFormNowHead(formNowInsight, effectiveOpponent.id, t, i18n.language)
+                    ? renderFormNowHead(
+                        formNowInsight,
+                        effectiveOpponent.id,
+                        t,
+                        i18n.language,
+                        formNowGamesDoor ? (
+                          <Link to={formNowGamesDoor.href}>
+                            {t('insights.door.seeGames', { count: formNowGamesDoor.count })}
+                          </Link>
+                        ) : undefined,
+                      )
                     : null
                 }
               >
-                <MatchupChart matchupMatches={matchupMatches} horizon={horizon} />
+                <MatchupChart
+                  matchupMatches={matchupMatches}
+                  horizon={horizon}
+                  periodSeries={periodSeries}
+                />
               </ChartCard>
             </div>
             <div className="col-span-12 xl:order-3 xl:col-span-8">
@@ -508,6 +642,7 @@ export function MatchupsPage() {
               <MatchupOrPlayerCard
                 matchupMatches={matchupMatches}
                 insight={matchupOrPlayerInsight}
+                doorCarry={pairingDoorCarry}
               />
             </div>
           </PageGrid>
@@ -522,7 +657,7 @@ export function MatchupsPage() {
                 axes={terminusAxes}
                 resolveClaim={resolveClaimForTerminus}
                 claimSummary={claimSummary}
-                eventKeyForMatch={formStripEventKeyForMatch}
+                eventKeyForMatch={eventKeysForMatch}
                 onClearFilters={() => setDrillDown({})}
                 showDelete
               />

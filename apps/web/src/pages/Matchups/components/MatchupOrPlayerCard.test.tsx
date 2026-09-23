@@ -58,18 +58,26 @@ function largeFixture(): Match[] {
 function CardTestHarness({
   matchupMatches,
   horizon,
+  doorCarry,
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
+  doorCarry?: URLSearchParams;
 }) {
   const insight = useMatchupOrPlayerInsight({ matchupMatches, horizon });
-  return <MatchupOrPlayerCard matchupMatches={matchupMatches} insight={insight} />;
+  return (
+    <MatchupOrPlayerCard matchupMatches={matchupMatches} insight={insight} doorCarry={doorCarry} />
+  );
 }
 
-function renderCard(matchupMatches: Match[], horizon: HorizonKey = 'last30') {
+function renderCard(
+  matchupMatches: Match[],
+  horizon: HorizonKey = 'last30',
+  doorCarry?: URLSearchParams,
+) {
   return render(
     <MemoryRouter>
-      <CardTestHarness matchupMatches={matchupMatches} horizon={horizon} />
+      <CardTestHarness matchupMatches={matchupMatches} horizon={horizon} doorCarry={doorCarry} />
     </MemoryRouter>,
   );
 }
@@ -108,6 +116,26 @@ describe('MatchupOrPlayerCard', () => {
 
       const secondary = doors[1]!;
       expect(secondary.textContent ?? '').toMatch(/open opponent/i);
+    });
+  });
+
+  describe('T-39.1-26 (gap closure): doorCarry keeps host context on the games door', () => {
+    it('with a doorCarry prop, the games door href keeps the carried params', () => {
+      const carry = new URLSearchParams({ fighter: '1', vs: '10' });
+      const { container } = renderCard(largeFixture(), 'last30', carry);
+      const card = container.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      const doors = within(card).getAllByRole('link');
+      expect(doors[0]!.getAttribute('href') ?? '').toContain('fighter=1');
+      expect(doors[0]!.getAttribute('href') ?? '').toContain('vs=10');
+    });
+
+    it('without doorCarry, the href stays unchanged (no fighter/vs leak)', () => {
+      const { container } = renderCard(largeFixture());
+      const card = container.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      const doors = within(card).getAllByRole('link');
+      const href = doors[0]!.getAttribute('href') ?? '';
+      expect(href).not.toContain('fighter=');
+      expect(href).toMatch(/#matchup-table$/);
     });
   });
 });

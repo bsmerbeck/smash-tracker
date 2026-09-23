@@ -126,14 +126,22 @@
       "summary_other": "{{count}} Spiele · {{filters}}",
       "clear": "Filter zurücksetzen",
       "empty": "Keine Spiele entsprechen diesen Filtern.",
+      "claimNotApplied": "Die verlinkte Auswertung ist nicht mehr verfügbar und wird daher nicht angewendet. Es werden alle Spiele angezeigt, die den übrigen Filtern entsprechen.",
       "loading": "Spiele werden geladen…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, öffnet Video",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, Details anzeigen",
       "columnMyCharacter": "Mein Charakter",
       "columnTheirCharacter": "Ihr Charakter",
       "columnEvent": "Event",
-      "showAll_one": "Alle {{count}} Spiel anzeigen",
-      "showAll_other": "Alle {{count}} Spiele anzeigen"
+      "showMore_one": "{{count}} weitere anzeigen",
+      "showMore_other": "{{count}} weitere anzeigen",
+      "showingOf_one": "{{shown}} von {{count}} Spiel angezeigt",
+      "showingOf_other": "{{shown}} von {{count}} Spielen angezeigt",
+      "eventSummary": {
+        "set": "Satz vs. {{opponent}} bei {{event}}",
+        "setUnnamed": "Satz vs. {{opponent}}",
+        "game": "Spiel vs. {{opponent}} am {{date}}"
+      }
     },
     "pips": {
       "empty": "Noch keine Matches.",

@@ -28,7 +28,10 @@ export interface HorizonSwitchProps {
  *
  * Reads `useHorizon` directly and holds NO local selected state — a second
  * copy of "which horizon is selected" here could drift from the hook's own
- * resolution (e.g. the lastEvent-unavailable fallback).
+ * resolution (e.g. the lastEvent-unavailable fallback). Its `useHorizon`
+ * call is separate from the host page's; `useHorizon` broadcasts each
+ * `setHorizon` to every mounted call on the same subject, so a press here
+ * moves the page's figures in the same event (39.1-REVIEW iteration 2 CR-01).
  *
  * Reading `insights.horizon.*` here is correct even though this file lives
  * in `components/analytics/` alongside plans 39.1-06/07's primitives: their

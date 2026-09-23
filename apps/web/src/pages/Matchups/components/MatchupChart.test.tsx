@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, buildPeriodSeries } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
@@ -56,6 +56,7 @@ function ChartCardWrapper({
       <MatchupChart
         matchupMatches={matchupMatches}
         horizon={horizon}
+        periodSeries={buildPeriodSeries({ matches: matchupMatches })}
         width={width}
         height={height}
       />
@@ -220,7 +221,7 @@ describe('MatchupChart', () => {
 });
 
 describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
-  it("clicking a period point writes the period's own from/to bounds and scrolls to the results-table anchor", () => {
+  it("clicking a period point writes the point's own key as the event axis (never a from/to window) and scrolls to the results-table anchor", () => {
     const scrollIntoView = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
@@ -235,11 +236,12 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
 
     // jsdom's zero-size layout resolves every click to activeTooltipIndex 0
     // (see TrendLine.test.tsx and the 37-01 SUMMARY) — the clicked point is
-    // therefore always the oldest ('game' grain) point, whose start/end both
-    // equal that game's own timestamp.
+    // therefore always the oldest ('game' grain) point. CR-02 (39.1-REVIEW):
+    // the drill names that point by its key — a `[startMs, endMs]` window
+    // over-counts on tied timestamps and non-contiguous grains.
     expect(setDrillDown).toHaveBeenCalledTimes(1);
     const call = setDrillDown.mock.calls[0]?.[0];
-    expect(call).toEqual({ from: matches[0]?.time, to: matches[0]?.time });
+    expect(call).toEqual({ eventKey: `game:${matches[0]?.id}` });
     expect(scrollIntoView).toHaveBeenCalledWith(
       expect.objectContaining({ behavior: 'smooth', block: 'start' }),
     );

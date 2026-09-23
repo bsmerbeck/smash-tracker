@@ -566,6 +566,111 @@ describe('FighterAnalysisPage', () => {
     });
   });
 
+  const LAST_30_DOOR_GAMES = 30;
+  const LAST_90_DOOR_GAMES = 50;
+
+  /**
+   * 50 games spread across the last ~80 days, oldest first, evenly spaced —
+   * `last30` (D-06's "most recent 30 games", a COUNT window, not a date
+   * window — `resolveWindow`'s `base.slice(-RECENT_GAME_WINDOW)`) picks
+   * exactly the newest 30; `last90` (a 90-DAY window) picks all 50, since
+   * the oldest game is only ~80 days old. Proves the hero door's count
+   * follows the pressed horizon figure (D-06).
+   */
+  function horizonFollowingFixture(): ReturnType<typeof makeMatch>[] {
+    const now = Date.now();
+    const spanDays = 80;
+    return Array.from({ length: LAST_90_DOOR_GAMES }, (_, i) =>
+      makeMatch({
+        id: `hz${i}`,
+        time:
+          now -
+          (LAST_90_DOOR_GAMES - 1 - i) *
+            ((spanDays / (LAST_90_DOOR_GAMES - 1)) * 24 * 60 * 60 * 1000),
+        win: i % 2 === 0,
+      }),
+    );
+  }
+
+  describe('T-39.1-25 (gap closure, SC4/INS-04): the hero door lands on exactly N', () => {
+    it("clicking the hero's counted-games door narrows the terminus to exactly the door's own count, states it in the summary, and scrolls #games into view", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richInsightFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+      const scrollIntoViewSpy = vi.fn();
+      const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+      try {
+        renderFighterAnalysis();
+
+        await screen.findByRole('heading', { name: mario.name, level: 2 });
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+        );
+        const doorsRoot = document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement;
+        const door = within(doorsRoot).getByRole('link');
+        const doorLabel = door.textContent ?? '';
+        const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+        expect(expectedCount).toBeGreaterThan(0);
+
+        await user.click(door);
+
+        await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+        const gamesCard = document.getElementById('games') as HTMLElement;
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+        expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+
+        expect(scrollIntoViewSpy).toHaveBeenCalled();
+        const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;
+        expect(scrollIntoViewSpy.mock.contexts[lastCallIndex]).toBe(gamesCard);
+      } finally {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      }
+    });
+
+    it('the hero door count follows the pressed horizon figure (D-06)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = horizonFollowingFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderFighterAnalysis();
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+      );
+      const initialDoor = within(
+        document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+      ).getByRole('link');
+      expect(initialDoor.textContent ?? '').toContain(String(LAST_30_DOOR_GAMES));
+
+      const heroBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      const last90Button = within(heroBody).getByText('90 days').closest('button')!;
+      await user.click(last90Button);
+
+      await waitFor(() => {
+        const door = within(
+          document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+        ).getByRole('link');
+        expect(door.textContent ?? '').toContain(String(LAST_90_DOOR_GAMES));
+      });
+
+      const door = within(
+        document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+      ).getByRole('link');
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(LAST_90_DOOR_GAMES);
+    });
+  });
+
   describe('WR-C02 (39.1-REVIEW.md): D-16 memoization contract', () => {
     it('an unrelated re-render does not re-run the terminus narrowing predicate', async () => {
       const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);

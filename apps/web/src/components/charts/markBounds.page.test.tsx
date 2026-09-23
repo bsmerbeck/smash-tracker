@@ -25,6 +25,7 @@ import {
   useMatchupFormNow,
 } from '@/pages/Matchups/components/MatchupChart';
 import { FighterHero } from '@/pages/FighterAnalysis/components/FighterHero';
+import { useFighterFormNow } from '@/pages/FighterAnalysis/lib/useFighterFormNow';
 
 /**
  * Plan 39.1-21 Task 2 (VIZ-01, UI-SPEC §11/§7.13): the whole-phase mark-bound
@@ -124,6 +125,7 @@ function ChartCardWrapper({
       <MatchupChart
         matchupMatches={matchupMatches}
         horizon={horizon}
+        periodSeries={buildPeriodSeries({ matches: matchupMatches })}
         width={width}
         height={height}
       />
@@ -157,17 +159,33 @@ function renderMatchupChart(
 // FighterHero harness — mirrors FighterHero.test.tsx's own renderHero.
 // ---------------------------------------------------------------------------
 
+/** Mirrors `FighterHero.test.tsx`'s own `HeroHarness` (plan 39.1-25): obtains `formNowInsight`/`nowMs` via `useFighterFormNow` itself, never a hand-built `Insight` literal. */
+function FighterHeroHarness({ fighterMatches }: { fighterMatches: Match[] }) {
+  const { insight, nowMs } = useFighterFormNow({
+    fighterId: fox.id,
+    fighterMatches,
+    horizon: 'last30',
+  });
+  return (
+    <FighterHero
+      fighter={fox}
+      fighterMatches={fighterMatches}
+      allMatches={fighterMatches}
+      horizon="last30"
+      setHorizon={vi.fn()}
+      isLoading={false}
+      formNowInsight={insight}
+      nowMs={nowMs}
+      periodSeries={buildPeriodSeries({ matches: fighterMatches })}
+      onDrill={vi.fn()}
+    />
+  );
+}
+
 function renderFighterHero(fighterMatches: Match[]) {
   return render(
     <MemoryRouter>
-      <FighterHero
-        fighter={fox}
-        fighterMatches={fighterMatches}
-        allMatches={fighterMatches}
-        horizon="last30"
-        setHorizon={vi.fn()}
-        isLoading={false}
-      />
+      <FighterHeroHarness fighterMatches={fighterMatches} />
     </MemoryRouter>,
   );
 }

@@ -126,14 +126,22 @@
       "summary_other": "{{count}} partidas · {{filters}}",
       "clear": "Borrar filtros",
       "empty": "Ninguna partida coincide con estos filtros.",
+      "claimNotApplied": "El análisis enlazado ya no está disponible, así que no se aplica. Se muestran todas las partidas que coinciden con los demás filtros.",
       "loading": "Cargando partidas…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, abre el video",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, mostrar detalles",
       "columnMyCharacter": "Mi personaje",
       "columnTheirCharacter": "Su personaje",
       "columnEvent": "Evento",
-      "showAll_one": "Mostrar {{count}} partida",
-      "showAll_other": "Mostrar todas las {{count}} partidas"
+      "showMore_one": "Mostrar {{count}} más",
+      "showMore_other": "Mostrar {{count}} más",
+      "showingOf_one": "Mostrando {{shown}} de {{count}} partida",
+      "showingOf_other": "Mostrando {{shown}} de {{count}} partidas",
+      "eventSummary": {
+        "set": "Set vs {{opponent}} en {{event}}",
+        "setUnnamed": "Set vs {{opponent}}",
+        "game": "Partida vs {{opponent}} el {{date}}"
+      }
     },
     "pips": {
       "empty": "Aún no hay partidas.",

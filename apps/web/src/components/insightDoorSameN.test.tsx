@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import {
@@ -13,9 +12,19 @@ import {
 import { generateSyntheticMatches, EIGHT_K_FIXTURE_OPTIONS } from '@smash-tracker/shared/testUtils';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
-import { FilteredMatchList, FILTERED_MATCH_LIST_ROW_CAP } from './FilteredMatchList';
+import {
+  FilteredMatchList,
+  FILTERED_MATCH_LIST_ROW_CAP,
+  FILTERED_MATCH_LIST_PAGE_SIZE,
+} from './FilteredMatchList';
 import { readDrillDownParams } from '@/lib/drillDownParams';
-import { buildInsightDoors, resolveInsightClaim, eventKeyOf } from './analytics/insightDoors';
+import {
+  buildInsightDoors,
+  resolveInsightClaim,
+  eventKeyOf,
+  type InsightDoorDescriptor,
+} from './analytics/insightDoors';
+import { INSIGHT_DOOR_HOSTS } from '@/test/insightDoorHosts';
 
 /**
  * Plan 39.1-19 Task 3, closed out by plan 39.1-22 (gap closure, orchestrator
@@ -264,6 +273,29 @@ describe('registry coverage', () => {
     expect(INSIGHT_TEMPLATES).toHaveLength(17);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
   });
+
+  /**
+   * Plan 39.1-29 (gap closure, SC4/INS-04): this file's own per-template
+   * guard proves the DOOR is exact once a `FilteredMatchList` is rendered
+   * directly at the door's own href — Finding 10 showed that a library-level
+   * guard nothing renders through a real page proves nothing. This case
+   * closes that gap AT THE SOURCE: every registered template must have at
+   * least one entry in `INSIGHT_DOOR_HOSTS` (imported from
+   * `@/test/insightDoorHosts`, the page-level reachability suite's own
+   * registry, `insightDoorReachability.test.tsx`) — so a future template
+   * that ships with no live host fails HERE, in the library guard, not only
+   * in the (much slower) page suite.
+   */
+  it('every registered template has at least one live host in INSIGHT_DOOR_HOSTS', () => {
+    for (const template of INSIGHT_TEMPLATES) {
+      const hosts = INSIGHT_DOOR_HOSTS[template.id];
+      expect(hosts, `${template.id} is missing from INSIGHT_DOOR_HOSTS`).toBeDefined();
+      expect(
+        hosts.length,
+        `${template.id} has zero live hosts in INSIGHT_DOOR_HOSTS`,
+      ).toBeGreaterThan(0);
+    }
+  });
 });
 
 /**
@@ -281,9 +313,14 @@ describe('registry coverage', () => {
  */
 const SAME_N_DOOR_TIMEOUT_MS = 20_000;
 
+/** The active-filter summary `<p>` — the header text that must always state the FULL printed n, never the mounted row count (plan 39.1-28). */
+function summaryLineText(container: HTMLElement): string | null {
+  return container.querySelector('.border-border p')?.textContent ?? null;
+}
+
 describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) => {
   it(
-    'counted-games door: present with the exact same-n row count iff the insight counted at least one game',
+    'counted-games door: present with the exact same-n row count iff the insight counted at least one game — header/data-total-rows state the count, never the mounted rows',
     () => {
       const insight = buildInsight(templateId);
       const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
@@ -304,44 +341,89 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
       expect(gamesDoor!.count).toBe(insight.countedMatchIds.length);
 
       const { matches } = FIXTURES[templateId];
-      renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
+      const { container } = renderFilteredMatchListAtDoor(insight, matches, gamesDoor!.href);
       expect(renderedRowCount()).toBe(gamesDoor!.count);
-      // Plan 39.1-23: `renderedRowCount()` reads `data-total-rows`, so this
-      // assertion holds even for whole-history reads (settingGap, rosterCore)
-      // whose doors land thousands of rows on the 8k fixture — FilteredMatchList
-      // now mounts at most FILTERED_MATCH_LIST_ROW_CAP of them, never all.
+      // Plan 39.1-23/39.1-28: `renderedRowCount()` reads `data-total-rows`, so
+      // this assertion holds even for whole-history reads (settingGap,
+      // rosterCore) whose doors land thousands of rows on the 8k fixture —
+      // FilteredMatchList now mounts at most FILTERED_MATCH_LIST_ROW_CAP of
+      // them per pass, never all at once.
+      //
+      // Plan 39.1-28: the header (active-filter summary line) ALSO states the
+      // full printed n — the same guarantee `data-total-rows` makes, proven a
+      // second way, at the surface a real user actually reads.
+      expect(summaryLineText(container)).toContain(String(gamesDoor!.count));
     },
     SAME_N_DOOR_TIMEOUT_MS,
   );
 });
 
-describe('same-n door guard: capped rendering still proves rendered == printed (plan 39.1-23)', () => {
+/**
+ * Plan 39.1-28 (owner decision 2026-09-22): replaces the settingGap-specific
+ * one-step "Show all" expansion case with a registry-driven paging-to-
+ * exhaustion case. The template is chosen PROGRAMMATICALLY — the smallest
+ * door count strictly greater than `FILTERED_MATCH_LIST_ROW_CAP` — rather
+ * than hand-picked, so this case stays correct if any template's fixture
+ * changes shape in the future.
+ */
+describe('same-n door guard: paging to exhaustion proves rendered == printed through 100-row pages (plan 39.1-28)', () => {
   it(
-    'settingGap: a real Show-all click mounts every counted game, matching the door count exactly — not just the data-total-rows attribute',
-    async () => {
-      const user = userEvent.setup();
-      const insight = buildInsight('settingGap');
-      const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
-      const gamesDoor = doors.find((d) => d.kind === 'games')!;
-      // Non-vacuity: this fixture must actually exceed the cap, or clicking
-      // Show all would prove nothing about the cap/expansion mechanism.
-      expect(gamesDoor.count).toBeGreaterThan(FILTERED_MATCH_LIST_ROW_CAP);
+    'pages the smallest over-cap door to exhaustion, never mounting more than the page size per activation, ending at the exact door count',
+    () => {
+      const candidates = INSIGHT_TEMPLATES.map((template) => {
+        const insight = buildInsight(template.id);
+        const doors = buildInsightDoors({ insight, subjectPath: identitySubjectPath });
+        const gamesDoor = doors.find((d) => d.kind === 'games');
+        return { templateId: template.id, insight, gamesDoor, count: gamesDoor?.count ?? 0 };
+      }).filter(
+        (
+          c,
+        ): c is {
+          templateId: InsightTemplateId;
+          insight: Insight;
+          gamesDoor: InsightDoorDescriptor;
+          count: number;
+        } => c.gamesDoor != null && c.count > FILTERED_MATCH_LIST_ROW_CAP,
+      );
 
-      const { matches } = FIXTURES.settingGap;
-      renderFilteredMatchListAtDoor(insight, matches, gamesDoor.href);
+      expect(
+        candidates.length,
+        `no template's door count exceeds FILTERED_MATCH_LIST_ROW_CAP (${FILTERED_MATCH_LIST_ROW_CAP}) — per-template counts: ${INSIGHT_TEMPLATES.map(
+          (t) => `${t.id}=${buildInsight(t.id).countedMatchIds.length}`,
+        ).join(', ')}`,
+      ).toBeGreaterThan(0);
+
+      const chosen = candidates.reduce((min, c) => (c.count < min.count ? c : min));
+
+      // Runtime bound: this test fixture family tops out at 8k rows; a
+      // chosen count above 1,000 would make this a real slow-test risk
+      // rather than a bounded exhaustion proof.
+      expect(
+        chosen.count,
+        `chosen paging template (${chosen.templateId}) door count ${chosen.count} exceeds the 1,000-row runtime bound`,
+      ).toBeLessThanOrEqual(1000);
+
+      const { matches } = FIXTURES[chosen.templateId];
+      renderFilteredMatchListAtDoor(chosen.insight, matches, chosen.gamesDoor.href);
       const table = screen.getByRole('table');
 
-      // First render: capped, never the full count of real <tr>s.
-      const cappedRowCount = within(table).getAllByRole('row').length - 1;
-      expect(cappedRowCount).toBe(FILTERED_MATCH_LIST_ROW_CAP);
+      // First render: capped, never the full door count of real <tr>s.
+      let mounted = within(table).getAllByRole('row').length - 1;
+      expect(mounted).toBe(FILTERED_MATCH_LIST_ROW_CAP);
 
-      await user.click(screen.getByRole('button', { name: /show all/i }));
+      let button = screen.queryByRole('button', { name: /show \d+ more/i });
+      while (button) {
+        fireEvent.click(button);
+        const newMounted = within(table).getAllByRole('row').length - 1;
+        expect(newMounted - mounted).toBeLessThanOrEqual(FILTERED_MATCH_LIST_PAGE_SIZE);
+        mounted = newMounted;
+        button = screen.queryByRole('button', { name: /show \d+ more/i });
+      }
 
-      // Post-expansion: every counted game is a real mounted <tr>, counted
+      // Post-exhaustion: every counted game is a real mounted <tr>, counted
       // directly — proving `data-total-rows` was never lying about what the
       // rest of the guard, above, takes on the attribute's word alone.
-      const expandedRowCount = within(table).getAllByRole('row').length - 1;
-      expect(expandedRowCount).toBe(gamesDoor.count);
+      expect(mounted).toBe(chosen.gamesDoor.count);
     },
     SAME_N_DOOR_TIMEOUT_MS,
   );

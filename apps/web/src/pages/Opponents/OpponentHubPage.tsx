@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import type { ReactElement, ReactNode } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { Insight, InsightKind, InsightScope, Match, SampleMeta } from '@smash-tracker/shared';
@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Button } from '@/components/ui/button';
 import { ChartCard } from '@/components/charts/ChartCard';
 import {
   MatrixHeat,
@@ -34,6 +35,7 @@ import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
@@ -44,6 +46,7 @@ import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import {
   buildOpponentEvidence,
   buildOpponentProfile,
@@ -56,6 +59,7 @@ import {
   resolveAnalyzeOpponentPreselection,
 } from '@/lib/analyzeOpponent';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_STAGE_PARAM,
@@ -122,21 +126,37 @@ function buildOpponentFormNowScope(opponentTag: string): InsightScope {
 }
 
 /**
+ * Plan 39.1-26 (gap closure): the ONE verdict composition for the hub's own
+ * `formNow` — `entity` is the resolved opponent's own display tag (a player
+ * identity, never a fighter name; `formNow.ts` never supplies `entity`
+ * itself, UI-SPEC §9.2 rule 7). Shared by `renderOpponentFormNowHead` (the
+ * slot) and this page's own `claimSummary` (the terminus's active-filter
+ * summary), so the two never independently re-derive the same sentence.
+ */
+function buildOpponentFormNowVerdict(insight: Insight, opponentTag: string, t: TFunction): string {
+  const entity = `${t('matchups.vs')} ${opponentTag}`;
+  return t(insight.copy.key, { ...insight.copy.values, entity });
+}
+
+/**
  * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
  * chip, verdict, evidence — WITHOUT the card's own chrome. Mirrors
- * `MatchupChart.tsx`'s `renderFormNowHead` exactly, except `entity` is the
- * resolved opponent's own display tag (a player identity), never a fighter
- * name — `formNow.ts` never supplies `entity` itself (UI-SPEC §9.2 rule 7).
+ * `MatchupChart.tsx`'s `renderFormNowHead` exactly.
+ *
+ * Plan 39.1-26 (gap closure): gains an optional trailing `door` — the
+ * counted-games door this page builds via `buildInsightDoors`, rendered as
+ * a `Button asChild` wrapping the host's own `<Link>` inside
+ * `data-slot="opponent-form-now-doors"`. `undefined` renders no doors row.
  */
 function renderOpponentFormNowHead(
   insight: Insight,
   opponentTag: string,
   t: TFunction,
   locale: string,
+  door?: ReactNode,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
-  const entity = `${t('matchups.vs')} ${opponentTag}`;
-  const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
+  const verdict = buildOpponentFormNowVerdict(insight, opponentTag, t);
 
   // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
   // `recent`/`baseline` claims and format it through the one shared,
@@ -173,6 +193,13 @@ function renderOpponentFormNowHead(
       >
         {evidence}
       </p>
+      {door && (
+        <div className="flex flex-wrap gap-2" data-slot="opponent-form-now-doors">
+          <Button asChild size="sm">
+            {door}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -424,16 +451,17 @@ export function OpponentHubPage() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  /** D-05: writes through the plan 38-04 param builder — the sole spelling for every drill-down axis this page composes. */
-  function handleSelectCell(cell: MatrixHeatCell) {
-    const [myStr, theirStr] = cell.rowKey.split(':');
-    const axes: Partial<DrillDownAxes> = {
-      fighterId: myStr != null ? Number(myStr) : undefined,
-      vsFighterId: theirStr != null ? Number(theirStr) : undefined,
-      stageId: Number(cell.colKey),
-    };
+  /**
+   * CR-01 (39.1-REVIEW): the ONE writer every hub drill goes through. A drill
+   * REPLACES an active insight claim, never intersects it — merging a matrix
+   * cell / trend point / set into a URL that still carried the H2H door's
+   * `claim=` showed `countedMatchIds ∩ drill` under the old verdict, not the
+   * games the clicked mark counted (the Matchups `clearFilterAxes` twin).
+   */
+  function writeHubDrill(axes: Partial<DrillDownAxes>) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
+      next.delete(DRILL_DOWN_CLAIM_PARAM);
       for (const [key, value] of buildDrillDownSearch(axes).entries()) {
         next.set(key, value);
       }
@@ -442,15 +470,18 @@ export function OpponentHubPage() {
     scrollToList();
   }
 
-  function handleSelectTrendPoint(point: TrendEventPoint) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [key, value] of buildDrillDownSearch({ eventKey: point.eventKey }).entries()) {
-        next.set(key, value);
-      }
-      return next;
+  /** D-05: writes through the plan 38-04 param builder — the sole spelling for every drill-down axis this page composes. */
+  function handleSelectCell(cell: MatrixHeatCell) {
+    const [myStr, theirStr] = cell.rowKey.split(':');
+    writeHubDrill({
+      fighterId: myStr != null ? Number(myStr) : undefined,
+      vsFighterId: theirStr != null ? Number(theirStr) : undefined,
+      stageId: Number(cell.colKey),
     });
-    scrollToList();
+  }
+
+  function handleSelectTrendPoint(point: TrendEventPoint) {
+    writeHubDrill({ eventKey: point.eventKey });
   }
 
   /**
@@ -459,14 +490,7 @@ export function OpponentHubPage() {
    * event, one destination shape, regardless of which surface produced it.
    */
   function handleSelectEvent(eventKey: string) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [key, value] of buildDrillDownSearch({ eventKey }).entries()) {
-        next.set(key, value);
-      }
-      return next;
-    });
-    scrollToList();
+    writeHubDrill({ eventKey });
   }
 
   const chipFilteredMatches = useMemo(() => {
@@ -590,6 +614,56 @@ export function OpponentHubPage() {
     return built[0] ?? null;
   }, [targetIdentity, trendSourceMatches, formNowNowMs]);
 
+  // Plan 39.1-26 (gap closure, Task 2): the host context the trend's own
+  // door must carry — exactly the inputs `chipFilteredMatches`/
+  // `trendSourceMatches` above depend on (the un-pooling chips, and a `vs`
+  // character narrowing). A prior matrix drill's `fighter`/`stage`/`event`
+  // are deliberately never carried: the trend insight was never computed
+  // over them. A door is a plain relative `<Link>`, never routed through
+  // `setSearchParams` (which merges), so without this carry a followed door
+  // would drop the chip/vs state entirely on navigation.
+  const hubDoorCarry = useMemo(() => {
+    const params = buildDrillDownSearch({ vsFighterId: axesFromUrl.vsFighterId });
+    if (hubContext) params.set(HUB_CONTEXT_PARAM, hubContext);
+    if (hubSource) params.set(HUB_SOURCE_PARAM, hubSource);
+    return params;
+  }, [axesFromUrl.vsFighterId, hubContext, hubSource]);
+
+  // Plan 39.1-26 (gap closure, Task 2): the trend's counted-games door — the
+  // `kind === 'games'` descriptor of `buildInsightDoors` over the SAME
+  // `trendInsight` the terminus below resolves against, anchored to this
+  // page's own `#opponent-hub-list` terminus id and carrying the chip/vs
+  // context above.
+  const trendGamesDoor = trendInsight
+    ? buildInsightDoors({
+        insight: trendInsight,
+        subjectPath,
+        anchor: `#${OPPONENT_HUB_LIST_ANCHOR_ID}`,
+        carry: hubDoorCarry,
+      }).find((door) => door.kind === 'games')
+    : undefined;
+
+  // Plan 39.1-26 (gap closure, Task 2): the terminus's claim resolver — a
+  // one-element array (this hub has exactly one insight source), memoized so
+  // `resolveClaim` below stays a stable reference (WR-03/D-16 precedent).
+  const hubInsights = useMemo(() => (trendInsight ? [trendInsight] : []), [trendInsight]);
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: hubInsights, matches: ms }),
+    [hubInsights],
+  );
+
+  // Plan 39.1-26 (gap closure, Task 2): landing is real in a browser
+  // (BrowserRouter performs no hash scroll of its own — `AppRouter.tsx`) —
+  // this scrolls the terminus into view once per navigation whenever the
+  // hash names it, covering the H2H trend door click. WR-02 (39.1-REVIEW):
+  // gated on the data having landed (the terminus lives inside the loaded
+  // profile branch), so a cold load / shared door URL lands there too.
+  useLandingScroll({
+    anchorId: OPPONENT_HUB_LIST_ANCHOR_ID,
+    ready: !isLoading && profile != null,
+  });
+
   // The twenty-tick set-grouped form strip above the trend plot, replacing
   // the header's ten-pip indicator (`ScoutingHeader.tsx`). Reuses Task 1's
   // `groupEncounters()` — the SAME event/session grouping `RecentEncounters`
@@ -664,8 +738,15 @@ export function OpponentHubPage() {
       vsFighterId: axesFromUrl.vsFighterId,
       stageId: axesFromUrl.stageId,
       eventKey: axesFromUrl.eventKey,
+      claimId: axesFromUrl.claimId,
     }),
-    [axesFromUrl.fighterId, axesFromUrl.vsFighterId, axesFromUrl.stageId, axesFromUrl.eventKey],
+    [
+      axesFromUrl.fighterId,
+      axesFromUrl.vsFighterId,
+      axesFromUrl.stageId,
+      axesFromUrl.eventKey,
+      axesFromUrl.claimId,
+    ],
   );
   const sortedOpponentMatches = useMemo(
     () => sortMatchesNewestFirst(opponentMatches),
@@ -700,6 +781,14 @@ export function OpponentHubPage() {
   const isRefetching = isFetching && !isLoading;
 
   const displayTag = profile?.opponent ?? pathTag ?? '';
+
+  // Plan 39.1-26 (gap closure, Task 2): the terminus's active-filter summary
+  // when the active claim is this page's OWN trend insight — the SAME
+  // verdict sentence the slot above renders, via `buildOpponentFormNowVerdict`.
+  const hubClaimSummary =
+    axesFromUrl.claimId != null && trendInsight != null && trendInsight.id === axesFromUrl.claimId
+      ? buildOpponentFormNowVerdict(trendInsight, displayTag, t)
+      : undefined;
 
   return (
     <div className="flex flex-col gap-6">
@@ -896,7 +985,17 @@ export function OpponentHubPage() {
             abstained={trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null}
             insight={
               trendInsight
-                ? renderOpponentFormNowHead(trendInsight, displayTag, t, i18n.language)
+                ? renderOpponentFormNowHead(
+                    trendInsight,
+                    displayTag,
+                    t,
+                    i18n.language,
+                    trendGamesDoor ? (
+                      <Link to={trendGamesDoor.href}>
+                        {t('insights.door.seeGames', { count: trendGamesDoor.count })}
+                      </Link>
+                    ) : undefined,
+                  )
                 : null
             }
           >
@@ -963,6 +1062,8 @@ export function OpponentHubPage() {
             <FilteredMatchList
               matches={sortedOpponentMatches}
               axes={terminusAxes}
+              resolveClaim={resolveClaimForTerminus}
+              claimSummary={hubClaimSummary}
               eventKeyForMatch={eventKeyForMatch}
               onClearFilters={() => {
                 setSearchParams((prev) => {
@@ -971,6 +1072,7 @@ export function OpponentHubPage() {
                   next.delete(DRILL_DOWN_VS_PARAM);
                   next.delete(DRILL_DOWN_STAGE_PARAM);
                   next.delete(DRILL_DOWN_EVENT_PARAM);
+                  next.delete(DRILL_DOWN_CLAIM_PARAM);
                   return next;
                 });
               }}

@@ -126,14 +126,22 @@
       "summary_other": "{{count}} matchs · {{filters}}",
       "clear": "Effacer les filtres",
       "empty": "Aucune partie ne correspond à ces filtres.",
+      "claimNotApplied": "L'analyse liée n'est plus disponible, elle n'est donc pas appliquée. Affichage de toutes les parties correspondant aux autres filtres.",
       "loading": "Chargement des parties…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, ouvre la vidéo",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, afficher les détails",
       "columnMyCharacter": "Mon personnage",
       "columnTheirCharacter": "Son personnage",
       "columnEvent": "Événement",
-      "showAll_one": "Afficher {{count}} partie",
-      "showAll_other": "Afficher les {{count}} parties"
+      "showMore_one": "Afficher {{count}} de plus",
+      "showMore_other": "Afficher {{count}} de plus",
+      "showingOf_one": "{{shown}} partie affichée sur {{count}}",
+      "showingOf_other": "{{shown}} parties affichées sur {{count}}",
+      "eventSummary": {
+        "set": "Set vs {{opponent}} à {{event}}",
+        "setUnnamed": "Set vs {{opponent}}",
+        "game": "Match vs {{opponent}} le {{date}}"
+      }
     },
     "pips": {
       "empty": "Pas encore de matchs.",

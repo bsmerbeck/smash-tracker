@@ -59,6 +59,8 @@ function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
   };
 }
 
+const removeMatch = vi.fn();
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
@@ -68,6 +70,7 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+      remove: (...args: unknown[]) => removeMatch(...args),
     },
   },
 }));
@@ -717,6 +720,71 @@ describe('MatchupsPage', () => {
       });
     });
 
+    it('CR-03 (39.1-REVIEW): clicking a form-strip set narrows the results list to exactly that set', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // 3 real start.gg sets of 3 games each — 9 pairing games, so a set
+      // drill that silently does nothing (the pre-fix behaviour) shows 9,
+      // never the set's own 3.
+      const now = Date.now();
+      const matches = Array.from({ length: 9 }, (_, i) => {
+        const setIdx = Math.floor(i / 3);
+        return makeMatch({
+          id: `s${setIdx}g${i % 3}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (9 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+          eventName: 'Weekly',
+          externalId: `sgg:set${setIdx}:g${(i % 3) + 1}`,
+        });
+      });
+      listMatches.mockResolvedValue(matches);
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(9);
+      });
+
+      const sets = document.querySelectorAll('[data-slot="form-strip-set"]');
+      expect(sets.length).toBe(3);
+      const newestSet = sets[sets.length - 1] as HTMLElement;
+      const tickCount = newestSet.querySelectorAll('[data-slot="form-strip-tick"]').length;
+      expect(tickCount).toBe(3);
+
+      await user.click(newestSet);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).toContain('event=set2'),
+      );
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(tickCount);
+      });
+    });
+
+    it('WR-02 (39.1-REVIEW): a cold load of a door URL (#matchup-table) scrolls the terminus into view once the data lands', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: true }),
+      ]);
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}&claim=x:y:last30#matchup-table`);
+
+      await waitFor(() => expect(document.getElementById('matchup-table')).toBeInTheDocument());
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => expect(scrollSpy.mock.contexts).toContain(gamesCard));
+    });
+
     it('renders no browser-storage write whose key is the persisted-selection or analytics-filter key on a URL-seeded arrival', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue([
@@ -752,6 +820,41 @@ describe('MatchupsPage', () => {
 
       localStorageSpy.mockRestore();
       sessionStorageSpy.mockRestore();
+    });
+
+    // 39.1-REVIEW iteration 2 WR-04: after a confirmed delete the deleted
+    // row and its trigger unmount once the list refetches; focus used to
+    // fall to <body>. It must land on the next row's delete trigger.
+    it('WR-04: deleting a row moves focus to the next row, never to <body>', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const rows = [1, 2, 3].map((n) =>
+        makeMatch({ id: `m${n}`, time: n * 1000, fighter_id: mario.id, opponent_id: luigi.id }),
+      );
+      listMatches.mockResolvedValue(rows);
+      removeMatch.mockImplementation(async () => {
+        listMatches.mockResolvedValue(rows.filter((m) => m.id !== 'm2'));
+      });
+
+      renderMatchups();
+
+      await waitFor(() =>
+        expect(screen.getAllByRole('button', { name: 'Delete match' })).toHaveLength(3),
+      );
+      // Newest first: m3, m2, m1 — delete the middle row.
+      const middle = screen.getAllByRole('button', { name: 'Delete match' })[1]!;
+      await user.click(middle);
+      await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+      await waitFor(() =>
+        expect(screen.getAllByRole('button', { name: 'Delete match' })).toHaveLength(2),
+      );
+      await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+      // The next row (m1) now sits where m2 was.
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      );
+      expect(removeMatch).toHaveBeenCalledWith('m2');
     });
 
     it('the delete confirm dialog still opens from the results list with the existing confirm-title string', async () => {
@@ -873,6 +976,299 @@ describe('MatchupsPage', () => {
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
       });
       expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+  });
+
+  describe('T-39.1-26 (gap closure): the chart formNow door lands on exactly N', () => {
+    /** 40 games, Mario vs Luigi, spread across the last 40 hours — well within `last30`. */
+    function richFormNowFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `f${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    it('a persisted pairing: the chart door narrows the terminus to exactly N, with the count and the formNow verdict in the summary', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      expect(formNowSlot).not.toBeNull();
+      const door = within(formNowSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(door.getAttribute('href') ?? '').toMatch(/#matchup-table$/);
+      const verdictText =
+        formNowSlot.querySelector('[data-slot="matchup-form-now-verdict"]')?.textContent ?? '';
+      expect(verdictText.length).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+      const summaryParagraph = gamesCard.querySelector('p.text-sm.text-muted-foreground');
+      expect(summaryParagraph?.textContent ?? '').toContain(String(expectedCount));
+      expect(summaryParagraph?.textContent ?? '').toContain(verdictText);
+    });
+
+    it('a URL-seeded pairing differing from the persisted one: the door href carries fighter/vs, and the click narrows to exactly N', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const defaultPairingMatches = [
+        makeMatch({ id: 'd1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ];
+      const urlPairingMatches = richFormNowFixture().map((m, i) => ({
+        ...m,
+        id: `u${i}`,
+        fighter_id: bowser.id,
+      }));
+      listMatches.mockResolvedValue([...defaultPairingMatches, ...urlPairingMatches]);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${bowser.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      expect(door.getAttribute('href') ?? '').toContain(`fighter=${bowser.id}`);
+      expect(door.getAttribute('href') ?? '').toContain(`vs=${luigi.id}`);
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
+    });
+
+    it('clicking Clear filters after following the chart door removes the claim axis and restores the full pairing count', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      await user.click(door);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).toContain('claim='),
+      );
+
+      const clearButton = await screen.findByRole('button', { name: 'Clear filters' });
+      await user.click(clearButton);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location-search').textContent).not.toContain('claim='),
+      );
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(matches.length);
+      });
+    });
+
+    it('clicking the chart door scrolls #matchup-table into view', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richFormNowFixture();
+      listMatches.mockResolvedValue(matches);
+      const scrollSpy = vi.fn();
+      HTMLElement.prototype.scrollIntoView = scrollSpy;
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrollSpy.mock.instances).toContain(gamesCard);
+    });
+
+    // 39.1-REVIEW iteration 2 WR-01: Matchups had no claim-follows-horizon
+    // wiring. 50 pairing games over ~80 days plus 40 from ~200 days ago:
+    // `last30` counts 30, `last90` counts 50, the pairing base is 90.
+    function horizonSplitFixture() {
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      return [
+        ...Array.from({ length: 50 }, (_, i) =>
+          makeMatch({
+            id: `hz${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (49 - i) * ((80 / 49) * day),
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({
+            id: `old${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (200 + i) * day,
+            win: true,
+          }),
+        ),
+      ];
+    }
+
+    const NOT_APPLIED =
+      "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.";
+
+    async function followFormNowDoor(user: ReturnType<typeof userEvent.setup>) {
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      const href = door.getAttribute('href') ?? '';
+      await user.click(door);
+      return href;
+    }
+
+    function terminusRows(): number {
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      return Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'));
+    }
+
+    it('WR-01: a HorizonSwitch press after following the door re-points the claim to the same insight at the new horizon', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+      await followFormNowDoor(user);
+      await waitFor(() => expect(terminusRows()).toBe(30));
+      const claimBefore = new URLSearchParams(
+        screen.getByTestId('location-search').textContent ?? '',
+      ).get('claim');
+      expect(claimBefore).toMatch(/:last30$/);
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      await waitFor(() =>
+        expect(
+          new URLSearchParams(screen.getByTestId('location-search').textContent ?? '').get('claim'),
+        ).toBe(claimBefore!.replace(/:last30$/, ':last90')),
+      );
+      await waitFor(() => expect(terminusRows()).toBe(50));
+      expect(screen.queryByText(NOT_APPLIED)).toBeNull();
+    });
+
+    it('WR-01: a door URL arriving under a different persisted horizon is shown as not applied, never as the door list', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      // The door's own href, taken at the default horizon.
+      const first = renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+      const doorHref = await followFormNowDoor(user);
+      first.unmount();
+
+      window.localStorage.setItem(
+        analyticsSelectionStorageKey('test-uid', null),
+        JSON.stringify({ fighterId: mario.id, opponentId: luigi.id, horizon: 'last90' }),
+      );
+      renderMatchups(doorHref);
+
+      await waitFor(() => expect(screen.getByText(NOT_APPLIED)).toBeInTheDocument());
+      expect(terminusRows()).toBe(90);
+      expect(screen.getByTestId('location-search').textContent).toContain(
+        new URL(doorHref, 'http://x').search,
+      );
+    });
+  });
+
+  describe('T-39.1-26 (gap closure): the matchupOrPlayer door survives a URL-seeded pairing', () => {
+    function richMatchupOrPlayerFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    it("a URL-seeded pairing differing from the persisted one keeps fighter/vs on the MatchupOrPlayer card's games door, and the click narrows to exactly N", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const defaultPairingMatches = [
+        makeMatch({ id: 'd1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ];
+      const urlPairingMatches = richMatchupOrPlayerFixture().map((m, i) => ({
+        ...m,
+        id: `u${i}`,
+        fighter_id: bowser.id,
+      }));
+      listMatches.mockResolvedValue([...defaultPairingMatches, ...urlPairingMatches]);
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${bowser.id}&vs=${luigi.id}`);
+
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const insightCard = document.querySelector('[data-slot="insight-card"]') as HTMLElement;
+      expect(insightCard).not.toBeNull();
+      const door = within(insightCard).getAllByRole('link')[0]!;
+      expect(door.getAttribute('href') ?? '').toContain(`fighter=${bowser.id}`);
+      expect(door.getAttribute('href') ?? '').toContain(`vs=${luigi.id}`);
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      await waitFor(() => {
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      });
     });
   });
 

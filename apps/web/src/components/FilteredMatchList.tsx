@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -32,7 +32,8 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { cn } from '@/lib/utils';
-import { matchesDrillDown, type DrillDownAxes } from '@/lib/drillDownParams';
+import { describeEventAxisGames } from '@/lib/eventAxisSummary';
+import { matchesDrillDown, type DrillDownAxes, type EventKeyResolver } from '@/lib/drillDownParams';
 
 /**
  * Phase 38 (D-07/D-08): the ONE terminus every drill-down in this milestone
@@ -84,16 +85,29 @@ export function matchHasAttachedVideo(match: Match): boolean {
 export type FilteredMatchListLayout = 'table' | 'stack';
 
 /**
- * UIX-02 bound (plan 39.1-23, orchestrator Finding 9): Phase 38's narrow
- * drill-down axes (one event/opponent/stage) never mounted more than a
- * handful of rows, so the terminus mounted every narrowed match with no
- * bound. Phase 39.1's account-scoped insight doors (`settingGap`,
+ * UIX-02 bound (plan 39.1-28, owner decision 2026-09-22: "conform to spec" —
+ * UI-SPEC §6.4, "<= 100 rows per DOM pass + 'Show 50 more'"). Phase 38's
+ * narrow drill-down axes (one event/opponent/stage) never mounted more than
+ * a handful of rows, so the terminus mounted every narrowed match with no
+ * bound; Phase 39.1's account-scoped insight doors (`settingGap`,
  * `rosterCore`, the full-history roster reads) can narrow to thousands of
- * rows on a real account. This caps what MOUNTS, never what is PRINTED — the
- * active-filter summary and `data-total-rows` always state the full narrowed
- * count; only the DOM row count is bounded until "Show all" is clicked.
+ * rows on a real account. This caps what MOUNTS on first render, never what
+ * is PRINTED — the active-filter summary and `data-total-rows` always state
+ * the full narrowed count. Plan 39.1-23 originally shipped this bound at 200
+ * rows with a one-step "Show all" reveal; the owner rejected that as
+ * over-spec relative to REQUIREMENTS.md's "no list renders more than 100
+ * rows in one pass" and UI-SPEC §6.4's literal text, so this plan lowers the
+ * cap to 100 and replaces the one-step reveal with `FILTERED_MATCH_LIST_PAGE_SIZE`-row
+ * paging below.
  */
-export const FILTERED_MATCH_LIST_ROW_CAP = 200;
+export const FILTERED_MATCH_LIST_ROW_CAP = 100;
+
+/**
+ * UIX-02 bound (plan 39.1-28): the number of additional rows one activation
+ * of the "Show N more" paging control mounts. See `FILTERED_MATCH_LIST_ROW_CAP`
+ * above for the first-pass bound this pairs with.
+ */
+export const FILTERED_MATCH_LIST_PAGE_SIZE = 50;
 
 /** Tailwind's `sm` breakpoint (640px) — matches the UI-SPEC's "Mobile (<640px)" clause and `MatrixHeat.tsx`'s own constant. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -129,7 +143,10 @@ export interface FilteredMatchListProps {
    * ADDITION to the six existing axes below (an intersection, never a
    * replacement); when omitted, or when it returns `undefined` for a
    * stale/unknown id, the list falls back to whatever the remaining axes
-   * alone narrow to — never a throw, never a not-found state.
+   * alone narrow to — never a throw, never a not-found state. WR-01
+   * (39.1-REVIEW iteration 2): an unresolved claim is announced with an
+   * explicit "not applied" notice, so the fallback never reads as the
+   * door's own list.
    */
   resolveClaim?: (claimId: string, matches: Match[]) => Match[] | undefined;
   /**
@@ -140,8 +157,8 @@ export interface FilteredMatchListProps {
    * absent.
    */
   claimSummary?: string;
-  /** Resolves a per-match event key for the `eventKey` axis (mirrors the resolver the host's own predicate would use) — required only when a host narrows by event. */
-  eventKeyForMatch?: (match: Match) => string | undefined;
+  /** Resolves a per-match event key (or every key the match is anchored under) for the `eventKey` axis (mirrors the resolver the host's own predicate would use) — required only when a host narrows by event. */
+  eventKeyForMatch?: EventKeyResolver;
   /** Renders a human-readable label for a match's event, for the Event column. Falls back to the match's own tournament/event name field. */
   eventLabelForMatch?: (match: Match) => string | undefined;
   /** Renders a tournament-detail link for a match's inline expansion, when the host can resolve one. Omitted entirely (no tournament line) when not supplied. */
@@ -168,8 +185,17 @@ function hasActiveAxis(axes: DrillDownAxes): boolean {
   );
 }
 
-/** Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). `claimSummary` (the insight's label-and-statement head) leads when a claim axis is present (plan 39.1-19). */
-function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction, claimSummary?: string): string {
+/**
+ * Joins the human-readable description of every active axis with " · " (UI-SPEC's filter-summary join). `claimSummary` (the insight's label-and-statement head) leads when a claim axis is present (plan 39.1-19).
+ *
+ * WR-03 (39.1-REVIEW): the `event` axis is an opaque host key (a set id, `game:<matchId>`, an anchor or period key) and is never printed — `eventGames` (the games the list resolved to) are described in words instead (`describeEventAxisGames`).
+ */
+function buildFilterSummaryText(
+  axes: DrillDownAxes,
+  t: TFunction,
+  eventGames: Match[],
+  claimSummary?: string,
+): string {
   const parts: string[] = [];
   if (axes.claimId != null && claimSummary) {
     parts.push(claimSummary);
@@ -187,7 +213,7 @@ function buildFilterSummaryText(axes: DrillDownAxes, t: TFunction, claimSummary?
     parts.push(stagesById.get(axes.stageId)?.name ?? t('common.unknown'));
   }
   if (axes.eventKey != null) {
-    parts.push(axes.eventKey);
+    parts.push(describeEventAxisGames(eventGames, t) ?? t('common.unknown'));
   }
   if (axes.from != null || axes.to != null) {
     const from = axes.from != null ? new Date(axes.from).toLocaleDateString() : null;
@@ -346,38 +372,121 @@ export function FilteredMatchList({
     };
   }, [matches, axes, eventKeyForMatch, resolveClaim]);
 
-  // Plan 39.1-23 (UIX-02): the row-cap ladder. `rootId` names whichever
-  // layout root actually mounts (table or stack are mutually exclusive) so
-  // the Show-all control's `aria-controls` always points at a real element.
-  const [expanded, setExpanded] = useState(false);
+  // Plan 39.1-28 (UIX-02, owner decision 2026-09-22): the paging ladder.
+  // `rootId` names whichever layout root actually mounts (table or stack are
+  // mutually exclusive) so the paging control's `aria-controls` always
+  // points at a real element. `visibleCount` replaces plan 39.1-23's
+  // one-step `expanded` boolean — the first pass mounts
+  // `FILTERED_MATCH_LIST_ROW_CAP` rows, and each activation of the paging
+  // control mounts up to `FILTERED_MATCH_LIST_PAGE_SIZE` more.
+  const [visibleCount, setVisibleCount] = useState(FILTERED_MATCH_LIST_ROW_CAP);
   const rootId = useId();
 
-  // A re-narrowing (a new `narrowedMatches` array — matches or axes changed)
-  // must not keep a stale expansion. "Adjusting state when a prop changes"
-  // (reset during render, not an Effect — mirrors `TimestampRow.tsx`'s
-  // `trackedIsEditing` pattern, and this codebase's own react-compiler lint
-  // rule flags the equivalent `useEffect(() => setState(...), [dep])` form
-  // as a synchronous-setState-in-an-effect cascading-render risk).
-  const [trackedNarrowedMatches, setTrackedNarrowedMatches] = useState(narrowedMatches);
-  if (narrowedMatches !== trackedNarrowedMatches) {
-    setTrackedNarrowedMatches(narrowedMatches);
-    setExpanded(false);
+  // A re-narrowing must not keep stale paging progress. WR-07 (39.1-REVIEW):
+  // "re-narrowing" means an axis VALUE changed — keyed on the axes' own
+  // values, never on the `narrowedMatches` array reference, which also
+  // changes on a refetch, a deleted row, or a host's claim resolver being
+  // rebuilt (a rail card dismissed) while the narrowing itself is the same;
+  // those used to snap the list back to the cap. A shrunken list needs no
+  // reset: `slice` below clamps to whatever remains. "Adjusting state when a
+  // prop changes" (reset during render, not an Effect — mirrors
+  // `TimestampRow.tsx`'s `trackedIsEditing` pattern, and this codebase's own
+  // react-compiler lint rule flags the equivalent
+  // `useEffect(() => setState(...), [dep])` form as a
+  // synchronous-setState-in-an-effect cascading-render risk).
+  const narrowingKey = JSON.stringify([
+    axes.fighterId ?? null,
+    axes.vsFighterId ?? null,
+    axes.stageId ?? null,
+    axes.eventKey ?? null,
+    axes.from ?? null,
+    axes.to ?? null,
+    axes.claimId ?? null,
+  ]);
+  const [trackedNarrowingKey, setTrackedNarrowingKey] = useState(narrowingKey);
+  if (narrowingKey !== trackedNarrowingKey) {
+    setTrackedNarrowingKey(narrowingKey);
+    setVisibleCount(FILTERED_MATCH_LIST_ROW_CAP);
   }
 
-  // The Show-all control unmounts itself once clicked (single one-way
-  // reveal); move focus to the (now-larger) list root so it never falls back
-  // to <body>.
+  const mountedMatches = narrowedMatches.slice(0, visibleCount);
+  const remaining = narrowedMatches.length - mountedMatches.length;
+  const nextPageSize = Math.min(FILTERED_MATCH_LIST_PAGE_SIZE, remaining);
+  const pagingControlVisible = remaining > 0;
+  // Shown whenever the FULL narrowed count exceeds the cap — including once
+  // the final page is revealed (`remaining === 0`) — so paging progress
+  // stays announced to assistive technology throughout, not just mid-page.
+  const progressVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP;
+
+  // The paging control unmounts itself once the activation that reveals the
+  // final page fires; move focus to the (now-larger) list root at exactly
+  // that point so it never falls back to <body>. Earlier activations leave
+  // focus on the control itself — it stays mounted (pages remain), so the
+  // browser keeps native post-click focus there with no extra handling.
+  // `shouldFocusRootRef` is set directly at the click that will exhaust the
+  // list (never inferred from a before/after `remaining` comparison), so a
+  // re-narrowing that happens to land exactly on a full final page never
+  // gets misread as "the paging control's own final activation". A ref
+  // (mutated, not `setState`) sidesteps the react-compiler lint rule that
+  // flags a synchronous `setState` inside an effect as a cascading-render
+  // risk — this effect runs after every commit but only ever ACTS on the
+  // one commit right after the exhausting click.
+  const shouldFocusRootRef = useRef(false);
   useEffect(() => {
-    if (expanded) {
+    if (shouldFocusRootRef.current) {
+      shouldFocusRootRef.current = false;
       document.getElementById(rootId)?.focus();
     }
-  }, [expanded, rootId]);
+  });
 
-  const mountedMatches =
-    expanded || narrowedMatches.length <= FILTERED_MATCH_LIST_ROW_CAP
-      ? narrowedMatches
-      : narrowedMatches.slice(0, FILTERED_MATCH_LIST_ROW_CAP);
-  const showAllControlVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP && !expanded;
+  // WR-04 (39.1-REVIEW iteration 2): after a confirmed delete the deleted
+  // row and its trigger unmount, dropping keyboard/screen-reader focus to
+  // <body>. The row usually disappears only once the matches refetch lands
+  // (`useDeleteMatch` awaits invalidation), i.e. AFTER the dialog has closed
+  // and `onCloseAutoFocus` (below) has returned focus to the still-mounted
+  // trigger, so the close handler alone cannot fix it. The deleted row's
+  // position is recorded instead, and as soon as its trigger is gone focus
+  // moves to the delete trigger now at that position (the next row), else
+  // the previous row's, else the list container. Checked on every commit
+  // and right after the mutation settles, whichever sees the row gone
+  // first. DOM order is row order in both layouts.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const focusAfterDeleteRef = useRef<{ matchId: string; index: number } | null>(null);
+  // The row whose trigger opened the confirm dialog. The dialog is opened
+  // through its controlled `open` prop, not an `AlertDialogTrigger`, so
+  // Radix has no trigger to return focus to on close (it would land on
+  // <body> even on Cancel) — `onCloseAutoFocus` below returns it here.
+  const dialogOpenerIdRef = useRef<string | null>(null);
+  function openDeleteDialog(match: Match): void {
+    dialogOpenerIdRef.current = match.id;
+    setPendingDelete(match);
+  }
+  function deleteTriggers(): HTMLElement[] {
+    return Array.from(
+      containerRef.current?.querySelectorAll<HTMLElement>('[data-slot="filtered-match-delete"]') ??
+        [],
+    );
+  }
+  function restoreFocusAfterDelete(): void {
+    const pending = focusAfterDeleteRef.current;
+    if (!pending || !containerRef.current) return;
+    const triggers = deleteTriggers();
+    if (triggers.some((el) => el.dataset.matchId === pending.matchId)) return;
+    focusAfterDeleteRef.current = null;
+    const target = triggers[pending.index] ?? triggers[pending.index - 1] ?? containerRef.current;
+    target.focus({ preventScroll: true });
+  }
+  useEffect(() => {
+    restoreFocusAfterDelete();
+  });
+
+  function handleShowMore() {
+    const next = visibleCount + FILTERED_MATCH_LIST_PAGE_SIZE;
+    setVisibleCount(next);
+    if (next >= narrowedMatches.length) {
+      shouldFocusRootRef.current = true;
+    }
+  }
 
   if (loading) {
     return <div className="text-muted-foreground">{t('shared.filteredMatchList.loading')}</div>;
@@ -396,10 +505,18 @@ export function FilteredMatchList({
 
   async function confirmDelete() {
     if (!pendingDelete) return;
+    const deletedId = pendingDelete.id;
+    const deletedIndex = deleteTriggers().findIndex((el) => el.dataset.matchId === deletedId);
+    // WR-04: see `restoreFocusAfterDelete` above. Armed before the request —
+    // the row can only unmount once the delete has succeeded and the list
+    // refetched — and disarmed on failure, where the row stays.
+    focusAfterDeleteRef.current = { matchId: deletedId, index: Math.max(0, deletedIndex) };
     try {
-      await deleteMatch.mutateAsync(pendingDelete.id);
+      await deleteMatch.mutateAsync(deletedId);
       toast.success(t('shared.matchDelete.deleted'));
+      restoreFocusAfterDelete();
     } catch {
+      focusAfterDeleteRef.current = null;
       toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
@@ -407,15 +524,32 @@ export function FilteredMatchList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={containerRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
       {activeAxes && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/50 p-3">
-          <p className="text-sm text-muted-foreground">
-            {t('shared.filteredMatchList.summary', {
-              count: narrowedMatches.length,
-              filters: buildFilterSummaryText(axes, t, claimResolvedOk ? claimSummary : undefined),
-            })}
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-muted-foreground">
+              {t('shared.filteredMatchList.summary', {
+                count: narrowedMatches.length,
+                filters: buildFilterSummaryText(
+                  axes,
+                  t,
+                  narrowedMatches,
+                  claimResolvedOk ? claimSummary : undefined,
+                ),
+              })}
+            </p>
+            {/* WR-01 (39.1-REVIEW iteration 2): a `claim=` the host cannot
+                resolve — its horizon suffix differs from the viewer's
+                horizon on arrival (reload, Back, a coach/shared URL), or the
+                insight is gone — is DROPPED from the narrowing, and says so.
+                Never a silent fallback that reads like the door's own list. */}
+            {!claimResolvedOk && (
+              <p role="status" data-slot="claim-not-applied" className="text-sm text-foreground">
+                {t('shared.filteredMatchList.claimNotApplied')}
+              </p>
+            )}
+          </div>
           {onClearFilters && (
             <Button variant="outline" size="sm" onClick={onClearFilters}>
               {t('shared.filteredMatchList.clear')}
@@ -529,7 +663,9 @@ export function FilteredMatchList({
                                 variant="outline"
                                 size="icon-sm"
                                 aria-label={t('shared.matchDelete.aria')}
-                                onClick={() => setPendingDelete(match)}
+                                data-slot="filtered-match-delete"
+                                data-match-id={match.id}
+                                onClick={() => openDeleteDialog(match)}
                               >
                                 <Trash2 />
                               </Button>
@@ -675,7 +811,9 @@ export function FilteredMatchList({
                                   variant="outline"
                                   size="icon-sm"
                                   aria-label={t('shared.matchDelete.aria')}
-                                  onClick={() => setPendingDelete(match)}
+                                  data-slot="filtered-match-delete"
+                                  data-match-id={match.id}
+                                  onClick={() => openDeleteDialog(match)}
                                 >
                                   <Trash2 />
                                 </Button>
@@ -717,17 +855,28 @@ export function FilteredMatchList({
               </div>
             )}
           </div>
-          {showAllControlVisible && (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              aria-expanded={expanded}
-              aria-controls={rootId}
-              onClick={() => setExpanded(true)}
-            >
-              {t('shared.filteredMatchList.showAll', { count: narrowedMatches.length })}
-            </Button>
+          {(pagingControlVisible || progressVisible) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {pagingControlVisible && (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  aria-controls={rootId}
+                  onClick={handleShowMore}
+                >
+                  {t('shared.filteredMatchList.showMore', { count: nextPageSize })}
+                </Button>
+              )}
+              {progressVisible && (
+                <p aria-live="polite" className="text-sm text-muted-foreground">
+                  {t('shared.filteredMatchList.showingOf', {
+                    shown: mountedMatches.length,
+                    count: narrowedMatches.length,
+                  })}
+                </p>
+              )}
+            </div>
           )}
         </>
       )}
@@ -737,7 +886,26 @@ export function FilteredMatchList({
           open={pendingDelete != null}
           onOpenChange={(open) => !open && setPendingDelete(null)}
         >
-          <AlertDialogContent>
+          <AlertDialogContent
+            onCloseAutoFocus={(event) => {
+              // WR-04: return focus to the row trigger that opened the
+              // dialog while it is still mounted (Cancel, a failed delete, or
+              // a delete whose refetch has not landed yet — the post-commit
+              // check then moves focus once the row goes). If the deleted
+              // row is already gone, move straight to the next row.
+              event.preventDefault();
+              const opener = deleteTriggers().find(
+                (el) => el.dataset.matchId === dialogOpenerIdRef.current,
+              );
+              if (opener) {
+                opener.focus({ preventScroll: true });
+              } else if (focusAfterDeleteRef.current) {
+                restoreFocusAfterDelete();
+              } else {
+                containerRef.current?.focus({ preventScroll: true });
+              }
+            }}
+          >
             <AlertDialogHeader>
               <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
               <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>

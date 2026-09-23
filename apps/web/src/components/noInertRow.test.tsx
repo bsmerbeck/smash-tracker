@@ -478,20 +478,33 @@ const SURFACES: Surface[] = [
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
   {
-    // Plan 39.1-23 (UIX-02): a narrowing over FILTERED_MATCH_LIST_ROW_CAP
-    // caps what mounts on first render; this entry proves the no-inert-row
-    // contract holds in the EXPANDED tail too, not just the capped head —
-    // clicking Show all (a synchronous fireEvent, so `render()` stays
-    // synchronous like every other entry's) mounts every remaining row
-    // before this file's shared row-interactivity check runs against them.
-    name: "The shared filtered match list's rows, over-cap Show-all expansion (the terminus)",
+    // Plan 39.1-23 (UIX-02), replaced by plan 39.1-28's paging mechanism: a
+    // narrowing over FILTERED_MATCH_LIST_ROW_CAP caps what mounts on first
+    // render; this entry proves the no-inert-row contract holds in the
+    // EXPANDED tail too, not just the capped head — activating the "Show N
+    // more" paging control (synchronous fireEvents, so `render()` stays
+    // synchronous like every other entry's) until it disappears mounts every
+    // remaining row before this file's shared row-interactivity check runs
+    // against them.
+    name: "The shared filtered match list's rows, over-cap paging expansion (the terminus)",
     file: 'apps/web/src/components/FilteredMatchList.tsx',
     render: () => {
       const matches = Array.from({ length: FILTERED_MATCH_LIST_ROW_CAP + 5 }, (_, i) =>
         makeMatch({ id: `cap-${i}`, time: i, win: true }),
       );
       const result = withRouterAndQuery(<FilteredMatchList matches={matches} axes={{}} />);
-      fireEvent.click(within(result.container).getByRole('button', { name: /show all/i }));
+      // WR-05 (39.1-REVIEW): `getByRole` first, so a renamed paging label
+      // fails loudly instead of skipping the loop, and the row count after
+      // the loop proves the whole tail mounted — otherwise the shared checks
+      // would silently run against only the 100-row head.
+      let button: HTMLElement | null = within(result.container).getByRole('button', {
+        name: /show \d+ more/i,
+      });
+      while (button) {
+        fireEvent.click(button);
+        button = within(result.container).queryByRole('button', { name: /show \d+ more/i });
+      }
+      expect(dataRows(result.container)).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 5);
       return result;
     },
     rows: (result) => dataRows(result.container),
@@ -677,7 +690,9 @@ const SURFACES: Surface[] = [
         makeMatch({ id: 'off1', time: 3, win: true, matchType: 'offline-tourney' }),
         makeMatch({ id: 'off2', time: 4, win: false, matchType: 'offline-tourney' }),
       ];
-      return withRouter(<SettingComparison matches={matches} horizon="last30" />);
+      return withRouter(
+        <SettingComparison matches={matches} horizon="last30" settingGapInsight={null} />,
+      );
     },
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },

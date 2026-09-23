@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
+import { buildPeriodSeries, periodPointMatchIdsForKey } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
@@ -15,6 +16,8 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -29,15 +32,22 @@ import {
   buildDrillDownSearch,
   readDrillDownParams,
   sortMatchesNewestFirst,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_CLAIM_PARAM,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
+import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
 import { SelectFighter } from './components/SelectFighter';
-import { FighterHero } from './components/FighterHero';
+import { FighterHero, type FighterHeroDrillAxes } from './components/FighterHero';
 import {
   FighterInsightRail,
   buildInsightVerdict,
   useFighterInsights,
 } from './components/FighterInsightRail';
+import { useFighterFormNow } from './lib/useFighterFormNow';
 import { VsCharactersList } from './components/VsCharactersList';
 import { VsPlayersList } from './components/VsPlayersList';
 import { StageMastery } from './components/StageMastery';
@@ -69,7 +79,12 @@ export function FighterAnalysisPage() {
     filterActive,
   } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
-  const { horizon, setHorizon, isLoading: horizonLoading } = useHorizon();
+  const {
+    horizon,
+    setHorizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `OpponentsPage.tsx`'s convention.
@@ -153,6 +168,36 @@ export function FighterAnalysisPage() {
     [fighterMatches],
   );
 
+  // CR-02 (39.1-REVIEW): the ONE period series the hero plots AND this
+  // page's terminus resolves a trend-point drill against. A point drills as
+  // `event=<point.key>`; each game resolves to BOTH its form-strip set key
+  // and its period key, so the one `event` axis narrows to exactly a set's
+  // games or exactly a point's games — never a reconstructed time window.
+  const periodSeries = useMemo(
+    () => buildPeriodSeries({ matches: fighterMatches }),
+    [fighterMatches],
+  );
+  // WR-02 (39.1-REVIEW iteration 2): the URL's `event=` period key resolves
+  // by the key's OWN grain rule over this same base, not through whichever
+  // grain the ladder picks right now — a key drawn at `week` still lands on
+  // its week after a range filter or a sync moves the ladder to `month`.
+  // While the grain is unchanged this is exactly the plotted point's games.
+  const drillEventKey = axesFromUrl.eventKey;
+  const periodEventMatchIds = useMemo(() => {
+    if (drillEventKey == null) return undefined;
+    const ids = periodPointMatchIdsForKey(drillEventKey, fighterMatches);
+    return ids ? new Set(ids) : undefined;
+  }, [drillEventKey, fighterMatches]);
+  const eventKeysForMatch = useCallback(
+    (match: Match): string[] => {
+      const setKey = formStripEventKeyForMatch(match);
+      return drillEventKey != null && periodEventMatchIds?.has(match.id)
+        ? [setKey, drillEventKey]
+        : [setKey];
+    },
+    [drillEventKey, periodEventMatchIds],
+  );
+
   // Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):
   // the ONE insight computation this page shares with `FighterInsightRail`
   // (which takes the result as props below) and this page's own
@@ -170,9 +215,27 @@ export function FighterAnalysisPage() {
     fighterMatches,
     horizon,
   });
+  // Plan 39.1-25 (gap closure, SC4/INS-04, D-12): the ONE `formNow`
+  // computation this page shares with the hero (verdict, strip, trend, the
+  // counted-games door) and its own terminus below — never a second,
+  // independently-built `formNow` insight (the hero no longer builds its
+  // own). Called unconditionally, above every early return, beside
+  // `useFighterInsights`.
+  const heroFormNow = useFighterFormNow({
+    fighterId: fighterIdForFilter,
+    fighterMatches,
+    horizon,
+  });
+  // The hero's own `formNow` insight leads `pageInsights` (so its
+  // `claim=<id>` door resolves through the SAME array the rail's insights
+  // already resolve through) — one array, one terminus resolver.
+  const pageInsights = useMemo(
+    () => (heroFormNow.insight ? [heroFormNow.insight, ...fighterInsights] : fighterInsights),
+    [heroFormNow.insight, fighterInsights],
+  );
   const insightById = useMemo(
-    () => new Map(fighterInsights.map((insight) => [insight.id, insight])),
-    [fighterInsights],
+    () => new Map(pageInsights.map((insight) => [insight.id, insight])),
+    [pageInsights],
   );
   // React Compiler forbids a bare fighter-name lookup with an `undefined` id
   // (`useFighterName` always needs a number) — a sentinel id resolves to the
@@ -191,12 +254,84 @@ export function FighterAnalysisPage() {
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render
   // (a horizon toggle, a background refetch) exactly like the un-memoized
   // `terminusAxes` object literal this file already fixed once. Memoized by
-  // `fighterInsights` alone — the only thing this closure actually reads.
+  // `pageInsights` alone — the only thing this closure actually reads
+  // (plan 39.1-24's D-16 memo lesson, now keyed on the shared array).
   const resolveClaimForTerminus = useCallback(
     (claimId: string, ms: Match[]) =>
-      resolveInsightClaim({ claimId, insights: fighterInsights, matches: ms }),
-    [fighterInsights],
+      resolveInsightClaim({ claimId, insights: pageInsights, matches: ms }),
+    [pageInsights],
   );
+
+  // Plan 39.1-25 / WR-02 (39.1-REVIEW): scroll the terminus into view once
+  // per navigation whenever the hash names it — only once the data has
+  // landed and the terminus is actually mounted, so a cold load, refresh or
+  // shared door URL lands there too (not just an in-app door click).
+  const location = useLocation();
+  useLandingScroll({
+    anchorId: GAMES_ANCHOR_ID,
+    ready: !fightersLoading && !matchesLoading && fighter != null && hasDrillAxis,
+  });
+
+  // Plan 39.1-25 (gap closure, SC6/TRND-04): the ONE URL writer for a hero
+  // trend-point or form-strip-set drill. A drill REPLACES any prior
+  // narrowing or claim axis (never composes with a claim door someone
+  // followed earlier) — `pathname` is passed explicitly so a `/coach/
+  // :clientId` or `/workspace/:tenantId` prefix survives.
+  const navigate = useNavigate();
+  /** The current search minus every axis this page's terminus narrows by — the ONE spelling every writer below shares. */
+  function searchWithoutDrillAxes(): URLSearchParams {
+    const params = new URLSearchParams(searchParams);
+    params.delete(DRILL_DOWN_STAGE_PARAM);
+    params.delete(DRILL_DOWN_EVENT_PARAM);
+    params.delete(DRILL_DOWN_FROM_PARAM);
+    params.delete(DRILL_DOWN_TO_PARAM);
+    params.delete(DRILL_DOWN_CLAIM_PARAM);
+    return params;
+  }
+  function handleHeroDrill(axes: FighterHeroDrillAxes): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch(axes)) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
+  // WR-01 (39.1-REVIEW): this page writes drill axes (the hero drills and
+  // the insight doors), so its terminus must offer a way back out — Clear
+  // filters drops every axis and the `#games` hash (the terminus unmounts,
+  // since it only exists while an axis is present).
+  function handleClearFilters(): void {
+    const search = searchWithoutDrillAxes().toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // WR-01 (39.1-REVIEW): a set/period drill or a `formNow:character:<id>`
+  // claim belongs to the fighter it was drawn from — switching fighter drops
+  // them (Matchups' `handleSetFighter` precedent) rather than narrowing the
+  // new fighter to an unrelated set, or silently falling back to all games.
+  function handleSelectFighter(next: Fighter): void {
+    setFighter(next);
+    if (hasDrillAxis) handleClearFilters();
+  }
+
+  // WR-01 (39.1-REVIEW): a claim id ends in its horizon; when the horizon
+  // changes, re-point it to the same insight at the new horizon. One that
+  // cannot resolve stays in the URL and the terminus shows it as not applied
+  // (iteration 2 — the same rule on every page that accepts `claim=`).
+  const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
+  const rewriteClaim = useUrlClaimRewriter();
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    horizonChangeCount,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
@@ -300,7 +435,7 @@ export function FighterAnalysisPage() {
             fighter={fighter}
             fighterSprites={orderedFighterSprites}
             fighterUsageById={fighterUsageById}
-            onChange={setFighter}
+            onChange={handleSelectFighter}
           />
         </div>
         <HorizonSwitch />
@@ -330,6 +465,10 @@ export function FighterAnalysisPage() {
               horizon={horizon}
               setHorizon={setHorizon}
               isLoading={horizonLoading || matchesLoading}
+              formNowInsight={heroFormNow.insight}
+              nowMs={heroFormNow.nowMs}
+              periodSeries={periodSeries}
+              onDrill={handleHeroDrill}
             />
           </GridCell>
 
@@ -390,6 +529,8 @@ export function FighterAnalysisPage() {
                     axes={terminusAxes}
                     resolveClaim={resolveClaimForTerminus}
                     claimSummary={claimSummary}
+                    eventKeyForMatch={eventKeysForMatch}
+                    onClearFilters={handleClearFilters}
                     showDelete
                   />
                 </CardContent>

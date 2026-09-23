@@ -1,15 +1,23 @@
 import { useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { HorizonKey, Insight, InsightKind, InsightScope, Match } from '@smash-tracker/shared';
+import type {
+  HorizonKey,
+  Insight,
+  InsightKind,
+  InsightScope,
+  Match,
+  PeriodPoint,
+  PeriodSeries,
+} from '@smash-tracker/shared';
 import {
   INSIGHT_TEMPLATES,
-  buildPeriodSeries,
   confidenceTierFor,
   parseExternalId,
   toRateValue,
 } from '@smash-tracker/shared';
+import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent, type FormStripSet } from '@/components/charts/FormStrip';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
@@ -89,23 +97,39 @@ export function useMatchupFormNow({
 }
 
 /**
+ * Plan 39.1-26 (gap closure): the ONE verdict composition for `formNow` at
+ * pairing scope — `entity` is never supplied by the engine (UI-SPEC §9.2
+ * rule 7), so this composes it itself before calling `t()`. Shared by
+ * `renderFormNowHead` (the slot) and `MatchupsPage.tsx`'s `claimSummary`
+ * (the terminus's active-filter summary), so the two never independently
+ * re-derive the same sentence.
+ */
+export function buildFormNowVerdict(insight: Insight, opponentId: number, t: TFunction): string {
+  const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
+  return t(insight.copy.key, { ...insight.copy.values, entity });
+}
+
+/**
  * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
  * chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
- * wrapper, no doors, no dismiss). `entity` is never supplied by the engine
- * (UI-SPEC §9.2 rule 7: the engine never localises a fighter name) — this
- * function composes it itself before calling `t()`, per plan 39.1-11's
- * documented convention. Called by `MatchupsPage.tsx` to build `ChartCard`'s
+ * wrapper, no dismiss). Called by `MatchupsPage.tsx` to build `ChartCard`'s
  * `insight` prop — `MatchupChart.tsx` itself never renders `ChartCard`.
+ *
+ * Plan 39.1-26 (gap closure): gains an optional trailing `door` — the
+ * counted-games door `MatchupsPage.tsx` builds via `buildInsightDoors`,
+ * rendered as a `Button asChild` wrapping the host's own `<Link>` inside
+ * `data-slot="matchup-form-now-doors"`. `undefined` renders no doors row at
+ * all (a zero-game window never prints "See the 0 games").
  */
 export function renderFormNowHead(
   insight: Insight,
   opponentId: number,
   t: TFunction,
   locale: string,
+  door?: ReactNode,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
-  const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
-  const verdict = t(insight.copy.key, { ...insight.copy.values, entity });
+  const verdict = buildFormNowVerdict(insight, opponentId, t);
 
   // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
   // `recent`/`baseline` claims and format it through the one shared,
@@ -142,6 +166,13 @@ export function renderFormNowHead(
       >
         {evidence}
       </p>
+      {door && (
+        <div className="flex flex-wrap gap-2" data-slot="matchup-form-now-doors">
+          <Button asChild size="sm">
+            {door}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -264,10 +295,14 @@ function computeCumulativeContextPercents(points: { wins: number; total: number 
  * supplies the frame, reading `useMatchupFormNow`/`renderFormNowHead` above
  * to build the `insight` prop.
  *
- * D-07/CHRT-02/Phase 38-04 (unchanged): a click on a trend point writes an
- * INCLUSIVE date window covering that period's own bounds to the URL (via
- * the Matchups context's `setDrillDown`) and scrolls to the results-table
- * anchor; a form-strip set click writes the `eventKey` axis the same way.
+ * D-07/CHRT-02/Phase 38-04: a click on a trend point writes that point's
+ * own `PeriodPoint.key` as the `eventKey` axis (CR-02, 39.1-REVIEW — never
+ * its `[startMs, endMs]` window, which over-counts on the non-contiguous
+ * `eventSession`/`set` grains and on tied `game` timestamps) via the
+ * Matchups context's `setDrillDown` and scrolls to the results-table
+ * anchor; a form-strip set click writes its set key the same way. The page
+ * supplies `periodSeries` — the SAME series its terminus resolves the key
+ * against.
  * Neither adds a second drill-down mechanism — both go through the existing
  * `setDrillDown` context method, which already preserves the ambient
  * `fighter`/`vs` character axes already present in the URL (Phase 38's own
@@ -276,11 +311,14 @@ function computeCumulativeContextPercents(points: { wins: number; total: number 
 export function MatchupChart({
   matchupMatches,
   horizon,
+  periodSeries,
   width,
   height,
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
+  /** CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over `matchupMatches` — plotted here, resolved by the host's terminus. */
+  periodSeries: PeriodSeries;
   width?: number;
   height?: number;
 }) {
@@ -288,11 +326,6 @@ export function MatchupChart({
   const { setDrillDown } = useMatchupsContext();
 
   const insight = useMatchupFormNow({ matchupMatches, horizon });
-
-  const periodSeries = useMemo(
-    () => buildPeriodSeries({ matches: matchupMatches }),
-    [matchupMatches],
-  );
 
   const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
 
@@ -311,8 +344,8 @@ export function MatchupChart({
     [matchupMatches, recentWindow, t],
   );
 
-  function handleSelectPeriodPoint(point: { startMs: number; endMs: number }) {
-    setDrillDown({ from: point.startMs, to: point.endMs });
+  function handleSelectPeriodPoint(point: PeriodPoint) {
+    setDrillDown({ eventKey: point.key });
     document
       .getElementById(MATCHUP_TABLE_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import {
   FilteredMatchList,
   matchHasAttachedVideo,
   FILTERED_MATCH_LIST_ROW_CAP,
+  FILTERED_MATCH_LIST_PAGE_SIZE,
 } from './FilteredMatchList';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
 
@@ -574,10 +575,14 @@ describe('FilteredMatchList — overlay lift scope (phase 38-08 code review WR-0
 });
 
 /**
- * Plan 39.1-23 (UIX-02, orchestrator Finding 9): the terminus caps rows
- * mounted at `FILTERED_MATCH_LIST_ROW_CAP`, printing the full narrowed count
- * via the summary line and `data-total-rows`, revealing the rest through one
- * accessible "Show all" control.
+ * Plan 39.1-28 (UIX-02, owner decision 2026-09-22): the terminus caps rows
+ * MOUNTED at `FILTERED_MATCH_LIST_ROW_CAP` (100) on first render, printing
+ * the full narrowed count via `data-total-rows` and a polite live-region
+ * progress line, and reveals the rest through a "Show N more" paging control
+ * that mounts at most `FILTERED_MATCH_LIST_PAGE_SIZE` (50) rows per
+ * activation — replacing plan 39.1-23's one-step "Show all" reveal, which
+ * the owner rejected as over-spec (REQUIREMENTS.md UIX-02 / UI-SPEC §6.4:
+ * "<= 100 rows per pass + 'Show 50 more'").
  */
 function makeManyMatches(count: number): Match[] {
   return Array.from({ length: count }, (_, i) =>
@@ -585,41 +590,106 @@ function makeManyMatches(count: number): Match[] {
   );
 }
 
-describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Finding 9)', () => {
-  it('table layout: mounts exactly the cap, prints the full count, and exposes it via data-total-rows', () => {
+/** Matches an accessible name like "Show 50 more" for a given next-page size. */
+function showMoreName(n: number): RegExp {
+  return new RegExp(`show ${n} more`, 'i');
+}
+
+describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan 39.1-28, UIX-02)', () => {
+  it('table layout: mounts exactly the cap, exposes data-total-rows, and shows the first paging control + progress line', () => {
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
     // header row + capped body rows
     expect(within(table).getAllByRole('row')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 1);
     expect(table).toHaveAttribute('data-total-rows', '1000');
-    expect(screen.getByText(/1000 games/)).toBeInTheDocument();
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    expect(showAll).toHaveAttribute('aria-expanded', 'false');
-    expect(showAll).toHaveAttribute('aria-controls', table.id);
+
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    expect(showMore).toHaveAttribute('aria-controls', table.id);
     expect(table.id).not.toBe('');
+
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).not.toBeNull();
+    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
   });
 
-  it('stacked layout: same cap, count, data-total-rows and Show-all control against <li> rows', () => {
+  it('stacked layout: same cap, count, data-total-rows and paging control against <li> rows', () => {
     const matches = makeManyMatches(1000);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
     expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
     expect(stack).toHaveAttribute('data-total-rows', '1000');
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    expect(showAll).toHaveAttribute('aria-controls', stack.id);
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    expect(showMore).toHaveAttribute('aria-controls', stack.id);
   });
 
-  it('clicking Show all mounts every row, flips aria-expanded, removes the control, and never loses focus to <body>', async () => {
+  it('one activation mounts exactly one page more, leaving focus on the control while pages remain', async () => {
     const user = userEvent.setup();
     const matches = makeManyMatches(1000);
     renderList({ matches, axes: {}, layout: 'table' });
-    const showAll = screen.getByRole('button', { name: /show all 1000/i });
-    await user.click(showAll);
+    const showMore = screen.getByRole('button', {
+      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+    });
+    await user.click(showMore);
     const table = screen.getByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(1001);
-    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
+    // Many pages remain (1000 total) — the control is still mounted and
+    // still holds native click focus.
+    expect(screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) })).toBe(
+      document.activeElement,
+    );
+  });
+
+  it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', () => {
+    // `fireEvent.click` (not `userEvent.click`) — this loop clicks ~18 times
+    // for a 1000-row fixture; real-pointer-event simulation per click made
+    // this test time out at the 15s default. Focus at the end is asserted
+    // via the component's own `document.getElementById(rootId)?.focus()`
+    // effect, which `fireEvent.click` triggers identically to `userEvent`.
+    // Measured standalone: ~18-24s. Under `pnpm --filter @smash-tracker/web
+    // test`'s full concurrent run it measured ~31s (timed out once at the
+    // 30s bound) — the explicit 60s timeout below keeps ~2x headroom over
+    // that measurement, the same margin `insightDoorSameN.test.tsx`'s
+    // SAME_N_DOOR_TIMEOUT_MS uses for its own slow-render cases.
+    const matches = makeManyMatches(1000);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const table = screen.getByRole('table');
+    let mounted = within(table).getAllByRole('row').length - 1;
+    expect(mounted).toBe(FILTERED_MATCH_LIST_ROW_CAP);
+
+    let button = screen.queryByRole('button', { name: /show \d+ more/i });
+    while (button) {
+      fireEvent.click(button);
+      const newMounted = within(table).getAllByRole('row').length - 1;
+      expect(newMounted - mounted).toBeLessThanOrEqual(FILTERED_MATCH_LIST_PAGE_SIZE);
+      mounted = newMounted;
+      button = screen.queryByRole('button', { name: /show \d+ more/i });
+    }
+
+    expect(mounted).toBe(1000);
+    expect(document.activeElement).toBe(table);
     expect(document.activeElement).not.toBe(document.body);
+    // The progress line stays present (and states the final, exhausted
+    // count) even once the paging control itself has unmounted.
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/1000 .* 1000/);
+  }, 60_000);
+
+  it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(FILTERED_MATCH_LIST_ROW_CAP + 30);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const showMore = screen.getByRole('button', { name: showMoreName(30) });
+    await user.click(showMore);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP + 30 + 1);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
   });
 
   it.each([
@@ -627,16 +697,21 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
     [FILTERED_MATCH_LIST_ROW_CAP, false],
     [FILTERED_MATCH_LIST_ROW_CAP + 1, true],
   ])(
-    'Show-all button appears only once narrowed count exceeds the cap (n=%i)',
-    (n, expectButton) => {
+    'the paging control (named for 1) and the progress line appear only once narrowed count exceeds the cap (n=%i)',
+    (n, expectVisible) => {
       const matches = makeManyMatches(n);
       renderList({ matches, axes: {}, layout: 'table' });
-      const button = screen.queryByRole('button', { name: /show all/i });
-      expect(button !== null).toBe(expectButton);
+      const button = screen.queryByRole('button', { name: /show \d+ more/i });
+      expect(button !== null).toBe(expectVisible);
+      if (expectVisible) {
+        expect(button).toHaveAccessibleName(showMoreName(1));
+      }
+      const progress = document.querySelector('[aria-live="polite"]');
+      expect(progress !== null).toBe(expectVisible);
     },
   );
 
-  it('re-narrowing (a new narrowedMatches identity) collapses expansion back to the cap', async () => {
+  it('re-narrowing (a new narrowedMatches identity) resets paging back to the first cap rows', async () => {
     const user = userEvent.setup();
     const matches = makeManyMatches(1000);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -655,8 +730,12 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
       </QueryClientProvider>
     );
     const { rerender } = render(<Wrapper axes={{}} />);
-    await user.click(screen.getByRole('button', { name: /show all 1000/i }));
-    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(1001);
+    await user.click(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
 
     // `from: 0` excludes nothing (every fixture match has time >= 1000) but
     // is a genuinely different axes object, so `narrowedMatches` recomputes
@@ -665,12 +744,84 @@ describe('FilteredMatchList — row cap (plan 39.1-23, UIX-02, orchestrator Find
     expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
       FILTERED_MATCH_LIST_ROW_CAP + 1,
     );
-    expect(screen.getByRole('button', { name: /show all 1000/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    ).toBeInTheDocument();
   });
 
-  it('the 16+ pre-existing single-page cases stay unaffected: a small narrowed set never shows the Show-all control', () => {
+  describe('WR-07 (39.1-REVIEW): paging survives changes that are not re-narrowings', () => {
+    type WrapperProps = {
+      matches: Match[];
+      axes: DrillDownAxes;
+      resolveClaim?: (claimId: string, ms: Match[]) => Match[] | undefined;
+    };
+    function renderPaged(initial: WrapperProps) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const Wrapper = (props: WrapperProps) => (
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/matchups']}>
+            <AuthProvider>
+              <Routes>
+                <Route path="/matchups" element={<FilteredMatchList {...props} layout="table" />} />
+              </Routes>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+      const result = render(<Wrapper {...initial} />);
+      return { ...result, Wrapper };
+    }
+    function mountedRows(): number {
+      return within(screen.getByRole('table')).getAllByRole('row').length - 1;
+    }
+    const PAGED = FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE;
+
+    it('a refetch (new matches array, same games) and a new-but-equal axes object keep the paging progress', () => {
+      const matches = makeManyMatches(1000);
+      const { rerender, Wrapper } = renderPaged({ matches, axes: {} });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(<Wrapper matches={[...matches]} axes={{}} />);
+      expect(mountedRows()).toBe(PAGED);
+    });
+
+    it('a deleted row (the list shrinks by one) keeps the paging progress instead of snapping back to the cap', () => {
+      const matches = makeManyMatches(1000);
+      const { rerender, Wrapper } = renderPaged({ matches, axes: {} });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(<Wrapper matches={matches.slice(1)} axes={{}} />);
+      expect(mountedRows()).toBe(PAGED);
+      expect(screen.getByRole('table')).toHaveAttribute('data-total-rows', '999');
+    });
+
+    it('a new claim-resolver reference that resolves the same claim (a rail card dismissed) keeps the paging progress', () => {
+      const matches = makeManyMatches(1000);
+      const axes: DrillDownAxes = { claimId: 'formNow:account:last30' };
+      const resolve = (_id: string, ms: Match[]) => ms.slice(0, 600);
+      const { rerender, Wrapper } = renderPaged({ matches, axes, resolveClaim: resolve });
+      fireEvent.click(
+        screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+      );
+      expect(mountedRows()).toBe(PAGED);
+
+      rerender(
+        <Wrapper matches={matches} axes={axes} resolveClaim={(id, ms) => resolve(id, ms)} />,
+      );
+      expect(mountedRows()).toBe(PAGED);
+    });
+  });
+
+  it('the pre-existing single-page cases stay unaffected: a small narrowed set never shows the paging control or progress line', () => {
     renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
-    expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
   });
 });
 
@@ -694,5 +845,112 @@ describe('waitFor smoke (loading -> populated transition is not tested elsewhere
     );
     await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
     expect(within(screen.getByRole('table')).getAllByRole('row').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 39.1-REVIEW iteration 2 WR-04: after a confirmed delete the deleted row
+ * (and the trigger the dialog returns focus to) unmounts once the host's
+ * list refetches, dropping focus to <body>. Here the host re-renders with
+ * the row gone only AFTER the mutation settled — the order the dialog's own
+ * focus return cannot cover.
+ */
+describe('WR-04: focus after a row delete', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    removeMatch.mockResolvedValue(undefined);
+    setMockUser(makeMockUser());
+  });
+
+  function renderDeletable(matches: Match[], layout: 'table' | 'stack') {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (ms: Match[]) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/matchups"
+                element={<FilteredMatchList matches={ms} axes={{}} showDelete layout={layout} />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const result = render(tree(matches));
+    return { ...result, rerenderWith: (ms: Match[]) => result.rerender(tree(ms)) };
+  }
+
+  async function confirmDeleteAt(index: number) {
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole('button', { name: 'Delete match' })[index]!);
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(removeMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText('Delete this match?')).toBeNull());
+  }
+
+  const rows = ['a', 'b', 'c'].map((id, i) =>
+    makeMatch({ id, time: 3000 - i * 1000, vodUrl: undefined }),
+  );
+
+  it.each(['table', 'stack'] as const)(
+    '%s: deleting a middle row focuses the next row’s delete trigger',
+    async (layout) => {
+      const { rerenderWith } = renderDeletable(rows, layout);
+      await confirmDeleteAt(1);
+      rerenderWith(rows.filter((m) => m.id !== 'b'));
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getAllByRole('button', { name: 'Delete match' })[1],
+        ),
+      );
+      expect(removeMatch).toHaveBeenCalledWith('b');
+    },
+  );
+
+  it('deleting the last row focuses the previous row’s delete trigger', async () => {
+    const { rerenderWith } = renderDeletable(rows, 'table');
+    await confirmDeleteAt(2);
+    rerenderWith(rows.filter((m) => m.id !== 'c'));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      ),
+    );
+  });
+
+  it('deleting the only row focuses the list container, never <body>', async () => {
+    const { container, rerenderWith } = renderDeletable([rows[0]!], 'table');
+    await confirmDeleteAt(0);
+    rerenderWith([]);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(container.contains(document.activeElement)).toBe(true);
+  });
+
+  it('Cancel returns focus to the row trigger that opened the dialog', async () => {
+    const user = userEvent.setup();
+    renderDeletable(rows, 'table');
+    await user.click(screen.getAllByRole('button', { name: 'Delete match' })[1]!);
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Delete this match?')).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getAllByRole('button', { name: 'Delete match' })[1],
+      ),
+    );
+    expect(removeMatch).not.toHaveBeenCalled();
+  });
+
+  it('a failed delete leaves the row and focus on its own trigger', async () => {
+    removeMatch.mockRejectedValueOnce(new Error('nope'));
+    const { rerenderWith } = renderDeletable(rows, 'table');
+    await confirmDeleteAt(1);
+    rerenderWith([...rows]);
+    const triggers = screen.getAllByRole('button', { name: 'Delete match' });
+    expect(triggers).toHaveLength(3);
+    await waitFor(() => expect(document.activeElement).toBe(triggers[1]));
   });
 });

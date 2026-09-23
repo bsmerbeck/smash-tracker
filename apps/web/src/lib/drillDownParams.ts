@@ -222,6 +222,15 @@ export function buildDrillDownSearch(axes: Partial<DrillDownAxes>): URLSearchPar
 }
 
 /**
+ * A host's per-match `event` resolver. Returns the ONE key a match is
+ * anchored under, or — CR-02 (39.1-REVIEW) — EVERY key it is anchored
+ * under when a page draws more than one event-like mark over the same games
+ * (Fighter Analysis / Matchups: a form-strip SET and a trend PERIOD point).
+ * The `event` axis matches when it equals any returned key.
+ */
+export type EventKeyResolver = (match: Match) => string | readonly string[] | undefined;
+
+/**
  * The drill-down predicate: `true` when `match` satisfies every axis
  * present in `axes` (an axis that is `undefined` matches everything). Stage
  * comparison uses the numeric bucket id (`match.map?.id ?? 0`) so an unknown
@@ -233,7 +242,7 @@ export function buildDrillDownSearch(axes: Partial<DrillDownAxes>): URLSearchPar
 export function matchesDrillDown(
   match: Match,
   axes: DrillDownAxes,
-  eventKeyForMatch?: (match: Match) => string | undefined,
+  eventKeyForMatch?: EventKeyResolver,
 ): boolean {
   if (axes.fighterId != null && match.fighter_id !== axes.fighterId) {
     return false;
@@ -246,7 +255,9 @@ export function matchesDrillDown(
   }
   if (axes.eventKey != null) {
     const key = eventKeyForMatch ? eventKeyForMatch(match) : undefined;
-    if (key !== axes.eventKey) {
+    const matched =
+      typeof key === 'string' ? key === axes.eventKey : (key?.includes(axes.eventKey) ?? false);
+    if (!matched) {
       return false;
     }
   }

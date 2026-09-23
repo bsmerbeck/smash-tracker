@@ -88,16 +88,24 @@ function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
  * drill-down tests reference that id, so it is never renamed. The games
  * door's scroll target is overridden accordingly via `buildInsightDoors`'s
  * `anchor` option; the resolved games/claim id and count are unaffected.
+ *
+ * Plan 39.1-26 (gap closure): `doorCarry` is threaded straight through to
+ * `buildInsightDoors` — the pairing this card's host page computed the
+ * insight over, so a URL-seeded pairing survives the door round trip
+ * exactly like the sibling chart door (see `MatchupChart.tsx`'s
+ * `renderFormNowHead`).
  */
 function buildDoorNodes(
   insight: Insight,
   t: TFunction,
   subjectPath: (personalPath: string) => string,
+  doorCarry?: URLSearchParams,
 ): InsightCardDoors | undefined {
   const descriptors = buildInsightDoors({
     insight,
     subjectPath,
     anchor: `#${MATCHUP_TABLE_ANCHOR_ID}`,
+    carry: doorCarry,
   }).slice(0, 3);
   if (descriptors.length === 0) return undefined;
   const nodes = descriptors.map((door) => (
@@ -114,6 +122,8 @@ export interface MatchupOrPlayerCardProps {
   matchupMatches: Match[];
   /** The one shared computation — see `useMatchupOrPlayerInsight` above. */
   insight: Insight | null;
+  /** Plan 39.1-26 (gap closure): the host's pairing context, forwarded to the games door — see `buildDoorNodes`' doc comment. */
+  doorCarry?: URLSearchParams;
 }
 
 /**
@@ -125,7 +135,11 @@ export interface MatchupOrPlayerCardProps {
  * `matchupOrPlayer.ts`'s own contract distinguishes those states (it never
  * emits a `locked` read for this template — see its SUMMARY's key-decisions).
  */
-export function MatchupOrPlayerCard({ matchupMatches, insight }: MatchupOrPlayerCardProps) {
+export function MatchupOrPlayerCard({
+  matchupMatches,
+  insight,
+  doorCarry,
+}: MatchupOrPlayerCardProps) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
 
@@ -138,7 +152,7 @@ export function MatchupOrPlayerCard({ matchupMatches, insight }: MatchupOrPlayer
   const matchup = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildMatchupOrPlayerVerdict(insight, t, opponentId);
-  const doors = buildDoorNodes(insight, t, subjectPath);
+  const doors = buildDoorNodes(insight, t, subjectPath, doorCarry);
 
   const claim = insight.recent;
   const record = claim.kind === 'evidenced' ? claim.value : null;

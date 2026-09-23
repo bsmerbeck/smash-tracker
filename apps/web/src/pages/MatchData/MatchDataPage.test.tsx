@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
@@ -14,6 +14,7 @@ import { MatchDataPage } from './MatchDataPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as drillDownParamsModule from '@/lib/drillDownParams';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
 /**
  * WR-C02 (39.1-REVIEW.md): a partial mock of `matchesDrillDown` (defaulting
@@ -1070,6 +1071,121 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
       const table = within(gamesCard).getByRole('table');
       expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
       expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    // 39.1-REVIEW iteration 2 WR-01: Match Data had no claim-follows-horizon
+    // wiring. 50 Mario games over ~80 days plus 40 from ~200 days ago, so the
+    // rail's rosterCore insight exists at both `last30` and `last90`.
+    function horizonSplitFixture() {
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      return [
+        ...Array.from({ length: 50 }, (_, i) =>
+          makeMatch({
+            id: `hz${i}`,
+            time: now - (49 - i) * ((80 / 49) * day),
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({ id: `old${i}`, time: now - (200 + i) * day, win: true }),
+        ),
+      ];
+    }
+
+    function ClaimProbe() {
+      const location = useLocation();
+      return (
+        <div
+          data-testid="claim-probe"
+          data-claim={new URLSearchParams(location.search).get('claim') ?? ''}
+        />
+      );
+    }
+
+    function renderMatchDataWithProbe(initialEntry: string) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <TooltipProvider>
+                  <ClaimProbe />
+                  <Routes>
+                    <Route path="/match-data" element={<MatchDataPage />} />
+                    <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
+                  </Routes>
+                </TooltipProvider>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    }
+
+    const NOT_APPLIED =
+      "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.";
+
+    it.each([
+      ['personal', '/match-data'],
+      ['coach-mounted', '/coach/test-client/match-data'],
+    ])(
+      'WR-01 %s: a HorizonSwitch press after following a rail door re-points the claim to the same insight at the new horizon',
+      async (_label, path) => {
+        getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+        listMatches.mockResolvedValue(horizonSplitFixture());
+        HTMLElement.prototype.scrollIntoView = vi.fn();
+        const user = userEvent.setup();
+
+        renderMatchDataWithProbe(path);
+        await screen.findByText('Match History');
+        const rosterDoor = await waitFor(() => {
+          const link = Array.from(
+            document.querySelectorAll<HTMLAnchorElement>('[data-slot="match-data-rail"] a'),
+          ).find((a) => (a.getAttribute('href') ?? '').includes('claim=rosterCore'));
+          expect(link).toBeDefined();
+          return link!;
+        });
+        await user.click(rosterDoor);
+        await waitFor(() =>
+          expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+            'data-claim',
+            'rosterCore:account:last30',
+          ),
+        );
+
+        await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+        await waitFor(() =>
+          expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+            'data-claim',
+            'rosterCore:account:last90',
+          ),
+        );
+        expect(screen.queryByText(NOT_APPLIED)).toBeNull();
+      },
+    );
+
+    it('WR-01: a claim arriving under a different persisted horizon is shown as not applied', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      window.localStorage.setItem(
+        analyticsSelectionStorageKey('test-uid', null),
+        JSON.stringify({ horizon: 'last90' }),
+      );
+
+      renderMatchDataWithProbe('/match-data?claim=rosterCore:account:last30');
+
+      await screen.findByText('Match History');
+      await waitFor(() => expect(screen.getByText(NOT_APPLIED)).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(90);
+      expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+        'data-claim',
+        'rosterCore:account:last30',
+      );
     });
 
     it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw)', async () => {

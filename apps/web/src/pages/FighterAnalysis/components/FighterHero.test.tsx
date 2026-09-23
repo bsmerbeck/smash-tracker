@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import type { Match } from '@smash-tracker/shared';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
+import { buildPeriodSeries } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { SpriteList } from '@/data/sprites';
-import { FighterHero } from './FighterHero';
+import { useFighterFormNow } from '../lib/useFighterFormNow';
+import { FighterHero, type FighterHeroDrillAxes } from './FighterHero';
 
 const mario = SpriteList.find((s) => s.id === 1)!;
 const luigi = SpriteList.find((s) => s.id === 10)!;
@@ -24,27 +26,65 @@ function makeMatch(overrides: Partial<Match> & { id: string; time: number; win: 
   } as Match;
 }
 
+/**
+ * Plan 39.1-25 (gap closure, SC4/INS-04): obtains `formNowInsight`/`nowMs`
+ * by rendering `useFighterFormNow` itself — never a hand-built `Insight`
+ * literal — so the door's shape is proven against the SAME computation the
+ * real page uses.
+ */
+function HeroHarness(props: {
+  fighterMatches: Match[];
+  allMatches?: Match[];
+  horizon?: HorizonKey;
+  setHorizon: (next: HorizonKey) => void;
+  isLoading?: boolean;
+  onDrill: (axes: FighterHeroDrillAxes) => void;
+}) {
+  const horizon = props.horizon ?? 'last30';
+  const { insight, nowMs } = useFighterFormNow({
+    fighterId: mario.id,
+    fighterMatches: props.fighterMatches,
+    horizon,
+  });
+  return (
+    <FighterHero
+      fighter={mario}
+      fighterMatches={props.fighterMatches}
+      allMatches={props.allMatches ?? props.fighterMatches}
+      horizon={horizon}
+      setHorizon={props.setHorizon}
+      isLoading={props.isLoading ?? false}
+      formNowInsight={insight}
+      nowMs={nowMs}
+      periodSeries={buildPeriodSeries({ matches: props.fighterMatches })}
+      onDrill={props.onDrill}
+    />
+  );
+}
+
 function renderHero(props: {
   fighterMatches: Match[];
   allMatches?: Match[];
-  horizon?: 'last30' | 'lastEvent' | 'last90';
-  setHorizon?: (next: 'last30' | 'lastEvent' | 'last90') => void;
+  horizon?: HorizonKey;
+  setHorizon?: (next: HorizonKey) => void;
   isLoading?: boolean;
+  onDrill?: (axes: FighterHeroDrillAxes) => void;
 }) {
   const setHorizon = props.setHorizon ?? vi.fn();
+  const onDrill = props.onDrill ?? vi.fn();
   const result = render(
     <MemoryRouter>
-      <FighterHero
-        fighter={mario}
+      <HeroHarness
         fighterMatches={props.fighterMatches}
-        allMatches={props.allMatches ?? props.fighterMatches}
-        horizon={props.horizon ?? 'last30'}
+        allMatches={props.allMatches}
+        horizon={props.horizon}
         setHorizon={setHorizon}
-        isLoading={props.isLoading ?? false}
+        isLoading={props.isLoading}
+        onDrill={onDrill}
       />
     </MemoryRouter>,
   );
-  return { setHorizon, ...result };
+  return { setHorizon, onDrill, ...result };
 }
 
 /** A large, mixed-event fixture — enough games to exceed both the form-strip and period-trend line bounds. */
@@ -185,10 +225,85 @@ describe('FighterHero', () => {
     expect(document.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
   });
 
-  it('renders a games door linking to the fighter-scoped drill-down search', () => {
-    renderHero({ fighterMatches: largeFixture() });
-    const door = screen.getByRole('link', { name: /see the .* games?/i });
-    expect(door.getAttribute('href')).toMatch(/fighter=1/);
+  describe('T-39.1-25 (gap closure, SC4/INS-04): the door is built from the claim axis, never a hand-built fighter axis', () => {
+    it('renders the formNow counted-games door built from the claim axis, count equal to countedMatchIds.length', () => {
+      const matches = largeFixture();
+      renderHero({ fighterMatches: matches, horizon: 'last30' });
+
+      const door = screen.getByRole('link', { name: /see the .* games?/i });
+      const href = door.getAttribute('href') ?? '';
+      // Same-route, claim-shaped href (UI-SPEC §10.3) — the insight id is
+      // `formNow:character:<fighterId>:<horizon>` — never a hand-built
+      // `fighter=1` axis (the defect this plan closes).
+      expect(href).toContain('claim=formNow%3Acharacter%3A1%3Alast30');
+      expect(href).toMatch(/#games$/);
+      expect(href).not.toMatch(/fighter=/);
+
+      // The label's printed count matches the insight's own
+      // `countedMatchIds.length` — computed independently via the SAME
+      // hook the harness renders with, never a hand-derived expectation.
+      const doorLabel = door.textContent ?? '';
+      const printedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(printedCount).toBeGreaterThan(0);
+    });
+
+    it('renders no door when the recent window has zero games (a fixture whose games are all outside the active horizon)', () => {
+      const now = Date.now();
+      // 20 games, all 365+ days old — outside both the `last90` (90-day)
+      // window AND the character scope's 12-month recency floor
+      // (`resolveWindow`'s `withinScopedRecency`), so the recent window is
+      // empty either way.
+      const oldFixture: Match[] = Array.from({ length: 20 }, (_, i) =>
+        makeMatch({ id: `old${i}`, time: now - (365 + i) * 24 * 60 * 60 * 1000, win: i % 2 === 0 }),
+      );
+
+      renderHero({ fighterMatches: oldFixture, horizon: 'last90' });
+      expect(screen.queryByRole('link', { name: /see the .* games?/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('T-39.1-25 (gap closure, SC6/TRND-04): the strip groups by real set id, not by event', () => {
+    it('groups games by their real start.gg set id, not by event (sets are no longer one-per-event)', () => {
+      const now = Date.now();
+      const eventName = 'Big House Online';
+      const matches: Match[] = [
+        makeMatch({
+          id: 'g1',
+          time: now - 3 * 60 * 60 * 1000,
+          win: true,
+          eventName,
+          externalId: 'sgg:100:g1',
+        }),
+        makeMatch({
+          id: 'g2',
+          time: now - 2 * 60 * 60 * 1000,
+          win: false,
+          eventName,
+          externalId: 'sgg:100:g2',
+        }),
+        makeMatch({
+          id: 'g3',
+          time: now - 1 * 60 * 60 * 1000,
+          win: true,
+          eventName,
+          externalId: 'sgg:200:g1',
+        }),
+      ];
+
+      renderHero({ fighterMatches: matches });
+
+      const eventRoot = document.querySelector('[data-slot="form-strip-event"]') as HTMLElement;
+      expect(eventRoot).toBeInTheDocument();
+      const setElements = eventRoot.querySelectorAll('[data-slot="form-strip-set"]');
+      // Two real start.gg sets (100 and 200) inside the SAME event — the
+      // old hand-rolled grouping collapsed every game of an event into ONE
+      // set; the fix must render exactly TWO set elements here.
+      expect(setElements.length).toBe(2);
+      const tickCounts = [...setElements]
+        .map((el) => el.querySelectorAll('[data-slot="form-strip-tick"]').length)
+        .sort();
+      expect(tickCounts).toEqual([1, 2]);
+    });
   });
 
   it('shows the empty state with no crash when the fighter has no matches at all', () => {

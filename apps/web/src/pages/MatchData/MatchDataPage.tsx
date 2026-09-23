@@ -14,6 +14,7 @@ import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useSortedFighters } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
@@ -67,7 +68,11 @@ export function MatchDataPage() {
     isFetching: matchesFetching,
     filterActive,
   } = useFilteredMatches();
-  const { horizon } = useHorizon();
+  const {
+    horizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: a tolerant read of every drill-down axis currently in the URL —
@@ -161,6 +166,22 @@ export function MatchDataPage() {
       resolveInsightClaim({ claimId, insights: matchDataInsights, matches: ms }),
     [matchDataInsights],
   );
+
+  // WR-01 (39.1-REVIEW iteration 2): the same claim-follows-horizon rule as
+  // Fighter Analysis, Trends and Matchups — a HorizonSwitch press re-points a
+  // followed rail door's claim to the same insight at the new horizon; one
+  // that cannot resolve is shown as not applied by the terminus. Above every
+  // early return (Rules of Hooks).
+  const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
+  const rewriteClaim = useUrlClaimRewriter();
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    horizonChangeCount,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
 
   const savedFighterIds = useMemo(
     () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],

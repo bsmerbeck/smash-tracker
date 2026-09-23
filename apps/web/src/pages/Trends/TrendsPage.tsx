@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { Insight, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -12,10 +12,19 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { cn } from '@/lib/utils';
 import { stagesById } from '@/data/stages';
 import {
+  DRILL_DOWN_CLAIM_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FIGHTER_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_VS_PARAM,
   readDrillDownParams,
   sortMatchesNewestFirst,
   type DrillDownAxes,
@@ -31,6 +40,7 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
+import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCardInsights';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -57,7 +67,11 @@ export function TrendsPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
-  const { horizon } = useHorizon();
+  const {
+    horizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: a tolerant read of every drill-down axis currently in the URL —
@@ -117,28 +131,97 @@ export function TrendsPage() {
     dismiss,
     restoreAll,
   } = useTrendsInsights({ matches, horizon });
+  // Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `settingGap`/`mixShift`/
+  // `volumeForm` computation this page shares with `SettingComparison`/
+  // `MatchTypeMix` (which take the result as props) and its own terminus
+  // below — called unconditionally, above every early return, beside
+  // `useTrendsInsights`.
+  const cardInsights = useTrendsCardInsights({ matches, horizon });
+  // The hero's/rail's own insights lead `pageInsights`, followed by the
+  // three card insights (non-null only) — one array, one terminus resolver,
+  // matching `FighterAnalysisPage.tsx`'s `pageInsights` precedent.
+  const pageInsights = useMemo(() => {
+    const cards = [cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm].filter(
+      (insight): insight is Insight => insight != null,
+    );
+    return [...trendsInsights, ...cards];
+  }, [trendsInsights, cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm]);
   const insightById = useMemo(
-    () => new Map(trendsInsights.map((insight) => [insight.id, insight])),
-    [trendsInsights],
+    () => new Map(pageInsights.map((insight) => [insight.id, insight])),
+    [pageInsights],
   );
   const accountNameForClaim = t('trends.title');
   const claimSummary =
     axesFromUrl.claimId != null
       ? (() => {
           const insight = insightById.get(axesFromUrl.claimId!);
-          return insight ? buildTrendsVerdict(insight, t, accountNameForClaim) : undefined;
+          if (!insight) return undefined;
+          // Plan 39.1-27 (gap closure, Task 2): mixShift's own raw
+          // `matchType` literal must never reach the summary — the SAME
+          // `buildMixShiftVerdict` the line itself uses.
+          return insight.templateId === 'mixShift'
+            ? buildMixShiftVerdict(insight, t)
+            : buildTrendsVerdict(insight, t, accountNameForClaim);
         })()
       : undefined;
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
   // passed as `resolveClaim` would be a NEW reference every render, breaking
   // `FilteredMatchList`'s D-16 memo on every unrelated parent re-render.
-  // Memoized by `trendsInsights` alone — the only thing this closure
+  // Memoized by `pageInsights` alone — the only thing this closure
   // actually reads.
   const resolveClaimForTerminus = useCallback(
     (claimId: string, ms: Match[]) =>
-      resolveInsightClaim({ claimId, insights: trendsInsights, matches: ms }),
-    [trendsInsights],
+      resolveInsightClaim({ claimId, insights: pageInsights, matches: ms }),
+    [pageInsights],
   );
+
+  // Plan 39.1-27: `AppRouter.tsx` uses `BrowserRouter`, which performs no
+  // hash scroll of its own, and this terminus mounts conditionally — so an
+  // effect after mount is the only place the scroll can land. Fires once per
+  // navigation whenever the hash names this page's terminus AND the
+  // terminus is actually mounted (`hasDrillAxis`). No state update inside
+  // this effect (react-compiler lint rule). Mirrors
+  // `FighterAnalysisPage.tsx`'s plan 39.1-25 landing effect.
+  //
+  // WR-02 (39.1-REVIEW): gated on `ready` (data landed, terminus mounted) so
+  // a cold load, refresh or shared door URL lands on the terminus too.
+  const location = useLocation();
+  useLandingScroll({ anchorId: GAMES_ANCHOR_ID, ready: !isLoading && hasDrillAxis });
+
+  // WR-01 (39.1-REVIEW): the terminus mounts only while a drill axis is in
+  // the URL, and this page's doors write one — Clear filters drops every
+  // axis the terminus reads (and the `#games` hash), which unmounts it.
+  const navigate = useNavigate();
+  function handleClearFilters(): void {
+    const params = new URLSearchParams(searchParams);
+    for (const key of [
+      DRILL_DOWN_FIGHTER_PARAM,
+      DRILL_DOWN_VS_PARAM,
+      DRILL_DOWN_STAGE_PARAM,
+      DRILL_DOWN_EVENT_PARAM,
+      DRILL_DOWN_FROM_PARAM,
+      DRILL_DOWN_TO_PARAM,
+      DRILL_DOWN_CLAIM_PARAM,
+    ]) {
+      params.delete(key);
+    }
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
+  // same insight at a new horizon; one that cannot resolve is shown as not
+  // applied by the terminus. Mirrors `FighterAnalysisPage.tsx`.
+  const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
+  const rewriteClaim = useUrlClaimRewriter();
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    horizonChangeCount,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
   // skeleton built from the SAME PageGrid spans as the loaded
@@ -233,8 +316,17 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={4} stack>
-          <SettingComparison matches={matches} horizon={horizon} />
-          <MatchTypeMix matches={matches} horizon={horizon} />
+          <SettingComparison
+            matches={matches}
+            horizon={horizon}
+            settingGapInsight={cardInsights.settingGap}
+          />
+          <MatchTypeMix
+            matches={matches}
+            horizon={horizon}
+            mixShiftInsight={cardInsights.mixShift}
+            volumeFormInsight={cardInsights.volumeForm}
+          />
         </GridCell>
 
         {hasDrillAxis && (
@@ -249,6 +341,7 @@ export function TrendsPage() {
                   axes={terminusAxes}
                   resolveClaim={resolveClaimForTerminus}
                   claimSummary={claimSummary}
+                  onClearFilters={handleClearFilters}
                   showDelete
                 />
               </CardContent>

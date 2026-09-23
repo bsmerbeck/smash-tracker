@@ -132,14 +132,22 @@
       "summary_other": "{{count}} games · {{filters}}",
       "clear": "Clear filters",
       "empty": "No games match these filters.",
+      "claimNotApplied": "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.",
       "loading": "Loading games…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, opens video",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, show details",
       "columnMyCharacter": "My character",
       "columnTheirCharacter": "Their character",
       "columnEvent": "Event",
-      "showAll_one": "Show all {{count}} game",
-      "showAll_other": "Show all {{count}} games"
+      "showMore_one": "Show {{count}} more",
+      "showMore_other": "Show {{count}} more",
+      "showingOf_one": "Showing {{shown}} of {{count}} game",
+      "showingOf_other": "Showing {{shown}} of {{count}} games",
+      "eventSummary": {
+        "set": "Set vs {{opponent}} at {{event}}",
+        "setUnnamed": "Set vs {{opponent}}",
+        "game": "Game vs {{opponent}} on {{date}}"
+      }
     },
     "pips": {
       "empty": "No matches yet.",

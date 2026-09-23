@@ -19,7 +19,13 @@ import {
   NARROW_PLOT_TARGET,
   PERIOD_TREND_MIN_PERIODS,
 } from './markBounds.js';
-import { buildPeriodSeries, regrainFor, type PeriodGrain } from './periodSeries.js';
+import {
+  buildPeriodSeries,
+  periodPointKeyByMatchId,
+  periodPointMatchIdsForKey,
+  regrainFor,
+  type PeriodGrain,
+} from './periodSeries.js';
 
 /** Minimal, deterministic `Match` builder — only the fields a given test cares about are overridden. */
 function makeMatch(id: string, time: number, overrides: Partial<Match> = {}): Match {
@@ -370,6 +376,141 @@ describe('buildPeriodSeries (VIZ-01) — the full ladder (Task 2)', () => {
 // Task 3: FIXT-02 sparse-workspace conformance and the locked-period-trend
 // threshold, driven entirely from engine output (§13.9's engine half).
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CR-02 (39.1-REVIEW): a point's identity is its own games, never the time
+// window reconstructed from them.
+// ---------------------------------------------------------------------------
+
+/**
+ * 25 tournaments, one day apart; each has three 3-game "Ultimate Singles"
+ * sets with one 3-game "Redemption" set interleaved between singles sets 1
+ * and 2. 100 sets (> 60) forces the ladder past `set` to `eventSession` (50
+ * points), and every singles block's `[startMs, endMs]` also contains that
+ * tournament's Redemption games.
+ */
+function buildInterleavedEventFixture(): Match[] {
+  const matches: Match[] = [];
+  const day = 24 * 60 * 60 * 1000;
+  const hour = 60 * 60 * 1000;
+  for (let t = 0; t < 25; t++) {
+    const base = Date.UTC(2024, 0, 1) + t * day;
+    const sets: Array<{ event: string; offsetH: number }> = [
+      { event: `T${t} Ultimate Singles`, offsetH: 0 },
+      { event: `T${t} Redemption`, offsetH: 1 },
+      { event: `T${t} Ultimate Singles`, offsetH: 2 },
+      { event: `T${t} Ultimate Singles`, offsetH: 3 },
+    ];
+    sets.forEach(({ event, offsetH }, s) => {
+      for (let g = 0; g < 3; g++) {
+        matches.push(
+          makeMatch(`t${t}s${s}g${g}`, base + offsetH * hour + g * 60_000, {
+            win: (t + s + g) % 2 === 0,
+            eventName: event,
+            externalId: `sgg:t${t}set${s}:g${g + 1}`,
+          }),
+        );
+      }
+    });
+  }
+  return matches;
+}
+
+describe('buildPeriodSeries — CR-02 (39.1-REVIEW) point identity', () => {
+  it('interleaved events force eventSession, and a time window over-counts (the fixture discriminates)', () => {
+    const matches = buildInterleavedEventFixture();
+    const series = buildPeriodSeries({ matches });
+    expect(series.grain).toBe('eventSession');
+    expect(series.points).toHaveLength(50);
+    const windowOverCounts = series.points.filter(
+      (p) => matches.filter((m) => m.time >= p.startMs && m.time <= p.endMs).length !== p.total,
+    );
+    expect(windowOverCounts.length).toBeGreaterThan(0);
+  });
+
+  it('every point carries exactly its own games, and the index resolves each game to exactly one point', () => {
+    const matches = buildInterleavedEventFixture();
+    const series = buildPeriodSeries({ matches });
+    const index = periodPointKeyByMatchId(series);
+    expect(index.size).toBe(matches.length);
+    for (const point of series.points) {
+      expect(point.matchIds).toHaveLength(point.total);
+      const resolved = matches.filter((m) => index.get(m.id) === point.key);
+      expect(resolved.map((m) => m.id).sort()).toEqual([...point.matchIds].sort());
+    }
+    expect(new Set(series.points.map((p) => p.key)).size).toBe(series.points.length);
+  });
+
+  it('two differently named events whose first games tie on one instant are two distinct keys', () => {
+    const at = Date.UTC(2024, 5, 1);
+    const matches = [
+      makeMatch('a1', at, { eventName: 'Singles', externalId: 'sgg:a1:g1' }),
+      makeMatch('a2', at + 1, { eventName: 'Singles', externalId: 'sgg:a2:g1' }),
+      makeMatch('b1', at, { eventName: 'Doubles', externalId: 'sgg:b1:g1' }),
+      makeMatch('b2', at + 2, { eventName: 'Doubles', externalId: 'sgg:b2:g1' }),
+    ];
+    // 4 one-game sets exceed target 2, so the ladder lands on eventSession.
+    const series = buildPeriodSeries({ matches, target: 2 });
+    expect(series.grain).toBe('eventSession');
+    const keys = series.points.map((p) => p.key);
+    expect(new Set(keys).size).toBe(2);
+    const index = periodPointKeyByMatchId(series);
+    expect(index.get('a1')).toBe(index.get('a2'));
+    expect(index.get('b1')).toBe(index.get('b2'));
+    expect(index.get('a1')).not.toBe(index.get('b1'));
+  });
+
+  it('game-grain points tied on one timestamp stay two points with one game each', () => {
+    const at = Date.UTC(2024, 5, 1);
+    const series = buildPeriodSeries({ matches: [makeMatch('x', at), makeMatch('y', at)] });
+    expect(series.grain).toBe('game');
+    expect(series.points.map((p) => p.matchIds)).toEqual([['x'], ['y']]);
+  });
+});
+
+describe('periodPointMatchIdsForKey — WR-02 (39.1-REVIEW iteration 2) grain-independent resolution', () => {
+  it("resolves every point of EVERY grain to exactly that point's games, whichever grain the default ladder picks", () => {
+    const matches = buildInterleavedEventFixture();
+    const defaultGrain = buildPeriodSeries({ matches }).grain;
+    const grainsSeen = new Set<PeriodGrain>();
+    for (const target of [1000, 100, 60, 10, 1]) {
+      const series = buildPeriodSeries({ matches, target });
+      grainsSeen.add(series.grain);
+      for (const point of series.points) {
+        expect([...(periodPointMatchIdsForKey(point.key, matches) ?? [])].sort()).toEqual(
+          [...point.matchIds].sort(),
+        );
+      }
+    }
+    // The fixture really exercises keys from grains other than the default.
+    expect([...grainsSeen]).toEqual(expect.arrayContaining(['game', 'set', 'week', 'month']));
+    expect(grainsSeen.size).toBeGreaterThan(1);
+    expect(grainsSeen.has(defaultGrain)).toBe(true);
+  });
+
+  it('a calendar key keeps resolving to its own games after the base grows and the ladder moves', () => {
+    const matches = buildInterleavedEventFixture();
+    const weekSeries = buildPeriodSeries({ matches, target: 10 });
+    expect(weekSeries.grain).toBe('week');
+    const drawn = weekSeries.points[0]!;
+    const later = [
+      ...matches,
+      ...Array.from({ length: 80 }, (_, i) => makeMatch(`later-${i}`, Date.UTC(2025, 0, 1 + i))),
+    ];
+    expect(buildPeriodSeries({ matches: later, target: 10 }).grain).not.toBe('week');
+    expect([...(periodPointMatchIdsForKey(drawn.key, later) ?? [])].sort()).toEqual(
+      [...drawn.matchIds].sort(),
+    );
+  });
+
+  it('returns undefined for a non-period key and [] for a period key no point matches', () => {
+    const matches = buildInterleavedEventFixture();
+    expect(periodPointMatchIdsForKey('t0set0', matches)).toBeUndefined();
+    expect(periodPointMatchIdsForKey('nonsense', matches)).toBeUndefined();
+    expect(periodPointMatchIdsForKey('week:1999-W01', matches)).toEqual([]);
+    expect(periodPointMatchIdsForKey('game:missing', matches)).toEqual([]);
+  });
+});
 
 describe('buildPeriodSeries — FIXT-02 sparse workspaces (Task 3)', () => {
   const workspaces: Array<[name: string, matches: Match[]]> = [

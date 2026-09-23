@@ -246,6 +246,222 @@ describe('TrendsPage', () => {
     });
   });
 
+  it('WR-01 (39.1-REVIEW): the page-level terminus offers Clear filters, which drops every drill axis and unmounts it', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+    const user = userEvent.setup();
+
+    renderTrends('/trends?stage=1&claim=ratingMove:account:last30#games');
+
+    await screen.findByText('Monthly Performance');
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(document.getElementById('games')).not.toBeInTheDocument());
+  });
+
+  it('WR-02 (39.1-REVIEW): a cold load of a door URL (#games) scrolls the terminus into view once the data lands', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+    const scrollSpy = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollSpy;
+
+    renderTrends('/trends?claim=ratingMove:account:last30#games');
+
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+    const gamesCard = document.getElementById('games') as HTMLElement;
+    await waitFor(() => expect(scrollSpy.mock.contexts).toContain(gamesCard));
+  });
+
+  describe('T-39.1-27 (gap closure): the Setting comparison door lands on exactly N', () => {
+    /** 10 online (quickplay) + 10 offline (offline-tourney) games, well past `COHORT_MIN_SIDE_GAMES` (8) on each side — a real SettingGap games door, `countedMatchIds.length === 20`. */
+    function settingGapDoorFixture() {
+      const now = Date.now();
+      const online = Array.from({ length: 10 }, (_, i) =>
+        makeMatch({
+          id: `on${i}`,
+          time: now - (10 - i) * 60_000,
+          win: true,
+          matchType: 'quickplay',
+        }),
+      );
+      const offline = Array.from({ length: 10 }, (_, i) =>
+        makeMatch({
+          id: `off${i}`,
+          time: now - (10 - i) * 60_000,
+          win: false,
+          matchType: 'offline-tourney',
+        }),
+      );
+      return [...online, ...offline];
+    }
+
+    /**
+     * The base fixture plus 5 `unspecified`-type games — settingGap only
+     * ever pools online+offline into `countedMatchIds` (never
+     * `unspecified`), so the door's own count (20) stays LESS than the
+     * page's total match count (25). This is what makes "resolves via the
+     * claim id" a real, falsifiable proof rather than a fixture where
+     * "resolved" and "unresolved-fallback-shows-everything" happen to print
+     * the same number.
+     */
+    function settingGapDoorFixtureWithFiller() {
+      const now = Date.now();
+      const filler = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ id: `unspec${i}`, time: now - (5 - i) * 60_000, win: true, matchType: 'none' }),
+      );
+      return [...settingGapDoorFixture(), ...filler];
+    }
+
+    it("clicking the Setting comparison card's counted-games door mounts #games with data-total-rows equal to the door's own count, states the count and the SettingGap sentence in the summary, and scrolls #games into view", async () => {
+      const matches = settingGapDoorFixtureWithFiller();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+      const scrollIntoViewSpy = vi.fn();
+      const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+      try {
+        renderTrends();
+
+        await screen.findByText('Setting Comparison');
+        const settingCard = screen
+          .getByText('Setting Comparison')
+          .closest('[data-slot="card"]') as HTMLElement;
+        const doorSlot = settingCard.querySelector(
+          '[data-slot="insight-line-door"]',
+        ) as HTMLElement;
+        expect(doorSlot).not.toBeNull();
+        const door = within(doorSlot).getByRole('link');
+        const doorLabel = door.textContent ?? '';
+        const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+        expect(expectedCount).toBe(20);
+
+        await user.click(door);
+
+        await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+        const gamesCard = document.getElementById('games') as HTMLElement;
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+        const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+        expect(summary).not.toBeNull();
+        expect(summary.textContent).toContain(String(expectedCount));
+        expect(summary.textContent).toMatch(/Setting/);
+
+        expect(scrollIntoViewSpy).toHaveBeenCalled();
+        const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;
+        expect(scrollIntoViewSpy.mock.contexts[lastCallIndex]).toBe(gamesCard);
+      } finally {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      }
+    });
+
+    it('a hand-typed ?claim=<settingGap id> resolves to exactly the door count — never the unresolved-fallback "everything" count', async () => {
+      const matches = settingGapDoorFixtureWithFiller();
+      listMatches.mockResolvedValue(matches);
+
+      // Insight.id === `${templateId}:${scopeKey}:${horizon}`; ACCOUNT_SCOPE's
+      // key is the literal string 'account'; DEFAULT_HORIZON is 'last30'
+      // (useHorizon.ts) — this page's own default before any switch press.
+      renderTrends('/trends?claim=settingGap:account:last30');
+
+      await screen.findByText('Setting Comparison');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      // 20 (the door's own count) — NOT 25 (the page's full match total,
+      // which an unresolved claim's tolerant fallback would show instead).
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(20);
+    });
+  });
+
+  describe('T-39.1-27 (gap closure): MixShift and VolumeForm doors land on exactly N', () => {
+    /**
+     * 70 old offline-tourney games (baseline) + 30 recent online-tourney
+     * games — a real, visible MixShift 'fact' state (WR-A02's own fixture
+     * shape), and a single-month VolumeForm 'locked' state (monthCount < 6)
+     * whose own `countedMatchIds` pools every game (100).
+     */
+    function mixShiftAndVolumeFormFixture() {
+      const now = Date.now();
+      const old = Array.from({ length: 70 }, (_, i) =>
+        makeMatch({
+          id: `old-${i}`,
+          time: now - (1000 - i) * 60_000,
+          win: true,
+          matchType: 'offline-tourney',
+        }),
+      );
+      const recent = Array.from({ length: 30 }, (_, i) =>
+        makeMatch({
+          id: `recent-${i}`,
+          time: now - (30 - i) * 60_000,
+          win: true,
+          matchType: 'online-tourney',
+        }),
+      );
+      return [...old, ...recent];
+    }
+
+    it("clicking the Match-type mix card's MixShift door narrows #games to exactly its own count, with the localized match-type label (never the raw enum) in the summary", async () => {
+      const matches = mixShiftAndVolumeFormFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Match-Type Mix');
+      const mixCard = screen
+        .getByText('Match-Type Mix')
+        .closest('[data-slot="card"]') as HTMLElement;
+      const mixShiftText = within(mixCard).getAllByText(/Online Tourney/)[0]!;
+      const mixShiftLine = mixShiftText.closest('[data-slot="insight-line"]') as HTMLElement;
+      const doorSlot = mixShiftLine.querySelector('[data-slot="insight-line-door"]') as HTMLElement;
+      expect(doorSlot).not.toBeNull();
+      const door = within(doorSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBe(30);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+      expect(summary).not.toBeNull();
+      expect(summary.textContent).toMatch(/Online Tourney/);
+      expect(summary.textContent).not.toMatch(/online-tourney/);
+    });
+
+    it("clicking the Match-type mix card's VolumeForm door narrows #games to exactly its own count", async () => {
+      const matches = mixShiftAndVolumeFormFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Match-Type Mix');
+      const mixCard = screen
+        .getByText('Match-Type Mix')
+        .closest('[data-slot="card"]') as HTMLElement;
+      const doorSlots = mixCard.querySelectorAll('[data-slot="insight-line-door"]');
+      expect(doorSlots.length).toBeGreaterThan(0);
+      // VolumeForm is the LAST insight line in this card (MixShift leads).
+      const volumeFormDoorSlot = doorSlots[doorSlots.length - 1] as HTMLElement;
+      const door = within(volumeFormDoorSlot).getByRole('link');
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBe(100);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+    });
+  });
+
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {

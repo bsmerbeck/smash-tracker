@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -7,18 +7,18 @@ import type {
   HorizonKey,
   Insight,
   InsightKind,
-  InsightScope,
   Match,
+  PeriodPoint,
+  PeriodSeries,
 } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
-  INSIGHT_TEMPLATES,
   PERIOD_TREND_MIN_PERIODS,
-  buildPeriodSeries,
   classify,
   confidenceTierFor,
   resolveWindow,
   toRateValue,
+  trimmedEventKey,
 } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,9 +30,11 @@ import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors } from '@/components/analytics/insightDoors';
+import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import type { DrillDownAxes } from '@/lib/drillDownParams';
 import { getMatchTypeRecords } from '@/lib/stats';
 import { formatPercent } from '@/lib/formatPercent';
 
@@ -42,14 +44,6 @@ import { formatPercent } from '@/lib/formatPercent';
  * owns (D-06). Order is fixed, matching UI-SPEC §8.1's stat row.
  */
 const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
-
-/**
- * VIZ-03/INS-05: the `formNow` template invoked at CHARACTER scope for this
- * one fighter (no opponent axis) — the same "any scope the template's own
- * logic can interpret" reuse plan 39.1-13 established for the pairing case.
- * Resolved once at module scope: the registry is a static, closed array.
- */
-const FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention (see `MatchupChart.tsx`'s `claimChipKindFor`). */
 function claimChipKindFor(kind: InsightKind): ClaimChipKind {
@@ -88,23 +82,19 @@ const CONFIDENCE_GLYPHS: Record<'high' | 'medium' | 'low' | 'none', string> = {
   none: '○○○',
 };
 
-/** Builds the character-scoped `InsightScope` for this one fighter (D-09's "axis identity supplied at the boundary" discipline) — `filter` is the identity function because `fighterMatches` is already fighter-filtered by the host before it reaches this component. */
-function buildFighterScope(fighterId: number): InsightScope {
-  return {
-    kind: 'character',
-    key: `character:${fighterId}`,
-    axes: { fighter: fighterId },
-    filter: (matches: Match[]) => matches,
-  };
-}
-
 /**
- * UI-SPEC §7.10-adjacent (ported, not shared, from `MatchupChart.tsx`'s
- * `buildFormStripEvents`, per the small-helper-duplication convention — this
- * plan's own dispatch notes cite plan 39.1-13's SUMMARY for this exact
- * pattern): event -> set -> game, oldest first, grouped only. `recentWindow`
- * marks each set `inRecentWindow` from the SAME `Insight.window` `formNow`
- * already resolved.
+ * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only. Plan
+ * 39.1-25 (gap closure, SC6/TRND-04): events group by `trimmedEventKey`
+ * (`eventSeries.ts`'s single name-priority rule — `eventName` first,
+ * `tournamentName` as fallback, ported here rather than the file's former
+ * hand-rolled `eventName ?? tournamentName` trim), and sets group by
+ * `formStripEventKeyForMatch` (the Matchups tracer's single set rule — a
+ * real parsed start.gg/parry.gg set id, else a per-game synthetic key, so a
+ * manual game is its own one-game set) — the SAME function
+ * `FighterAnalysisPage.tsx` hands `FilteredMatchList` as `eventKeyForMatch`,
+ * so a rendered set's own click narrows to precisely those games.
+ * `recentWindow` marks each set `inRecentWindow` from the SAME
+ * `Insight.window` `formNow` already resolved.
  */
 function buildFighterFormStripEvents(
   matches: Match[],
@@ -114,9 +104,7 @@ function buildFighterFormStripEvents(
   const sorted = [...matches].sort((a, b) => a.time - b.time);
   const byEvent = new Map<string, Match[]>();
   for (const match of sorted) {
-    const raw = match.eventName ?? match.tournamentName;
-    const trimmed = raw?.trim();
-    const key = trimmed && trimmed.length > 0 ? trimmed : '__manual__';
+    const key = trimmedEventKey(match) ?? '__manual__';
     const group = byEvent.get(key);
     if (group) {
       group.push(match);
@@ -135,11 +123,7 @@ function buildFighterFormStripEvents(
   for (const [key, eventMatches] of byEvent) {
     const bySet = new Map<string, Match[]>();
     for (const match of eventMatches) {
-      // No parseable set id is threaded here (unlike MatchupChart's
-      // formStripSetKey) — the hero's set click narrows only the event/window
-      // axes, never a per-set eventKey, so each event is its own one-set
-      // group for the strip's set-boundary rendering.
-      const setKey = key;
+      const setKey = formStripEventKeyForMatch(match);
       const group = bySet.get(setKey);
       if (group) {
         group.push(match);
@@ -178,6 +162,17 @@ function buildFighterFormStripEvents(
   return events;
 }
 
+/**
+ * Plan 39.1-25 (gap closure, SC6/TRND-04): the axes a hero drill (a trend
+ * point or a form-strip set) can write — a subset of `DrillDownAxes`, never
+ * `fighterId`/`vsFighterId`/`stageId`/`claimId` (those are never written by
+ * this drill; `FighterAnalysisPage.tsx`'s writer also clears any prior
+ * `claim`/`stage`/`event`/`from`/`to` before applying these). CR-02
+ * (39.1-REVIEW): only `eventKey` — a time window is never a hero drill's
+ * identity.
+ */
+export type FighterHeroDrillAxes = Partial<Pick<DrillDownAxes, 'eventKey'>>;
+
 export interface FighterHeroProps {
   fighter: Fighter;
   fighterMatches: Match[];
@@ -187,6 +182,31 @@ export interface FighterHeroProps {
   setHorizon: (next: HorizonKey) => void;
   /** True while the match query is still in flight — a figure click performs no write in this state (T-39.1-14-03). */
   isLoading: boolean;
+  /**
+   * Plan 39.1-25 (gap closure, SC4/INS-04, D-12): the ONE `formNow`
+   * computation the host page shares with its own terminus
+   * (`resolveClaim`/`claimSummary`) — the hero no longer builds this itself.
+   * `null` before a fighter is resolved or when the fighter has no matches.
+   */
+  formNowInsight: Insight | null;
+  /** The SAME clock `formNowInsight` was built with — one clock, one insight (D-06, D-12). */
+  nowMs: number;
+  /**
+   * CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over
+   * `fighterMatches`. The host's terminus resolves a period drill's
+   * `event=<point.key>` over the SAME base by the key's own grain rule
+   * (`periodPointMatchIdsForKey`, WR-02 iteration 2), which is exactly this
+   * series' point while the grain is unchanged and keeps resolving after
+   * the ladder moves.
+   */
+  periodSeries: PeriodSeries;
+  /**
+   * Plan 39.1-25 (gap closure, SC6/TRND-04): the host's ONE URL writer for a
+   * trend-point or form-strip-set drill — both call `onDrill({ eventKey })`:
+   * a trend point with its own `PeriodPoint.key` (CR-02, 39.1-REVIEW), a
+   * form-strip set with its set key.
+   */
+  onDrill: (axes: FighterHeroDrillAxes) => void;
 }
 
 /**
@@ -205,24 +225,16 @@ export function FighterHero({
   horizon,
   setHorizon,
   isLoading,
+  formNowInsight,
+  nowMs,
+  periodSeries,
+  onDrill,
 }: FighterHeroProps) {
   const { t, i18n } = useTranslation();
   const localizedName = useFighterName(fighter.id);
   const subjectPath = useSubjectPath();
-  // React Compiler forbids a bare `Date.now()` call in the render body (it's
-  // impure) — the lazy `useState` initializer is this codebase's established
-  // one-time-read escape hatch (see `MatchupChart.tsx`, `useHorizon.ts`).
-  const [nowMs] = useState(() => Date.now());
 
   const hasMatches = fighterMatches.length > 0;
-
-  const scope = useMemo(() => buildFighterScope(fighter.id), [fighter.id]);
-
-  const formNowInsight: Insight | null = useMemo(() => {
-    if (!hasMatches) return null;
-    const built = FORM_NOW_TEMPLATE.build({ matches: fighterMatches, scope, horizon, nowMs });
-    return built[0] ?? null;
-  }, [fighterMatches, scope, horizon, nowMs, hasMatches]);
 
   const baselineAllTime = useMemo(() => toRateValue(fighterMatches), [fighterMatches]);
   const sharePct =
@@ -248,10 +260,6 @@ export function FighterHero({
     });
   }, [fighterMatches, baselineAllTime, nowMs]);
 
-  const periodSeries = useMemo(
-    () => buildPeriodSeries({ matches: fighterMatches }),
-    [fighterMatches],
-  );
   const overallRatePercent = baselineAllTime.rate * 100;
   const recentWindow = useMemo(
     () => ({
@@ -442,15 +450,26 @@ export function FighterHero({
     };
   });
 
-  function handleSelectPeriodPoint(point: { startMs: number; endMs: number }): void {
-    // The hero currently has no page-level filter-axis writer of its own
-    // (Task 3 wires FighterAnalysisPage's `setDrillDown`) — the trend still
-    // renders a real click affordance; a future plan threads this through
-    // once the page owns a `setDrillDown` context the way MatchupsPage does.
-    void point;
+  // CR-02 (39.1-REVIEW): a period point drills by its own KEY, never by its
+  // `[startMs, endMs]` bounds — `eventSession`/`set` groups are not
+  // contiguous in time (an interleaved Redemption bracket falls inside a
+  // Singles block's window) and `game` points tie on a shared timestamp, so
+  // a window listed more games than the point counted. The host's terminus
+  // resolves the key through the point's own `matchIds`.
+  function handleSelectPeriodPoint(point: PeriodPoint): void {
+    onDrill({ eventKey: point.key });
   }
 
-  const gamesDoorHref = `${subjectPath('/fighter-analysis')}?${buildDrillDownSearch({ fighterId: fighter.id }).toString()}#games`;
+  // Plan 39.1-25 (gap closure, SC4/INS-04): the door is built by
+  // `buildInsightDoors` from the SAME `formNowInsight` the host's terminus
+  // resolves against — never a hand-built fighter-axis href. `undefined`
+  // whenever the insight has zero counted games (a zero-game window never
+  // prints "See the 0 games").
+  const gamesDoor = formNowInsight
+    ? buildInsightDoors({ insight: formNowInsight, subjectPath }).find(
+        (door) => door.kind === 'games',
+      )
+    : undefined;
 
   const confidenceLabel = allTimeTier
     ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
@@ -527,6 +546,7 @@ export function FighterHero({
                   ? t(`analytics.strip.windowEmpty.${horizon}`)
                   : undefined,
             }}
+            onSelectSet={(setKey) => onDrill({ eventKey: setKey })}
           />
         </div>
 
@@ -573,11 +593,11 @@ export function FighterHero({
         />
 
         {/* 7. doors */}
-        {formNowInsight && (
+        {gamesDoor && (
           <div className="flex flex-wrap gap-2" data-slot="fighter-hero-doors">
             <Button asChild size="sm">
-              <Link to={gamesDoorHref}>
-                {t('insights.door.seeGames', { count: formNowInsight.window.games })}
+              <Link to={gamesDoor.href}>
+                {t('insights.door.seeGames', { count: gamesDoor.count })}
               </Link>
             </Button>
           </div>
