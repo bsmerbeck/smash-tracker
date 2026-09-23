@@ -542,14 +542,19 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     expect(onSelectPoint).toHaveBeenCalledWith(points[0]);
   });
 
-  it('TrendLine.tsx imports nothing from the shared engine but period TYPES and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
+  it('TrendLine.tsx imports nothing from the shared engine but the period TYPE and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
+    // Plan 39.1-30: `PeriodGrain` dropped from this assertion (and from the
+    // file's own import) — the grain-rule tick selection that was the ONLY
+    // reader of that type moved out to `periodTicks.ts` wholesale (action E),
+    // so `TrendLine.tsx` no longer has any legitimate reference to it; kept
+    // here would be a dead import failing `pnpm lint`'s no-unused-vars gate.
+    // `PeriodPoint` stays — the chart still consumes `PeriodPoint[]` directly.
     const filePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'TrendLine.tsx');
     const source = fs.readFileSync(filePath, 'utf8');
     const sharedImportLines = source
       .split('\n')
       .filter((line) => line.includes("from '@smash-tracker/shared'"));
     expect(sharedImportLines).toHaveLength(2);
-    expect(sharedImportLines.join('\n')).toMatch(/PeriodGrain/);
     expect(sharedImportLines.join('\n')).toMatch(/PeriodPoint/);
     expect(sharedImportLines.join('\n')).toMatch(/PERIOD_TREND_MIN_PERIODS/);
     expect(sharedImportLines.join('\n')).not.toMatch(/buildPeriodSeries|regrainFor/);

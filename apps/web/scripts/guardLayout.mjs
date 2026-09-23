@@ -77,10 +77,24 @@ export const LAYOUT_ORACLE_ROUTES = [
 const HARD_TIMEOUT_MS = Number(process.env.GUARD_LAYOUT_HARD_TIMEOUT_MS) || 5 * 60 * 1000;
 const ROUTE_LOAD_TIMEOUT_MS = 15_000;
 
-function withHardTimeout(promise, ms, label) {
+/**
+ * `onTimeout` (plan 39.1-30 first_fix) is fired the instant the hard timeout
+ * elapses, NOT awaited by this function — it is a fire-and-forget prompt-exit
+ * hook (`main()`'s `forceExitOnTimeout`, below). `Promise.race` has no way to
+ * cancel the losing `promise`: the measurement loop keeps running in the
+ * background after this function's caller sees the rejection. Without
+ * `onTimeout`, the ONLY cleanup left is the caller's own `finally` block
+ * asking `browser.close()` to gracefully wait on the exact CDP connection an
+ * orphaned `page.evaluate()` is still using — that wait was measured taking
+ * minutes, defeating the whole point of a hard timeout.
+ */
+function withHardTimeout(promise, ms, label, onTimeout) {
   let timer;
   const timeout = new Promise((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms hard timeout`)), ms);
+    timer = setTimeout(() => {
+      if (onTimeout) void onTimeout();
+      reject(new Error(`${label} exceeded its ${ms}ms hard timeout`));
+    }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
@@ -154,28 +168,27 @@ function collectPageMeasurements(checks) {
   // a requesting route's opted-in families (see `wantX` flags above).
   // -------------------------------------------------------------------
 
-  function isVisuallyHidden(el) {
-    const style = window.getComputedStyle(el);
+  // Perf (plan 39.1-30 first_fix): a naive walk called `getComputedStyle`
+  // TWICE per visited descendant (once for visibility, once for overflow-x).
+  // `getComputedStyle` forces a style recalculation; on a chart-heavy page
+  // (Recharts renders hundreds of SVG nodes) doubling that cost per node is
+  // the difference between a route finishing in seconds and one blowing the
+  // 300s hard timeout. One style object per element, reused by both checks.
+  function isVisuallyHiddenFromStyle(style, rect, el) {
     if (style.position === 'fixed') return true;
-    const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return true;
     if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return true;
     if ((el.offsetWidth <= 1 && el.offsetHeight <= 1) || style.visibility === 'hidden') return true;
     return false;
   }
 
-  function isOverflowContainer(el) {
-    const style = window.getComputedStyle(el);
-    return ['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX);
-  }
-
   const overflowCards = [];
   if (wantContentOverflow) {
     for (const cardEl of document.querySelectorAll('[data-slot="card"]')) {
       const rect = cardEl.getBoundingClientRect();
-      const style = window.getComputedStyle(cardEl);
-      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
-      const borderRight = parseFloat(style.borderRightWidth) || 0;
+      const cardStyle = window.getComputedStyle(cardEl);
+      const borderLeft = parseFloat(cardStyle.borderLeftWidth) || 0;
+      const borderRight = parseFloat(cardStyle.borderRightWidth) || 0;
       const innerLeft = rect.left + borderLeft;
       const innerRight = rect.right - borderRight;
 
@@ -184,9 +197,10 @@ function collectPageMeasurements(checks) {
       while (stack.length > 0) {
         const el = stack.shift();
         const isSvg = el.tagName === 'svg';
-        const overflowContainer = isOverflowContainer(el);
-        if (!isVisuallyHidden(el)) {
-          const elRect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const overflowContainer = ['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX);
+        const elRect = el.getBoundingClientRect();
+        if (!isVisuallyHiddenFromStyle(style, elRect, el)) {
           if (elRect.left < innerLeft - 1 || elRect.right > innerRight + 1) {
             offenders.push({
               selectorPath: describeElement(el),
@@ -292,7 +306,25 @@ function collectPageMeasurements(checks) {
 
   const grids = [];
   if (wantGridBalance) {
-    for (const gridEl of document.querySelectorAll('*')) {
+    // Perf (plan 39.1-30 first_fix): the naive form called `getComputedStyle`
+    // — a forced style recalculation — for EVERY element in the document,
+    // including every SVG internal a chart renders (paths, tick <text>
+    // nodes, grid lines) and every table row. This codebase's CSS grid
+    // containers are ALWAYS Tailwind-classed (`grid`, `grid-cols-12`,
+    // `lg:grid`, …), so a cheap className substring check — no style/layout
+    // read — first narrows thousands of candidates down to the handful that
+    // could possibly be a grid container before paying for the real style
+    // read. SVG elements' `className` is an `SVGAnimatedString`, not a
+    // plain string (no `.includes`); the `typeof` guard skips them, which is
+    // correct — no SVG internal is ever a CSS grid container here.
+    const gridClassCandidates = [];
+    for (const el of document.querySelectorAll('*')) {
+      const cls = el.className;
+      if (typeof cls === 'string' && cls.includes('grid')) {
+        gridClassCandidates.push(el);
+      }
+    }
+    for (const gridEl of gridClassCandidates) {
       const display = window.getComputedStyle(gridEl).display;
       if (display !== 'grid' && display !== 'inline-grid') continue;
       const cardBearingChildren = Array.from(gridEl.children).filter(
@@ -482,10 +514,45 @@ async function main() {
   let measuredCount = 0;
   const unmeasuredIds = new Set();
 
+  // Plan 39.1-30 first_fix: the hard timeout must exit PROMPTLY. `Promise.race`
+  // cannot cancel the losing side — once the timeout branch rejects, the
+  // measurement loop below keeps running unawaited in the background. The
+  // original code's ONLY cleanup was the `finally` block's graceful
+  // `browser.close()`, which itself waits on the SAME CDP connection the
+  // orphaned `page.evaluate()` is still using — measured taking ~16 minutes
+  // wall-clock to actually exit. `forceExitOnTimeout` is fired the instant
+  // the timer elapses (see `withHardTimeout`'s `onTimeout` hook): it
+  // SIGKILLs the browser process directly (no graceful CDP round trip, so it
+  // cannot be blocked by an in-flight orphaned evaluate), closes the server,
+  // prints the same summary lines the normal path prints, and calls
+  // `process.exit(1)` itself — never returning control to the `try/catch`
+  // below, whose own cleanup would otherwise still be racing the orphaned
+  // loop.
+  let hardTimedOut = false;
+  const forceExitOnTimeout = async () => {
+    hardTimedOut = true;
+    console.error(`guardLayout exceeded its ${HARD_TIMEOUT_MS}ms hard timeout — force-exiting`);
+    process.off('SIGINT', sigintHandler);
+    process.off('SIGTERM', sigtermHandler);
+    const browserProcess = browser.process();
+    if (browserProcess) {
+      browserProcess.kill('SIGKILL');
+    } else {
+      await browser.close().catch(() => {});
+    }
+    await server.close().catch(() => {});
+    console.log(`MEASURED_ROUTES=${measuredCount}`);
+    console.log(
+      `UNMEASURED_ROUTES=${unmeasuredIds.size > 0 ? [...unmeasuredIds].join(',') : 'NONE'}`,
+    );
+    process.exit(1);
+  };
+
   try {
     await withHardTimeout(
       (async () => {
         for (const route of LAYOUT_ORACLE_ROUTES) {
+          if (hardTimedOut) break;
           // Plan 39.1-30: a route's own `extraViewports` (keys of
           // `EXTRA_ORACLE_VIEWPORTS`) are measured IN ADDITION TO the three
           // standard viewports — every other route's viewport set is
@@ -495,7 +562,9 @@ async function main() {
             ...(route.extraViewports ?? []).map((key) => EXTRA_ORACLE_VIEWPORTS[key]),
           ];
           for (const viewport of routeViewports) {
+            if (hardTimedOut) break;
             const result = await measureRouteAtViewport(browser, baseUrl, route, viewport);
+            if (hardTimedOut) break;
             if (result.unmeasured) {
               console.log(
                 `UNMEASURED route=${route.id} viewport=${viewport.name} reason="${result.reason}"`,
@@ -516,24 +585,47 @@ async function main() {
             }
           }
         }
-      })(),
+      })().catch((error) => {
+        // Swallow errors from the ABANDONED loop after a hard timeout — the
+        // browser process is already SIGKILLed by `forceExitOnTimeout`, so
+        // an in-flight `page.evaluate()`/`browser.newPage()` throws almost
+        // immediately ("Protocol error", "Target closed"). That rejection
+        // has nothing left to report to — `forceExitOnTimeout` already
+        // printed the summary and is calling `process.exit(1)`. Re-throwing
+        // here would surface as an actual unhandled rejection.
+        if (hardTimedOut) return;
+        throw error;
+      }),
       HARD_TIMEOUT_MS,
       'guardLayout',
+      forceExitOnTimeout,
     );
   } catch (error) {
+    if (hardTimedOut) {
+      // `forceExitOnTimeout` already printed the summary and is calling
+      // `process.exit(1)` — do not race it with a second summary/exit.
+      return;
+    }
     console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
     exitCode = 1;
   } finally {
-    // Normal completion: unregister the signal handlers ABOVE actually
-    // closing browser/server — a signal arriving in the narrow window
-    // during this shutdown would otherwise race a second close against the
-    // one already in flight (both `.close()` calls below are already
-    // idempotent via `.catch(() => {})`, but there is no reason to leave
-    // the listeners live past this point).
-    process.off('SIGINT', sigintHandler);
-    process.off('SIGTERM', sigtermHandler);
-    await browser.close().catch(() => {});
-    await server.close().catch(() => {});
+    if (!hardTimedOut) {
+      // Normal completion: unregister the signal handlers ABOVE actually
+      // closing browser/server — a signal arriving in the narrow window
+      // during this shutdown would otherwise race a second close against
+      // the one already in flight (both `.close()` calls below are already
+      // idempotent via `.catch(() => {})`, but there is no reason to leave
+      // the listeners live past this point).
+      process.off('SIGINT', sigintHandler);
+      process.off('SIGTERM', sigtermHandler);
+      await browser.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  }
+
+  if (hardTimedOut) {
+    // `forceExitOnTimeout` owns the exit in this path.
+    return;
   }
 
   console.log(`MEASURED_ROUTES=${measuredCount}`);

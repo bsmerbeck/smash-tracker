@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { XAxis, YAxis, type MouseHandlerDataParam } from 'recharts';
-import type { PeriodGrain, PeriodPoint } from '@smash-tracker/shared';
+import type { PeriodPoint } from '@smash-tracker/shared';
 import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
+import { formatPeriodTickLabel, formatPeriodRowLabel, selectPeriodTicks } from './periodTicks';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -235,7 +236,7 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
    * render tree; the other two modes' code below is untouched.
    */
   if (props.mode === 'period') {
-    return renderPeriodTrend(props, { width, height, onClick: handleClick });
+    return <PeriodTrendChart props={props} width={width} height={height} onClick={handleClick} />;
   }
 
   if (props.points.length === 0) {
@@ -411,39 +412,6 @@ function computePeriodYDomain(points: PeriodPoint[]): [number, number] {
   return [lo, hi];
 }
 
-/**
- * UI-SPEC §7.13: "years (quarter grain), month starts (week grain), every
- * 4th otherwise" — all period points at a chosen grain share that grain, so
- * the ladder's OWN chosen grain (never re-derived) picks the rule.
- */
-function selectPeriodXAxisTicks(points: PeriodPoint[]): string[] {
-  const grain: PeriodGrain | undefined = points[0]?.grain;
-  if (grain === 'quarter' || grain === 'year') {
-    const seenYears = new Set<string>();
-    return points
-      .filter((point) => {
-        const year = String(new Date(point.startMs).getUTCFullYear());
-        if (seenYears.has(year)) return false;
-        seenYears.add(year);
-        return true;
-      })
-      .map((point) => point.key);
-  }
-  if (grain === 'week') {
-    const seenMonths = new Set<string>();
-    return points
-      .filter((point) => {
-        const d = new Date(point.startMs);
-        const tickMonthGroup = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
-        if (seenMonths.has(tickMonthGroup)) return false;
-        seenMonths.add(tickMonthGroup);
-        return true;
-      })
-      .map((point) => point.key);
-  }
-  return points.filter((_, i) => i % 4 === 0).map((point) => point.key);
-}
-
 /** UI-SPEC §7.13: the emphasis band's left edge snaps to the period CONTAINING the window start; a window start that falls between periods snaps forward to the next period rather than inventing a partial one. */
 function findEmphasisStartKey(points: PeriodPoint[], emphasisStartMs: number): string | undefined {
   const containing = points.find(
@@ -475,6 +443,7 @@ function periodDotRenderer(points: PeriodPoint[]) {
           fill={CHART_TOKENS.surface}
           stroke={CHART_TOKENS.deemphasis}
           strokeWidth={1.5}
+          data-slot="trend-period-dot"
         />
       );
     }
@@ -487,6 +456,7 @@ function periodDotRenderer(points: PeriodPoint[]) {
         fill={CHART_TOKENS.series1}
         stroke={CHART_TOKENS.surface}
         strokeWidth={2}
+        data-slot="trend-period-dot"
       />
     );
   };
@@ -513,8 +483,57 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
         fontWeight={600}
+        data-slot="trend-period-value-label"
       >
         {`${Math.round(point.rate * 100)}%`}
+      </text>
+    );
+  };
+}
+
+/**
+ * UI-SPEC §7.13: a FUNCTION passed as XAxis `tick` receives `className`
+ * (`recharts-cartesian-axis-tick-value`) in its props and must put it on its
+ * own `text` — a static `tick={{ fill, fontSize }}` object (the event mode's
+ * approach) cannot format per-tick text or vary the text-anchor by position,
+ * both of which this axis needs (`formatPeriodTickLabel`, edge anchoring).
+ * `firstKey`/`lastKey` are the SELECTED tick set's own first/last entries
+ * (never the series' own first/last point) — with a narrow plot, the
+ * selected set can be a strict subset that never includes the series' true
+ * edges, and the anchor decision is about the rendered tick set, not the
+ * data.
+ */
+function periodTickRenderer(points: PeriodPoint[], ticks: string[], locale: string) {
+  const byKey = new Map(points.map((point) => [point.key, point]));
+  const firstKey = ticks[0];
+  const lastKey = ticks[ticks.length - 1];
+  return function renderTick(tickProps: unknown): ReactElement {
+    const { x, y, payload, className } = tickProps as {
+      x?: number;
+      y?: number;
+      payload?: { value?: string };
+      className?: string;
+    };
+    const value = payload?.value;
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof value !== 'string') {
+      return <g />;
+    }
+    const point = byKey.get(value);
+    if (!point) {
+      return <g />;
+    }
+    const textAnchor = value === firstKey ? 'start' : value === lastKey ? 'end' : 'middle';
+    return (
+      <text
+        x={x}
+        y={y}
+        dy="0.71em"
+        textAnchor={textAnchor}
+        className={className}
+        fill={CHART_TOKENS.axisText}
+        fontSize={CHART_AXIS_FONT_SIZE}
+      >
+        {formatPeriodTickLabel(point, locale)}
       </text>
     );
   };
@@ -568,6 +587,7 @@ function renderPeriodLockedInset(props: TrendLinePeriodProps): ReactElement {
 
 function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactElement {
   const [open, setOpen] = useState(false);
+  const { i18n } = useTranslation();
   const { points, labels } = props;
   return (
     <Collapsible open={open} onOpenChange={setOpen} data-slot="trend-line-period-table">
@@ -595,7 +615,7 @@ function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactEleme
           <tbody>
             {points.map((point) => (
               <tr key={point.key}>
-                <td>{point.label}</td>
+                <td>{formatPeriodRowLabel(point, i18n.language)}</td>
                 <td>{`${point.wins}–${point.losses}`}</td>
                 <td>{`${Math.round(point.rate * 100)}%`}</td>
                 <td>{point.total}</td>
@@ -608,12 +628,46 @@ function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactEleme
   );
 }
 
-function renderPeriodTrend(
-  props: TrendLinePeriodProps,
-  opts: { width?: number; height: number; onClick: (state: MouseHandlerDataParam) => void },
-): ReactElement {
+/** UI-SPEC §7.13: the Y-axis's own reserved width, and the X-axis's left/right edge padding (both px). */
+const PERIOD_Y_AXIS_WIDTH_PX = 60;
+const PERIOD_X_AXIS_PADDING_PX = 16;
+
+/**
+ * Used only to derive the initial plot-width estimate before
+ * `ResponsiveContainer`'s first real `onResize` callback fires — mirrors
+ * `EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH`'s own role for event mode; the
+ * runtime page render is still governed by the actual measured width the
+ * moment it's available.
+ */
+const PERIOD_TICKS_RESPONSIVE_FALLBACK_WIDTH = EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH;
+
+/**
+ * Period mode's entire render tree (VIZ-01, VIZ-03, UI-SPEC §7.13) — a real
+ * component (not a plain function call), because `selectPeriodTicks` needs
+ * the plot's actual pixel width, and that width is only known instantly when
+ * an explicit `width` prop is given (every test); at runtime (no explicit
+ * width) it comes from `ResponsiveContainer`'s own `onResize` callback, which
+ * requires component state.
+ */
+function PeriodTrendChart({
+  props,
+  width,
+  height,
+  onClick,
+}: {
+  props: TrendLinePeriodProps;
+  width?: number;
+  height: number;
+  onClick: (state: MouseHandlerDataParam) => void;
+}): ReactElement {
   const { points } = props;
-  const { width, height, onClick } = opts;
+  const { i18n } = useTranslation();
+  const locale = i18n.language;
+
+  // Every hook above every early return (Rules of Hooks) — the locked-state
+  // branch below still needs this component to have called exactly the same
+  // hooks on every render regardless of `points.length`.
+  const [measuredWidth, setMeasuredWidth] = useState(PERIOD_TICKS_RESPONSIVE_FALLBACK_WIDTH);
 
   if (points.length < PERIOD_TREND_MIN_PERIODS) {
     return (
@@ -624,11 +678,16 @@ function renderPeriodTrend(
     );
   }
 
+  const containerWidth = typeof width === 'number' ? width : measuredWidth;
+  const plotWidthPx = Math.max(
+    0,
+    containerWidth - PERIOD_Y_AXIS_WIDTH_PX - PERIOD_X_AXIS_PADDING_PX * 2,
+  );
+
   const data = buildPeriodChartData(points, props.contextRatePercents);
   const labeledIndices = findPeriodLabeledIndices(points);
   const [yMin, yMax] = computePeriodYDomain(points);
-  const ticks = selectPeriodXAxisTicks(points);
-  const labelByKey = new Map(points.map((point) => [point.key, point.label]));
+  const ticks = selectPeriodTicks(points, { plotWidthPx, locale });
   const emphasisStartKey =
     props.emphasisStartMs !== undefined
       ? findEmphasisStartKey(points, props.emphasisStartMs)
@@ -650,11 +709,13 @@ function renderPeriodTrend(
         domain={points.map((point) => point.key)}
         ticks={ticks}
         interval={0}
-        tickFormatter={(value: string) => labelByKey.get(value) ?? value}
-        tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+        padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
+        tick={periodTickRenderer(points, ticks, locale)}
       />
       <YAxis
         domain={[yMin, yMax]}
+        width={PERIOD_Y_AXIS_WIDTH_PX}
+        padding={{ top: 24, bottom: 16 }}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
       />
       {props.tooltip && (
@@ -715,7 +776,7 @@ function renderPeriodTrend(
     typeof width === 'number' ? (
       chart
     ) : (
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={height} onResize={(w) => setMeasuredWidth(w)}>
         {chart}
       </ResponsiveContainer>
     );
