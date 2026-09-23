@@ -319,7 +319,13 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(groups.length).toBe(3);
 
-    const labels = groups.map((g) => g.querySelector('span[title]')?.getAttribute('title'));
+    // `span.truncate[title]` is the event LABEL span (`FormStrip.tsx`'s
+    // `<span className="min-w-0 truncate" title={event.label}>`) — a bare
+    // `span[title]` would also match each game `Tick`'s own `title` (the
+    // per-game tooltip), which renders first in DOM order inside the group.
+    const labels = groups.map((g) =>
+      g.querySelector('span.truncate[title]')?.getAttribute('title'),
+    );
     const expectedDate = new Intl.DateTimeFormat('en', {
       year: 'numeric',
       month: 'short',

@@ -15,6 +15,7 @@ import {
   INSIGHT_TEMPLATES,
   confidenceTierFor,
   parseExternalId,
+  splitIntoSessions,
   toRateValue,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -97,16 +98,107 @@ export function useMatchupFormNow({
 }
 
 /**
+ * Plan 39.1-31 (gap closure, D-07/D-15, item 7): true exactly when the
+ * engine's `locked` state is really "the last-30 window has fewer than 3
+ * games because D-15's 12-month scoped-recency bound emptied or thinned it,
+ * while the pairing's lifetime record is evidenced" — the ONE case this
+ * plan maps to a truthful whole-sentence key instead of the engine's own
+ * `insights.formNow.locked` (which reads "N more games unlock this read", a
+ * sentence about games still NEEDED, not about the window being
+ * time-bounded — and whose `copy.values.count` is deliberately `gamesNeeded`
+ * per CR-A02, wrong for this purpose). The engine itself is unchanged:
+ * `ladder.ts` keeps `locked` before `thinRecent` for every horizon; this is
+ * a UI-only reinterpretation of an already-produced `locked` insight. Scoped
+ * to `horizon === 'last30'` on purpose — only there is "fewer than 3 in the
+ * window" exactly "fewer than 3 in the last 12 months" (D-15's bound IS
+ * `last30`'s own scoping); `lastEvent`/`last90` are time-bounded in their
+ * own right and keep the engine's stock `locked` copy.
+ */
+function headStatesScopedWindow(insight: Insight): boolean {
+  return (
+    insight.state === 'locked' &&
+    insight.horizon === 'last30' &&
+    insight.window.scoped &&
+    insight.baseline.kind === 'evidenced'
+  );
+}
+
+/**
  * Plan 39.1-26 (gap closure): the ONE verdict composition for `formNow` at
  * pairing scope — `entity` is never supplied by the engine (UI-SPEC §9.2
  * rule 7), so this composes it itself before calling `t()`. Shared by
  * `renderFormNowHead` (the slot) and `MatchupsPage.tsx`'s `claimSummary`
  * (the terminus's active-filter summary), so the two never independently
  * re-derive the same sentence.
+ *
+ * Plan 39.1-31: `headStatesScopedWindow` above maps the D-15 scoped-empty
+ * `locked` case to `insights.state.noneRecent.scoped` (0 recent games) or
+ * `insights.state.thinRecent.scoped` (1-2) BEFORE falling through to the
+ * engine's own `insight.copy.key` — no new key is added under
+ * `insights.formNow.*` (the registry's reverse audit forbids an
+ * unreachable template key).
  */
 export function buildFormNowVerdict(insight: Insight, opponentId: number, t: TFunction): string {
-  const entity = `${t('matchups.vs')} ${localizedFighterName(opponentId, t)}`;
+  const fighter = localizedFighterName(opponentId, t);
+  if (headStatesScopedWindow(insight)) {
+    return insight.window.games === 0
+      ? t('insights.state.noneRecent.scoped', { fighter })
+      : t('insights.state.thinRecent.scoped', { count: insight.window.games, fighter });
+  }
+  const entity = `${t('matchups.vs')} ${fighter}`;
   return t(insight.copy.key, { ...insight.copy.values, entity });
+}
+
+/**
+ * Plan 39.1-31 (item 7): the evidence line's ONE composition, split out of
+ * `renderFormNowHead` so its three-way branch (recent evidenced / baseline
+ * only / neither) is a single readable function.
+ *
+ * - Recent evidenced (the common case, and every non-`locked`/scoped-empty
+ *   state): the existing two-horizon sentence, unchanged EXCEPT its
+ *   confidence cue now reads `insight.window.games` (the window's own game
+ *   total) rather than `insight.copy.values.count` — for `locked`,
+ *   `copy.values.count` is deliberately `gamesNeeded` (CR-A02), the wrong
+ *   number for a cue about the recent sample; for every other state the two
+ *   values already coincide (`copy.values.count` is `recentRate.total`
+ *   there), so this is a no-op for those states and a fix for the one it
+ *   isn't.
+ * - Recent NOT evidenced, baseline evidenced (below-floor recent window —
+ *   `locked` at any horizon, not only the D-15 scoped-empty case above):
+ *   a lifetime-only line — never a fabricated "0–0" recent record, never a
+ *   confidence cue computed from games still needed.
+ * - Neither evidenced (a pairing with fewer than 3 games total): no
+ *   evidence line at all — there is nothing true to report yet beyond the
+ *   verdict's own "N more games" sentence.
+ */
+function buildFormNowEvidence(insight: Insight, t: TFunction, locale: string): string | null {
+  if (insight.recent.kind === 'evidenced') {
+    const recentRateText = formatPercent(insight.recent.value.rate, locale);
+    const baselineRateText =
+      insight.baseline.kind === 'evidenced'
+        ? formatPercent(insight.baseline.value.rate, locale)
+        : '';
+    const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
+    const cueCount = insight.window.games;
+    const tier = confidenceTierFor(cueCount);
+    const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: cueCount }) : '';
+    return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
+      recentRecord,
+      baselineRate: baselineRateText,
+      baselineGames: insight.copy.values.baselineGames ?? 0,
+      cue,
+    });
+  }
+  if (insight.baseline.kind === 'evidenced') {
+    const record = `${insight.baseline.value.wins}–${insight.baseline.value.losses}`;
+    const rate = formatPercent(insight.baseline.value.rate, locale);
+    const tier = insight.baseline.sample.confidenceTier;
+    const cue = tier
+      ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: insight.baseline.value.total })
+      : '';
+    return t('insights.evidence.allTimeOnly', { record, rate, cue });
+  }
+  return null;
 }
 
 /**
@@ -130,26 +222,7 @@ export function renderFormNowHead(
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildFormNowVerdict(insight, opponentId, t);
-
-  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
-  // `recent`/`baseline` claims and format it through the one shared,
-  // locale-aware percent formatter, rather than the engine's pre-formatted
-  // `copy.values.rate`/`.baselineRate` strings (always English-convention
-  // "42%").
-  const recentRateText =
-    insight.recent.kind === 'evidenced' ? formatPercent(insight.recent.value.rate, locale) : '';
-  const baselineRateText =
-    insight.baseline.kind === 'evidenced' ? formatPercent(insight.baseline.value.rate, locale) : '';
-  const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
-  const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
-  const tier = confidenceTierFor(count);
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
-  const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord,
-    baselineRate: baselineRateText,
-    baselineGames: insight.copy.values.baselineGames ?? 0,
-    cue,
-  });
+  const evidence = buildFormNowEvidence(insight, t, locale);
 
   return (
     <div className="flex flex-col gap-2" data-slot="matchup-form-now">
@@ -160,12 +233,14 @@ export function renderFormNowHead(
       >
         {verdict}
       </p>
-      <p
-        className="text-xs leading-4 text-muted-foreground tabular-nums"
-        data-slot="matchup-form-now-evidence"
-      >
-        {evidence}
-      </p>
+      {evidence && (
+        <p
+          className="text-xs leading-4 text-muted-foreground tabular-nums"
+          data-slot="matchup-form-now-evidence"
+        >
+          {evidence}
+        </p>
+      )}
       {door && (
         <div className="flex flex-wrap gap-2" data-slot="matchup-form-now-doors">
           <Button asChild size="sm">
@@ -199,28 +274,47 @@ export function formStripEventKeyForMatch(match: Match): string {
  * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only (never
  * binned/windowed — `FormStrip` itself trims to `limit`). A match with no
  * parseable `externalId` becomes its own single-game set (see
- * `formStripSetKey`) rather than a session-split reduction, keeping this
- * host-side grouping simple and 1:1 with `formStripEventKeyForMatch`.
- * `recentWindow` marks each set `inRecentWindow` from the SAME
- * `Insight.window` `formNow` already resolved — one source of truth for
- * "recent," never re-derived.
+ * `formStripSetKey`) — unaffected by the session grouping below, which only
+ * changes how the manual REMAINDER is bucketed at the event level, never
+ * the per-set key `formStripEventKeyForMatch` resolves. `recentWindow` marks
+ * each set `inRecentWindow` from the SAME `Insight.window` `formNow` already
+ * resolved — one source of truth for "recent," never re-derived.
+ *
+ * Plan 39.1-31 (item 7, UI-SPEC §7.10/§8.6): a manual game (no event or
+ * tournament name) used to fall into one flat `__manual__` bucket labelled
+ * `common.unknown` ("Unknown") — untrue (there is no "unknown" here, only
+ * "no named event") and, on an account with a long manual-only history, one
+ * gigantic unbroken tick row. The manual remainder is now split by the
+ * shared `splitIntoSessions` (the SAME 3-hour-gap session model
+ * `OpponentHubPage.tsx`'s `buildOpponentFormStripEvents` and
+ * `encounterGrouping.ts`'s `groupEncounters` already use for their own
+ * manual remainders), one `FormStripEvent` per session, labelled
+ * `analytics.strip.sessionLabel` with that session's first game's date.
+ * Every event (named or session) is ordered by its own first game's time —
+ * named events and sessions interleave correctly even though they're
+ * resolved by two different code paths above.
  */
 function buildFormStripEvents(
   matches: Match[],
   recentWindow: { fromMs: number | null; toMs: number | null },
   t: TFunction,
+  locale: string,
 ): FormStripEvent[] {
   const sorted = [...matches].sort((a, b) => a.time - b.time);
   const byEvent = new Map<string, Match[]>();
+  const manual: Match[] = [];
   for (const match of sorted) {
     const raw = match.eventName ?? match.tournamentName;
     const trimmed = raw?.trim();
-    const key = trimmed && trimmed.length > 0 ? trimmed : '__manual__';
-    const group = byEvent.get(key);
-    if (group) {
-      group.push(match);
+    if (trimmed && trimmed.length > 0) {
+      const group = byEvent.get(trimmed);
+      if (group) {
+        group.push(match);
+      } else {
+        byEvent.set(trimmed, [match]);
+      }
     } else {
-      byEvent.set(key, [match]);
+      manual.push(match);
     }
   }
 
@@ -230,8 +324,7 @@ function buildFormStripEvents(
     m.time >= recentWindow.fromMs &&
     m.time <= recentWindow.toMs;
 
-  const events: FormStripEvent[] = [];
-  for (const [key, eventMatches] of byEvent) {
+  function toFormStripEvent(key: string, label: string, eventMatches: Match[]): FormStripEvent {
     const bySet = new Map<string, Match[]>();
     for (const match of eventMatches) {
       const setKey = formStripSetKey(match);
@@ -262,15 +355,32 @@ function buildFormStripEvents(
     });
     const wins = eventMatches.filter((m) => m.win).length;
     const losses = eventMatches.length - wins;
-    events.push({
-      key,
-      label: key === '__manual__' ? t('common.unknown') : key,
-      record: `${wins}–${losses}`,
-      sets,
+    return { key, label, record: `${wins}–${losses}`, sets };
+  }
+
+  const groups: { firstMs: number; event: FormStripEvent }[] = [];
+  for (const [key, eventMatches] of byEvent) {
+    groups.push({
+      firstMs: eventMatches[0]!.time,
+      event: toFormStripEvent(key, key, eventMatches),
+    });
+  }
+  for (const session of splitIntoSessions(manual)) {
+    const first = session[0]!;
+    const date = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(first.time));
+    const label = t('analytics.strip.sessionLabel', { date });
+    groups.push({
+      firstMs: first.time,
+      event: toFormStripEvent(`session:${first.id}`, label, session),
     });
   }
 
-  return events;
+  groups.sort((a, b) => a.firstMs - b.firstMs);
+  return groups.map((g) => g.event);
 }
 
 /** UI-SPEC §7.13: the cumulative rate at (and through) each period point, as a context series parallel to `points` — never a second binning pass, just a running reduction over the SAME already-binned points. */
@@ -322,7 +432,7 @@ export function MatchupChart({
   width?: number;
   height?: number;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { setDrillDown } = useMatchupsContext();
 
   const insight = useMatchupFormNow({ matchupMatches, horizon });
@@ -340,8 +450,8 @@ export function MatchupChart({
   );
 
   const formStripEvents = useMemo(
-    () => buildFormStripEvents(matchupMatches, recentWindow, t),
-    [matchupMatches, recentWindow, t],
+    () => buildFormStripEvents(matchupMatches, recentWindow, t, i18n.language),
+    [matchupMatches, recentWindow, t, i18n.language],
   );
 
   function handleSelectPeriodPoint(point: PeriodPoint) {
@@ -374,8 +484,12 @@ export function MatchupChart({
               ? t('analytics.strip.shownOf', { shown: 30, total: matchupMatches.length })
               : undefined,
           empty: <span>{t('analytics.strip.empty')}</span>,
+          // Plan 39.1-31 (item 7): suppressed exactly when the verdict head
+          // already states the scoped-empty window itself (D-15's "No games
+          // ... — showing lifetime." sentence) — printing both would be the
+          // same contradictory double-note this plan closes.
           windowEmpty:
-            insight && insight.window.games === 0
+            insight && insight.window.games === 0 && !headStatesScopedWindow(insight)
               ? t(`analytics.strip.windowEmpty.${horizon}`)
               : undefined,
         }}
