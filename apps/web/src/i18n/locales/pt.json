@@ -126,6 +126,7 @@
       "summary_other": "{{count}} partidas · {{filters}}",
       "clear": "Limpar filtros",
       "empty": "Nenhuma partida corresponde a estes filtros.",
+      "claimNotApplied": "A análise vinculada não está mais disponível, então não é aplicada. Mostrando todas as partidas que correspondem aos outros filtros.",
       "loading": "Carregando partidas…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, abre o vídeo",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, mostrar detalhes",

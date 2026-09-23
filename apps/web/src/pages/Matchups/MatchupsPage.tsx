@@ -19,6 +19,7 @@ import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/i
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -90,7 +91,11 @@ export function MatchupsPage() {
     isFetching: matchesFetching,
     filterActive,
   } = useFilteredMatches();
-  const { horizon } = useHorizon();
+  const {
+    horizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: tolerant read of every drill-down axis currently in the URL. A URL
@@ -350,6 +355,25 @@ export function MatchupsPage() {
       resolveInsightClaim({ claimId, insights: insightsForTerminus, matches: ms }),
     [insightsForTerminus],
   );
+
+  // WR-01 (39.1-REVIEW iteration 2): the same claim-follows-horizon rule as
+  // Fighter Analysis and Trends — now that the HorizonSwitch drives this
+  // page (CR-01), a switch press re-points a followed door's claim to the
+  // same insight at the new horizon; one that cannot resolve is shown as
+  // not applied by the terminus. Above every early return (Rules of Hooks).
+  const hasPageClaim = useCallback(
+    (id: string) => insightsForTerminus.some((insight) => insight.id === id),
+    [insightsForTerminus],
+  );
+  const rewriteClaim = useUrlClaimRewriter();
+  useClaimFollowsHorizon({
+    horizon,
+    horizonLoading,
+    horizonChangeCount,
+    claimId: axesFromUrl.claimId,
+    hasClaim: hasPageClaim,
+    rewriteClaim,
+  });
 
   // Plan 39.1-26 (gap closure, Task 1): the chart's counted-games door —
   // built by `buildInsightDoors` from the SAME `formNowInsight` the

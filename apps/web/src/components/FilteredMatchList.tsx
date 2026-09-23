@@ -143,7 +143,10 @@ export interface FilteredMatchListProps {
    * ADDITION to the six existing axes below (an intersection, never a
    * replacement); when omitted, or when it returns `undefined` for a
    * stale/unknown id, the list falls back to whatever the remaining axes
-   * alone narrow to — never a throw, never a not-found state.
+   * alone narrow to — never a throw, never a not-found state. WR-01
+   * (39.1-REVIEW iteration 2): an unresolved claim is announced with an
+   * explicit "not applied" notice, so the fallback never reads as the
+   * door's own list.
    */
   resolveClaim?: (claimId: string, matches: Match[]) => Match[] | undefined;
   /**
@@ -475,17 +478,29 @@ export function FilteredMatchList({
     <div className="flex flex-col gap-3">
       {activeAxes && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/50 p-3">
-          <p className="text-sm text-muted-foreground">
-            {t('shared.filteredMatchList.summary', {
-              count: narrowedMatches.length,
-              filters: buildFilterSummaryText(
-                axes,
-                t,
-                narrowedMatches,
-                claimResolvedOk ? claimSummary : undefined,
-              ),
-            })}
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-muted-foreground">
+              {t('shared.filteredMatchList.summary', {
+                count: narrowedMatches.length,
+                filters: buildFilterSummaryText(
+                  axes,
+                  t,
+                  narrowedMatches,
+                  claimResolvedOk ? claimSummary : undefined,
+                ),
+              })}
+            </p>
+            {/* WR-01 (39.1-REVIEW iteration 2): a `claim=` the host cannot
+                resolve — its horizon suffix differs from the viewer's
+                horizon on arrival (reload, Back, a coach/shared URL), or the
+                insight is gone — is DROPPED from the narrowing, and says so.
+                Never a silent fallback that reads like the door's own list. */}
+            {!claimResolvedOk && (
+              <p role="status" data-slot="claim-not-applied" className="text-sm text-foreground">
+                {t('shared.filteredMatchList.claimNotApplied')}
+              </p>
+            )}
+          </div>
           {onClearFilters && (
             <Button variant="outline" size="sm" onClick={onClearFilters}>
               {t('shared.filteredMatchList.clear')}

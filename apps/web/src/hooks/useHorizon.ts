@@ -55,6 +55,14 @@ export interface UseHorizonResult {
   /** False when the current scope (subject) has no tournament (named-event) games. */
   isLastEventAvailable: boolean;
   isLoading: boolean;
+  /**
+   * 39.1-REVIEW iteration 2 WR-01: bumps on every EXPLICIT horizon change
+   * reaching this call (its own `setHorizon`, or another same-subject call's
+   * broadcast) and on nothing else — never on the seed read, an auth/subject
+   * key resolving, or the loading placeholder settling. Lets a consumer tell
+   * a user's press apart from the horizon merely arriving.
+   */
+  explicitChangeCount: number;
 }
 
 /**
@@ -96,6 +104,7 @@ export function useHorizon(): UseHorizonResult {
   // (signed out / no subject), so the first not-loading render always seeds
   // once, even when there is nothing to read.
   const [seededKey, setSeededKey] = useState<string | null | undefined>(undefined);
+  const [explicitChangeCount, setExplicitChangeCount] = useState(0);
 
   if (!isLoading && seededKey !== storageKey) {
     setSeededKey(storageKey);
@@ -111,6 +120,7 @@ export function useHorizon(): UseHorizonResult {
     const listener: HorizonListener = (changedKey, next) => {
       if (changedKey !== storageKey) return;
       setRecord((prev) => (prev.horizon === next ? prev : { ...prev, horizon: next }));
+      setExplicitChangeCount((count) => count + 1);
     };
     horizonListeners.add(listener);
     return () => {
@@ -124,6 +134,7 @@ export function useHorizon(): UseHorizonResult {
       setHorizon: () => {},
       isLastEventAvailable: false,
       isLoading: true,
+      explicitChangeCount,
     };
   }
 
@@ -140,8 +151,14 @@ export function useHorizon(): UseHorizonResult {
   function setHorizon(next: HorizonKey): void {
     setRecord((prev) => ({ ...prev, horizon: next }));
     persistSelection(uid, clientId, { horizon: next });
-    if (storageKey != null) broadcastHorizon(storageKey, next);
+    // With a storage key the broadcast reaches this call's own listener too,
+    // which bumps `explicitChangeCount`; without one there is no listener.
+    if (storageKey != null) {
+      broadcastHorizon(storageKey, next);
+    } else {
+      setExplicitChangeCount((count) => count + 1);
+    }
   }
 
-  return { horizon, setHorizon, isLastEventAvailable, isLoading: false };
+  return { horizon, setHorizon, isLastEventAvailable, isLoading: false, explicitChangeCount };
 }

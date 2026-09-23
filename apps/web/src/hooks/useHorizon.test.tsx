@@ -318,4 +318,46 @@ describe('useHorizon', () => {
     expect(screen.getByTestId('coach-horizon')).toHaveTextContent('last30');
     expect(readRawStored('test-uid', 'client-a')).toBeNull();
   });
+
+  // 39.1-REVIEW iteration 2 WR-01: `explicitChangeCount` separates a user's
+  // press from the persisted value merely arriving — it stays 0 through the
+  // seed read (a stored `last90` landing moves `horizon` with no bump) and
+  // bumps on every call of the subject once a write happens.
+  it('explicitChangeCount stays 0 while the persisted value lands, and bumps on an explicit change for every same-subject call', async () => {
+    seedHorizon('test-uid', null, 'last90');
+    list.mockResolvedValue([manualMatch('m1', Date.now())]);
+    function Counted({ name }: { name: string }) {
+      const { horizon, setHorizon, isLoading, explicitChangeCount } = useHorizon();
+      return (
+        <div>
+          <span data-testid={`${name}-state`}>
+            {isLoading ? 'loading' : `${horizon}#${explicitChangeCount}`}
+          </span>
+          <button onClick={() => setHorizon('last30')}>{`${name}-set-last30`}</button>
+        </div>
+      );
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <Counted name="a" />
+              <Counted name="b" />
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('a-state')).toHaveTextContent('last90#0');
+      expect(screen.getByTestId('b-state')).toHaveTextContent('last90#0');
+    });
+
+    await userEvent.setup().click(screen.getByText('a-set-last30'));
+
+    expect(screen.getByTestId('a-state')).toHaveTextContent('last30#1');
+    expect(screen.getByTestId('b-state')).toHaveTextContent('last30#1');
+  });
 });

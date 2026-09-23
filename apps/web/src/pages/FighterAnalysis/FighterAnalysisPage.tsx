@@ -16,7 +16,7 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useHorizon } from '@/hooks/useHorizon';
-import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -79,7 +79,12 @@ export function FighterAnalysisPage() {
     filterActive,
   } = useFilteredMatches();
   const { data: aliasMap } = useOpponentAliases();
-  const { horizon, setHorizon, isLoading: horizonLoading } = useHorizon();
+  const {
+    horizon,
+    setHorizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `OpponentsPage.tsx`'s convention.
@@ -303,29 +308,15 @@ export function FighterAnalysisPage() {
   }
 
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon; when the horizon
-  // changes, re-point it to the same insight at the new horizon (or drop it)
-  // rather than leave an id that no longer resolves. `replace`, and no hash:
-  // the user is at the control they pressed, not at the terminus.
+  // changes, re-point it to the same insight at the new horizon. One that
+  // cannot resolve stays in the URL and the terminus shows it as not applied
+  // (iteration 2 — the same rule on every page that accepts `claim=`).
   const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
-  const rewriteClaim = useCallback(
-    (next: string | null) => {
-      const params = new URLSearchParams(searchParams);
-      if (next == null) {
-        params.delete(DRILL_DOWN_CLAIM_PARAM);
-      } else {
-        params.set(DRILL_DOWN_CLAIM_PARAM, next);
-      }
-      const search = params.toString();
-      navigate(
-        { pathname: location.pathname, search: search ? `?${search}` : '' },
-        { replace: true },
-      );
-    },
-    [searchParams, navigate, location.pathname],
-  );
+  const rewriteClaim = useUrlClaimRewriter();
   useClaimFollowsHorizon({
     horizon,
     horizonLoading,
+    horizonChangeCount,
     claimId: axesFromUrl.claimId,
     hasClaim: hasPageClaim,
     rewriteClaim,

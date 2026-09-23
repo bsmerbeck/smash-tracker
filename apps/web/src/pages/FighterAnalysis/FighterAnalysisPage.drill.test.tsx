@@ -11,6 +11,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
 /**
  * Plan 39.1-25 (gap closure, SC6/TRND-04): a SEPARATE file from
@@ -583,6 +584,52 @@ describe('FighterAnalysisPage drill-down (39.1-25 gap closure, SC6/TRND-04)', ()
 
         await user.click(heroFigure('30 games'));
         await waitFor(() => expect(horizonSwitch).toHaveAttribute('data-horizon', 'last30'));
+      },
+    );
+
+    // 39.1-REVIEW iteration 2 WR-01: a door URL whose claim suffix differs
+    // from the viewer's persisted horizon on ARRIVAL (reload, Back, a coach
+    // or shared URL). Before the fix the claim silently fell back to every
+    // game for the fighter (60) under a summary with no hint the door's
+    // claim was dropped. Now the claim is not applied AND the terminus says
+    // so; the URL is left exactly as it arrived (never re-pointed to a
+    // window its sender did not choose).
+    it.each([
+      ['personal', '/fighter-analysis', null],
+      ['coach-mounted', '/coach/test-client/fighter-analysis', 'test-client'],
+    ])(
+      '%s: a claim arriving under a different persisted horizon is shown as not applied, never as the door list',
+      async (_label, path, clientId) => {
+        HTMLElement.prototype.scrollIntoView = vi.fn();
+        window.localStorage.setItem(
+          analyticsSelectionStorageKey('test-uid', clientId),
+          JSON.stringify({ horizon: 'last90' }),
+        );
+        const now = Date.now();
+        const day = 24 * 60 * 60 * 1000;
+        listMatches.mockResolvedValue([
+          ...Array.from({ length: 50 }, (_, i) =>
+            makeMatch({ id: `hz${i}`, time: now - (49 - i) * ((80 / 49) * day), win: i % 2 === 0 }),
+          ),
+          ...Array.from({ length: 10 }, (_, i) =>
+            makeMatch({ id: `old${i}`, time: now - 200 * day - i * day, win: true }),
+          ),
+        ]);
+        const claim = `formNow:character:${mario.id}:last30`;
+
+        renderFighterAnalysisAt(`${path}?claim=${encodeURIComponent(claim)}#games`);
+        await screen.findByRole('heading', { name: mario.name, level: 2 });
+        await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+        const gamesCard = document.getElementById('games') as HTMLElement;
+
+        const notice = await within(gamesCard).findByText(
+          "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.",
+        );
+        expect(notice).toHaveAttribute('role', 'status');
+        expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(
+          60,
+        );
+        expect(new URLSearchParams(locationProbe().dataset.search ?? '').get('claim')).toBe(claim);
       },
     );
   });

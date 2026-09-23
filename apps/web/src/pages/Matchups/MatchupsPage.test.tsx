@@ -1083,6 +1083,102 @@ describe('MatchupsPage', () => {
       await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
       expect(scrollSpy.mock.instances).toContain(gamesCard);
     });
+
+    // 39.1-REVIEW iteration 2 WR-01: Matchups had no claim-follows-horizon
+    // wiring. 50 pairing games over ~80 days plus 40 from ~200 days ago:
+    // `last30` counts 30, `last90` counts 50, the pairing base is 90.
+    function horizonSplitFixture() {
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      return [
+        ...Array.from({ length: 50 }, (_, i) =>
+          makeMatch({
+            id: `hz${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (49 - i) * ((80 / 49) * day),
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({
+            id: `old${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (200 + i) * day,
+            win: true,
+          }),
+        ),
+      ];
+    }
+
+    const NOT_APPLIED =
+      "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.";
+
+    async function followFormNowDoor(user: ReturnType<typeof userEvent.setup>) {
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
+      const door = within(formNowSlot).getByRole('link');
+      const href = door.getAttribute('href') ?? '';
+      await user.click(door);
+      return href;
+    }
+
+    function terminusRows(): number {
+      const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+      return Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'));
+    }
+
+    it('WR-01: a HorizonSwitch press after following the door re-points the claim to the same insight at the new horizon', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+      await followFormNowDoor(user);
+      await waitFor(() => expect(terminusRows()).toBe(30));
+      const claimBefore = new URLSearchParams(
+        screen.getByTestId('location-search').textContent ?? '',
+      ).get('claim');
+      expect(claimBefore).toMatch(/:last30$/);
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      await waitFor(() =>
+        expect(
+          new URLSearchParams(screen.getByTestId('location-search').textContent ?? '').get('claim'),
+        ).toBe(claimBefore!.replace(/:last30$/, ':last90')),
+      );
+      await waitFor(() => expect(terminusRows()).toBe(50));
+      expect(screen.queryByText(NOT_APPLIED)).toBeNull();
+    });
+
+    it('WR-01: a door URL arriving under a different persisted horizon is shown as not applied, never as the door list', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      const user = userEvent.setup();
+
+      // The door's own href, taken at the default horizon.
+      const first = renderMatchups(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+      const doorHref = await followFormNowDoor(user);
+      first.unmount();
+
+      window.localStorage.setItem(
+        analyticsSelectionStorageKey('test-uid', null),
+        JSON.stringify({ fighterId: mario.id, opponentId: luigi.id, horizon: 'last90' }),
+      );
+      renderMatchups(doorHref);
+
+      await waitFor(() => expect(screen.getByText(NOT_APPLIED)).toBeInTheDocument());
+      expect(terminusRows()).toBe(90);
+      expect(screen.getByTestId('location-search').textContent).toContain(
+        new URL(doorHref, 'http://x').search,
+      );
+    });
   });
 
   describe('T-39.1-26 (gap closure): the matchupOrPlayer door survives a URL-seeded pairing', () => {

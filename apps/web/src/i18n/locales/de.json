@@ -126,6 +126,7 @@
       "summary_other": "{{count}} Spiele · {{filters}}",
       "clear": "Filter zurücksetzen",
       "empty": "Keine Spiele entsprechen diesen Filtern.",
+      "claimNotApplied": "Die verlinkte Auswertung ist nicht mehr verfügbar und wird daher nicht angewendet. Es werden alle Spiele angezeigt, die den übrigen Filtern entsprechen.",
       "loading": "Spiele werden geladen…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, öffnet Video",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, Details anzeigen",

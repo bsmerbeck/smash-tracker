@@ -126,6 +126,7 @@
       "summary_other": "{{count}}試合 · {{filters}}",
       "clear": "フィルターを解除",
       "empty": "このフィルターに一致する対戦がありません。",
+      "claimNotApplied": "リンク先の分析は利用できなくなったため、適用されていません。その他のフィルターに一致するすべての対戦を表示しています。",
       "loading": "対戦を読み込み中…",
       "rowVod": "{{opponent}} — {{stage}}、{{result}}、動画を開く",
       "rowExpand": "{{opponent}} — {{stage}}、{{result}}、詳細を表示",

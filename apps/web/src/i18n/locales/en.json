@@ -132,6 +132,7 @@
       "summary_other": "{{count}} games · {{filters}}",
       "clear": "Clear filters",
       "empty": "No games match these filters.",
+      "claimNotApplied": "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.",
       "loading": "Loading games…",
       "rowVod": "{{opponent}} — {{stage}}, {{result}}, opens video",
       "rowExpand": "{{opponent}} — {{stage}}, {{result}}, show details",

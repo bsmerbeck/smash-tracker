@@ -12,7 +12,7 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
-import { useClaimFollowsHorizon } from '@/hooks/useClaimFollowsHorizon';
+import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { cn } from '@/lib/utils';
@@ -67,7 +67,11 @@ export function TrendsPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
-  const { horizon, isLoading: horizonLoading } = useHorizon();
+  const {
+    horizon,
+    isLoading: horizonLoading,
+    explicitChangeCount: horizonChangeCount,
+  } = useHorizon();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: a tolerant read of every drill-down axis currently in the URL —
@@ -206,28 +210,14 @@ export function TrendsPage() {
   }
 
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
-  // same insight at a new horizon (or drop it) instead of leaving an id that
-  // no longer resolves. Mirrors `FighterAnalysisPage.tsx`.
+  // same insight at a new horizon; one that cannot resolve is shown as not
+  // applied by the terminus. Mirrors `FighterAnalysisPage.tsx`.
   const hasPageClaim = useCallback((id: string) => insightById.has(id), [insightById]);
-  const rewriteClaim = useCallback(
-    (next: string | null) => {
-      const params = new URLSearchParams(searchParams);
-      if (next == null) {
-        params.delete(DRILL_DOWN_CLAIM_PARAM);
-      } else {
-        params.set(DRILL_DOWN_CLAIM_PARAM, next);
-      }
-      const search = params.toString();
-      navigate(
-        { pathname: location.pathname, search: search ? `?${search}` : '' },
-        { replace: true },
-      );
-    },
-    [searchParams, navigate, location.pathname],
-  );
+  const rewriteClaim = useUrlClaimRewriter();
   useClaimFollowsHorizon({
     horizon,
     horizonLoading,
+    horizonChangeCount,
     claimId: axesFromUrl.claimId,
     hasClaim: hasPageClaim,
     rewriteClaim,
