@@ -1005,10 +1005,11 @@ export function OpponentHubPage() {
               labels={{
                 summary: t('analytics.strip.aria', { count: trendSourceMatches.length }),
                 legend: t('analytics.strip.legend'),
-                shownOfTotal:
-                  trendSourceMatches.length > 20
-                    ? t('analytics.strip.shownOf', { shown: 20, total: trendSourceMatches.length })
-                    : undefined,
+                // Plan 39.1-33 (R1): a formatter — only the kit knows how
+                // many games it actually drew after `limit` AND its own
+                // measured-width fit, so the host no longer computes `shown`
+                // itself.
+                shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
                 empty: <span>{t('analytics.strip.empty')}</span>,
                 windowEmpty:
                   trendInsight && trendInsight.window.games === 0

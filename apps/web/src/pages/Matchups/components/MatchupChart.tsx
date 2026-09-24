@@ -479,10 +479,10 @@ export function MatchupChart({
         labels={{
           summary: t('analytics.strip.aria', { count: matchupMatches.length }),
           legend: t('analytics.strip.legend'),
-          shownOfTotal:
-            matchupMatches.length > 30
-              ? t('analytics.strip.shownOf', { shown: 30, total: matchupMatches.length })
-              : undefined,
+          // Plan 39.1-33 (R1): a formatter — only the kit knows how many
+          // games it actually drew after `limit` AND its own measured-width
+          // fit, so the host no longer computes `shown` itself.
+          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
           empty: <span>{t('analytics.strip.empty')}</span>,
           // Plan 39.1-31 (item 7): suppressed exactly when the verdict head
           // already states the scoped-empty window itself (D-15's "No games

@@ -536,10 +536,10 @@ export function FighterHero({
             labels={{
               summary: t('analytics.strip.aria', { count: fighterMatches.length }),
               legend: t('analytics.strip.legend'),
-              shownOfTotal:
-                fighterMatches.length > 60
-                  ? t('analytics.strip.shownOf', { shown: 60, total: fighterMatches.length })
-                  : undefined,
+              // Plan 39.1-33 (R1): a formatter — only the kit knows how many
+              // games it actually drew after `limit` AND its own measured-
+              // width fit, so the host no longer computes `shown` itself.
+              shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
               empty: <span>{t('analytics.strip.empty')}</span>,
               windowEmpty:
                 formNowInsight && formNowInsight.window.games === 0
