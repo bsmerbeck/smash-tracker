@@ -33,7 +33,8 @@ function makePoint(overrides: Partial<PeriodPoint> & { grain: PeriodGrain }): Pe
   };
 }
 
-const NOV_15_2023_MS = Date.UTC(2023, 10, 15, 19, 30, 20);
+/** Noon UTC — Nov 15 in every host zone from UTC−11 to UTC+11 (fine grains format in local time, WR-02). */
+const NOV_15_2023_MS = Date.UTC(2023, 10, 15, 12, 30, 20);
 
 describe('formatPeriodTickLabel', () => {
   it('formats a game-grain point (engine label an ISO string) to a short date, never an ISO-looking string', () => {

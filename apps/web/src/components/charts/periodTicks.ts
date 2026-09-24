@@ -53,12 +53,20 @@ function cachedFormatter(
   return formatter;
 }
 
+/**
+ * WR-02 (39.1-REVIEW.md): a fine-grain point (game/set/session) names a real
+ * game instant, so it is labelled in the host's LOCAL time zone — the same
+ * rule as the results list (`toLocaleDateString(i18n.language)`), the
+ * form-strip tick titles and the session captions on the same page. (It was
+ * UTC, which put an evening game in the Americas on the next day.) Coarse
+ * grains below stay UTC because `periodSeries.ts` buckets them in UTC.
+ * The cached formatter captures the host zone on first use.
+ */
 function formatShortDate(ms: number, locale: string): string {
   return cachedFormatter('shortDate', locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    timeZone: 'UTC',
   }).format(new Date(ms));
 }
 
