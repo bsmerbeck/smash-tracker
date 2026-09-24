@@ -99,6 +99,11 @@ export type FilteredMatchListLayout = 'table' | 'stack';
  * rows in one pass" and UI-SPEC §6.4's literal text, so this plan lowers the
  * cap to 100 and replaces the one-step reveal with `FILTERED_MATCH_LIST_PAGE_SIZE`-row
  * paging below.
+ *
+ * Plan 39.1-33 (R2): this constant now governs the TABLE layout only — the
+ * stacked (phone) layout uses its own, stricter `FILTERED_MATCH_LIST_STACK_ROW_CAP`
+ * (see below), because a phone list that flows in the page (plan 39.1-32
+ * item 13) needs a phone-appropriate bound, not the shared 100-row table cap.
  */
 export const FILTERED_MATCH_LIST_ROW_CAP = 100;
 
@@ -108,6 +113,21 @@ export const FILTERED_MATCH_LIST_ROW_CAP = 100;
  * above for the first-pass bound this pairs with.
  */
 export const FILTERED_MATCH_LIST_PAGE_SIZE = 50;
+
+/**
+ * Plan 39.1-33 (R2, UIX-02, owner decision 2026-09-24: phone rows = 20): a
+ * stricter phone-only bound inside UI-SPEC §6.4's "<= 100 rows per DOM pass"
+ * ceiling. Since plan 39.1-32 (item 13) the stacked (phone) layout flows in
+ * the page with no inner scroller, so its first pass is about two phone
+ * screens (20 rows of ~82px + 8px gap, measured at 390x844 in the
+ * guard-layout harness) and it pages by the same step. The table layout
+ * (640px and up) keeps `FILTERED_MATCH_LIST_ROW_CAP`/`_PAGE_SIZE` (100/50)
+ * inside its grandfathered 500px wrapper, byte-unchanged.
+ */
+export const FILTERED_MATCH_LIST_STACK_ROW_CAP = 20;
+
+/** Plan 39.1-33: the stacked layout's own "Show N more" page size — see `FILTERED_MATCH_LIST_STACK_ROW_CAP` above. */
+export const FILTERED_MATCH_LIST_STACK_PAGE_SIZE = 20;
 
 /** Tailwind's `sm` breakpoint (640px) — matches the UI-SPEC's "Mobile (<640px)" clause and `MatrixHeat.tsx`'s own constant. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -376,10 +396,20 @@ export function FilteredMatchList({
   // `rootId` names whichever layout root actually mounts (table or stack are
   // mutually exclusive) so the paging control's `aria-controls` always
   // points at a real element. `visibleCount` replaces plan 39.1-23's
-  // one-step `expanded` boolean — the first pass mounts
-  // `FILTERED_MATCH_LIST_ROW_CAP` rows, and each activation of the paging
-  // control mounts up to `FILTERED_MATCH_LIST_PAGE_SIZE` more.
-  const [visibleCount, setVisibleCount] = useState(FILTERED_MATCH_LIST_ROW_CAP);
+  // one-step `expanded` boolean — the first pass mounts the active layout's
+  // own row cap, and each activation of the paging control mounts up to the
+  // active layout's own page size more.
+  //
+  // Plan 39.1-33 (R2): the stacked (phone) layout uses its own, stricter
+  // cap/page size (`FILTERED_MATCH_LIST_STACK_ROW_CAP`/`_PAGE_SIZE`, 20/20);
+  // the table layout keeps the shared 100/50 pair byte-unchanged.
+  const activeRowCap =
+    resolvedLayout === 'stack' ? FILTERED_MATCH_LIST_STACK_ROW_CAP : FILTERED_MATCH_LIST_ROW_CAP;
+  const activePageSize =
+    resolvedLayout === 'stack'
+      ? FILTERED_MATCH_LIST_STACK_PAGE_SIZE
+      : FILTERED_MATCH_LIST_PAGE_SIZE;
+  const [visibleCount, setVisibleCount] = useState(() => activeRowCap);
   const rootId = useId();
 
   // A re-narrowing must not keep stale paging progress. WR-07 (39.1-REVIEW):
@@ -394,6 +424,12 @@ export function FilteredMatchList({
   // react-compiler lint rule flags the equivalent
   // `useEffect(() => setState(...), [dep])` form as a
   // synchronous-setState-in-an-effect cascading-render risk).
+  // Plan 39.1-33: `resolvedLayout` joins the narrowing key so a layout
+  // change (the stacked/table `matchMedia` boundary, or a host/test's
+  // explicit `layout` prop flip) also re-bounds `visibleCount` to the NEW
+  // active cap — the two layouts have different caps, so carrying stale
+  // progress across a layout switch would either strand a stacked list at
+  // 100 mounted rows or under-mount a table that just gained rows.
   const narrowingKey = JSON.stringify([
     axes.fighterId ?? null,
     axes.vsFighterId ?? null,
@@ -402,21 +438,23 @@ export function FilteredMatchList({
     axes.from ?? null,
     axes.to ?? null,
     axes.claimId ?? null,
+    resolvedLayout,
   ]);
   const [trackedNarrowingKey, setTrackedNarrowingKey] = useState(narrowingKey);
   if (narrowingKey !== trackedNarrowingKey) {
     setTrackedNarrowingKey(narrowingKey);
-    setVisibleCount(FILTERED_MATCH_LIST_ROW_CAP);
+    setVisibleCount(activeRowCap);
   }
 
   const mountedMatches = narrowedMatches.slice(0, visibleCount);
   const remaining = narrowedMatches.length - mountedMatches.length;
-  const nextPageSize = Math.min(FILTERED_MATCH_LIST_PAGE_SIZE, remaining);
+  const nextPageSize = Math.min(activePageSize, remaining);
   const pagingControlVisible = remaining > 0;
-  // Shown whenever the FULL narrowed count exceeds the cap — including once
-  // the final page is revealed (`remaining === 0`) — so paging progress
-  // stays announced to assistive technology throughout, not just mid-page.
-  const progressVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP;
+  // Shown whenever the FULL narrowed count exceeds the active cap —
+  // including once the final page is revealed (`remaining === 0`) — so
+  // paging progress stays announced to assistive technology throughout, not
+  // just mid-page.
+  const progressVisible = narrowedMatches.length > activeRowCap;
 
   // The paging control unmounts itself once the activation that reveals the
   // final page fires; move focus to the (now-larger) list root at exactly
@@ -487,7 +525,7 @@ export function FilteredMatchList({
   });
 
   function handleShowMore() {
-    const next = visibleCount + FILTERED_MATCH_LIST_PAGE_SIZE;
+    const next = visibleCount + activePageSize;
     setVisibleCount(next);
     if (next >= narrowedMatches.length) {
       shouldFocusRootRef.current = true;
@@ -576,9 +614,14 @@ export function FilteredMatchList({
             list flows in the PAGE, because §6.4 bans nested vertical
             scrollers and exemption 2's original reason — a Phase 38
             unbounded list — no longer holds once plan 39.1-28 bounds every
-            DOM pass at FILTERED_MATCH_LIST_ROW_CAP rows + "Show 50 more"
-            paging. The table layout (640px and up) keeps the grandfathered
-            max-h-[500px] overflow-y-auto wrapper exactly as before.
+            DOM pass. Plan 39.1-33 (R2) tightens the stacked pass specifically
+            to FILTERED_MATCH_LIST_STACK_ROW_CAP rows (20) + "Show 20 more"
+            paging — about two phone screens — because a page that flows in
+            the page (no inner scroller) needs a phone-appropriate bound, not
+            the shared 100-row table cap. The table layout (640px and up)
+            keeps the grandfathered max-h-[500px] overflow-y-auto wrapper and
+            its own FILTERED_MATCH_LIST_ROW_CAP/_PAGE_SIZE (100/50) exactly
+            as before.
           */}
           {resolvedLayout === 'stack' ? (
             <ul

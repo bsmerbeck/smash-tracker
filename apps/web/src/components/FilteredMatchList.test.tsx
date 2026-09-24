@@ -637,14 +637,20 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
   });
 
-  it('stacked layout: same cap, count, data-total-rows and paging control against <li> rows', () => {
+  it('stacked layout: count, data-total-rows and paging control against <li> rows, at the layout-appropriate cap (plan 39.1-33: stack no longer shares the table cap — see the dedicated stack-paging describe below for its 20-row bound)', () => {
     const matches = makeManyMatches(1000);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    // Plan 39.1-33 local literal, mirrors the not-yet-imported
+    // FILTERED_MATCH_LIST_STACK_ROW_CAP/PAGE_SIZE (see the dedicated describe
+    // below) — this case predates the stack/table cap split (plan 39.1-28)
+    // and originally pinned the shared FILTERED_MATCH_LIST_ROW_CAP (100).
+    const stackRowCap = 20;
+    const stackPageSize = 20;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(stackRowCap);
     expect(stack).toHaveAttribute('data-total-rows', '1000');
     const showMore = screen.getByRole('button', {
-      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+      name: showMoreName(stackPageSize),
     });
     expect(showMore).toHaveAttribute('aria-controls', stack.id);
   });
@@ -872,7 +878,7 @@ describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
     expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
     expect(stack).toHaveAttribute('data-total-rows', '150');
-    expect(screen.getByText(/150 games/)).toBeInTheDocument();
+    expect(screen.getByText(/150 games ·/)).toBeInTheDocument();
 
     const showMore = screen.getByRole('button', { name: showMoreName(STACK_PAGE) });
     expect(showMore).toHaveAttribute('aria-controls', stack.id);
@@ -881,15 +887,18 @@ describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged
     expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
   });
 
-  it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', () => {
+  it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', async () => {
+    const user = userEvent.setup();
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
     const matches = makeManyMatches(50);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
     expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
 
-    // First activation: 20 -> 40, control remains (10 rows left).
-    fireEvent.click(screen.getByRole('button', { name: showMoreName(STACK_PAGE) }));
+    // First activation: 20 -> 40, control remains (10 rows left). userEvent
+    // (not fireEvent) — jsdom only moves native post-click focus for a real
+    // pointer-event simulation, mirroring the table-layout paging test above.
+    await user.click(screen.getByRole('button', { name: showMoreName(STACK_PAGE) }));
     expect(within(stack).getAllByRole('listitem')).toHaveLength(40);
     expect(screen.getByRole('button', { name: showMoreName(10) })).toBe(document.activeElement);
 
