@@ -2,6 +2,16 @@ import { defineConfig, configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
+// IN-01 (39.1-REVIEW iteration 2): fine-grain period labels, form-strip tick
+// titles and session captions format in the host's LOCAL zone (WR-02), so
+// their fixtures only hold in some zones (a noon-UTC fixture is a different
+// day at UTC+12..+14). Pin the whole web unit run to UTC — the zone CI
+// runners already use — so the suite is deterministic on every host. Set
+// here, before vitest forks its workers, so each worker starts in UTC; a
+// test that needs another zone (`periodTicks.timezone.test.ts`) overrides
+// `process.env.TZ` itself before importing the module under test.
+process.env.TZ = 'UTC';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {

@@ -33,8 +33,20 @@ function makePoint(overrides: Partial<PeriodPoint> & { grain: PeriodGrain }): Pe
   };
 }
 
-/** Noon UTC — Nov 15 in every host zone from UTC−11 to UTC+11 (fine grains format in local time, WR-02). */
+/**
+ * Noon UTC. Fine grains format in the host's LOCAL zone (WR-02), so this is
+ * Nov 15 only from UTC−11 to UTC+11 — the web vitest run pins `TZ=UTC`
+ * (`vitest.config.ts`, IN-01) so the expectations below hold on any host,
+ * including UTC+12..+14 (e.g. Pacific/Auckland) where they used to fail.
+ */
 const NOV_15_2023_MS = Date.UTC(2023, 10, 15, 12, 30, 20);
+
+describe('the web unit suite runs in a pinned time zone (IN-01)', () => {
+  it('resolves every local-time formatter in UTC, whatever the host zone', () => {
+    expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toMatch(/^(UTC|Etc\/UTC)$/);
+    expect(new Date(NOV_15_2023_MS).getHours()).toBe(12);
+  });
+});
 
 describe('formatPeriodTickLabel', () => {
   it('formats a game-grain point (engine label an ISO string) to a short date, never an ISO-looking string', () => {
