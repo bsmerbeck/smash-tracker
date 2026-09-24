@@ -650,6 +650,34 @@ describe('OpponentHubPage', () => {
           'Tendencies',
         ]);
       });
+
+      it('WR-02 (review iteration 2): a session the limit={20} trim cuts states only its DRAWN record, in the caption and the group name', async () => {
+        // One manual session of 25 one-minute-apart games: the 5 oldest are
+        // losses, the 20 newest wins. The whole session is 20–5; the strip's
+        // limit={20} draws only the 20 wins, so the only honest record is 20–0.
+        const start = Date.UTC(2024, 2, 10, 12, 0, 0);
+        listMatches.mockResolvedValue(
+          Array.from({ length: 25 }, (_, i) =>
+            makeMatch({ id: `s${i}`, time: start + i * 60_000, opponent: 'rival', win: i >= 5 }),
+          ),
+        );
+        renderHub('/opponents/rival');
+
+        await findRecordText('20-5');
+        const groups = Array.from(document.querySelectorAll('[data-slot="form-strip-event"]'));
+        expect(groups).toHaveLength(1);
+        expect(document.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(20);
+
+        const caption = document.querySelector('[data-slot="form-strip-caption-first"]');
+        const captionText = caption?.textContent ?? '';
+        // Date only (the other two hosts' `analytics.strip.sessionLabel`) — no record at all.
+        expect(captionText).toMatch(/^Session · /);
+        expect(captionText).not.toMatch(/\d+–\d+/);
+
+        const groupName = groups[0]!.getAttribute('aria-label') ?? '';
+        expect(groupName).toBe(`${captionText} · 20–0`);
+        expect(groupName).not.toMatch(/20–5/);
+      });
     });
   });
 

@@ -32,6 +32,7 @@ import {
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
+import { formStripSessionLabel } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -215,6 +216,7 @@ function buildOpponentFormStripEvents(
   recentWindow: { fromMs: number | null; toMs: number | null },
   opponentTag: string,
   t: TFunction,
+  locale: string,
 ): FormStripEvent[] {
   const inWindow = (m: Match): boolean =>
     recentWindow.fromMs != null &&
@@ -225,14 +227,19 @@ function buildOpponentFormStripEvents(
   const oldestFirst = [...groups].reverse();
 
   return oldestFirst.map((group) => {
-    const gamesWon = group.sets.reduce((sum, set) => sum + set.gamesWon, 0);
-    const gamesLost = group.sets.reduce((sum, set) => sum + set.gamesLost, 0);
+    // WR-02 (review iteration 2): a session group is labelled by the SAME
+    // helper the other two strip hosts use — date only. The kit appends the
+    // record of the games it draws, so a session the limit trim or width fit
+    // cuts never states the whole session's record.
     const label =
       group.kind === 'event'
         ? group.label
-        : t('analytics.encounters.sessionHeader', {
-            date: new Date(group.dateMs).toLocaleDateString(),
-            record: `${gamesWon}–${gamesLost}`,
+        : formStripSessionLabel({
+            firstGameMs: Math.min(
+              ...group.sets.flatMap((set) => set.games.map((game) => game.match.time)),
+            ),
+            t,
+            locale,
           });
     return {
       key: group.key,
@@ -687,8 +694,9 @@ export function OpponentHubPage() {
         trendRecentWindow,
         profile?.opponent ?? pathTag ?? '',
         t,
+        i18n.language,
       ),
-    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t],
+    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t, i18n.language],
   );
 
   const headToHeadSample: SampleMeta | null = useMemo(() => {

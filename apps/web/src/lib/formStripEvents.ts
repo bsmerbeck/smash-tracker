@@ -25,6 +25,31 @@ export function formStripSetKeyForMatch(match: Match): string {
 }
 
 /**
+ * The ONE label for a manual-session `FormStrip` group, shared by all three
+ * strip hosts: `analytics.strip.sessionLabel` with the session's FIRST game's
+ * date (host-local zone, UI locale). Date only, never a record: the kit
+ * appends the record of the games it actually draws (39.1-REVIEW iteration 2
+ * WR-02 — a session the `limit` trim or width fit cuts must never state a
+ * record for games that are not on screen).
+ */
+export function formStripSessionLabel({
+  firstGameMs,
+  t,
+  locale,
+}: {
+  firstGameMs: number;
+  t: TFunction;
+  locale: string;
+}): string {
+  const date = new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(firstGameMs));
+  return t('analytics.strip.sessionLabel', { date });
+}
+
+/**
  * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only (never
  * binned/windowed — `FormStrip` itself trims to `limit`). A match with no
  * parseable `externalId` becomes its own single-game set (see
@@ -124,12 +149,7 @@ export function buildFormStripEvents(
   }
   for (const session of splitIntoSessions(manual)) {
     const first = session[0]!;
-    const date = new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    }).format(new Date(first.time));
-    const label = t('analytics.strip.sessionLabel', { date });
+    const label = formStripSessionLabel({ firstGameMs: first.time, t, locale });
     groups.push({
       firstMs: first.time,
       event: toFormStripEvent(`session:${first.id}`, label, session),
