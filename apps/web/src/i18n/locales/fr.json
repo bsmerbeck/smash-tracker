@@ -904,7 +904,6 @@
     "insights": {
       "title": "Analyse du matchup",
       "minMatches": "Min. de matchs par stage",
-      "minMatchesAria": "Minimum de matchs par stage",
       "empty": "Aucun match enregistré pour ce matchup pour l'instant.",
       "currentStreak": "Série en cours",
       "streakUnit": {

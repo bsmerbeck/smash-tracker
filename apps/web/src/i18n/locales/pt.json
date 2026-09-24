@@ -904,7 +904,6 @@
     "insights": {
       "title": "Insights do confronto",
       "minMatches": "Mín. de partidas por stage",
-      "minMatchesAria": "Mínimo de partidas por stage",
       "empty": "Nenhuma partida registrada para este confronto ainda.",
       "currentStreak": "Sequência atual",
       "streakUnit": {

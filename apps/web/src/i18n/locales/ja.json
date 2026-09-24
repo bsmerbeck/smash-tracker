@@ -904,7 +904,6 @@
     "insights": {
       "title": "相性の分析",
       "minMatches": "ステージごとの最低対戦数",
-      "minMatchesAria": "ステージごとの最低対戦数",
       "empty": "この相性の対戦はまだ記録されていません。",
       "currentStreak": "現在の連続記録",
       "streakUnit": {

@@ -904,7 +904,6 @@
     "insights": {
       "title": "Análisis del enfrentamiento",
       "minMatches": "Mín. de partidas por escenario",
-      "minMatchesAria": "Mínimo de partidas por escenario",
       "empty": "Aún no hay partidas registradas para este enfrentamiento.",
       "currentStreak": "Racha actual",
       "streakUnit": {

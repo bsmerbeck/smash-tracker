@@ -111,4 +111,13 @@ describe('MatchupStageGuide', () => {
       'true',
     );
   });
+
+  it('IN-06 (review iteration 2): the min-matches select is named by its visible label (label-in-name), with no aria-label override', () => {
+    renderGuide([makeMatch({ id: 'm1', time: 1, win: true })]);
+    const select = screen.getByRole('combobox', { name: 'Min matches per stage' });
+    expect(select).not.toHaveAttribute('aria-label');
+    const label = screen.getByText('Min matches per stage');
+    expect(label.tagName.toLowerCase()).toBe('label');
+    expect(label).toHaveAttribute('for', select.id);
+  });
 });
