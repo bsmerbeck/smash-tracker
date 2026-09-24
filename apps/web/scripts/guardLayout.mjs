@@ -739,6 +739,71 @@ export function createShutdownHandler({
   };
 }
 
+/**
+ * WR-10 (39.1-REVIEW.md): how long the hard-timeout exit waits for Vite's
+ * `server.close()` (or, with no browser process handle, `browser.close()`)
+ * before giving up on it and exiting anyway — the timeout path exists to
+ * FORCE an exit, so no cleanup step may be allowed to hang it.
+ */
+export const HARD_TIMEOUT_CLOSE_BOUND_MS = 5_000;
+
+/** Resolves when `promise` settles or `ms` elapses, whichever is first — never rejects. */
+function settleWithin(promise, ms) {
+  let timer;
+  const bound = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return Promise.race([Promise.resolve(promise).catch(() => {}), bound]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/**
+ * WR-10 (39.1-REVIEW.md): the hard-timeout exit, as a factory so
+ * `guardLayoutShutdown.test.mjs` can drive it with fakes. Puppeteer launches
+ * Chrome `detached` on POSIX — Chrome is its own process-group leader — and
+ * its own `kill()` signals `-pid`, the whole group. Signalling only the
+ * leader (the previous code) could orphan helper processes (crashpad
+ * handler, zygote), so this SIGKILLs the process GROUP via `kill(-pid)`,
+ * falling back to the leader where a group kill is unsupported (Windows
+ * rejects a negative pid). Every close it still awaits is bounded by
+ * `serverCloseTimeoutMs`, then it prints the summary and exits 1. Idempotent:
+ * a second call is a no-op.
+ */
+export function createHardTimeoutExit({
+  browser,
+  server,
+  offListeners,
+  printSummary,
+  exit = (code) => process.exit(code),
+  kill = (pid, signal) => process.kill(pid, signal),
+  serverCloseTimeoutMs = HARD_TIMEOUT_CLOSE_BOUND_MS,
+}) {
+  let fired = false;
+  return async function forceExit() {
+    if (fired) return;
+    fired = true;
+    offListeners();
+    const browserProcess = browser.process?.() ?? null;
+    if (browserProcess && browserProcess.pid != null) {
+      try {
+        kill(-browserProcess.pid, 'SIGKILL');
+      } catch {
+        try {
+          browserProcess.kill('SIGKILL');
+        } catch {
+          // Already gone — nothing left to kill.
+        }
+      }
+    } else {
+      await settleWithin(browser.close(), serverCloseTimeoutMs);
+    }
+    await settleWithin(server.close(), serverCloseTimeoutMs);
+    printSummary();
+    exit(1);
+  };
+}
+
 async function main() {
   const { server, baseUrl } = await startGuardLayoutHarnessServer();
   // WR-B03 (39.1-REVIEW.md): Puppeteer's own launcher (`@puppeteer/browsers`)
@@ -795,30 +860,32 @@ async function main() {
   // orphaned `page.evaluate()` is still using — measured taking ~16 minutes
   // wall-clock to actually exit. `forceExitOnTimeout` is fired the instant
   // the timer elapses (see `withHardTimeout`'s `onTimeout` hook): it
-  // SIGKILLs the browser process directly (no graceful CDP round trip, so it
-  // cannot be blocked by an in-flight orphaned evaluate), closes the server,
+  // SIGKILLs the browser's whole process GROUP directly (no graceful CDP
+  // round trip, so it cannot be blocked by an in-flight orphaned evaluate),
+  // closes the server within a bound (WR-10, `createHardTimeoutExit`),
   // prints the same summary lines the normal path prints, and calls
   // `process.exit(1)` itself — never returning control to the `try/catch`
   // below, whose own cleanup would otherwise still be racing the orphaned
   // loop.
   let hardTimedOut = false;
+  const hardTimeoutExit = createHardTimeoutExit({
+    browser,
+    server,
+    offListeners: () => {
+      process.off('SIGINT', sigintHandler);
+      process.off('SIGTERM', sigtermHandler);
+    },
+    printSummary: () => {
+      console.log(`MEASURED_ROUTES=${measuredCount}`);
+      console.log(
+        `UNMEASURED_ROUTES=${unmeasuredIds.size > 0 ? [...unmeasuredIds].join(',') : 'NONE'}`,
+      );
+    },
+  });
   const forceExitOnTimeout = async () => {
     hardTimedOut = true;
     console.error(`guardLayout exceeded its ${HARD_TIMEOUT_MS}ms hard timeout — force-exiting`);
-    process.off('SIGINT', sigintHandler);
-    process.off('SIGTERM', sigtermHandler);
-    const browserProcess = browser.process();
-    if (browserProcess) {
-      browserProcess.kill('SIGKILL');
-    } else {
-      await browser.close().catch(() => {});
-    }
-    await server.close().catch(() => {});
-    console.log(`MEASURED_ROUTES=${measuredCount}`);
-    console.log(
-      `UNMEASURED_ROUTES=${unmeasuredIds.size > 0 ? [...unmeasuredIds].join(',') : 'NONE'}`,
-    );
-    process.exit(1);
+    await hardTimeoutExit();
   };
 
   try {
