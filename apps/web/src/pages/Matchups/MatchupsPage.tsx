@@ -101,6 +101,9 @@ export function MatchupsPage() {
   // Plan 39.1-30 (item 5): stable across re-renders — attaches the pairing
   // identity heading to the grid it names via `aria-labelledby`.
   const pairingHeadingId = useId();
+  // WR-07: the pairing picker's <label htmlFor> targets.
+  const fighterSelectId = useId();
+  const opponentSelectId = useId();
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
   // D-05: tolerant read of every drill-down axis currently in the URL. A URL
@@ -540,14 +543,21 @@ export function MatchupsPage() {
                 data-slot="matchup-pairing-picker"
                 className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[15rem_auto_15rem] sm:items-end sm:gap-x-3"
               >
+                {/*
+                  WR-07 (39.1-REVIEW.md): the captions are form LABELS tied to
+                  their selects (which take their accessible names from
+                  them), never h3 headings — two h3s ahead of the page's h2
+                  skipped a heading level and cluttered the outline.
+                */}
                 <div className="flex min-w-0 flex-col gap-1">
-                  <h3
+                  <label
+                    htmlFor={fighterSelectId}
                     data-slot="matchup-pairing-label"
                     className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
                   >
                     {t('matchups.you')}
-                  </h3>
-                  <SelectFighter />
+                  </label>
+                  <SelectFighter id={fighterSelectId} />
                 </div>
                 <span
                   data-slot="matchup-pairing-vs"
@@ -556,13 +566,14 @@ export function MatchupsPage() {
                   {t('matchups.vs')}
                 </span>
                 <div className="flex min-w-0 flex-col gap-1">
-                  <h3
+                  <label
+                    htmlFor={opponentSelectId}
                     data-slot="matchup-pairing-label"
                     className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
                   >
                     {t('matchups.opponent')}
-                  </h3>
-                  <SelectOpponent />
+                  </label>
+                  <SelectOpponent id={opponentSelectId} />
                 </div>
               </div>
               <HorizonSwitch />

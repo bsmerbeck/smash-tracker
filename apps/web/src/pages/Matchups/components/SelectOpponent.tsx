@@ -25,7 +25,13 @@ import { useMatchupsContext } from '../MatchupsContext';
  * "Faced" group is rendered order, no sorting performed here (that's
  * `usePersistedSelection`'s / `rankOpponentUsage`'s job).
  */
-export function SelectOpponent() {
+/**
+ * WR-07 (39.1-REVIEW.md): `id` goes on the trigger so a visible
+ * `<label htmlFor={id}>` names it; with an `id` the trigger carries no
+ * `aria-label` (which would override the visible label). Without one — a
+ * standalone render — the descriptive `matchups.selectOpponentAria` name remains.
+ */
+export function SelectOpponent({ id }: { id?: string } = {}) {
   const { t } = useTranslation();
   const localizedName = useFighterNameResolver();
   const alphaFighters = useAlphaFighters();
@@ -46,7 +52,10 @@ export function SelectOpponent() {
 
   return (
     <Select value={opponent ? String(opponent.id) : undefined} onValueChange={selectById}>
-      <SelectTrigger aria-label={t('matchups.selectOpponentAria')} className="w-full">
+      <SelectTrigger
+        {...(id ? { id } : { 'aria-label': t('matchups.selectOpponentAria') })}
+        className="w-full"
+      >
         <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>

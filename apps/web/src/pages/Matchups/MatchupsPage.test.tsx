@@ -290,10 +290,10 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(await screen.findByRole('option', { name: new RegExp(luigi.name) }));
 
     await waitFor(() => {
@@ -372,9 +372,9 @@ describe('MatchupsPage', () => {
     // faced), which has a match — explicitly switch to a fighter Mario has
     // never faced to exercise the pairing's own empty state.
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(
       await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
     );
@@ -476,8 +476,8 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
-    const fighterTrigger = screen.getByLabelText('Select your fighter');
-    const opponentTrigger = screen.getByLabelText('Select opponent fighter');
+    const fighterTrigger = screen.getByRole('combobox', { name: 'You' });
+    const opponentTrigger = screen.getByRole('combobox', { name: 'Opponent' });
     expect(within(fighterTrigger).getByText(mario.name)).toBeInTheDocument();
     expect(within(opponentTrigger).getByText(luigi.name)).toBeInTheDocument();
 
@@ -508,22 +508,22 @@ describe('MatchupsPage', () => {
     const { unmount } = renderMatchups();
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(luigi.name),
       ).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(
       await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
     );
 
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(
           alphabeticallyFirstSprite.name,
         ),
       ).toBeInTheDocument();
@@ -534,7 +534,7 @@ describe('MatchupsPage', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(
           alphabeticallyFirstSprite.name,
         ),
       ).toBeInTheDocument();
@@ -560,7 +560,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(bowser.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(bowser.name),
         ).toBeInTheDocument(),
       );
       // The win-loss card also reflects Bowser's own 1-0 record, not Mario's.
@@ -577,7 +577,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(mario.name),
         ).toBeInTheDocument(),
       );
       expect(screen.getByText('Matchup Results')).toBeInTheDocument();
@@ -606,14 +606,14 @@ describe('MatchupsPage', () => {
       renderMatchups();
 
       await waitFor(() =>
-        expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+        expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
       );
       await waitFor(() => {
         expect(
-          within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+          within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(luigi.name),
         ).toBeInTheDocument();
       });
-      await user.click(screen.getByLabelText('Select opponent fighter'));
+      await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
       await user.click(
         await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
       );
@@ -813,7 +813,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(mario.name),
         ).toBeInTheDocument(),
       );
 
@@ -1445,6 +1445,36 @@ describe('MatchupsPage', () => {
         expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
       );
     }
+
+    it('WR-07: the "You" / "Opponent" captions are <label for> the two selects (their accessible names), not headings', async () => {
+      await renderLoadedPairingForPicker();
+      const labels = Array.from(document.querySelectorAll('[data-slot="matchup-pairing-label"]'));
+      expect(labels.map((el) => el.tagName.toLowerCase())).toEqual(['label', 'label']);
+      const you = screen.getByRole('combobox', { name: 'You' });
+      const opponent = screen.getByRole('combobox', { name: 'Opponent' });
+      expect(labels[0]!.getAttribute('for')).toBe(you.id);
+      expect(labels[1]!.getAttribute('for')).toBe(opponent.id);
+      expect(screen.queryByRole('heading', { name: 'You' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Opponent' })).not.toBeInTheDocument();
+    });
+
+    it('WR-07: the heading outline never skips a level — nothing deeper than the pairing h2 precedes it, and each heading is at most one level below the previous', async () => {
+      await renderLoadedPairingForPicker();
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+      const levels = headings.map((el) => Number(el.tagName.slice(1)));
+      const pairingIndex = headings.findIndex(
+        (el) => el.getAttribute('data-slot') === 'matchup-detail-heading',
+      );
+      expect(pairingIndex).toBeGreaterThanOrEqual(0);
+      for (const level of levels.slice(0, pairingIndex)) {
+        expect(level).toBeLessThanOrEqual(2);
+      }
+      for (let i = 1; i < levels.length; i += 1) {
+        expect(levels[i]!, `heading ${i} after h${levels[i - 1]}`).toBeLessThanOrEqual(
+          levels[i - 1]! + 1,
+        );
+      }
+    });
 
     it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same filter card, after the picker', async () => {
       await renderLoadedPairingForPicker();

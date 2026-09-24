@@ -16,7 +16,13 @@ import { useMatchupsContext } from '../MatchupsContext';
  * most-recent tiebreak) — this component performs no sorting of its own,
  * and renders each row with a localized trailing game count.
  */
-export function SelectFighter() {
+/**
+ * WR-07 (39.1-REVIEW.md): `id` goes on the trigger so a visible
+ * `<label htmlFor={id}>` names it; with an `id` the trigger carries no
+ * `aria-label` (which would override the visible label). Without one — a
+ * standalone render — the descriptive `matchups.selectFighterAria` name remains.
+ */
+export function SelectFighter({ id }: { id?: string } = {}) {
   const { t } = useTranslation();
   const localizedName = useFighterNameResolver();
   const { fighter, fighterSprites, setFighter, fighterUsageById } = useMatchupsContext();
@@ -31,7 +37,10 @@ export function SelectFighter() {
         }
       }}
     >
-      <SelectTrigger aria-label={t('matchups.selectFighterAria')} className="w-full">
+      <SelectTrigger
+        {...(id ? { id } : { 'aria-label': t('matchups.selectFighterAria') })}
+        className="w-full"
+      >
         <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>
