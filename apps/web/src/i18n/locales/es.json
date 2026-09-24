@@ -3402,7 +3402,8 @@
     },
     "strip": {
       "legend": "arriba = victoria · abajo = derrota · hueco = set nuevo · etiqueta = evento",
-      "aria": "Franja de forma, {{count}} partidas",
+      "aria_one": "Franja de forma, {{shown}} de {{count}} partida",
+      "aria_other": "Franja de forma, {{shown}} de {{count}} partidas",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Sesión · {{date}}",
       "windowHighlighted": {

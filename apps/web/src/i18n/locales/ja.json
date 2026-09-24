@@ -3402,7 +3402,8 @@
     },
     "strip": {
       "legend": "上 = 勝利 · 下 = 敗北 · 間隔 = 新しいセット · ラベル = イベント",
-      "aria": "調子ストリップ、{{count}}試合",
+      "aria_one": "調子ストリップ、{{count}}試合中{{shown}}試合",
+      "aria_other": "調子ストリップ、{{count}}試合中{{shown}}試合",
       "setAria": "vs {{opponent}}のセット、{{record}}",
       "sessionLabel": "セッション · {{date}}",
       "windowHighlighted": {

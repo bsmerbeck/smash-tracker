@@ -378,6 +378,26 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     expect(groups).toHaveLength(3);
   });
 
+  it('WR-03: the strip row is named for the games DRAWN of the total ("Form strip, 30 of 35 games"), and the key pluralises on the total', () => {
+    const { container } = renderChart(recentSequence(35));
+    const row = container.querySelector('[data-slot="form-strip-root"] [role="group"]');
+    expect(row).toHaveAttribute('aria-label', 'Form strip, 30 of 35 games');
+    const t = i18n.getFixedT('en');
+    expect(t('analytics.strip.aria', { count: 1, shown: 1 })).toBe('Form strip, 1 of 1 game');
+    expect(t('analytics.strip.aria', { count: 77, shown: 11 })).toBe('Form strip, 11 of 77 games');
+    for (const locale of ['en', 'es', 'fr', 'de', 'pt', 'ja']) {
+      for (const suffix of ['_one', '_other']) {
+        const bundle = JSON.parse(
+          fs.readFileSync(path.resolve(__dirname, `../../../i18n/locales/${locale}.json`), 'utf8'),
+        ) as { analytics: { strip: Record<string, string> } };
+        const value = bundle.analytics.strip[`aria${suffix}`];
+        expect(value, `${locale} analytics.strip.aria${suffix}`).toMatch(
+          /\{\{shown\}\}.*\{\{count\}\}|\{\{count\}\}.*\{\{shown\}\}/,
+        );
+      }
+    }
+  });
+
   it('a pairing of 35 games renders "30 of 35 games shown" — the host formatter wiring, jsdom applies only the 30-game limit (no measured width)', () => {
     const { container } = renderChart(recentSequence(35));
     const shownOfTotal = container.querySelector('[data-slot="form-strip-shown-of-total"]');

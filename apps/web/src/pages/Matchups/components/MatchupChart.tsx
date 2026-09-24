@@ -346,7 +346,8 @@ export function MatchupChart({
         events={formStripEvents}
         limit={30}
         labels={{
-          summary: t('analytics.strip.aria', { count: matchupMatches.length }),
+          // WR-03: names the games actually DRAWN of the total (kit-computed).
+          summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
           legend: t('analytics.strip.legend'),
           // Plan 39.1-33 (R1): a formatter — only the kit knows how many
           // games it actually drew after `limit` AND its own measured-width

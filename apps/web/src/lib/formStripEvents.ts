@@ -111,9 +111,8 @@ export function buildFormStripEvents(
         })),
       };
     });
-    const wins = eventMatches.filter((m) => m.win).length;
-    const losses = eventMatches.length - wins;
-    return { key, label, record: `${wins}–${losses}`, sets };
+    // WR-03: no group record here — FormStrip computes it from the drawn games.
+    return { key, label, sets };
   }
 
   const groups: { firstMs: number; event: FormStripEvent }[] = [];

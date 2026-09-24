@@ -3402,7 +3402,8 @@
     },
     "strip": {
       "legend": "oben = Sieg · unten = Niederlage · Lücke = neuer Satz · Label = Event",
-      "aria": "Formleiste, {{count}} Matches",
+      "aria_one": "Formleiste, {{shown}} von {{count}} Match",
+      "aria_other": "Formleiste, {{shown}} von {{count}} Matches",
       "setAria": "Satz vs. {{opponent}}, {{record}}",
       "sessionLabel": "Sitzung · {{date}}",
       "windowHighlighted": {

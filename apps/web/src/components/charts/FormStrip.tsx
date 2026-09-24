@@ -54,14 +54,23 @@ export interface FormStripEvent {
   key: string;
   /** Event name — the row's single flexible truncating slot. */
   label: string;
-  /** Pre-formatted W–L record shown as a non-shrinking token beside the label. */
-  record: string;
+  /*
+   * WR-03 (39.1-REVIEW.md): no host-supplied `record` — the kit computes
+   * each rendered group's W–L from the games it actually DRAWS, so a group
+   * the limit trim or width fit shows only partly never states a record
+   * for sets that are not on screen.
+   */
   sets: FormStripSet[];
 }
 
 export interface FormStripLabels {
-  /** Container `role="group"` aria-label, e.g. "Form, last 42 games: 30 wins, 12 losses, oldest first". */
-  summary: string;
+  /**
+   * WR-03 (39.1-REVIEW.md): the row's `role="group"` accessible name — a
+   * formatter of the games actually DRAWN (after `limit` and the width fit)
+   * and the total in `events`, e.g. "Form strip, 11 of 77 games". It used to
+   * be a host string stating the host total while far fewer were drawn.
+   */
+  summary: (counts: { shown: number; total: number }) => string;
   /** One-line legend, e.g. "up = win · down = loss · gap = new set · label = event". */
   legend: string;
   /**
@@ -156,6 +165,22 @@ function splitLegendParts(legend: string): string[] {
     .split(LEGEND_SEPARATOR)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
+}
+
+/** WR-03: a rendered group's W–L over the games it actually draws. */
+function drawnRecord(event: FormStripEvent): string {
+  let wins = 0;
+  let losses = 0;
+  for (const set of event.sets) {
+    for (const game of set.games) {
+      if (game.won) {
+        wins += 1;
+      } else {
+        losses += 1;
+      }
+    }
+  }
+  return `${wins}–${losses}`;
 }
 
 function countGames(events: FormStripEvent[]): number {
@@ -465,23 +490,26 @@ export function FormStrip({
       */}
       <div
         role="group"
-        aria-label={labels.summary}
+        aria-label={labels.summary({ shown: shownGames, total: totalGames })}
         className="flex min-w-0 flex-nowrap gap-4 overflow-hidden"
       >
-        {shownEvents.map((event) => (
-          <div
-            key={event.key}
-            data-slot="form-strip-event"
-            role="group"
-            aria-label={`${event.label}${LEGEND_SEPARATOR}${event.record}`}
-            title={`${event.label}${LEGEND_SEPARATOR}${event.record}`}
-            className="flex shrink-0 gap-1"
-          >
-            {event.sets.map((set) => (
-              <SetGroup key={set.key} set={set} onSelectSet={onSelectSet} />
-            ))}
-          </div>
-        ))}
+        {shownEvents.map((event) => {
+          const name = `${event.label}${LEGEND_SEPARATOR}${drawnRecord(event)}`;
+          return (
+            <div
+              key={event.key}
+              data-slot="form-strip-event"
+              role="group"
+              aria-label={name}
+              title={name}
+              className="flex shrink-0 gap-1"
+            >
+              {event.sets.map((set) => (
+                <SetGroup key={set.key} set={set} onSelectSet={onSelectSet} />
+              ))}
+            </div>
+          );
+        })}
       </div>
       {/*
         Plan 39.1-33 (R1): one caption line, first/last shown event only —

@@ -3402,7 +3402,8 @@
     },
     "strip": {
       "legend": "up = win · down = loss · gap = new set · label = event",
-      "aria": "Form strip, {{count}} games",
+      "aria_one": "Form strip, {{shown}} of {{count}} game",
+      "aria_other": "Form strip, {{shown}} of {{count}} games",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {

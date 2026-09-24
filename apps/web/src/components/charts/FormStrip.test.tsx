@@ -20,7 +20,6 @@ function twoEventFixture(inRecentWindow = true): FormStripEvent[] {
     {
       key: 'evt-1',
       label: 'Genesis 10',
-      record: '2-1',
       sets: [
         {
           key: 'set-1',
@@ -33,7 +32,6 @@ function twoEventFixture(inRecentWindow = true): FormStripEvent[] {
     {
       key: 'evt-2',
       label: 'Weekly #12',
-      record: '1-0',
       sets: [
         {
           key: 'set-2',
@@ -60,7 +58,7 @@ function ninetyGameFixture(): FormStripEvent[] {
       games,
     });
   }
-  return [{ key: 'evt-1', label: 'Long Event', record: '45-45', sets }];
+  return [{ key: 'evt-1', label: 'Long Event', sets }];
 }
 
 /** Plan 39.1-33: a formatter matching the three real hosts' wiring — `t('analytics.strip.shownOf', { shown, total })`'s English shape, without pulling in i18next for this kit-only test file. */
@@ -84,7 +82,6 @@ function threeEventFourSetFixture(): FormStripEvent[] {
   return ['A', 'B', 'C'].map((label) => ({
     key: `evt-${label}`,
     label: `Event ${label}`,
-    record: '2-2',
     sets: Array.from({ length: 4 }, (_, i) => singleGameSet(`${label}${i + 1}`, i % 2 === 0)),
   }));
 }
@@ -95,7 +92,6 @@ function oneEventFiveThreeGameSetsFixture(): FormStripEvent[] {
     {
       key: 'evt-solo',
       label: 'Solo Long Event',
-      record: '8-7',
       sets: Array.from({ length: 5 }, (_, i) => ({
         key: `solo-set-${i + 1}`,
         label: `solo set ${i + 1}`,
@@ -106,8 +102,13 @@ function oneEventFiveThreeGameSetsFixture(): FormStripEvent[] {
   ];
 }
 
+/** WR-03: the summary is a formatter of the DRAWN vs total game counts, like `shownOfTotal`. */
+function summaryFormatter({ shown, total }: { shown: number; total: number }): string {
+  return `summary ${shown} of ${total}`;
+}
+
 const emptyLabels = {
-  summary: 'summary',
+  summary: summaryFormatter,
   legend: 'legend',
   empty: <p>No games in this view yet.</p>,
 };
@@ -173,7 +174,6 @@ describe('FormStrip', () => {
       {
         key: 'evt-1',
         label: 'Solo Event',
-        record: '1-0',
         sets: [
           { key: 'set-1', label: 'solo set', inRecentWindow: true, games: [game('g1', true)] },
         ],
@@ -188,7 +188,6 @@ describe('FormStrip', () => {
       {
         key: 'evt-1',
         label: 'Duo Event',
-        record: '1-1',
         sets: [
           {
             key: 'set-1',
@@ -267,7 +266,7 @@ describe('FormStrip', () => {
 describe('FormStrip — single row, group names, caption (plan 39.1-33, R1)', () => {
   it('the row carries flex-nowrap, overflow-hidden and min-w-0, and never flex-wrap or a horizontal-scroll utility', () => {
     render(<FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />);
-    const row = screen.getByRole('group', { name: 'summary' });
+    const row = screen.getByRole('group', { name: /^summary / });
     expect(row.className).toMatch(/\bflex-nowrap\b/);
     expect(row.className).toMatch(/\boverflow-hidden\b/);
     expect(row.className).toMatch(/\bmin-w-0\b/);
@@ -296,12 +295,12 @@ describe('FormStrip — single row, group names, caption (plan 39.1-33, R1)', ()
     const eventEls = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(eventEls.map((el) => el.getAttribute('role'))).toEqual(['group', 'group']);
     expect(eventEls.map((el) => el.getAttribute('aria-label'))).toEqual([
-      'Genesis 10 · 2-1',
-      'Weekly #12 · 1-0',
+      'Genesis 10 · 2–1',
+      'Weekly #12 · 1–0',
     ]);
     expect(eventEls.map((el) => el.getAttribute('title'))).toEqual([
-      'Genesis 10 · 2-1',
-      'Weekly #12 · 1-0',
+      'Genesis 10 · 2–1',
+      'Weekly #12 · 1–0',
     ]);
   });
 
@@ -329,7 +328,7 @@ describe('FormStrip — single row, group names, caption (plan 39.1-33, R1)', ()
 
   it('a one-event fixture renders caption-first only — no form-strip-caption-last', () => {
     const events: FormStripEvent[] = [
-      { key: 'evt-1', label: 'Solo Event', record: '1-0', sets: [singleGameSet('g1', true)] },
+      { key: 'evt-1', label: 'Solo Event', sets: [singleGameSet('g1', true)] },
     ];
     const { container } = render(<FormStrip events={events} limit={30} labels={emptyLabels} />);
     expect(container.querySelector('[data-slot="form-strip-caption-first"]')).not.toBeNull();
@@ -351,8 +350,8 @@ describe('FormStrip — width fit via availableWidthPx (plan 39.1-33, R1)', () =
     const eventEls = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(eventEls).toHaveLength(2);
     expect(eventEls.map((el) => el.getAttribute('aria-label'))).toEqual([
-      'Event B · 2-2',
-      'Event C · 2-2',
+      'Event B · 2–2',
+      'Event C · 2–2',
     ]);
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[sets.length - 1]!.getAttribute('aria-label')).toBe('C4 set');
@@ -423,7 +422,6 @@ function recurringEventNameFixture(): FormStripEvent[] {
     {
       key: 'Ultimate Singles',
       label: 'Ultimate Singles',
-      record: '3-0',
       sets: [
         set('singles-2022', '2022-03-05T18:00:00Z'),
         set('singles-2026a', '2026-02-07T18:00:00Z'),
@@ -433,7 +431,6 @@ function recurringEventNameFixture(): FormStripEvent[] {
     {
       key: 'session:m2025',
       label: 'Session · Jun 1, 2025',
-      record: '1-0',
       sets: [set('manual-2025', '2025-06-01T18:00:00Z')],
     },
   ];
@@ -483,7 +480,6 @@ describe('FormStrip — chronological set order across events (WR-01)', () => {
     const padding: FormStripEvent = {
       key: 'Old Weekly',
       label: 'Old Weekly',
-      record: '17-0',
       sets: Array.from({ length: 17 }, (_, i) => ({
         ...singleGameSet(`weekly-${i}`, true),
         lastGameMs: Date.parse('2024-01-01T00:00:00Z') + i * 60_000,
@@ -498,6 +494,49 @@ describe('FormStrip — chronological set order across events (WR-01)', () => {
     expect(labels).toHaveLength(20);
     expect(labels).not.toContain('singles-2022 set');
     expect(labels[labels.length - 1]).toBe('singles-2026b set');
+  });
+});
+
+describe('FormStrip — accessible names state what is drawn (WR-03)', () => {
+  it('the row group name is the host formatter of the DRAWN vs total games (60 of 90 at limit 60)', () => {
+    render(<FormStrip events={ninetyGameFixture()} limit={60} labels={emptyLabels} />);
+    expect(screen.getByRole('group', { name: 'summary 60 of 90' })).toBeInTheDocument();
+  });
+
+  it('after the width fit the row group name counts only the fitted games (8 of 12 at 240px)', () => {
+    render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={240}
+      />,
+    );
+    expect(screen.getByRole('group', { name: 'summary 8 of 12' })).toBeInTheDocument();
+  });
+
+  it("a partially shown event's group name and title state the record of ONLY its drawn sets", () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={280}
+      />,
+    );
+    const oldest = container.querySelector('[data-slot="form-strip-event"]')!;
+    // Event A keeps only A4 (a loss): 0–1, never the whole event's 2–2.
+    expect(oldest.getAttribute('aria-label')).toBe('Event A · 0–1');
+    expect(oldest.getAttribute('title')).toBe('Event A · 0–1');
+  });
+
+  it('a limit trim that cuts into a set counts only the drawn games of that set', () => {
+    render(<FormStrip events={ninetyGameFixture()} limit={60} labels={emptyLabels} />);
+    const group = screen.getByRole('group', { name: /^Long Event · / });
+    const drawnWins = group.querySelectorAll('[data-slot="form-strip-tick-win"]').length;
+    const drawnLosses = group.querySelectorAll('[data-slot="form-strip-tick-loss"]').length;
+    expect(drawnWins + drawnLosses).toBe(60);
+    expect(group.getAttribute('aria-label')).toBe(`Long Event · ${drawnWins}–${drawnLosses}`);
   });
 });
 
@@ -615,7 +654,6 @@ describe('FormStrip — legend, narrow tick geometry, and centred single-game se
       {
         key: 'evt-1',
         label: 'Solo Event',
-        record: '1-0',
         sets: [
           { key: 'set-1', label: 'solo set', inRecentWindow: true, games: [game('g1', true)] },
         ],
@@ -634,7 +672,6 @@ describe('FormStrip — legend, narrow tick geometry, and centred single-game se
       {
         key: 'evt-1',
         label: 'Trio Event',
-        record: '2-1',
         sets: [
           {
             key: 'set-1',

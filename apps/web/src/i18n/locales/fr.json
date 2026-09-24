@@ -3402,7 +3402,8 @@
     },
     "strip": {
       "legend": "haut = victoire · bas = défaite · espace = nouveau set · étiquette = événement",
-      "aria": "Frise de forme, {{count}} matchs",
+      "aria_one": "Frise de forme, {{shown}} sur {{count}} match",
+      "aria_other": "Frise de forme, {{shown}} sur {{count}} matchs",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {

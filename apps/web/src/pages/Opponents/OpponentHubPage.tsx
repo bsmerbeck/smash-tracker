@@ -237,7 +237,6 @@ function buildOpponentFormStripEvents(
     return {
       key: group.key,
       label,
-      record: `${gamesWon}–${gamesLost}`,
       sets: [...group.sets].reverse().map((set) => ({
         key: set.key,
         label: t('analytics.strip.setAria', {
@@ -1005,7 +1004,8 @@ export function OpponentHubPage() {
               events={formStripEvents}
               limit={20}
               labels={{
-                summary: t('analytics.strip.aria', { count: trendSourceMatches.length }),
+                // WR-03: names the games actually DRAWN of the total (kit-computed).
+                summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
                 legend: t('analytics.strip.legend'),
                 // Plan 39.1-33 (R1): a formatter — only the kit knows how
                 // many games it actually drew after `limit` AND its own
