@@ -14,6 +14,7 @@ import {
   STRETCH_TOLERANCE_PX,
   SCROLL_BUDGET_2560X1440,
   SCROLL_BUDGET_1440X900,
+  DEFAULT_SCROLL_BUDGETS,
   EXTRA_ORACLE_VIEWPORTS,
   ORPHAN_HALF_MIN_RATIO,
   HEADER_SQUEEZE_MIN_SHARE,
@@ -23,6 +24,9 @@ import {
   ROW_COHESION_TOP_TOLERANCE_PX,
   TAG_MIN_ROW_SHARE,
   NARROW_VIEWPORT_MAX_WIDTH_PX,
+  MATCHUPS_SCROLL_BUDGET_390X844,
+  WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
+  FORM_STRIP_ROW_TOP_TOLERANCE_PX,
   evaluateStretch,
   evaluateScrollBudget,
   evaluateHorizontalOverflow,
@@ -37,6 +41,8 @@ import {
   evaluateRowCohesion,
   evaluateRowTagLegibility,
   evaluateNestedScrollers,
+  evaluateCardHeightCeilings,
+  evaluateFormStripFit,
 } from './guardLayoutCore.mjs';
 
 test('a card exactly at the 24px tolerance passes', () => {
@@ -105,6 +111,60 @@ test('a viewport with no declared scroll budget (390x844) is exempt', () => {
     viewportName: '390x844',
   });
   assert.equal(violations.length, 0);
+});
+
+// --- plan 39.1-33: DEFAULT_SCROLL_BUDGETS + the Matchups 390x844 opt-in ---
+
+test('DEFAULT_SCROLL_BUDGETS is exactly the pre-39.1-33 map', () => {
+  assert.deepEqual(DEFAULT_SCROLL_BUDGETS, { '2560x1440': 3, '1440x900': 5 });
+});
+
+test('scroll-budget: a merged 390x844 budget of 7.5, scrollHeight 11641 / innerHeight 844 -> one violation with budget 7.5', () => {
+  const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
+  const violations = evaluateScrollBudget(
+    { scrollHeight: 11641, innerHeight: 844, viewportName: '390x844' },
+    budgets,
+  );
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'scroll-budget');
+  assert.equal(violations[0].budget, 7.5);
+});
+
+test('scroll-budget: 6015 / 844 at the merged 390x844 budget passes', () => {
+  const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
+  const violations = evaluateScrollBudget(
+    { scrollHeight: 6015, innerHeight: 844, viewportName: '390x844' },
+    budgets,
+  );
+  assert.equal(violations.length, 0);
+});
+
+test('scroll-budget: exactly 7.5 viewport heights (6330 / 844) at the merged 390x844 budget passes', () => {
+  const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
+  const violations = evaluateScrollBudget(
+    { scrollHeight: 6330, innerHeight: 844, viewportName: '390x844' },
+    budgets,
+  );
+  assert.equal(violations.length, 0);
+});
+
+test('scroll-budget: 6331 / 844 (0.01 over 7.5) at the merged 390x844 budget fails', () => {
+  const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
+  const violations = evaluateScrollBudget(
+    { scrollHeight: 6331, innerHeight: 844, viewportName: '390x844' },
+    budgets,
+  );
+  assert.equal(violations.length, 1);
+});
+
+test('scroll-budget: the merged map still applies 5 at 1440x900 (4501 / 900 fails)', () => {
+  const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
+  const violations = evaluateScrollBudget(
+    { scrollHeight: 4501, innerHeight: 900, viewportName: '1440x900' },
+    budgets,
+  );
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].budget, 5);
 });
 
 test('a document whose scroll width exceeds its inner width fails horizontal overflow', () => {
@@ -702,5 +762,145 @@ test('evaluateFamilyPresence: an empty nested-scroll list fails non-vacuously', 
 
 test('evaluateFamilyPresence: a one-scroller nested-scroll list passes', () => {
   const violations = evaluateFamilyPresence('nested-scroll', [{ selectorPath: '#a' }]);
+  assert.equal(violations.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-33: the Matchups phone scroll budget (above), the Win Rate Trend
+// card ceiling (card-height-ceiling) and the single-row form-strip family
+// (form-strip-fit) + their family-presence non-vacuity cases.
+// ---------------------------------------------------------------------------
+
+test('the plan 39.1-33 family constants are exactly the documented values', () => {
+  assert.equal(MATCHUPS_SCROLL_BUDGET_390X844, 7.5);
+  assert.equal(WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS, 1);
+  assert.equal(FORM_STRIP_ROW_TOP_TOLERANCE_PX, 2);
+});
+
+// --- card-height-ceiling ---
+
+test('card-height-ceiling: a 1204px card against a 1 viewport-height ceiling at 844 innerHeight fails, carrying height and limitPx', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 1204, maxViewportHeights: 1 }],
+  });
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'card-height-ceiling');
+  assert.equal(violations[0].height, 1204);
+  assert.equal(violations[0].limitPx, 844);
+});
+
+test('card-height-ceiling: a 664px card passes', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 664, maxViewportHeights: 1 }],
+  });
+  assert.equal(violations.length, 0);
+});
+
+test('card-height-ceiling: exactly 844px (the limit) passes', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 844, maxViewportHeights: 1 }],
+  });
+  assert.equal(violations.length, 0);
+});
+
+test('card-height-ceiling: 845px (0.01 over the limit) fails', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 845, maxViewportHeights: 1 }],
+  });
+  assert.equal(violations.length, 1);
+});
+
+test('card-height-ceiling: two over-ceiling cards -> two violations', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [
+      { marker: '#a', selectorPath: '#a', height: 900, maxViewportHeights: 1 },
+      { marker: '#b', selectorPath: '#b', height: 1000, maxViewportHeights: 1 },
+    ],
+  });
+  assert.equal(violations.length, 2);
+});
+
+test('card-height-ceiling: a card with height null fails non-vacuously with card-height-ceiling-unmeasured naming its marker', () => {
+  const violations = evaluateCardHeightCeilings({
+    innerHeight: 844,
+    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: null, height: null, maxViewportHeights: 1 }],
+  });
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'card-height-ceiling-unmeasured');
+  assert.equal(violations[0].marker, '[data-slot="matchup-chart-body"]');
+});
+
+test('card-height-ceiling: an empty card list passes with no violations', () => {
+  const violations = evaluateCardHeightCeilings({ innerHeight: 844, cards: [] });
+  assert.equal(violations.length, 0);
+});
+
+// --- form-strip-fit ---
+
+function makeStrip(overrides = {}) {
+  return {
+    selectorPath: '#strip',
+    setTops: [100],
+    rowScrollWidth: 308,
+    rowClientWidth: 308,
+    ...overrides,
+  };
+}
+
+test('form-strip-fit: set tops [100, 100, 168] fail form-strip-wrapped', () => {
+  const violations = evaluateFormStripFit([makeStrip({ setTops: [100, 100, 168] })]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-wrapped').length, 1);
+});
+
+test('form-strip-fit: set tops [100, 100, 101.5] pass (within the 2px tolerance)', () => {
+  const violations = evaluateFormStripFit([makeStrip({ setTops: [100, 100, 101.5] })]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-wrapped').length, 0);
+});
+
+test('form-strip-fit: set tops [100, 100, 102.5] fail form-strip-wrapped (0.5 over tolerance)', () => {
+  const violations = evaluateFormStripFit([makeStrip({ setTops: [100, 100, 102.5] })]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-wrapped').length, 1);
+});
+
+test('form-strip-fit: a single set passes (nothing to compare)', () => {
+  const violations = evaluateFormStripFit([makeStrip({ setTops: [100] })]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-wrapped').length, 0);
+});
+
+test('form-strip-fit: rowScrollWidth 836 / rowClientWidth 308 fails form-strip-overflow', () => {
+  const violations = evaluateFormStripFit([
+    makeStrip({ setTops: [100], rowScrollWidth: 836, rowClientWidth: 308 }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-overflow').length, 1);
+});
+
+test('form-strip-fit: rowScrollWidth 309 / rowClientWidth 308 (1px boundary) passes', () => {
+  const violations = evaluateFormStripFit([
+    makeStrip({ setTops: [100], rowScrollWidth: 309, rowClientWidth: 308 }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-overflow').length, 0);
+});
+
+test('form-strip-fit: two wrapped strips -> two violations', () => {
+  const violations = evaluateFormStripFit([
+    makeStrip({ selectorPath: '#a', setTops: [100, 168] }),
+    makeStrip({ selectorPath: '#b', setTops: [100, 168] }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'form-strip-wrapped').length, 2);
+});
+
+test('evaluateFamilyPresence: an empty form-strip-fit list fails non-vacuously', () => {
+  const violations = evaluateFamilyPresence('form-strip-fit', []);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'form-strip-fit-unmeasured');
+});
+
+test('evaluateFamilyPresence: a one-strip form-strip-fit list passes', () => {
+  const violations = evaluateFamilyPresence('form-strip-fit', [{ selectorPath: '#a' }]);
   assert.equal(violations.length, 0);
 });

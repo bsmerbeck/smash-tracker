@@ -44,6 +44,11 @@ import {
   evaluateRowCohesion,
   evaluateRowTagLegibility,
   evaluateNestedScrollers,
+  evaluateCardHeightCeilings,
+  evaluateFormStripFit,
+  DEFAULT_SCROLL_BUDGETS,
+  MATCHUPS_SCROLL_BUDGET_390X844,
+  WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
   LAYOUT_ORACLE_VIEWPORTS,
   EXTRA_ORACLE_VIEWPORTS,
   NARROW_VIEWPORT_MAX_WIDTH_PX,
@@ -62,7 +67,12 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
   },
   { id: 'dashboard', loadedMarker: '[data-slot="dashboard-body"]' },
-  { id: 'fighter-analysis', loadedMarker: '[data-slot="fighter-hero-body"]' },
+  {
+    id: 'fighter-analysis',
+    loadedMarker: '[data-slot="fighter-hero-body"]',
+    // Plan 39.1-33: form-strip-fit only — no extra viewport, no scroll budget.
+    checks: ['form-strip-fit'],
+  },
   {
     id: 'matchups',
     loadedMarker: '[data-slot="matchup-chart-body"]',
@@ -76,17 +86,38 @@ export const LAYOUT_ORACLE_ROUTES = [
       'grid-balance',
       'picker-alignment',
       'row-cohesion',
+      // Plan 39.1-33: the single-row form-strip family.
+      'form-strip-fit',
     ],
     extraViewports: ['1024x768', '1280x800'],
     // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
     // wide (UI-SPEC §6.6 "below 640") — every other route's `narrowChecks` is
     // `undefined`, so `measureRouteAtViewport` requests none for them.
-    narrowChecks: ['row-tag-legibility', 'nested-scroll'],
+    // Plan 39.1-33 adds card-height-ceiling (the Win Rate Trend card, a
+    // phone-only ceiling).
+    narrowChecks: ['row-tag-legibility', 'nested-scroll', 'card-height-ceiling'],
+    // Plan 39.1-33: Matchups' own phone scroll budget, merged over
+    // DEFAULT_SCROLL_BUDGETS — see evaluateScrollBudget's doc comment.
+    scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
+    // Plan 39.1-33: the Win Rate Trend ChartCard is the closest
+    // [data-slot="card"] ancestor of the route's own loaded marker — no new
+    // hook needed.
+    cardHeightCeilings: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        maxViewportHeights: WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
+      },
+    ],
   },
   { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
   { id: 'trends', loadedMarker: '[data-slot="trends-hero-body"]' },
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
-  { id: 'opponent-hub', loadedMarker: '[data-slot="opponent-hub-body"]' },
+  {
+    id: 'opponent-hub',
+    loadedMarker: '[data-slot="opponent-hub-body"]',
+    // Plan 39.1-33: form-strip-fit only — no extra viewport, no scroll budget.
+    checks: ['form-strip-fit'],
+  },
   { id: 'stage-detail', loadedMarker: '[data-slot="stage-detail-body"]' },
 ];
 
@@ -122,7 +153,7 @@ function withHardTimeout(promise, ms, label, onTimeout) {
  * categories below are only collected — at real DOM/CSS-computation cost —
  * for a route that actually asked for them.
  */
-function collectPageMeasurements(checks) {
+function collectPageMeasurements(checks, ceilingMarkers = []) {
   const wantContentOverflow = checks.includes('content-overflow');
   const wantHeaderSqueeze = checks.includes('header-squeeze');
   const wantAxisTicks = checks.includes('axis-ticks');
@@ -131,6 +162,8 @@ function collectPageMeasurements(checks) {
   const wantRowCohesion = checks.includes('row-cohesion');
   const wantRowTagLegibility = checks.includes('row-tag-legibility');
   const wantNestedScroll = checks.includes('nested-scroll');
+  const wantCardHeightCeiling = checks.includes('card-height-ceiling');
+  const wantFormStripFit = checks.includes('form-strip-fit');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -461,6 +494,52 @@ function collectPageMeasurements(checks) {
     ? Array.from(document.querySelectorAll('[data-total-rows]'))
     : [];
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-33: card-height-ceiling + form-strip-fit, collected only for
+  // a requesting route's opted-in families.
+  // -------------------------------------------------------------------
+
+  const cardHeightCards = [];
+  if (wantCardHeightCeiling) {
+    for (const ceiling of ceilingMarkers) {
+      const markerEl = document.querySelector(ceiling.marker);
+      const cardEl = markerEl ? markerEl.closest('[data-slot="card"]') : null;
+      if (cardEl) {
+        const rect = cardEl.getBoundingClientRect();
+        cardHeightCards.push({
+          marker: ceiling.marker,
+          selectorPath: describeElement(cardEl),
+          height: rect.height,
+          maxViewportHeights: ceiling.maxViewportHeights,
+        });
+      } else {
+        cardHeightCards.push({
+          marker: ceiling.marker,
+          selectorPath: null,
+          height: null,
+          maxViewportHeights: ceiling.maxViewportHeights,
+        });
+      }
+    }
+  }
+
+  const formStrips = [];
+  if (wantFormStripFit) {
+    for (const rootEl of document.querySelectorAll('[data-slot="form-strip-root"]')) {
+      const rowEl = rootEl.querySelector(':scope > [role="group"]');
+      if (!rowEl) continue;
+      const setTops = Array.from(rootEl.querySelectorAll('[data-slot="form-strip-set"]')).map(
+        (setEl) => setEl.getBoundingClientRect().top,
+      );
+      formStrips.push({
+        selectorPath: describeElement(rowEl),
+        setTops,
+        rowScrollWidth: rowEl.scrollWidth,
+        rowClientWidth: rowEl.clientWidth,
+      });
+    }
+  }
+
   return {
     cards,
     truncationElements,
@@ -473,6 +552,8 @@ function collectPageMeasurements(checks) {
     rowTags,
     nestedScrollers,
     nestedScrollPresenceList: nestedScrollPresenceList.length,
+    cardHeightCards,
+    formStrips,
     scrollHeight: document.documentElement.scrollHeight,
     scrollWidth: document.documentElement.scrollWidth,
     innerHeight: window.innerHeight,
@@ -505,7 +586,12 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       ...(route.checks ?? []),
       ...(viewport.width <= NARROW_VIEWPORT_MAX_WIDTH_PX ? (route.narrowChecks ?? []) : []),
     ];
-    const measurements = await page.evaluate(collectPageMeasurements, checks);
+    // Plan 39.1-33: the route's own cardHeightCeilings markers, passed only
+    // when card-height-ceiling was actually requested.
+    const ceilingMarkers = checks.includes('card-height-ceiling')
+      ? (route.cardHeightCeilings ?? [])
+      : [];
+    const measurements = await page.evaluate(collectPageMeasurements, checks, ceilingMarkers);
 
     const violations = [
       ...evaluateStretch(measurements.cards),
@@ -513,7 +599,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         scrollHeight: measurements.scrollHeight,
         innerHeight: measurements.innerHeight,
         viewportName: viewport.name,
-      }),
+      }, { ...DEFAULT_SCROLL_BUDGETS, ...(route.scrollBudgets ?? {}) }),
       ...evaluateHorizontalOverflow({
         scrollWidth: measurements.scrollWidth,
         innerWidth: measurements.innerWidth,
@@ -564,6 +650,21 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         ),
       );
     }
+    // Plan 39.1-33: card-height-ceiling + form-strip-fit, same opt-in
+    // discipline (requested + presence check together).
+    if (checks.includes('card-height-ceiling')) {
+      violations.push(
+        ...evaluateCardHeightCeilings({
+          innerHeight: measurements.innerHeight,
+          cards: measurements.cardHeightCards,
+        }),
+      );
+      violations.push(...evaluateFamilyPresence('card-height-ceiling', measurements.cardHeightCards));
+    }
+    if (checks.includes('form-strip-fit')) {
+      violations.push(...evaluateFormStripFit(measurements.formStrips));
+      violations.push(...evaluateFamilyPresence('form-strip-fit', measurements.formStrips));
+    }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
     // output contract requires the measured maximum card stretch and the
@@ -575,7 +676,14 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     }, 0);
     const scrollRatio = measurements.scrollHeight / measurements.innerHeight;
 
-    return { unmeasured: false, violations, maxStretchPx, scrollRatio };
+    return {
+      unmeasured: false,
+      violations,
+      maxStretchPx,
+      scrollRatio,
+      cardHeightCards: measurements.cardHeightCards,
+      innerHeight: measurements.innerHeight,
+    };
   } finally {
     await page.close();
   }
@@ -733,6 +841,17 @@ async function main() {
             console.log(
               `MEASUREMENT route=${route.id} viewport=${viewport.name} maxStretchPx=${result.maxStretchPx.toFixed(1)} scrollRatio=${result.scrollRatio.toFixed(3)}`,
             );
+            // Plan 39.1-33: one CARD_HEIGHT line per measured ceiling marker,
+            // printed right after the MEASUREMENT line, regardless of
+            // pass/fail — mirrors the MEASUREMENT line's own always-print
+            // discipline.
+            for (const card of result.cardHeightCards ?? []) {
+              if (card.height == null) continue;
+              const limitPx = card.maxViewportHeights * result.innerHeight;
+              console.log(
+                `CARD_HEIGHT route=${route.id} viewport=${viewport.name} marker=${card.marker} height=${card.height.toFixed(1)} limitPx=${limitPx.toFixed(1)}`,
+              );
+            }
             for (const violation of result.violations) {
               console.log(
                 `VIOLATION route=${route.id} viewport=${viewport.name} type=${violation.type} selector=${violation.selectorPath ?? 'n/a'} detail=${JSON.stringify(violation)}`,

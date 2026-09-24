@@ -848,51 +848,117 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
 });
 
 /**
- * Plan 39.1-32 (item 13): the DOM bound (100-row first pass + "Show 50 more"
- * paging) holds identically for the stacked layout once the inner scroll
- * wrapper is gone — the cap was never coupled to the 500px box, it just
- * happened to render inside it. The last-page activation's focus move must
- * use `{ preventScroll: true }` on a phone: without the removed 500px box
- * that jump used to be contained inside it, so a plain `focus()` would
- * scroll the whole page back to the top of a long list.
+ * Plan 39.1-33 (R2, UIX-02, owner decision 2026-09-24: phone rows = 20): the
+ * stacked (phone) layout's DOM bound tightens from the shared
+ * FILTERED_MATCH_LIST_ROW_CAP/PAGE_SIZE (100/50) to a stricter phone-only
+ * first-pass cap and page size of 20 — the stacked layout flows in the page
+ * (plan 39.1-32 item 13 removed its inner scroller), so about two phone
+ * screens (20 rows of ~82px + 8px gap) is the bound, still well inside
+ * UI-SPEC §6.4's 100-per-pass ceiling. The table layout (640px and up) keeps
+ * its 100 + "Show 50 more" byte-unchanged. `STACK_FIRST_PASS`/`STACK_PAGE`
+ * are LOCAL literals (not imported) — the production component does not yet
+ * export `FILTERED_MATCH_LIST_STACK_ROW_CAP`/`FILTERED_MATCH_LIST_STACK_PAGE_SIZE`
+ * at RED time, and importing a not-yet-existing named export would fail the
+ * whole file at import instead of on an assertion (#3770 INVALID_RED).
  */
-describe('FilteredMatchList — stacked layout paging bound + last-page focus (plan 39.1-32, item 13)', () => {
-  it('stacked layout: 150 matches mount exactly 100 rows, data-total-rows is 150, and "Show 50 more" renders', () => {
+describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged (plan 39.1-33, R2)', () => {
+  // Mirrors the not-yet-exported FILTERED_MATCH_LIST_STACK_ROW_CAP / _PAGE_SIZE.
+  const STACK_FIRST_PASS = 20;
+  const STACK_PAGE = 20;
+
+  it('stacked layout: 150 matches (active fighterId axis) mount exactly 20 rows, data-total-rows is 150, the summary states 150 games, and "Show 20 more" renders with the right aria-controls', () => {
     const matches = makeManyMatches(150);
-    const { container } = renderList({ matches, axes: {}, layout: 'stack' });
+    const { container } = renderList({ matches, axes: { fighterId: mario.id }, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
     expect(stack).toHaveAttribute('data-total-rows', '150');
-    expect(
-      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/150 games/)).toBeInTheDocument();
+
+    const showMore = screen.getByRole('button', { name: showMoreName(STACK_PAGE) });
+    expect(showMore).toHaveAttribute('aria-controls', stack.id);
+
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
   });
 
-  it('stacked layout: 160 matches, the final "Show 50 more" activation moves focus to the list root with preventScroll, unmounts the control, and the progress line announces the full count', () => {
+  it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', () => {
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
-    const matches = makeManyMatches(160);
+    const matches = makeManyMatches(50);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
 
-    // First activation: 100 -> 150, control remains (10 rows left).
-    fireEvent.click(
-      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
-    );
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(150);
+    // First activation: 20 -> 40, control remains (10 rows left).
+    fireEvent.click(screen.getByRole('button', { name: showMoreName(STACK_PAGE) }));
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(40);
+    expect(screen.getByRole('button', { name: showMoreName(10) })).toBe(document.activeElement);
 
-    // Second (final) activation: 150 -> 160, exhausts the list.
+    // Second (final) activation: 40 -> 50, exhausts the list.
     focusSpy.mockClear();
     fireEvent.click(screen.getByRole('button', { name: showMoreName(10) }));
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(160);
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(50);
 
     expect(document.activeElement).toBe(stack);
     expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
     expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
     const progress = document.querySelector('[aria-live="polite"]');
-    expect(progress).toHaveTextContent(/160 .* 160/);
+    expect(progress).toHaveTextContent(/Showing 50 of 50 games/);
 
     focusSpy.mockRestore();
+  });
+
+  it('stacked layout: exactly 20 matches show no paging control and no progress line', () => {
+    const matches = makeManyMatches(20);
+    renderList({ matches, axes: {}, layout: 'stack' });
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+  });
+
+  it('stacked layout: 21 matches show "Show 1 more" (singular key) and the progress line reads "Showing 20 of 21 games"', () => {
+    const matches = makeManyMatches(21);
+    renderList({ matches, axes: {}, layout: 'stack' });
+    expect(screen.getByRole('button', { name: showMoreName(1) })).toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 21 games/);
+  });
+
+  it('table layout: 77 matches mount all 77 rows with no paging control (unchanged)', () => {
+    const matches = makeManyMatches(77);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(77 + 1);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+  });
+
+  it('rerendering the same 150 matches with the layout prop switched from table (after one "Show 50 more") to stack mounts exactly 20 rows — a layout change re-bounds', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(150);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const Wrapper = ({ layout }: { layout: 'table' | 'stack' }) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/matchups"
+                element={<FilteredMatchList matches={matches} axes={{}} layout={layout} />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { rerender, container } = render(<Wrapper layout="table" />);
+    await user.click(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
+
+    rerender(<Wrapper layout="stack" />);
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
   });
 });
 

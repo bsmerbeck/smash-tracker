@@ -18,6 +18,20 @@ export const STRETCH_TOLERANCE_PX = 24;
 export const SCROLL_BUDGET_2560X1440 = 3;
 export const SCROLL_BUDGET_1440X900 = 5;
 
+/**
+ * Plan 39.1-33: the default per-viewport scroll-budget map `evaluateScrollBudget`
+ * uses when a caller passes none — exported so a route can merge its OWN
+ * per-viewport budgets over these defaults (`{ ...DEFAULT_SCROLL_BUDGETS,
+ * ...route.scrollBudgets }`) instead of the runner silently exempting every
+ * viewport this map has no entry for (see `evaluateScrollBudget`'s doc
+ * comment — that silent exemption is exactly why the 390x844 regression this
+ * plan closes went unmeasured for plans 30-32).
+ */
+export const DEFAULT_SCROLL_BUDGETS = {
+  '2560x1440': SCROLL_BUDGET_2560X1440,
+  '1440x900': SCROLL_BUDGET_1440X900,
+};
+
 /** UI-SPEC §13.1's three named viewports, in the order the runner measures them. */
 export const LAYOUT_ORACLE_VIEWPORTS = [
   { name: '2560x1440', width: 2560, height: 1440 },
@@ -71,13 +85,19 @@ export function evaluateStretch(cards, tolerancePx = STRETCH_TOLERANCE_PX) {
 
 /**
  * UI-SPEC §6.3's scroll budget: `scrollHeight / innerHeight` must not exceed
- * 3 at 2560×1440 or 5 at 1440×900. The 390×844 viewport carries no scroll
- * budget (only the horizontal-overflow check applies there) — a viewport
- * name with no entry in `budgets` is silently exempt.
+ * 3 at 2560×1440 or 5 at 1440×900. A viewport name with no entry in `budgets`
+ * is silently exempt — UI-SPEC §6.3 deliberately sets no 390px budget, and
+ * plan 39.1-30/31/32's runner never passed a `budgets` argument, so Matchups'
+ * 390x844 (and its 1024x768/1280x800 extras) had NO enforced scroll budget:
+ * plan 32's final gate printed `MEASUREMENT route=matchups viewport=390x844
+ * ... scrollRatio=13.793` and nothing failed on it. Plan 39.1-33 closes this
+ * by letting a route declare its OWN per-viewport budgets, merged over
+ * `DEFAULT_SCROLL_BUDGETS` (see `MATCHUPS_SCROLL_BUDGET_390X844` below) —
+ * every other route/viewport combination stays exempt exactly as before.
  */
 export function evaluateScrollBudget(
   { scrollHeight, innerHeight, viewportName },
-  budgets = { '2560x1440': SCROLL_BUDGET_2560X1440, '1440x900': SCROLL_BUDGET_1440X900 },
+  budgets = DEFAULT_SCROLL_BUDGETS,
 ) {
   const budget = budgets[viewportName];
   if (budget === undefined) {
@@ -498,6 +518,92 @@ export function evaluateNestedScrollers(scrollers) {
         scrollHeight,
         clientHeight,
       });
+    }
+  }
+  return violations;
+}
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-33: the Matchups phone scroll budget (above), the Win Rate Trend
+// card ceiling and the single-row form-strip family. Both new evaluators
+// return a LIST of ALL offenders, same discipline as every family above.
+// ---------------------------------------------------------------------------
+
+/**
+ * Plan 39.1-33: a Matchups regression tripwire, not a design target —
+ * UI-SPEC §6.3's own budgets and every other route are unchanged. Derived
+ * from the measured projection of a single-row form strip + a 20-row phone
+ * results page (7.127 viewport heights, ~6015px) plus ~0.37 (~315px, ~3.5
+ * rows) of headroom: 5.611 at 9abcac76 and 6.063 after plan 31 both had the
+ * list confined to the (now-banned) 500px nested scroller; 13.793 at
+ * 494216ed with neither fix; 7.767 with only the form strip fixed; 13.153
+ * with only the results list bounded. 7.5 sits below every single-regression
+ * state and below a stacked cap drifting past ~23 rows.
+ */
+export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.5;
+
+/**
+ * Plan 39.1-33: one phone screen — a card taller than the viewport can never
+ * be seen whole. 1204px (1.427 viewport heights) on 494216ed fails by 360px;
+ * the projected single-row-strip card (~664px, ~0.787) passes with ~180px
+ * headroom.
+ */
+export const WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS = 1;
+
+/** Plan 39.1-33: the FormStrip row's own set-top spread tolerance, px. */
+export const FORM_STRIP_ROW_TOP_TOLERANCE_PX = 2;
+
+/**
+ * Plan 39.1-33: a card taller than `maxViewportHeights` viewport heights is a
+ * ceiling violation; a card whose marker never resolved to an ancestor
+ * `[data-slot="card"]` (height `null`) is `card-height-ceiling-unmeasured`
+ * rather than silently passing. Each `card` is
+ * `{ marker, selectorPath, height: number|null, maxViewportHeights }`.
+ */
+export function evaluateCardHeightCeilings({ innerHeight, cards }) {
+  const violations = [];
+  for (const card of cards) {
+    const { marker, selectorPath, height, maxViewportHeights } = card;
+    if (height == null) {
+      violations.push({ type: 'card-height-ceiling-unmeasured', marker });
+      continue;
+    }
+    const limitPx = maxViewportHeights * innerHeight;
+    if (height > limitPx) {
+      violations.push({
+        type: 'card-height-ceiling',
+        marker,
+        selectorPath,
+        height,
+        limitPx,
+        ratio: height / innerHeight,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §7.10 as narrowed by plan 39.1-33 (one row, most recent sets that
+ * fit): `form-strip-wrapped` when the row's own sets carry two or more
+ * distinct tops spread by more than `FORM_STRIP_ROW_TOP_TOLERANCE_PX`;
+ * `form-strip-overflow` when the row's own `scrollWidth` exceeds its
+ * `clientWidth` by more than 1px (a strip that clips or scrolls its newest
+ * ticks is not fitting). Each `strip` is
+ * `{ selectorPath, setTops: number[], rowScrollWidth, rowClientWidth }`.
+ */
+export function evaluateFormStripFit(strips) {
+  const violations = [];
+  for (const strip of strips) {
+    const { selectorPath, setTops, rowScrollWidth, rowClientWidth } = strip;
+    if (setTops.length >= 2) {
+      const spread = Math.max(...setTops) - Math.min(...setTops);
+      if (spread > FORM_STRIP_ROW_TOP_TOLERANCE_PX) {
+        violations.push({ type: 'form-strip-wrapped', selectorPath });
+      }
+    }
+    if (rowScrollWidth > rowClientWidth + 1) {
+      violations.push({ type: 'form-strip-overflow', selectorPath });
     }
   }
   return violations;
