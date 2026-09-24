@@ -342,6 +342,42 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     expect(captionFirst).toHaveAttribute('title', `Session · ${expectedDate}`);
   });
 
+  it("WR-01: a recurring start.gg event name at two tournaments is ordered by its sets' own games — the newest tournament's sets end the strip, not an older manual session", () => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const olderTournament = Array.from({ length: 4 }, (_, i) =>
+      makeMatch({
+        id: `a${i}`,
+        time: now - 300 * dayMs + i * 60_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Genesis',
+        opponent: 'old-rival',
+      }),
+    );
+    const manualSession = [
+      makeMatch({ id: 's1', time: now - 100 * dayMs, opponent: 'session-rival' }),
+      makeMatch({ id: 's2', time: now - 100 * dayMs + 60_000, opponent: 'session-rival' }),
+    ];
+    const newerTournament = Array.from({ length: 3 }, (_, i) =>
+      makeMatch({
+        id: `b${i}`,
+        time: now - 2 * dayMs + i * 60_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Evo',
+        opponent: 'newest-rival',
+      }),
+    );
+    const { container } = renderChart([...olderTournament, ...manualSession, ...newerTournament]);
+    const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
+    expect(sets[sets.length - 1]!.getAttribute('aria-label')).toMatch(/newest-rival/);
+    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveAttribute(
+      'title',
+      'Ultimate Singles',
+    );
+    const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
+    expect(groups).toHaveLength(3);
+  });
+
   it('a pairing of 35 games renders "30 of 35 games shown" — the host formatter wiring, jsdom applies only the 30-game limit (no measured width)', () => {
     const { container } = renderChart(recentSequence(35));
     const shownOfTotal = container.querySelector('[data-slot="form-strip-shown-of-total"]');

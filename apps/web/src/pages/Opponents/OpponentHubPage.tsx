@@ -245,6 +245,8 @@ function buildOpponentFormStripEvents(
           record: `${set.gamesWon}–${set.gamesLost}`,
         }),
         inRecentWindow: set.games.some((game) => inWindow(game.match)),
+        // WR-01: the kit orders sets by this across events before its trim/fit.
+        lastGameMs: Math.max(...set.games.map((game) => game.match.time)),
         games: set.games.map((game) => ({
           key: game.match.id,
           won: game.match.win,

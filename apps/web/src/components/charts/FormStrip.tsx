@@ -38,6 +38,16 @@ export interface FormStripSet {
   /** Whether this set falls inside the host's recent window. Sets outside it render at 32% opacity. */
   inRecentWindow: boolean;
   games: FormStripGame[];
+  /**
+   * WR-01 (39.1-REVIEW.md): the instant (ms) of this set's newest game. When
+   * EVERY set carries one, the kit orders sets chronologically across all
+   * events before the `limit` trim and the width fit (see
+   * `orderSetsChronologically`), so "the most recent sets that fit" really
+   * are the most recent — a host grouping by a recurring event name (every
+   * start.gg tournament's "Ultimate Singles") can no longer bury this
+   * year's sets inside a group that started years ago.
+   */
+  lastGameMs?: number;
 }
 
 export interface FormStripEvent {
@@ -153,6 +163,42 @@ function countGames(events: FormStripEvent[]): number {
     (sum, event) => sum + event.sets.reduce((setSum, set) => setSum + set.games.length, 0),
     0,
   );
+}
+
+/**
+ * WR-01 (39.1-REVIEW.md): the hosts group by event NAME and order groups by
+ * their FIRST game, so a recurring name (start.gg writes the same "Ultimate
+ * Singles" at every tournament) collects sets years apart into one group
+ * placed at its oldest game — and the trim/fit below, which walk the array
+ * from its end as "newest", then kept an older manual session over this
+ * year's sets. When every set carries `lastGameMs`, this flattens every
+ * (event, set) pair, stable-sorts them by that instant, and regroups
+ * CONSECUTIVE runs of the same event: a name that recurs around other
+ * groups becomes one display group per contiguous run (a later run's key
+ * gets a `#<n>` suffix so React keys stay unique). Without `lastGameMs` on
+ * every set the host's own order is kept unchanged.
+ */
+function orderSetsChronologically(events: FormStripEvent[]): FormStripEvent[] {
+  const pairs = events.flatMap((event) => event.sets.map((set) => ({ event, set })));
+  if (pairs.some(({ set }) => set.lastGameMs === undefined)) {
+    return events;
+  }
+  pairs.sort((a, b) => a.set.lastGameMs! - b.set.lastGameMs!);
+  const result: FormStripEvent[] = [];
+  const sourceKeys: string[] = [];
+  const runsByKey = new Map<string, number>();
+  for (const { event, set } of pairs) {
+    const last = result[result.length - 1];
+    if (last && sourceKeys[sourceKeys.length - 1] === event.key) {
+      last.sets.push(set);
+      continue;
+    }
+    const run = (runsByKey.get(event.key) ?? 0) + 1;
+    runsByKey.set(event.key, run);
+    result.push({ ...event, key: run === 1 ? event.key : `${event.key}#${run}`, sets: [set] });
+    sourceKeys.push(event.key);
+  }
+  return result;
 }
 
 /**
@@ -385,7 +431,7 @@ export function FormStrip({
     return <div data-slot="form-strip-empty">{labels.empty}</div>;
   }
 
-  const trimmedEvents = trimToLimit(events, limit);
+  const trimmedEvents = trimToLimit(orderSetsChronologically(events), limit);
   const legendParts = splitLegendParts(labels.legend);
 
   // D-04: an explicit `availableWidthPx` wins outright; otherwise the

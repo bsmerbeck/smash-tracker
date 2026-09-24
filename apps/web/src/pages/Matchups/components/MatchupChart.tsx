@@ -290,9 +290,11 @@ export function formStripEventKeyForMatch(match: Match): string {
  * `encounterGrouping.ts`'s `groupEncounters` already use for their own
  * manual remainders), one `FormStripEvent` per session, labelled
  * `analytics.strip.sessionLabel` with that session's first game's date.
- * Every event (named or session) is ordered by its own first game's time —
- * named events and sessions interleave correctly even though they're
- * resolved by two different code paths above.
+ * Every event (named or session) is ordered by its own first game's time.
+ * WR-01 (39.1-REVIEW.md): that group order alone is NOT chronological — a
+ * recurring event name (start.gg's "Ultimate Singles" at every tournament)
+ * spans years — so each set also carries `lastGameMs` and `FormStrip`
+ * reorders sets by it across groups before trimming and fitting.
  */
 function buildFormStripEvents(
   matches: Match[],
@@ -346,6 +348,8 @@ function buildFormStripEvents(
           record: `${wins}–${losses}`,
         }),
         inRecentWindow: setMatches.some(inWindow),
+        // WR-01: the kit orders sets by this across events before its trim/fit.
+        lastGameMs: Math.max(...setMatches.map((m) => m.time)),
         games: setMatches.map((match) => ({
           key: match.id,
           won: match.win,

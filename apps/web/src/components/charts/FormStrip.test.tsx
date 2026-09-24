@@ -406,6 +406,101 @@ describe('FormStrip — width fit via availableWidthPx (plan 39.1-33, R1)', () =
   });
 });
 
+/**
+ * WR-01 (39.1-REVIEW.md): start.gg writes the same event name ("Ultimate
+ * Singles") at every tournament, and the hosts group by name and order
+ * groups by their FIRST game — so this year's sets sit inside a group
+ * placed at a 2022 game, behind a 2025 manual session. Each set carries its
+ * newest game's instant (`lastGameMs`); the kit must order by it.
+ */
+function recurringEventNameFixture(): FormStripEvent[] {
+  const at = (iso: string) => Date.parse(iso);
+  const set = (key: string, iso: string): FormStripSet => ({
+    ...singleGameSet(key, true),
+    lastGameMs: at(iso),
+  });
+  return [
+    {
+      key: 'Ultimate Singles',
+      label: 'Ultimate Singles',
+      record: '3-0',
+      sets: [
+        set('singles-2022', '2022-03-05T18:00:00Z'),
+        set('singles-2026a', '2026-02-07T18:00:00Z'),
+        set('singles-2026b', '2026-02-07T19:00:00Z'),
+      ],
+    },
+    {
+      key: 'session:m2025',
+      label: 'Session · Jun 1, 2025',
+      record: '1-0',
+      sets: [set('manual-2025', '2025-06-01T18:00:00Z')],
+    },
+  ];
+}
+
+describe('FormStrip — chronological set order across events (WR-01)', () => {
+  it('keeps the two newest sets (both from the recurring event name), not the older manual session, when only two fit', () => {
+    const { container } = render(
+      <FormStrip
+        events={recurringEventNameFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={60}
+      />,
+    );
+    const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]')).map((el) =>
+      el.getAttribute('aria-label'),
+    );
+    expect(sets).toEqual(['singles-2026a set', 'singles-2026b set']);
+    expect(container.querySelector('[data-slot="form-strip-caption-first"]')).toHaveTextContent(
+      'Ultimate Singles',
+    );
+  });
+
+  it('with every set drawn, renders the reused name as two groups around the session, oldest first', () => {
+    const { container } = render(
+      <FormStrip events={recurringEventNameFixture()} limit={30} labels={emptyLabels} />,
+    );
+    const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
+    expect(groups.map((g) => g.querySelectorAll('[data-slot="form-strip-set"]').length)).toEqual([
+      1, 1, 2,
+    ]);
+    expect(container.querySelector('[data-slot="form-strip-caption-first"]')).toHaveTextContent(
+      'Ultimate Singles',
+    );
+    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveTextContent(
+      'Ultimate Singles',
+    );
+    const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
+    expect(sets[1]!.getAttribute('aria-label')).toBe('manual-2025 set');
+  });
+
+  it('the limit trim drops the OLDEST set by time, not the first array entry', () => {
+    const events = recurringEventNameFixture();
+    // Four games in, limit 20 would keep all — use the kit's smallest limit
+    // with a padded older event so exactly the oldest game falls out.
+    const padding: FormStripEvent = {
+      key: 'Old Weekly',
+      label: 'Old Weekly',
+      record: '17-0',
+      sets: Array.from({ length: 17 }, (_, i) => ({
+        ...singleGameSet(`weekly-${i}`, true),
+        lastGameMs: Date.parse('2024-01-01T00:00:00Z') + i * 60_000,
+      })),
+    };
+    const { container } = render(
+      <FormStrip events={[...events, padding]} limit={20} labels={emptyLabels} />,
+    );
+    const labels = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]')).map(
+      (el) => el.getAttribute('aria-label'),
+    );
+    expect(labels).toHaveLength(20);
+    expect(labels).not.toContain('singles-2022 set');
+    expect(labels[labels.length - 1]).toBe('singles-2026b set');
+  });
+});
+
 describe('FormStrip — hooks stay above the 0-games early return (guard)', () => {
   it('rerendering from 0 games to the two-event fixture and back to 0 renders empty -> 4 ticks -> empty, with no hook-order error', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
