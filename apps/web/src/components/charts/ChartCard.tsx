@@ -48,6 +48,14 @@ export interface ChartCardProps {
 const COMPACT_CARD_CLASSES = 'gap-4 py-4 shadow-none sm:py-5';
 const COMPACT_HEADER_CLASSES = 'px-4 sm:px-5';
 const COMPACT_CONTENT_CLASSES = 'px-4 sm:px-5';
+/**
+ * WR-08 (39.1-REVIEW.md): the toolbar slot owns its separation from the
+ * content under it — `CardContent` has no gap, so a toolbar line (e.g. the
+ * Counterpick advisor's assumption sentence) otherwise sat flush against
+ * the next paragraph. `mb-4` is the kit's existing 16px step (the compact
+ * density's header-to-content `gap-4` above) — no new spacing value.
+ */
+const TOOLBAR_CLASSES = 'mb-4 min-w-0';
 
 /**
  * The single chart frame every kit chart renders inside (CHRT-01). Every
@@ -81,7 +89,7 @@ export function ChartCard({
       </CardHeader>
       <CardContent className={isCompact ? COMPACT_CONTENT_CLASSES : undefined}>
         {toolbar && (
-          <div data-slot="chart-card-toolbar" className="min-w-0">
+          <div data-slot="chart-card-toolbar" className={TOOLBAR_CLASSES}>
             {toolbar}
           </div>
         )}

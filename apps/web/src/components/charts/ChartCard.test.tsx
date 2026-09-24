@@ -183,4 +183,25 @@ describe('ChartCard — toolbar slot (plan 39.1-30, item 1: header holds only ti
     );
     expect(container.querySelector('[data-slot="chart-card-toolbar"]')).not.toBeInTheDocument();
   });
+
+  it('WR-08: the toolbar slot carries its own bottom spacing (mb-4, the compact density 16px header-to-content step) in both densities and both branches, so the next block never sits flush under it', () => {
+    for (const density of ['default', 'compact'] as const) {
+      for (const abstained of [null, { gamesNeeded: 3 }]) {
+        const { container, unmount } = render(
+          <ChartCard
+            title="Counterpick"
+            density={density}
+            abstained={abstained}
+            toolbar={<p>assumption line</p>}
+          >
+            <p>threshold sentence</p>
+          </ChartCard>,
+        );
+        const toolbar = container.querySelector('[data-slot="chart-card-toolbar"]')!;
+        expect(toolbar.className.split(/\s+/)).toContain('mb-4');
+        expect(toolbar.className.split(/\s+/)).toContain('min-w-0');
+        unmount();
+      }
+    }
+  });
 });
