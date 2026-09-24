@@ -143,7 +143,10 @@ describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 
     const { container } = renderInsights(matches);
 
     const label = screen.getByText('Min matches per stage');
-    const select = screen.getByRole('combobox', { name: 'Minimum matches per stage' });
+    // WR-05 (39.1-REVIEW.md): the visible <label for> IS the accessible name
+    // (WCAG 2.5.3 label in name) — no aria-label overriding it.
+    const select = screen.getByRole('combobox', { name: 'Min matches per stage' });
+    expect(select).not.toHaveAttribute('aria-label');
     expect(label.tagName.toLowerCase()).toBe('label');
     expect(label.getAttribute('for')).toBe(select.id);
 

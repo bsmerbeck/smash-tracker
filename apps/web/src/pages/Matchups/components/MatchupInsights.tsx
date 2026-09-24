@@ -141,11 +141,8 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
                 {t('matchups.insights.minMatches')}
               </Label>
               <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-                <SelectTrigger
-                  id={minMatchesSelectId}
-                  className="w-[72px]"
-                  aria-label={t('matchups.insights.minMatchesAria')}
-                >
+                {/* WR-05: named by the visible <Label htmlFor> above — no aria-label override. */}
+                <SelectTrigger id={minMatchesSelectId} className="w-[72px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
