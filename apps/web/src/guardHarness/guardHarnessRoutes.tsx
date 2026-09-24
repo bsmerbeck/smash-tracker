@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { StretchedCardFixture } from '@/components/analytics/guardFixtures/StretchedCardFixture';
+import { PeriodAxisTicksFixture } from '@/components/analytics/guardFixtures/PeriodAxisTicksFixture';
 import { DashboardPage } from '@/pages/Dashboard/DashboardPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
@@ -88,6 +89,15 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/guard-harness/stretched-card-fixture',
     element: <StretchedCardFixture />,
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
+  },
+  {
+    // CR-01 (39.1-REVIEW.md): the period axis's real-Chrome failing series
+    // lengths, measured by guard:layout's `axis-ticks` family.
+    id: 'period-axis-ticks-fixture',
+    path: '/guard-harness/period-axis-ticks-fixture',
+    initialEntry: '/guard-harness/period-axis-ticks-fixture',
+    element: <PeriodAxisTicksFixture />,
+    loadedMarker: '[data-guard-loaded="period-axis-ticks-fixture"]',
   },
   {
     id: 'dashboard',

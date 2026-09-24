@@ -66,6 +66,15 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'stretched-card-fixture',
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
   },
+  {
+    // CR-01 (39.1-REVIEW.md): fixed-width period charts at the review's
+    // reproduced overlap lengths (month n=17 @262px, game n=10 @829px). The
+    // charts never depend on the viewport, so one viewport measures them.
+    id: 'period-axis-ticks-fixture',
+    loadedMarker: '[data-guard-loaded="period-axis-ticks-fixture"]',
+    checks: ['axis-ticks'],
+    viewports: ['1440x900'],
+  },
   { id: 'dashboard', loadedMarker: '[data-slot="dashboard-body"]' },
   {
     id: 'fighter-analysis',
@@ -821,8 +830,14 @@ async function main() {
           // `EXTRA_ORACLE_VIEWPORTS`) are measured IN ADDITION TO the three
           // standard viewports — every other route's viewport set is
           // unchanged (`extraViewports` is `undefined` for them).
+          // CR-01: a route's own `viewports` (names from
+          // `LAYOUT_ORACLE_VIEWPORTS`) restricts the standard set — only the
+          // fixed-width period-axis fixture uses it.
+          const standardViewports = route.viewports
+            ? LAYOUT_ORACLE_VIEWPORTS.filter((viewport) => route.viewports.includes(viewport.name))
+            : LAYOUT_ORACLE_VIEWPORTS;
           const routeViewports = [
-            ...LAYOUT_ORACLE_VIEWPORTS,
+            ...standardViewports,
             ...(route.extraViewports ?? []).map((key) => EXTRA_ORACLE_VIEWPORTS[key]),
           ];
           for (const viewport of routeViewports) {

@@ -186,11 +186,17 @@ describe('selectPeriodTicks', () => {
     expect(ticks.length).toBe(monthStarts.size);
   });
 
-  it('at a narrow plot width, no two kept ticks anchored label spans come within 4px of each other', () => {
+  it('at a narrow plot width, no two kept ticks anchored label spans come within the selection gap of each other', () => {
+    // WR-09 (39.1-REVIEW.md): the old body asserted only a count, so it
+    // passed for any output — including CR-01's overlaps. It now lays the
+    // returned ticks out with the RENDERER's anchor rule and asserts the gap.
     const points = weekPoints(60);
     const ticks = selectPeriodTicks(points, { plotWidthPx: 320, locale: 'en' });
     expect(ticks.length).toBeGreaterThan(0);
     expect(ticks.length).toBeLessThan(points.length);
+    expect(smallestRenderedGap(points, ticks, 320, 'en')).toBeGreaterThanOrEqual(
+      REQUIRED_TICK_GAP_PX,
+    );
   });
 
   it('always keeps the first grain-rule candidate', () => {
@@ -234,5 +240,189 @@ describe('selectPeriodTicks', () => {
 
   it('returns an empty array for an empty series', () => {
     expect(selectPeriodTicks([], { plotWidthPx: 640, locale: 'en' })).toEqual([]);
+  });
+});
+
+/**
+ * CR-01 (39.1-REVIEW.md): the selector must never return a tick set whose
+ * labels overlap once the axis renders them. The oracle below is written
+ * INDEPENDENTLY of `periodTicks.ts`'s own layout code, from the renderer's
+ * documented anchor rule (`TrendLine.tsx`'s period tick renderer): the
+ * first SELECTED tick is start-anchored, the last SELECTED tick is
+ * end-anchored, every other tick is centred; x is the point's position on
+ * a point scale spanning the plot width; the width is
+ * `estimateTickLabelWidthPx` of the rendered label text.
+ */
+const REQUIRED_TICK_GAP_PX = 8;
+
+function renderedSpans(
+  points: PeriodPoint[],
+  ticks: string[],
+  plotWidthPx: number,
+  locale: string,
+): { key: string; left: number; right: number }[] {
+  const n = points.length;
+  const indexByKey = new Map(points.map((point, i) => [point.key, i]));
+  return ticks.map((key, j) => {
+    const i = indexByKey.get(key)!;
+    const point = points[i]!;
+    const x = n > 1 ? (i * plotWidthPx) / (n - 1) : 0;
+    const w = estimateTickLabelWidthPx(formatPeriodTickLabel(point, locale));
+    const anchor = j === 0 ? 'start' : j === ticks.length - 1 ? 'end' : 'middle';
+    if (anchor === 'start') return { key, left: x, right: x + w };
+    if (anchor === 'end') return { key, left: x - w, right: x };
+    return { key, left: x - w / 2, right: x + w / 2 };
+  });
+}
+
+function smallestRenderedGap(
+  points: PeriodPoint[],
+  ticks: string[],
+  plotWidthPx: number,
+  locale: string,
+): number {
+  const spans = renderedSpans(points, ticks, plotWidthPx, locale);
+  let smallest = Number.POSITIVE_INFINITY;
+  for (let j = 1; j < spans.length; j += 1) {
+    smallest = Math.min(smallest, spans[j]!.left - spans[j - 1]!.right);
+  }
+  return smallest;
+}
+
+type SweepGrain =
+  | 'game'
+  | 'set'
+  | 'eventSession:session'
+  | 'eventSession:tournament'
+  | 'week'
+  | 'month'
+  | 'quarter'
+  | 'year';
+
+const SWEEP_GRAINS: SweepGrain[] = [
+  'game',
+  'set',
+  'eventSession:session',
+  'eventSession:tournament',
+  'week',
+  'month',
+  'quarter',
+  'year',
+];
+
+const TOURNAMENT_NAMES = [
+  'Genesis 10 Grand Finals',
+  'Locals',
+  'Smash Summit 15',
+  'The Big House 11',
+  'Weekly #212',
+  'Collision 2024',
+];
+
+/** A realistic, evenly spaced engine series for `grain` — the shape `periodSeries.ts` hands the chart. */
+function sweepSeries(grain: SweepGrain, count: number): PeriodPoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    let startMs: number;
+    let key: string;
+    let label: string;
+    let periodGrain: PeriodGrain;
+    switch (grain) {
+      case 'game':
+      case 'set':
+      case 'eventSession:session': {
+        startMs = Date.UTC(2023, 10, 1 + i, 12);
+        periodGrain = grain === 'eventSession:session' ? 'eventSession' : grain;
+        key =
+          grain === 'eventSession:session' ? `eventSession:session:${startMs}` : `${grain}:${i}`;
+        label = new Date(startMs).toISOString();
+        break;
+      }
+      case 'eventSession:tournament': {
+        startMs = Date.UTC(2023, 0, 1 + i * 7, 12);
+        periodGrain = 'eventSession';
+        label = TOURNAMENT_NAMES[i % TOURNAMENT_NAMES.length]!;
+        key = `eventSession:tournament:${label}:${startMs}`;
+        break;
+      }
+      case 'week':
+        startMs = Date.UTC(2024, 0, 1 + i * 7);
+        periodGrain = 'week';
+        key = `week:${i}`;
+        label = `2024-W${i}`;
+        break;
+      case 'month':
+        startMs = Date.UTC(2022, i, 1);
+        periodGrain = 'month';
+        key = `month:${i}`;
+        label = `m${i}`;
+        break;
+      case 'quarter':
+        startMs = Date.UTC(2012, i * 3, 1);
+        periodGrain = 'quarter';
+        key = `quarter:${i}`;
+        label = `q${i}`;
+        break;
+      case 'year':
+        startMs = Date.UTC(1990 + i, 0, 1);
+        periodGrain = 'year';
+        key = `year:${i}`;
+        label = String(1990 + i);
+        break;
+    }
+    return makePoint({ grain: periodGrain, key, label, startMs, endMs: startMs + 1 });
+  });
+}
+
+describe('selectPeriodTicks — rendered labels never overlap (CR-01)', () => {
+  it('RED case (review): month grain, n=17, plot 262px — the kept ticks render at least the selection gap apart', () => {
+    const points = sweepSeries('month', 17);
+    const ticks = selectPeriodTicks(points, { plotWidthPx: 262, locale: 'en' });
+    expect(smallestRenderedGap(points, ticks, 262, 'en')).toBeGreaterThanOrEqual(
+      REQUIRED_TICK_GAP_PX,
+    );
+  });
+
+  it('RED case (review): game grain, n=10, plot 829px — the kept ticks render at least the selection gap apart', () => {
+    const points = sweepSeries('game', 10);
+    const ticks = selectPeriodTicks(points, { plotWidthPx: 829, locale: 'en' });
+    expect(smallestRenderedGap(points, ticks, 829, 'en')).toBeGreaterThanOrEqual(
+      REQUIRED_TICK_GAP_PX,
+    );
+  });
+
+  it('property: every grain × n=2..60 × plot widths 240..1400px renders no overlapping pair', () => {
+    const failures: string[] = [];
+    for (const grain of SWEEP_GRAINS) {
+      for (let n = 2; n <= 60; n += 1) {
+        const points = sweepSeries(grain, n);
+        for (let plotWidthPx = 240; plotWidthPx <= 1400; plotWidthPx += 20) {
+          const ticks = selectPeriodTicks(points, { plotWidthPx, locale: 'en' });
+          const gap = smallestRenderedGap(points, ticks, plotWidthPx, 'en');
+          if (gap < REQUIRED_TICK_GAP_PX) {
+            failures.push(`${grain} n=${n} plot=${plotWidthPx} gap=${gap.toFixed(1)}`);
+          }
+        }
+      }
+    }
+    expect(failures.slice(0, 20)).toEqual([]);
+  });
+
+  it('property: the same holds for the wide-glyph (ja) and long-month (de) locales at phone and desktop widths', () => {
+    const failures: string[] = [];
+    for (const locale of ['ja', 'de']) {
+      for (const grain of SWEEP_GRAINS) {
+        for (let n = 2; n <= 60; n += 1) {
+          const points = sweepSeries(grain, n);
+          for (const plotWidthPx of [234, 262, 500, 800, 829, 1200]) {
+            const ticks = selectPeriodTicks(points, { plotWidthPx, locale });
+            const gap = smallestRenderedGap(points, ticks, plotWidthPx, locale);
+            if (gap < REQUIRED_TICK_GAP_PX) {
+              failures.push(`${locale} ${grain} n=${n} plot=${plotWidthPx} gap=${gap.toFixed(1)}`);
+            }
+          }
+        }
+      }
+    }
+    expect(failures.slice(0, 20)).toEqual([]);
   });
 });

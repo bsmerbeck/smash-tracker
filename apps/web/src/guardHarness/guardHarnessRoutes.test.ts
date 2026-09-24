@@ -11,8 +11,14 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly nine entries: the eight real analytics routes plus the stretch fixture route', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(9);
+  it('has exactly ten entries: the eight real analytics routes plus the stretch and period-axis fixture routes', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(10);
+  });
+
+  it('CR-01: carries the period-axis tick fixture route', () => {
+    expect(findGuardHarnessRoute('period-axis-ticks-fixture')?.loadedMarker).toBe(
+      '[data-guard-loaded="period-axis-ticks-fixture"]',
+    );
   });
 
   it('every entry carries a non-empty path, initialEntry, element and loadedMarker', () => {
