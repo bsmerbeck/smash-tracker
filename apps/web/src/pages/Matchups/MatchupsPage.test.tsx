@@ -1476,6 +1476,15 @@ describe('MatchupsPage', () => {
       }
     });
 
+    it('WR-06: the pairing detail block is a region named by the pairing heading (a named section, never aria-labelledby on a generic div)', async () => {
+      await renderLoadedPairingForPicker();
+      const detail = document.getElementById('matchup-detail')!;
+      expect(detail.tagName.toLowerCase()).toBe('section');
+      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]')!;
+      expect(detail.getAttribute('aria-labelledby')).toBe(heading.id);
+      expect(screen.getByRole('region', { name: heading.textContent ?? '' })).toBe(detail);
+    });
+
     it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same filter card, after the picker', async () => {
       await renderLoadedPairingForPicker();
       const picker = document.querySelector('[data-slot="matchup-pairing-picker"]');

@@ -588,7 +588,13 @@ export function MatchupsPage() {
               wrapper, and MatchupChart's own `data-slot="matchup-chart-body"`
               (which exists only once this branch is reached) doubles as this
               route's layout-oracle loaded marker. */}
-          <div
+          {/*
+            WR-06 (39.1-REVIEW.md): a <section>, not a div — ARIA prohibits
+            naming the generic role, so aria-labelledby on a div was never
+            exposed. A section becomes a named region exactly when the
+            pairing heading exists to name it.
+          */}
+          <section
             id={MATCHUP_DETAIL_ANCHOR_ID}
             aria-labelledby={effectiveFighter && effectiveOpponent ? pairingHeadingId : undefined}
             className={cn(
@@ -718,7 +724,7 @@ export function MatchupsPage() {
                 />
               </CardContent>
             </Card>
-          </div>
+          </section>
         </div>
       </PageShell>
     </MatchupsContext.Provider>
