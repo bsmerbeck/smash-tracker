@@ -122,7 +122,12 @@ export function MatchWinLossCard({
           ]}
         />
         <RecordBar wins={wins} losses={losses} />
-        <MiniStrip games={last30} ariaLabel={t('analytics.strip.aria', { count: last30.length })} />
+        {/* The same drawn-of-total name the FormStrip hosts use: `shown` is the games
+            the mini strip draws (the last ≤30), `count` the card's whole record. */}
+        <MiniStrip
+          games={last30}
+          ariaLabel={t('analytics.strip.aria', { count: total, shown: last30.length })}
+        />
       </div>
     </ChartCard>
   );
