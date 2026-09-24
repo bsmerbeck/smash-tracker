@@ -7,11 +7,15 @@ import { TrendLine, type TrendLinePeriodLabels } from '@/components/charts/Trend
  * series its fixture account happens to produce, which never lands on a
  * series length where the period axis's tick selection and its renderer
  * disagreed about label anchors — so the family passed while real accounts
- * smeared. This fixture pins the review's two reproduced lengths at their
- * exact plot widths (explicit `width` = plot width + the period chart's
- * 60px y-axis + 2×16px x padding, so the viewport never changes them):
+ * smeared. This fixture pins the review's two reproduced lengths with
+ * explicit chart widths (so the viewport never changes them) of plot width
+ * + 92px — the 60px y-axis plus 2×16px x padding a198f125's selector
+ * subtracted, so on that commit the selector evaluated exactly the review's
+ * cases (it reported tick-overlap gaps of −17.3px and −18.5px here):
  *   - month grain, 17 points, 262px plot (a ~390px phone card);
  *   - game grain, 10 points, 829px plot (a desktop card).
+ * Since CR-01 the selector also subtracts the chart's 2×5px outer margin,
+ * so it now models the true 252px/819px plot these widths draw.
  * Measured at one viewport only (`guardLayout.mjs`), because both charts
  * are fixed-width by construction.
  */

@@ -4,6 +4,9 @@ import {
   formatPeriodTickLabel,
   formatPeriodRowLabel,
   estimateTickLabelWidthPx,
+  layoutPeriodTicks,
+  MIN_TICK_LABEL_GAP_PX,
+  selectPeriodTickLayout,
   selectPeriodTicks,
 } from './periodTicks';
 
@@ -253,7 +256,7 @@ describe('selectPeriodTicks', () => {
  * a point scale spanning the plot width; the width is
  * `estimateTickLabelWidthPx` of the rendered label text.
  */
-const REQUIRED_TICK_GAP_PX = 8;
+const REQUIRED_TICK_GAP_PX = MIN_TICK_LABEL_GAP_PX;
 
 function renderedSpans(
   points: PeriodPoint[],
@@ -424,5 +427,47 @@ describe('selectPeriodTicks — rendered labels never overlap (CR-01)', () => {
       }
     }
     expect(failures.slice(0, 20)).toEqual([]);
+  });
+});
+
+describe('layoutPeriodTicks / selectPeriodTickLayout (CR-01: one anchor rule)', () => {
+  it('the selection gap stays at 8px (twice guard:layout MIN_TICK_GAP_PX)', () => {
+    expect(MIN_TICK_LABEL_GAP_PX).toBe(8);
+  });
+
+  it('agrees with the independent renderer-rule oracle for every multi-tick selection', () => {
+    for (const grain of SWEEP_GRAINS) {
+      for (const n of [8, 17, 33, 60]) {
+        const points = sweepSeries(grain, n);
+        for (const plotWidthPx of [262, 829]) {
+          const layout = selectPeriodTickLayout(points, { plotWidthPx, locale: 'en' });
+          if (layout.length < 2) continue;
+          const oracle = renderedSpans(
+            points,
+            layout.map((tick) => tick.key),
+            plotWidthPx,
+            'en',
+          );
+          expect(layout.map(({ key, left, right }) => ({ key, left, right }))).toEqual(oracle);
+        }
+      }
+    }
+  });
+
+  it('a lone tick anchors towards its nearer plot edge so it stays inside the plot', () => {
+    const points = sweepSeries('game', 12);
+    const plotWidthPx = 500;
+    const [first] = layoutPeriodTicks(points, [points[0]!.key], { plotWidthPx, locale: 'en' });
+    const [last] = layoutPeriodTicks(points, [points[11]!.key], { plotWidthPx, locale: 'en' });
+    expect(first!.anchor).toBe('start');
+    expect(last!.anchor).toBe('end');
+    expect(last!.right).toBe(plotWidthPx);
+  });
+
+  it('at a width too narrow for two labels, a fine grain keeps its most recent point and a coarse grain its first', () => {
+    const game = sweepSeries('game', 2);
+    expect(selectPeriodTicks(game, { plotWidthPx: 60, locale: 'en' })).toEqual([game[1]!.key]);
+    const month = sweepSeries('month', 13);
+    expect(selectPeriodTicks(month, { plotWidthPx: 60, locale: 'en' })).toEqual([month[0]!.key]);
   });
 });

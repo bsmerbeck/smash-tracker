@@ -8,7 +8,7 @@ import {
 } from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
-import { formatPeriodRowLabel } from './periodTicks';
+import { formatPeriodRowLabel, selectPeriodTickLayout } from './periodTicks';
 import type { PeriodPoint } from '@smash-tracker/shared';
 import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import fs from 'node:fs';
@@ -615,6 +615,50 @@ describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', (
     );
     expect(sorted[0]!.getAttribute('text-anchor')).toBe('start');
     expect(sorted[sorted.length - 1]!.getAttribute('text-anchor')).toBe('end');
+  });
+
+  it('CR-01: every rendered tick takes its text, x and text-anchor from selectPeriodTickLayout — never a second derivation', () => {
+    // game grain, n=10 at an 829px plot — one of the review's reproduced
+    // overlap cases (the old renderer re-derived anchors from the selected
+    // set and drew a middle tick into the appended final one).
+    const points = Array.from({ length: 10 }, (_, i) => {
+      const startMs = Date.UTC(2023, 10, 1 + i, 12);
+      return makePeriodPoint({
+        grain: 'game',
+        key: `game:${i}`,
+        label: new Date(startMs).toISOString(),
+        startMs,
+        endMs: startMs + 1,
+        rate: 0.5,
+      });
+    });
+    const chartMargin = 5;
+    const yAxisWidth = 60;
+    const xPadding = 16;
+    const plotWidthPx = 829;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={plotWidthPx + chartMargin * 2 + yAxisWidth + xPadding * 2}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const rendered = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'))
+      .map((el) => ({
+        x: Number(el.getAttribute('x')),
+        label: el.textContent ?? '',
+        anchor: el.getAttribute('text-anchor'),
+      }))
+      .sort((a, b) => a.x - b.x);
+    const layout = selectPeriodTickLayout(points, { plotWidthPx, locale: 'en' });
+    expect(rendered.map(({ label, anchor }) => ({ label, anchor }))).toEqual(
+      layout.map(({ label, anchor }) => ({ label, anchor })),
+    );
+    rendered.forEach((tick, j) => {
+      expect(tick.x).toBeCloseTo(layout[j]!.x + chartMargin + yAxisWidth + xPadding, 0);
+    });
   });
 
   it('every period circle carries data-slot "trend-period-dot" and every direct value label carries data-slot "trend-period-value-label"', () => {

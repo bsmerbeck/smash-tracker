@@ -25,7 +25,7 @@ import {
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
-import { formatPeriodTickLabel, formatPeriodRowLabel, selectPeriodTicks } from './periodTicks';
+import { formatPeriodRowLabel, selectPeriodTickLayout, type PeriodTickLayout } from './periodTicks';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -496,17 +496,17 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
  * (`recharts-cartesian-axis-tick-value`) in its props and must put it on its
  * own `text` — a static `tick={{ fill, fontSize }}` object (the event mode's
  * approach) cannot format per-tick text or vary the text-anchor by position,
- * both of which this axis needs (`formatPeriodTickLabel`, edge anchoring).
- * `firstKey`/`lastKey` are the SELECTED tick set's own first/last entries
- * (never the series' own first/last point) — with a narrow plot, the
- * selected set can be a strict subset that never includes the series' true
- * edges, and the anchor decision is about the rendered tick set, not the
- * data.
+ * both of which this axis needs.
+ *
+ * CR-01 (39.1-REVIEW.md): every tick's text AND `text-anchor` come verbatim
+ * from `selectPeriodTickLayout`'s output — the same layout the selector
+ * checked for collisions. This renderer never derives an anchor or a label
+ * of its own (it previously re-derived anchors from the selected set's
+ * first/last key, which disagreed with what the selector had assumed and
+ * overlapped labels).
  */
-function periodTickRenderer(points: PeriodPoint[], ticks: string[], locale: string) {
-  const byKey = new Map(points.map((point) => [point.key, point]));
-  const firstKey = ticks[0];
-  const lastKey = ticks[ticks.length - 1];
+function periodTickRenderer(layout: PeriodTickLayout[]) {
+  const byKey = new Map(layout.map((tick) => [tick.key, tick]));
   return function renderTick(tickProps: unknown): ReactElement {
     const { x, y, payload, className } = tickProps as {
       x?: number;
@@ -518,22 +518,21 @@ function periodTickRenderer(points: PeriodPoint[], ticks: string[], locale: stri
     if (typeof x !== 'number' || typeof y !== 'number' || typeof value !== 'string') {
       return <g />;
     }
-    const point = byKey.get(value);
-    if (!point) {
+    const tick = byKey.get(value);
+    if (!tick) {
       return <g />;
     }
-    const textAnchor = value === firstKey ? 'start' : value === lastKey ? 'end' : 'middle';
     return (
       <text
         x={x}
         y={y}
         dy="0.71em"
-        textAnchor={textAnchor}
+        textAnchor={tick.anchor}
         className={className}
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
       >
-        {formatPeriodTickLabel(point, locale)}
+        {tick.label}
       </text>
     );
   };
@@ -631,6 +630,20 @@ function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactEleme
 /** UI-SPEC §7.13: the Y-axis's own reserved width, and the X-axis's left/right edge padding (both px). */
 const PERIOD_Y_AXIS_WIDTH_PX = 60;
 const PERIOD_X_AXIS_PADDING_PX = 16;
+/**
+ * CR-01: the period chart's outer margin on every side — Recharts'
+ * `CartesianChart` default (5px), passed explicitly so the plot-width model
+ * `selectPeriodTickLayout` receives is exactly the width the axis draws
+ * across (it previously ignored the two 5px side margins, placing every
+ * modelled tick up to 10px right of where it rendered).
+ */
+const PERIOD_CHART_MARGIN_PX = 5;
+const PERIOD_CHART_MARGIN = {
+  top: PERIOD_CHART_MARGIN_PX,
+  right: PERIOD_CHART_MARGIN_PX,
+  bottom: PERIOD_CHART_MARGIN_PX,
+  left: PERIOD_CHART_MARGIN_PX,
+};
 
 /**
  * Used only to derive the initial plot-width estimate before
@@ -643,7 +656,7 @@ const PERIOD_TICKS_RESPONSIVE_FALLBACK_WIDTH = EVENT_TICKS_RESPONSIVE_FALLBACK_W
 
 /**
  * Period mode's entire render tree (VIZ-01, VIZ-03, UI-SPEC §7.13) — a real
- * component (not a plain function call), because `selectPeriodTicks` needs
+ * component (not a plain function call), because `selectPeriodTickLayout` needs
  * the plot's actual pixel width, and that width is only known instantly when
  * an explicit `width` prop is given (every test); at runtime (no explicit
  * width) it comes from `ResponsiveContainer`'s own `onResize` callback, which
@@ -681,13 +694,16 @@ function PeriodTrendChart({
   const containerWidth = typeof width === 'number' ? width : measuredWidth;
   const plotWidthPx = Math.max(
     0,
-    containerWidth - PERIOD_Y_AXIS_WIDTH_PX - PERIOD_X_AXIS_PADDING_PX * 2,
+    containerWidth -
+      PERIOD_CHART_MARGIN_PX * 2 -
+      PERIOD_Y_AXIS_WIDTH_PX -
+      PERIOD_X_AXIS_PADDING_PX * 2,
   );
 
   const data = buildPeriodChartData(points, props.contextRatePercents);
   const labeledIndices = findPeriodLabeledIndices(points);
   const [yMin, yMax] = computePeriodYDomain(points);
-  const ticks = selectPeriodTicks(points, { plotWidthPx, locale });
+  const tickLayout = selectPeriodTickLayout(points, { plotWidthPx, locale });
   const emphasisStartKey =
     props.emphasisStartMs !== undefined
       ? findEmphasisStartKey(points, props.emphasisStartMs)
@@ -699,6 +715,7 @@ function PeriodTrendChart({
     <LineChart
       {...(typeof width === 'number' ? { width, height } : {})}
       data={data}
+      margin={PERIOD_CHART_MARGIN}
       onClick={onClick}
       accessibilityLayer
     >
@@ -707,10 +724,10 @@ function PeriodTrendChart({
         dataKey="key"
         type="category"
         domain={points.map((point) => point.key)}
-        ticks={ticks}
+        ticks={tickLayout.map((tick) => tick.key)}
         interval={0}
         padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
-        tick={periodTickRenderer(points, ticks, locale)}
+        tick={periodTickRenderer(tickLayout)}
       />
       <YAxis
         domain={[yMin, yMax]}

@@ -32,8 +32,29 @@ function isFineGrain(grain: PeriodGrain): boolean {
   return grain === 'game' || grain === 'set' || grain === 'eventSession';
 }
 
+/**
+ * `Intl.DateTimeFormat` construction is far costlier than `format()`, and
+ * the tick selector formats every candidate on every render — one cached
+ * formatter per (kind, locale).
+ */
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function cachedFormatter(
+  kind: string,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const cacheKey = `${kind}|${locale}`;
+  let formatter = dateFormatterCache.get(cacheKey);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dateFormatterCache.set(cacheKey, formatter);
+  }
+  return formatter;
+}
+
 function formatShortDate(ms: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
+  return cachedFormatter('shortDate', locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -42,7 +63,7 @@ function formatShortDate(ms: number, locale: string): string {
 }
 
 function formatMonthYear(ms: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
+  return cachedFormatter('monthYear', locale, {
     year: 'numeric',
     month: 'short',
     timeZone: 'UTC',
@@ -50,7 +71,7 @@ function formatMonthYear(ms: number, locale: string): string {
 }
 
 function formatYearOnly(ms: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { year: 'numeric', timeZone: 'UTC' }).format(new Date(ms));
+  return cachedFormatter('year', locale, { year: 'numeric', timeZone: 'UTC' }).format(new Date(ms));
 }
 
 /**
@@ -166,12 +187,84 @@ function grainRuleCandidateKeys(points: PeriodPoint[]): string[] {
  * gives this estimate-vs-reality gap enough headroom that it no longer
  * crosses the oracle's own threshold in practice.
  */
-const MIN_TICK_LABEL_GAP_PX = 8;
+export const MIN_TICK_LABEL_GAP_PX = 8;
 
-interface KeptTick {
+export type PeriodTickAnchor = 'start' | 'middle' | 'end';
+
+/** One SELECTED tick exactly as the axis draws it: its text, x, SVG `text-anchor`, and estimated span. */
+export interface PeriodTickLayout {
   key: string;
+  label: string;
+  x: number;
+  anchor: PeriodTickAnchor;
   left: number;
   right: number;
+}
+
+/**
+ * CR-01 (39.1-REVIEW.md): THE period axis's anchor rule, used by both the
+ * selector below and `TrendLine.tsx`'s tick renderer (which reads each
+ * tick's `anchor` off `layoutPeriodTicks`' output — it never derives one
+ * itself). Anchors are decided by position among the SELECTED ticks, never
+ * among the grain rule's candidates: the first selected tick is
+ * start-anchored, the last end-anchored, every other centred. A lone tick
+ * anchors towards whichever plot edge it sits nearer, so it stays inside
+ * the plot.
+ */
+function periodTickAnchor(
+  index: number,
+  count: number,
+  x: number,
+  plotWidthPx: number,
+): PeriodTickAnchor {
+  if (count === 1) return x > plotWidthPx / 2 ? 'end' : 'start';
+  if (index === 0) return 'start';
+  if (index === count - 1) return 'end';
+  return 'middle';
+}
+
+function spanFor(x: number, w: number, anchor: PeriodTickAnchor): { left: number; right: number } {
+  if (anchor === 'start') return { left: x, right: x + w };
+  if (anchor === 'end') return { left: x - w, right: x };
+  return { left: x - w / 2, right: x + w / 2 };
+}
+
+/** Point-scale x of every key across the plot width — the same placement Recharts gives a padded category axis. */
+function xPositions(points: PeriodPoint[], plotWidthPx: number): Map<string, number> {
+  const n = points.length;
+  return new Map(points.map((point, i) => [point.key, n > 1 ? (i * plotWidthPx) / (n - 1) : 0]));
+}
+
+/**
+ * Lays a SELECTED tick set out exactly as the axis renders it — label text
+ * (`formatPeriodTickLabel`), x, anchor (`periodTickAnchor`) and estimated
+ * span (`estimateTickLabelWidthPx`). The single source of both the
+ * selector's final collision pass and the renderer's per-tick text/anchor.
+ */
+export function layoutPeriodTicks(
+  points: PeriodPoint[],
+  tickKeys: string[],
+  opts: { plotWidthPx: number; locale: string },
+): PeriodTickLayout[] {
+  const { plotWidthPx, locale } = opts;
+  const byKey = new Map(points.map((point) => [point.key, point]));
+  const xForKey = xPositions(points, plotWidthPx);
+  return tickKeys.flatMap((key, index) => {
+    const point = byKey.get(key);
+    const x = xForKey.get(key);
+    if (!point || x === undefined) return [];
+    const label = formatPeriodTickLabel(point, locale);
+    const anchor = periodTickAnchor(index, tickKeys.length, x, plotWidthPx);
+    return [{ key, label, x, anchor, ...spanFor(x, estimateTickLabelWidthPx(label), anchor) }];
+  });
+}
+
+/** Index of the first adjacent pair whose laid-out spans sit closer than the selection gap, or -1. */
+function firstCollision(layout: PeriodTickLayout[]): number {
+  for (let j = 0; j + 1 < layout.length; j += 1) {
+    if (layout[j + 1]!.left - layout[j]!.right < MIN_TICK_LABEL_GAP_PX) return j;
+  }
+  return -1;
 }
 
 /**
@@ -179,74 +272,76 @@ interface KeptTick {
  * legible at the plotted pixel width — a pure, deterministic pass over
  * `grainRuleCandidateKeys`' output (never Recharts' own measurement-driven
  * thinning, unreachable under jsdom per `eventTicks.ts`'s doc comment).
- * Each candidate's anchored label span (start-anchored for the first
- * candidate, end-anchored for the last, centred otherwise — mirroring how
- * the axis actually renders each tick's text) is kept only when it clears
- * `MIN_TICK_LABEL_GAP_PX` from the previously KEPT span; the first candidate
- * is always kept. For a fine grain (game/set/eventSession), the series'
- * FINAL point is always appended too — even when it wasn't a `% 4` candidate
- * — dropping the previously kept tick first if the two would collide, so the
- * most recent period is always legible. Week/month/quarter/year grains never
- * append a point outside the grain rule — their own last candidate already
- * lands on (or near) the series end.
+ *
+ * 1. Greedy thinning: each candidate is kept when its estimated span clears
+ *    `MIN_TICK_LABEL_GAP_PX` from the previously kept span; the first
+ *    candidate is always kept. For a fine grain (game/set/eventSession) the
+ *    series' FINAL point is then appended — even when it wasn't a `% 4`
+ *    candidate — so the most recent period is always legible. Week/month/
+ *    quarter/year grains never append a point outside the grain rule.
+ * 2. CR-01 settle pass: the greedy pass can only guess each tick's final
+ *    anchor (the last kept tick renders end-anchored, not centred; a
+ *    candidate estimated end-anchored renders centred once a final point is
+ *    appended after it). So the kept set is re-laid out with
+ *    `layoutPeriodTicks` — the renderer's own anchors — and, while any
+ *    adjacent pair collides, a MIDDLE tick of that pair is dropped (never
+ *    the first or last, which are the series' anchoring edges). If only two
+ *    ticks remain and still collide, a fine grain keeps the last (most
+ *    recent) and a coarse grain keeps the first. Dropping a middle tick
+ *    never changes any other tick's anchor, so each step only widens gaps
+ *    and the pass terminates.
  */
-export function selectPeriodTicks(
+export function selectPeriodTickLayout(
   points: PeriodPoint[],
   opts: { plotWidthPx: number; locale: string },
-): string[] {
+): PeriodTickLayout[] {
   if (points.length === 0) return [];
   const { plotWidthPx, locale } = opts;
 
   const candidateKeys = grainRuleCandidateKeys(points);
   const byKey = new Map(points.map((point) => [point.key, point]));
-  const n = points.length;
-  const xForKey = new Map(
-    points.map((point, i) => [point.key, n > 1 ? (i * plotWidthPx) / (n - 1) : 0]),
-  );
+  const xForKey = xPositions(points, plotWidthPx);
 
-  function labelSpanFor(
-    key: string,
-    isFirst: boolean,
-    isLast: boolean,
-  ): { left: number; right: number } {
-    const point = byKey.get(key)!;
-    const label = formatPeriodTickLabel(point, locale);
-    const w = estimateTickLabelWidthPx(label);
-    const x = xForKey.get(key)!;
-    if (isFirst) return { left: x, right: x + w };
-    if (isLast) return { left: x - w, right: x };
-    return { left: x - w / 2, right: x + w / 2 };
+  function estimatedSpan(key: string, anchor: PeriodTickAnchor): { left: number; right: number } {
+    const label = formatPeriodTickLabel(byKey.get(key)!, locale);
+    return spanFor(xForKey.get(key)!, estimateTickLabelWidthPx(label), anchor);
   }
 
-  const kept: KeptTick[] = [];
+  const kept: { key: string; right: number }[] = [];
   candidateKeys.forEach((key, i) => {
-    const isFirst = i === 0;
-    const isLast = i === candidateKeys.length - 1;
-    const span = labelSpanFor(key, isFirst, isLast);
-    if (kept.length === 0) {
-      kept.push({ key, ...span });
-      return;
-    }
-    const prev = kept[kept.length - 1]!;
-    if (span.left - prev.right >= MIN_TICK_LABEL_GAP_PX) {
-      kept.push({ key, ...span });
+    const anchor = periodTickAnchor(i, candidateKeys.length, xForKey.get(key)!, plotWidthPx);
+    const span = estimatedSpan(key, anchor);
+    const prev = kept[kept.length - 1];
+    if (!prev || span.left - prev.right >= MIN_TICK_LABEL_GAP_PX) {
+      kept.push({ key, right: span.right });
     }
   });
 
   const grain: PeriodGrain | undefined = points[0]?.grain;
-  const appendsFinalPoint = grain !== undefined && isFineGrain(grain);
-  if (appendsFinalPoint) {
-    const lastPoint = points[points.length - 1]!;
-    const lastKey = lastPoint.key;
-    if (kept.length === 0 || kept[kept.length - 1]!.key !== lastKey) {
-      const lastSpan = labelSpanFor(lastKey, false, true);
-      const prev = kept[kept.length - 1];
-      if (prev && lastSpan.left - prev.right < MIN_TICK_LABEL_GAP_PX) {
-        kept.pop();
-      }
-      kept.push({ key: lastKey, ...lastSpan });
-    }
+  const fine = grain !== undefined && isFineGrain(grain);
+  const keptKeys = kept.map((tick) => tick.key);
+  if (fine) {
+    const lastKey = points[points.length - 1]!.key;
+    if (keptKeys[keptKeys.length - 1] !== lastKey) keptKeys.push(lastKey);
   }
 
-  return kept.map((tick) => tick.key);
+  let layout = layoutPeriodTicks(points, keptKeys, opts);
+  for (let j = firstCollision(layout); j !== -1; j = firstCollision(layout)) {
+    if (keptKeys.length === 2) {
+      keptKeys.splice(fine ? 0 : 1, 1);
+    } else {
+      // j + 1 is the last tick only when j is a middle tick (length >= 3).
+      keptKeys.splice(j + 1 === keptKeys.length - 1 ? j : j + 1, 1);
+    }
+    layout = layoutPeriodTicks(points, keptKeys, opts);
+  }
+  return layout;
+}
+
+/** The selected tick keys alone — `selectPeriodTickLayout(...).map((tick) => tick.key)`. */
+export function selectPeriodTicks(
+  points: PeriodPoint[],
+  opts: { plotWidthPx: number; locale: string },
+): string[] {
+  return selectPeriodTickLayout(points, opts).map((tick) => tick.key);
 }
