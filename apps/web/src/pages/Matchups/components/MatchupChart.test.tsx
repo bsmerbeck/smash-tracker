@@ -319,23 +319,33 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(groups.length).toBe(3);
 
-    // `span.truncate[title]` is the event LABEL span (`FormStrip.tsx`'s
-    // `<span className="min-w-0 truncate" title={event.label}>`) — a bare
-    // `span[title]` would also match each game `Tick`'s own `title` (the
-    // per-game tooltip), which renders first in DOM order inside the group.
-    const labels = groups.map((g) =>
-      g.querySelector('span.truncate[title]')?.getAttribute('title'),
-    );
+    // Plan 39.1-33 (R1): each group's own aria-label is "<label> · <record>"
+    // — the per-group label/record line FormStrip.tsx used to render is
+    // gone, replaced by the row's own accessible name and the kit-level
+    // caption (asserted below).
+    const labels = groups.map((g) => g.getAttribute('aria-label'));
     const expectedDate = new Intl.DateTimeFormat('en', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     }).format(new Date(base));
 
-    expect(labels[0]).toBe(`Session · ${expectedDate}`);
-    expect(labels[1]).toBe('Genesis 9');
+    expect(labels[0]).toMatch(new RegExp(`^Session · ${expectedDate}`));
+    expect(labels[1]).toMatch(/^Genesis 9/);
     expect(labels[2]).toMatch(/^Session · /);
-    expect(labels.some((l) => l === 'Unknown')).toBe(false);
+    expect(labels.some((l) => l?.startsWith('Unknown'))).toBe(false);
+
+    // The caption's first (oldest shown) span carries the same event's
+    // label as its title — no width-fit prop is given in this render, so
+    // every group is shown and the oldest is session A.
+    const captionFirst = container.querySelector('[data-slot="form-strip-caption-first"]');
+    expect(captionFirst).toHaveAttribute('title', `Session · ${expectedDate}`);
+  });
+
+  it('a pairing of 35 games renders "30 of 35 games shown" — the host formatter wiring, jsdom applies only the 30-game limit (no measured width)', () => {
+    const { container } = renderChart(recentSequence(35));
+    const shownOfTotal = container.querySelector('[data-slot="form-strip-shown-of-total"]');
+    expect(shownOfTotal).toHaveTextContent('30 of 35 games shown');
   });
 });
 
