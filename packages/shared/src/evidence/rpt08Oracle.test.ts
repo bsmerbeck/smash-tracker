@@ -17,7 +17,9 @@ import {
   vodEvidenceId,
 } from './snapshot.js';
 import { legacyCitationOnlyVerdict } from './legacyCitationRule.js';
-import { ADVERSARIAL_FIXTURES } from './adversarialFixtures.js';
+import { ADVERSARIAL_FAMILIES, ADVERSARIAL_FIXTURES } from './adversarialFixtures.js';
+import { CONFIDENCE_TIER_BOUNDS, confidenceTierFor } from './policy.js';
+import { emptyWorkspace, oneGameWorkspace, twoGameWorkspace } from '../testUtils/index.js';
 
 /**
  * RPT-08 / D-09 (phase 39 plan 01, wave 1): this suite's green-ness IS the
@@ -237,5 +239,139 @@ describe('orderSnapshotOpponents contract (review C2-M10)', () => {
     // test exists to prove, or the assertion below would pass vacuously.
     expect(codeUnitOrder).not.toEqual(localeOrder);
     expect(orderSnapshotOpponents(tags)).toEqual(codeUnitOrder);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 2: the full adversarial corpus's coverage/integrity gates.
+// ---------------------------------------------------------------------------
+
+describe('adversarial fixture corpus coverage (Task 2)', () => {
+  it('every declared family has at least one fixture (anti-vacuous — a family added to the type but never populated fails)', () => {
+    const populatedFamilies = new Set(ADVERSARIAL_FIXTURES.map((fixture) => fixture.family));
+    for (const family of ADVERSARIAL_FAMILIES) {
+      expect(populatedFamilies.has(family)).toBe(true);
+    }
+  });
+
+  it('every fixture carries at least one rubric rule id', () => {
+    for (const fixture of ADVERSARIAL_FIXTURES) {
+      expect(fixture.rubricRuleIds.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("C2-B2: every row key is reproduced by rebuilding it from that row's own predicate and subject, and row count equals distinct (predicate, subject) pairs (per fixture)", () => {
+    for (const fixture of ADVERSARIAL_FIXTURES) {
+      const rows = fixture.snapshot.rows;
+      const opponentTags = Object.values(rows)
+        .map((row) => row.subject.opponentTag)
+        .filter((tag): tag is string => tag !== null);
+      const opponentOrder = orderSnapshotOpponents(opponentTags);
+      const distinctPairKeys = new Set<string>();
+
+      for (const [storedKey, row] of Object.entries(rows)) {
+        const rebuiltKey = evidenceIdFor({
+          predicate: row.predicate,
+          subject: row.subject,
+          opponentOrder,
+        });
+        expect(rebuiltKey).toBe(storedKey);
+        distinctPairKeys.add(`${row.predicate}::${JSON.stringify(row.subject)}`);
+      }
+
+      expect(distinctPairKeys.size).toBe(Object.keys(rows).length);
+    }
+  });
+
+  it('cold-start fixtures derive their digest count from the EXISTING sparse-workspace builders, not a re-declared literal', () => {
+    expect(findFixture('cold-start-empty-snapshot').snapshot.matchIdDigest.count).toBe(
+      emptyWorkspace().length,
+    );
+    expect(findFixture('cold-start-one-game').snapshot.matchIdDigest.count).toBe(
+      oneGameWorkspace().length,
+    );
+    expect(findFixture('cold-start-two-game').snapshot.matchIdDigest.count).toBe(
+      twoGameWorkspace().length,
+    );
+  });
+
+  it('tier-boundary fixtures carry tiers computed by confidenceTierFor and map to abstain/low/low/medium/medium/high', () => {
+    const boundaryGames = [
+      CONFIDENCE_TIER_BOUNDS.low - 1,
+      CONFIDENCE_TIER_BOUNDS.low,
+      CONFIDENCE_TIER_BOUNDS.medium - 1,
+      CONFIDENCE_TIER_BOUNDS.medium,
+      CONFIDENCE_TIER_BOUNDS.high - 1,
+      CONFIDENCE_TIER_BOUNDS.high,
+    ];
+    const expectedTiers = [null, 'low', 'low', 'medium', 'medium', 'high'] as const;
+
+    boundaryGames.forEach((games, index) => {
+      const fixture = findFixture(`tier-boundary-${games}-games`);
+      const row = Object.values(fixture.snapshot.rows)[0]!;
+      expect(confidenceTierFor(games)).toBe(expectedTiers[index]);
+      expect(row.sample.confidenceTier).toBe(expectedTiers[index]);
+    });
+  });
+
+  it('C2-H3: ordinary_prose carries at least four sentences with a Unicode decimal digit, and at least one digit run absent from every licensed claim value', () => {
+    const fixture = findFixture('ordinary-prose-negative-corpus');
+    const prose = (fixture.sections ?? []).map((section) => section.prose).join(' ');
+    const sentences = prose.split(/(?<=[.!?])\s+/);
+    const digitBearingSentences = sentences.filter((sentence) => /\p{Nd}/u.test(sentence));
+    expect(digitBearingSentences.length).toBeGreaterThanOrEqual(4);
+
+    const licensedNumbers = new Set<number>();
+    for (const claim of fixture.output.claims) {
+      const value = claim.assertedValue;
+      if (value.kind === 'record') {
+        licensedNumbers.add(value.wins);
+        licensedNumbers.add(value.losses);
+        licensedNumbers.add(value.games);
+      } else if (value.kind === 'rate') {
+        licensedNumbers.add(value.numerator);
+        licensedNumbers.add(value.denominator);
+      } else if (value.kind === 'count') {
+        licensedNumbers.add(value.count);
+      }
+    }
+
+    const digitRuns = Array.from(prose.matchAll(/\d+/g)).map((match) => Number(match[0]));
+    expect(digitRuns.some((digitRun) => !licensedNumbers.has(digitRun))).toBe(true);
+  });
+
+  it('C2-H1: the all_null_subject family carries a recent_form row and a cohort_disclosure row whose four subject axes are all null', () => {
+    const fixture = findFixture('all-null-subject');
+    const rows = Object.values(fixture.snapshot.rows);
+    const allNull = (subject: ClaimSubject): boolean =>
+      subject.myFighterId === null &&
+      subject.opponentFighterId === null &&
+      subject.stageId === null &&
+      subject.opponentTag === null;
+
+    const recentFormRow = rows.find((row) => row.predicate === 'recent_form');
+    const cohortRow = rows.find((row) => row.predicate === 'cohort_disclosure');
+    expect(recentFormRow).toBeDefined();
+    expect(cohortRow).toBeDefined();
+    expect(allNull(recentFormRow!.subject)).toBe(true);
+    expect(allNull(cohortRow!.subject)).toBe(true);
+  });
+
+  it('C2-M6: prose_entity contains one fixture whose stage row stored name differs from StageList canonical spelling, recorded as accepted', () => {
+    const fixture = findFixture('prose-entity-stage-name-mismatch');
+    expect(fixture.family).toBe('prose_entity');
+    expect(fixture.expected.validatorVerdict).toBe('accepted');
+    const prose = (fixture.sections ?? []).map((section) => section.prose).join(' ');
+    // "Battle Field" (this fixture's stand-in stored name) must differ from
+    // StageList's canonical spelling for stage id 1 ("Battlefield").
+    expect(prose).toContain('Battle Field');
+    expect(prose).not.toContain('on Battlefield');
+  });
+
+  it('no fixture file contains a real account tag or a production push key (spot-check: no known real player tags)', () => {
+    const serialized = JSON.stringify(ADVERSARIAL_FIXTURES);
+    for (const forbiddenTag of ['sparg0', 'MkLeo', 'IzAw', 'hbox']) {
+      expect(serialized.toLowerCase()).not.toContain(forbiddenTag.toLowerCase());
+    }
   });
 });
