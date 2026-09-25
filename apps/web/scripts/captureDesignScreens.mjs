@@ -230,6 +230,27 @@ function collectMetrics(floorGames) {
   };
 }
 
+/** Resolves once scrollHeight and every svg's width hold still across three 250ms samples (bounded). */
+async function waitForStableLayout(page) {
+  const sample = () =>
+    page.evaluate(() =>
+      JSON.stringify([
+        document.documentElement.scrollHeight,
+        ...[...document.querySelectorAll('svg')].map((svg) =>
+          Math.round(svg.getBoundingClientRect().width),
+        ),
+      ]),
+    );
+  let previous = await sample();
+  let stable = 0;
+  for (let i = 0; i < 40 && stable < 2; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const next = await sample();
+    stable = next === previous ? stable + 1 : 0;
+    previous = next;
+  }
+}
+
 async function captureRoute({ browser, baseUrl, route, width, scale, shell, scaleDir }) {
   const page = await browser.newPage();
   const errors = [];
@@ -248,13 +269,24 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
     }
     await page.waitForNetworkIdle({ idleTime: 300, timeout: WAIT_TIMEOUT_MS }).catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+    // Metrics are read at the real viewport, BEFORE the resize below.
+    const metrics = await page.evaluate(collectMetrics, FLOOR_GAMES);
+    // A fullPage screenshot resizes the viewport mid-capture, and responsive
+    // charts can re-measure to a transient width inside the shot (seen once
+    // on the Trends career timeline). Pre-size the viewport to the page's
+    // full height, wait until the layout is stable, then capture.
+    await page.setViewport({
+      width,
+      height: Math.max(VIEWPORT_HEIGHTS[width], metrics.scrollHeight),
+      deviceScaleFactor: 1,
+    });
+    await waitForStableLayout(page);
     const name = `live-${route.id}-${width}.png`;
     const file = path.join(scaleDir, name);
     await page.screenshot({ path: file, fullPage: true });
     if (fs.statSync(file).size < MIN_PNG_BYTES) {
       throw new Error(`${name} is under ${MIN_PNG_BYTES} bytes`);
     }
-    const metrics = await page.evaluate(collectMetrics, FLOOR_GAMES);
     return { route: route.id, width, scale, shell, png: name, errors, ...metrics };
   } finally {
     await page.close().catch(() => {});
