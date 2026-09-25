@@ -700,6 +700,14 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
     expect(monthTable!.querySelector('caption')?.textContent).toBe('Win rate and games by month');
   });
 
+  it("plan 39.1-35 fidelity: the twin toggle is sketch 002's neutral bordered .btn, never brand-red link ink", () => {
+    render(<CareerTimeline timeline={TIMELINE} labels={LABELS} width={1000} />);
+    const toggle = screen.getByRole('button', { name: 'View as table' });
+    expect(toggle.getAttribute('data-variant')).toBe('outline');
+    expect(toggle.className).not.toMatch(/\btext-primary\b/);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('table twin: the year x month table runs newest year first, 12 months + a year total, "<rate> · <n>" or "—", stacked per row below 640px', () => {
     const { container } = render(
       <CareerTimeline

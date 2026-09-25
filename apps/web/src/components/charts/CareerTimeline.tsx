@@ -933,11 +933,12 @@ function TableTwin({
   const rows = yearRows(monthRecords);
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
+      {/* Sketch 002's `.btn`: a neutral bordered button — never brand-red link ink (plan 39.1-35 fidelity). */}
       <Button
         type="button"
-        variant="link"
+        variant="outline"
         size="sm"
-        className="px-0"
+        className="mt-3 font-normal"
         data-slot="career-timeline-table-toggle"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
