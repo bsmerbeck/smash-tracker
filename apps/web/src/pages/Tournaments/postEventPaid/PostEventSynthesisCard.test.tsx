@@ -17,6 +17,7 @@ import {
   USAGE_CLAIM,
   H2H_CLAIM,
 } from '@/test/claimReportFixtures';
+import { CLAIMS_ERA_PLAN_WITH_ACTIONS } from '@/test/actionFixtures';
 import { PostEventSynthesisCard } from './PostEventSynthesisCard';
 
 const navigate = vi.fn();
@@ -716,5 +717,56 @@ describe('PostEventSynthesisCard — honest failure badge (post-plan fix 39-10)'
     expect(screen.getByText(CHARGE_UNKNOWN)).toBeInTheDocument();
     expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
     expectNoRefundWording();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39-11 (RPT-09 / D-12, review C3-M2): the PAID recommended-actions block
+// renders ONCE inside the expanded plan view, after the last focus area /
+// claim section — claims-era plans only.
+// ---------------------------------------------------------------------------
+describe('PostEventSynthesisCard — recommended actions (plan 39-11)', () => {
+  const succeeded = {
+    data: {
+      job: {
+        jobId: 'job-1',
+        status: 'succeeded' as const,
+        updatedAt: 1,
+        resultRef: 'plan-1',
+      },
+    },
+  };
+
+  it('renders the paid block once in the expanded plan, after the last claim section, with three rows and one door each', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: CLAIMS_ERA_PLAN_WITH_ACTIONS } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    expect(container.querySelector('[data-recommended-actions]')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    const blocks = container.querySelectorAll('[data-recommended-actions="paid"]');
+    expect(blocks).toHaveLength(1);
+    const rows = blocks[0]!.querySelectorAll<HTMLElement>('[data-action-row]');
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.querySelectorAll('a')).toHaveLength(1);
+    }
+    const lastSection = container.querySelector('[data-plan-claim-section="watchFor"]')!;
+    expect(
+      lastSection.compareDocumentPosition(blocks[0]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('a legacy plan (no claims/sections) renders no recommended-actions block', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: makePlan() } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(container.querySelector('[data-recommended-actions]')).toBeNull();
   });
 });

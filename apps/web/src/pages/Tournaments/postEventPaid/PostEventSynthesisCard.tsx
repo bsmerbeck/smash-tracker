@@ -24,6 +24,7 @@ import {
 import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
 import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
 import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
+import { PaidRecommendedActionsCard } from '@/components/claims/PaidRecommendedActionsCard';
 import { resolveClaimSection, type ResolvedClaimSection } from '@/components/claims/claimSection';
 import { usePostEventCheckoutReturn } from './usePostEventCheckoutReturn';
 
@@ -334,6 +335,15 @@ export function PostEventSynthesisCard({
                       </div>
                     );
                   })}
+                {/* Plan 39-11 (RPT-09 / D-12): the plan's recommended actions,
+                    once, after the last focus area / claim section —
+                    claims-era plans only. */}
+                {planData.plan.sections != null && (
+                  <PaidRecommendedActionsCard
+                    actions={planData.plan.actions}
+                    claims={planData.plan.claims}
+                  />
+                )}
                 {/* Plan 39-10 (D-07 / D-20): once each, after the last
                     focus area / claim section, from the stored counts. */}
                 <DroppedClaimsNote count={planData.plan.droppedClaimCount} />

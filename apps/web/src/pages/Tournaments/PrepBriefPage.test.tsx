@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -82,12 +84,17 @@ const listMatches = vi.fn();
 const listAliases = vi.fn();
 const listOpponents = vi.fn();
 const listOpponentNotes = vi.fn();
+// Plan 39-11 (C2-M8): `useFighters()` feeds the recommended-actions producer.
+const getFighters = vi.fn(async () => ({ primary: [] as number[], secondary: [] as number[] }));
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
   return {
     ...actual,
     api: {
+      users: {
+        getFighters: () => getFighters(),
+      },
       tournaments: {
         list: (...args: unknown[]) => listTournaments(...args),
       },
@@ -881,5 +888,146 @@ describe('PrepBriefPage — admin-imported entry (prep-bypass closure)', () => {
     expect(await screen.findByTestId('prep-imported-blocked')).toBeInTheDocument();
     expect(activateMutateSpy).not.toHaveBeenCalled();
     expect(reopenMutateSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39-11 (RPT-09 / D-12, review C1-H8): the FREE recommended-actions card
+// in both branches. The anti-empty gate: on a history-bearing fixture the
+// card must draw THREE rows, each with one door — the empty sentence can
+// never satisfy these assertions.
+// ---------------------------------------------------------------------------
+describe('recommended actions (plan 39-11)', () => {
+  const EMPTY_SENTENCE =
+    'Not enough data yet to recommend a specific action — log a few more games.';
+
+  /** Mario vs "rival": 1–5 against Donkey Kong on Battlefield, 1–3 against Link on Big Battlefield; two lost games carry VOD notes. */
+  function rivalHistory(): Match[] {
+    const vod = [{ id: 't1', seconds: 42, note: '' }] as Match['vodTimestamps'];
+    const bigBattlefield = { id: 2, name: 'Big Battlefield' };
+    const base = Date.UTC(2020, 5, 1);
+    const specs: Array<Partial<Match> & Pick<Match, 'win'>> = [
+      { win: true },
+      { win: false, vodTimestamps: vod },
+      { win: false },
+      { win: false },
+      { win: false },
+      { win: false, vodTimestamps: vod },
+      { win: true, opponent_id: 3, map: bigBattlefield },
+      { win: false, opponent_id: 3, map: bigBattlefield },
+      { win: false, opponent_id: 3, map: bigBattlefield },
+      { win: false, opponent_id: 3, map: bigBattlefield },
+    ];
+    return specs.map((spec, index) =>
+      makeMatch({ id: `m${index}`, time: base + index * 60_000, opponent: 'rival', ...spec }),
+    );
+  }
+
+  function actionRows(): HTMLElement[] {
+    const card = document.querySelector('[data-recommended-actions="free"]');
+    expect(card).not.toBeNull();
+    return Array.from(card!.querySelectorAll<HTMLElement>('[data-action-row]'));
+  }
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    listTournaments.mockResolvedValue([makeEntry()]);
+    listMatches.mockResolvedValue(rivalHistory());
+    listAliases.mockResolvedValue({});
+    listOpponents.mockResolvedValue(['rival']);
+    listOpponentNotes.mockResolvedValue({});
+    mockUseActivatePrepBrief.mockReturnValue({
+      mutate: activateMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useActivatePrepBrief>);
+    mockUseReopenPrepBrief.mockReturnValue({
+      mutate: reopenMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useReopenPrepBrief>);
+  });
+
+  it('prep branch: THREE non-empty action rows with one door each, after the checklist card, including a matchup_practice row', async () => {
+    mockBriefStatus({ activated: true, likelyOpponents: { rival: true } });
+    renderPage();
+
+    const checklist = await screen.findByText('Prep checklist');
+    await screen.findByText('Practice Mario vs Donkey Kong');
+    const rows = actionRows();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('link')).toHaveLength(1);
+    }
+    expect(rows.map((row) => row.dataset.actionKind)).toContain('matchup_practice');
+    expect(screen.queryByText(EMPTY_SENTENCE)).not.toBeInTheDocument();
+    const card = document.querySelector('[data-recommended-actions="free"]')!;
+    expect(checklist.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelector('[data-recommended-actions="paid"]')).toBeNull();
+  });
+
+  it('review branch: THREE non-empty action rows after the grounding card and before the collapsed prep section', async () => {
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      likelyOpponents: { rival: true },
+    });
+    renderPage();
+
+    await screen.findByText('Post-event review');
+    await screen.findByText('Practice Mario vs Donkey Kong');
+    const rows = actionRows();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('link')).toHaveLength(1);
+    }
+    const card = document.querySelector('[data-recommended-actions="free"]')!;
+    const grounding = screen.getByText('Your annotations');
+    const collapsedTrigger = screen.getByText('Your original prep brief');
+    expect(grounding.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      card.compareDocumentPosition(collapsedTrigger) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('a door lands on the evidence behind the action (the matchup page with both character axes)', async () => {
+    mockBriefStatus({ activated: true, likelyOpponents: { rival: true } });
+    renderPage();
+
+    const title = await screen.findByText('Practice Mario vs Donkey Kong');
+    const row = title.closest<HTMLElement>('[data-action-row]')!;
+    const href = within(row).getByRole('link').getAttribute('href')!;
+    const url = new URL(href, 'https://x.test');
+    expect(url.pathname).toBe('/matchups');
+    expect(url.searchParams.get('fighter')).toBe('1');
+    expect(url.searchParams.get('vs')).toBe('2');
+  });
+
+  it('a cold start (no matches) renders the one empty sentence — reachable, just never the only state', async () => {
+    listMatches.mockResolvedValue([]);
+    mockBriefStatus({ activated: true, likelyOpponents: { rival: true } });
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    expect(await screen.findByText(EMPTY_SENTENCE)).toBeInTheDocument();
+    expect(actionRows()).toHaveLength(0);
+  });
+
+  it('reads the caller’s fighters through the existing useFighters hook (C2-M8)', async () => {
+    mockBriefStatus({ activated: true, likelyOpponents: { rival: true } });
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    expect(getFighters).toHaveBeenCalled();
+  });
+
+  it('source: the page imports the FREE card module and never the paid one', () => {
+    const source = readFileSync(resolve(__dirname, 'PrepBriefPage.tsx'), 'utf-8');
+    expect(source).toMatch(
+      /import \{ RecommendedActionsCard \} from '@\/components\/claims\/RecommendedActionsCard';/,
+    );
+    expect(source).not.toMatch(/PaidRecommendedActionsCard/);
+    expect(source).toMatch(/useFighters\(\)/);
+    expect(source).toMatch(/buildPrepBriefActions\(/);
   });
 });

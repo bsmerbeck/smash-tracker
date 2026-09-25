@@ -10,6 +10,7 @@ import { ClaimAtomLine } from '@/components/claims/ClaimAtomLine';
 import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
 import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
 import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
+import { PaidRecommendedActionsCard } from '@/components/claims/PaidRecommendedActionsCard';
 import {
   isClaimsEraReport,
   resolveClaimSection,
@@ -295,6 +296,13 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* Plan 39-11 (RPT-09 / D-12): the model's chosen recommended actions,
+              after the claim sections and before the confidence caption —
+              claims-era records only (a legacy record has no action slots). */}
+          {claimsEra && (
+            <PaidRecommendedActionsCard actions={report.actions} claims={report.claims} />
           )}
 
           {hasConfidenceNotes && (

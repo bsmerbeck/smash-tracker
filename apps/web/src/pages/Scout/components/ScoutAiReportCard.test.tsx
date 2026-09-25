@@ -10,6 +10,7 @@ import {
   STAGE_CLAIM,
   USAGE_CLAIM,
 } from '@/test/claimReportFixtures';
+import { CLAIMS_ERA_RECORD_WITH_ACTIONS } from '@/test/actionFixtures';
 import { PrepPaidReportsCard } from '@/pages/Tournaments/prepPaid/PrepPaidReportsCard';
 import { ScoutAiReportCard } from './ScoutAiReportCard';
 
@@ -467,5 +468,64 @@ describe('ScoutAiReportCard — dropped-claims and withheld-prose footer (plan 3
     );
     await user.click(screen.getByRole('button', { name: 'View report' }));
     expect(await screen.findAllByText(WITHHELD_ONE)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39-11 (RPT-09 / D-12, review C3-M2): the PAID recommended-actions block
+// mounts inside this card after the claim sections and before the
+// confidence-notes caption — claims-era records only.
+// ---------------------------------------------------------------------------
+describe('ScoutAiReportCard — recommended actions (plan 39-11)', () => {
+  function renderInRouter(record: ScoutReportRecord) {
+    return render(
+      <MemoryRouter initialEntries={['/scout']}>
+        <ScoutAiReportCard record={record} />
+      </MemoryRouter>,
+    );
+  }
+
+  it('mounts the paid block with the model’s three action rows, each with one door', () => {
+    const { container } = renderInRouter(CLAIMS_ERA_RECORD_WITH_ACTIONS);
+    const blocks = container.querySelectorAll('[data-recommended-actions="paid"]');
+    expect(blocks).toHaveLength(1);
+    const rows = blocks[0]!.querySelectorAll<HTMLElement>('[data-action-row]');
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(within(row).getAllByRole('link')).toHaveLength(1);
+    }
+    expect(container.querySelector('[data-recommended-actions="free"]')).toBeNull();
+  });
+
+  it('sits after the claim sections and before the confidence-notes caption', () => {
+    const record: ScoutReportRecord = {
+      ...CLAIMS_ERA_RECORD_WITH_ACTIONS,
+      report: { ...CLAIMS_ERA_RECORD_WITH_ACTIONS.report, confidenceNotes: 'A light sample.' },
+    };
+    const { container } = renderInRouter(record);
+    const block = container.querySelector('[data-recommended-actions="paid"]')!;
+    const watchFor = within(container.querySelector('.print\\:hidden') as HTMLElement).getByText(
+      'Watch for',
+    );
+    const notes = within(container.querySelector('.print\\:hidden') as HTMLElement).getByText(
+      'A light sample.',
+    );
+    expect(watchFor.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(block.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('a claims-era record with no chosen slots renders the one empty sentence', () => {
+    const { container } = renderInRouter(CLAIMS_ERA_RECORD);
+    const block = container.querySelector('[data-recommended-actions="paid"]')!;
+    expect(block).toHaveTextContent(
+      'Not enough data yet to recommend a specific action — log a few more games.',
+    );
+    expect(block.querySelectorAll('[data-action-row]')).toHaveLength(0);
+  });
+
+  it('a legacy record renders no recommended-actions block at all', () => {
+    const { container } = renderInRouter(RECORD);
+    expect(container.querySelector('[data-recommended-actions]')).toBeNull();
+    expect(screen.queryByText('Recommended actions')).not.toBeInTheDocument();
   });
 });

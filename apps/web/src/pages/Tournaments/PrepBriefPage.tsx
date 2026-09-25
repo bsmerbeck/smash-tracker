@@ -11,9 +11,12 @@ import { useMatches } from '@/hooks/useMatches';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
+import { useFighters } from '@/hooks/useFighters';
 import { applyOpponentAliases } from '@/hooks/useFilteredMatches';
 import { usePrepBrief, useActivatePrepBrief, useReopenPrepBrief } from '@/hooks/usePrepBrief';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
+import { buildPrepBriefActions } from '@/lib/prepBriefClaims';
+import { RecommendedActionsCard } from '@/components/claims/RecommendedActionsCard';
 import { TournamentHeader } from './components/TournamentHeader';
 import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { LikelyOpponentsCard } from './prep/LikelyOpponentsCard';
@@ -98,6 +101,10 @@ export function PrepBriefPage() {
   const { data: aliasMap } = useOpponentAliases();
   const { data: canonicalOpponents = [] } = useOpponents();
   const { data: opponentNotes } = useOpponentNotes();
+  // Plan 39-11 (RPT-09, review C2-M8): the caller's declared fighters feed
+  // the recommended-actions producer's candidate set. An EXISTING hook on an
+  // EXISTING query key — no new route, no new query key.
+  const { data: fighters } = useFighters();
 
   const briefQuery = usePrepBrief(entryKey);
   const activateBrief = useActivatePrepBrief(entryKey ?? '');
@@ -133,6 +140,28 @@ export function PrepBriefPage() {
   const matches = useMemo(
     () => applyOpponentAliases(allMatches, aliasMap ?? {}),
     [allMatches, aliasMap],
+  );
+
+  // Plan 39-11 (RPT-09 / D-12, review C1-H8): the free brief's recommended
+  // actions — the shared engine's top three, derived from the data this page
+  // already holds (`buildPrepBriefActions` is pure; it resolves opponent
+  // identity itself, so it takes the stored matches and the alias map). One
+  // mount-time provenance timestamp, the page-level pattern plan 36-02 set.
+  const [actionsRefreshedAt] = useState(() => Date.now());
+  const likelyOpponentTags = useMemo(
+    () => Object.keys(briefQuery.data?.brief?.likelyOpponents ?? {}),
+    [briefQuery.data],
+  );
+  const prepActions = useMemo(
+    () =>
+      buildPrepBriefActions({
+        matches: allMatches,
+        aliasMap: aliasMap ?? {},
+        likelyOpponentTags,
+        myFighters: { primary: fighters?.primary ?? [], secondary: fighters?.secondary ?? [] },
+        refreshedAt: actionsRefreshedAt,
+      }),
+    [allMatches, aliasMap, likelyOpponentTags, fighters, actionsRefreshedAt],
   );
 
   // WR-04: keyed by entryKey itself (not a bare boolean) so the guard is
@@ -296,6 +325,7 @@ export function PrepBriefPage() {
             />
           )}
           <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
+          <RecommendedActionsCard actions={prepActions.actions} claims={prepActions.claims} />
         </>
       )}
       {mode === 'review' && (
@@ -304,6 +334,7 @@ export function PrepBriefPage() {
           <ResultsContextCard synced={reviewResults.synced} manual={reviewResults.manual} />
           <ReviewChecklistCard entryKey={entryKey!} reviewChecklist={reviewChecklist} />
           <ReviewGroundingCard eventMatches={eventMatches} />
+          <RecommendedActionsCard actions={prepActions.actions} claims={prepActions.claims} />
           {/*
            * RPT-04's exact strict-true rule, reused verbatim (owner
            * invariant 6 / REV-03): `showPaidReports` is the SAME
