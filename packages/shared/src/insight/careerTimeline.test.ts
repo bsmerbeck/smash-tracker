@@ -548,3 +548,26 @@ describe('buildCareerTimeline (Task 2) — the strip ladders', () => {
     expect(timeline.strips!.narrow.cells.length).toBeLessThanOrEqual(36);
   });
 });
+
+describe('buildCareerTimeline — the rate step follows the unrounded delta (fidelity fix vs sketch 002-C)', () => {
+  it('a 2.99-pt month steps 1 (below the 3-pt edge) although its one-decimal deltaPoints reads 3', () => {
+    const month = (m: number, wins: number, losses: number) =>
+      Array.from({ length: wins + losses }, (_, i) =>
+        game(`r${m}-${i}`, Date.UTC(2024, m, 2) + i * HOUR, i < wins),
+      );
+    // Overall 157-157 (baseline exactly 50%): Jan 62-55 (+2.991 pts), Feb 55-62 (-2.991 pts).
+    const matches = [
+      ...month(0, 62, 55),
+      ...month(1, 55, 62),
+      ...[2, 3, 4, 5].flatMap((m) => month(m, 10, 10)),
+    ];
+    const timeline = timelineOf(matches);
+    expect(timeline.baseline.rate).toBe(0.5);
+    const jan = timeline.strips!.wide.cells.find((c) => c.key === 'month:2024-01')!;
+    const feb = timeline.strips!.wide.cells.find((c) => c.key === 'month:2024-02')!;
+    expect(jan.deltaPoints).toBe(3);
+    expect(jan.rateStep).toBe(1);
+    expect(feb.deltaPoints).toBe(-3);
+    expect(feb.rateStep).toBe(-1);
+  });
+});

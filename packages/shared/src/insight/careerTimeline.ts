@@ -361,8 +361,13 @@ function stripCellsForGrain(
   const cells: CareerStripCell[] = raw.map((cell) => {
     const total = cell.wins + cell.losses;
     const rate = total > 0 ? cell.wins / total : 0;
+    // The step reads the UNROUNDED delta (UI-SPEC §12.1's edges are 1 / 3 / 6 /
+    // 10 pts, sketch 002-C's `stepFor` steps the raw difference): a 2.97-pt
+    // month is below the 3-pt edge even though its one-decimal `deltaPoints`
+    // reads 3.0.
+    const rawDeltaPoints = (rate - baselineRate) * 100;
     const deltaPoints = Math.round((rate - baselineRate) * 1000) / 10;
-    const { step, reason } = careerRateStep({ deltaPoints, total });
+    const { step, reason } = careerRateStep({ deltaPoints: rawDeltaPoints, total });
     return {
       key: cell.key,
       label: cell.label,
