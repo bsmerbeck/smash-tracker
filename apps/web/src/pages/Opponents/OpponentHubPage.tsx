@@ -39,6 +39,8 @@ import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { PageShell } from '@/components/analytics/PageShell';
+import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { cn } from '@/lib/utils';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
@@ -764,24 +766,29 @@ export function OpponentHubPage() {
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
   // skeleton echoing the loaded hub's own section shapes (header, matrix,
-  // trend, the 2-up what-they-play/stages pair, and the encounters/history
-  // list below). This page is not on the PageGrid/GridCell contract, so the
-  // skeleton mirrors the same raw section stack rather than asserting an
-  // exact `data-span` match.
+  // the 8 + 4 trend | what-they-play/stages row, and the encounters/history
+  // list below). Plan 39.1-37: the hub is on PageShell/PageGrid now, so the
+  // skeleton's trend row carries the SAME spans as the loaded row.
   if (isLoading) {
     return (
-      <div role="status" aria-busy="true" className="flex flex-col gap-6">
-        <span className="sr-only">{t('opponents.loading')}</span>
-        <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('opponents.loading')}</span>
+          <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
+          <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+          <PageGrid>
+            <GridCell span={8}>
+              <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+            </GridCell>
+            <GridCell span={4} stack>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+            </GridCell>
+          </PageGrid>
+          <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
           <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
         </div>
-        <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
-      </div>
+      </PageShell>
     );
   }
 
@@ -799,8 +806,10 @@ export function OpponentHubPage() {
       ? buildOpponentFormNowVerdict(trendInsight, displayTag, t)
       : undefined;
 
+  // Plan 39.1-37 (UIX-01): the hub renders inside the one page container
+  // (content capped at 1440px); its header row stays the first child.
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
@@ -989,71 +998,82 @@ export function OpponentHubPage() {
           {/* Event-anchored trend (OPP-03) — Plan 39.1-18: gains the formNow
               insight slot and a 20-tick set-grouped form strip above the
               plot (UI-SPEC §8.6), replacing the header's ten-pip indicator. */}
-          <ChartCard
-            title={t('opponents.trend.title')}
-            abstained={trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null}
-            insight={
-              trendInsight
-                ? renderOpponentFormNowHead(
-                    trendInsight,
-                    displayTag,
-                    t,
-                    i18n.language,
-                    trendGamesDoor ? (
-                      <Link to={trendGamesDoor.href}>
-                        {t('insights.door.seeGames', { count: trendGamesDoor.count })}
-                      </Link>
-                    ) : undefined,
-                  )
-                : null
-            }
-          >
-            <FormStrip
-              events={formStripEvents}
-              limit={20}
-              labels={{
-                // WR-03: names the games actually DRAWN of the total (kit-computed).
-                summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-                legend: t('analytics.strip.legend'),
-                // Plan 39.1-33 (R1): a formatter — only the kit knows how
-                // many games it actually drew after `limit` AND its own
-                // measured-width fit, so the host no longer computes `shown`
-                // itself.
-                shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
-                empty: <span>{t('analytics.strip.empty')}</span>,
-                windowEmpty:
-                  trendInsight && trendInsight.window.games === 0
-                    ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
-                    : undefined,
-              }}
-              onSelectSet={handleSelectEvent}
-            />
-            <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
-          </ChartCard>
-
           {/*
-            Absorbed scouting cards (D-12) — content unchanged, chart.js
-            trend removed. Phase 38-07 (D-14): the hub threads its resolved
-            opponent identity into each card's destination builder; no
-            absorbed card re-derives the opponent from its own data prop.
+            Plan 39.1-37 — OWNER DECISION 2026-09-25 (overrides UI-SPEC §8.6's
+            "39.1 leaves the hub layout unchanged"): UI-SPEC §6.1's chart = 8 + 4
+            row. The H2H trend card sits in an 8-col cell and the two short
+            absorbed scouting lists (What they play, Stages — content
+            unchanged, D-12; Phase 38-07 D-14 identity threading unchanged) are
+            stacked in the 4-col cell beside it. Below lg every cell spans 12,
+            in the same DOM order as before.
           */}
-          {/* Plan 39.1-20 Task 3 [Rule 1]: items-start added — see
-              OpponentsPage.tsx's identical fix for the same pair; the layout
-              oracle measured the same 29px stretch violation here. */}
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            <WhatTheyPlayTable
-              byTheirFighter={profile.byTheirFighter}
-              rowHref={(row) =>
-                subjectPath(
-                  `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
-                )
-              }
-            />
-            <ScoutingStagesCard
-              byStage={profile.byStage}
-              stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
-            />
-          </div>
+          <PageGrid>
+            <GridCell span={8}>
+              <ChartCard
+                title={t('opponents.trend.title')}
+                abstained={
+                  trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null
+                }
+                insight={
+                  trendInsight
+                    ? renderOpponentFormNowHead(
+                        trendInsight,
+                        displayTag,
+                        t,
+                        i18n.language,
+                        trendGamesDoor ? (
+                          <Link to={trendGamesDoor.href}>
+                            {t('insights.door.seeGames', { count: trendGamesDoor.count })}
+                          </Link>
+                        ) : undefined,
+                      )
+                    : null
+                }
+              >
+                <FormStrip
+                  events={formStripEvents}
+                  limit={20}
+                  labels={{
+                    // WR-03: names the games actually DRAWN of the total (kit-computed).
+                    summary: ({ shown, total }) =>
+                      t('analytics.strip.aria', { count: total, shown }),
+                    legend: t('analytics.strip.legend'),
+                    // Plan 39.1-33 (R1): a formatter — only the kit knows how
+                    // many games it actually drew after `limit` AND its own
+                    // measured-width fit, so the host no longer computes `shown`
+                    // itself.
+                    shownOfTotal: ({ shown, total }) =>
+                      t('analytics.strip.shownOf', { shown, total }),
+                    empty: <span>{t('analytics.strip.empty')}</span>,
+                    windowEmpty:
+                      trendInsight && trendInsight.window.games === 0
+                        ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
+                        : undefined,
+                  }}
+                  onSelectSet={handleSelectEvent}
+                />
+                <TrendLine
+                  mode="event"
+                  points={trendPoints}
+                  onSelectPoint={handleSelectTrendPoint}
+                />
+              </ChartCard>
+            </GridCell>
+            <GridCell span={4} stack>
+              <WhatTheyPlayTable
+                byTheirFighter={profile.byTheirFighter}
+                rowHref={(row) =>
+                  subjectPath(
+                    `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
+                  )
+                }
+              />
+              <ScoutingStagesCard
+                byStage={profile.byStage}
+                stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
+              />
+            </GridCell>
+          </PageGrid>
           <RecentEncounters
             matches={profile.recent}
             tournamentLinkForMatch={tournamentLinkForMatch}
@@ -1108,6 +1128,6 @@ export function OpponentHubPage() {
           onMerged={() => setMergeCandidate(null)}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

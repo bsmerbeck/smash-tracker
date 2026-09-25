@@ -307,6 +307,48 @@ export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
   return violations;
 }
 
+/** Plan 39.1-37 (UI-SPEC §6.1): a trend plot is never wider than 4 : 1. */
+export const PLOT_ASPECT_MAX = 4;
+/** UI-SPEC §6.1's 8 + 4 rule applies from the lg breakpoint; narrower viewports stack every cell at 12. */
+export const PLOT_ASPECT_MIN_VIEWPORT_WIDTH_PX = 1024;
+/**
+ * UI-SPEC §6.1's signed-off exemption (D-12): the hero's compact trend
+ * (`CHART_H_COMPACT`, 160px) is exempt — any plot at or under 160 + 8px tall.
+ */
+export const PLOT_ASPECT_COMPACT_EXEMPT_MAX_HEIGHT_PX = 168;
+
+/**
+ * Plan 39.1-37 (design-audit item 5, event-chart-aspect): every chart plot
+ * surface (`svg.recharts-surface` inside a `[data-slot="card"]`) taller than
+ * the compact exemption must be at most `PLOT_ASPECT_MAX` : 1 at viewports
+ * `PLOT_ASPECT_MIN_VIEWPORT_WIDTH_PX` and wider. Each surface is
+ * `{ selectorPath, width, height }`. An opted route with no surface at all is
+ * `plot-aspect-unmeasured` (non-vacuity) at an evaluated viewport.
+ */
+export function evaluatePlotAspect({ viewportWidth, surfaces }) {
+  if (viewportWidth < PLOT_ASPECT_MIN_VIEWPORT_WIDTH_PX) {
+    return [];
+  }
+  if (surfaces.length === 0) {
+    return [{ type: 'plot-aspect-unmeasured' }];
+  }
+  const violations = [];
+  for (const surface of surfaces) {
+    if (!(surface.height > PLOT_ASPECT_COMPACT_EXEMPT_MAX_HEIGHT_PX)) continue;
+    const ratio = surface.width / surface.height;
+    if (ratio > PLOT_ASPECT_MAX) {
+      violations.push({
+        type: 'plot-aspect',
+        selectorPath: surface.selectorPath,
+        width: surface.width,
+        height: surface.height,
+        ratio,
+      });
+    }
+  }
+  return violations;
+}
+
 /**
  * Non-vacuity check for the axis-ticks family: a route opted into the family
  * whose collected `surfaces` carry NO x tick anywhere fails with

@@ -25,6 +25,8 @@ import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { SampleCue, UnknownRow } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { PageShell } from '@/components/analytics/PageShell';
+import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { cn } from '@/lib/utils';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -324,19 +326,31 @@ export function StageDetailPage() {
   const byCharacterHasMore = sortedByCharacter.length > LIST_CAP_RAIL;
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
-  // skeleton echoing the loaded page's own by-opponent/by-character/
-  // over-time/games section stack. This page is not on the PageGrid/
-  // GridCell contract, so the skeleton mirrors the same raw section stack
-  // rather than asserting an exact `data-span` match.
+  // skeleton echoing the loaded page's own section stack. Plan 39.1-37: the
+  // page is on PageShell/PageGrid now, so the skeleton carries the loaded
+  // spans — over time (8) beside by opponent (4), then by character and the
+  // games list full-width.
   if (isLoading) {
     return (
-      <div role="status" aria-busy="true" className="flex flex-col gap-6">
-        <span className="sr-only">{t('stages.detail.loading')}</span>
-        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
-        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
-        <CardSkeleton variant="chart" statusLabel={t('stages.detail.loading')} />
-        <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
-      </div>
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('stages.detail.loading')}</span>
+          <PageGrid>
+            <GridCell span={8}>
+              <CardSkeleton variant="chart" statusLabel={t('stages.detail.loading')} />
+            </GridCell>
+            <GridCell span={4}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
+            </GridCell>
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
+            </GridCell>
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('stages.detail.loading')} />
+            </GridCell>
+          </PageGrid>
+        </div>
+      </PageShell>
     );
   }
 
@@ -353,8 +367,9 @@ export function StageDetailPage() {
       : (stage?.name ?? t('common.unknown'));
   const eventLabel = eventAxis != null ? (eventAnchor?.label ?? eventAxis) : null;
 
+  // Plan 39.1-37 (UIX-01): the one page container (content capped at 1440px).
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <div className="flex items-center gap-3">
         {stage?.url ? (
           <img src={stage.url} alt="" className="h-14 w-24 shrink-0 rounded object-cover" />
@@ -400,176 +415,199 @@ export function StageDetailPage() {
               'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
           )}
         >
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('stages.detail.byOpponent')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table id={BY_OPPONENT_TABLE_ID}>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('matchups.opponent')}</TableHead>
-                    <TableHead>{t('matchups.stageTable.record')}</TableHead>
-                    <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleByOpponent.map((row) => (
-                    <TableRow key={row.identity}>
-                      <TableCell className="text-sm">
-                        <Link
-                          to={subjectPath(
-                            `${buildOpponentHubPath(row.displayTag)}?${buildDrillDownSearch({ stageId: resolvedStageId }).toString()}`,
-                          )}
-                          className="text-primary hover:underline"
-                        >
-                          {row.displayTag}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {row.wins}-{row.losses}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <span className="flex items-center gap-2">
-                          {winRatePercent(row.wins, row.losses)}%
-                          <SampleCue sample={row.sample} />
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {breakdown?.unnamed && (
-                    <tr className="text-muted-foreground">
-                      <td colSpan={100} className="px-2 py-1 text-sm">
-                        {t('shared.evidence.unnamedBucket', { count: breakdown.unnamed.games })}
-                      </td>
-                    </tr>
-                  )}
-                </TableBody>
-              </Table>
-              {byOpponentHasMore && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  onClick={() => setByOpponentExpanded((prev) => !prev)}
-                  aria-expanded={byOpponentExpanded}
-                  aria-controls={BY_OPPONENT_TABLE_ID}
-                >
-                  {byOpponentExpanded
-                    ? t('analytics.list.showFewer')
-                    : t('analytics.list.showAll', { count: sortedByOpponent.length })}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('stages.detail.byCharacter')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table id={BY_CHARACTER_TABLE_ID}>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
-                    <TableHead>{t('shared.filteredMatchList.columnTheirCharacter')}</TableHead>
-                    <TableHead>{t('matchups.stageTable.record')}</TableHead>
-                    <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleByCharacter.map((row) => {
-                    const mySprite = getFighterById(row.myFighterId);
-                    const theirSprite = getFighterById(row.theirFighterId);
-                    return (
-                      <TableRow key={row.key}>
-                        <TableCell className="text-sm">
-                          <Link
-                            to={subjectPath(
-                              `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
-                            )}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                          >
-                            {mySprite?.url && (
-                              <img src={mySprite.url} alt="" className="size-5 object-contain" />
-                            )}
-                            {mySprite
-                              ? localizedFighterName(row.myFighterId, t)
-                              : t('common.unknown')}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <Link
-                            to={subjectPath(
-                              `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
-                            )}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                          >
-                            {theirSprite?.url && (
-                              <img src={theirSprite.url} alt="" className="size-5 object-contain" />
-                            )}
-                            {theirSprite
-                              ? localizedFighterName(row.theirFighterId, t)
-                              : t('common.unknown')}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {row.wins}-{row.losses}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <span className="flex items-center gap-2">
-                            {winRatePercent(row.wins, row.losses)}%
-                            <SampleCue sample={row.sample} />
-                          </span>
-                        </TableCell>
+          {/* Plan 39.1-37 (UI-SPEC §6.1 chart = 8 + 4; owner item 5): the Over
+              Time trend in an 8-col cell beside the By opponent list (3
+              columns, a ranked list) in a 4-col cell; By character and the
+              games list stay full-width rows below. */}
+          <PageGrid>
+            <GridCell span={8}>
+              <ChartCard
+                title={t('stages.detail.overTime')}
+                abstained={
+                  breakdown && breakdown.sample.rawSampleSize < ABSTENTION_FLOOR_GAMES
+                    ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - breakdown.sample.rawSampleSize }
+                    : null
+                }
+              >
+                <TrendLine
+                  mode="event"
+                  points={trendPoints}
+                  onSelectPoint={handleSelectTrendPoint}
+                />
+              </ChartCard>
+            </GridCell>
+            <GridCell span={4}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('stages.detail.byOpponent')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table id={BY_OPPONENT_TABLE_ID}>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('matchups.opponent')}</TableHead>
+                        <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                        <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
                       </TableRow>
-                    );
-                  })}
-                  <UnknownRow bucket={unknownCharacterBucket} as="tr" />
-                </TableBody>
-              </Table>
-              {byCharacterHasMore && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  onClick={() => setByCharacterExpanded((prev) => !prev)}
-                  aria-expanded={byCharacterExpanded}
-                  aria-controls={BY_CHARACTER_TABLE_ID}
-                >
-                  {byCharacterExpanded
-                    ? t('analytics.list.showFewer')
-                    : t('analytics.list.showAll', { count: sortedByCharacter.length })}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          <ChartCard
-            title={t('stages.detail.overTime')}
-            abstained={
-              breakdown && breakdown.sample.rawSampleSize < ABSTENTION_FLOOR_GAMES
-                ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - breakdown.sample.rawSampleSize }
-                : null
-            }
-          >
-            <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
-          </ChartCard>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('stages.detail.games')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FilteredMatchList
-                matches={sortedMatches}
-                axes={terminusAxes}
-                eventKeyForMatch={eventKeyForMatch}
-              />
-            </CardContent>
-          </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleByOpponent.map((row) => (
+                        <TableRow key={row.identity}>
+                          <TableCell className="text-sm">
+                            <Link
+                              to={subjectPath(
+                                `${buildOpponentHubPath(row.displayTag)}?${buildDrillDownSearch({ stageId: resolvedStageId }).toString()}`,
+                              )}
+                              className="text-primary hover:underline"
+                            >
+                              {row.displayTag}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {row.wins}-{row.losses}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            <span className="flex items-center gap-2">
+                              {winRatePercent(row.wins, row.losses)}%
+                              <SampleCue sample={row.sample} />
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {breakdown?.unnamed && (
+                        <tr className="text-muted-foreground">
+                          <td colSpan={100} className="px-2 py-1 text-sm">
+                            {t('shared.evidence.unnamedBucket', { count: breakdown.unnamed.games })}
+                          </td>
+                        </tr>
+                      )}
+                    </TableBody>
+                  </Table>
+                  {byOpponentHasMore && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => setByOpponentExpanded((prev) => !prev)}
+                      aria-expanded={byOpponentExpanded}
+                      aria-controls={BY_OPPONENT_TABLE_ID}
+                    >
+                      {byOpponentExpanded
+                        ? t('analytics.list.showFewer')
+                        : t('analytics.list.showAll', { count: sortedByOpponent.length })}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            </GridCell>
+            <GridCell span={12}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('stages.detail.byCharacter')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table id={BY_CHARACTER_TABLE_ID}>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
+                        <TableHead>{t('shared.filteredMatchList.columnTheirCharacter')}</TableHead>
+                        <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                        <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleByCharacter.map((row) => {
+                        const mySprite = getFighterById(row.myFighterId);
+                        const theirSprite = getFighterById(row.theirFighterId);
+                        return (
+                          <TableRow key={row.key}>
+                            <TableCell className="text-sm">
+                              <Link
+                                to={subjectPath(
+                                  `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
+                                )}
+                                className="flex items-center gap-1 text-primary hover:underline"
+                              >
+                                {mySprite?.url && (
+                                  <img
+                                    src={mySprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {mySprite
+                                  ? localizedFighterName(row.myFighterId, t)
+                                  : t('common.unknown')}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <Link
+                                to={subjectPath(
+                                  `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
+                                )}
+                                className="flex items-center gap-1 text-primary hover:underline"
+                              >
+                                {theirSprite?.url && (
+                                  <img
+                                    src={theirSprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {theirSprite
+                                  ? localizedFighterName(row.theirFighterId, t)
+                                  : t('common.unknown')}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {row.wins}-{row.losses}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <span className="flex items-center gap-2">
+                                {winRatePercent(row.wins, row.losses)}%
+                                <SampleCue sample={row.sample} />
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      <UnknownRow bucket={unknownCharacterBucket} as="tr" />
+                    </TableBody>
+                  </Table>
+                  {byCharacterHasMore && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      onClick={() => setByCharacterExpanded((prev) => !prev)}
+                      aria-expanded={byCharacterExpanded}
+                      aria-controls={BY_CHARACTER_TABLE_ID}
+                    >
+                      {byCharacterExpanded
+                        ? t('analytics.list.showFewer')
+                        : t('analytics.list.showAll', { count: sortedByCharacter.length })}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            </GridCell>
+            <GridCell span={12}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t('stages.detail.games')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FilteredMatchList
+                    matches={sortedMatches}
+                    axes={terminusAxes}
+                    eventKeyForMatch={eventKeyForMatch}
+                  />
+                </CardContent>
+              </Card>
+            </GridCell>
+          </PageGrid>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

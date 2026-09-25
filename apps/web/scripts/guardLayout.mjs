@@ -38,6 +38,7 @@ import {
   evaluateHeaderSqueeze,
   evaluateAxisTicks,
   evaluateAxisPresence,
+  evaluatePlotAspect,
   evaluateGridBalance,
   evaluateFamilyPresence,
   evaluatePickerAlignment,
@@ -159,14 +160,15 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="opponent-hub-body"]',
     // Plan 39.1-33: form-strip-fit — no extra viewport, no scroll budget.
     // Plan 39.1-37: axis-ticks on the H2H event trend (raw-axis-key,
-    // value-label-overlap and the existing tick families).
-    checks: ['form-strip-fit', 'axis-ticks'],
+    // value-label-overlap and the existing tick families) and plot-aspect
+    // (UI-SPEC §6.1, the 8 + 4 trend row).
+    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect'],
   },
   {
     id: 'stage-detail',
     loadedMarker: '[data-slot="stage-detail-body"]',
-    // Plan 39.1-37: axis-ticks on the Over Time event trend.
-    checks: ['axis-ticks'],
+    // Plan 39.1-37: axis-ticks and plot-aspect on the Over Time event trend.
+    checks: ['axis-ticks', 'plot-aspect'],
   },
 ];
 
@@ -221,6 +223,7 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
   const wantCardHeightCeiling = checks.includes('card-height-ceiling');
   const wantFormStripFit = checks.includes('form-strip-fit');
   const wantCareerTimeline = checks.includes('career-timeline');
+  const wantPlotAspect = checks.includes('plot-aspect');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -456,6 +459,20 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
         referenceLabels,
         xAxisLine: axisLineRect('.recharts-xAxis'),
         yAxisLine: axisLineRect('.recharts-yAxis'),
+      });
+    }
+  }
+
+  // Plan 39.1-37 (UI-SPEC §6.1): every chart plot surface inside a card —
+  // read from rects the page already lays out, no style walk.
+  const plotSurfaces = [];
+  if (wantPlotAspect) {
+    for (const surfaceEl of document.querySelectorAll('[data-slot="card"] svg.recharts-surface')) {
+      const r = surfaceEl.getBoundingClientRect();
+      plotSurfaces.push({
+        selectorPath: describeElement(surfaceEl),
+        width: r.width,
+        height: r.height,
       });
     }
   }
@@ -709,6 +726,7 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
     overflowCards,
     headers,
     axisSurfaces,
+    plotSurfaces,
     grids,
     pickers,
     rowCohesionRows,
@@ -802,6 +820,15 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       violations.push(...evaluateAxisTicks(measurements.axisSurfaces));
       violations.push(...evaluateAxisPresence(measurements.axisSurfaces));
     }
+    // Plan 39.1-37: plot-aspect (its presence check is inside the evaluator).
+    if (checks.includes('plot-aspect')) {
+      violations.push(
+        ...evaluatePlotAspect({
+          viewportWidth: viewport.width,
+          surfaces: measurements.plotSurfaces,
+        }),
+      );
+    }
     if (checks.includes('grid-balance')) {
       violations.push(...evaluateGridBalance(measurements.grids));
       violations.push(...evaluateFamilyPresence('grid-balance', measurements.grids));
@@ -875,6 +902,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       cardHeightCards: measurements.cardHeightCards,
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
+      plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
     };
   } finally {
     await page.close();
@@ -1115,6 +1143,13 @@ async function main() {
               const limitPx = card.maxViewportHeights * result.innerHeight;
               console.log(
                 `CARD_HEIGHT route=${route.id} viewport=${viewport.name} marker=${card.marker} height=${card.height.toFixed(1)} limitPx=${limitPx.toFixed(1)}`,
+              );
+            }
+            // Plan 39.1-37: one PLOT_ASPECT line per measured chart plot,
+            // printed whether or not it passed — the recordable ratios.
+            for (const surface of result.plotSurfaces ?? []) {
+              console.log(
+                `PLOT_ASPECT route=${route.id} viewport=${viewport.name} width=${surface.width.toFixed(1)} height=${surface.height.toFixed(1)} ratio=${(surface.width / surface.height).toFixed(2)}`,
               );
             }
             // Plan 39.1-34: one TIMELINE line per measured career timeline
