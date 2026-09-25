@@ -654,5 +654,7 @@ describe('StageDetailPage — design-fidelity loop (plan 39.1-37 Task 3)', () =>
     const table = document.getElementById('stage-by-opponent-table')!;
     const rateCell = table.querySelector('tbody tr td:nth-child(3) > span')!;
     expect(rateCell.className).toMatch(/\bflex-wrap\b/);
+    // TableCell is whitespace-nowrap by default — the cue can only wrap if the cell lets it.
+    expect(rateCell.parentElement!.className).toMatch(/\bwhitespace-normal\b/);
   });
 });

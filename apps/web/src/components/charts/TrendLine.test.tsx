@@ -1102,3 +1102,29 @@ describe('TrendLine — design-fidelity loop (plan 39.1-37 Task 3): marks at the
     expect(periodLabel.getAttribute('paint-order')).toBe('stroke');
   });
 });
+
+describe('TrendLine — event labels clear the step riser (plan 39.1-37 Task 3 design-fidelity loop)', () => {
+  it('each W-L label starts just right of its dot (clear of the stepAfter riser); the last ends just left of it', () => {
+    const points = eventKeysFor(5).map((eventKey, i) =>
+      makeEventPoint({ eventKey, cumulativeWinRate: 40 + i * 5, wins: i, losses: 1 }),
+    );
+    const { container } = render(
+      <TrendLine mode="event" points={points} width={1000} height={288} />,
+    );
+    const dots = Array.from(container.querySelectorAll('.recharts-line-dots circle')).map((c) =>
+      Number(c.getAttribute('cx')),
+    );
+    const labels = Array.from(container.querySelectorAll('[data-slot="trend-event-value-label"]'));
+    expect(labels).toHaveLength(5);
+    labels.forEach((label, i) => {
+      const x = Number(label.getAttribute('x'));
+      if (i === labels.length - 1) {
+        expect(label.getAttribute('text-anchor')).toBe('end');
+        expect(x).toBeLessThan(dots[i]!);
+      } else {
+        expect(label.getAttribute('text-anchor')).toBe('start');
+        expect(x).toBeGreaterThan(dots[i]!);
+      }
+    });
+  });
+});
