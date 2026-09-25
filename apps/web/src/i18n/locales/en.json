@@ -1603,7 +1603,28 @@
     "droppedClaims_one": "1 claim couldn't be verified and was removed from this report.",
     "droppedClaims_other": "{{count}} claims couldn't be verified and were removed from this report.",
     "withheldProse_one": "Commentary for 1 section was withheld because it couldn't be verified against your match data.",
-    "withheldProse_other": "Commentary for {{count}} sections was withheld because it couldn't be verified against your match data."
+    "withheldProse_other": "Commentary for {{count}} sections was withheld because it couldn't be verified against your match data.",
+    "actions": {
+      "title": "Recommended actions",
+      "empty": "Not enough data yet to recommend a specific action — log a few more games.",
+      "matchupPractice": {
+        "title": "Practice {{myFighter}} vs {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Review your losses to {{opponent}}"
+      },
+      "drill": {
+        "stageHabit": "Drill: your game plan on {{stage}}",
+        "matchupPunish": "Drill: punishing {{opponentFighter}}",
+        "characterFamiliarity": "Drill: learn the {{opponentFighter}} matchup",
+        "vodPattern": "Drill: the pattern in your annotated moments"
+      },
+      "door": {
+        "practiceMatchup": "Practice this matchup",
+        "watchGames": "Watch the games",
+        "openStage": "Open stage"
+      }
+    }
   },
   "groups": {
     "title": "Groups",

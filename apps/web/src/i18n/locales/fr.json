@@ -1603,7 +1603,28 @@
     "droppedClaims_one": "{{count}} affirmation n'a pas pu être vérifiée et a été retirée de ce rapport.",
     "droppedClaims_other": "{{count}} affirmations n'ont pas pu être vérifiées et ont été retirées de ce rapport.",
     "withheldProse_one": "Le commentaire de {{count}} section a été retenu, car il n'a pas pu être vérifié par rapport à vos données de matchs.",
-    "withheldProse_other": "Les commentaires de {{count}} sections ont été retenus, car ils n'ont pas pu être vérifiés par rapport à vos données de matchs."
+    "withheldProse_other": "Les commentaires de {{count}} sections ont été retenus, car ils n'ont pas pu être vérifiés par rapport à vos données de matchs.",
+    "actions": {
+      "title": "Actions recommandées",
+      "empty": "Pas encore assez de données pour recommander une action précise — enregistrez encore quelques parties.",
+      "matchupPractice": {
+        "title": "Entraînez {{myFighter}} contre {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Revoyez vos défaites contre {{opponent}}"
+      },
+      "drill": {
+        "stageHabit": "Exercice : votre plan de jeu sur {{stage}}",
+        "matchupPunish": "Exercice : punir {{opponentFighter}}",
+        "characterFamiliarity": "Exercice : apprenez le matchup contre {{opponentFighter}}",
+        "vodPattern": "Exercice : le schéma de vos moments annotés"
+      },
+      "door": {
+        "practiceMatchup": "Travailler ce matchup",
+        "watchGames": "Voir les parties",
+        "openStage": "Ouvrir le stage"
+      }
+    }
   },
   "groups": {
     "title": "Groupes",

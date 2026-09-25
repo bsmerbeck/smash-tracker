@@ -1603,7 +1603,28 @@
     "droppedClaims_one": "{{count}} afirmação não pôde ser verificada e foi removida deste relatório.",
     "droppedClaims_other": "{{count}} afirmações não puderam ser verificadas e foram removidas deste relatório.",
     "withheldProse_one": "O comentário de {{count}} seção foi omitido porque não pôde ser verificado com seus dados de partidas.",
-    "withheldProse_other": "Os comentários de {{count}} seções foram omitidos porque não puderam ser verificados com seus dados de partidas."
+    "withheldProse_other": "Os comentários de {{count}} seções foram omitidos porque não puderam ser verificados com seus dados de partidas.",
+    "actions": {
+      "title": "Ações recomendadas",
+      "empty": "Ainda não há dados suficientes para recomendar uma ação específica — registre mais algumas partidas.",
+      "matchupPractice": {
+        "title": "Treine {{myFighter}} contra {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Revise suas derrotas para {{opponent}}"
+      },
+      "drill": {
+        "stageHabit": "Treino: seu plano de jogo em {{stage}}",
+        "matchupPunish": "Treino: punir {{opponentFighter}}",
+        "characterFamiliarity": "Treino: aprenda o confronto contra {{opponentFighter}}",
+        "vodPattern": "Treino: o padrão nos seus momentos anotados"
+      },
+      "door": {
+        "practiceMatchup": "Treinar este confronto",
+        "watchGames": "Ver as partidas",
+        "openStage": "Abrir stage"
+      }
+    }
   },
   "groups": {
     "title": "Grupos",

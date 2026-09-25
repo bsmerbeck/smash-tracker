@@ -1603,7 +1603,28 @@
     "droppedClaims_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Bericht entfernt.",
     "droppedClaims_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Bericht entfernt.",
     "withheldProse_one": "Der Kommentar zu {{count}} Abschnitt wurde zurückgehalten, weil er sich nicht mit deinen Matchdaten abgleichen ließ.",
-    "withheldProse_other": "Die Kommentare zu {{count}} Abschnitten wurden zurückgehalten, weil sie sich nicht mit deinen Matchdaten abgleichen ließen."
+    "withheldProse_other": "Die Kommentare zu {{count}} Abschnitten wurden zurückgehalten, weil sie sich nicht mit deinen Matchdaten abgleichen ließen.",
+    "actions": {
+      "title": "Empfohlene Aktionen",
+      "empty": "Noch nicht genug Daten für eine konkrete Empfehlung – erfasse ein paar weitere Spiele.",
+      "matchupPractice": {
+        "title": "Übe {{myFighter}} gegen {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Sieh dir deine Niederlagen gegen {{opponent}} an"
+      },
+      "drill": {
+        "stageHabit": "Übung: dein Spielplan auf {{stage}}",
+        "matchupPunish": "Übung: {{opponentFighter}} bestrafen",
+        "characterFamiliarity": "Übung: lerne das Matchup gegen {{opponentFighter}}",
+        "vodPattern": "Übung: das Muster in deinen markierten Momenten"
+      },
+      "door": {
+        "practiceMatchup": "Dieses Matchup üben",
+        "watchGames": "Spiele ansehen",
+        "openStage": "Stage öffnen"
+      }
+    }
   },
   "groups": {
     "title": "Gruppen",

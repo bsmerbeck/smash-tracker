@@ -1603,7 +1603,28 @@
     "droppedClaims_one": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
     "droppedClaims_other": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
     "withheldProse_one": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
-    "withheldProse_other": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。"
+    "withheldProse_other": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
+    "actions": {
+      "title": "おすすめのアクション",
+      "empty": "具体的なアクションを提案するにはまだデータが足りません。もう少し試合を記録してください。",
+      "matchupPractice": {
+        "title": "{{myFighter}}で{{opponentFighter}}のキャラ対を練習"
+      },
+      "vodReview": {
+        "title": "{{opponent}}に負けた試合を振り返る"
+      },
+      "drill": {
+        "stageHabit": "ドリル：{{stage}}でのゲームプラン",
+        "matchupPunish": "ドリル：{{opponentFighter}}への確定反撃",
+        "characterFamiliarity": "ドリル：{{opponentFighter}}のキャラ対を覚える",
+        "vodPattern": "ドリル：メモした場面のパターン"
+      },
+      "door": {
+        "practiceMatchup": "このキャラ対を練習",
+        "watchGames": "試合を見る",
+        "openStage": "ステージを開く"
+      }
+    }
   },
   "groups": {
     "title": "グループ",
