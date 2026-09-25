@@ -53,8 +53,16 @@ if (!route) {
   // Plan 39.1-30: routes carrying `shell: 'app'` are measured inside the
   // MainLayout-geometry wrapper so their content is measured at production
   // content widths — every other route mounts unwrapped, unchanged.
-  const routedElement =
-    route.shell === 'app' ? <GuardAppShell>{route.element}</GuardAppShell> : route.element;
+  // Plan 39.1-36: a `shell=app` URL parameter wraps ANY route in the same
+  // shell — used only by the design-review capture tool
+  // (`captureDesignScreens.mjs`); guard:layout never sends it, so its
+  // measurements are unchanged.
+  const wrapInAppShell = route.shell === 'app' || params.get('shell') === 'app';
+  const routedElement = wrapInAppShell ? (
+    <GuardAppShell>{route.element}</GuardAppShell>
+  ) : (
+    route.element
+  );
 
   createRoot(rootElement).render(
     <QueryClientProvider client={queryClient}>

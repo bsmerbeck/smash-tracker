@@ -20,6 +20,7 @@
     "guard:layout": "node scripts/guardLayout.mjs",
     "guard:palette": "node scripts/guardPalette.mjs",
     "capture:timeline-fidelity": "node scripts/captureTimelineFidelity.mjs",
+    "capture:design": "node scripts/captureDesignScreens.mjs",
     "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {
