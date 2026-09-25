@@ -3172,7 +3172,7 @@
     "chip": {
       "up": "Up",
       "down": "Down",
-      "steady": "Steady",
+      "steady": "steady",
       "thin": "Thin",
       "noDirection_one": "n {{count}} · no direction",
       "noDirection_other": "n {{count}} · no direction",
@@ -3182,6 +3182,8 @@
         "lastEvent": "last event",
         "last90": "last 90 days"
       },
+      "ratingUp": "+{{points}}",
+      "ratingDown": "−{{points}}",
       "aria": {
         "up": "Trending up",
         "down": "Trending down",
@@ -3380,7 +3382,7 @@
     "record": {
       "aria": "{{wins}} wins, {{losses}} losses",
       "deltaUp": "+{{points}} pts",
-      "deltaDown": "-{{points}} pts"
+      "deltaDown": "−{{points}} pts"
     },
     "stat": {
       "collapsedValue": "= all games",

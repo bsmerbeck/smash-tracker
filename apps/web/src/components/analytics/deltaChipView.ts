@@ -15,6 +15,12 @@ export interface DeltaChipViewInput {
   horizon: HorizonKey;
   /** True only when the enclosing figure overline or list meta already names the horizon (UI-SPEC §7.5). */
   horizonOwnedByParent: boolean;
+  /**
+   * `points` (default): a win-rate delta in percentage points ("+7 pts").
+   * `rating`: a rating move, printed with no unit ("−84") as sketch 002-C's
+   * `chipRating` does — a rating move is not percentage points.
+   */
+  deltaUnit?: 'points' | 'rating';
   t: TFunction;
 }
 
@@ -33,6 +39,12 @@ const CHIP_HORIZON_KEYS: Record<HorizonKey, string> = {
   lastEvent: 'insights.chip.horizon.lastEvent',
   last90: 'insights.chip.horizon.last90',
 };
+
+/** Value-label keys per delta unit and direction ("+7 pts" / "−7 pts"; "+24" / "−84"). */
+const DELTA_KEYS = {
+  points: { up: 'analytics.record.deltaUp', down: 'analytics.record.deltaDown' },
+  rating: { up: 'insights.chip.ratingUp', down: 'insights.chip.ratingDown' },
+} as const;
 
 /**
  * The ONE mapping from the engine's honesty-ladder state to a `DeltaChip`
@@ -61,6 +73,7 @@ export function deltaChipView({
   recentGames,
   horizon,
   horizonOwnedByParent,
+  deltaUnit = 'points',
   t,
 }: DeltaChipViewInput): DeltaChipView | null {
   if (state === 'collapsed') {
@@ -104,12 +117,7 @@ export function deltaChipView({
     const direction = deltaPoints < 0 ? 'down' : 'up';
     return {
       state: direction,
-      valueLabel: t(
-        direction === 'down' ? 'analytics.record.deltaDown' : 'analytics.record.deltaUp',
-        {
-          points: Math.abs(deltaPoints),
-        },
-      ),
+      valueLabel: t(DELTA_KEYS[deltaUnit][direction], { points: Math.abs(deltaPoints) }),
       horizonLabel,
       horizonOwnedByParent,
       recentGames,

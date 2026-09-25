@@ -3182,6 +3182,8 @@
         "lastEvent": "直近の大会",
         "last90": "直近90日"
       },
+      "ratingUp": "+{{points}}",
+      "ratingDown": "−{{points}}",
       "aria": {
         "up": "上昇傾向",
         "down": "下降傾向",
@@ -3380,7 +3382,7 @@
     "record": {
       "aria": "{{wins}}勝{{losses}}敗",
       "deltaUp": "+{{points}}pt",
-      "deltaDown": "-{{points}}pt"
+      "deltaDown": "−{{points}}pt"
     },
     "stat": {
       "collapsedValue": "= 全試合",

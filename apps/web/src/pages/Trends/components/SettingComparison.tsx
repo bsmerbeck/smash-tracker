@@ -160,32 +160,15 @@ export function SettingComparison({ matches, horizon, settingGapInsight }: Setti
       return null;
     }
     const collapsed = gate.state === 'collapsed';
-    // Plan 39.1-36: the dumbbell legend says "recent" without naming the
-    // horizon, so a row chip carries its own label too.
-    const chipView = deltaChipView({
-      state: gate.state,
-      deltaPoints: gate.deltaPoints,
-      recentGames: recent.total,
-      horizon,
-      horizonOwnedByParent: false,
-      t,
-    });
     const interval = wilsonInterval(recent.wins, recent.total);
     return {
       key,
       label,
       recentRecordNode: <Record wins={recent.wins} losses={recent.losses} cue="none" />,
-      deltaNode:
-        collapsed || chipView === null ? null : (
-          <DeltaChip
-            {...chipView}
-            ariaLabel={t('analytics.dumbbell.rowAria', {
-              label,
-              recentRecord: `${recent.wins}–${recent.losses}`,
-              baselineRecord: `${baseline.wins}–${baseline.losses}`,
-            })}
-          />
-        ),
+      // Plan 39.1-36 (sketch 002-C `SettingTile`): the dumbbell rows carry no
+      // chip — the Online / Offline figures above already state the read with
+      // its horizon, and a second chip per row squeezed the row label.
+      deltaNode: null,
       baselineRate: baseline.rate * 100,
       recentRate: recent.rate * 100,
       recentRange: [interval.lower * 100, interval.upper * 100],

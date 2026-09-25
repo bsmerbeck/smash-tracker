@@ -185,6 +185,7 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
       recentGames: ratingMoveInsight?.window.games ?? 0,
       horizon,
       horizonOwnedByParent: false,
+      deltaUnit: 'rating',
       t,
     });
     ratingFigure = (

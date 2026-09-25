@@ -3172,7 +3172,7 @@
     "chip": {
       "up": "Steigt",
       "down": "Fällt",
-      "steady": "Stabil",
+      "steady": "stabil",
       "thin": "Zu wenig Daten",
       "noDirection_one": "n {{count}} · keine Richtung",
       "noDirection_other": "n {{count}} · keine Richtung",
@@ -3182,6 +3182,8 @@
         "lastEvent": "letztes Event",
         "last90": "letzte 90 Tage"
       },
+      "ratingUp": "+{{points}}",
+      "ratingDown": "−{{points}}",
       "aria": {
         "up": "Steigender Trend",
         "down": "Fallender Trend",
@@ -3380,7 +3382,7 @@
     "record": {
       "aria": "{{wins}} Siege, {{losses}} Niederlagen",
       "deltaUp": "+{{points}} Pkt.",
-      "deltaDown": "-{{points}} Pkt."
+      "deltaDown": "−{{points}} Pkt."
     },
     "stat": {
       "collapsedValue": "= alle Matches",
