@@ -55,7 +55,7 @@ const NULL_TARGET: ActionTarget = {
 
 function makeAction(
   index: number,
-  overrides: Partial<ActionCandidate> & { target?: Partial<ActionTarget> } = {},
+  overrides: Omit<Partial<ActionCandidate>, 'target'> & { target?: Partial<ActionTarget> } = {},
 ): ActionCandidate {
   const { target, ...rest } = overrides;
   return {
