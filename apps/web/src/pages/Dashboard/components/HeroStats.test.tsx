@@ -108,6 +108,55 @@ describe('HeroStats', () => {
     expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
   });
 
+  describe('plan 39.1-36 (honest-none-chip): the overall-record chip states its horizon and never a direction below the floor', () => {
+    function overallChip(): HTMLElement | null {
+      const card = screen.getByText('Overall Record').closest('[data-slot="card"]') as HTMLElement;
+      return card.querySelector('[data-slot="delta-chip"]');
+    }
+
+    it('a stale account (no games in the scoped window) reads "no games · last 30"', () => {
+      const now = Date.now();
+      const matches = Array.from({ length: 40 }, (_, i) =>
+        makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+      );
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const chip = overallChip();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('none');
+      expect(chip!.textContent).toBe('no games· last 30');
+    });
+
+    it('a 2-game scoped window reads "n 2 · no direction"', () => {
+      const now = Date.now();
+      const matches = [
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+        makeMatch({ id: 'n1', time: now - 2 * DAY_MS, win: true }),
+        makeMatch({ id: 'n2', time: now - DAY_MS, win: true }),
+      ];
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const chip = overallChip();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('thin');
+      expect(chip!.textContent).toBe('n 2 · no direction');
+    });
+
+    it("a steady 30-game window carries its own horizon label 'last 30'", () => {
+      const now = Date.now();
+      const matches = [
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({ id: `o${i}`, time: now - (200 + i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+        ...Array.from({ length: 30 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: now - i * DAY_MS, win: i % 2 === 0 }),
+        ),
+      ];
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      expect(overallChip()!.textContent).toBe('Steady· last 30');
+    });
+  });
+
   it('renders the current streak in the form card', () => {
     const matches = [
       makeMatch({ id: '1', time: 1, win: false }),

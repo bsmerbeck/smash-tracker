@@ -77,6 +77,15 @@ const KNOWN_PRIVATE_CHIP_HELPERS: readonly string[] = [
   'apps/web/src/pages/Trends/components/TrendsHero.tsx',
 ];
 
+/**
+ * Named exemption, not an allowlist entry: `OpponentList.tsx` keeps its own
+ * notable-only inline mapping because UI-SPEC §8.5 renders a DeltaChip on an
+ * opponent row only when the read is notable (up/down); a sub-floor or
+ * steady row renders no chip at all, which satisfies "never steady/up/down
+ * below the floor" by omission.
+ */
+const OPPONENT_LIST_EXEMPTION = 'apps/web/src/pages/Opponents/components/OpponentList.tsx';
+
 describe('design fidelity — source-tree guard (plan 39.1-36)', () => {
   it('the default suite excludes the .guard.test.ts suffix (this file is deliberately NOT named with it)', () => {
     const vitestConfigSource = readRepoFile('apps/web/vitest.config.ts');
@@ -121,6 +130,29 @@ describe('design fidelity — source-tree guard (plan 39.1-36)', () => {
         return !PRIVATE_CHIP_HELPER_PATTERN.test(fs.readFileSync(fullPath, 'utf8'));
       });
       expect(stale, `stale allowlist entries: ${stale.join(', ')}`).toEqual([]);
+    });
+
+    it('has reached its terminal state: only the two Matchups files plans 39.1-44/45 rebuild', () => {
+      // Plan 39.1-36 Task 2 converted the five other hosts. MatchWinLossCard
+      // (record card) and PairingOpponents (By-opponent rows) are removed or
+      // rebuilt on sketch 003-A by plans 39.1-44/45, which adopt
+      // deltaChipView there and empty this list.
+      expect([...KNOWN_PRIVATE_CHIP_HELPERS].sort()).toEqual([
+        'apps/web/src/pages/Matchups/components/MatchWinLossCard.tsx',
+        'apps/web/src/pages/Matchups/components/PairingOpponents.tsx',
+      ]);
+    });
+
+    it('OpponentList is a named exemption (UI-SPEC §8.5: a DeltaChip only when notable) whose inline mapping emits up/down only', () => {
+      const source = readRepoFile(OPPONENT_LIST_EXEMPTION);
+      // Positive presence: the notable-only gate and the up/down-only state are still there.
+      expect(source).toMatch(/return state === 'trend' \|\| state === 'suggestion';/);
+      expect(source).toMatch(/\{notable && \(\s*<DeltaChip/);
+      expect(source).toMatch(/deltaPoints < 0 \? 'down' : 'up'/);
+      // It never renders a steady / thin / none / no-direction chip.
+      expect(source).not.toMatch(/insights\.chip\./);
+      expect(source).not.toMatch(/state=\{?['"](steady|thin|none)['"]/);
+      expect(PRIVATE_CHIP_HELPER_PATTERN.test(source)).toBe(false);
     });
 
     it('the mapping module itself exports deltaChipView', () => {

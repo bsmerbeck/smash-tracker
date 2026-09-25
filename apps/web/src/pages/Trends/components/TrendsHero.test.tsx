@@ -116,6 +116,58 @@ describe('TrendsHero', () => {
     expect(screen.getByText(/games avg/)).toBeInTheDocument();
   });
 
+  describe('plan 39.1-36 (honest-none-chip): the win-rate chip states its horizon and never a direction below the floor', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    function winRateFigure(): HTMLElement {
+      return screen.getByText('Win rate').parentElement as HTMLElement;
+    }
+
+    it("a 60-game window inside the baseline interval reads 'Steady · last 30'", () => {
+      // 60 older games at 50% and 60 recent games at 50%: last 30 sits inside
+      // the baseline interval and 30 < 60% of 120, so the state is steady.
+      const matches = [
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({ id: `o${i}`, time: NOW - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: NOW - (60 - i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+      ];
+      render(<TrendsHero matches={matches} horizon="last30" />);
+      const chip = winRateFigure().querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('steady');
+      expect(chip.getAttribute('data-recent-games')).toBe('30');
+      expect(chip.textContent).toBe('Steady· last 30');
+    });
+
+    it('an empty last-90-days window on a stale account reads "no games · last 90 days"', () => {
+      const matches = Array.from({ length: 40 }, (_, i) =>
+        makeMatch({ id: `s${i}`, time: NOW - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+      );
+      render(<TrendsHero matches={matches} horizon="last90" />);
+      const chip = winRateFigure().querySelector('[data-slot="delta-chip"]');
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('none');
+      expect(chip!.textContent).toBe('no games· last 90 days');
+    });
+
+    it('a 5-game last-90-days window reads "n 5 · no direction", never a direction', () => {
+      const matches = [
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({ id: `s${i}`, time: NOW - (400 + i) * DAY_MS, win: false }),
+        ),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ id: `n${i}`, time: NOW - (5 - i) * DAY_MS, win: true }),
+        ),
+      ];
+      render(<TrendsHero matches={matches} horizon="last90" />);
+      const chip = winRateFigure().querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('thin');
+      expect(chip.textContent).toBe('n 5 · no direction');
+    });
+  });
+
   it('carries no stretch utility on its card root (UIX-04)', () => {
     const { container } = render(<TrendsHero matches={[]} horizon="last30" />);
     const cardRoot = container.querySelector('[data-slot="card"]');
