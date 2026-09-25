@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RULESET_CONTRACT_VERSION, stageIdKey } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 describe('GET /api/tournaments', () => {
@@ -553,5 +554,277 @@ describe('POST /api/tournaments/manual-entry', () => {
     const fired = rows.filter((row) => row.eventName === 'tournament_prep_activated');
     expect(fired).toHaveLength(1);
     expect(fired[0]?.actorId).toBe(TEST_UID);
+  });
+});
+
+// EVID-04 (37-CONTEXT.md D-10, D-18): the route's hard edges — ownership,
+// validation, and the two-row-shape serialization round trip.
+describe('PATCH /api/tournaments/:entryKey/ruleset', () => {
+  it('rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      payload: { rulesetOverride: null },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('answers 404 for an entry key with no stored entry', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/missing-entry/ruleset',
+      headers: authHeader(),
+      payload: { rulesetOverride: null },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('answers 404 for an entry owned by a different uid and performs no write on it', async () => {
+    const { app, database, auth } = buildTestApp();
+    auth.registerToken('other-uid-token', { uid: 'other-uid', email: 'other@example.com' });
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+    const before = database.dump();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader('other-uid-token'),
+      payload: { rulesetOverride: null },
+    });
+
+    expect(response.statusCode).toBe(404);
+    // The uid-scoped path is the enforcement, not merely the convention: the
+    // OTHER uid's entry (this test's caller isn't TEST_UID) must be
+    // byte-unchanged after the request.
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('stores exactly one rulesetOverride child carrying the running contract version', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: { rulesetOverride: { contractVersion: RULESET_CONTRACT_VERSION, dsr: 'none' } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { entryKey: string; rulesetOverride: { dsr: string } };
+    expect(body).toMatchObject({ entryKey: '987', rulesetOverride: { dsr: 'none' } });
+    const stored = (database.dump().tournamentEntries as Record<string, Record<string, unknown>>)[
+      TEST_UID
+    ]?.['987'] as Record<string, unknown>;
+    expect(stored.rulesetOverride).toEqual({
+      contractVersion: RULESET_CONTRACT_VERSION,
+      dsr: 'none',
+    });
+  });
+
+  it('a clearing PATCH removes the rulesetOverride child entirely', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+        rulesetOverride: { contractVersion: RULESET_CONTRACT_VERSION, dsr: 'none' },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: { rulesetOverride: null },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const stored = (database.dump().tournamentEntries as Record<string, Record<string, unknown>>)[
+      TEST_UID
+    ]?.['987'] as Record<string, unknown>;
+    expect('rulesetOverride' in stored).toBe(false);
+  });
+
+  it('rejects a stage presence map with an unprefixed or non-numeric key with a 400', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: {
+        rulesetOverride: {
+          contractVersion: RULESET_CONTRACT_VERSION,
+          starterStageIds: { '113': true },
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects a ban count outside its bound with a 400', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: {
+        rulesetOverride: {
+          contractVersion: RULESET_CONTRACT_VERSION,
+          banCounts: { bo3: 99, bo5: 2 },
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects a DSR value outside the enum with a 400', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: {
+        rulesetOverride: { contractVersion: RULESET_CONTRACT_VERSION, dsr: 'illegal-value' },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('a GET after a successful PATCH returns the entry with its override intact for an ordinary entry', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+    });
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/ruleset',
+      headers: authHeader(),
+      payload: {
+        rulesetOverride: {
+          contractVersion: RULESET_CONTRACT_VERSION,
+          starterStageIds: { [stageIdKey(113)]: true },
+        },
+      },
+    });
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+    const [entry] = getResponse.json() as Array<{ rulesetOverride?: unknown }>;
+    expect(entry?.rulesetOverride).toEqual({
+      contractVersion: RULESET_CONTRACT_VERSION,
+      starterStageIds: { [stageIdKey(113)]: true },
+    });
+  });
+
+  // The registry-first union order is load-bearing: an admin-imported row
+  // also satisfies the legacy schema, which would strip its new members if
+  // only the legacy schema declared `rulesetOverride`.
+  it('a GET after a successful PATCH returns an admin-imported registry row with its override intact', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      'histimport:100001': {
+        entryId: 'histimport:100001',
+        origin: 'admin-imported',
+        provider: 'startgg',
+        startggEventId: '100001',
+        eventName: 'Ultimate Singles',
+        playedSetCount: 8,
+        provenance: {
+          source: 'research-import',
+          importedAtMs: 1_755_000_000_000,
+        },
+        registryWitness: 'research-import:v1:100001',
+        firstSetAt: 1_699_000_000_000,
+        lastSetAt: 1_699_000_500_000,
+        setsPlayed: 8,
+      },
+    });
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/histimport:100001/ruleset',
+      headers: authHeader(),
+      payload: { rulesetOverride: { contractVersion: RULESET_CONTRACT_VERSION, dsr: 'none' } },
+    });
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+    const [entry] = getResponse.json() as Array<{ rulesetOverride?: unknown }>;
+    expect(entry?.rulesetOverride).toEqual({
+      contractVersion: RULESET_CONTRACT_VERSION,
+      dsr: 'none',
+    });
   });
 });

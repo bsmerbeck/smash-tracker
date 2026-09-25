@@ -13,7 +13,13 @@
     "acquire:stages": "node scripts/acquire-stage-art.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && pnpm run test:guards",
+    "test:guards": "node --test scripts/guardLayoutCore.test.mjs scripts/guardPaletteCore.test.mjs scripts/guardLayoutShutdown.test.mjs scripts/ciChartBundleGuard.test.mjs",
+    "guard:perf-harness-build": "vitest run --config vitest.guard.config.ts",
+    "guard:chart-bundle": "vitest run --config vitest.guard.config.ts src/components/charts/bundleIsolation.guard.test.ts",
+    "guard:layout": "node scripts/guardLayout.mjs",
+    "guard:palette": "node scripts/guardPalette.mjs",
+    "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -36,6 +42,7 @@
     "react-hook-form": "^7.80.0",
     "react-i18next": "^17.0.8",
     "react-router": "^8.3.0",
+    "recharts": "3.10.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.4.3"

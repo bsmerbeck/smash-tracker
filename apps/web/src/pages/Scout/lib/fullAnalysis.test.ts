@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ScoutGame } from '@smash-tracker/shared';
-import { scoutGamesToMatches } from './fullAnalysis';
+import type { Match, ScoutGame } from '@smash-tracker/shared';
+import i18n from '@/i18n';
+import { getRollingWinRate } from '@/lib/stats';
+import { buildScoutTrendChartPoints, scoutGamesToMatches } from './fullAnalysis';
 
 function makeGame(overrides: Partial<ScoutGame> = {}): ScoutGame {
   return {
@@ -54,5 +56,56 @@ describe('scoutGamesToMatches', () => {
 
   it('returns an empty array for an empty input', () => {
     expect(scoutGamesToMatches([])).toEqual([]);
+  });
+});
+
+describe('buildScoutTrendChartPoints', () => {
+  function makeMatch(overrides: Partial<Match> = {}): Match {
+    return {
+      id: 'm1',
+      fighter_id: 1,
+      opponent_id: 10,
+      time: 1000,
+      map: { id: 1, name: 'Battlefield' },
+      opponent: 'PowPow',
+      matchType: 'none',
+      win: true,
+      ...overrides,
+    };
+  }
+
+  it('maps the rolling-win-rate series onto the kit TrendChartPoint shape', () => {
+    const matches = [
+      makeMatch({ id: 'm1', time: 1, win: true }),
+      makeMatch({ id: 'm2', time: 2, win: false }),
+    ];
+    const series = getRollingWinRate(matches, 5);
+    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points).toHaveLength(2);
+    expect(points[0]?.context).toMatchObject({
+      matchId: 'm1',
+      opponentTag: 'PowPow',
+      stageName: 'Battlefield',
+      win: true,
+    });
+  });
+
+  it('falls back to the localized unknown label for a match with stage id 0', () => {
+    const series = getRollingWinRate([makeMatch({ map: { id: 0, name: 'no selection' } })], 5);
+    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.stageName).toBe(i18n.t('common.unknown'));
+  });
+
+  it('resolves eventName from tournamentName when eventName is absent', () => {
+    const series = getRollingWinRate(
+      [makeMatch({ eventName: undefined, tournamentName: 'Genesis 10' })],
+      5,
+    );
+    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
+    expect(points[0]?.context.eventName).toBe('Genesis 10');
+  });
+
+  it('returns an empty array for an empty series', () => {
+    expect(buildScoutTrendChartPoints([], i18n.t.bind(i18n))).toEqual([]);
   });
 });

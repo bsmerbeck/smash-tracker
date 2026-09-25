@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { rulesetOverrideStoredSchema } from './ruleset.js';
 
 /**
  * `startggLinks/{uid}` — server-only record of a user's linked start.gg
@@ -155,6 +156,16 @@ export const tournamentEntrySchema = z.object({
    * parseable.
    */
   entryKey: z.string().min(1).nullish(),
+  /**
+   * EVID-04 (37-CONTEXT.md D-10): the per-event ruleset override,
+   * `.nullish()` following this schema's own existing convention (e.g.
+   * `eventId`, `source` above) — an absent member means the event uses the
+   * house default ruleset (`resolveRuleset` in `ruleset.ts` is the one place
+   * that interprets absence vs. presence). Every writer must
+   * conditional-spread this field rather than write it unconditionally,
+   * mirroring this codebase's documented `260725-juj` null-strip incident.
+   */
+  rulesetOverride: rulesetOverrideStoredSchema.nullish(),
 });
 export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
 

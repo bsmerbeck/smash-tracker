@@ -1,133 +1,398 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import {
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LineElement,
-  LinearScale,
-  PointElement,
-  Tooltip,
-  type ChartOptions,
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
-import type { Match } from '@smash-tracker/shared';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  getRollingWinRate,
-  getRunningWinRateSeries,
-  type RollingWinRatePoint,
-  type RunningWinRatePoint,
-} from '@/lib/stats';
-import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import type {
+  HorizonKey,
+  Insight,
+  InsightKind,
+  InsightScope,
+  Match,
+  PeriodPoint,
+  PeriodSeries,
+} from '@smash-tracker/shared';
+import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
+import { Button } from '@/components/ui/button';
+import { TrendLine } from '@/components/charts/TrendLine';
+import { FormStrip } from '@/components/charts/FormStrip';
+import { buildFormStripEvents, formStripSetKeyForMatch } from '@/lib/formStripEvents';
+import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { localizedFighterName } from '@/lib/fighterNames';
+import { formatPercent } from '@/lib/formatPercent';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
+import { useMatchupsContext } from '../MatchupsContext';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
-
-export type TrendMode = '5' | '10' | 'cumulative';
-
-const TREND_OPTIONS: { value: TrendMode; labelKey: string }[] = [
-  { value: '5', labelKey: 'matchups.chart.rolling5' },
-  { value: '10', labelKey: 'matchups.chart.rolling10' },
-  { value: 'cumulative', labelKey: 'matchups.chart.cumulative' },
-];
-
-type TrendPoint = RollingWinRatePoint | RunningWinRatePoint;
+/** UI-SPEC §7.13: the trend's total-period-count unlock floor. Duplicated as a local literal (not imported from `PERIOD_TREND_MIN_PERIODS`) only for the locked-sentence's own `count` arithmetic below — the kit component itself already reads the shared constant. */
+const PERIOD_TREND_LOCKED_FLOOR = 8;
 
 /**
- * Builds the trend series for the given mode — the pure part of the chart,
- * factored out so window-switching logic is unit-testable without mounting
- * chart.js. 'cumulative' mirrors the original all-time running win rate;
- * '5'/'10' use the trailing-window "form curve" from the v3 stats engine.
+ * VIZ-03/INS-05 (UI-SPEC §8.3): the `formNow` template registered in the
+ * closed insight registry, looked up by id rather than imported directly —
+ * `formNowTemplate` itself is not a public export of `@smash-tracker/shared`
+ * (only the composed `INSIGHT_TEMPLATES` registry is), and `registry.ts`'s
+ * own doc comment states a caller may invoke `build` with any `InsightScope`
+ * its own logic can interpret — this is exactly that reuse (`formNow` at
+ * character scope, distinct from its account-scope default). Resolved once
+ * at module scope: the registry is a static, closed array.
  */
-export function buildTrendSeries(matches: Match[], mode: TrendMode): TrendPoint[] {
-  if (mode === 'cumulative') {
-    return getRunningWinRateSeries(matches);
-  }
-  return getRollingWinRate(matches, Number(mode));
+const FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
+
+/** UI-SPEC §7.8: `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated, not shared, in `MatchupOrPlayerCard.tsx` — mirrors this codebase's established "no shared file for one small mapping" convention (see `bestWorstMatchup.ts`'s doc comment on `groupByOpponentCharacter`). */
+export function claimChipKindFor(kind: InsightKind): ClaimChipKind {
+  if (kind === 'inference') return 'trend';
+  if (kind === 'recommendation') return 'suggestion';
+  return 'fact';
 }
 
-/** Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over time for the specific matchup, upgraded with a rolling-window selector (default 5) and a cumulative fallback. */
-export function MatchupChart({ matchupMatches }: { matchupMatches: Match[] }) {
-  const { t, i18n } = useTranslation();
-  const [mode, setMode] = useState<TrendMode>('5');
-  const series = buildTrendSeries(matchupMatches, mode);
+/**
+ * Builds the character-scoped `InsightScope` for this exact fighter/opponent
+ * pairing (D-09's "axis identity supplied at the boundary" discipline —
+ * `formNow.ts` itself never derives this). `filter` is the identity function
+ * because `matchupMatches` is already pairing-filtered by `MatchupsPage`
+ * before it reaches this component; `axes` mirrors `drillDownParams.ts`'s
+ * own param names (`fighter`/`vs`).
+ */
+function buildPairingScope(fighterId: number, opponentId: number): InsightScope {
+  return {
+    kind: 'character',
+    key: `character:${fighterId}:${opponentId}`,
+    axes: { fighter: fighterId, vs: opponentId },
+    filter: (matches: Match[]) => matches,
+  };
+}
+
+/**
+ * Plan 39.1-13: `formNow` at pairing (character) scope, resolved once and
+ * shared by the insight-slot head (`renderFormNowHead`, called by the HOST —
+ * `MatchupsPage.tsx` owns `ChartCard`, per the Phase 37 structural frame
+ * rule `chartKitBoundary.test.ts` enforces: `MatchupChart.tsx` never imports
+ * `ChartCard`) and by `MatchupChart` itself (the form strip's recent-window
+ * highlight and the trend's emphasis band both read the SAME resolved
+ * window, never a second, independently-resolved one).
+ */
+export function useMatchupFormNow({
+  matchupMatches,
+  horizon,
+}: {
+  matchupMatches: Match[];
+  horizon: HorizonKey;
+}): Insight | null {
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — the lazy `useState` initializer is this codebase's established
+  // one-time-read escape hatch (see `MatchupInsights.tsx`, `useHorizon.ts`).
+  const [nowMs] = useState(() => Date.now());
+  const fighterId = matchupMatches[0]?.fighter_id;
+  const opponentId = matchupMatches[0]?.opponent_id;
+
+  return useMemo(() => {
+    if (fighterId == null || opponentId == null) return null;
+    const scope = buildPairingScope(fighterId, opponentId);
+    const built = FORM_NOW_TEMPLATE.build({ matches: matchupMatches, scope, horizon, nowMs });
+    return built[0] ?? null;
+  }, [fighterId, opponentId, matchupMatches, horizon, nowMs]);
+}
+
+/**
+ * Plan 39.1-31 (gap closure, D-07/D-15, item 7): true exactly when the
+ * engine's `locked` state is really "the last-30 window has fewer than 3
+ * games because D-15's 12-month scoped-recency bound emptied or thinned it,
+ * while the pairing's lifetime record is evidenced" — the ONE case this
+ * plan maps to a truthful whole-sentence key instead of the engine's own
+ * `insights.formNow.locked` (which reads "N more games unlock this read", a
+ * sentence about games still NEEDED, not about the window being
+ * time-bounded — and whose `copy.values.count` is deliberately `gamesNeeded`
+ * per CR-A02, wrong for this purpose). The engine itself is unchanged:
+ * `ladder.ts` keeps `locked` before `thinRecent` for every horizon; this is
+ * a UI-only reinterpretation of an already-produced `locked` insight. Scoped
+ * to `horizon === 'last30'` on purpose — only there is "fewer than 3 in the
+ * window" exactly "fewer than 3 in the last 12 months" (D-15's bound IS
+ * `last30`'s own scoping); `lastEvent`/`last90` are time-bounded in their
+ * own right and keep the engine's stock `locked` copy.
+ */
+function headStatesScopedWindow(insight: Insight): boolean {
+  return (
+    insight.state === 'locked' &&
+    insight.horizon === 'last30' &&
+    insight.window.scoped &&
+    insight.baseline.kind === 'evidenced'
+  );
+}
+
+/**
+ * Plan 39.1-26 (gap closure): the ONE verdict composition for `formNow` at
+ * pairing scope — `entity` is never supplied by the engine (UI-SPEC §9.2
+ * rule 7), so this composes it itself before calling `t()`. Shared by
+ * `renderFormNowHead` (the slot) and `MatchupsPage.tsx`'s `claimSummary`
+ * (the terminus's active-filter summary), so the two never independently
+ * re-derive the same sentence.
+ *
+ * Plan 39.1-31: `headStatesScopedWindow` above maps the D-15 scoped-empty
+ * `locked` case to `insights.state.noneRecent.scoped` (0 recent games) or
+ * `insights.state.thinRecent.scoped` (1-2) BEFORE falling through to the
+ * engine's own `insight.copy.key` — no new key is added under
+ * `insights.formNow.*` (the registry's reverse audit forbids an
+ * unreachable template key).
+ */
+export function buildFormNowVerdict(insight: Insight, opponentId: number, t: TFunction): string {
+  const fighter = localizedFighterName(opponentId, t);
+  if (headStatesScopedWindow(insight)) {
+    return insight.window.games === 0
+      ? t('insights.state.noneRecent.scoped', { fighter })
+      : t('insights.state.thinRecent.scoped', { count: insight.window.games, fighter });
+  }
+  const entity = `${t('matchups.vs')} ${fighter}`;
+  return t(insight.copy.key, { ...insight.copy.values, entity });
+}
+
+/**
+ * Plan 39.1-31 (item 7): the evidence line's ONE composition, split out of
+ * `renderFormNowHead` so its three-way branch (recent evidenced / baseline
+ * only / neither) is a single readable function.
+ *
+ * - Recent evidenced (the common case, and every non-`locked`/scoped-empty
+ *   state): the existing two-horizon sentence, unchanged EXCEPT its
+ *   confidence cue now reads `insight.window.games` (the window's own game
+ *   total) rather than `insight.copy.values.count` — for `locked`,
+ *   `copy.values.count` is deliberately `gamesNeeded` (CR-A02), the wrong
+ *   number for a cue about the recent sample; for every other state the two
+ *   values already coincide (`copy.values.count` is `recentRate.total`
+ *   there), so this is a no-op for those states and a fix for the one it
+ *   isn't.
+ * - Recent NOT evidenced, baseline evidenced (below-floor recent window —
+ *   `locked` at any horizon, not only the D-15 scoped-empty case above):
+ *   a lifetime-only line — never a fabricated "0–0" recent record, never a
+ *   confidence cue computed from games still needed.
+ * - Neither evidenced (a pairing with fewer than 3 games total): no
+ *   evidence line at all — there is nothing true to report yet beyond the
+ *   verdict's own "N more games" sentence.
+ */
+function buildFormNowEvidence(insight: Insight, t: TFunction, locale: string): string | null {
+  if (insight.recent.kind === 'evidenced') {
+    const recentRateText = formatPercent(insight.recent.value.rate, locale);
+    const baselineRateText =
+      insight.baseline.kind === 'evidenced'
+        ? formatPercent(insight.baseline.value.rate, locale)
+        : '';
+    const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
+    const cueCount = insight.window.games;
+    const tier = confidenceTierFor(cueCount);
+    const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: cueCount }) : '';
+    return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
+      recentRecord,
+      baselineRate: baselineRateText,
+      baselineGames: insight.copy.values.baselineGames ?? 0,
+      cue,
+    });
+  }
+  if (insight.baseline.kind === 'evidenced') {
+    const record = `${insight.baseline.value.wins}–${insight.baseline.value.losses}`;
+    const rate = formatPercent(insight.baseline.value.rate, locale);
+    const tier = insight.baseline.sample.confidenceTier;
+    const cue = tier
+      ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: insight.baseline.value.total })
+      : '';
+    return t('insights.evidence.allTimeOnly', { record, rate, cue });
+  }
+  return null;
+}
+
+/**
+ * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
+ * chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
+ * wrapper, no dismiss). Called by `MatchupsPage.tsx` to build `ChartCard`'s
+ * `insight` prop — `MatchupChart.tsx` itself never renders `ChartCard`.
+ *
+ * Plan 39.1-26 (gap closure): gains an optional trailing `door` — the
+ * counted-games door `MatchupsPage.tsx` builds via `buildInsightDoors`,
+ * rendered as a `Button asChild` wrapping the host's own `<Link>` inside
+ * `data-slot="matchup-form-now-doors"`. `undefined` renders no doors row at
+ * all (a zero-game window never prints "See the 0 games").
+ */
+export function renderFormNowHead(
+  insight: Insight,
+  opponentId: number,
+  t: TFunction,
+  locale: string,
+  door?: ReactNode,
+): ReactElement {
+  const chipKind = claimChipKindFor(insight.kind);
+  const verdict = buildFormNowVerdict(insight, opponentId, t);
+  const evidence = buildFormNowEvidence(insight, t, locale);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-end gap-2">
-        <span className="text-sm text-muted-foreground">{t('matchups.chart.window')}</span>
-        <Select value={mode} onValueChange={(value) => setMode(value as TrendMode)}>
-          <SelectTrigger className="w-[140px]" aria-label={t('matchups.chart.windowAria')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TREND_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {t(option.labelKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {series.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('matchups.chart.empty')}</p>
-      ) : (
-        <Line data={buildData(series, t)} options={buildOptions(series, i18n.language)} />
+    <div className="flex flex-col gap-2" data-slot="matchup-form-now">
+      <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
+      <p
+        className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+        data-slot="matchup-form-now-verdict"
+      >
+        {verdict}
+      </p>
+      {evidence && (
+        <p
+          className="text-xs leading-4 text-muted-foreground tabular-nums"
+          data-slot="matchup-form-now-evidence"
+        >
+          {evidence}
+        </p>
+      )}
+      {door && (
+        <div className="flex flex-wrap gap-2" data-slot="matchup-form-now-doors">
+          <Button asChild size="sm">
+            {door}
+          </Button>
+        </div>
       )}
     </div>
   );
 }
 
-function buildData(series: TrendPoint[], t: TFunction) {
-  return {
-    labels: series.map((point) => point.index.toString()),
-    datasets: [
-      {
-        label: t('matchups.chart.winRate'),
-        ...redLineDataset(),
-        data: series.map((point) => point.winRate),
-      },
-    ],
-  };
+/** The resolver `MatchupsPage` passes to `FilteredMatchList` so a form-strip set click's `event=` axis actually narrows the results list — the shared `formStripSetKeyForMatch` rule. */
+export function formStripEventKeyForMatch(match: Match): string {
+  return formStripSetKeyForMatch(match);
 }
 
-/** Builds chart options with tooltip callbacks closed over `series`, mirroring legacy MatchChart's tooltip title/footer (date + opponent's fighter name). */
-function buildOptions(series: TrendPoint[], locale: string): ChartOptions<'line'> {
-  const theme = darkChartOptions();
-  return {
-    scales: {
-      x: theme.scales?.x,
-      y: {
-        ...theme.scales?.y,
-        position: 'right',
-        suggestedMax: 100,
-      },
-    },
-    plugins: {
-      legend: {
-        display: true,
-        labels: theme.plugins?.legend?.labels,
-      },
-      tooltip: {
-        ...theme.plugins?.tooltip,
-        mode: 'nearest',
-        intersect: true,
-        callbacks: {
-          title: (items) => {
-            const point = series[items[0]?.dataIndex ?? -1];
-            if (!point) return '';
-            return new Date(point.match.time).toLocaleDateString(locale);
+/** UI-SPEC §7.13: the cumulative rate at (and through) each period point, as a context series parallel to `points` — never a second binning pass, just a running reduction over the SAME already-binned points. */
+function computeCumulativeContextPercents(points: { wins: number; total: number }[]): number[] {
+  let wins = 0;
+  let total = 0;
+  return points.map((point) => {
+    wins += point.wins;
+    total += point.total;
+    return total > 0 ? (wins / total) * 100 : 0;
+  });
+}
+
+/**
+ * Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over
+ * time for the specific matchup. Phase 39.1 (VIZ-03, INS-05, UI-SPEC §8.3):
+ * rebuilt end to end onto the new contract — the `rolling5/10/cumulative`
+ * `Select` is gone with NO replacement control (the horizon comes from the
+ * page's single `HorizonSwitch`, passed in as the `horizon` prop). This
+ * component still owns no card and never imports `ChartCard` (the Phase 37
+ * structural split `chartKitBoundary.test.ts` enforces) — `MatchupsPage.tsx`
+ * supplies the frame, reading `useMatchupFormNow`/`renderFormNowHead` above
+ * to build the `insight` prop.
+ *
+ * D-07/CHRT-02/Phase 38-04: a click on a trend point writes that point's
+ * own `PeriodPoint.key` as the `eventKey` axis (CR-02, 39.1-REVIEW — never
+ * its `[startMs, endMs]` window, which over-counts on the non-contiguous
+ * `eventSession`/`set` grains and on tied `game` timestamps) via the
+ * Matchups context's `setDrillDown` and scrolls to the results-table
+ * anchor; a form-strip set click writes its set key the same way. The page
+ * supplies `periodSeries` — the SAME series its terminus resolves the key
+ * against.
+ * Neither adds a second drill-down mechanism — both go through the existing
+ * `setDrillDown` context method, which already preserves the ambient
+ * `fighter`/`vs` character axes already present in the URL (Phase 38's own
+ * `setSearchParams(prev => ...)` merge, untouched by this plan).
+ */
+export function MatchupChart({
+  matchupMatches,
+  horizon,
+  periodSeries,
+  width,
+  height,
+}: {
+  matchupMatches: Match[];
+  horizon: HorizonKey;
+  /** CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over `matchupMatches` — plotted here, resolved by the host's terminus. */
+  periodSeries: PeriodSeries;
+  width?: number;
+  height?: number;
+}) {
+  const { t, i18n } = useTranslation();
+  const { setDrillDown } = useMatchupsContext();
+
+  const insight = useMatchupFormNow({ matchupMatches, horizon });
+
+  const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
+
+  const contextRatePercents = useMemo(
+    () => computeCumulativeContextPercents(periodSeries.points),
+    [periodSeries.points],
+  );
+
+  const recentWindow = useMemo(
+    () => ({ fromMs: insight?.window.fromMs ?? null, toMs: insight?.window.toMs ?? null }),
+    [insight],
+  );
+
+  const formStripEvents = useMemo(
+    () => buildFormStripEvents(matchupMatches, recentWindow, t, i18n.language),
+    [matchupMatches, recentWindow, t, i18n.language],
+  );
+
+  function handleSelectPeriodPoint(point: PeriodPoint) {
+    setDrillDown({ eventKey: point.key });
+    document
+      .getElementById(MATCHUP_TABLE_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function handleSelectSet(setKey: string) {
+    setDrillDown({ eventKey: setKey });
+    document
+      .getElementById(MATCHUP_TABLE_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  return (
+    // min-w-0 (plan 39.1-20 Task 3 [Rule 1]): without it, this flex item
+    // refuses to shrink below FormStrip's unconstrained max-content width
+    // — see FormStrip.tsx's own doc comment for the full mechanism.
+    <div className="flex min-w-0 flex-col gap-4" data-slot="matchup-chart-body">
+      <FormStrip
+        events={formStripEvents}
+        limit={30}
+        labels={{
+          // WR-03: names the games actually DRAWN of the total (kit-computed).
+          summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
+          legend: t('analytics.strip.legend'),
+          // Plan 39.1-33 (R1): a formatter — only the kit knows how many
+          // games it actually drew after `limit` AND its own measured-width
+          // fit, so the host no longer computes `shown` itself.
+          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+          empty: <span>{t('analytics.strip.empty')}</span>,
+          // Plan 39.1-31 (item 7): suppressed exactly when the verdict head
+          // already states the scoped-empty window itself (D-15's "No games
+          // ... — showing lifetime." sentence) — printing both would be the
+          // same contradictory double-note this plan closes.
+          windowEmpty:
+            insight && insight.window.games === 0 && !headStatesScopedWindow(insight)
+              ? t(`analytics.strip.windowEmpty.${horizon}`)
+              : undefined,
+        }}
+        onSelectSet={handleSelectSet}
+      />
+
+      <TrendLine
+        mode="period"
+        points={periodSeries.points}
+        onSelectPoint={handleSelectPeriodPoint}
+        referenceRate={overallRate}
+        emphasisStartMs={recentWindow.fromMs ?? undefined}
+        contextRatePercents={contextRatePercents}
+        width={width}
+        height={height}
+        labels={{
+          lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
+            count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
+          }),
+          lockedCountLabel: t('insights.state.lockedMeter', {
+            have: periodSeries.points.length,
+            need: PERIOD_TREND_LOCKED_FLOOR,
+          }),
+          tableToggle: t('analytics.trend.tableToggle'),
+          tableHeaders: {
+            period: t('analytics.trend.tableHeaders.period'),
+            record: t('analytics.trend.tableHeaders.record'),
+            rate: t('analytics.trend.tableHeaders.rate'),
+            sample: t('analytics.trend.tableHeaders.sample'),
           },
-          label: (item) => `: ${Math.round(Number(item.formattedValue) * 100) / 100}%`,
-        },
-      },
-    },
-  };
+          referenceLabel: `${Math.round(overallRate)}%`,
+        }}
+      />
+    </div>
+  );
 }

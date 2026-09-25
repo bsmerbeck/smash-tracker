@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
 import { HeroStats } from './HeroStats';
 
@@ -15,8 +15,10 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 describe('HeroStats', () => {
-  it('renders the account-wide overall record with sample size', () => {
+  it('renders the account-wide overall record as a win-rate lead with its record as the support line (UIX-04)', () => {
     const matches = [
       makeMatch({ id: '1', time: 1, win: true }),
       makeMatch({ id: '2', time: 2, win: true }),
@@ -25,15 +27,85 @@ describe('HeroStats', () => {
 
     render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
 
-    expect(screen.getByText('2-1')).toBeInTheDocument();
-    expect(screen.getByText('67% win rate')).toBeInTheDocument();
-    expect(screen.getByText('3 games')).toBeInTheDocument();
+    const overallCard = screen
+      .getByText('Overall Record')
+      .closest('[data-slot="card"]') as HTMLElement;
+    // The record primitive's en-dash format is the ONE record everywhere
+    // (UIX-04) — never the old bespoke hyphenated "2-1" string.
+    expect(within(overallCard).getByText('2–1')).toBeInTheDocument();
+    expect(within(overallCard).queryByText('2-1')).not.toBeInTheDocument();
+    // The win rate is the LARGE lead figure (StatFigure's own value role);
+    // "67%" ALSO appears once more inside the Record support line's own
+    // rate segment (the same established pairing `FighterHero.tsx`'s
+    // all-time figure uses) — assert the lead specifically by its role class.
+    const leadValue = overallCard.querySelector('.text-\\[1\\.75rem\\]');
+    expect(leadValue?.textContent).toBe('67%');
+    expect(within(overallCard).queryByText('3 games')).not.toBeInTheDocument();
+    expect(within(overallCard).getByText('3')).toBeInTheDocument();
   });
 
   it('shows an empty state for the overall record when there are no matches', () => {
     render(<HeroStats matches={[]} timeFilteredMatches={[]} />);
 
     expect(screen.getAllByText('No match data to report yet.').length).toBeGreaterThan(0);
+  });
+
+  it('renders a delta chip with a genuine recent-vs-baseline trend, under the active horizon', () => {
+    const now = Date.now();
+    // 30 older losses (well outside the last-30-games window) + 30 recent
+    // wins (all inside the 12-month scoped-recency floor) — baseline sits at
+    // 50%, recent at 100%, and recent.total(30) stays below
+    // HORIZON_COLLAPSE_RATIO(0.6) * baseline.total(60) = 36, so this
+    // genuinely asserts a direction rather than collapsing.
+    const older = Array.from({ length: 30 }, (_, i) =>
+      makeMatch({ id: `o${i}`, time: now - (200 + i) * DAY_MS, win: false }),
+    );
+    const recent = Array.from({ length: 30 }, (_, i) =>
+      makeMatch({ id: `r${i}`, time: now - i * DAY_MS, win: true }),
+    );
+
+    render(
+      <HeroStats matches={[...older, ...recent]} timeFilteredMatches={[...older, ...recent]} />,
+    );
+
+    expect(screen.getByText('+50 pts')).toBeInTheDocument();
+  });
+
+  it('renders one figure and no delta chip when the recent window collapses onto the baseline', () => {
+    const now = Date.now();
+    // A small, all-recent account (10 games, all within the last-30-games
+    // window AND past TREND_MIN_RECENT_GAMES(8) so it clears `thinRecent`
+    // first) — recent === baseline exactly, the `collapsed` state.
+    const matches = Array.from({ length: 10 }, (_, i) =>
+      makeMatch({ id: `${i}`, time: now - i * DAY_MS, win: i % 3 !== 0 }),
+    );
+
+    render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+
+    const overallCard = screen
+      .getByText('Overall Record')
+      .closest('[data-slot="card"]') as HTMLElement;
+    const leadValue = overallCard.querySelector('.text-\\[1\\.75rem\\]');
+    expect(leadValue?.textContent).toBe('60%');
+    expect(within(overallCard).queryByText(/pts$/)).not.toBeInTheDocument();
+    expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
+  });
+
+  it('WR-C01: never mislabels the delta chip "Thin" when the recent window is locked below the abstention floor', () => {
+    // 2 total games -> recent.total(2) < ABSTENTION_FLOOR_GAMES(3): the
+    // honesty ladder's `locked` state, a different tier than `thin` (enough
+    // games to count but not to assert a direction).
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true }),
+      makeMatch({ id: '2', time: 2, win: false }),
+    ];
+
+    render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+
+    const overallCard = screen
+      .getByText('Overall Record')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
   });
 
   it('renders the current streak in the form card', () => {
@@ -78,7 +150,33 @@ describe('HeroStats', () => {
     render(<HeroStats matches={manual} timeFilteredMatches={manual} />);
 
     expect(screen.getByText('no data')).toBeInTheDocument();
+    // The casual/competitive delta reads "+Npts" — the em-dash empty-state
+    // caption from `StatFigure`'s own zero-record split is unrelated text,
+    // so scoping to the trailing "pts" suffix stays a precise check.
     expect(screen.queryByText(/pts$/)).not.toBeInTheDocument();
+  });
+
+  it('every hero card that carries a real win/loss split renders it through the Record primitive (UIX-04)', () => {
+    const manual = [
+      makeMatch({ id: 'm1', time: 1, win: true }),
+      makeMatch({ id: 'm2', time: 2, win: false }),
+    ];
+    const competitive = [
+      makeMatch({ id: 'c1', time: 3, win: true, source: 'startgg' }),
+      makeMatch({ id: 'c2', time: 4, win: true, source: 'startgg' }),
+    ];
+    const online = [makeMatch({ id: 'q1', time: 5, win: true, matchType: 'quickplay' })];
+    const offline = [makeMatch({ id: 'f1', time: 6, win: false, matchType: 'offline-friendly' })];
+    const matches = [...manual, ...competitive, ...online, ...offline];
+
+    const { container } = render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+
+    // Every W–L pair anywhere on the hero row renders with the Record
+    // primitive's en-dash — never a plain hyphen. Overall record (1) +
+    // casual/competitive splits (2) + online/offline splits (2) = 5.
+    const enDashRecords = (container.textContent?.match(/\d+–\d+/g) ?? []).length;
+    expect(enDashRecords).toBe(5);
+    expect(container.textContent).not.toMatch(/\d+-\d+/); // never a plain hyphen record
   });
 
   it('renders the online/offline split respecting all global filters', () => {

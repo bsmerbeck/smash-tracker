@@ -34,6 +34,8 @@
     "chunkLoadError": "Ein Teil der Seite konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
     "retry": "Erneut versuchen",
     "language": "Sprache",
+    "collapseSidebarAria": "Seitenleiste einklappen",
+    "expandSidebarAria": "Seitenleiste ausklappen",
     "languageChanged": "Sprache auf {{language}} gesetzt — jederzeit in der oberen Leiste änderbar."
   },
   "common": {
@@ -83,7 +85,11 @@
     },
     "noMatches": {
       "title": "Du hast noch keine Matches gemeldet!",
-      "subtitle": "Erfasse ein Match im Dashboard und schau dann hier wieder vorbei."
+      "subtitle": "Synchronisiere deine start.gg- oder parry.gg-Matches oder erfasse eins manuell über dein Dashboard, um loszulegen."
+    },
+    "pickerUsage": {
+      "games_one": "{{count}} Match",
+      "games_other": "{{count}} Matches"
     },
     "vod": {
       "title": "VOD-Notizen",
@@ -115,15 +121,42 @@
       "message": "Keine Matches entsprechen den aktuellen Filtern.",
       "clear": "Filter zurücksetzen"
     },
+    "filteredMatchList": {
+      "summary_one": "{{count}} Spiel · {{filters}}",
+      "summary_other": "{{count}} Spiele · {{filters}}",
+      "clear": "Filter zurücksetzen",
+      "empty": "Keine Spiele entsprechen diesen Filtern.",
+      "claimNotApplied": "Die verlinkte Auswertung ist nicht mehr verfügbar und wird daher nicht angewendet. Es werden alle Spiele angezeigt, die den übrigen Filtern entsprechen.",
+      "loading": "Spiele werden geladen…",
+      "rowVod": "{{opponent}} — {{stage}}, {{result}}, öffnet Video",
+      "rowExpand": "{{opponent}} — {{stage}}, {{result}}, Details anzeigen",
+      "columnMyCharacter": "Mein Charakter",
+      "columnTheirCharacter": "Ihr Charakter",
+      "columnEvent": "Event",
+      "showMore_one": "{{count}} weitere anzeigen",
+      "showMore_other": "{{count}} weitere anzeigen",
+      "showingOf_one": "{{shown}} von {{count}} Spiel angezeigt",
+      "showingOf_other": "{{shown}} von {{count}} Spielen angezeigt",
+      "eventSummary": {
+        "set": "Satz vs. {{opponent}} bei {{event}}",
+        "setUnnamed": "Satz vs. {{opponent}}",
+        "game": "Spiel vs. {{opponent}} am {{date}}"
+      }
+    },
     "pips": {
       "empty": "Noch keine Matches.",
       "recentResults": "Letzte {{count}} Ergebnisse, neueste zuerst"
     },
     "glicko": {
       "whatIs": "Was ist Glicko-2?",
-      "p1": "<strong>Glicko-2</strong> ist das Wertungssystem aus dem Schach, das auch viele kompetitive Ladder nutzen. Anders als eine reine Winrate gewichtet es, <em>wen</em> du schlägst und wie überraschend das Ergebnis war.",
+      "p1": "<strong>Glicko-2</strong> ist das Wertungssystem aus dem Schach, das auch viele kompetitive Ladder nutzen. Die Version dieser App (v2) bewertet jede Session gegen einen festen, konstanten Referenzgegner — sie spiegelt wider, wie gut du gespielt hast, nicht wen du geschlagen hast oder wie stark er war.",
       "p2": "Die <strong>±-Zahl (RD)</strong> ist die Unsicherheit: Sie schrumpft, je mehr du spielst, und wächst bei Inaktivität — ein Spieler mit 1500 ±50 ist etabliert, einer mit 1500 ±300 eine Unbekannte.",
-      "p3": "Wir nutzen es, weil Bracket-Play stoßweise passiert: Glicko-2 kommt mit langen Pausen zwischen Turnieren und kleinen Stichproben deutlich besser zurecht als Elo oder Winrate allein. Die Wertungen hier sind inoffiziell und werden nur aus deinen synchronisierten bzw. erfassten Matches berechnet."
+      "p3": "Wir nutzen es, weil Bracket-Play stoßweise passiert: Glicko-2 kommt mit langen Pausen zwischen Turnieren und kleinen Stichproben deutlich besser zurecht als eine reine Winrate. Die Wertungen hier sind inoffiziell, werden nur aus deinen synchronisierten bzw. erfassten Matches berechnet und nutzen Wertungsmodell-Version 2 (ein vollständiges Neuberechnen der Historie — sieh dir den Hinweis „Wertungsmodell aktualisiert“ an)."
+    },
+    "ratingModelNote": {
+      "title": "Wertungsmodell aktualisiert",
+      "body": "Session-Wertungen spiegeln jetzt Ergebnisse gegen einen festen Referenzgegner wider, nicht die reine Sieg/Niederlage-Bilanz — sieh dir „Was ist Glicko-2?“ an, um zu erfahren, was sich geändert hat. Ältere Wertungen wurden unter dem neuen Modell neu berechnet; deine Wertung kann von dem abweichen, woran du dich erinnerst.",
+      "dismiss": "Verstanden"
     },
     "relativeDate": {
       "justNow": "gerade eben",
@@ -138,9 +171,91 @@
       "label": "Gegner analysieren",
       "aria": "Gegner {{name}} analysieren"
     },
+    "drillableRow": {
+      "aria": "{{subject}} — {{context}}, öffnet Details"
+    },
     "inferredFighters": {
       "title": "Kämpfer aus deinem Match-Verlauf",
       "body": "Du hast noch keine Lieblingskämpfer gespeichert, daher nutzt diese Seite die in deinen erfassten Matches beobachteten Kämpfer. Favoriten zu wählen ist optional und personalisiert diese Seiten nur."
+    },
+    "evidence": {
+      "abstained_one": "Noch nicht genug Daten — {{count}} weiteres Match nötig.",
+      "abstained_other": "Noch nicht genug Daten — {{count}} weitere Matches nötig.",
+      "sampleCue": {
+        "low_one": "{{count}} Match · niedrige Konfidenz",
+        "low_other": "{{count}} Matches · niedrige Konfidenz",
+        "medium_one": "{{count}} Match · mittlere Konfidenz",
+        "medium_other": "{{count}} Matches · mittlere Konfidenz",
+        "high_one": "{{count}} Match · hohe Konfidenz",
+        "high_other": "{{count}} Matches · hohe Konfidenz"
+      },
+      "unknownRow_one": "Unbekannt ({{count}} Match, ausgeschlossen)",
+      "unknownRow_other": "Unbekannt ({{count}} Matches, ausgeschlossen)",
+      "unnamedBucket_one": "{{count}} Spiel ohne erfassten Gegnernamen",
+      "unnamedBucket_other": "{{count}} Spiele ohne erfassten Gegnernamen",
+      "mixedContext": "Gemischter Kontext",
+      "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — gemischt mit {{majorityLabel}}.",
+      "sampleCueGlyph": {
+        "low_one": "niedrige Konfidenz, {{count}} Match",
+        "low_other": "niedrige Konfidenz, {{count}} Matches",
+        "medium_one": "mittlere Konfidenz, {{count}} Match",
+        "medium_other": "mittlere Konfidenz, {{count}} Matches",
+        "high_one": "hohe Konfidenz, {{count}} Match",
+        "high_other": "hohe Konfidenz, {{count}} Matches"
+      },
+      "cohort": {
+        "online": "online",
+        "offline": "offline",
+        "unspecified": "unbestimmt",
+        "manual": "manuell",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
+      "type": {
+        "recommendation": "Coaching-Empfehlung basierend auf deinen erfassten Matches — keine Garantie.",
+        "inference": "Statistische Ableitung aus deinen erfassten Matches.",
+        "fact": "Erfasste Tatsache aus deinem Match-Verlauf."
+      }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}} %",
+      "whoWhere": "{{opponent}} auf {{stage}}",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}} ({{score}})",
+      "resultOnly": "{{result}}",
+      "gameNumber": "Spiel {{game}}",
+      "whoWhereEvent": "{{opponent}} bei {{event}}",
+      "eventScore": "{{wins}}–{{losses}} bei diesem Event"
+    },
+    "ruleset": {
+      "control": {
+        "label": "Regelwerk: {{preset}}",
+        "aria": "Das Regelwerk hinter diesen Stage-Empfehlungen ansehen"
+      },
+      "preset": {
+        "default": {
+          "name": "Haus-Standard (SSBU)",
+          "detail": "{{starters}}, {{bans}} pro Spiel, {{strikeOrder}}-Strike, {{dsr}}, {{setFormat}} — hausinterne Konvention angelehnt an {{source}} ({{date}})"
+        },
+        "starterClause_one": "{{count}} Startstage",
+        "starterClause_other": "{{count}} Startstages",
+        "banClause_one": "{{count}} Bann",
+        "banClause_other": "{{count}} Banns"
+      },
+      "dsr": {
+        "none": "kein DSR",
+        "standard": "Standard-DSR",
+        "modified": "modifiziertes DSR"
+      },
+      "setFormat": {
+        "bo3": "Best of 3",
+        "bo5": "Best of 5"
+      },
+      "customName": "Angepasst (dieses Event)",
+      "overrideBadge": "Angepasstes Regelwerk",
+      "overrideEditHint": "Dieses Regelwerk auf der Turnier-Detailseite bearbeiten.",
+      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet."
     }
   },
   "dashboard": {
@@ -196,7 +311,6 @@
       "openLab": "Matchup Lab öffnen",
       "strongest": "Stärkste Matchups",
       "toughest": "Schwierigste Matchups",
-      "needMoreGames": "Spiele noch ein paar Matches ({{count}}+ pro Gegner), um dein schwierigstes Matchup zu ermitteln.",
       "notEnough": "Nicht genug erfasste Matches für eine Auswertung."
     },
     "selectFighter": {
@@ -297,6 +411,23 @@
       "deleteMatch": "Match löschen",
       "edited": "Match bearbeitet!",
       "saveFailed": "Match konnte nicht gespeichert werden. Bitte erneut versuchen."
+    },
+    "continueSet": {
+      "trigger": "Set fortsetzen",
+      "title": "Set fortsetzen",
+      "description": "Füge die weiteren Spiele dieses Sets hinzu. Bereits gespeicherte Spiele werden nur zur Orientierung angezeigt und nicht verändert.",
+      "saved": "Gespeichert",
+      "removeGame": "Spiel {{number}} aus diesem Set entfernen",
+      "clearContext": "Stattdessen bei Spiel 1 beginnen",
+      "contextCleared": "Frühere Spiele ignoriert — neue Spiele beginnen bei Spiel 1.",
+      "alreadyDecided": "Dieses Set ist bereits entschieden. Wechsle zu Bo5, um weitere Spiele hinzuzufügen.",
+      "loading": "Suche nach den früheren Spielen dieses Sets…",
+      "loadFailed": "Deine Matches konnten nicht geladen werden, daher sind die früheren Spiele dieses Sets unbekannt.",
+      "continueWithoutContext": "Ohne frühere Spiele fortfahren",
+      "back": "Zurück",
+      "save": "Spiele speichern",
+      "added_one": "{{count}} Spiel zum Set hinzugefügt",
+      "added_other": "{{count}} Spiele zum Set hinzugefügt"
     },
     "stageForm": {
       "label": "Stage-Form",
@@ -507,7 +638,8 @@
     "roster": {
       "title": "Roster-Nutzung",
       "showAll": "Alle anzeigen ({{count}} weitere)",
-      "showLess": "Weniger anzeigen"
+      "showLess": "Weniger anzeigen",
+      "railName": "Roster"
     },
     "stages": {
       "title": "Stage-Auswertung",
@@ -742,12 +874,18 @@
     "you": "Du",
     "opponent": "Gegner",
     "vs": "vs.",
+    "pairingHeading": "{{fighter}} vs. {{opponent}}",
     "winRateTrend": "Winrate-Verlauf",
     "results": "Matchup-Ergebnisse",
     "selectFighterAria": "Deinen Kämpfer auswählen",
     "selectOpponentAria": "Gegnerischen Kämpfer auswählen",
     "selectPlaceholder": "Kämpfer wählen",
+    "selectOpponent": {
+      "facedGroup": "Bereits gespielt",
+      "unfacedGroup": "Noch nicht gespielt"
+    },
     "record": {
+      "title": "Bilanz",
       "empty": "Keine erfassten Matches gegen diesen Kämpfer",
       "totalMatches": "Matches gesamt"
     },
@@ -757,45 +895,70 @@
       "showAll": "Alle {{count}} anzeigen",
       "empty": "Noch keine Matches erfasst — spiele ein paar Matches, um deine Matchup-Matrix aufzubauen.",
       "yourFighterSr": "Dein Kämpfer",
-      "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}"
+      "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}",
+      "cellAria4": "{{row}} auf {{col}}: {{wins}}-{{losses}}"
     },
     "chart": {
-      "window": "Fenster",
-      "windowAria": "Trend-Fenster",
-      "rolling5": "Letzte 5",
-      "rolling10": "Letzte 10",
-      "cumulative": "Kumuliert",
-      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
       "winRate": "Winrate"
     },
     "insights": {
       "title": "Matchup-Einblicke",
       "minMatches": "Min. Matches pro Stage",
-      "minMatchesAria": "Minimale Matches pro Stage",
       "empty": "Für dieses Matchup sind noch keine Matches erfasst.",
       "currentStreak": "Aktuelle Serie",
-      "streakWins": "{{count}} Siege",
-      "streakLosses": "{{count}} Niederlagen",
+      "streakUnit": {
+        "win_one": "Sieg",
+        "win_other": "Siege",
+        "loss_one": "Niederlage",
+        "loss_other": "Niederlagen"
+      },
       "longestWin": "Längste Siegesserie",
       "longestLoss": "Längste Niederlagenserie",
       "recentForm": "Aktuelle Form (neueste zuerst)",
       "bestStage": "Beste Stage",
       "worstStage": "Schlechteste Stage",
-      "notEnoughStageData": "Noch nicht genug Stage-Daten.",
+      "singleStageOnly": "Noch nicht genügend unterschiedliche Stages — spiele dieses Matchup auf einer weiteren Stage, um eine Warnung zur schlechtesten Stage zu sehen.",
       "byMatchType": "Nach Match-Typ"
     },
     "stageTable": {
       "title": "Stage-Auswertung",
       "stage": "Stage",
       "record": "Bilanz",
-      "winRate": "Winrate"
+      "winRate": "Winrate",
+      "noStage_one": "{{count}} Spiel ohne erfassten Stage",
+      "noStage_other": "{{count}} Spiele ohne erfassten Stage"
     },
     "counterpick": {
       "title": "Counterpick-Berater",
-      "gather": "Sammle mehr Daten: Stages brauchen mindestens {{count}} erfasste Matches in diesem Matchup, bevor Picks oder Bans vorgeschlagen werden können.",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
-      "unknownStage": "Unbekannte Stage"
+      "unknownStage": "Unbekannte Stage",
+      "threshold_one": "Min. {{count}} Spiel pro Stage",
+      "threshold_other": "Min. {{count}} Spiele pro Stage",
+      "noLegalStages": "Unter diesem Regelwerk und diesem Spielstand ist keine Stage legal.",
+      "setState": {
+        "summary": "Angenommen {{phase}} · {{role}} · {{priorSummary}}",
+        "editAria": "Spielphase, Rolle, vorherige Stages und Bans der Annahme ändern",
+        "editLabel": "Annahme ändern",
+        "phase": {
+          "game1": "Spiel 1",
+          "game2plus": "Spiel 2+"
+        },
+        "role": {
+          "striking": "Striken",
+          "picking": "Picken"
+        },
+        "priorSummary_one": "{{count}} gespielte Stage",
+        "priorSummary_other": "{{count}} gespielte Stages",
+        "priorNone": "noch keine Stage gespielt",
+        "bansSummary_one": "{{count}} gebannte Stage",
+        "bansSummary_other": "{{count}} gebannte Stages",
+        "bansNone": "keine Bans",
+        "priorStagesLabel": "Bisher gespielte Stages",
+        "bansLabel": "Bisher gebannte Stages",
+        "wonLabel": "Gewonnen",
+        "lostLabel": "Verloren"
+      }
     },
     "opponentSplit": {
       "title": "Nach Gegner",
@@ -805,7 +968,10 @@
       "empty": "Noch keine Matches erfasst!",
       "date": "Datum",
       "result": "Ergebnis",
-      "manage": "Verwalten"
+      "manage": "Verwalten",
+      "selectionNotice_one": "{{count}} Match aus dem Diagramm wird angezeigt.",
+      "selectionNotice_other": "{{count}} Matches aus dem Diagramm werden angezeigt.",
+      "clearSelection": "Alle Matches anzeigen"
     }
   },
   "fighterAnalysis": {
@@ -822,7 +988,37 @@
       "share": "{{pct}} % deiner Matches",
       "last10": "Letzte 10 (neueste zuerst)",
       "formRolling": "Form (gleitende 10)",
-      "typeColumn": "Typ"
+      "typeColumn": "Typ",
+      "allTime": "Gesamt",
+      "identityMeta": "{{pct}} % der Spiele · {{confidence}}",
+      "verdictMeta": {
+        "last30": "FormNow · letzte 30 Spiele gegen Gesamt",
+        "lastEvent": "FormNow · letztes Event gegen Gesamt",
+        "last90": "FormNow · letzte 90 Tage gegen Gesamt"
+      },
+      "figureLocked_one": "{{count}} weiteres Spiel schaltet dies frei",
+      "figureLocked_other": "{{count}} weitere Spiele schalten dies frei",
+      "formStrip": {
+        "title": "Form · letzte 60 Spiele, nach Event"
+      },
+      "trendTitle": {
+        "game": "Siegquote nach Spiel · Punktgröße = Spiele",
+        "set": "Siegquote nach Satz · Punktgröße = Spiele",
+        "eventSession": "Siegquote nach Event · Punktgröße = Spiele",
+        "week": "Siegquote nach Woche · Punktgröße = Spiele",
+        "month": "Siegquote nach Monat · Punktgröße = Spiele",
+        "quarter": "Siegquote nach Quartal · Punktgröße = Spiele",
+        "year": "Siegquote nach Jahr · Punktgröße = Spiele"
+      },
+      "vsCharacters": {
+        "title": "vs Charaktere",
+        "empty": "Noch keine Charakterdaten — erfasse Spiele, um Trends nach Charakter zu sehen."
+      },
+      "vsPlayers": {
+        "title": "vs Spieler",
+        "empty": "Noch keine Gegnerdaten — erfasse Spiele, um Trends nach Gegner zu sehen."
+      },
+      "listMeta": "meiste Spiele zuerst · jeweils letzte 30"
     },
     "stageMastery": {
       "title": "Stage-Beherrschung",
@@ -844,8 +1040,7 @@
       "stageHabit": "Du spielst immer wieder auf {{stage}}: {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "Matchup-Stage-Guide",
-      "empty": "Noch keine Matchup-Daten — erfasse Matches mit diesem Kämpfer, um den Guide aufzubauen."
+      "title": "Matchup-Stage-Guide"
     },
     "opponents": {
       "title": "Gegner",
@@ -854,9 +1049,12 @@
     }
   },
   "trends": {
+    "title": "Trends",
     "loading": "Trends werden geladen...",
     "noMatches": "Du hast noch keine Matches — erfasse eins und schau hier wieder vorbei, um deine Trends zu sehen!",
     "hero": {
+      "winRate": "Siegquote",
+      "rating": "Wertung",
       "currentRating": "Aktuelle Wertung",
       "glickoRating": "Glicko-2-Wertung",
       "notEnoughGames": "Noch nicht genug Matches",
@@ -866,7 +1064,11 @@
       "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} Matches)",
       "bestMonthNeeds": "Braucht einen Monat mit {{count}}+ Matches",
       "currentForm": "Aktuelle Form",
-      "formCaption": "Letzte {{played}} von {{window}} Matches"
+      "formCaption": "Letzte {{played}} von {{window}} Matches",
+      "sessionsLabel": "Sitzungen",
+      "avgGamesCaption": "{{count}} Matches im Schnitt",
+      "locked_one": "{{count}} weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "{{count}} weitere Matches schalten diese Auswertung frei."
     },
     "monthly": {
       "title": "Monatliche Leistung",
@@ -909,11 +1111,14 @@
       "offline": "Offline",
       "unspecified": "Nicht angegeben",
       "noData": "keine Daten",
-      "even": "Du gewinnst online und offline etwa gleich oft.",
-      "youWin": "Du gewinnst",
-      "moreOnline": "häufiger online als offline.",
-      "moreOffline": "häufiger offline als online.",
-      "smallSample": "Für einen verlässlichen Vergleich braucht es mindestens {{count}} Matches online und offline."
+      "unspecifiedFootnote_one": "{{count}} nicht angegebenes Match nicht mitgezählt.",
+      "unspecifiedFootnote_other": "{{count}} nicht angegebene Matches nicht mitgezählt."
+    },
+    "recentEvents": {
+      "title": "Letzte Events",
+      "placementAndSeed": "{{placement}} von {{entrants}} · Setzung {{seed}}",
+      "placementOnly": "{{placement}} von {{entrants}}",
+      "seedOnly": "Setzung {{seed}}"
     },
     "tournaments": {
       "title": "Turniere",
@@ -928,11 +1133,17 @@
       "showAllTime": "Gesamten Zeitraum anzeigen"
     },
     "mix": {
-      "title": "Match-Typ-Mix im Zeitverlauf",
+      "title": "Match-Typ-Mix",
       "tourney": "Turnier",
       "friendly": "Friendly",
       "quickplay": "Quickplay",
-      "unspecified": "Nicht angegeben"
+      "unspecified": "Nicht angegeben",
+      "allTime": "Gesamter Verlauf",
+      "recentHeader": {
+        "last30": "Letzte 30 Matches",
+        "lastEvent": "Letztes Event",
+        "last90": "Letzte 90 Tage"
+      }
     }
   },
   "tournaments": {
@@ -986,7 +1197,6 @@
     },
     "retro": {
       "title": "Berater-Rückblick",
-      "description": "Jeder Pick wird daran gemessen, was der Counterpick-Berater empfohlen hätte — nur mit Daten von vor Turnierbeginn.",
       "noGames": "Für dieses Event sind noch keine Matches erfasst.",
       "notEnough": "Nicht genug Vor-Turnier-Daten, um diese Picks zu bewerten.",
       "adherence": "Berater-Befolgung: {{rate}} % der bewertbaren Picks",
@@ -1000,7 +1210,25 @@
       "adviceNone": "kein klarer Pick",
       "verdictFollowed": "befolgt",
       "verdictAgainst": "dagegen",
-      "verdictNeutral": "neutral zu"
+      "verdictNeutral": "neutral zu",
+      "chip": {
+        "followed": "Berater befolgt",
+        "against": "Gegen den Berater entschieden",
+        "neutral": "Keine Berater-Haltung",
+        "noData": "Nicht genug Daten"
+      },
+      "reasonLine": "{{stage}} — Entscheidung des Beraters: {{verdict}} ({{result}})",
+      "reasonOutsideRuleset": "{{stage}} — nach dem Regelwerk dieses Events nicht zulässig, daher hat der Berater sie nie eingestuft ({{result}})",
+      "takeaway": {
+        "followedWin": "Pick befolgt und gewonnen — gutes Zeichen, diese Stage im Spielplan zu behalten.",
+        "followedLoss": "Pick befolgt und verloren — die Empfehlung hat sich diesmal nicht bestätigt.",
+        "againstWin": "Gegen den Pick entschieden und gewonnen — die Empfehlung braucht vielleicht mehr Daten.",
+        "againstLoss": "Gegen den Pick entschieden und verloren — lohnt sich, die empfohlene Stage nächstes Mal zu versuchen.",
+        "neutral": "Keine klare Empfehlung in die eine oder andere Richtung für diese Stage.",
+        "noData": "Nicht genug Vor-Turnier-Daten, um diesen Pick zu bewerten."
+      },
+      "rulesetDisclosure": "Bewertet nach {{preset}} ({{source}})",
+      "gradingBasis": "Jede von diesem Regelwerk erlaubte Stage wurde als verfügbar behandelt — Bans und Strikes pro Spiel wurden nie erfasst."
     },
     "recap": {
       "generateButton": "Recap erstellen",
@@ -1036,6 +1264,27 @@
       "dqExcluded_other": "{{count}} DQs ausgeschlossen",
       "resultsNotRecorded": "Die Top-Platzierungen wurden bei diesem Import nicht erfasst.",
       "listFootnote": "\"Importiert\"-Zeilen sind Schnappschüsse öffentlicher Turnierdaten, keine live synchronisierten Anmeldungen."
+    },
+    "detail": {
+      "rulesetOverride": {
+        "title": "Regelwerk für dieses Event",
+        "usingDefault": "Verwendet das hausinterne Standard-Regelwerk.",
+        "usingOverride": "Verwendet ein angepasstes Regelwerk für dieses Event.",
+        "editButton": "Regelwerk für dieses Event bearbeiten",
+        "resetButton": "Auf Haus-Standard zurücksetzen",
+        "stageRole": {
+          "starter": "Startstage",
+          "counterpick": "Konter-Wahl",
+          "notLegal": "Nicht legal"
+        },
+        "banCountBo3": "Banns in einem Best of 3",
+        "banCountBo5": "Banns in einem Best of 5",
+        "dsrLabel": "Stage-Wiederholungsregel",
+        "setFormatDefault": "Standard-Set-Format",
+        "setFormatTopCut": "Set-Format im Top-Cut",
+        "saved": "Regelwerk für dieses Event gespeichert.",
+        "saveFailed": "Regelwerk für dieses Event konnte nicht gespeichert werden."
+      }
     }
   },
   "billing": {
@@ -1157,6 +1406,34 @@
       "print": "H2H exportieren",
       "copy": "Als Text kopieren",
       "copied": "Kopiert!"
+    },
+    "hub": {
+      "trend": {
+        "pointLabel": "{{wins}}–{{losses}}"
+      },
+      "matrix": {
+        "notEnoughData_one": "Noch nicht genug Daten ({{count}} Spiel)",
+        "notEnoughData_other": "Noch nicht genug Daten ({{count}} Spiele)",
+        "tabAria": "{{row}}s Stage-Aufschlüsselung"
+      },
+      "filter": {
+        "fighter": "Mein Charakter",
+        "vs": "Gegnerischer Charakter",
+        "stage": "Stage"
+      },
+      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet."
+    }
+  },
+  "stages": {
+    "detail": {
+      "title": "{{stage}}",
+      "atEvent": "bei {{eventName}}",
+      "byOpponent": "Nach Gegner",
+      "byCharacter": "Nach Charakter",
+      "overTime": "Im Zeitverlauf",
+      "games": "Spiele",
+      "loading": "Stage wird geladen…",
+      "empty": "Für diese Stage sind noch keine Spiele erfasst."
     }
   },
   "scout": {
@@ -1807,7 +2084,8 @@
     "analyticsNav": {
       "dashboard": "Dashboard",
       "fighterAnalysis": "Kämpferanalyse",
-      "matchups": "Matchups"
+      "matchups": "Matchups",
+      "opponents": "Scouting"
     },
     "deliveryVodPicker": {
       "title": "VODs zum Einbeziehen auswählen",
@@ -2874,5 +3152,345 @@
   "demo": {
     "accountBanner": "Forschungs-Snapshot aus öffentlichen Daten — unverifiziert, nicht im Besitz des Spielers und nicht von ihm unterstützt.",
     "disabledReason": "Deaktiviert für Forschungskonten mit öffentlichen Daten."
+  },
+  "insights": {
+    "kind": {
+      "fact": "Fakt",
+      "trend": "Trend",
+      "suggestion": "Empfehlung",
+      "locked": "Gesperrt",
+      "unlocksNext": "Als Nächstes freigeschaltet"
+    },
+    "rail": {
+      "title": {
+        "last30": "Auswertungen · letzte 30 Matches vs. gesamt",
+        "lastEvent": "Auswertungen · letztes Event vs. gesamt",
+        "last90": "Auswertungen · letzte 90 Tage vs. gesamt"
+      },
+      "legend": "Fakt · Trend · Empfehlung",
+      "allDismissed": "Alle Auswertungen in dieser Leiste wurden ausgeblendet.",
+      "dismissedCount_one": "{{count}} auf diesem Gerät ausgeblendet",
+      "dismissedCount_other": "{{count}} auf diesem Gerät ausgeblendet",
+      "restore": "Wiederherstellen",
+      "dismiss": "Ausblenden",
+      "dismissedToast": "Auswertung auf diesem Gerät ausgeblendet.",
+      "error": "Auswertungen für diese Ansicht konnten nicht berechnet werden. Zum erneuten Versuch neu laden.",
+      "unavailable": "Für diese Ansicht sind noch keine Auswertungen verfügbar."
+    },
+    "door": {
+      "seeGames_one": "Das {{count}} Match ansehen",
+      "seeGames_other": "Die {{count}} Matches ansehen",
+      "openMatchup": "Matchup öffnen",
+      "openOpponent": "Gegner öffnen",
+      "openStage": "Stage öffnen",
+      "openEvent": "Event öffnen",
+      "findVods": "VODs finden",
+      "ratingModelNote": "Hinweis zum Wertungsmodell"
+    },
+    "chip": {
+      "up": "Steigt",
+      "down": "Fällt",
+      "steady": "Stabil",
+      "thin": "Zu wenig Daten",
+      "none_one": "{{count}} Matchup ohne nennenswerte Veränderung",
+      "none_other": "{{count}} Matchups ohne nennenswerte Veränderung",
+      "aria": {
+        "up": "Steigender Trend",
+        "down": "Fallender Trend",
+        "steady": "Keine nennenswerte Veränderung",
+        "thin": "Noch nicht genug Daten"
+      }
+    },
+    "horizon": {
+      "label": "Aktuelles Fenster",
+      "last30": "Letzte 30 Matches",
+      "lastEvent": "Letztes Event",
+      "last90": "Letzte 90 Tage",
+      "lastEventDisabled": "Keine Events erfasst",
+      "short": {
+        "last30": "30 Matches",
+        "lastEvent": "Letztes Event",
+        "last90": "90 Tage"
+      }
+    },
+    "evidence": {
+      "twoHorizon": {
+        "last30": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}",
+        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames}} · {{cue}}"
+      },
+      "single": "{{record}} · {{cue}}",
+      "span": "Diese {{count}} Matches erstrecken sich von {{from}} bis {{to}}.",
+      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} gesamt · {{cue}}"
+    },
+    "state": {
+      "collapsed": {
+        "last30": "Die letzten 30 Matches sind der gesamte Datensatz — eine Zahl, kein Vergleich.",
+        "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
+      },
+      "noneRecent": {
+        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
+      },
+      "thinRecent": {
+        "scoped_one": "Nur {{count}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "scoped_other": "Nur {{count}} Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "page": {
+          "last30": "Nur {{count}} Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
+          "lastEvent": "Nur {{count}} Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
+          "last90": "Nur {{count}} Matches in den letzten 90 Tagen — es wird der Gesamtzeitraum gezeigt."
+        }
+      },
+      "locked_one": "vs. {{fighter}} — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "vs. {{fighter}} — {{count}} weitere Matches schalten diese Auswertung frei.",
+      "lockedMeter": "{{have}} von {{need}} Matches",
+      "steady": {
+        "last30": "Keine nennenswerte Veränderung in den letzten 30 Matches.",
+        "lastEvent": "Keine nennenswerte Veränderung beim letzten Event.",
+        "last90": "Keine nennenswerte Veränderung in den letzten 90 Tagen."
+      }
+    },
+    "formNow": {
+      "up": {
+        "last30": "{{entity}} — Siegquote um {{points}} Pkt. gestiegen in den letzten 30 Matches.",
+        "lastEvent": "{{entity}} — Siegquote um {{points}} Pkt. gestiegen beim letzten Event.",
+        "last90": "{{entity}} — Siegquote um {{points}} Pkt. gestiegen in den letzten 90 Tagen."
+      },
+      "down": {
+        "last30": "{{entity}} — Siegquote um {{points}} Pkt. gesunken in den letzten 30 Matches.",
+        "lastEvent": "{{entity}} — Siegquote um {{points}} Pkt. gesunken beim letzten Event.",
+        "last90": "{{entity}} — Siegquote um {{points}} Pkt. gesunken in den letzten 90 Tagen."
+      },
+      "collapsed": {
+        "last30": "{{entity}} — {{record}} über alle {{count}} erfassten Matches.",
+        "lastEvent": "{{entity}} — {{record}} über alle {{count}} erfassten Matches beim letzten Event.",
+        "last90": "{{entity}} — {{record}} über alle {{count}} erfassten Matches."
+      },
+      "steady": "{{entity}} — {{record}} in den letzten {{count}} Matches, innerhalb der üblichen Bandbreite für eine Quote von {{rate}} ({{lower}}–{{upper}}).",
+      "thinRecent": "Nur {{count}} Matches zuletzt — es wird der Gesamtzeitraum gezeigt.",
+      "thin": "{{entity}} — bisher nur {{count}} Matches, zu wenig für einen Trend.",
+      "locked_one": "{{entity}} — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "{{entity}} — {{count}} weitere Matches schalten diese Auswertung frei."
+    },
+    "characterMovers": {
+      "up": "vs. {{fighter}} — Siegquote um {{points}} Pkt. gestiegen in den letzten {{count}} Matches.",
+      "down": "vs. {{fighter}} — Siegquote um {{points}} Pkt. gesunken in den letzten {{count}} Matches.",
+      "steady": "vs. Charaktere — keine nennenswerte Veränderung über {{count}} Matchups mit 8+ aktuellen Matches.",
+      "thinRecent": "Nur {{count}} Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+      "locked_one": "vs. {{fighter}} — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "vs. {{fighter}} — {{count}} weitere Matches schalten diese Auswertung frei.",
+      "sub": "Keine nennenswerten Rückgänge bei den übrigen {{count}} Matchups mit 8+ aktuellen Matches."
+    },
+    "rivalMovers": {
+      "up": "vs. {{opponent}} — Siegquote um {{points}} Pkt. gestiegen in den letzten {{count}} Matches.",
+      "down": "vs. {{opponent}} — Siegquote um {{points}} Pkt. gesunken in den letzten {{count}} Matches.",
+      "steady": "vs. Gegner — keine nennenswerte Veränderung über {{count}} Gegner mit 8+ aktuellen Matches.",
+      "thinRecent": "vs. Gegner — nur {{count}} Gegner erreichten 8 Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
+      "locked_one": "vs. {{opponent}} — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "vs. {{opponent}} — {{count}} weitere Matches schalten diese Auswertung frei."
+    },
+    "lastEventRecap": {
+      "hidden": "Noch kein Event erfasst.",
+      "fact": "{{event}} — {{gameRecord}} in Matches, {{setRecord}} in Sets.",
+      "factGamesOnly": "{{event}} — {{gameRecord}} in Matches.",
+      "factPlacement": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches, {{setRecord}} in Sets.",
+      "factPlacementGamesOnly": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches.",
+      "noSetLosses": "Keine verlorenen Sets.",
+      "setLosses_one": "Verlorener Satz — {{named}}.",
+      "setLosses_other": "Verlorene Sätze — {{named}}."
+    },
+    "ratingMove": {
+      "up": "Wertung — um {{points}} gestiegen in den letzten {{count}} Matches ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Wertung — um {{points}} gesunken in den letzten {{count}} Matches ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Wertung — keine Bewegung außerhalb der ±{{band}}-Bandbreite in den letzten {{count}} Matches ({{startRating}} → {{endRating}}).",
+      "thin": "Wertung — {{startRating}} → {{endRating}} beim letzten Event; {{count}} Matches sind zu wenig für eine Bewegung.",
+      "collapsed": "Wertung — {{endRating}} ±{{band}} nach {{count}} Matches; die Bandbreite bleibt weit.",
+      "locked_one": "Wertung — 1 weiteres Match schaltet diese Auswertung frei.",
+      "locked_other": "Wertung — {{count}} weitere Matches schalten diese Auswertung frei."
+    },
+    "tiltCost": {
+      "trend": "Nach 2 Niederlagen in Folge — nächstes Match {{spotRate}} vs. {{baselineRate}} Referenzwert.",
+      "suggestion": "Nach 2 Niederlagen in Folge — nächstes Match {{spotRate}} vs. {{baselineRate}} Referenzwert; eine Pause nach zwei Niederlagen ist einen Versuch wert.",
+      "steady": "Nach 2 Niederlagen in Folge — nächstes Match {{spotRate}} über {{spotCount}} Fälle; kein nennenswerter Nachteil vs. {{baselineRate}}.",
+      "locked_one": "Nach 2 Niederlagen in Folge — 1 weiterer Fall schaltet diese Auswertung frei.",
+      "locked_other": "Nach 2 Niederlagen in Folge — {{count}} weitere Fälle schalten diese Auswertung frei."
+    },
+    "sessionFatigue": {
+      "hidden": "Noch nicht genug lange Sessions zum Vergleich.",
+      "suggestion": "Sessiondauer — {{lateRate}} ab Match {{lateGameNumber}} vs. {{earlyRate}} in den ersten {{earlyGameCount}}; kürzere Blöcke sind einen Versuch wert.",
+      "trend": "Sessiondauer — {{lateRate}} ab Match {{lateGameNumber}} vs. {{earlyRate}} in den ersten {{earlyGameCount}}.",
+      "steady": "Sessiondauer — kein nennenswerter Rückgang nach Match {{lateGameNumber}} ({{lateRate}} vs. {{earlyRate}}).",
+      "caveat": "Auch die Bracket-Tiefe steigt spät in einer Session, ein Teil dieser Differenz liegt also an stärkeren Gegnern."
+    },
+    "settingGap": {
+      "up": "Umgebung — online läuft {{points}} Pkt. besser ({{onlineRate}} vs. {{offlineRate}}).",
+      "down": "Umgebung — offline läuft {{points}} Pkt. besser ({{onlineRate}} vs. {{offlineRate}}).",
+      "steady": "Umgebung — kein nennenswerter Unterschied zwischen online und offline ({{onlineRate}} vs. {{offlineRate}}).",
+      "thin": "Nicht genug {{shortSide}} Matches für einen Vergleich ({{count}}).",
+      "locked_one": "Umgebung — 1 weiteres {{shortSide}} Match schaltet den Online-/Offline-Vergleich frei.",
+      "locked_other": "Umgebung — {{count}} weitere {{shortSide}} Matches schalten den Online-/Offline-Vergleich frei."
+    },
+    "volumeForm": {
+      "up": "Umfang — Monate mit {{threshold}}+ Matches laufen {{highRate}} vs. sonst {{lowRate}}.",
+      "down": "Umfang — Monate mit {{threshold}}+ Matches laufen {{highRate}} vs. sonst {{lowRate}}.",
+      "steady": "Umfang — Monate mit {{threshold}}+ Matches laufen {{highRate}} vs. sonst {{lowRate}}; kein nennenswerter Unterschied.",
+      "locked_one": "Umfang — 1 weiterer Spielmonat schaltet diese Auswertung frei.",
+      "locked_other": "Umfang — {{count}} weitere Spielmonate schalten diese Auswertung frei."
+    },
+    "mixShift": {
+      "hidden": "Noch keine nennenswerte Verschiebung in der Match-Mischung.",
+      "fact": "Match-Mischung — {{recentShare}} {{matchType}} zuletzt vs. {{lifetimeShare}} insgesamt."
+    },
+    "rosterCore": {
+      "fact": "Roster — {{fighter}} ist der Main mit {{share}}% der Spielzeit; {{secondaryCount}} Secondaries, {{pocketCount}} Pockets.",
+      "thin": "Roster — der Main steht noch nicht fest; {{count}} Matches auf einem Charakter legen ihn fest."
+    },
+    "rosterShift": {
+      "hidden": "Noch keine nennenswerte Verschiebung darin, wer gespielt wird.",
+      "steady": "Roster — keine nennenswerte Verschiebung darin, wer gespielt wird, in den letzten 30 Matches.",
+      "up": "{{fighter}} — Spielanteil um {{points}} Pkt. gestiegen in den letzten {{count}} Matches.",
+      "down": "{{fighter}} — Spielanteil um {{points}} Pkt. gesunken in den letzten {{count}} Matches."
+    },
+    "secondaryPayoff": {
+      "trend": "vs. {{opponent}} — {{secondary}} läuft {{secondaryRate}}%, wo {{main}} {{mainRate}}% läuft.",
+      "suggestion": "vs. {{opponent}} — {{secondary}} läuft {{secondaryRate}}%, wo {{main}} {{mainRate}}% läuft; der Secondary lohnt sich.",
+      "steady": "Secondaries — kein Matchup, in dem ein Secondary den Main nennenswert schlägt.",
+      "locked_one": "vs. {{opponent}} — 1 weiteres Match mit {{secondary}} schaltet diese Auswertung frei.",
+      "locked_other": "vs. {{opponent}} — {{count}} weitere Matches mit {{secondary}} schalten diese Auswertung frei."
+    },
+    "pocketCost": {
+      "hidden": "Noch nicht genug Pocket-Matches, um einen Nachteil zu ermitteln.",
+      "fact": "Pockets — {{pocketRate}}% über {{pocketGames}} Matches vs. {{mainRate}}% beim Main.",
+      "steady": "Pockets — kein nennenswerter Nachteil gegenüber dem Main ({{pocketRate}}% vs. {{mainRate}}%)."
+    },
+    "matchupOrPlayer": {
+      "hidden": "Noch nicht genug Matches oder Gegner, um Spieler von Matchup zu unterscheiden.",
+      "player": "{{matchup}} — {{lossShare}} von {{totalLosses}} Niederlagen kommen von einem Spieler, {{opponent}}, in {{opponentGames}} Matches.",
+      "matchup": "{{matchup}} — Niederlagen verteilen sich auf {{distinctOpponents}} Spieler; kein Einzelner sticht heraus."
+    },
+    "bestMatchup": {
+      "locked": "Beste Bilanz — noch nicht genug Matches, um eine zu nennen.",
+      "fact": "Beste Bilanz — vs. {{vs}}, {{record}} über {{count}}."
+    },
+    "worstMatchup": {
+      "locked": "Schwerste Bilanz — noch nicht genug Matches, um eine zu nennen.",
+      "fact": "Schwerste Bilanz — vs. {{vs}}, {{record}} über {{count}}."
+    }
+  },
+  "analytics": {
+    "list": {
+      "showAll": "Alle {{count}} anzeigen",
+      "showFewer": "Weniger anzeigen",
+      "showMore50": "50 weitere anzeigen",
+      "allSessions": "Alle {{count}} Sessions →",
+      "allTournaments": "Alle {{count}} Turniere →",
+      "allOpponents": "Alle {{count}} Gegner →",
+      "sortMostGames": "Meiste Matches",
+      "allMatchups": "Alle {{count}} Matchups →",
+      "allStages": "Alle {{count}} Stages →"
+    },
+    "record": {
+      "aria": "{{wins}} Siege, {{losses}} Niederlagen",
+      "deltaUp": "+{{points}} Pkt.",
+      "deltaDown": "-{{points}} Pkt."
+    },
+    "stat": {
+      "collapsedValue": "= alle Matches",
+      "collapsedSupport": "{{recent}} von {{total}} Matches",
+      "noGames": "Noch keine Matches"
+    },
+    "strip": {
+      "legend": "oben = Sieg · unten = Niederlage · Lücke = neuer Satz · Label = Event",
+      "aria_one": "Formleiste, {{shown}} von {{count}} Match",
+      "aria_other": "Formleiste, {{shown}} von {{count}} Matches",
+      "setAria": "Satz vs. {{opponent}}, {{record}}",
+      "sessionLabel": "Sitzung · {{date}}",
+      "windowHighlighted": {
+        "last30": "Letzte 30 Matches hervorgehoben",
+        "lastEvent": "Letztes Event hervorgehoben",
+        "last90": "Letzte 90 Tage hervorgehoben"
+      },
+      "windowAll": "Gesamter Datensatz wird gezeigt",
+      "shownOf": "{{shown}} von {{total}} Matches angezeigt",
+      "empty": "Noch keine Matches zum Anzeigen.",
+      "windowEmpty": {
+        "last30": "Keine Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
+        "lastEvent": "Keine Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
+        "last90": "Keine Matches in den letzten 90 Tagen — es wird der Gesamtzeitraum gezeigt."
+      }
+    },
+    "share": {
+      "aria": "Match-Typ-Anteil, {{count}} Matches",
+      "ofGames": "{{count}} von {{total}} Matches",
+      "recentEqualsAll": "Aktuell entspricht der Mischung über die gesamte Zeit.",
+      "empty": "Noch keine Matches zum Anzeigen.",
+      "recentEmpty": {
+        "last30": "Keine Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
+        "lastEvent": "Keine Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
+        "last90": "Keine Matches in den letzten 90 Tagen — es wird der Gesamtzeitraum gezeigt."
+      }
+    },
+    "dumbbell": {
+      "legend": {
+        "allTime": "gesamt",
+        "recent": "aktuell",
+        "range": "95%-Bereich aktuell"
+      },
+      "rowAria": "{{label}}, {{recentRecord}} aktuell vs. {{baselineRecord}} gesamt",
+      "recentEqualsAll": "Aktuell entspricht dem Gesamtzeitraum."
+    },
+    "trend": {
+      "refLabel": "Referenzlinie",
+      "legendBand": {
+        "allTime": "gesamt",
+        "recent": "aktuell",
+        "range": "95%-Bereich aktuell"
+      },
+      "legendHollow": "hohl = unter 3 Matches",
+      "lockedPeriods": {
+        "week_one": "{{count}} weitere Woche schaltet diesen Zeitraum frei",
+        "week_other": "{{count}} weitere Wochen schalten diesen Zeitraum frei",
+        "month_one": "{{count}} weiterer Monat schaltet diesen Zeitraum frei",
+        "month_other": "{{count}} weitere Monate schalten diesen Zeitraum frei",
+        "quarter_one": "{{count}} weiteres Quartal schaltet diesen Zeitraum frei",
+        "quarter_other": "{{count}} weitere Quartale schalten diesen Zeitraum frei",
+        "game_one": "{{count}} weiteres Spiel schaltet diesen Zeitraum frei",
+        "game_other": "{{count}} weitere Spiele schalten diesen Zeitraum frei",
+        "set_one": "{{count}} weiteres Set schaltet diesen Zeitraum frei",
+        "set_other": "{{count}} weitere Sets schalten diesen Zeitraum frei",
+        "eventSession_one": "{{count}} weiteres Event schaltet diesen Zeitraum frei",
+        "eventSession_other": "{{count}} weitere Events schalten diesen Zeitraum frei",
+        "year_one": "{{count}} weiteres Jahr schaltet diesen Zeitraum frei",
+        "year_other": "{{count}} weitere Jahre schalten diesen Zeitraum frei"
+      },
+      "aria": "Trenddiagramm, {{count}} Zeiträume",
+      "tableToggle": "Als Tabelle anzeigen",
+      "tableHeaders": {
+        "period": "Zeitraum",
+        "record": "Bilanz",
+        "rate": "Quote",
+        "sample": "Stichprobe"
+      }
+    },
+    "roster": {
+      "main": "Main",
+      "secondaries": "Secondaries",
+      "pockets": "Pockets",
+      "pocketsRow": "Pockets — {{count}} Charaktere, {{games}} Matches",
+      "mainNotEstablished": "Main noch nicht festgelegt"
+    },
+    "encounters": {
+      "sessionHeader": "{{date}} — {{record}}",
+      "setAria": "Satz {{index}}, {{record}}",
+      "showAll": "Alle Sätze anzeigen"
+    },
+    "matchType": {
+      "online-tourney": "Online-Turnier",
+      "offline-tourney": "Offline-Turnier",
+      "quickplay": "Quickplay",
+      "online-friendly": "Online-Freundschaftsspiel",
+      "offline-friendly": "Offline-Freundschaftsspiel",
+      "none": "Nicht angegeben"
+    }
   }
 }

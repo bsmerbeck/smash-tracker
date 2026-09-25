@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
@@ -7,10 +7,10 @@ import type { Match } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import {
   AnalyticsFilterProvider,
-  ANALYTICS_FILTER_STORAGE_KEY,
+  analyticsFilterStorageKey,
 } from '@/context/AnalyticsFilterContext';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
-import { useAutoWidenEmptyRange, RANGE_AUTO_WIDEN_SESSION_KEY } from './useAutoWidenEmptyRange';
+import { useAutoWidenEmptyRange, rangeAutoWidenSessionKey } from './useAutoWidenEmptyRange';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 const toastInfo = vi.fn();
@@ -67,12 +67,20 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
-function setPersistedFilter(state: { source: string; range: string }) {
-  window.localStorage.setItem(ANALYTICS_FILTER_STORAGE_KEY, JSON.stringify(state));
+function setPersistedFilter(
+  state: { source: string; range: string },
+  clientId: string | null = null,
+) {
+  window.localStorage.setItem(
+    analyticsFilterStorageKey('test-uid', clientId),
+    JSON.stringify(state),
+  );
 }
 
-function readPersistedFilter(): unknown {
-  return JSON.parse(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY) ?? '{}');
+function readPersistedFilter(clientId: string | null = null): unknown {
+  return JSON.parse(
+    window.localStorage.getItem(analyticsFilterStorageKey('test-uid', clientId)) ?? '{}',
+  );
 }
 
 function Harness() {
@@ -86,11 +94,21 @@ function Harness() {
   );
 }
 
-function renderHarness() {
+/**
+ * Phase 35-03 (NEW-M1): under the pathname-derived provider/hook design,
+ * `MemoryRouter` alone supplies the ROUTE (what `useEffectiveSubject`
+ * resolves) but never touches `window.location` (what the out-of-router
+ * provider resolves). Any non-root `path` must therefore ALSO push
+ * `window.history` — that's the VALUE — while `initialEntries` and the
+ * router itself supply what `useAutoWidenEmptyRange`'s own
+ * `useEffectiveSubject()` call resolves.
+ */
+function renderHarness(path = '/') {
+  window.history.pushState({}, '', path);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <Harness />
@@ -109,7 +127,12 @@ describe('useAutoWidenEmptyRange', () => {
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     window.localStorage.clear();
     window.sessionStorage.clear();
+    window.history.pushState({}, '', '/');
     setMockUser(makeMockUser());
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
   });
 
   it('widens a stale persisted range to all-time with an explanatory toast, and persists it', async () => {
@@ -243,7 +266,89 @@ describe('useAutoWidenEmptyRange', () => {
     renderHarness();
 
     await waitFor(() =>
-      expect(window.sessionStorage.getItem(RANGE_AUTO_WIDEN_SESSION_KEY)).not.toBeNull(),
+      expect(
+        window.sessionStorage.getItem(rangeAutoWidenSessionKey('test-uid', null)),
+      ).not.toBeNull(),
     );
+  });
+
+  it('M-2: a second subject in the same session gets its own independent evaluation, widen, and toast', async () => {
+    // Personal's session flag is already spent.
+    window.sessionStorage.setItem(rangeAutoWidenSessionKey('test-uid', null), '1');
+    setPersistedFilter({ source: 'all', range: '12m' }, 'client-a');
+    list.mockResolvedValue([
+      makeMatch({ id: 'm1', time: Date.now() - WELL_OUTSIDE_12M_MS, win: true }),
+    ]);
+
+    renderHarness('/coach/client-a/matchups');
+
+    await waitFor(() => expect(screen.getByTestId('range')).toHaveTextContent('all'));
+    expect(toastInfo).toHaveBeenCalledTimes(1);
+    expect(readPersistedFilter('client-a')).toEqual({ source: 'all', range: 'all' });
+    // The personal flag is untouched — still exactly the pre-seeded value.
+    expect(window.sessionStorage.getItem(rangeAutoWidenSessionKey('test-uid', null))).toBe('1');
+  });
+
+  it('NEW-H1: a commit whose filter state belongs to another subject calls no setter, writes no flag, and shows no toast', async () => {
+    // Personal-scoped excluding range, but the ROUTE (not window.location)
+    // says client-a — the deliberate mismatch this case exists to prove is
+    // inert, not a harness mistake.
+    setPersistedFilter({ source: 'all', range: '12m' });
+    list.mockResolvedValue([
+      makeMatch({ id: 'm1', time: Date.now() - WELL_OUTSIDE_12M_MS, win: true }),
+    ]);
+
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/coach/client-a/matchups']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <Harness />
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(list).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(setItemSpy.mock.calls.some((call) => String(call[0]).includes('analyticsFilter'))).toBe(
+      false,
+    );
+    expect(window.sessionStorage.getItem(rangeAutoWidenSessionKey('test-uid', null))).toBeNull();
+    expect(
+      window.sessionStorage.getItem(rangeAutoWidenSessionKey('test-uid', 'client-a')),
+    ).toBeNull();
+    expect(toastInfo).not.toHaveBeenCalled();
+    setItemSpy.mockRestore();
+
+    // Now align the pathname with the route — the provider re-seeds against
+    // client-a's own (never-seeded) key, which defaults to 'all', so the
+    // hook returns before burning the shot. The observable proof of
+    // "evaluation happened" here is the session flag, never an unqualified
+    // widen/toast — the client-a key was never seeded with an excluding
+    // range, so there is nothing to widen.
+    window.history.pushState({}, '', '/coach/client-a/matchups');
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/coach/client-a/matchups']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <Harness />
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        window.sessionStorage.getItem(rangeAutoWidenSessionKey('test-uid', 'client-a')),
+      ).not.toBeNull(),
+    );
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 });

@@ -43,10 +43,34 @@ describe('ScoutMatchupAdvisorCard', () => {
 
   it('recommends the best pick per opponent character, using the user primary fighter as a candidate', () => {
     useFightersMock.mockReturnValue({ data: { primary: [82], secondary: [] } });
-    render(<ScoutMatchupAdvisorCard scoutedCharacters={SCOUTED_CHARACTERS} matches={[]} />);
+    // Phase 36 (D-05): the character advisor now abstains below 3 countable
+    // games, so this fixture needs >=3 recorded games against the opponent
+    // character to exercise the recommended-pick path at all. Steve is the
+    // only candidate, so the tier prior still decides the pick regardless of
+    // the record's own win rate.
+    const matches = [
+      makeMatch({ fighter_id: 82, opponent_id: 9, win: true }),
+      makeMatch({ fighter_id: 82, opponent_id: 9, win: true }),
+      makeMatch({ fighter_id: 82, opponent_id: 9, win: true }),
+    ];
+    render(<ScoutMatchupAdvisorCard scoutedCharacters={SCOUTED_CHARACTERS} matches={matches} />);
 
     expect(screen.getByText('vs. Pikachu')).toBeInTheDocument();
     expect(screen.getByText('Steve')).toBeInTheDocument();
+  });
+
+  // Phase 36 (D-05, D-07): the character advisor's first hard gate — a
+  // below-floor record renders the abstained sentence, never a pick chip.
+  it('shows the abstained sentence, not a pick chip, for an opponent character with fewer than 3 countable games', () => {
+    useFightersMock.mockReturnValue({ data: { primary: [82], secondary: [] } });
+    const matches = [
+      makeMatch({ fighter_id: 82, opponent_id: 9, win: true }),
+      makeMatch({ fighter_id: 82, opponent_id: 9, win: false }),
+    ];
+    render(<ScoutMatchupAdvisorCard scoutedCharacters={SCOUTED_CHARACTERS} matches={matches} />);
+
+    expect(screen.getByText(/Not enough data yet.*1 more game needed/)).toBeInTheDocument();
+    expect(screen.queryByText('Steve')).not.toBeInTheDocument();
   });
 
   it('lets the users own record vs. a specific opponent character override the tier prior', () => {

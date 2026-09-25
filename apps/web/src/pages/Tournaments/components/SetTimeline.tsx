@@ -20,6 +20,7 @@ import {
 } from '@smash-tracker/shared';
 import { buildStartggUrl } from '../lib/startggLinks';
 import { cn } from '@/lib/utils';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
 import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
 import { AnalyzeOpponentLink } from '@/components/AnalyzeOpponentLink';
@@ -159,6 +160,7 @@ function VodTimestampChips({ vodUrl, match }: { vodUrl: string; match: Match }) 
  */
 function VodLink({ set }: { set: TournamentSet }) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const [dialogOpen, setDialogOpen] = useState(false);
   const vodMatch =
     set.games.map((g) => g.match).find((m) => m.vodUrl != null) ?? set.games[0]?.match;
@@ -175,7 +177,7 @@ function VodLink({ set }: { set: TournamentSet }) {
       {vodUrl && (
         <>
           <Link
-            to={`/vod?match=${vodMatch.id}`}
+            to={subjectPath(`/vod?match=${vodMatch.id}`)}
             aria-label={t('tournaments.timeline.watchVodAria', { set: setLabel })}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >

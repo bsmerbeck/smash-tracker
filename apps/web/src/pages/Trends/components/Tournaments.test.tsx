@@ -8,6 +8,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
+  analyticsFilterStorageKey,
 } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { Tournaments, buildTournamentEntryRows } from './Tournaments';
@@ -494,9 +495,9 @@ describe('Tournaments component', () => {
         expect(screen.getByRole('link', { name: 'Old Regional' })).toBeInTheDocument();
       });
       expect(screen.queryByText(/outside the last/)).not.toBeInTheDocument();
-      expect(JSON.parse(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY)!).range).toBe(
-        'all',
-      );
+      expect(
+        JSON.parse(window.localStorage.getItem(analyticsFilterStorageKey('test-uid', null))!).range,
+      ).toBe('all');
     });
 
     it('shows the resync hint (not a range notice) when the registry is genuinely empty (D-03)', async () => {

@@ -1,8 +1,7 @@
-import { execFile, type ChildProcess } from 'node:child_process';
-import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { runWithLifecycle } from './enrichLifecycle.js';
+import { spawnLifecycleHarness } from './lifecycleHarnessSpawn.js';
 
 /**
  * 30.2 reliability gate: proves the guaranteed-termination contract — the
@@ -14,44 +13,7 @@ import { runWithLifecycle } from './enrichLifecycle.js';
  * signal-interrupted runs alike. No Firebase, no emulator, no network.
  */
 
-const TSX_BIN = fileURLToPath(new URL('../node_modules/.bin/tsx', import.meta.url));
 const HARNESS = fileURLToPath(new URL('./enrichLifecycleHarness.ts', import.meta.url));
-
-interface ChildOutcome {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-  elapsedMs: number;
-}
-
-function spawnHarness(
-  mode: string,
-  hardExitMs: number,
-): { child: ChildProcess; outcome: Promise<ChildOutcome> } {
-  const startedAt = Date.now();
-  let stdout = '';
-  let stderr = '';
-  const child = execFile(TSX_BIN, [HARNESS, mode, String(hardExitMs)], {
-    // A hard ceiling well past every assertion bound, so a regression fails
-    // the test rather than hanging the suite.
-    timeout: 20_000,
-  });
-  child.stdout?.on('data', (chunk: string | Buffer) => {
-    stdout += String(chunk);
-  });
-  child.stderr?.on('data', (chunk: string | Buffer) => {
-    stderr += String(chunk);
-  });
-  const outcome = once(child, 'exit').then(([code, signal]) => ({
-    code: code as number | null,
-    signal: signal as NodeJS.Signals | null,
-    stdout,
-    stderr,
-    elapsedMs: Date.now() - startedAt,
-  }));
-  return { child, outcome };
-}
 
 describe('runWithLifecycle (in-process)', () => {
   interface FakeProc {
@@ -155,7 +117,12 @@ describe('runWithLifecycle (in-process)', () => {
 
 describe('runWithLifecycle (child process — no open handles survive)', () => {
   it('a successful run with an open handle exits 0 naturally, well before the hard-exit deadline', async () => {
-    const { outcome } = spawnHarness('success', 5_000);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'success',
+      hardExitMs: 5_000,
+      ceilingMs: 20_000,
+    });
     const result = await outcome;
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('run-settled');
@@ -166,7 +133,12 @@ describe('runWithLifecycle (child process — no open handles survive)', () => {
   });
 
   it('an injected-failure run exits 1 naturally within the bound', async () => {
-    const { outcome } = spawnHarness('failure', 5_000);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'failure',
+      hardExitMs: 5_000,
+      ceilingMs: 20_000,
+    });
     const result = await outcome;
     expect(result.code).toBe(1);
     expect(result.stdout).toContain('cleanup-complete');
@@ -174,7 +146,12 @@ describe('runWithLifecycle (child process — no open handles survive)', () => {
   });
 
   it('a cleanup that never releases its handle is force-exited by the backstop at the deadline', async () => {
-    const { outcome } = spawnHarness('hang-cleanup', 1_500);
+    const { outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'hang-cleanup',
+      hardExitMs: 1_500,
+      ceilingMs: 20_000,
+    });
     const result = await outcome;
     expect(result.code).toBe(1);
     expect(result.stdout).toContain('cleanup-complete');
@@ -187,7 +164,12 @@ describe('runWithLifecycle (child process — no open handles survive)', () => {
   });
 
   it('SIGINT terminates a run that ignores its signal, with cleanup and exit code 130, within the bound', async () => {
-    const { child, outcome } = spawnHarness('wait-signal', 5_000);
+    const { child, outcome } = spawnLifecycleHarness({
+      harness: HARNESS,
+      mode: 'wait-signal',
+      hardExitMs: 5_000,
+      ceilingMs: 20_000,
+    });
     // Give tsx time to boot the harness before signalling.
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     child.kill('SIGINT');

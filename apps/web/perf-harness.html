@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  DEV-ONLY perf measurement harness (Phase 36 Plan 06, SCL-01 Task 3B).
+  NEVER shipped in the production build: `vite.config.ts` has no
+  `build.rollupOptions.input` override, so `vite build` (the command the
+  production `pnpm build` script runs) processes ONLY `index.html`, exactly
+  as it did before this file existed. Only a caller that explicitly starts
+  Vite programmatically with this file as an override input (see
+  `apps/web/scripts/scl01BrowserBudget.mjs`) ever serves it. Verified by
+  `apps/web/src/perfHarness/perfHarnessProductionIsolation.guard.test.ts`.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCL-01 perf harness (dev-only, never shipped)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/perfHarness/main.tsx"></script>
+  </body>
+</html>

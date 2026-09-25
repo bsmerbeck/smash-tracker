@@ -1,0 +1,23 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "ns": 0,
+        "title": "Battle of BC/1",
+        "revisions": [
+          {
+            "revid": 507803,
+            "slots": {
+              "main": {
+                "contentmodel": "wikitext",
+                "contentformat": "text/x-wiki",
+                "content": "{{DISPLAYTITLE:Battle of BC}}{{tabs game\n|basepage=Battle of BC/1\n|melee=true\n|wiiu=true\n}}\n{{Infobox league\n|name=Battle of BC\n|image=Bobc_logo_1.png\n|organizer=UBC eSports Association\n|sponsor=\n|country=Canada\n|city=Vancouver |state= British Columbia\n|sdate=2016-05-14\n|edate=2016-05-14\n|overview=true\n\n|facebook=events/241651032838942/\n|twitch=ubcesports\n|twitch2=nssmash\n|youtube=\n|challonge=\n|smashgg=tournament/ubc-esports-presents-battle-of-bc/details\n|smashboards=\n\n|liquipediatier=4\n|liquipediatiertype=\n|previous=\n|next=Battle of BC/2{{!}}Battle of BC 2\n|series=BoBC\n}}\n\n==Tournaments==\n<center>\n{{Smash Melee Tournament|link=Battle of BC/1/Melee}}\n{{Smash Wii U Tournament|link=Battle of BC/1/Wii U}}\n</center>\n\n==Results==\n===Singles===\n{{TournamentOverviewStart}}\n{{TournamentOverviewRowSMW|game=melee}}\n{{TournamentOverviewRowSMW|game=wiiu}}\n{{TournamentOverviewEnd}}\n\n===Doubles===\n{{TournamentDoublesOverviewStart}}\n{{TournamentDoublesOverviewRowSMW |game=melee}}\n{{TournamentDoublesOverviewRowSMW |game=wiiu}}\n{{TournamentDoublesOverviewEnd}}"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

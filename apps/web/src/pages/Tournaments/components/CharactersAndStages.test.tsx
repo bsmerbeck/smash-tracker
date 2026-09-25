@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { CharactersAndStages } from './CharactersAndStages';
 import { SpriteList } from '@/data/sprites';
@@ -20,9 +21,23 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
+function renderCharactersAndStages(
+  matches: Match[],
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined,
+  initialPath = '/',
+) {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <CharactersAndStages matches={matches} stageAggregateLinkParams={stageAggregateLinkParams} />
+    </MemoryRouter>,
+  );
+}
+
 describe('CharactersAndStages', () => {
   it('shows empty states for all three cards when there are no matches', () => {
-    render(<CharactersAndStages matches={[]} />);
+    renderCharactersAndStages([]);
     expect(screen.getAllByText('No games recorded.')).toHaveLength(2);
     expect(screen.getByText('No stage data recorded.')).toBeInTheDocument();
   });
@@ -33,7 +48,7 @@ describe('CharactersAndStages', () => {
       makeMatch({ id: 'm2', time: 2, win: false, fighter_id: mario.id }),
       makeMatch({ id: 'm3', time: 3, win: true, fighter_id: fox.id }),
     ];
-    render(<CharactersAndStages matches={matches} />);
+    renderCharactersAndStages(matches);
 
     expect(screen.getByText('Your Characters')).toBeInTheDocument();
     expect(screen.getByText(mario.name)).toBeInTheDocument();
@@ -47,7 +62,7 @@ describe('CharactersAndStages', () => {
       makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
       makeMatch({ id: 'm2', time: 2, win: true, opponent_id: fox.id }),
     ];
-    render(<CharactersAndStages matches={matches} />);
+    renderCharactersAndStages(matches);
 
     expect(screen.getByText(/Opponents/)).toBeInTheDocument();
     expect(screen.getByText(luigi.name)).toBeInTheDocument();
@@ -59,10 +74,57 @@ describe('CharactersAndStages', () => {
       makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
       makeMatch({ id: 'm2', time: 2, win: false, map: { id: 0, name: 'no selection' } }),
     ];
-    render(<CharactersAndStages matches={matches} />);
+    renderCharactersAndStages(matches);
 
     expect(screen.getByText('Stages Played')).toBeInTheDocument();
     expect(screen.getByText('Battlefield')).toBeInTheDocument();
     expect(screen.queryByText('no selection')).not.toBeInTheDocument();
+  });
+
+  describe('D-14: uniform drillable rows', () => {
+    it('a your-character row opens the param-aware Matchups page with the fighter axis', () => {
+      const matches = [makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id })];
+      renderCharactersAndStages(matches);
+      const link = screen.getByRole('link', { name: new RegExp(mario.name) });
+      expect(link).toHaveAttribute('href', `/matchups?fighter=${mario.id}`);
+    });
+
+    it('an opponent-character row opens the param-aware Matchups page with the vs axis', () => {
+      const matches = [makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id })];
+      renderCharactersAndStages(matches);
+      const link = screen.getByRole('link', { name: new RegExp(luigi.name) });
+      expect(link).toHaveAttribute('href', `/matchups?vs=${luigi.id}`);
+    });
+
+    it('a stage row opens the stage detail page with the event axis looked up per-stage (CR-03)', () => {
+      const matches = [
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+      ];
+      renderCharactersAndStages(matches, (stageId) =>
+        stageId === 1 ? { eventKey: 'tournament:ultimate singles:1' } : undefined,
+      );
+      const link = screen.getByRole('link', { name: /Battlefield/ });
+      expect(link).toHaveAttribute('href', '/stages/1?event=tournament%3Aultimate+singles%3A1');
+    });
+
+    it('a stage row with no resolved anchor for its stage opens the plain stage detail page', () => {
+      const matches = [
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+      ];
+      renderCharactersAndStages(matches, () => undefined);
+      const link = screen.getByRole('link', { name: /Battlefield/ });
+      expect(link).toHaveAttribute('href', '/stages/1');
+    });
+
+    it('carries the coach prefix through every destination', () => {
+      const matches = [
+        makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+      ];
+      renderCharactersAndStages(matches, undefined, '/coach/client-a/tournaments/1');
+      expect(screen.getByRole('link', { name: new RegExp(mario.name) })).toHaveAttribute(
+        'href',
+        `/coach/client-a/matchups?fighter=${mario.id}`,
+      );
+    });
   });
 });

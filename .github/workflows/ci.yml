@@ -36,3 +36,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Chart bundle guard
+        run: pnpm --filter @smash-tracker/web guard:chart-bundle

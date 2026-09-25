@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Users } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useGroupLeaderboard, useGroups } from '@/hooks/useGroups';
+import { RatingModelNote } from '@/components/RatingModelNote';
 import { CreateGroupDialog } from './components/CreateGroupDialog';
 import { JoinGroupDialog } from './components/JoinGroupDialog';
 import { GroupCardList } from './components/GroupCardList';
@@ -76,6 +77,7 @@ export function GroupsPage() {
 
           {leaderboard.data && (
             <>
+              <RatingModelNote />
               <GroupLeaderboardHeader
                 group={leaderboard.data.group}
                 isOwner={leaderboard.data.group.ownerUid === user?.uid}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import i18n from '@/i18n';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { Match } from '@smash-tracker/shared';
 import {
   MonthlyPerformance,
@@ -81,7 +82,8 @@ describe('MonthlyPerformance component', () => {
     expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
   });
 
-  it('renders the small-sample caption and a table row per month', () => {
+  it('renders the small-sample caption, with the table behind a closed-by-default disclosure', async () => {
+    const user = userEvent.setup();
     const matches = [
       makeMatch({ id: '1', time: Date.UTC(2021, 0, 1), win: true }),
       makeMatch({ id: '2', time: Date.UTC(2021, 1, 1), win: true }),
@@ -95,10 +97,40 @@ describe('MonthlyPerformance component', () => {
         `Faded bars mark months with fewer than ${SMALL_SAMPLE_THRESHOLD} games — small sample, read with caution.`,
       ),
     ).toBeInTheDocument();
+    // DD-14: closed by default — no month row visible until expanded.
+    expect(screen.queryByText('Jan 2021')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'View as table' }));
+
     expect(screen.getByText('Jan 2021')).toBeInTheDocument();
     expect(screen.getByText('Feb 2021')).toBeInTheDocument();
     // Table shows most recent month first.
     const rows = screen.getAllByRole('row');
     expect(rows[1]).toHaveTextContent('Feb 2021');
+  });
+
+  it('caps the table at 25 rows inline and carries no nested max-height/overflow-y pair (DD-14)', async () => {
+    const user = userEvent.setup();
+    const matches = Array.from({ length: 30 }, (_, month) =>
+      makeMatch({ id: `${month}`, time: Date.UTC(2020, month, 1), win: true }),
+    );
+    render(<MonthlyPerformance matches={matches} />);
+
+    await user.click(screen.getByRole('button', { name: 'View as table' }));
+
+    // Header row + at most 25 data rows.
+    expect(screen.getAllByRole('row').length).toBeLessThanOrEqual(26);
+  });
+
+  it('draws the small-sample bar colour in the tokenised series colour, never brand red (DD-11/UIX-05)', () => {
+    const matches = [
+      makeMatch({ id: '1', time: Date.UTC(2021, 0, 1), win: true }),
+      makeMatch({ id: '2', time: Date.UTC(2021, 0, 2), win: false }),
+    ];
+    const records = getMonthlyRecords(matches);
+    const data = buildMonthlyChartData(records, i18n.t, 'en');
+    const colors = data.datasets[0]?.backgroundColor as string[];
+    expect(colors.some((c) => c.includes('230, 0, 18') || c === '#e60012')).toBe(false);
   });
 });

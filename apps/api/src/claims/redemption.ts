@@ -73,17 +73,21 @@ export const CLAIM_REDEMPTION_FLOOR_MS = 200;
  * Pads the caller's elapsed time (measured from `startedAtMs`) up to
  * `floorMs` before resolving. Never sleeps when the elapsed time already
  * meets or exceeds the floor.
+ *
+ * Re-checks the wall clock after every wake: a Node timer runs on a monotonic
+ * clock and can fire ~1 ms early as measured by `Date.now()`, so one
+ * `setTimeout(remaining)` is not a guarantee (CI observed a 199 ms response).
  */
 export async function floorDelay(
   startedAtMs: number,
   floorMs: number = CLAIM_REDEMPTION_FLOOR_MS,
 ): Promise<void> {
-  const elapsed = Date.now() - startedAtMs;
-  const remaining = floorMs - elapsed;
-  if (remaining <= 0) {
-    return;
+  let remaining = floorMs - (Date.now() - startedAtMs);
+  while (remaining > 0) {
+    const wait = remaining;
+    await new Promise<void>((resolve) => setTimeout(resolve, wait));
+    remaining = floorMs - (Date.now() - startedAtMs);
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, remaining));
 }
 
 export type ClaimConsumeOutcome = 'fresh' | 'replay-same-client' | 'ineligible';

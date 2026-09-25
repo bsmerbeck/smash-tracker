@@ -2,13 +2,25 @@ import type { Database } from 'firebase-admin/database';
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
-  buildMatchupAdvisor,
+  ABSTENTION_FLOOR_GAMES,
+  buildMatchupAdvisorWithGate,
+  buildStageEvidence,
+  type CohortComposition,
+  describeCohort,
+  EVIDENCE_POLICY_VERSION,
   generatedScoutReportSchema,
+  getStageRecords,
+  makeCanonicalizer,
   matchRecordSchema,
   opponentNoteMapSchema,
+  RECENCY_TREATMENT,
+  type ClaimKind,
+  type RecencyTreatment,
+  type SampleMeta,
   selectMyCandidateFighterIds,
   SpriteList,
   type GeneratedScoutReport,
+  type Match,
   type MatchupEvidence,
   type MyCharacterRecordVsOpponent,
   type OpponentNote,
@@ -138,12 +150,22 @@ export interface HeadToHeadMatch {
   date: string;
 }
 
-/** Raw-count aggregate of the caller's results against one of the scouted player's top characters. */
+/**
+ * Raw-count aggregate of the caller's results against one of the scouted
+ * player's top characters. Phase 36 (D-11, D-14): `sample`/`claimKind` are
+ * the engine's claim metadata for this exact match subset (`buildStageEvidence`
+ * over the matches vs. this opponent character) so the model reads structured
+ * evidence provenance instead of applying a prose sample-size rule of its
+ * own — see `SYSTEM_PROMPT` below. `wins`/`losses`/`topStages` stay raw
+ * recorded facts, unchanged in meaning.
+ */
 export interface MatchupAggregate {
   opponentCharacter: string;
   wins: number;
   losses: number;
   topStages: Array<{ stage: string; wins: number; losses: number }>;
+  sample: SampleMeta;
+  claimKind: ClaimKind;
 }
 
 /**
@@ -157,6 +179,8 @@ export interface CharacterRecord {
   wins: number;
   losses: number;
   vsOpponentCharacter: Array<{ opponentCharacter: string; wins: number; losses: number }>;
+  /** Phase 36 (D-11): the engine's claim metadata for the matches played AS this character. */
+  sample: SampleMeta;
 }
 
 /**
@@ -167,9 +191,43 @@ export interface CharacterRecord {
  * inflate token cost for zero grounding benefit. `assembleReportPayload`
  * strips it unconditionally, even when the incoming `scout` has it.
  */
+/**
+ * Phase 36 (D-05/D-07): one opponent top-character's deterministic
+ * matchup-advisor claim — either a ranked recommendation (the pre-Phase-36
+ * shape, now carrying `sample`) or, below the abstention floor, an explicit
+ * abstention naming how many more countable games would clear it. There is
+ * no partial/degraded `ranked` value below the floor — see
+ * `EvidenceClaim`'s own doc comment for why.
+ */
+export type MatchupAdvisorEntry =
+  | {
+      opponentCharacter: string;
+      ranked: Array<{ character: string; score: number; evidence: MatchupEvidence }>;
+      sample: SampleMeta;
+    }
+  | {
+      opponentCharacter: string;
+      abstained: true;
+      gamesNeeded: number;
+    };
+
 export interface ReportPayload {
   scout: Omit<ScoutReportData, 'games'>;
   headToHead: HeadToHeadMatch[];
+  /**
+   * Phase 36 (D-11, D-14): the ONE evidence-policy version/floor/recency
+   * treatment/refresh-time every claim in this payload was computed under —
+   * a structural fact the model reads instead of a prose sample-size rule
+   * (see `SYSTEM_PROMPT` below).
+   */
+  evidencePolicy: {
+    version: number;
+    abstentionFloorGames: number;
+    recencyTreatment: RecencyTreatment;
+    refreshedAt: number;
+  };
+  /** Phase 36 (D-10, EVID-02): the session-type/provenance composition of the caller's whole match sample this report drew from. */
+  cohort: CohortComposition;
   userContext: {
     /** The signed-in user's own primary/secondary character selections (fighter names, not ids). */
     myFighters: { primary: string[]; secondary: string[] };
@@ -190,11 +248,11 @@ export interface ReportPayload {
      * — kept lean (opponent's top-5 only, not the full roster) per the
      * feature's payload-size guidance. `characterStrategy` must ground its
      * picks in this, not contradict it without stating why (see SYSTEM_PROMPT).
+     * Phase 36 (D-05/D-07): now gated — an opponent character the user has
+     * fewer than `evidencePolicy.abstentionFloorGames` countable games
+     * against arrives `abstained`, never a confident pick.
      */
-    matchupAdvisor: Array<{
-      opponentCharacter: string;
-      ranked: Array<{ character: string; score: number; evidence: MatchupEvidence }>;
-    }>;
+    matchupAdvisor: MatchupAdvisorEntry[];
   };
   notes: OpponentNote | null;
 }
@@ -242,6 +300,12 @@ export async function assembleReportPayload(
     database.ref(`secondaryFighters/${uid}`).get(),
   ]);
 
+  // Phase 36 (D-11): a single refresh timestamp for every claim this payload
+  // assembles, mirroring the web tier's page-level `useState(() =>
+  // Date.now())` pattern (plan 36-02) — every sibling claim in this one
+  // report reports the same provenance timestamp.
+  const refreshedAt = Date.now();
+
   const aliasMap = aliasSnapshot.exists()
     ? (aliasSnapshot.val() as Record<string, string>)
     : ({} as Record<string, string>);
@@ -252,13 +316,26 @@ export async function assembleReportPayload(
       ) as Array<ReturnType<typeof matchRecordSchema.parse> & { time: number }>)
     : [];
 
-  // Single-hop alias lookup: opponentAliases/{uid} is already transitively
-  // flattened by the write path (RtdbService.setOpponentAlias), so one
-  // lookup suffices — no need to walk chains here.
-  function canonicalOpponentName(name: string | undefined): string {
-    const tag = normalizeOpponentTag(name);
-    return aliasMap[tag] ?? tag;
-  }
+  // `getStageRecords`/`buildStageEvidence`/`describeCohort` are typed over
+  // `Match[]` (the API-response shape with an `id`); the API's own parsed
+  // rows never carry one (`Object.values` over an RTDB node has no push key
+  // to hand). `id` is never read by any of them, so a synthetic per-index
+  // value is safe here — computed ONCE so every downstream filter still
+  // carries a valid (if synthetic) id.
+  const rawMatchesWithId: Match[] = rawMatches.map((match, index) => ({
+    ...match,
+    id: `stage-tally-${index}`,
+  }));
+
+  // Phase 36 (EVID-12): the alias hop has exactly one implementation now —
+  // `makeCanonicalizer` from the engine, the same idempotent
+  // normalize-then-hop `opponentEvidence.ts` uses. `normalizeOpponentTag`
+  // (imported above from `../startgg/sync.js`, the canonical sync-time
+  // definition) is still needed directly for `scoutedCanonicalName` below,
+  // which normalizes the freshly-scouted player's OWN tag — never looked up
+  // in this caller's `aliasMap`, which only covers their own recorded
+  // opponents.
+  const canonicalOpponentName = makeCanonicalizer(aliasMap);
 
   const scoutedCanonicalName = normalizeOpponentTag(scout.player.gamerTag);
 
@@ -297,33 +374,62 @@ export async function assembleReportPayload(
   const topCharacterIds = scout.characters.slice(0, TOP_CHARACTERS_COUNT).map((c) => c.fighterId);
 
   const vsTopCharacters: MatchupAggregate[] = topCharacterIds.map((fighterId) => {
-    const matchesVsCharacter = rawMatches.filter((match) => match.opponent_id === fighterId);
+    const matchesVsCharacter = rawMatchesWithId.filter((match) => match.opponent_id === fighterId);
     const wins = matchesVsCharacter.filter((match) => match.win).length;
     const losses = matchesVsCharacter.length - wins;
 
-    const stageTally = new Map<string, { wins: number; losses: number; games: number }>();
+    // R1-HIGH-3: the stage NAME is the whole risk here. `getStageRecords`
+    // keys on the numeric `map.id` and carries no name, so the name is
+    // re-derived from the FIRST-SEEN `match.map.name` for that id — never
+    // from `stagesById` (which would emit a different string than the one
+    // actually stored on the row for any legacy/renamed stage). One
+    // behavioural consequence: two rows whose `map.id` is equal but whose
+    // stored `map.name` differs now collapse into a single row carrying the
+    // first-seen name — asserted in generate.test.ts, not merely assumed.
+    const stageNameById = new Map<number, string>();
     for (const match of matchesVsCharacter) {
-      const name = match.map ? match.map.name : 'Unknown stage';
-      const existing = stageTally.get(name) ?? { wins: 0, losses: 0, games: 0 };
-      existing.games += 1;
-      if (match.win) {
-        existing.wins += 1;
-      } else {
-        existing.losses += 1;
+      const id = match.map?.id ?? 0;
+      if (id !== 0 && match.map && !stageNameById.has(id)) {
+        stageNameById.set(id, match.map.name);
       }
-      stageTally.set(name, existing);
     }
 
-    const topStages = [...stageTally.entries()]
-      .sort((a, b) => b[1].games - a[1].games)
+    // Phase 36 (D-09, EVID-11): unknown-stage games are excluded from the
+    // count-sorted `topStages` ranking below — never silently mixed in — and
+    // reported as their own forced-last entry from the engine's explicit
+    // `unknown` bucket instead (see `stageEvidence` below), so the model sees
+    // excluded games rather than a silently shorter list.
+    const topStages = getStageRecords(
+      matchesVsCharacter.filter((match) => (match.map?.id ?? 0) !== 0),
+    )
+      .sort((a, b) => b.total - a.total)
       .slice(0, TOP_STAGES_PER_MATCHUP)
-      .map(([stage, tally]) => ({ stage, wins: tally.wins, losses: tally.losses }));
+      .map((record) => ({
+        stage: stageNameById.get(record.stageId) ?? 'Unknown stage',
+        wins: record.wins,
+        losses: record.losses,
+      }));
+
+    // Phase 36 (D-11, D-14): the shared engine's stage-evidence claim over
+    // this exact match subset (vs. one opponent top character) — supplies
+    // this row's `sample`/`claimKind` AND the explicit unknown-stage bucket
+    // appended below.
+    const stageEvidence = buildStageEvidence({ matches: matchesVsCharacter, refreshedAt });
+    if (stageEvidence.unknown) {
+      topStages.push({
+        stage: 'Unknown stage',
+        wins: stageEvidence.unknown.wins,
+        losses: stageEvidence.unknown.losses,
+      });
+    }
 
     return {
       opponentCharacter: fighterName(fighterId),
       wins,
       losses,
       topStages,
+      sample: stageEvidence.claim.sample,
+      claimKind: stageEvidence.claim.claimType,
     };
   });
 
@@ -367,7 +473,9 @@ export async function assembleReportPayload(
   );
 
   const myCharacterRecords: CharacterRecord[] = myFighterIds.map((fighterId) => {
-    const matchesAsThisCharacter = rawMatches.filter((match) => match.fighter_id === fighterId);
+    const matchesAsThisCharacter = rawMatchesWithId.filter(
+      (match) => match.fighter_id === fighterId,
+    );
     const wins = matchesAsThisCharacter.filter((match) => match.win).length;
     const losses = matchesAsThisCharacter.length - wins;
 
@@ -383,11 +491,18 @@ export async function assembleReportPayload(
       };
     });
 
+    // Phase 36 (D-11, D-14): the same engine call used for `vsTopCharacters`
+    // above, over this character's OWN matches — supplies this row's
+    // `sample` claim metadata.
+    const sample = buildStageEvidence({ matches: matchesAsThisCharacter, refreshedAt }).claim
+      .sample;
+
     return {
       userCharacter: fighterName(fighterId),
       wins,
       losses,
       vsOpponentCharacter,
+      sample,
     };
   });
 
@@ -410,18 +525,35 @@ export async function assembleReportPayload(
       }),
     ]),
   );
-  const matchupAdvisor = buildMatchupAdvisor(
+  // Phase 36 (D-05/D-07): the character advisor's first hard abstention
+  // floor, server-side — `buildMatchupAdvisorWithGate` returns one claim per
+  // `topCharacterIds` entry, in the SAME order, so it can be zipped back
+  // against the original opponent fighter ids by index (an abstained claim
+  // carries no `value`, hence no `opponentFighterId` of its own).
+  const matchupAdvisorClaims = buildMatchupAdvisorWithGate(
     topCharacterIds,
     myFighterIds,
     recordsByOpponentFighterId,
-  ).map((ranking) => ({
-    opponentCharacter: fighterName(ranking.opponentFighterId),
-    ranked: ranking.ranked.map((pick) => ({
-      character: fighterName(pick.fighterId),
-      score: pick.score,
-      evidence: pick.evidence,
-    })),
-  }));
+  );
+  const matchupAdvisor: MatchupAdvisorEntry[] = topCharacterIds.map((opponentFighterId, index) => {
+    const claim = matchupAdvisorClaims[index]!;
+    if (claim.kind === 'abstained') {
+      return {
+        opponentCharacter: fighterName(opponentFighterId),
+        abstained: true,
+        gamesNeeded: claim.gamesNeeded,
+      };
+    }
+    return {
+      opponentCharacter: fighterName(opponentFighterId),
+      ranked: claim.value.ranked.map((pick) => ({
+        character: fighterName(pick.fighterId),
+        score: pick.score,
+        evidence: pick.evidence,
+      })),
+      sample: claim.sample,
+    };
+  });
 
   // Strip `games` (V9-D) before handing the scout data to Claude — see the
   // doc comment on `ReportPayload.scout`.
@@ -438,6 +570,13 @@ export async function assembleReportPayload(
   return {
     scout: scoutForPayload,
     headToHead,
+    evidencePolicy: {
+      version: EVIDENCE_POLICY_VERSION,
+      abstentionFloorGames: ABSTENTION_FLOOR_GAMES,
+      recencyTreatment: RECENCY_TREATMENT,
+      refreshedAt,
+    },
+    cohort: describeCohort(rawMatchesWithId),
     userContext: {
       myFighters,
       myCharacterRecords,
@@ -487,7 +626,7 @@ const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach wr
 
 Hard rules — follow these exactly:
 - Ground every claim in the provided JSON payload ONLY. Never invent results, characters, stages, or events that are not present in the data.
-- If a conclusion is drawn from fewer than 5 games of evidence (a character matchup, a stage record, a head-to-head record, etc.), you MUST flag that sample-size caveat explicitly in confidenceNotes.
+- Every "userContext.vsTopCharacters" and "userContext.myCharacterRecords" entry carries a "sample" object with "eligibleDenominator", "knownFieldCoverage" and "confidenceTier" — state the confidence tier and the sample behind any claim you make in confidenceNotes rather than applying a sample-size threshold of your own. A "userContext.matchupAdvisor" entry marked "abstained" means there is not enough evidence to recommend a character against that opponent character — say so explicitly rather than falling back to tier-list reasoning. The payload's "evidencePolicy.abstentionFloorGames" is the only sample threshold in play. Never state a bare win-probability percentage.
 - Stage names and character names in your output must come VERBATIM from the data provided — do not paraphrase, translate, or invent alternate spellings.
 - Be concise and actionable. No filler, no generic advice that isn't grounded in this specific opponent's data.
 - The payload contains: "scout" (the opponent's public tournament-site history — their characters, stages, recent events, common opponents), "headToHead" (the user's own past matches against this exact player, if any), "userContext" (the user's own character selections and character-matchup records, the user's raw W/L record against players of the opponent's most-used characters broken down by stage, the user's recent overall form, and a deterministic matchup advisor ranking — see below), and "notes" (a saved tendency note about this opponent, if the user has one).
@@ -496,7 +635,7 @@ Hard rules — follow these exactly:
 
 Character strategy is CO-EQUAL in importance with stage strategy — treat characterStrategy with the same rigor and specificity you give stageStrategy, not as an afterthought:
 - "userContext.myFighters" lists the user's own primary/secondary character selections. "userContext.myCharacterRecords" gives, for each character the user demonstrably plays (their selections plus their most-used characters by games played), that character's overall W/L and W/L against each of the opponent's top characters.
-- "userContext.matchupAdvisor" is a DETERMINISTIC, pre-computed ranking (not generated by you) of the user's own characters against each of the opponent's top-5 characters, blending the user's real record with tier-list/archetype priors — each entry's "evidence" explains why (a record, a tier score, an archetype edge). Treat this ranking as the GROUND TRUTH starting point for characterStrategy: your picks should normally match its top-ranked character for the opponent's most-used character. You MAY explain nuance or adjust for something the ranking can't see (e.g. stage-specific patterns, a saved note), but if your recommendation diverges from the advisor's top pick you MUST say so explicitly and state why in characterStrategy.reasoning — never silently contradict it.
+- "userContext.matchupAdvisor" is a DETERMINISTIC, pre-computed ranking (not generated by you) of the user's own characters against each of the opponent's top-5 characters, blending the user's real record with tier-list/archetype priors — each entry's "evidence" explains why (a record, a tier score, an archetype edge). Treat this ranking as the GROUND TRUTH starting point for characterStrategy: your picks should normally match its top-ranked character for the opponent's most-used character. You MAY explain nuance or adjust for something the ranking can't see (e.g. stage-specific patterns, a saved note), but if your recommendation diverges from the advisor's top pick you MUST say so explicitly and state why in characterStrategy.reasoning — never silently contradict it. An entry carrying "abstained: true" instead of "ranked" means the user has too few countable games against that opponent character for the advisor to recommend one — treat it as an explicit "not enough data yet" for that specific opponent character, not as license to invent a tier-list-only recommendation in its place.
 - You MUST recommend picks ONLY from characters that appear in "userContext.myFighters" or "userContext.myCharacterRecords" — NEVER recommend a character the user does not play, even if it would theoretically counter the opponent well.
 - characterStrategy.picks must include a game-1 recommendation, and characterStrategy.reasoning must state what to switch to if the opponent changes character (e.g. "Game 1: X; if they swap to Y, counter with Z"), grounded in the user's actual W/L from myCharacterRecords against the opponent's specific top characters and the matchupAdvisor ranking — not generic tier-list reasoning invented from scratch.
 - If the user's own character data is too sparse to ground a confident recommendation, say so explicitly in characterStrategy.reasoning and confidenceNotes rather than guessing.`;

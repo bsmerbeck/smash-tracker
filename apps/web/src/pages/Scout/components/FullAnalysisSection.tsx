@@ -1,17 +1,26 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
-import type { ScoutGame } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { filterByFighter, rankMatchupsByEvidence } from '@/lib/stats';
+import {
+  filterByFighter,
+  getOpponentRecords,
+  getRollingWinRate,
+  rankMatchupsByEvidence,
+} from '@/lib/stats';
 import { StageMastery } from '@/pages/FighterAnalysis/components/StageMastery';
-import { OpponentTable } from '@/pages/FighterAnalysis/components/OpponentTable';
+import {
+  OpponentTable,
+  type OpponentTableRow,
+} from '@/pages/FighterAnalysis/components/OpponentTable';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
-import { ScoutingTrendChart } from '@/pages/Opponents/components/ScoutingTrendChart';
+import { ChartCard } from '@/components/charts/ChartCard';
+import { TrendLine } from '@/components/charts/TrendLine';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { scoutGamesToMatches } from '../lib/fullAnalysis';
+import { scoutGamesToMatches, buildScoutTrendChartPoints } from '../lib/fullAnalysis';
 
 /**
  * V9-D: "Fighter Analysis, but for the player you're scouting" — reuses the
@@ -66,11 +75,14 @@ export function FullAnalysisSection({
   );
 }
 
-const MIN_MATCHUP_GAMES = 3;
+/** Trailing-5 rolling window — matches the deleted chart.js scouting-trend component's own `ROLLING_WINDOW` constant, so the numbers this card shows are unchanged by the kit swap. */
+const ROLLING_WINDOW = 5;
 
 function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag: string }) {
   const { t } = useTranslation();
   const matches = scoutGamesToMatches(games);
+  const trendSeries = getRollingWinRate(matches, ROLLING_WINDOW);
+  const trendPoints = buildScoutTrendChartPoints(trendSeries, t);
 
   // "Their top character" — the character with the most sampled games,
   // i.e. whichever fighter_id appears most often once adapted to Match[]
@@ -92,10 +104,39 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
     topCharacterMatches.length > 0 &&
     topCharacterMatches.length < matches.length;
 
-  const matchupSpread = rankMatchupsByEvidence(matches, MIN_MATCHUP_GAMES);
+  const matchupSpread = rankMatchupsByEvidence(matches, ABSTENTION_FLOOR_GAMES);
+
+  // Phase 38-07 (H-02): this host keeps TODAY's behaviour exactly — the
+  // legacy raw-tag-grouped builder over the SCOUTED PLAYER's own per-game
+  // history, descending by games played, with NO `hubHref` supplied.
+  // Applying the viewer's alias map here (`useOpponentAliases`, a `useQuery`
+  // over the VIEWER's subject-scoped map) would silently change what the
+  // scouting report says about a third party, and a hub link here would
+  // send the viewer into their OWN opponent hub for someone else's history —
+  // the same data-scope hazard `StageMastery`'s and `WhatTheyPlayTable`'s
+  // opt-in already guard against in this exact host file.
+  const opponentTableRows: OpponentTableRow[] = getOpponentRecords(matches)
+    .sort((a, b) => b.total - a.total)
+    .map((record) => ({
+      key: record.opponent,
+      displayLabel: record.opponent,
+      wins: record.wins,
+      losses: record.losses,
+      total: record.total,
+      winRate: record.winRate,
+    }));
 
   return (
     <>
+      {/*
+        Phase 38-06 (H-01/T-38-06-02): NO `stageHref` supplied at either
+        instance below — this surface is own-account-only (D-04) and its
+        tiles describe a SCOUTED PLAYER's play, not the viewer's. A stage
+        link built here would resolve into the VIEWER's own stage history
+        and silently answer a different question. This is also why
+        `StageMastery` must stay router-free: this host's test file renders
+        it bare, with no `MemoryRouter`.
+      */}
       <StageMastery fighterMatches={matches} title={t('scout.fullAnalysis.stageMasteryOverall')} />
 
       {showTopCharacterCard && (
@@ -110,14 +151,24 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
         />
       )}
 
+      {/*
+        Phase 38-07 (C2-H-01): NO `rowHref` supplied — a row here is a THIRD
+        PARTY's character, and linking it would open the VIEWER's own
+        Matchups page for a pairing the viewer may never have played. Same
+        data-scope hazard `StageMastery` and `OpponentTable` already carry an
+        opt-in for, in this exact host file.
+      */}
       <WhatTheyPlayTable byTheirFighter={matchupSpread} />
 
-      <ScoutingTrendChart
-        matches={matches}
-        title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}
-      />
+      <ChartCard title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}>
+        {trendPoints.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('opponents.trend.empty')}</p>
+        ) : (
+          <TrendLine points={trendPoints} />
+        )}
+      </ChartCard>
 
-      <OpponentTable fighterMatches={matches} />
+      <OpponentTable rows={opponentTableRows} />
     </>
   );
 }

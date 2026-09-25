@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testUtils": {
+      "types": "./dist/testUtils/index.d.ts",
+      "default": "./dist/testUtils/index.js"
     }
   },
   "scripts": {
@@ -16,12 +20,14 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "budget": "vitest run --config vitest.budget.config.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^24.13.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }

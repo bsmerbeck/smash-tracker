@@ -39,7 +39,7 @@ import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.
  */
 
 /** Soft cap on ACTIVE (non-archived) clients per coach — config-raisable. */
-export const MAX_ACTIVE_CLIENTS_PER_COACH = 20;
+export const MAX_ACTIVE_CLIENTS_PER_COACH = 1000;
 
 /**
  * Quick 260901-fmb: a deliberate independent LOCAL copy of the

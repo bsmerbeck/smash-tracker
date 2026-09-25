@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
@@ -12,6 +13,19 @@ import {
 import { MatchDataPage } from './MatchDataPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+
+/**
+ * WR-C02 (39.1-REVIEW.md): a partial mock of `matchesDrillDown` (defaulting
+ * to the real implementation), mirroring `OpponentHubPage.test.tsx`'s own
+ * "WR-03 (38-REVIEW-FIX)" mock — the ONE observable signal that
+ * `FilteredMatchList`'s D-16 memoization contract actually hit its cache.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -126,29 +140,32 @@ function ShellProfileSubscription() {
 
 function renderMatchData(initialEntry = '/match-data') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <ShellProfileSubscription />
-            <Routes>
-              <Route path="/match-data" element={<MatchDataPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-              <Route path="/vod" element={<VodRouteProbe />} />
-              {/* Phase 11 fix round 3 (FB-6): the coaching-route mirror — proves
-                  "Go to VOD Manager" stays subject-aware instead of escaping
-                  to the personal /vod route above. */}
-              <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
-              <Route path="/coach/:clientId/vods" element={<VodRouteProbe />} />
-            </Routes>
+            <TooltipProvider>
+              <ShellProfileSubscription />
+              <Routes>
+                <Route path="/match-data" element={<MatchDataPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+                <Route path="/vod" element={<VodRouteProbe />} />
+                {/* Phase 11 fix round 3 (FB-6): the coaching-route mirror — proves
+                    "Go to VOD Manager" stays subject-aware instead of escaping
+                    to the personal /vod route above. */}
+                <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
+                <Route path="/coach/:clientId/vods" element={<VodRouteProbe />} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('MatchDataPage', () => {
@@ -239,14 +256,18 @@ describe('MatchDataPage', () => {
     expect(link).toHaveAttribute('href', '/opponents?player=sgg%3Auser%2F9fb774ae&opponent=rival');
   });
 
-  it('omits the Analyze opponent link inside a client workspace (no /opponents there)', async () => {
+  // Plan 38-02 (D-03/OPP-04): /opponents is now mounted under the coach
+  // family from the shared subjectAnalyticsRoutes list, so the link renders
+  // here instead of suppressing itself — the destination is built through
+  // the subject-aware useSubjectPath builder and carries the coach prefix.
+  it('renders the Analyze opponent link inside a client workspace, with the coach-prefixed destination', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
 
     renderMatchData('/coach/client-1/match-data');
 
-    await screen.findByText('Match History');
-    expect(screen.queryByRole('link', { name: /Analyze opponent/ })).not.toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'Analyze opponent rival' });
+    expect(link).toHaveAttribute('href', '/coach/client-1/opponents?opponent=rival');
   });
 
   it('renders rows from mocked matches', async () => {
@@ -888,5 +909,368 @@ describe('MatchDataPage — CSV export demo gating', () => {
 
     await waitFor(() => expect(screen.getAllByText('rival')).not.toHaveLength(0));
     expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeEnabled();
+  });
+});
+
+// Task 3 (T-39.1-16-03): the page-shell/grid rewrite, the roster rail, and
+// the conditional games terminus — mirrors FighterAnalysisPage.test.tsx's
+// own equivalent tests exactly (T-39.1-14 precedent).
+describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-03)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    setMockUser(makeMockUser());
+    listOpponents.mockResolvedValue(['rival']);
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+  });
+
+  it('no card root on this surface carries a stretch utility (UIX-04)', async () => {
+    renderMatchData();
+
+    await screen.findByText('Match History');
+    const cardRoots = document.querySelectorAll('[data-slot="card"]');
+    expect(cardRoots.length).toBeGreaterThan(0);
+    for (const card of cardRoots) {
+      expect(card.className).not.toMatch(/\bflex-1\b/);
+      expect(card.className).not.toMatch(/\bgrow\b/);
+      expect(card.className).not.toMatch(/\bself-stretch\b/);
+    }
+  });
+
+  it('renders exactly one filter row and one horizon switch', async () => {
+    renderMatchData();
+
+    await screen.findByText('Match History');
+    expect(document.querySelectorAll('[data-slot="horizon-switch"]')).toHaveLength(1);
+  });
+
+  it('renders the filtered match list only when a drill axis is present in the URL', async () => {
+    const { unmount } = renderMatchData('/match-data');
+    await screen.findByText('Match History');
+    expect(document.getElementById('games')).not.toBeInTheDocument();
+    unmount();
+
+    renderMatchData('/match-data?stage=1');
+    await screen.findByText('Match History');
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  describe('WR-C02 (39.1-REVIEW.md): D-16 memoization contract', () => {
+    it('an unrelated re-render does not re-run the terminus narrowing predicate', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+      ]);
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // A FRESH element tree on each call (never the SAME object reference
+      // reused) — React's fiber reconciler bails out of re-rendering a
+      // subtree whose parent's `oldProps === newProps` by REFERENCE, so
+      // passing the identical tree object to both `render` and `rerender`
+      // would short-circuit before ever reaching `MatchDataPage`, making
+      // this assertion pass VACUOUSLY regardless of the fix. A new JSX call
+      // on each invocation (mirrors `StageDetailPage.test.tsx`'s own
+      // `stageTree()` helper) produces new-but-value-equal props at every
+      // level, forcing a genuine re-render pass all the way down.
+      function tree() {
+        return (
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter initialEntries={['/match-data?stage=1']}>
+              <AuthProvider>
+                <AnalyticsFilterProvider>
+                  <TooltipProvider>
+                    <ShellProfileSubscription />
+                    <Routes>
+                      <Route path="/match-data" element={<MatchDataPage />} />
+                    </Routes>
+                  </TooltipProvider>
+                </AnalyticsFilterProvider>
+              </AuthProvider>
+            </MemoryRouter>
+          </QueryClientProvider>
+        );
+      }
+      const { rerender } = render(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // Neither `MatchDataPage` nor `FilteredMatchList` is wrapped in
+      // `React.memo`, so re-invoking `render()` on the same root always
+      // re-runs both function bodies (mirrors a horizon toggle, a
+      // background refetch, or any sibling state change — the same class of
+      // "parent re-rendered, nothing this terminus cares about changed"
+      // event) — the only thing under test is whether that re-run
+      // recomputes `FilteredMatchList`'s own narrowing memo. A stable
+      // `terminusAxes`/`matches` reference means it doesn't:
+      // `matchesDrillDown`'s call count stays flat (mirrors
+      // `StageDetailPage.test.tsx`'s own "WR-03 (38-REVIEW-FIX)" test).
+      rerender(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
+    });
+  });
+
+  it('mounts the roster rail', async () => {
+    renderMatchData();
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+    );
+  });
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a rail card door narrows the terminus to exactly N', () => {
+    /** 45 games, all Mario — clears `ROSTER_MAIN_MIN_GAMES` (20) so `rosterCore` produces a real, asserting fact card. */
+    function richRosterFixture() {
+      const now = Date.now();
+      return Array.from({ length: 45 }, (_, i) =>
+        makeMatch({
+          id: `roster-${i}`,
+          fighter_id: mario.id,
+          time: now - (45 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+        }),
+      );
+    }
+
+    it("clicking a card's counted-games door shows the terminus with data-total-rows equal to the door's own count", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richRosterFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderMatchData();
+
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
+        ).not.toBeNull(),
+      );
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      const door = within(card).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    // 39.1-REVIEW iteration 2 WR-01: Match Data had no claim-follows-horizon
+    // wiring. 50 Mario games over ~80 days plus 40 from ~200 days ago, so the
+    // rail's rosterCore insight exists at both `last30` and `last90`.
+    function horizonSplitFixture() {
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      return [
+        ...Array.from({ length: 50 }, (_, i) =>
+          makeMatch({
+            id: `hz${i}`,
+            time: now - (49 - i) * ((80 / 49) * day),
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({ id: `old${i}`, time: now - (200 + i) * day, win: true }),
+        ),
+      ];
+    }
+
+    function ClaimProbe() {
+      const location = useLocation();
+      return (
+        <div
+          data-testid="claim-probe"
+          data-claim={new URLSearchParams(location.search).get('claim') ?? ''}
+        />
+      );
+    }
+
+    function renderMatchDataWithProbe(initialEntry: string) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <TooltipProvider>
+                  <ClaimProbe />
+                  <Routes>
+                    <Route path="/match-data" element={<MatchDataPage />} />
+                    <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
+                  </Routes>
+                </TooltipProvider>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    }
+
+    const NOT_APPLIED =
+      "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.";
+
+    it.each([
+      ['personal', '/match-data'],
+      ['coach-mounted', '/coach/test-client/match-data'],
+    ])(
+      'WR-01 %s: a HorizonSwitch press after following a rail door re-points the claim to the same insight at the new horizon',
+      async (_label, path) => {
+        getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+        listMatches.mockResolvedValue(horizonSplitFixture());
+        HTMLElement.prototype.scrollIntoView = vi.fn();
+        const user = userEvent.setup();
+
+        renderMatchDataWithProbe(path);
+        await screen.findByText('Match History');
+        const rosterDoor = await waitFor(() => {
+          const link = Array.from(
+            document.querySelectorAll<HTMLAnchorElement>('[data-slot="match-data-rail"] a'),
+          ).find((a) => (a.getAttribute('href') ?? '').includes('claim=rosterCore'));
+          expect(link).toBeDefined();
+          return link!;
+        });
+        await user.click(rosterDoor);
+        await waitFor(() =>
+          expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+            'data-claim',
+            'rosterCore:account:last30',
+          ),
+        );
+
+        await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+        await waitFor(() =>
+          expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+            'data-claim',
+            'rosterCore:account:last90',
+          ),
+        );
+        expect(screen.queryByText(NOT_APPLIED)).toBeNull();
+      },
+    );
+
+    it('WR-01: a claim arriving under a different persisted horizon is shown as not applied', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonSplitFixture());
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      window.localStorage.setItem(
+        analyticsSelectionStorageKey('test-uid', null),
+        JSON.stringify({ horizon: 'last90' }),
+      );
+
+      renderMatchDataWithProbe('/match-data?claim=rosterCore:account:last30');
+
+      await screen.findByText('Match History');
+      await waitFor(() => expect(screen.getByText(NOT_APPLIED)).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(90);
+      expect(screen.getByTestId('claim-probe')).toHaveAttribute(
+        'data-claim',
+        'rosterCore:account:last30',
+      );
+    });
+
+    it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+
+      renderMatchData('/match-data?claim=rosterCore:account:doesNotExist');
+
+      await screen.findByText('Match History');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderMatchData();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading match data...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+      // The skeleton's grid spans (12, 8, 4) mirror the loaded page's own
+      // table(12)/roster+stage(8)/rail(4) spans.
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '4', '8'].sort());
+    });
+
+    it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch()]);
+
+      const { container } = renderMatchData();
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+      );
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '4', '8'].sort());
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch()]);
+
+      const { container, queryClient } = renderMatchData();
+      await screen.findByText('Match History');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="match-data-rail"]')).toBeInTheDocument(),
+      );
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Match History')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch()]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
+    });
   });
 });

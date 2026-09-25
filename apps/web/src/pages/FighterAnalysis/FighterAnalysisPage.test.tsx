@@ -1,12 +1,30 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+import * as drillDownParamsModule from '@/lib/drillDownParams';
+
+/**
+ * WR-C02 (39.1-REVIEW.md): a partial mock of `matchesDrillDown` (defaulting
+ * to the real implementation), mirroring `OpponentHubPage.test.tsx`'s own
+ * "WR-03 (38-REVIEW-FIX)" mock — the ONE observable signal that
+ * `FilteredMatchList`'s D-16 memoization contract actually hit its cache.
+ * `matchesDrillDown` runs once PER MATCH inside `FilteredMatchList`'s own
+ * `useMemo` body; if that memo MISSES (an unstable `axes` reference
+ * recreated every render), it runs again on every unrelated re-render.
+ */
+vi.mock('@/lib/drillDownParams', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/drillDownParams')>();
+  return { ...actual, matchesDrillDown: vi.fn(actual.matchesDrillDown) };
+});
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -63,22 +81,25 @@ function makeMatch(
 
 function renderFighterAnalysis() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/fighter-analysis']}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              <Route path="/dashboard" element={<div>Dashboard page</div>} />
-            </Routes>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('FighterAnalysisPage', () => {
@@ -108,9 +129,85 @@ describe('FighterAnalysisPage', () => {
     expect(await screen.findByText("You haven't reported any matches!")).toBeInTheDocument();
   });
 
-  it('renders the fighter hero with sprite, name, record, share of games, and streak chip', async () => {
+  it('opens on the most-played saved fighter, not the alphabetically-first one', async () => {
+    // Fox is alphabetically first ("Fox" < "Mario"); Mario has more games.
+    getFighters.mockResolvedValue({ primary: [fox.id, mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'f1', time: 1, win: true, fighter_id: fox.id }),
+      makeMatch({ id: 'm1', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 3, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 4, win: true, fighter_id: mario.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: fox.name, level: 2 })).not.toBeInTheDocument();
+  });
+
+  it('renders the inferred most-played fighter and its analysis when favorites are empty but a history exists (H-1)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 3, win: false, fighter_id: mario.id }),
+      makeMatch({ id: 'l1', time: 4, win: true, fighter_id: luigi.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
+  });
+
+  it('shows the non-blocking ChooseFavoritesPrompt when favorites are empty but a history exists (H-1)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    expect(await screen.findByTestId('choose-favorites-prompt')).toBeInTheDocument();
+  });
+
+  it('opens on a remembered INFERRED fighter (not a saved favorite) — the same fighter Matchups would open on (D-12)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      // Mario is the most-played inferred fighter...
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 3, win: true, fighter_id: mario.id }),
+      // ...but Luigi was explicitly remembered for this subject, and Luigi is
+      // present only in the match history (never a saved favorite).
+      makeMatch({ id: 'l1', time: 4, win: true, fighter_id: luigi.id }),
+    ]);
+    window.localStorage.setItem(
+      analyticsSelectionStorageKey('test-uid', null),
+      JSON.stringify({ fighterId: luigi.id }),
+    );
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: luigi.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: mario.name, level: 2 })).not.toBeInTheDocument();
+  });
+
+  it('still shows the choose-fighters gate when there are neither saved favorites nor any matches to infer from', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderFighterAnalysis();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+  });
+
+  it('renders the fighter hero with sprite, name, the all-time record and its share of play (T-39.1-14)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    // Chronological: W, W, L, L, L, W (current streak 1 win)
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', time: 1, win: true }),
       makeMatch({ id: 'm2', time: 2, win: true }),
@@ -125,10 +222,10 @@ describe('FighterAnalysisPage', () => {
     const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
     expect(heroHeading).toBeInTheDocument();
     const heroCard = heroHeading.closest('[data-slot="card"]') as HTMLElement;
-    expect(within(heroCard).getByTestId('hero-record')).toHaveTextContent('3-3');
-    expect(within(heroCard).getByText('1W streak')).toBeInTheDocument();
-    // All 6 matches are Mario's -> 100% share.
-    expect(within(heroCard).getByText('100% of your games')).toBeInTheDocument();
+    // 3 wins - 3 losses over 6 games, rendered by the shared `<Record>` idiom.
+    expect(within(heroCard).getAllByText(/3–3/).length).toBeGreaterThan(0);
+    // All 6 matches are Mario's -> 100% share of play.
+    expect(within(heroCard).getByText(/100% of play/)).toBeInTheDocument();
   });
 
   it('shows Stage Mastery tiles with a Best pick caption once a stage qualifies', async () => {
@@ -185,7 +282,16 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('Practice Recommendations')).toBeInTheDocument());
-    expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
+    // Scoped to the Practice Recommendations card (plan 38-06/ADV-03): with
+    // only unknown-stage (id 0) games, Stage Mastery's OWN caption now ALSO
+    // renders the same shared abstention sentence (it used to render
+    // nothing here) — an unscoped query would find it twice.
+    const practiceCard = screen
+      .getByText('Practice Recommendations')
+      .closest('[data-slot="card"]')!;
+    expect(
+      within(practiceCard as HTMLElement).getByText(/Not enough data yet/),
+    ).toBeInTheDocument();
   });
 
   it('surfaces a practice recommendation once a matchup has enough losses', async () => {
@@ -237,9 +343,16 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getAllByText(luigi.name).length).toBeGreaterThan(0);
     expect(screen.getAllByText(fox.name).length).toBeGreaterThan(0);
     expect(screen.getByText('3-0')).toBeInTheDocument();
-    // Luigi's best stage qualifies (3 matches on Battlefield at 100%)
-    expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
-    expect(screen.getByText('(100% over 3)')).toBeInTheDocument();
+    // Luigi's best stage qualifies (3 matches on Battlefield at 100%). Scoped
+    // to the Matchup Stage Guide card (plan 38-06/ADV-03): Stage Mastery's
+    // OWN caption can independently qualify the SAME stage for the SAME
+    // fighter from the SAME underlying matches, and now that its stage name
+    // is a real link (H-01/ADV-03) rather than bare text, `(100% over 3)`
+    // reads as that `<p>`'s only OWN direct text — an unscoped query would
+    // find it twice.
+    const guideCard = screen.getByText('Matchup Stage Guide').closest('[data-slot="card"]')!;
+    expect(within(guideCard as HTMLElement).getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+    expect(within(guideCard as HTMLElement).getByText('(100% over 3)')).toBeInTheDocument();
   });
 
   it('lists named-opponent records in the Opponent table, ignoring blank names', async () => {
@@ -252,10 +365,13 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('Opponents')).toBeInTheDocument());
-    expect(screen.getByText('rival')).toBeInTheDocument();
+    const opponentsCard = screen
+      .getByText('Opponents')
+      .closest('[data-slot="card"]') as HTMLElement;
+    expect(within(opponentsCard).getByText('rival')).toBeInTheDocument();
   });
 
-  it('shows the by-match-type table folded into the hero', async () => {
+  it('shows the by-match-type share bar in the hero with localised labels, never a raw enum (T-39.1-14/UI-SPEC §9.6)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', time: 1, win: true, matchType: 'quickplay' }),
@@ -265,9 +381,420 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
-    expect(screen.getByText('quickplay')).toBeInTheDocument();
-    expect(screen.getByText('unspecified')).toBeInTheDocument();
-    const pipsRegion = within(screen.getByLabelText('Last 2 results, newest first'));
-    expect(pipsRegion).toBeTruthy();
+    expect(screen.getByText('Quickplay')).toBeInTheDocument();
+    expect(screen.getByText('Unspecified')).toBeInTheDocument();
+    expect(screen.queryByText('quickplay')).not.toBeInTheDocument();
+    expect(screen.queryByText('unspecified')).not.toBeInTheDocument();
+  });
+
+  it('the hero is the first grid cell in DOM order (T-39.1-14, DD-07)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    const grid = document.querySelector('[data-slot="page-grid"]') as HTMLElement;
+    expect(grid).toBeInTheDocument();
+    const firstCell = grid.children[0] as HTMLElement;
+    expect(firstCell.querySelector('[data-slot="fighter-hero-body"]')).toBeInTheDocument();
+  });
+
+  it('no card root on this surface carries a stretch utility (UIX-04)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    const cardRoots = document.querySelectorAll('[data-slot="card"]');
+    for (const card of cardRoots) {
+      expect(card.className).not.toMatch(/\bflex-1\b/);
+      expect(card.className).not.toMatch(/\bgrow\b/);
+      expect(card.className).not.toMatch(/\bself-stretch\b/);
+    }
+  });
+
+  it('renders exactly one filter row and one horizon switch', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+    renderFighterAnalysis();
+
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(document.querySelectorAll('[data-slot="horizon-switch"]')).toHaveLength(1);
+  });
+
+  it('renders the filtered match list only when a drill axis is present in the URL (T-39.1-14)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+    ]);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/fighter-analysis']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <TooltipProvider>
+                <Routes>
+                  <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                </Routes>
+              </TooltipProvider>
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(document.getElementById('games')).not.toBeInTheDocument();
+
+    const queryClient2 = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient2}>
+        <MemoryRouter initialEntries={['/fighter-analysis?stage=1']}>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <TooltipProvider>
+                <Routes>
+                  <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                </Routes>
+              </TooltipProvider>
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+  });
+
+  /** Enough games, spread across two opponent characters, to produce a real asserting `characterMovers`/`rivalMovers` card (mirrors `FighterInsightRail.test.tsx`'s own `richFixture()`). */
+  function richInsightFixture(): ReturnType<typeof makeMatch>[] {
+    const matches: ReturnType<typeof makeMatch>[] = [];
+    const now = Date.now();
+    for (let i = 0; i < 40; i++) {
+      matches.push(
+        makeMatch({
+          id: `l${i}`,
+          time: now - (80 - i) * 60 * 60 * 1000,
+          win: i < 20 ? i % 2 === 0 : true,
+          opponent_id: luigi.id,
+          opponent: 'rival-luigi',
+        }),
+      );
+    }
+    for (let i = 0; i < 12; i++) {
+      matches.push(
+        makeMatch({
+          id: `f${i}`,
+          time: now - (30 - i) * 60 * 60 * 1000,
+          win: i % 2 === 0,
+          opponent_id: fox.id,
+          opponent: 'rival-fox',
+        }),
+      );
+    }
+    return matches;
+  }
+
+  describe('T-39.1-24 (gap closure, DD-09 reachability): a rail card door narrows the terminus to exactly N', () => {
+    it("clicking a card's counted-games door shows the terminus with data-total-rows equal to the door's own count, plus the claim summary", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richInsightFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderFighterAnalysis();
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
+        ).not.toBeNull(),
+      );
+
+      const card = document.querySelector(
+        '[data-slot="insight-rail-card"][data-card-kind="regular"]',
+      ) as HTMLElement;
+      const door = within(card).getAllByRole('link')[0]!;
+      const doorLabel = door.textContent ?? '';
+      const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+      expect(expectedCount).toBeGreaterThan(0);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      // The active-filter summary states the count and leads with the
+      // insight's own claim summary (`buildInsightVerdict`), never a bare
+      // "N games" line with no indication of WHICH claim narrowed the list.
+      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+    });
+
+    it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw or not-found state)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/fighter-analysis?claim=formNow:account:doesNotExist']}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <TooltipProvider>
+                  <Routes>
+                    <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                  </Routes>
+                </TooltipProvider>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      // hasDrillAxis is true (a claim param is present) so the terminus
+      // mounts, narrowed by the remaining (empty) axes alone — never a crash,
+      // never a "not found" branch. Scoped to the games terminus card itself
+      // — the page also renders `OpponentTable`'s own unrelated `<table>`.
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
+    });
+  });
+
+  const LAST_30_DOOR_GAMES = 30;
+  const LAST_90_DOOR_GAMES = 50;
+
+  /**
+   * 50 games spread across the last ~80 days, oldest first, evenly spaced —
+   * `last30` (D-06's "most recent 30 games", a COUNT window, not a date
+   * window — `resolveWindow`'s `base.slice(-RECENT_GAME_WINDOW)`) picks
+   * exactly the newest 30; `last90` (a 90-DAY window) picks all 50, since
+   * the oldest game is only ~80 days old. Proves the hero door's count
+   * follows the pressed horizon figure (D-06).
+   */
+  function horizonFollowingFixture(): ReturnType<typeof makeMatch>[] {
+    const now = Date.now();
+    const spanDays = 80;
+    return Array.from({ length: LAST_90_DOOR_GAMES }, (_, i) =>
+      makeMatch({
+        id: `hz${i}`,
+        time:
+          now -
+          (LAST_90_DOOR_GAMES - 1 - i) *
+            ((spanDays / (LAST_90_DOOR_GAMES - 1)) * 24 * 60 * 60 * 1000),
+        win: i % 2 === 0,
+      }),
+    );
+  }
+
+  describe('T-39.1-25 (gap closure, SC4/INS-04): the hero door lands on exactly N', () => {
+    it("clicking the hero's counted-games door narrows the terminus to exactly the door's own count, states it in the summary, and scrolls #games into view", async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = richInsightFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+      const scrollIntoViewSpy = vi.fn();
+      const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+      HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+      try {
+        renderFighterAnalysis();
+
+        await screen.findByRole('heading', { name: mario.name, level: 2 });
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+        );
+        const doorsRoot = document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement;
+        const door = within(doorsRoot).getByRole('link');
+        const doorLabel = door.textContent ?? '';
+        const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
+        expect(expectedCount).toBeGreaterThan(0);
+
+        await user.click(door);
+
+        await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+        const gamesCard = document.getElementById('games') as HTMLElement;
+        const table = within(gamesCard).getByRole('table');
+        expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+        expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+
+        expect(scrollIntoViewSpy).toHaveBeenCalled();
+        const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;
+        expect(scrollIntoViewSpy.mock.contexts[lastCallIndex]).toBe(gamesCard);
+      } finally {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+      }
+    });
+
+    it('the hero door count follows the pressed horizon figure (D-06)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const matches = horizonFollowingFixture();
+      listMatches.mockResolvedValue(matches);
+      const user = userEvent.setup();
+
+      renderFighterAnalysis();
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="fighter-hero-doors"]')).not.toBeNull(),
+      );
+      const initialDoor = within(
+        document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+      ).getByRole('link');
+      expect(initialDoor.textContent ?? '').toContain(String(LAST_30_DOOR_GAMES));
+
+      const heroBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      const last90Button = within(heroBody).getByText('90 days').closest('button')!;
+      await user.click(last90Button);
+
+      await waitFor(() => {
+        const door = within(
+          document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+        ).getByRole('link');
+        expect(door.textContent ?? '').toContain(String(LAST_90_DOOR_GAMES));
+      });
+
+      const door = within(
+        document.querySelector('[data-slot="fighter-hero-doors"]') as HTMLElement,
+      ).getByRole('link');
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(LAST_90_DOOR_GAMES);
+    });
+  });
+
+  describe('WR-C02 (39.1-REVIEW.md): D-16 memoization contract', () => {
+    it('an unrelated re-render does not re-run the terminus narrowing predicate', async () => {
+      const matchesDrillDownSpy = vi.mocked(drillDownParamsModule.matchesDrillDown);
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'm2', time: 2, win: true, map: { id: 1, name: 'Battlefield' } }),
+      ]);
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // A FRESH element tree on each call (never the SAME object reference
+      // reused) — React's fiber reconciler bails out of re-rendering a
+      // subtree whose parent's `oldProps === newProps` by REFERENCE, so
+      // passing the identical `tree` object to both `render` and `rerender`
+      // would short-circuit before ever reaching `FighterAnalysisPage`,
+      // making this assertion pass VACUOUSLY regardless of the fix. A new
+      // JSX call on each invocation (mirrors `StageDetailPage.test.tsx`'s
+      // own `stageTree()` helper) produces new-but-value-equal props at
+      // every level, forcing a genuine re-render pass all the way down.
+      function tree() {
+        return (
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter initialEntries={['/fighter-analysis?stage=1']}>
+              <AuthProvider>
+                <AnalyticsFilterProvider>
+                  <TooltipProvider>
+                    <Routes>
+                      <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+                    </Routes>
+                  </TooltipProvider>
+                </AnalyticsFilterProvider>
+              </AuthProvider>
+            </MemoryRouter>
+          </QueryClientProvider>
+        );
+      }
+      const { rerender } = render(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const callsBefore = matchesDrillDownSpy.mock.calls.length;
+      expect(callsBefore).toBeGreaterThan(0);
+
+      // Neither `FighterAnalysisPage` nor `FilteredMatchList` is wrapped in
+      // `React.memo`, so re-invoking `render()` on the same root always
+      // re-runs both function bodies (mirrors a horizon toggle, a
+      // background refetch, or any sibling state change — the same class of
+      // "parent re-rendered, nothing this terminus cares about changed"
+      // event) — the only thing under test is whether that re-run
+      // recomputes `FilteredMatchList`'s own narrowing memo. A stable
+      // `terminusAxes`/`matches` reference means it doesn't: `matchesDrillDown`'s
+      // call count stays flat (mirrors `StageDetailPage.test.tsx`'s own
+      // "WR-03 (38-REVIEW-FIX)" test).
+      rerender(tree());
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderFighterAnalysis();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading fighter analysis...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+      // The skeleton's grid spans (8, 4, 12, 12) mirror the loaded page's own
+      // hero(8)/rail(4)/vs-lists(12)/existing-cards(12) spans.
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+    });
+
+    it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const { container } = renderFighterAnalysis();
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="fighter-hero-body"]')).not.toBeNull();
+      const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
+        el.getAttribute('data-span'),
+      );
+      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+
+      const { container, queryClient } = renderFighterAnalysis();
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByRole('heading', { name: mario.name, level: 2 })).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch({ id: 'm1', time: 1, win: true })]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
+    });
   });
 });

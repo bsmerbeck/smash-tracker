@@ -1,0 +1,167 @@
+import type { Match } from '@smash-tracker/shared';
+import { parseExternalId } from '@smash-tracker/shared';
+import {
+  maxGamesFor,
+  type SetFormat,
+  type SetGameValues,
+  type SetSharedValues,
+} from './setWizardLogic';
+
+/**
+ * Maximum allowed gap between two CONSECUTIVE saved games of the same
+ * manually-entered set, for the purpose of deriving "the earlier games of
+ * this set" from `useMatches()` data. `vodSetGrouping.MANUAL_SET_WINDOW_MS`
+ * (60s) models one bulk submit loop and is far too tight here, because
+ * entering results as you play means consecutive games land many minutes
+ * apart — 30 minutes per consecutive gap comfortably covers one game plus
+ * data entry while still refusing to chain a run into an unrelated session
+ * hours or days later. Safety argument: this derivation drives DISPLAY
+ * CONTEXT only, nothing persisted depends on it, and a false positive costs
+ * one click to drop — so a generous window is the right trade.
+ */
+export const CONTINUE_SET_MAX_GAP_MS = 30 * 60_000;
+
+/**
+ * Matches `vodSetGrouping.MAX_SET_GAMES` — no Bo5 (the longest set format
+ * the app supports) has more than 5 games. Defined locally rather than
+ * imported from the VOD Manager page module — this component must not
+ * depend on a page's lib.
+ */
+export const MAX_CONTINUE_SET_GAMES = 5;
+
+/**
+ * Whether `match` is a manually-entered record (as opposed to synced from
+ * start.gg/parry.gg). Mirrors `getDisplayedSetKey`'s manual branch,
+ * including that an unparseable `externalId` still counts as manual.
+ */
+export function isManualMatch(match: Match): boolean {
+  return match.source === undefined && parseExternalId(match.externalId) === null;
+}
+
+/**
+ * A stable grouping key for the manual-set membership heuristic. Joins
+ * opponent/eventName/tournamentName/matchType with a NUL (`\u0000`)
+ * separator — a separator no free-text field can contain, so two different
+ * field splits can never collide into one key. `fighter_id`/`opponent_id`
+ * are deliberately excluded for the reason `vodSetGrouping.ts` documents —
+ * per-game characters legitimately differ across the games of one set.
+ */
+export function setGroupKey(match: Match): string {
+  return [
+    match.opponent ?? '',
+    match.eventName ?? '',
+    match.tournamentName ?? '',
+    match.matchType || 'none',
+  ].join('\u0000');
+}
+
+/**
+ * Derives the already-saved games of `anchor`'s set from the subject-scoped
+ * `matches` list: the maximal contiguous (by `CONTINUE_SET_MAX_GAP_MS`) run
+ * of manual matches sharing `anchor`'s `setGroupKey`, capped at
+ * `MAX_CONTINUE_SET_GAMES` entries closest to the anchor in time, returned
+ * ascending by `time` with the anchor always included exactly once. Returns
+ * `[]` if `anchor` isn't manual (defensive — the UI never calls this
+ * otherwise). Never mutates `matches`.
+ */
+export function findPriorSetGames(anchor: Match, matches: Match[]): Match[] {
+  if (!isManualMatch(anchor)) {
+    return [];
+  }
+
+  const anchorKey = setGroupKey(anchor);
+  const byId = new Map<string, Match>();
+  for (const m of matches) {
+    if (isManualMatch(m) && setGroupKey(m) === anchorKey) {
+      byId.set(m.id, m);
+    }
+  }
+  byId.set(anchor.id, anchor);
+
+  const candidates = [...byId.values()].sort(
+    (a, b) => a.time - b.time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const anchorIndex = candidates.findIndex((m) => m.id === anchor.id);
+
+  let left = anchorIndex;
+  while (
+    left > 0 &&
+    candidates[left]!.time - candidates[left - 1]!.time <= CONTINUE_SET_MAX_GAP_MS
+  ) {
+    left -= 1;
+  }
+  let right = anchorIndex;
+  while (
+    right < candidates.length - 1 &&
+    candidates[right + 1]!.time - candidates[right]!.time <= CONTINUE_SET_MAX_GAP_MS
+  ) {
+    right += 1;
+  }
+
+  let run = candidates.slice(left, right + 1);
+  if (run.length > MAX_CONTINUE_SET_GAMES) {
+    run = [...run]
+      .sort((a, b) => {
+        const da = Math.abs(a.time - anchor.time);
+        const db = Math.abs(b.time - anchor.time);
+        return da !== db ? da - db : a.time - b.time;
+      })
+      .slice(0, MAX_CONTINUE_SET_GAMES)
+      .sort((a, b) => a.time - b.time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  return run;
+}
+
+/**
+ * Maps a stored `Match` to the wizard's per-game shape for rendering as a
+ * locked, read-only row. `fighterId`/`opponentFighterId` are set EXPLICITLY
+ * (not left `undefined`) so the wizard's forward-carry inherits the real
+ * characters that were played. `vodUrl`/`vodStartSeconds` are omitted
+ * entirely: locked rows are never submitted, and surfacing a VOD field on a
+ * read-only row would imply it is being re-saved.
+ */
+export function matchToSetGameValues(match: Match): SetGameValues {
+  return {
+    result: match.win ? 'win' : 'loss',
+    stageId: match.map?.id ?? 0,
+    stocksLeft: match.stocksLeft,
+    stageForm: match.map?.form,
+    fighterId: match.fighter_id,
+    opponentFighterId: match.opponent_id,
+  };
+}
+
+/**
+ * Set-level default form values for a continuation, seeded from the anchor
+ * match plus the number of locked games already saved (which decides the
+ * default Bo3/Bo5 format). The `|| 'unknown'` fallback: a Quick Logger
+ * match stored with an empty opponent cannot round-trip through
+ * `buildSetSharedFormSchema` (min length 1), so the continuation surfaces
+ * the same `'unknown'` default the Add Match form uses, visible and
+ * editable in the combobox before saving.
+ */
+export function continueSetSharedDefaults(
+  anchor: Match,
+  lockedCount: number,
+): SetSharedValues & { format: SetFormat } {
+  return {
+    fighterId: anchor.fighter_id,
+    opponentFighterId: anchor.opponent_id,
+    opponentName: anchor.opponent ? anchor.opponent : 'unknown',
+    matchType: anchor.matchType ? anchor.matchType : 'none',
+    eventName: anchor.eventName ?? '',
+    tournamentName: anchor.tournamentName ?? '',
+    format: defaultContinueFormat(lockedCount),
+  };
+}
+
+/** The default Bo3/Bo5 format for a continuation, given how many games are already locked in. */
+export function defaultContinueFormat(lockedCount: number): SetFormat {
+  return lockedCount > maxGamesFor('bo3') ? 'bo5' : 'bo3';
+}
+
+/** Whether `format` can even hold `lockedCount` already-saved games. */
+export function isFormatSelectable(format: SetFormat, lockedCount: number): boolean {
+  return lockedCount <= maxGamesFor(format);
+}

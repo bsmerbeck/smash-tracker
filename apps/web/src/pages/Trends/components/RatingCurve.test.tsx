@@ -59,6 +59,17 @@ describe('buildRatingCurveData', () => {
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]?.data).toEqual([]);
   });
+
+  it('draws the rating line in the tokenised series colour, never brand red (DD-11/UIX-05)', () => {
+    const matches = Array.from({ length: 6 }, (_, i) =>
+      makeMatch({ id: `${i}`, time: i * 1000, win: true }),
+    );
+    const { periods } = computeRatingHistory(matches);
+    const data = buildRatingCurveData(periods, i18n.t, 'en');
+
+    expect(data.datasets[0]?.borderColor).toBe('#3186e9');
+    expect(data.datasets[0]?.borderColor).not.toBe('#e60012');
+  });
 });
 
 describe('RatingCurve component', () => {

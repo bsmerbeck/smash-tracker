@@ -24,10 +24,17 @@ export interface OwnedWorkspaceSubject {
 
 const WORKSPACE_TENANT_ID_PATTERN = /^\/workspace\/([^/]+)/;
 
+/**
+ * Phase 35-03 (Task 3, H-3): the pure body of `useOwnedWorkspaceSubject`,
+ * extracted for the identical reason `activeSubjectFromPathname` is —
+ * `lib/subjectQueryKey.ts` composes this against `window.location.pathname`
+ * rather than re-declaring the tenantId route grammar a second time.
+ */
+export function ownedWorkspaceTenantIdFromPathname(pathname: string): string | null {
+  const match = WORKSPACE_TENANT_ID_PATTERN.exec(pathname);
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
 export function useOwnedWorkspaceSubject(): OwnedWorkspaceSubject {
-  const location = useLocation();
-  const match = WORKSPACE_TENANT_ID_PATTERN.exec(location.pathname);
-  return {
-    tenantId: match ? decodeURIComponent(match[1]!) : null,
-  };
+  return { tenantId: ownedWorkspaceTenantIdFromPathname(useLocation().pathname) };
 }

@@ -7,6 +7,7 @@ import {
   MAX_GROUP_MEMBERS,
   MAX_GROUPS_PER_USER,
   matchRecordSchema,
+  RATING_MODEL_VERSION,
   type GroupLeaderboard,
   type GroupMemberRecord,
   type GroupRecord,
@@ -248,6 +249,14 @@ export async function deleteGroup(database: Database, uid: string, groupId: stri
 // Leaderboard computation + cache
 // ---------------------------------------------------------------------------
 
+/**
+ * Phase 36 (TRND-01, D-03): this in-memory TTL is the ONLY caching layer for
+ * a leaderboard — there is no persisted/RTDB rating cache. That means a
+ * rating-model version bump (v1 -> v2) needs no backfill: the first cache
+ * miss after deploy (at most `CACHE_TTL_MS` after the previous one)
+ * recomputes every member's `toLeaderboardEntry` under the current
+ * `computeRatingHistory`, i.e. the current model version, automatically.
+ */
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface LeaderboardCacheEntry {
@@ -338,6 +347,10 @@ function toLeaderboardEntry(
     games,
     lastMatchAt,
     isYou,
+    // Falls back to the current constant (never the OLD 1500/350 defaults'
+    // implied version) when `history.current` is null, so the field is
+    // never absent even for a member with no rating history.
+    ratingModelVersion: history.current?.ratingModelVersion ?? RATING_MODEL_VERSION,
   };
 }
 

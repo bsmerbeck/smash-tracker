@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { OpponentList } from './OpponentList';
 
@@ -34,15 +35,26 @@ const MATCHES: Match[] = [
 
 function renderList() {
   return render(
-    <OpponentList matches={MATCHES} selected={null} onSelect={vi.fn()} onRequestMerge={vi.fn()} />,
+    <OpponentList
+      matches={MATCHES}
+      selected={null}
+      onSelect={vi.fn()}
+      onRequestMerge={vi.fn()}
+      aliasMap={{}}
+    />,
   );
 }
 
+// Plan 39.1-17 (UIX-03): the tag is the row's ONE flexible truncating slot,
+// identified by `data-truncate-guard` — its `title` attribute is now
+// CONDITIONAL (only present when the rendered string genuinely overflows,
+// never measurable in jsdom's unmocked layout), so `getByTitle` no longer
+// reliably locates it.
 function rowNames(): string[] {
   const list = screen.getByRole('list', { name: 'Opponents' });
   return within(list)
     .getAllByRole('listitem')
-    .map((li) => within(li).getByTitle(/.+/).textContent ?? '');
+    .map((li) => li.querySelector('[data-truncate-guard]')?.textContent ?? '');
 }
 
 describe('OpponentList sorting and filtering', () => {
@@ -88,5 +100,125 @@ describe('OpponentList sorting and filtering', () => {
     expect(rowNames()).toEqual(['alice']);
     // The header count still reflects everyone faced, not the filtered view.
     expect(screen.getByText('3 opponents faced')).toBeInTheDocument();
+  });
+});
+
+// Phase 36 (EVID-12, R2-MEDIUM-1, R3-MEDIUM-1): the migration to
+// buildOpponentEvidence re-keys the per-opponent lookups by resolved
+// identity — these assertions are ADDED (not edits to the fixture above),
+// so they don't violate the "existing assertions pass unedited" rule.
+describe('OpponentList alias-merged identity (EVID-12)', () => {
+  it('sorts an alias-merged opponent by their latest game across all tags and renders a mixed source badge on the list row', async () => {
+    const user = userEvent.setup();
+    const matches: Match[] = [
+      makeMatch({ id: 'd1', time: 100, win: true, opponent: 'dave' }),
+      makeMatch({ id: 'd2', time: 200, win: true, opponent: 'dave' }),
+      makeMatch({
+        id: 'd3',
+        time: 5000,
+        win: true,
+        opponent: 'daveovertime',
+        source: 'startgg',
+      }),
+      makeMatch({ id: 'e1', time: 3000, win: false, opponent: 'ellis' }),
+    ];
+    render(
+      <OpponentList
+        matches={matches}
+        selected={null}
+        onSelect={vi.fn()}
+        onRequestMerge={vi.fn()}
+        aliasMap={{ daveovertime: 'dave' }}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort opponents' }));
+    await user.click(screen.getByRole('option', { name: 'Recently played' }));
+    // "dave"'s latest game (across both tags) is time 5000 — newer than
+    // "ellis"'s single game at time 3000.
+    expect(rowNames()).toEqual(['dave', 'ellis']);
+
+    const list = screen.getByRole('list', { name: 'Opponents' });
+    const daveRow = within(list).getAllByRole('listitem')[0]!;
+    expect(within(daveRow).getByLabelText('mixed sources')).toBeInTheDocument();
+  });
+});
+
+describe('OpponentList unnamed-opponent bucket (D-10)', () => {
+  it('discloses the unnamed bucket as a fact, outside every ranked row, for a fixture with no opponent name', () => {
+    const matches: Match[] = [
+      makeMatch({ id: 'a1', time: 100, win: true, opponent: 'alice' }),
+      makeMatch({ id: 'n1', time: 200, win: true, opponent: '' }),
+      makeMatch({ id: 'n2', time: 300, win: false, opponent: '' }),
+    ];
+    render(
+      <OpponentList
+        matches={matches}
+        selected={null}
+        onSelect={vi.fn()}
+        onRequestMerge={vi.fn()}
+        aliasMap={{}}
+      />,
+    );
+
+    const list = screen.getByRole('list', { name: 'Opponents' });
+    const rows = within(list).getAllByRole('listitem');
+    // Only "alice" is a ranked row — the two unnamed games are excluded.
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]!).getByText('alice')).toBeInTheDocument();
+
+    expect(screen.getByText('2 games with no opponent name recorded')).toBeInTheDocument();
+    // Not a link, not a listitem — a disclosed fact only.
+    expect(screen.queryByRole('link', { name: /no opponent name/ })).not.toBeInTheDocument();
+  });
+
+  it('renders no bucket disclosure when every match has an opponent name', () => {
+    renderList();
+    expect(screen.queryByText(/no opponent name recorded/)).not.toBeInTheDocument();
+  });
+});
+
+// Phase 38-07 (C3-M-01): OpponentList takes an OPTIONAL host-supplied
+// `hubHref` destination-builder prop. The TWO existing bare renders above
+// (`renderList()` and the alias-merge render) pass no builder and stay
+// byte-unchanged — this describe block is the ONLY place a `MemoryRouter`
+// is introduced in this file.
+describe('OpponentList hub destination (C3-M-01)', () => {
+  it('with hubHref supplied, a row is a real anchor to that destination', () => {
+    render(
+      <MemoryRouter>
+        <OpponentList
+          matches={MATCHES}
+          selected={null}
+          onSelect={vi.fn()}
+          onRequestMerge={vi.fn()}
+          aliasMap={{}}
+          hubHref={(row) => `/opponents/${row.displayTag}`}
+        />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: /alice/ });
+    expect(link).toHaveAttribute('href', '/opponents/alice');
+    // The old in-page selection button is gone once a destination is supplied.
+    expect(screen.queryByRole('button', { name: /alice/, pressed: false })).not.toBeInTheDocument();
+  });
+
+  it('under a coach entry the destination carries the coach prefix', () => {
+    render(
+      <MemoryRouter>
+        <OpponentList
+          matches={MATCHES}
+          selected={null}
+          onSelect={vi.fn()}
+          onRequestMerge={vi.fn()}
+          aliasMap={{}}
+          hubHref={(row) => `/coach/client-a/opponents/${row.displayTag}`}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /alice/ })).toHaveAttribute(
+      'href',
+      '/coach/client-a/opponents/alice',
+    );
   });
 });

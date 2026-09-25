@@ -1,7 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { matchesForEntry, buildSetTimeline } from '@smash-tracker/shared';
+import type { Match } from '@smash-tracker/shared';
+import {
+  anchorKey,
+  matchesForEntry,
+  buildSetTimeline,
+  splitTournamentBlocks,
+  stageBucketId,
+  trimmedEventKey,
+} from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
@@ -14,6 +22,7 @@ import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
+import { RulesetOverrideSection } from './components/RulesetOverrideSection';
 import { GenerateRecapDialog } from './components/GenerateRecapDialog';
 import { buildRetrospective } from './lib/retrospective';
 
@@ -105,6 +114,140 @@ export function TournamentDetailPage() {
 
   const timeline = useMemo(() => buildSetTimeline(entryMatches), [entryMatches]);
 
+  /**
+   * CR-03/WR-04 (38-REVIEW-FIX): a per-STAGE, per-PROXIMITY-BLOCK
+   * event-anchor key — never `entry.entryKey` (the tournament registry's own
+   * foreign key, unrelated to `packages/shared/src/evidence/eventSeries.ts`'s
+   * anchor-key format). `StageDetailPage.tsx` resolves its `event=` param by
+   * looking up `buildStageEventSeries({ matches, stageId, ... })`'s own
+   * anchors, and that builder scopes matches by STAGE first, groups by name,
+   * then calls `splitTournamentBlocks` — which starts a NEW anchor whenever
+   * two consecutive plays on that stage are more than
+   * `EVENT_ANCHOR_PROXIMITY_MS` (4 days) apart. A multi-day entry can
+   * therefore split a single stage into more than one anchor block, each
+   * with its OWN key (its own block's min time), and each block now also
+   * carries its own `startMs`/`endMs` (WR-05: needed to span every block in
+   * a from/to window — see `stageAggregateLinkParams` below). CR-03's
+   * original fix computed exactly one key per stage (the EARLIEST block's),
+   * which under-represents a later block's picks — WR-04 fixes that by
+   * computing every block per stage here (calling the engine's own exported
+   * `splitTournamentBlocks`, never re-implementing the proximity rule) and
+   * resolving the correct block for a SPECIFIC match via `eventKeyForStage`
+   * below (the Advisor Retrospective case, where each pick names its own
+   * played game — untouched by WR-05). `entryMatches` are already bounded to
+   * this one tournament occurrence (`matchesForEntry`'s
+   * eventName[+tournamentName]+time-window filter), so every match here
+   * shares one name and the per-stage blocks computed here match what
+   * `buildStageEventSeries` independently derives for a real, single
+   * occurrence of this event.
+   */
+  const stageEventBlocksByStageId = useMemo(() => {
+    const map = new Map<
+      number,
+      { key: string; matchIds: Set<string>; startMs: number; endMs: number }[]
+    >();
+    const [firstMatch] = entryMatches;
+    if (!firstMatch) {
+      return map;
+    }
+    const name = trimmedEventKey(firstMatch);
+    if (name == null) {
+      return map;
+    }
+    const matchesByStage = new Map<number, Match[]>();
+    for (const match of entryMatches) {
+      const stageId = stageBucketId(match);
+      const group = matchesByStage.get(stageId);
+      if (group) {
+        group.push(match);
+      } else {
+        matchesByStage.set(stageId, [match]);
+      }
+    }
+    for (const [stageId, stageMatches] of matchesByStage) {
+      const sorted = [...stageMatches].sort((a, b) => a.time - b.time);
+      const blocks = splitTournamentBlocks(sorted).map((block) => ({
+        key: anchorKey('tournament', name, block[0]!.time),
+        matchIds: new Set(block.map((m) => m.id)),
+        startMs: block[0]!.time,
+        endMs: block[block.length - 1]!.time,
+      }));
+      map.set(stageId, blocks);
+    }
+    return map;
+  }, [entryMatches]);
+  const eventKeyForStage = useCallback(
+    (stageId: number, matchId?: string): string | undefined => {
+      const blocks = stageEventBlocksByStageId.get(stageId);
+      if (!blocks || blocks.length === 0) {
+        return undefined;
+      }
+      if (matchId != null) {
+        const owningBlock = blocks.find((block) => block.matchIds.has(matchId));
+        if (owningBlock) {
+          return owningBlock.key;
+        }
+      }
+      // Blocks are pushed in ascending time order by `splitTournamentBlocks`,
+      // so the last one is the most recent.
+      return blocks[blocks.length - 1]!.key;
+    },
+    [stageEventBlocksByStageId],
+  );
+
+  /**
+   * WR-05 (38-REVIEW-FIX): the "Stages Played" aggregate row's OWN
+   * drill-down params — never `eventKeyForStage`'s no-`matchId` branch. That
+   * row has no single match of its own; its displayed W-L/games figure
+   * (`CharactersAndStages.tsx`'s `StagesCard`) already sums EVERY block for
+   * that stage, but a single `event=<key>` link can only ever resolve to ONE
+   * block on `StageDetailPage.tsx` — for a stage split across more than one
+   * proximity block, that landed the user on a subset smaller than what the
+   * row promised, with nothing on the destination disclosing the narrowing
+   * (its only "subset" signal, the `eventLabel` subtitle, is just the
+   * tournament's name — identical across every block of the same event).
+   *
+   * When the stage has exactly one block, this returns the SAME
+   * `{ eventKey }` `eventKeyForStage` would have (byte-identical link for the
+   * common case). When it has more than one, this returns an inclusive
+   * `from`/`to` date window spanning every block's own match times instead —
+   * `StageDetailPage.tsx` narrows every region by that window exactly as it
+   * would by `event=` (see its `sourceMatches`/`terminusAxes`), so the
+   * destination lists exactly the games this row counts. No new URL param:
+   * `from`/`to` are `drillDownParams.ts`'s own existing axes.
+   *
+   * Known, accepted limitation: unlike `event=` (which matches by this
+   * entry's own block membership), a `from`/`to` window matches by RAW
+   * `match.time`, so it could in principle also admit a DIFFERENT tournament
+   * entry's games on the same stage if that entry shares this one's event
+   * name and its games happen to fall inside the window (`trimmedEventKey`
+   * groups only by name, not by `tournamentName`+time the way
+   * `matchesForEntry` disambiguates entries — see that function's own
+   * "two different weeklies both hosting 'Ultimate Singles'" comment for the
+   * same class of tradeoff already accepted elsewhere in this codebase).
+   * There is no existing drill-down axis that scopes to one entry's specific
+   * match ids, and adding one is out of scope here — the alternative (this
+   * fix's predecessor: an undisclosed subset on EVERY multi-block entry) is
+   * the strictly more common and more actively misleading failure mode this
+   * finding named, so the rare cross-entry edge case is accepted rather than
+   * reverting to a silent narrowing.
+   */
+  const stageAggregateLinkParams = useCallback(
+    (stageId: number): { eventKey?: string; from?: number; to?: number } | undefined => {
+      const blocks = stageEventBlocksByStageId.get(stageId);
+      if (!blocks || blocks.length === 0) {
+        return undefined;
+      }
+      if (blocks.length === 1) {
+        return { eventKey: blocks[0]!.key };
+      }
+      const startMs = Math.min(...blocks.map((block) => block.startMs));
+      const endMs = Math.max(...blocks.map((block) => block.endMs));
+      return { from: startMs, to: endMs };
+    },
+    [stageEventBlocksByStageId],
+  );
+
   const retrospective = useMemo(() => {
     if (!entry) {
       return null;
@@ -179,8 +322,18 @@ export function TournamentDetailPage() {
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
-      <CharactersAndStages matches={entryMatches} />
-      {retrospective && <AdvisorRetrospective retrospective={retrospective} />}
+      <CharactersAndStages
+        matches={entryMatches}
+        stageAggregateLinkParams={stageAggregateLinkParams}
+      />
+      {/* EVID-04 (D-10, D-18): renders for every entry including
+          admin-imported ones — plan 37-06's retrospective grades historical
+          picks under whichever ruleset applied to that event, and this is
+          where that ruleset is disclosed and (own-account only) edited. */}
+      <RulesetOverrideSection entry={entry} />
+      {retrospective && (
+        <AdvisorRetrospective retrospective={retrospective} eventKeyForStage={eventKeyForStage} />
+      )}
       {canGenerateRecap && entry.entryKey && (
         <GenerateRecapDialog
           entryKey={entry.entryKey}

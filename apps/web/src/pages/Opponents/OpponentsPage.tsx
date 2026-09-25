@@ -1,20 +1,32 @@
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { resolveAliasChain } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
-import { resolveAnalyzeOpponentPreselection } from '@/lib/analyzeOpponent';
+import {
+  ANALYZE_OPPONENT_PLAYER_PARAM,
+  ANALYZE_OPPONENT_TAG_PARAM,
+  buildOpponentHubPath,
+  resolveAnalyzeOpponentPreselection,
+} from '@/lib/analyzeOpponent';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
-import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
+import {
+  buildOpponentEvidence,
+  buildOpponentProfile,
+  resolveOpponentIdentities,
+} from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
-import { ScoutingTrendChart } from './components/ScoutingTrendChart';
 import { RecentEncounters } from './components/RecentEncounters';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
@@ -32,17 +44,31 @@ import { buildEvidencePacket } from './evidencePacket';
  */
 export function OpponentsPage() {
   const { t } = useTranslation();
-  const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
+  const subjectPath = useSubjectPath();
+  const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
   const { user } = useAuth();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch, matching `CounterpickAdvisor.tsx`'s convention. One value
+  // per render pass, shared by every `buildOpponentEvidence`/
+  // `buildOpponentProfile` call below, so all three claims report the same
+  // refresh time.
+  const [refreshedAt] = useState(() => Date.now());
 
-  const opponentRecords = useMemo(() => getOpponentRecords(matches), [matches]);
+  // Phase 36 (EVID-12, R1-BLOCKER-2): the identity-resolving inventory
+  // (aliased + normalized + slug/parry-id bound), NOT the raw-tag
+  // `getOpponentRecords` — one alias-merged person is now ONE row here.
+  const opponentRecords = useMemo(
+    () => buildOpponentEvidence({ matches, aliasMap: aliasMap ?? {}, refreshedAt }).rows,
+    [matches, aliasMap, refreshedAt],
+  );
   const sources = useMemo(() => getOpponentSources(matches), [matches]);
 
   const mostPlayed = useMemo(() => {
-    return [...opponentRecords].sort((a, b) => b.total - a.total)[0]?.opponent ?? null;
+    return [...opponentRecords].sort((a, b) => b.total - a.total)[0]?.displayTag ?? null;
   }, [opponentRecords]);
 
   // Tracks an explicit user selection only; when unset, or when the previous
@@ -52,54 +78,95 @@ export function OpponentsPage() {
   // needed to seed state from data that just loaded.
   const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
 
-  // Phase 30.3 (Gate 4): "Analyze opponent" deep links land here with
-  // ?player=sgg:<slug>|pgg:<id> (provider identity, preferred) and/or
-  // ?opponent=<tag> (alias-aware fallback). Resolved against the SAME
-  // alias-canonicalized, filter-applied match set the page's aggregates and
-  // drill-downs use, so a preselected profile can never disagree with what
-  // the list would show for a manual click. Purely a render-time derivation
-  // — an explicit click always wins over the URL, and a preselection that
-  // isn't in the current filtered records falls back to most-played exactly
-  // like a stale explicit selection does.
+  // Plan 38-05 (D-01/D-02): "Analyze opponent" deep links with
+  // ?player=sgg:<slug>|pgg:<id> and/or ?opponent=<tag> now REDIRECT into the
+  // hub (below) instead of preselecting inline — the hub is the addressable
+  // surface these links resolve into. `player=` is carried through verbatim
+  // (D-02 keeps it alive as a provider-identity hint the hub consumes as an
+  // identity fallback of last resort, never a filter axis).
   const [searchParams] = useSearchParams();
-  const preselected = useMemo(
-    () => resolveAnalyzeOpponentPreselection(searchParams, matches, aliasMap ?? {}),
-    [searchParams, matches, aliasMap],
-  );
+  const navigate = useNavigate();
+  useEffect(() => {
+    const opponentParam = searchParams.get(ANALYZE_OPPONENT_TAG_PARAM);
+    const playerParam = searchParams.get(ANALYZE_OPPONENT_PLAYER_PARAM);
+    if (!opponentParam && !playerParam) {
+      return;
+    }
+    // Wait for BOTH queries to settle before resolving: a provider-id or
+    // alias hint resolved against a still-empty `matches`/`aliasMap` (the
+    // initial render, before either query has loaded) would redirect to the
+    // WRONG tag and, because this component then unmounts, never gets a
+    // chance to correct itself once the real data arrives. `aliasMap` is
+    // checked for definedness rather than the query's own `isLoading` flag —
+    // a disabled query (auth still resolving) reports `isLoading: false`
+    // with `data: undefined`, which would pass a naive `isLoading` check.
+    if (isLoading || aliasMap === undefined) {
+      return;
+    }
+    const resolved = resolveAnalyzeOpponentPreselection(searchParams, matches, aliasMap ?? {});
+    if (!resolved) {
+      // A hint that resolves to nothing falls through to today's behaviour
+      // (the list with no selection) rather than redirecting to a dead hub.
+      return;
+    }
+    const hubSearch = playerParam
+      ? `?${ANALYZE_OPPONENT_PLAYER_PARAM}=${encodeURIComponent(playerParam)}`
+      : '';
+    navigate(subjectPath(`${buildOpponentHubPath(resolved)}${hubSearch}`), { replace: true });
+  }, [searchParams, matches, aliasMap, isLoading, navigate, subjectPath]);
 
   // The opponent name currently open in the "Merge into..." dialog, or null
   // when the dialog is closed.
   const [mergeCandidate, setMergeCandidate] = useState<string | null>(null);
 
-  const requested = selectedOpponent ?? preselected;
+  const requested = selectedOpponent;
   const selected =
-    requested && opponentRecords.some((o) => o.opponent === requested) ? requested : mostPlayed;
+    requested && opponentRecords.some((o) => o.displayTag === requested) ? requested : mostPlayed;
 
   const profile = useMemo(() => {
     if (!selected) {
       return null;
     }
-    return getOpponentProfile(matches, selected);
-  }, [matches, selected]);
+    return buildOpponentProfile({
+      matches,
+      aliasMap: aliasMap ?? {},
+      opponentTag: selected,
+      refreshedAt,
+    });
+  }, [matches, aliasMap, selected, refreshedAt]);
 
-  const opponentMatches = useMemo(
-    () => (profile ? matches.filter((m) => m.opponent === profile.opponent) : []),
-    [matches, profile],
-  );
+  // Phase 36 (EVID-12): resolved-identity comparison, not raw-string
+  // equality — an alias-merged person's drill-down series must interleave
+  // ALL of their tags' games into one continuous chronological run, which a
+  // `m.opponent === profile.opponent` comparison (a normalized canonical
+  // tag, post-migration) would silently re-split.
+  const opponentMatches = useMemo(() => {
+    if (!profile || !selected) {
+      return [];
+    }
+    const resolve = resolveOpponentIdentities(matches, aliasMap ?? {});
+    const targetIdentity = resolve({ opponent: selected });
+    return matches.filter((m) => resolve(m) === targetIdentity);
+  }, [matches, aliasMap, profile, selected]);
 
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
 
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
   // Alias names that currently resolve to the selected opponent (for the
-  // "Merged names" management card).
+  // "Merged names" management card). WR-02-i2: follows the FULL transitive
+  // chain via `resolveAliasChain` (the same shared primitive CR-01 made the
+  // canonical resolver) rather than a reverse single-hop `canonical ===
+  // selected` lookup — for a chain like `{ leo: 'mkleo', mkleo:
+  // 'somebody-else' }` with `selected === 'somebody-else'`, a single-hop
+  // filter lists only `'mkleo'` and silently omits `'leo'`, even though
+  // `'leo'`'s matches are already correctly folded into this same row by
+  // CR-01's fix.
   const mergedAliasesForSelected = useMemo(() => {
     if (!selected || !aliasMap) {
       return [];
     }
-    return Object.entries(aliasMap)
-      .filter(([, canonical]) => canonical === selected)
-      .map(([alias]) => alias);
+    return Object.keys(aliasMap).filter((alias) => resolveAliasChain(alias, aliasMap) === selected);
   }, [aliasMap, selected]);
 
   // V6-W1c: "Export H2H" evidence packet — built from the same profile +
@@ -112,13 +179,34 @@ export function OpponentsPage() {
     return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
   }, [profile, tournamentBlocks, user]);
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
+  // skeleton echoing the loaded page's own 320px-rail + report split, so
+  // nothing shifts when data lands. This page is not on the PageGrid/
+  // GridCell contract (a raw `lg:grid-cols-[320px_1fr]` split, unchanged by
+  // this plan), so the skeleton mirrors that same raw split rather than
+  // asserting an exact `data-span` match.
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('opponents.loading')}</div>
+      <div role="status" aria-busy="true" className="flex flex-col gap-6">
+        <span className="sr-only">{t('opponents.loading')}</span>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+          <CardSkeleton variant="list" rows={6} statusLabel={t('opponents.loading')} />
+          <div className="flex flex-col gap-4">
+            <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+            </div>
+            <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
+          </div>
+        </div>
       </div>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = isFetching && !isLoading;
 
   if (allMatches.length === 0) {
     return (
@@ -128,8 +216,12 @@ export function OpponentsPage() {
           <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
           <div className="flex flex-wrap justify-center gap-2">
             <Button asChild>
-              <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+              <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
             </Button>
+            {/* WR-C04 (39.1-REVIEW.md): `/settings/integrations` has no
+                coach/workspace-scoped equivalent (start.gg connection is an
+                own-account-only setting), so it stays an absolute personal
+                route — only the "/dashboard" links below need `subjectPath`. */}
             <Button asChild variant="outline">
               <Link to="/settings/integrations">{t('opponents.empty.connectStartgg')}</Link>
             </Button>
@@ -139,15 +231,21 @@ export function OpponentsPage() {
     );
   }
 
-  const allOpponentsNamed = getOpponentRecords(allMatches);
-  if (allOpponentsNamed.length === 0) {
+  // Phase 36 (R1-BLOCKER-2): a direct existence check, NOT the identity
+  // engine — this branch decides whether to show the "no tags yet" empty
+  // state, and it is not itself a claim about a specific person. Gating it
+  // through `buildOpponentEvidence` (or the old `getOpponentRecords`) would
+  // apply logic irrelevant to this yes/no question; a `.some(...)` over a
+  // non-empty `opponent` is exactly what the branch asks.
+  const hasNamedOpponent = allMatches.some((m) => m.opponent && m.opponent.length > 0);
+  if (!hasNamedOpponent) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
           <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
           <Button asChild className="mt-2">
-            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+            <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
           </Button>
         </div>
       </div>
@@ -158,12 +256,24 @@ export function OpponentsPage() {
     <div className="flex flex-col gap-6">
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      {/* data-slot="opponents-body" (plan 39.1-20): a marker that exists
+          only once the loading gate above has cleared — used as the layout
+          oracle's page-loaded marker for this route. */}
+      <div
+        data-slot="opponents-body"
+        className={cn(
+          'grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]',
+          isRefetching &&
+            'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+        )}
+      >
         <OpponentList
           matches={matches}
           selected={selected}
           onSelect={setSelectedOpponent}
           onRequestMerge={setMergeCandidate}
+          aliasMap={aliasMap ?? {}}
+          hubHref={(row) => subjectPath(buildOpponentHubPath(row.displayTag))}
         />
 
         {profile ? (
@@ -174,13 +284,17 @@ export function OpponentsPage() {
             <ScoutingHeader
               profile={profile}
               encounterContext={encounterContext}
-              source={sources.get(profile.opponent) ?? 'manual'}
+              source={profile.source}
             />
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Plan 39.1-20 Task 3 [Rule 1]: items-start added — a plain CSS
+                Grid without it stretches every row's shorter card to its
+                taller sibling's height (the same defect PageGrid's own
+                items-start exists to prevent). The layout oracle measured
+                this as a real 29px stretch violation on this exact pair. */}
+            <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
-            <ScoutingTrendChart matches={opponentMatches} />
             <RecentEncounters matches={profile.recent} />
             <TournamentHistory
               blocks={tournamentBlocks}
@@ -207,7 +321,7 @@ export function OpponentsPage() {
           }}
           opponent={mergeCandidate}
           candidates={opponentRecords
-            .map((o) => o.opponent)
+            .map((o) => o.displayTag)
             .filter((name) => name !== mergeCandidate)}
           sources={sources}
           onMerged={() => setMergeCandidate(null)}

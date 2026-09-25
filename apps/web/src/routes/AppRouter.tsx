@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
 import { CoachingModeGate } from '@/pages/Coaching/CoachingModeGate';
@@ -10,6 +10,7 @@ import { ResearchTelemetrySuppression } from './ResearchTelemetrySuppression';
 import { RouteAnalytics } from './RouteAnalytics';
 import { RouteTitles } from './RouteTitles';
 import { retryableLazy } from '@/lib/retryableLazy';
+import { renderSubjectAnalyticsRoutes } from './subjectAnalyticsRoutes';
 
 /**
  * V12 SEO: every page except HomePage is lazy-loaded so the entry chunk stays
@@ -21,9 +22,6 @@ import { retryableLazy } from '@/lib/retryableLazy';
  * through retryableLazy (timeout + retry + one-shot reload) after cold-edge
  * chunk stalls froze boot for 103s.
  */
-const DashboardPage = retryableLazy(() =>
-  import('@/pages/Dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
-);
 // Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02): the one-intent-
 // question chooser HomePage's post-auth routing branch can send a new
 // account to. ProtectedRoute-gated like every other authenticated route.
@@ -39,17 +37,6 @@ const ChooseSecondaryPage = retryableLazy(() =>
   import('@/pages/CharacterSelect/ChooseSecondaryPage').then((m) => ({
     default: m.ChooseSecondaryPage,
   })),
-);
-const FighterAnalysisPage = retryableLazy(() =>
-  import('@/pages/FighterAnalysis/FighterAnalysisPage').then((m) => ({
-    default: m.FighterAnalysisPage,
-  })),
-);
-const MatchupsPage = retryableLazy(() =>
-  import('@/pages/Matchups/MatchupsPage').then((m) => ({ default: m.MatchupsPage })),
-);
-const OpponentsPage = retryableLazy(() =>
-  import('@/pages/Opponents/OpponentsPage').then((m) => ({ default: m.OpponentsPage })),
 );
 const ScoutPage = retryableLazy(() =>
   import('@/pages/Scout/ScoutPage').then((m) => ({ default: m.ScoutPage })),
@@ -252,14 +239,24 @@ export function AppRouter() {
               no auth, revocable/expiring token. A SIBLING to /s/:token
               above, never a fork. */}
             <Route path="/r/:token" element={<ReviewDeliveryPage />} />
+            {/* Plan 38-02 (D-03): dashboard, fighter analysis, matchups and
+              opponents are rendered from the SAME shared descriptor list the
+              coach and workspace families use below — a pathless layout
+              route supplies `ProtectedRoute` (and nothing else) so these
+              four URLs stay byte-unchanged (`/dashboard`, `/fighter-analysis`,
+              `/matchups`, `/opponents`) while sharing one source of truth
+              with the other two families. Tournaments, Trends and Scout are
+              deliberately NOT part of this shared list (D-04): see the coach
+              and workspace blocks below for why. */}
             <Route
-              path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <DashboardPage />
+                  <Outlet />
                 </ProtectedRoute>
               }
-            />
+            >
+              {renderSubjectAnalyticsRoutes()}
+            </Route>
             {/* Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02/D-01):
               route-visible so it survives reload/deep-link/Back — HomePage's
               post-auth routing branch sends a new account with no saved
@@ -287,30 +284,6 @@ export function AppRouter() {
               element={
                 <ProtectedRoute>
                   <ChooseSecondaryPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/fighter-analysis"
-              element={
-                <ProtectedRoute>
-                  <FighterAnalysisPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/matchups"
-              element={
-                <ProtectedRoute>
-                  <MatchupsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/opponents"
-              element={
-                <ProtectedRoute>
-                  <OpponentsPage />
                 </ProtectedRoute>
               }
             />
@@ -474,11 +447,14 @@ export function AppRouter() {
               <Route path="fighters" element={<ClientFightersPage />} />
               <Route path="vods" element={<VodManagerPage />} />
               <Route path="match-data" element={<MatchDataPage />} />
-              <Route element={<ClientAnalyticsLayout />}>
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
-                <Route path="matchups" element={<MatchupsPage />} />
-              </Route>
+              {/* Plan 38-02 (D-03/DRL-04): the shared analytics route list —
+                dashboard, fighter analysis, matchups, opponents — rendered
+                from the SAME descriptors the personal and workspace families
+                use. Tournaments, Trends and Scout are deliberately NOT added
+                here (D-04): their API routes are uid-only, and mounting them
+                under a client route would render the COACH's own data under
+                a client's subject path. */}
+              <Route element={<ClientAnalyticsLayout />}>{renderSubjectAnalyticsRoutes()}</Route>
               {/* Phase 12 (Coach Reviews & Delivery, D-01/D-05): the Reviews list + the review composer. */}
               <Route path="reviews" element={<ReviewsListPage />} />
               <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
@@ -516,11 +492,14 @@ export function AppRouter() {
               <Route path="fighters" element={<OwnerFightersPage />} />
               <Route path="vods" element={<VodManagerPage />} />
               <Route path="match-data" element={<MatchDataPage />} />
-              <Route element={<OwnerAnalyticsLayout />}>
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
-                <Route path="matchups" element={<MatchupsPage />} />
-              </Route>
+              {/* Plan 38-02 (D-03/DRL-04): the shared analytics route list —
+                dashboard, fighter analysis, matchups, opponents — rendered
+                from the SAME descriptors the personal and coach families use.
+                Tournaments, Trends and Scout are deliberately NOT added here
+                (D-04): their API routes are uid-only, and mounting them under
+                a tenant route would render the OWNER's own data under a
+                different subject path than the one displayed. */}
+              <Route element={<OwnerAnalyticsLayout />}>{renderSubjectAnalyticsRoutes()}</Route>
               <Route path="reviews" element={<Navigate to="../overview" replace />} />
               <Route path="sessions" element={<Navigate to="../overview" replace />} />
               <Route path="gsp" element={<Navigate to="../overview" replace />} />

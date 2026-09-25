@@ -18,14 +18,21 @@ import { describe, expect, it } from 'vitest';
  *
  * A content check rather than a `git diff`, so it stays meaningful
  * regardless of which commit or worktree it runs from.
+ *
+ * Phase 35-03 (Task 3, H-3): the coach-route parse itself was extracted into
+ * a pure `activeSubjectFromPathname(pathname)` so `lib/subjectQueryKey.ts`
+ * could compose it without a second copy of the route grammar — the
+ * `location.pathname` literal this gate pinned became a `pathname` parameter
+ * as part of that extraction. The retuned literal below asserts the SAME
+ * route-derived-only property against the new call-site shape; the file
+ * still exports `useActiveSubject(): ActiveSubject` and gained no
+ * client-owned-workspace coupling.
  */
 describe('coach chrome integrity (Quick 260726-r5)', () => {
   it('useActiveSubject.ts stays route-derived only — no client-owned-workspace coupling', () => {
     const source = readFileSync(resolve('src/hooks/useActiveSubject.ts'), 'utf-8');
     expect(source).toContain('export function useActiveSubject(): ActiveSubject {');
-    expect(source).toContain(
-      "location.pathname === '/coach' || location.pathname.startsWith('/coach/')",
-    );
+    expect(source).toContain("pathname === '/coach' || pathname.startsWith('/coach/')");
     expect(source).not.toContain('useOwnedWorkspaceSubject');
     expect(source).not.toContain('useClientWorkspaces');
     expect(source).not.toContain('tenantId');

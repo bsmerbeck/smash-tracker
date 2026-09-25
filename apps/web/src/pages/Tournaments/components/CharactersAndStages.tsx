@@ -5,20 +5,58 @@ import { stagesById } from '@/data/stages';
 import { getRecordsByFighter, getStageRecords, type FighterRecord } from '@/lib/stats';
 import type { Match } from '@smash-tracker/shared';
 import { useFighterName } from '@/hooks/useFighterName';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import { DrillableRow } from '@/components/DrillableRow';
 
-function FighterRow({ record }: { record: FighterRecord }) {
+/** Which drill-down axis a `FighterCard`'s rows write — the user's own character column or the opponent's. */
+type FighterAxis = 'mine' | 'theirs';
+
+function FighterRow({
+  record,
+  axis,
+  destination,
+}: {
+  record: FighterRecord;
+  axis: FighterAxis;
+  destination?: string;
+}) {
   const { t } = useTranslation();
   const sprite = getFighterById(record.fighterId);
   const localizedName = useFighterName(record.fighterId);
-  return (
-    <li className="flex items-center justify-between gap-2">
+  const label = sprite ? localizedName : t('common.unknown');
+  const detail = `${record.wins}-${record.losses} · ${t('common.games', { count: record.total })}`;
+
+  const content = (
+    <>
       <div className="flex items-center gap-2">
         {sprite && <img src={sprite.url} alt="" className="size-7 object-contain" />}
-        <span className="text-sm">{sprite ? localizedName : t('common.unknown')}</span>
+        <span className="text-sm">{label}</span>
       </div>
-      <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-        {record.wins}-{record.losses} · {t('common.games', { count: record.total })}
-      </span>
+      <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{detail}</span>
+    </>
+  );
+
+  if (destination == null) {
+    return <li className="flex items-center justify-between gap-2">{content}</li>;
+  }
+
+  return (
+    <li>
+      <DrillableRow
+        to={destination}
+        ariaLabel={t('shared.drillableRow.aria', {
+          subject: label,
+          context: t(
+            axis === 'mine'
+              ? 'tournaments.charStages.yourCharacters'
+              : 'tournaments.charStages.opponentsCharacters',
+          ),
+        })}
+        className="justify-between px-1"
+      >
+        {content}
+      </DrillableRow>
     </li>
   );
 }
@@ -26,10 +64,14 @@ function FighterRow({ record }: { record: FighterRecord }) {
 function FighterCard({
   title,
   matches,
+  axis,
+  subjectPath,
   keyFn,
 }: {
   title: string;
   matches: Match[];
+  axis: FighterAxis;
+  subjectPath: (path: string) => string;
   keyFn?: (match: Match) => number;
 }) {
   const { t } = useTranslation();
@@ -45,9 +87,22 @@ function FighterCard({
           <p className="text-sm text-muted-foreground">{t('tournaments.charStages.noGames')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {records.map((record) => (
-              <FighterRow key={record.fighterId} record={record} />
-            ))}
+            {records.map((record) => {
+              const search = buildDrillDownSearch(
+                axis === 'mine'
+                  ? { fighterId: record.fighterId }
+                  : { vsFighterId: record.fighterId },
+              ).toString();
+              const destination = subjectPath(`/matchups?${search}`);
+              return (
+                <FighterRow
+                  key={record.fighterId}
+                  record={record}
+                  axis={axis}
+                  destination={destination}
+                />
+              );
+            })}
           </ul>
         )}
       </CardContent>
@@ -55,7 +110,27 @@ function FighterCard({
   );
 }
 
-function StagesCard({ matches }: { matches: Match[] }) {
+function StagesCard({
+  matches,
+  subjectPath,
+  stageAggregateLinkParams,
+}: {
+  matches: Match[];
+  subjectPath: (path: string) => string;
+  /**
+   * WR-05 (38-REVIEW-FIX): this card's own aggregate row has no single match
+   * of its own (it summarizes every game on the stage across the whole
+   * entry, across every proximity block) — a single `eventKey` link can only
+   * ever resolve to ONE block, so this returns either `{ eventKey }` (a
+   * stage with exactly one block, byte-identical to the pre-WR-05 link) or a
+   * `from`/`to` date window spanning every block (a stage split across more
+   * than one), so the destination lists exactly the games this row counts.
+   * See `TournamentDetailPage.tsx`'s `stageAggregateLinkParams`.
+   */
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined;
+}) {
   const { t } = useTranslation();
   const records = getStageRecords(matches)
     .filter((r) => r.stageId !== 0)
@@ -73,21 +148,37 @@ function StagesCard({ matches }: { matches: Match[] }) {
           <ul className="flex flex-col gap-2">
             {records.map((record) => {
               const stage = stagesById.get(record.stageId);
+              const name = stage?.name ?? t('common.unknown');
+              const detail = `${record.wins}-${record.losses} · ${t('common.games', { count: record.total })}`;
+              const linkParams = stageAggregateLinkParams?.(record.stageId);
+              const search = buildDrillDownSearch(linkParams ?? {}).toString();
+              const destination = subjectPath(
+                `/stages/${record.stageId}${search ? `?${search}` : ''}`,
+              );
               return (
-                <li key={record.stageId} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    {stage?.url ? (
-                      <img src={stage.url} alt="" className="h-8 w-14 rounded object-cover" />
-                    ) : (
-                      <span className="flex h-8 w-14 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">
-                        {stage ? stage.name.slice(0, 3).toUpperCase() : '??'}
-                      </span>
-                    )}
-                    <span className="text-sm">{stage?.name ?? t('common.unknown')}</span>
-                  </div>
-                  <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-                    {record.wins}-{record.losses} · {t('common.games', { count: record.total })}
-                  </span>
+                <li key={record.stageId}>
+                  <DrillableRow
+                    to={destination}
+                    ariaLabel={t('shared.drillableRow.aria', {
+                      subject: name,
+                      context: t('tournaments.charStages.stagesPlayed'),
+                    })}
+                    className="justify-between px-1"
+                  >
+                    <div className="flex items-center gap-2">
+                      {stage?.url ? (
+                        <img src={stage.url} alt="" className="h-8 w-14 rounded object-cover" />
+                      ) : (
+                        <span className="flex h-8 w-14 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">
+                          {stage ? stage.name.slice(0, 3).toUpperCase() : '??'}
+                        </span>
+                      )}
+                      <span className="text-sm">{name}</span>
+                    </div>
+                    <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
+                      {detail}
+                    </span>
+                  </DrillableRow>
                 </li>
               );
             })}
@@ -102,18 +193,54 @@ function StagesCard({ matches }: { matches: Match[] }) {
  * Three compact cards summarizing the entry's matches: your characters
  * played (with per-character W-L), the opponents' characters faced, and
  * stages played — all derived from the same entry-scoped match list.
+ *
+ * Phase 38-07 (D-14): every row is now drillable per the Uniform
+ * Drillable-Row Contract. This card's only host is `TournamentDetailPage.tsx`
+ * (own-account only, D-04), so it calls `useSubjectPath()` directly rather
+ * than taking a host-supplied builder — there is no third-party-data host
+ * rendering this component.
+ *
+ * CR-03/WR-05 (38-REVIEW-FIX): `stageAggregateLinkParams` (a per-STAGE
+ * lookup, not a single flat string) is threaded down for the stage rows'
+ * event/date-window axis — a flat key shared by every row could only ever
+ * match ONE stage's real event-series anchor on `StageDetailPage.tsx` (that
+ * page scopes matches by stage BEFORE grouping into anchors, so each stage's
+ * anchor carries its OWN start time), and a stage split across more than one
+ * proximity block needs a date window rather than a single anchor key so the
+ * destination lists exactly the games the row counts (WR-05). Optional
+ * because a legacy entry may resolve no anchor for a given stage.
  */
-export function CharactersAndStages({ matches }: { matches: Match[] }) {
+export function CharactersAndStages({
+  matches,
+  stageAggregateLinkParams,
+}: {
+  matches: Match[];
+  stageAggregateLinkParams?: (
+    stageId: number,
+  ) => { eventKey?: string; from?: number; to?: number } | undefined;
+}) {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <FighterCard title={t('tournaments.charStages.yourCharacters')} matches={matches} />
+      <FighterCard
+        title={t('tournaments.charStages.yourCharacters')}
+        matches={matches}
+        axis="mine"
+        subjectPath={subjectPath}
+      />
       <FighterCard
         title={t('tournaments.charStages.opponentsCharacters')}
         matches={matches}
+        axis="theirs"
+        subjectPath={subjectPath}
         keyFn={(m) => m.opponent_id}
       />
-      <StagesCard matches={matches} />
+      <StagesCard
+        matches={matches}
+        subjectPath={subjectPath}
+        stageAggregateLinkParams={stageAggregateLinkParams}
+      />
     </div>
   );
 }

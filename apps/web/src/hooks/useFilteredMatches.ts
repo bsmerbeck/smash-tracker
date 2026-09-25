@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
-import type { Match, OpponentAliasMap, TournamentEntry } from '@smash-tracker/shared';
+import {
+  resolveAliasChain,
+  type Match,
+  type OpponentAliasMap,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import { useMatches } from '@/hooks/useMatches';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -102,13 +107,25 @@ export function filterEntriesByRange(
 
 /**
  * Rewrites `match.opponent` to its canonical name per `aliasMap` (alias ->
- * canonical). Matches with no `opponent` set, or whose opponent isn't a key
- * in the map, are returned unchanged (same object reference — no unnecessary
- * re-renders downstream). This is the SINGLE CHOKE POINT for opponent
- * identity merging: every consumer that reads `match.opponent` should go
- * through `useFilteredMatches` (which applies this) rather than raw
- * `useMatches`, so scouting/tables/dashboards all see merged identities
- * automatically without each needing alias-awareness of their own.
+ * canonical), following the FULL alias chain to its terminal name
+ * (CR-01/WR-04) via the shared `resolveAliasChain` primitive — never a raw
+ * single-hop lookup. Applied to the RAW, un-normalized `match.opponent`
+ * (unlike the engine's `canonicalOpponentName`, which normalizes first) so
+ * a match with no alias entry at all is returned byte-for-byte unchanged —
+ * same object reference, no unnecessary re-renders downstream, and no
+ * casing/content change purely from this pass. This is the SINGLE CHOKE
+ * POINT for opponent identity merging: every consumer that reads
+ * `match.opponent` should go through `useFilteredMatches` (which applies
+ * this) rather than raw `useMatches`, so scouting/tables/dashboards all see
+ * merged identities automatically without each needing alias-awareness of
+ * their own.
+ *
+ * Calling the SAME `resolveAliasChain` primitive
+ * `packages/shared/src/evidence/opponentEvidence.ts` and the API's
+ * report/prep call sites use (via `canonicalOpponentName`/
+ * `makeCanonicalizer`) is what makes this and the engine's own hop agree on
+ * which terminal name a chain resolves to — see `resolveAliasChain`'s doc
+ * comment for the ownership split.
  */
 export function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMap): Match[] {
   if (Object.keys(aliasMap).length === 0) {
@@ -118,7 +135,8 @@ export function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMa
     if (!match.opponent || !Object.prototype.hasOwnProperty.call(aliasMap, match.opponent)) {
       return match;
     }
-    return { ...match, opponent: aliasMap[match.opponent]! };
+    const resolved = resolveAliasChain(match.opponent, aliasMap);
+    return resolved === match.opponent ? match : { ...match, opponent: resolved };
   });
 }
 
@@ -186,6 +204,16 @@ export interface UseFilteredMatchesResult {
    */
   timeFilteredMatches: Match[];
   isLoading: boolean;
+  /**
+   * Plan 39.1-20 (UIX-07): true while the underlying matches query is
+   * in-flight AND the initial load has already settled once (`!isLoading`)
+   * — a background refetch, not the first paint. Threaded straight from
+   * `useMatches()`'s own react-query `isFetching`, which was previously
+   * discarded here; every one of the eight analytics pages needs this to
+   * implement the "hold the previous frame at reduced opacity" refetch rule
+   * (UI-SPEC §7.2/§10.5) without re-deriving it from a second query call.
+   */
+  isFetching: boolean;
   /** True when the active filters exclude at least one record the user actually has. */
   filterActive: boolean;
 }
@@ -202,7 +230,7 @@ export interface UseFilteredMatchesResult {
  * just want to show opponent names quickly and re-render once aliases land.
  */
 export function useFilteredMatches(): UseFilteredMatchesResult {
-  const { data: rawMatches = [], isLoading } = useMatches();
+  const { data: rawMatches = [], isLoading, isFetching } = useMatches();
   const { data: aliasMap } = useOpponentAliases();
   const { source, range } = useAnalyticsFilter();
 
@@ -223,6 +251,7 @@ export function useFilteredMatches(): UseFilteredMatchesResult {
     allMatches,
     timeFilteredMatches,
     isLoading,
+    isFetching,
     filterActive: matches.length !== allMatches.length,
   };
 }

@@ -2,9 +2,17 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { filterByFighter, getWinLossRecord } from '@/lib/stats';
 import type { Match } from '@smash-tracker/shared';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { useDashboardContext } from '../DashboardContext';
 
-/** Ports legacy/src/screens/Dashboard/components/WinLossTracker. */
+/**
+ * Ports legacy/src/screens/Dashboard/components/WinLossTracker.
+ *
+ * Plan 39.1-17 (UIX-04): the banned flex-distribution collision (owner's
+ * "garbage spacing" note) and the page-local `Stat` component are gone —
+ * wins/rate/losses now go through the ONE stat idiom (`StatRow`/
+ * `StatFigure`), the last page-local stat component on this surface.
+ */
 export function WinLossTracker({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
   const { fighter } = useDashboardContext();
@@ -18,23 +26,19 @@ export function WinLossTracker({ matches }: { matches: Match[] }) {
       <CardHeader>
         <CardTitle className="text-center">{t('dashboard.hero.overallRecord')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex justify-evenly">
-        <Stat label={t('common.wins')} value={hasMatches ? wins : t('common.notAvailable')} />
-        {hasMatches && <Stat label={t('common.rate')} value={`${winRate}%`} />}
-        <Stat label={t('common.losses')} value={hasMatches ? losses : t('common.notAvailable')} />
+      <CardContent>
+        {hasMatches ? (
+          <StatRow
+            figures={[
+              <StatFigure key="wins" label={t('common.wins')} value={wins} />,
+              <StatFigure key="rate" label={t('common.rate')} value={`${winRate}%`} />,
+              <StatFigure key="losses" label={t('common.losses')} value={losses} />,
+            ]}
+          />
+        ) : (
+          <p className="text-center text-sm text-muted-foreground">{t('common.noMatchData')}</p>
+        )}
       </CardContent>
-      {!hasMatches && (
-        <p className="pb-4 text-center text-sm text-muted-foreground">{t('common.noMatchData')}</p>
-      )}
     </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex flex-col items-center text-center">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-lg font-medium">{value}</span>
-    </div>
   );
 }

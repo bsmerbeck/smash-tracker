@@ -47,12 +47,22 @@ describe('sampleSizeToOpacity', () => {
     expect(opacity).toBeLessThan(0.5);
   });
 
-  it('reaches full opacity at the full-sample threshold', () => {
-    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE)).toBe(1);
+  /**
+   * Plan 39.1-31 (item 4): the opacity ceiling moved from 1 (100%) to 0.5
+   * (50%), mirroring `MatrixHeat.tsx`'s own highest tint tier — see this
+   * file's module doc comment. Pinned at exactly `0.15`/`0.5` (not merely
+   * "faint"/"below 1") per the plan's own behavior spec.
+   */
+  it('is exactly 0.15 at a single game', () => {
+    expect(sampleSizeToOpacity(1)).toBe(0.15);
   });
 
-  it('stays at full opacity beyond the threshold', () => {
-    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE + 50)).toBe(1);
+  it('reaches exactly 0.5 at the full-sample threshold', () => {
+    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE)).toBe(0.5);
+  });
+
+  it('stays at 0.5 beyond the threshold', () => {
+    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE + 50)).toBe(0.5);
   });
 
   it('increases monotonically with sample size between 1 and the threshold', () => {
@@ -63,20 +73,78 @@ describe('sampleSizeToOpacity', () => {
     }
   });
 
-  it('clamps zero/negative sample sizes to the minimum opacity', () => {
+  it('clamps zero/negative sample sizes to exactly the 0.15 minimum opacity', () => {
+    expect(sampleSizeToOpacity(0)).toBe(0.15);
+    expect(sampleSizeToOpacity(-5)).toBe(0.15);
     expect(sampleSizeToOpacity(0)).toBe(sampleSizeToOpacity(1));
     expect(sampleSizeToOpacity(-5)).toBe(sampleSizeToOpacity(1));
   });
 });
 
 describe('matchupCellBackground', () => {
-  it('renders an rgba() string combining the wilson color and sample-size opacity', () => {
+  it('renders an rgba() string combining the wilson color and sample-size opacity, ending in the new 0.500 ceiling at the full-sample threshold', () => {
     const css = matchupCellBackground(1, FULL_SAMPLE_SIZE);
-    expect(css).toBe('rgba(16, 185, 129, 1.000)');
+    expect(css).toBe('rgba(16, 185, 129, 0.500)');
   });
 
   it('produces a faint low-sample cell', () => {
     const css = matchupCellBackground(0, 1);
     expect(css).toMatch(/^rgba\(217, 62, 52, 0\.\d+\)$/);
   });
+});
+
+/**
+ * Plan 39.1-31 (item 4, UI-SPEC §4.3 rule 2): `MatchupMatrix.tsx`'s cell
+ * button renders its record text in `text-foreground` over this module's
+ * `background-color` composited on top of the card surface. WCAG 2.1
+ * relative-luminance contrast, computed independently here (not imported
+ * from the component) so this oracle can never accidentally share a bug
+ * with the code it's checking.
+ */
+describe('WCAG contrast: text-foreground over a composited matrix cell (39.1-31, item 4)', () => {
+  /** `--card` (index.css) in sRGB, per the plan context's own citation. */
+  const CARD_SRGB: [number, number, number] = [23, 23, 26];
+  /** `--foreground` (index.css, oklch(0.97 0 0)) in sRGB, per the plan context's own citation. */
+  const FOREGROUND_SRGB: [number, number, number] = [245, 245, 245];
+
+  function srgbChannelToLinear(channel: number): number {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+
+  function relativeLuminance([r, g, b]: [number, number, number]): number {
+    return (
+      0.2126 * srgbChannelToLinear(r) +
+      0.7152 * srgbChannelToLinear(g) +
+      0.0722 * srgbChannelToLinear(b)
+    );
+  }
+
+  function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+    const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+    return (lighter! + 0.05) / (darker! + 0.05);
+  }
+
+  /** Alpha-composites `matchupCellBackground(rate, total)`'s rgba fill over `CARD_SRGB`. */
+  function compositedCell(rate: number, total: number): [number, number, number] {
+    const css = matchupCellBackground(rate, total);
+    const match = css.match(/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/);
+    if (!match) throw new Error(`unparseable rgba(): ${css}`);
+    const [, r, g, b, a] = match.map(Number) as [number, number, number, number, number];
+    const alpha = a!;
+    return [
+      r! * alpha + CARD_SRGB[0] * (1 - alpha),
+      g! * alpha + CARD_SRGB[1] * (1 - alpha),
+      b! * alpha + CARD_SRGB[2] * (1 - alpha),
+    ];
+  }
+
+  for (const rate of [0, 0.25, 0.5, 0.75, 1]) {
+    for (const total of [1, 5, 10, 50]) {
+      it(`clears 4.5:1 at rate=${rate} total=${total}`, () => {
+        const ratio = contrastRatio(FOREGROUND_SRGB, compositedCell(rate, total));
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
 });

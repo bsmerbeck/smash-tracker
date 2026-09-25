@@ -223,6 +223,27 @@ describe('applyOpponentAliases', () => {
     const result = applyOpponentAliases(matches, { rivl: 'rival', riv: 'rival' });
     expect(result.map((m) => m.opponent)).toEqual(['rival', 'rival']);
   });
+
+  it('CR-01/WR-04: follows a TRANSITIVE alias chain to its terminal name, not just the first hop', () => {
+    // Deliberately unflattened: 'leo' -> 'mkleo', and 'mkleo' is ALSO a key
+    // (mapping elsewhere) — the exact shape a second merge action on top of
+    // an earlier one produces (RtdbService.setOpponentAlias does not
+    // re-point an existing edge when its target is later merged away).
+    const aliasMap = { leo: 'mkleo', mkleo: 'somebody-else' };
+    const matches = [
+      withOpponent('m1', 'leo'),
+      withOpponent('m2', 'mkleo'),
+      withOpponent('m3', 'somebody-else'),
+    ];
+    const result = applyOpponentAliases(matches, aliasMap);
+    // Every match now resolves to the SAME terminal identity — the fix for
+    // the "silently re-splits an already-merged opponent" defect.
+    expect(result.map((m) => m.opponent)).toEqual([
+      'somebody-else',
+      'somebody-else',
+      'somebody-else',
+    ]);
+  });
 });
 
 describe('getOpponentSources', () => {

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Match, UpdateMatchInput } from '@smash-tracker/shared';
+import type { CreateMatchInput, Match, UpdateMatchInput } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { SpriteList } from '@/data/sprites';
 import { EditMatchForm } from './EditMatchForm';
@@ -31,6 +31,7 @@ vi.mock('@/lib/firebase', async () => {
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const updateMatch = vi.fn().mockResolvedValue({});
+const createMatch = vi.fn();
 const listMatches = vi.fn().mockResolvedValue([]);
 const listOpponents = vi.fn().mockResolvedValue([]);
 const stageFavoritesGet = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
@@ -49,6 +50,7 @@ vi.mock('@/lib/api', () => ({
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
       update: (...args: unknown[]) => updateMatch(...args),
+      create: (...args: unknown[]) => createMatch(...args),
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
@@ -100,6 +102,7 @@ describe('EditMatchForm', () => {
     resetAuthMock();
     vi.clearAllMocks();
     updateMatch.mockResolvedValue({});
+    createMatch.mockResolvedValue(makeMatch({ id: 'new-game' }));
     listMatches.mockResolvedValue([]);
     listOpponents.mockResolvedValue([]);
     stageFavoritesGet.mockResolvedValue({ stageIds: [], updatedAt: 0 });
@@ -212,6 +215,127 @@ describe('EditMatchForm', () => {
         screen.queryByTestId('edit-match-characters-source-owned-note'),
       ).not.toBeInTheDocument();
       expect(screen.queryByTestId('edit-match-stocks-source-owned-note')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Continue Set (quick-260917-l6t)', () => {
+    it('Test A: shows a Continue Set control for a manually-entered match', async () => {
+      renderEditMatchForm(makeMatch());
+
+      expect(await screen.findByRole('button', { name: 'Continue Set' })).toBeInTheDocument();
+    });
+
+    it('Test B: shows no Continue Set control for a synced match (source or parseable externalId)', async () => {
+      const bySource = renderEditMatchForm(makeMatch({ source: 'startgg' }));
+      await screen.findByRole('button', { name: 'Save' });
+      expect(screen.queryByRole('button', { name: 'Continue Set' })).not.toBeInTheDocument();
+      bySource.unmount();
+
+      renderEditMatchForm(makeMatch({ externalId: 'sgg:99:g1', source: undefined }));
+      await screen.findByRole('button', { name: 'Save' });
+      expect(screen.queryByRole('button', { name: 'Continue Set' })).not.toBeInTheDocument();
+    });
+
+    it('Test C: shows a loading state (never an empty set) while the matches query is unresolved', async () => {
+      listMatches.mockReturnValue(new Promise<Match[]>(() => {})); // never resolves
+      const user = userEvent.setup();
+      renderEditMatchForm(makeMatch());
+
+      await user.click(await screen.findByRole('button', { name: 'Continue Set' }));
+
+      expect(await screen.findByTestId('continue-set-loading')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Save Games' })).not.toBeInTheDocument();
+    });
+
+    it('Test D: derives and locks the set’s already-saved games with a running score', async () => {
+      const anchor = makeMatch({ id: 'm-anchor', time: 1_700_000_600_000, win: true });
+      const sibling = makeMatch({ id: 'm-sibling', time: 1_700_000_000_000, win: false });
+      listMatches.mockResolvedValue([anchor, sibling]);
+      const user = userEvent.setup();
+      renderEditMatchForm(anchor);
+
+      await user.click(await screen.findByRole('button', { name: 'Continue Set' }));
+
+      expect(await screen.findByTestId('locked-game-1')).toBeInTheDocument();
+      expect(screen.getByTestId('locked-game-2')).toBeInTheDocument();
+      expect(screen.getByTestId('set-score-chip')).toHaveTextContent('1-1');
+      // Read-only: no result/stage inputs for the two locked games.
+      expect(screen.queryByRole('radio', { name: 'Game 1 Win' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Game 2 Win' })).not.toBeInTheDocument();
+    });
+
+    it('Test E: saves only the new game through the create-match mutation — the two saved games are never re-created', async () => {
+      const anchor = makeMatch({
+        id: 'm-anchor',
+        time: 1_700_000_600_000,
+        win: true,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        matchType: 'offline-tourney',
+      });
+      const sibling = makeMatch({
+        id: 'm-sibling',
+        time: 1_700_000_000_000,
+        win: false,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        matchType: 'offline-tourney',
+      });
+      listMatches.mockResolvedValue([anchor, sibling]);
+      const user = userEvent.setup();
+      renderEditMatchForm(anchor);
+
+      await user.click(await screen.findByRole('button', { name: 'Continue Set' }));
+      await screen.findByTestId('locked-game-2');
+      await user.click(await screen.findByRole('radio', { name: 'Game 3 Win' }));
+      await user.click(screen.getByRole('button', { name: 'Save Games' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+      expect(updateMatch).not.toHaveBeenCalled();
+      const [payload] = createMatch.mock.calls[0] as [CreateMatchInput];
+      expect(payload).toMatchObject({
+        opponent: 'rival',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        matchType: 'offline-tourney',
+      });
+    });
+
+    it('Test F: re-picking Bo3 to Bo5 after a 2-0 locked context reveals game 3', async () => {
+      const anchor = makeMatch({ id: 'm-anchor', time: 1_700_000_600_000, win: true });
+      const sibling = makeMatch({ id: 'm-sibling', time: 1_700_000_000_000, win: true });
+      listMatches.mockResolvedValue([anchor, sibling]);
+      const user = userEvent.setup();
+      renderEditMatchForm(anchor);
+
+      await user.click(await screen.findByRole('button', { name: 'Continue Set' }));
+      await screen.findByTestId('locked-game-2');
+
+      expect(screen.getByTestId('continue-set-already-decided')).toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Game 3 Win' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('radio', { name: 'Best of 5' }));
+
+      expect(await screen.findByRole('radio', { name: 'Game 3 Win' })).toBeInTheDocument();
+    });
+
+    it('Test G: dropping a wrongly-derived earlier game only changes local context — never stored data', async () => {
+      const anchor = makeMatch({ id: 'm-anchor', time: 1_700_000_600_000, win: true });
+      const sibling = makeMatch({ id: 'm-sibling', time: 1_700_000_000_000, win: false });
+      listMatches.mockResolvedValue([anchor, sibling]);
+      const user = userEvent.setup();
+      renderEditMatchForm(anchor);
+
+      await user.click(await screen.findByRole('button', { name: 'Continue Set' }));
+      await screen.findByTestId('locked-game-2');
+      expect(screen.getByTestId('set-score-chip')).toHaveTextContent('1-1');
+
+      await user.click(screen.getByRole('button', { name: 'Remove game 1 from this set' }));
+
+      await waitFor(() => expect(screen.queryByTestId('locked-game-2')).not.toBeInTheDocument());
+      expect(screen.getByTestId('locked-game-1')).toBeInTheDocument();
+      expect(screen.getByTestId('set-score-chip')).toHaveTextContent('1-0');
+      expect(updateMatch).not.toHaveBeenCalled();
     });
   });
 });

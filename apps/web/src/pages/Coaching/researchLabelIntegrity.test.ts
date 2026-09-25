@@ -165,9 +165,35 @@ function extractNestedRoutePaths(block: string): string[] {
   return paths;
 }
 
+const SUBJECT_ANALYTICS_ROUTES_PATH = resolve('src/routes/subjectAnalyticsRoutes.tsx');
+
+/**
+ * Plan 38-02 (D-03): `dashboard`/`fighter-analysis`/`matchups` (and now
+ * `opponents`) are no longer literal `<Route path="...">` JSX inside
+ * `AppRouter.tsx` — they're rendered via a single `renderSubjectAnalyticsRoutes()`
+ * call against the shared descriptor list in `subjectAnalyticsRoutes.tsx`.
+ * Extracting the leaf `path` values from that file keeps this proof's own
+ * "discovery, never a hand-maintained array" philosophy intact rather than
+ * hardcoding the now-shared page names here a second time.
+ */
+function extractSharedAnalyticsRoutePaths(): string[] {
+  const source = stripComments(readFileSync(SUBJECT_ANALYTICS_ROUTES_PATH, 'utf-8'));
+  const paths: string[] = [];
+  const pathRe = /path:\s*'([^']+)'/g;
+  let match: RegExpExecArray | null;
+  while ((match = pathRe.exec(source))) {
+    paths.push(match[1]!);
+  }
+  return paths;
+}
+
 describe('research label universal-coverage proof', () => {
   const workspaceBlock = extractRouteBlock(appRouterSource, '/coach/:clientId');
-  const workspaceRoutePaths = extractNestedRoutePaths(workspaceBlock);
+  const workspaceRoutePaths = extractNestedRoutePaths(workspaceBlock).concat(
+    workspaceBlock.includes('renderSubjectAnalyticsRoutes(')
+      ? extractSharedAnalyticsRoutePaths()
+      : [],
+  );
 
   it('enumerates more than zero routes nested under the /coach/:clientId workspace route (anti-vacuous-pass guard)', () => {
     expect(workspaceRoutePaths.length).toBeGreaterThan(0);

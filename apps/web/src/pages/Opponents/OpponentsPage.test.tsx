@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -119,25 +119,89 @@ function ShellProfileSubscription() {
   return null;
 }
 
+/**
+ * Plan 38-05 (D-02): stands in for the real (lazy-loaded) `OpponentHubPage`
+ * so the legacy-redirect tests can assert the DESTINATION (the decoded tag
+ * plus any carried `player=` hint) without mounting the actual hub.
+ */
+function HubDestinationStub() {
+  const { opponentTag } = useParams<{ opponentTag: string }>();
+  const [searchParams] = useSearchParams();
+  const player = searchParams.get('player');
+  return (
+    <div>
+      Hub: {opponentTag}
+      {player && <span>player={player}</span>}
+    </div>
+  );
+}
+
+/**
+ * CR-01 fix regression (38-REVIEW-FIX): renders the router's OWN current
+ * `pathname` + `search` into the DOM, mounted as a `<Routes>` sibling (like
+ * `ActiveSubjectSync` in `AppRouter.tsx`) so it observes the final location
+ * regardless of which route matched. Without this, a redirect that drops the
+ * `/coach/:clientId` or `/workspace/:tenantId` prefix would still land on the
+ * bare `/opponents/:opponentTag` route mounted below and render
+ * `HubDestinationStub` successfully — the bug is only visible in the
+ * resulting URL, never in what stub renders.
+ */
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+  return <div data-testid="location-probe">{`${pathname}${search}`}</div>;
+}
+
 function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <ShellProfileSubscription />
+            <LocationProbe />
             <Routes>
               <Route path="/opponents" element={<OpponentsPage />} />
+              <Route path="/coach/:clientId/opponents" element={<OpponentsPage />} />
+              {/* Plan 38-02 (DRL-04): the third subject family — the shared
+                route list now mounts /opponents here too. */}
+              <Route path="/workspace/:tenantId/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              {/* WR-C04 (39.1-REVIEW.md): the coach/workspace-scoped
+                destinations the two empty-state "Go to Dashboard" links must
+                land on instead of the bare personal `/dashboard` above. */}
+              <Route
+                path="/coach/:clientId/dashboard"
+                element={<div>Coach client dashboard page</div>}
+              />
+              <Route
+                path="/workspace/:tenantId/dashboard"
+                element={<div>Workspace dashboard page</div>}
+              />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
               <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
+              {/* Plan 38-05 (D-02): the legacy query-hint redirect's destination — a
+                stub so the redirect's target is observable without mounting the
+                real (lazy-loaded) OpponentHubPage. */}
+              <Route path="/opponents/:opponentTag" element={<HubDestinationStub />} />
+              {/* CR-01 fix regression: the SAME stub mounted under the coach and
+                workspace subject prefixes, so a correctly-prefixed redirect has
+                somewhere to land too. */}
+              <Route
+                path="/coach/:clientId/opponents/:opponentTag"
+                element={<HubDestinationStub />}
+              />
+              <Route
+                path="/workspace/:tenantId/opponents/:opponentTag"
+                element={<HubDestinationStub />}
+              />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('OpponentsPage', () => {
@@ -173,6 +237,29 @@ describe('OpponentsPage', () => {
     );
   });
 
+  // WR-C04 (39.1-REVIEW.md): under a coach/workspace subject route, both
+  // empty-state "Go to Dashboard" links must route through `subjectPath` —
+  // previously hardcoded to the bare personal `/dashboard`, they bounced a
+  // coach viewing a client with zero recorded (or zero named-opponent)
+  // matches to the COACH's own dashboard instead of `/coach/:clientId/...`.
+  // `/settings/integrations` has no coach-scoped equivalent (start.gg
+  // connection is own-account-only) and stays absolute in every mode.
+  it('WR-C04: the "no matches" empty state links to the coach-scoped dashboard under a coach client-subject route', async () => {
+    listMatches.mockResolvedValue([]);
+
+    renderOpponents('/coach/client-a/opponents');
+
+    expect(await screen.findByText('No matches to scout yet!')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Dashboard' })).toHaveAttribute(
+      'href',
+      '/coach/client-a/dashboard',
+    );
+    expect(screen.getByRole('link', { name: 'Connect start.gg' })).toHaveAttribute(
+      'href',
+      '/settings/integrations',
+    );
+  });
+
   it('shows an explanatory empty state when no matches have an opponent tag', async () => {
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: undefined })]);
 
@@ -181,6 +268,20 @@ describe('OpponentsPage', () => {
     expect(
       await screen.findByText('None of your matches have an opponent tag recorded.'),
     ).toBeInTheDocument();
+  });
+
+  it('WR-C04: the "no named opponent" empty state links to the coach-scoped dashboard under a coach client-subject route', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: undefined })]);
+
+    renderOpponents('/coach/client-a/opponents');
+
+    expect(
+      await screen.findByText('None of your matches have an opponent tag recorded.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Dashboard' })).toHaveAttribute(
+      'href',
+      '/coach/client-a/dashboard',
+    );
   });
 
   it('shows a clear-filters notice when the global filter empties an existing match set', async () => {
@@ -229,12 +330,66 @@ describe('OpponentsPage', () => {
       expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
     });
 
+    // Phase 36 (T-36-02-02): no component this plan touched reads a subject,
+    // a uid, or a route param directly — each receives an already
+    // subject-scoped `Match[]`/alias map from the host page's own
+    // subject-scoped hooks. This asserts the SAME structure renders under a
+    // client-subject route segment as under the personal one, not just by
+    // inspection of the (subject-blind) component code.
+    it('renders the identical list/report structure under a coach client-subject route', async () => {
+      renderOpponents('/coach/tetra-client/opponents');
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
+      expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+    });
+
+    // Plan 38-02 (DRL-04): the third subject family — the owned-workspace
+    // route was a real gap because it did not exist as a mounted route when
+    // this test file was originally written (only personal and coach were).
+    it('renders the identical list/report structure under an owned-workspace tenant route', async () => {
+      renderOpponents('/workspace/tenant-1/opponents');
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
+      expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+    });
+
+    it("D-14 (38-07): a row's destination is the hub path for the row's engine-resolved display tag", async () => {
+      renderOpponents();
+
+      await screen.findByText('2 opponents faced');
+      expect(screen.getByRole('link', { name: /rival/ })).toHaveAttribute(
+        'href',
+        '/opponents/rival',
+      );
+      expect(screen.getByRole('link', { name: /zeta/ })).toHaveAttribute('href', '/opponents/zeta');
+    });
+
+    it('D-14 (38-07): carries the coach prefix through the destination under a coach entry', async () => {
+      renderOpponents('/coach/client-a/opponents');
+
+      await screen.findByText('2 opponents faced');
+      expect(screen.getByRole('link', { name: /rival/ })).toHaveAttribute(
+        'href',
+        '/coach/client-a/opponents/rival',
+      );
+    });
+
     it('auto-selects the most-played opponent and shows their scouting report', async () => {
       renderOpponents();
 
       // The scouting report renders "Last 10" pips once a profile loads —
       // proof the most-played opponent ("rival") was auto-selected.
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
     });
 
@@ -254,41 +409,29 @@ describe('OpponentsPage', () => {
       });
     });
 
-    it('selects a different opponent on click and updates the scouting report', async () => {
+    it('D-14 (38-07): a row now navigates into the opponent hub rather than selecting in place', async () => {
       const user = userEvent.setup();
       renderOpponents();
 
       await screen.findByText('2 opponents faced');
-      // Scoped to the row's selection button (has aria-pressed) — the row's
-      // kebab menu button ("Actions for zeta") also matches /zeta/ by name.
-      await user.click(screen.getByRole('button', { name: /zeta/, pressed: false }));
+      // Scoped to the row's link (opens the hub) — the row's kebab menu
+      // button ("Actions for zeta") also matches /zeta/ by name.
+      await user.click(screen.getByRole('link', { name: /zeta/ }));
 
-      // The scouting report card title switches to "zeta".
-      await waitFor(() => {
-        const titles = screen.getAllByText('zeta');
-        expect(titles.length).toBeGreaterThan(0);
-      });
-      // zeta's record is 1-0, shown in the report header (scoped by the
-      // "Last 10" pips section landmark that only renders once selected).
-      expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
     /**
-     * Phase 30.3 (Gate 4): "Analyze opponent" deep links preselect the
-     * opponent via query params instead of defaulting to most-played.
+     * Plan 38-05 (D-01/D-02): "Analyze opponent" deep links now REDIRECT
+     * into the hub instead of preselecting inline on the list.
      */
-    it('preselects the opponent named by an ?opponent= tag deep link', async () => {
+    it('redirects to the hub path for an ?opponent= tag deep link (replacing history)', async () => {
       renderOpponents('/opponents?opponent=zeta');
 
-      // Without the param, most-played "rival" would win — the deep link
-      // must override the default.
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
-      expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
-    it('preselects via the provider player id, preferred over the tag', async () => {
+    it('redirects via the provider player id, preferred over the tag, and carries the player= hint through', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
         makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
@@ -301,44 +444,107 @@ describe('OpponentsPage', () => {
         }),
       ]);
 
-      // The tag param carries a stale name — the provider id must win.
+      // The tag param carries a stale name — the provider id must win, and
+      // D-02 requires the player= hint to survive the redirect verbatim.
       renderOpponents('/opponents?player=sgg%3Auser%2F9fb774ae&opponent=stale-name');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByText('player=sgg:user/9fb774ae')).toBeInTheDocument();
     });
 
-    it('resolves an aliased tag deep link to its canonical opponent', async () => {
+    it('redirects to the canonical hub path for an aliased tag deep link', async () => {
       listAliases.mockResolvedValue({ 'old zeta': 'zeta' });
 
       renderOpponents('/opponents?opponent=old+zeta');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
-      );
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
     });
 
-    it('falls back to most-played when the deep-linked opponent matches nothing', async () => {
+    it('redirects even for a tag naming an opponent with no recorded games — the hub itself renders the empty state', async () => {
       renderOpponents('/opponents?opponent=nobody-known');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
+      expect(await screen.findByText('Hub: nobody-known')).toBeInTheDocument();
+    });
+
+    it('does not redirect when a player= hint resolves to no matching row and no opponent= tag is present', async () => {
+      renderOpponents('/opponents?player=sgg%3Auser%2Funknown-slug');
+
+      // No identifying tag exists to redirect to — the list renders normally
+      // with its default (most-played) selection, and its row is a real
+      // hub link (D-14, 38-07) rather than an in-page selection button.
+      await waitFor(() => expect(screen.getByRole('link', { name: /rival/ })).toBeInTheDocument());
+      expect(screen.queryByText(/^Hub:/)).not.toBeInTheDocument();
+    });
+
+    /**
+     * CR-01 (38-REVIEW-FIX): the legacy `?opponent=`/`?player=` redirect used
+     * to call `navigate(buildOpponentHubPath(...))` directly — an absolute
+     * personal path that escapes whatever subject prefix the current route
+     * matched under. Confirmed failing pre-fix: reverting the `subjectPath(...)`
+     * wrap in `OpponentsPage.tsx` makes the location-probe assertion below
+     * observe `/opponents/zeta` (the coach's OWN personal hub) instead of
+     * `/coach/tetra-client/opponents/zeta` (the client subject's hub).
+     */
+    it('CR-01: keeps the coach subject prefix when redirecting an ?opponent= deep link', async () => {
+      renderOpponents('/coach/tetra-client/opponents?opponent=zeta');
+
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/coach/tetra-client/opponents/zeta',
       );
     });
 
-    it('an explicit click still overrides a deep-linked preselection', async () => {
-      const user = userEvent.setup();
-      renderOpponents('/opponents?opponent=zeta');
+    it('CR-01: keeps the owned-workspace tenant prefix when redirecting an ?opponent= deep link', async () => {
+      renderOpponents('/workspace/tenant-1/opponents?opponent=zeta');
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
+      expect(await screen.findByText('Hub: zeta')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/workspace/tenant-1/opponents/zeta',
       );
-      await user.click(screen.getByRole('button', { name: /rival/, pressed: false }));
+    });
+  });
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
-      );
+  // Phase 36 (EVID-12, R1-BLOCKER-2, ROADMAP SC1 clause 3): where the
+  // alias-merged identity resolution becomes visible in the PRODUCT, not
+  // only in packages/shared/src/evidence/opponentEvidence.test.ts's engine
+  // oracle (plan 36-01 Task 3).
+  describe('alias-merged opponent identity (EVID-12)', () => {
+    function seedTwoTagsForOnePerson() {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'g1', time: 1, opponent: 'gonzo', win: true }),
+        makeMatch({ id: 'g2', time: 2, opponent: 'gonzo', win: true }),
+        makeMatch({ id: 'g3', time: 10, opponent: 'gonzo2', win: false }),
+      ]);
+    }
+
+    it('renders ONE list row and one interleaved chronological encounter series with a merging alias map', async () => {
+      seedTwoTagsForOnePerson();
+      listAliases.mockResolvedValue({ gonzo2: 'gonzo' });
+
+      renderOpponents();
+
+      expect(await screen.findByText('1 opponent faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+
+      // 39.1-18: none of these matches carry an `externalId`, so they group
+      // into one session under a session header — each game its own
+      // one-game pseudo-set, rendered as a set row (`data-slot`, not
+      // `role="listitem"` scoped to a single flat `role="list"`, since the
+      // card is now event/session-grouped rather than one flat list).
+      await screen.findByText('Recent Encounters');
+      expect(document.querySelectorAll('[data-slot="encounter-set-row"]')).toHaveLength(3);
+    });
+
+    it('renders TWO list rows with an empty alias map (no merge)', async () => {
+      seedTwoTagsForOnePerson();
+      listAliases.mockResolvedValue({});
+
+      renderOpponents();
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      expect(within(list).getAllByRole('listitem')).toHaveLength(2);
     });
   });
 
@@ -379,36 +585,103 @@ describe('OpponentsPage', () => {
     });
 
     it('renders the H2H record, their-character ordering, and newest-first recent encounters', async () => {
+      // Phase 36 (D-05/D-07): `byTheirFighter` (the "What They Play" card)
+      // is `rankMatchupsByEvidence`, whose default floor is now
+      // ABSTENTION_FLOOR_GAMES (3) — this test overrides the shared
+      // `beforeEach` fixture (1 Luigi game, 2 Fox games) with 3 games per
+      // character so both still clear the gate and appear.
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm2',
+          time: 2,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: false,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm3',
+          time: 3,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm4',
+          time: 4,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: false,
+          map: { id: 3, name: 'Final Destination' },
+        }),
+        makeMatch({
+          id: 'm5',
+          time: 5,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 3, name: 'Final Destination' },
+        }),
+        makeMatch({
+          id: 'm6',
+          time: 6,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 3, name: 'Final Destination' },
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+        }),
+      ]);
+
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
 
-      // Scouting report header shows the overall H2H record (2-1) and rate.
+      // Scouting report header shows the overall H2H record (4-2) and rate.
       const headerCard = screen
-        .getByText('Last 10 (newest first)')
+        .getByText(/First played/)
         .closest('[data-slot="card"]') as HTMLElement;
-      expect(within(headerCard).getByText('2-1')).toBeInTheDocument();
-      expect(within(headerCard).getByText(/67% over 3 games/)).toBeInTheDocument();
+      expect(within(headerCard).getByText('4-2')).toBeInTheDocument();
+      expect(within(headerCard).getByText(/67% over 6 games/)).toBeInTheDocument();
 
-      // "What They Play": both Luigi and Fox appear, with Fox's better record
-      // (1-1, Wilson-ranked among matchups with 2 games) surfacing correctly.
-      // Scoped to the card itself — the (visually hidden, print-only) H2H
-      // evidence packet also renders both fighter names elsewhere in the DOM.
+      // "What They Play": both Luigi and Fox appear, each with a 3-game
+      // (floor-clearing) record. Scoped to the card itself — the (visually
+      // hidden, print-only) H2H evidence packet also renders both fighter
+      // names elsewhere in the DOM.
       const whatTheyPlayCard = screen
         .getByText('What They Play')
         .closest('[data-slot="card"]') as HTMLElement;
       expect(within(whatTheyPlayCard).getByText(luigi.name)).toBeInTheDocument();
       expect(within(whatTheyPlayCard).getAllByText(fox.name).length).toBeGreaterThan(0);
 
-      // Recent encounters, newest first: m3 (with event/tournament name) before m1.
-      const encountersList = screen.getByRole('list', { name: 'Recent encounters' });
-      const encounterItems = within(encountersList).getAllByRole('listitem');
-      expect(encounterItems.length).toBe(3);
-      // Newest match (m3, time 3) is first and shows the tournament name.
-      expect(within(encounterItems[0]!).getByText('The Big House 9')).toBeInTheDocument();
-      expect(within(encounterItems[0]!).getByText('Win')).toBeInTheDocument();
+      // Recent encounters, newest first: none of m1-m6 carry an `externalId`,
+      // so they group into one session (39.1-18) — six one-game pseudo-sets,
+      // newest (m6, time 6) first. A session pseudo-set shows no per-row
+      // event/tournament name (that now lives only on a real EVENT group's
+      // header, formed from a parsed `externalId`) — a genuine, documented
+      // behavior change from Phase 38's flat per-match tournament label.
+      const encounterRows = document.querySelectorAll('[data-slot="encounter-set-row"]');
+      expect(encounterRows.length).toBe(6);
+      expect(within(encounterRows[0] as HTMLElement).getByText('Win')).toBeInTheDocument();
       // Oldest match (m1, time 1) is last.
-      expect(within(encounterItems[2]!).getByText('Win')).toBeInTheDocument();
+      expect(within(encounterRows[5] as HTMLElement).getByText('Win')).toBeInTheDocument();
 
       // Stages card shows both stages played against this opponent. Scoped
       // for the same reason as "What They Play" above — the hidden print
@@ -629,7 +902,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('start.gg-verified').length).toBeGreaterThan(0);
     });
 
@@ -640,7 +913,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('manually entered').length).toBeGreaterThan(0);
     });
 
@@ -652,8 +925,36 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getAllByLabelText('mixed sources').length).toBeGreaterThan(0);
+    });
+
+    // Phase 36 (R3-MEDIUM-2): after the identity migration, profile.opponent
+    // is the identity's normalized canonical displayTag, while the raw-tag
+    // `sources` map (still fed to MergeOpponentDialog) keys on the exact,
+    // case-preserving `match.opponent`. A stored tag that is NOT already
+    // normalized misses that map — `?? 'manual'` turned the miss into a
+    // WRONG badge before this plan re-pointed the header at `profile.source`
+    // (verified against the pre-fix expression: `sources.get(profile.opponent)
+    // ?? 'manual'` resolved to 'manual' here, because `profile.opponent`
+    // becomes "rival" but the only key `sources` has is the raw "Rival").
+    it('shows a mixed badge in the profile header (not just the list row) for an opponent whose stored tag is not already normalized', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'Rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'Rival', win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+      // Scoped to the report card (the ScoutingHeader), not a page-wide
+      // getAllByLabelText — the OpponentList row already carries the
+      // correct badge independently, which would satisfy a page-wide query
+      // even if the header's own badge were wrong.
+      const reportCard = screen
+        .getByText(/First played/)
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(within(reportCard).getByLabelText('mixed sources')).toBeInTheDocument();
     });
   });
 
@@ -740,7 +1041,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
 
       const mergedCard = (await screen.findByText('Merged names')).closest(
         '[data-slot="card"]',
@@ -760,8 +1061,33 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.queryByText('Merged names')).not.toBeInTheDocument();
+    });
+
+    // WR-02-i2: a REVERSE single-hop lookup (`canonical === selected`) lists
+    // only the immediate alias one hop away from the terminal name — for a
+    // 3-member chain (`leo` -> `mkleo` -> `somebody-else`), it would list
+    // `mkleo` but silently omit `leo`, even though CR-01 already folds
+    // `leo`'s matches into this same row. Proves the card now follows the
+    // full transitive chain and lists every member.
+    it('lists every alias in a chained (3-member) merge, not just the immediate one-hop alias', async () => {
+      listAliases.mockResolvedValue({ leo: 'mkleo', mkleo: 'somebody-else' });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'leo', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'mkleo', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'somebody-else', win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+
+      const mergedCard = (await screen.findByText('Merged names')).closest(
+        '[data-slot="card"]',
+      ) as HTMLElement;
+      expect(within(mergedCard).getByText('leo')).toBeInTheDocument();
+      expect(within(mergedCard).getByText('mkleo')).toBeInTheDocument();
     });
   });
 
@@ -779,7 +1105,7 @@ describe('OpponentsPage', () => {
     it('shows the empty state prompting a first note when none is saved', async () => {
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
       expect(within(card).getByText(/No scouting notes yet/)).toBeInTheDocument();
       expect(within(card).getByRole('button', { name: 'Add a note' })).toBeInTheDocument();
@@ -797,7 +1123,7 @@ describe('OpponentsPage', () => {
 
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
       expect(within(card).getByText('Rolls a lot')).toBeInTheDocument();
       expect(within(card).getByText('Ledge mixups')).toBeInTheDocument();
@@ -809,7 +1135,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Add a note' }));
@@ -830,7 +1156,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Add a note' }));
@@ -850,7 +1176,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Edit' }));
@@ -867,7 +1193,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const card = tendenciesCard();
 
       await user.click(within(card).getByRole('button', { name: 'Edit' }));
@@ -887,7 +1213,7 @@ describe('OpponentsPage', () => {
     it('shows an Export H2H button and a Copy as text fallback', async () => {
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeInTheDocument();
     });
@@ -897,7 +1223,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       await user.click(screen.getByRole('button', { name: /Export H2H/ }));
 
       expect(printSpy).toHaveBeenCalledTimes(1);
@@ -909,7 +1235,7 @@ describe('OpponentsPage', () => {
       const user = userEvent.setup();
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       // Stubbed AFTER the initial render settles: jsdom installs its own
       // real Clipboard implementation as part of mounting (observed via
       // debugging — a stub defined before render gets clobbered), so this
@@ -934,7 +1260,7 @@ describe('OpponentsPage', () => {
       getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       const printButton = screen.getByRole('button', { name: /Export H2H/ });
       const copyButton = screen.getByRole('button', { name: /Copy as text/ });
       expect(printButton).toBeDisabled();
@@ -947,9 +1273,64 @@ describe('OpponentsPage', () => {
       getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
       renderOpponents();
 
-      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeEnabled();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeEnabled();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderOpponents();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading scouting reports...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once loaded', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1' })]);
+
+      const { container } = renderOpponents();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="opponents-body"]')).not.toBeNull();
+    });
+
+    it('on a background refetch, dims the body instead of flashing a skeleton', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1' })]);
+
+      const { container, queryClient } = renderOpponents();
+      await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponents-body"]');
+        expect(body?.className).toMatch(/opacity-60/);
+      });
+      expect(screen.getByText('Recent Encounters')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([makeMatch({ id: 'm1' })]);
+      await waitFor(() => {
+        const body = container.querySelector('[data-slot="opponents-body"]');
+        expect(body?.className).not.toMatch(/opacity-60/);
+      });
     });
   });
 });

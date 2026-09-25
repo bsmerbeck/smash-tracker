@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
@@ -21,6 +21,8 @@ import {
   useMatchForm,
   type MatchFormValues,
 } from '@/components/match-form/MatchForm';
+import { isManualMatch } from '@/components/match-form/continueSetLogic';
+import { ContinueSetPanel } from '@/components/match-form/ContinueSetPanel';
 
 /** Maps a stored `Match` to the shared form's value shape, applying legacy's fallbacks for older records missing optional fields. */
 export function matchToFormValues(match: Match): MatchFormValues {
@@ -81,6 +83,12 @@ export function EditMatchForm({
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
+  // Quick 260917-l6t: 'continue' swaps the dialog body for `ContinueSetPanel`
+  // INSIDE this same already-open `DialogContent` — never a second Dialog.
+  // Both mount points (`MatchTable`, `GspPage`) unmount this whole component
+  // the instant the dialog closes, so a sibling dialog opened after closing
+  // this one would be destroyed before it could render.
+  const [mode, setMode] = useState<'edit' | 'continue'>('edit');
   // requireOpponent: false — Quick Logger matches are stored with
   // `opponent: ''` (anonymous quickplay randoms) and must stay editable
   // without inventing a name; blank PATCHes through as "still anonymous".
@@ -113,6 +121,8 @@ export function EditMatchForm({
     onOpenChange(next);
     if (next) {
       form.reset(matchToFormValues(match));
+      // A reopened dialog never starts mid-continuation.
+      setMode('edit');
     }
   }
 
@@ -140,54 +150,82 @@ export function EditMatchForm({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{t('matchForm.edit.title')}</DialogTitle>
-          <DialogDescription>{t('matchForm.edit.description')}</DialogDescription>
+          <DialogTitle>
+            {mode === 'continue' ? t('matchForm.continueSet.title') : t('matchForm.edit.title')}
+          </DialogTitle>
+          <DialogDescription>
+            {mode === 'continue'
+              ? t('matchForm.continueSet.description')
+              : t('matchForm.edit.description')}
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
-          <MatchFormFields form={form} fighterSprites={fighterSprites} />
-          {vodIsSourceOwned && (
-            <p
-              data-testid="edit-match-vod-source-owned-note"
-              className="mt-1 text-xs text-muted-foreground"
-            >
-              {t('enrichment.editForm.sourceOwnedNote')}
-            </p>
-          )}
-          {charactersAreSourceOwned && (
-            <p
-              data-testid="edit-match-characters-source-owned-note"
-              className="mt-1 text-xs text-muted-foreground"
-            >
-              {t('enrichment.editForm.sourceOwnedNote')}
-            </p>
-          )}
-          {stocksAreSourceOwned && (
-            <p
-              data-testid="edit-match-stocks-source-owned-note"
-              className="mt-1 text-xs text-muted-foreground"
-            >
-              {t('enrichment.editForm.sourceOwnedNote')}
-            </p>
-          )}
-          <DialogFooter className="mt-4">
-            {onDelete && (
-              <Button
-                type="button"
-                variant="destructive"
-                className="sm:mr-auto"
-                onClick={() => onDelete(match)}
+        {mode === 'continue' ? (
+          <ContinueSetPanel
+            anchorMatch={match}
+            fighterSprites={fighterSprites}
+            onBack={() => setMode('edit')}
+            onDone={() => onOpenChange(false)}
+          />
+        ) : (
+          <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+            <MatchFormFields form={form} fighterSprites={fighterSprites} />
+            {vodIsSourceOwned && (
+              <p
+                data-testid="edit-match-vod-source-owned-note"
+                className="mt-1 text-xs text-muted-foreground"
               >
-                {t('matchForm.edit.deleteMatch')}
-              </Button>
+                {t('enrichment.editForm.sourceOwnedNote')}
+              </p>
             )}
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {t('common.cancel')}
-            </Button>
-            <PendingButton type="submit" pending={updateMatch.isPending}>
-              {t('common.save')}
-            </PendingButton>
-          </DialogFooter>
-        </form>
+            {charactersAreSourceOwned && (
+              <p
+                data-testid="edit-match-characters-source-owned-note"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {t('enrichment.editForm.sourceOwnedNote')}
+              </p>
+            )}
+            {stocksAreSourceOwned && (
+              <p
+                data-testid="edit-match-stocks-source-owned-note"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {t('enrichment.editForm.sourceOwnedNote')}
+              </p>
+            )}
+            <DialogFooter className="mt-4">
+              {onDelete && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="sm:mr-auto"
+                  onClick={() => onDelete(match)}
+                >
+                  {t('matchForm.edit.deleteMatch')}
+                </Button>
+              )}
+              {/* Quick 260917-l6t: a synced start.gg/parry.gg record already
+                  carries a real set identity via `externalId` — hand-continuing
+                  one would fabricate manual rows alongside a synced set. */}
+              {isManualMatch(match) && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  data-testid="edit-match-continue-set"
+                  onClick={() => setMode('continue')}
+                >
+                  {t('matchForm.continueSet.trigger')}
+                </Button>
+              )}
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {t('common.cancel')}
+              </Button>
+              <PendingButton type="submit" pending={updateMatch.isPending}>
+                {t('common.save')}
+              </PendingButton>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

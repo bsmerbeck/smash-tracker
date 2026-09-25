@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './MatchupMatrix';
 import { SpriteList } from '@/data/sprites';
+
+const mockNavigate = vi.fn();
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
@@ -26,7 +33,11 @@ function makeMatch(overrides: Partial<Match> = {}): Match {
   };
 }
 
-function renderMatrix(matches: Match[], overrides: Partial<MatchupsContextValue> = {}) {
+function renderMatrix(
+  matches: Match[],
+  overrides: Partial<MatchupsContextValue> = {},
+  initialEntry = '/matchups',
+) {
   const setFighter = vi.fn();
   const setOpponent = vi.fn();
   const contextValue: MatchupsContextValue = {
@@ -35,14 +46,20 @@ function renderMatrix(matches: Match[], overrides: Partial<MatchupsContextValue>
     setFighter,
     opponent: luigi,
     setOpponent,
+    fighterUsageById: new Map(),
+    opponentUsage: [],
+    drillDownAxes: {},
+    setDrillDown: vi.fn(),
     ...overrides,
   };
 
   render(
-    <MatchupsContext.Provider value={contextValue}>
-      <div id={MATCHUP_DETAIL_ANCHOR_ID} />
-      <MatchupMatrix matches={matches} />
-    </MatchupsContext.Provider>,
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <MatchupsContext.Provider value={contextValue}>
+        <div id={MATCHUP_DETAIL_ANCHOR_ID} />
+        <MatchupMatrix matches={matches} />
+      </MatchupsContext.Provider>
+    </MemoryRouter>,
   );
 
   return { setFighter, setOpponent };
@@ -127,21 +144,50 @@ describe('MatchupMatrix', () => {
     expect(screen.getByRole('button', { name: /Show top 12/ })).toBeInTheDocument();
   });
 
-  it('clicking a cell sets the fighter+opponent selection and scrolls to the detail anchor', async () => {
+  it('clicking a cell navigates to the param-aware Matchups route with both character axes set, and scrolls to the detail anchor', async () => {
     const user = userEvent.setup();
     const scrollIntoView = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    mockNavigate.mockClear();
 
-    const { setFighter, setOpponent } = renderMatrix([
-      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
-    ]);
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
 
     await user.click(screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` }));
 
-    expect(setFighter).toHaveBeenCalledWith(expect.objectContaining({ id: mario.id }));
-    expect(setOpponent).toHaveBeenCalledWith(expect.objectContaining({ id: luigi.id }));
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    const destination = mockNavigate.mock.calls[0]?.[0] as string;
+    expect(destination).toBe(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
     expect(scrollIntoView).toHaveBeenCalledWith(
       expect.objectContaining({ behavior: 'smooth', block: 'start' }),
     );
+  });
+
+  it('starts at the card content edge (no auto-centering) and renders every cell button in the foreground text token (39.1-31, item 4)', () => {
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
+
+    // `renderMatrix` (this file's own helper) doesn't return `container` —
+    // `screen` is document-bound and finds the table the same way.
+    const table = screen.getByRole('table');
+    expect(table.className).not.toMatch(/\bmx-auto\b/);
+
+    const cell = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` });
+    expect(cell.className).toMatch(/\btext-foreground\b/);
+    expect(cell.className).not.toMatch(/\btext-white\b/);
+  });
+
+  it('under a coach route, clicking a cell navigates to the coach-prefixed Matchups destination', async () => {
+    const user = userEvent.setup();
+    mockNavigate.mockClear();
+
+    renderMatrix(
+      [makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })],
+      {},
+      '/coach/test-client/matchups',
+    );
+
+    await user.click(screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` }));
+
+    const destination = mockNavigate.mock.calls[0]?.[0] as string;
+    expect(destination).toBe(`/coach/test-client/matchups?fighter=${mario.id}&vs=${luigi.id}`);
   });
 });

@@ -1,100 +1,101 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { StageBreakdown } from './StageBreakdown';
 
-function makeMatch(overrides: Partial<Match> = {}): Match {
+let matchIdCounter = 0;
+
+function makeMatch(stageId: number, fighterId = 1): Match {
+  matchIdCounter += 1;
   return {
-    id: 'm1',
-    fighter_id: 1,
+    id: `m-${matchIdCounter}`,
+    fighter_id: fighterId,
     opponent_id: 10,
-    time: 1_700_000_000_000,
-    map: { id: 1, name: 'Battlefield' },
+    time: 1_700_000_000_000 + matchIdCounter,
+    map: { id: stageId, name: `Stage ${stageId}` },
     opponent: 'rival',
     notes: '',
     matchType: 'none',
     win: true,
-    ...overrides,
   };
+}
+
+function renderCard(matches: Match[]) {
+  return render(
+    <MemoryRouter>
+      <StageBreakdown matches={matches} />
+    </MemoryRouter>,
+  );
+}
+
+/** Real stage ids 1..count (StageList has 123 entries) so getStageById resolves names/art. */
+function stagesFixture(count: number): Match[] {
+  const matches: Match[] = [];
+  for (let stageId = 1; stageId <= count; stageId++) {
+    matches.push(makeMatch(stageId));
+  }
+  return matches;
 }
 
 describe('StageBreakdown', () => {
   it('shows an empty state when there is no match data', () => {
-    render(<StageBreakdown matches={[]} />);
+    renderCard([]);
     expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
   });
 
-  it('shows no thumbnail for the initial "no selection" state', () => {
-    render(<StageBreakdown matches={[makeMatch()]} />);
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  it('caps the list at 8 with a show-all control, and fully expands within the inline cap', async () => {
+    const user = userEvent.setup();
+    renderCard(stagesFixture(20));
+
+    expect(document.querySelectorAll('[data-slot="stage-row"]')).toHaveLength(8);
+    const showAll = screen.getByRole('button', { name: /show all/i });
+    await user.click(showAll);
+    expect(document.querySelectorAll('[data-slot="stage-row"]')).toHaveLength(20);
+    expect(screen.getByRole('button', { name: /show fewer/i })).toBeInTheDocument();
   });
 
-  it('shows the stage art thumbnail for a stage that has one', async () => {
+  it('expands to the inline cap and then shows a terminus anchor beyond 25 stages', async () => {
     const user = userEvent.setup();
-    render(<StageBreakdown matches={[makeMatch({ map: { id: 1, name: 'Battlefield' } })]} />);
+    renderCard(stagesFixture(30));
 
-    await user.click(screen.getByLabelText('Select stage'));
-    // "Battlefield" appears once in "Most played" and once in "All stages" —
-    // either selects the same stage id, so just take the first match.
-    const [option] = await screen.findAllByRole('option', { name: /Battlefield/ });
-    await user.click(option!);
-
-    const thumbnail = document.querySelector('img[src="/assets/stages/1-battlefield.jpg"]');
-    expect(thumbnail).toBeInTheDocument();
+    const showAll = screen.getByRole('button', { name: /show all/i });
+    await user.click(showAll);
+    expect(document.querySelectorAll('[data-slot="stage-row"]')).toHaveLength(25);
+    expect(screen.getByRole('button', { name: /all 30 stages/i })).toBeInTheDocument();
   });
 
-  it('pins a Favorites group when favoriteStageIds are passed', async () => {
-    const user = userEvent.setup();
-    render(<StageBreakdown matches={[makeMatch()]} favoriteStageIds={[3]} />);
+  it('every stage row is a link with a non-empty accessible name and a destination carrying the stage identifier', () => {
+    renderCard(stagesFixture(3));
 
-    await user.click(screen.getByLabelText('Select stage'));
-
-    expect(await screen.findByText('Favorites')).toBeInTheDocument();
-    // Final Destination (id 3) appears in Favorites and again in All stages.
-    // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
-    expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThanOrEqual(3);
+    for (const link of links) {
+      expect(link).toHaveAccessibleName();
+      expect(link.getAttribute('href')).toMatch(/\/stages\/\d+/);
+    }
   });
 
-  it('reports a heart click via onToggleFavorite without selecting the stage', async () => {
-    const user = userEvent.setup();
-    const onToggleFavorite = vi.fn();
-    render(
-      <StageBreakdown
-        matches={[makeMatch()]}
-        favoriteStageIds={[3]}
-        onToggleFavorite={onToggleFavorite}
-      />,
-    );
+  it('the stage name element carries the truncation-guard attribute and a title with the full string', () => {
+    renderCard(stagesFixture(1));
 
-    await user.click(screen.getByLabelText('Select stage'));
-    // Final Destination is favorited, so its heart appears on both its
-    // Favorites row and its All stages row — either toggles the same stage.
-    const [heart] = await screen.findAllByRole('button', {
-      name: 'Remove Final Destination from favorites',
-    });
-    await user.click(heart!);
-
-    expect(onToggleFavorite).toHaveBeenCalledWith(3);
-    // The picker is still open and nothing got selected.
-    expect(screen.getByRole('listbox')).toBeInTheDocument();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    const name = document.querySelector('[data-truncate-guard]')!;
+    expect(name).toHaveAttribute('title');
+    expect(name.getAttribute('title')).toBe(name.textContent);
   });
 
-  it('shows a fallback abbreviation tile for a stage lacking art', async () => {
-    // id 1000 is the "(Gen. Battlefield)" synthetic sentinel — the only
-    // stages with url: '' after 19-01's art-completeness fill (every real
-    // stage now has committed art; see stageArt.test.ts).
-    const user = userEvent.setup();
-    render(
-      <StageBreakdown matches={[makeMatch({ map: { id: 1000, name: '(Gen. Battlefield)' } })]} />,
-    );
+  it('renders no per-fighter split, even for a fixture whose stage has multiple fighters', () => {
+    const matches = [makeMatch(1, 1), makeMatch(1, 2), makeMatch(1, 3)];
+    renderCard(matches);
 
-    await user.click(screen.getByLabelText('Select stage'));
-    const [option] = await screen.findAllByRole('option', { name: /\(Gen\. Battlefield\)/ });
-    await user.click(option!);
+    expect(document.querySelectorAll('table')).toHaveLength(0);
+    expect(screen.queryAllByRole('row')).toHaveLength(0);
+  });
 
-    const heading = screen.getByRole('heading', { name: '(Gen. Battlefield)' });
-    expect(within(heading.parentElement!).getByText('GB')).toBeInTheDocument();
+  it("the card's meta line states the sort order", () => {
+    renderCard(stagesFixture(3));
+
+    expect(screen.getByText('Most games')).toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildContinuationPayloads,
   buildDefaultGameValues,
   buildSetGamePayloads,
   formatSetScore,
@@ -276,6 +277,41 @@ describe('buildSetGamePayloads', () => {
     expect(payloads[0]).toMatchObject({ fighter_id: 1, opponent_id: 8 });
     expect(payloads[1]).toMatchObject({ fighter_id: 1, opponent_id: 14 });
     expect(payloads[2]).toMatchObject({ fighter_id: 6, opponent_id: 14 });
+  });
+});
+
+describe('buildContinuationPayloads', () => {
+  const shared: SetSharedValues = {
+    fighterId: 1,
+    opponentFighterId: 8,
+    opponentName: 'rival',
+    matchType: 'offline-tourney',
+  };
+
+  it('returns exactly newGames.length payloads — none for the locked prefix', () => {
+    const lockedGames: SetGameValues[] = [game('win'), game('loss')];
+    const newGames: SetGameValues[] = [game('win', { stageId: 3 })];
+    const payloads = buildContinuationPayloads(shared, lockedGames, newGames);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({ map: { id: 3, name: 'Final Destination' } });
+  });
+
+  it('carries character inheritance ACROSS the locked/new boundary', () => {
+    const lockedGames: SetGameValues[] = [
+      game('win'),
+      game('loss', { fighterId: 5, opponentFighterId: 12 }),
+    ];
+    const newGames: SetGameValues[] = [game('win')];
+    const payloads = buildContinuationPayloads(shared, lockedGames, newGames);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({ fighter_id: 5, opponent_id: 12 });
+  });
+
+  it('is deep-equal to buildSetGamePayloads when there are no locked games (the AddMatchForm degenerate case)', () => {
+    const games: SetGameValues[] = [game('win'), game('loss', { stageId: 3 })];
+    expect(buildContinuationPayloads(shared, [], games)).toEqual(
+      buildSetGamePayloads(shared, games),
+    );
   });
 });
 

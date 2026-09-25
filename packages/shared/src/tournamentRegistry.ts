@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { tournamentEntrySchema } from './startgg.js';
+import { rulesetOverrideStoredSchema } from './ruleset.js';
 
 /**
  * Phase 30.3 (Tournament Registry Backfill): the shared contract for a
@@ -179,6 +180,17 @@ export const tournamentRegistryRowSchema = z.object({
   slug: z.string().min(1).max(MAX_REGISTRY_TEXT).nullish(),
   /** Read-time stamp from the RTDB child key (always equals `entryId`). */
   entryKey: z.string().min(1).nullish(),
+  /**
+   * EVID-04 (37-CONTEXT.md D-10): the SAME per-event ruleset override member
+   * `tournamentEntrySchema` carries. Not optional to omit here: the GET
+   * response is a union with this registry row FIRST
+   * (`tournamentRegistryListEntrySchema`), and a Zod object strips unknown
+   * keys — an admin-imported row carrying an override would lose it at
+   * serialization if only the legacy schema declared the field. Demo
+   * accounts' histories are admin-imported rows, so this is the common case
+   * for the retrospective (plan 37-06), not the edge case.
+   */
+  rulesetOverride: rulesetOverrideStoredSchema.nullish(),
 });
 export type TournamentRegistryRow = z.infer<typeof tournamentRegistryRowSchema>;
 

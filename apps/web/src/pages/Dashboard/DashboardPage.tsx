@@ -14,6 +14,12 @@ import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { intentDestination } from '@/hooks/useOnboarding';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { RatingModelNote } from '@/components/RatingModelNote';
+import { useHorizon } from '@/hooks/useHorizon';
+import { PageShell } from '@/components/analytics/PageShell';
+import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
+import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { cn } from '@/lib/utils';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
@@ -151,8 +157,15 @@ export function DashboardPage() {
     allMatches,
     timeFilteredMatches,
     isLoading: matchesLoading,
+    isFetching: matchesFetching,
     filterActive,
   } = useFilteredMatches();
+  // Plan 39.1-17 (INS-02): the page's ONE HorizonSwitch value, threaded into
+  // HeroStats. DashboardToolbar's switch makes its own useHorizon() call;
+  // the two calls stay in step only because useHorizon broadcasts every
+  // setHorizon to all mounted calls on the same subject (39.1-REVIEW
+  // iteration 2 CR-01) — localStorage alone is NOT a shared React state.
+  const { horizon } = useHorizon();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -179,13 +192,47 @@ export function DashboardPage() {
     setFighter: (next) => setSelectedFighterId(next.id),
   };
 
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
+  // skeleton built from the SAME PageGrid spans as the loaded hero row + the
+  // six cards below it, so nothing shifts when data lands. The filter row
+  // (DashboardToolbar) is intentionally not rendered here — it needs
+  // fighter/matches-derived props the loading state doesn't have yet, and
+  // `PageShell` renders it as an optional slot either way.
   if (fightersLoading || matchesLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="text-muted-foreground">{t('dashboard.loading')}</div>
-      </div>
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('dashboard.loading')}</span>
+          <PageGrid>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <GridCell span={3} key={i}>
+                <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
+              </GridCell>
+            ))}
+            <GridCell span={12}>
+              <CardSkeleton variant="stat-row" rows={4} statusLabel={t('dashboard.loading')} />
+            </GridCell>
+            <GridCell span={6}>
+              <CardSkeleton variant="chart" statusLabel={t('dashboard.loading')} />
+            </GridCell>
+            <GridCell span={6}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('dashboard.loading')} />
+            </GridCell>
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />
+            </GridCell>
+            <GridCell span={12}>
+              <CardSkeleton variant="chart" statusLabel={t('dashboard.loading')} />
+            </GridCell>
+          </PageGrid>
+        </div>
+      </PageShell>
     );
   }
+
+  // Plan 39.1-20: a background refetch (matches already loaded once) holds
+  // the previous frame at reduced opacity instead of flashing a skeleton.
+  const isRefetching = matchesFetching && !matchesLoading;
 
   // Phase 30.1 Plan 05 (WKSP-01A, review C2-H2): `<SelfDataCoveragePanel />`
   // is hoisted ABOVE the `fighterSprites.length === 0` gate so it renders
@@ -222,23 +269,55 @@ export function DashboardPage() {
 
   return (
     <DashboardContext.Provider value={contextValue}>
-      <div className="flex flex-col gap-6">
+      {/* Plan 39.1-17 (UI-SPEC §10.4, §8.7): PageShell's filterRow is ALWAYS
+          first — DashboardToolbar (now carrying HorizonSwitch) moves ahead of
+          the onboarding/coverage chrome that used to precede it, matching
+          every other 39.1 page's "one filter row above everything it
+          scopes" contract. */}
+      <PageShell filterRow={<DashboardToolbar />}>
         <SelfDataCoveragePanel />
         <DashboardNextBestAction />
         <DashboardPrepActionSlot />
-        <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
-
-        <DashboardToolbar />
-        {filterActive && allMatches.length > 0 && matches.length === 0 && <FilteredEmptyNotice />}
-        <WinLossTracker matches={matches} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <LastMatchesChart matches={matches} />
-          <PreviousMatches matches={matches} />
+        <RatingModelNote />
+        {/* data-slot="dashboard-body" (plan 39.1-20): a `display: contents`
+            marker that exists only once the loading gate above has cleared —
+            never during the skeleton, never a skeleton block itself. Used as
+            the layout oracle's page-loaded marker for this route. */}
+        <div className="contents" data-slot="dashboard-body">
+          <PageGrid
+            className={cn(
+              isRefetching &&
+                'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+            )}
+          >
+            <HeroStats
+              matches={matches}
+              timeFilteredMatches={timeFilteredMatches}
+              horizon={horizon}
+            />
+            {filterActive && allMatches.length > 0 && matches.length === 0 && (
+              <GridCell span={12}>
+                <FilteredEmptyNotice />
+              </GridCell>
+            )}
+            <GridCell span={12}>
+              <WinLossTracker matches={matches} />
+            </GridCell>
+            <GridCell span={6}>
+              <LastMatchesChart matches={matches} />
+            </GridCell>
+            <GridCell span={6}>
+              <PreviousMatches matches={matches} />
+            </GridCell>
+            <GridCell span={12}>
+              <StageTiles matches={matches} />
+            </GridCell>
+            <GridCell span={12}>
+              <MatchupSnapshot matches={matches} />
+            </GridCell>
+          </PageGrid>
         </div>
-
-        <StageTiles matches={matches} />
-        <MatchupSnapshot matches={matches} />
-      </div>
+      </PageShell>
     </DashboardContext.Provider>
   );
 }

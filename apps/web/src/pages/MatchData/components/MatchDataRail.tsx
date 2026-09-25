@@ -1,0 +1,360 @@
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
+import {
+  ACCOUNT_SCOPE,
+  INSIGHT_TEMPLATES,
+  RAIL_CARD_CAP,
+  assembleRail,
+  scoreInsight,
+} from '@smash-tracker/shared';
+import {
+  InsightRail,
+  type InsightRailCard,
+  type InsightRailShape,
+} from '@/components/analytics/InsightRail';
+import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
+import { InsightLine } from '@/components/analytics/InsightLine';
+import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
+import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
+import { useInsightDismissals } from '@/hooks/useInsightDismissals';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { formatPercent } from '@/lib/formatPercent';
+
+/**
+ * The four Match Data roster reads (UI-SPEC §8.4's rail: "RosterCore ·
+ * RosterShift · SecondaryPayoff · PocketCost — four candidates, top 3 by
+ * salience render"), plus the two D-14 back-fill FACT templates (WR-A03,
+ * 39.1-REVIEW.md). NOTE: `bestMatchup`/`worstMatchup` both guard
+ * `scope.kind !== 'character'` internally and this rail runs at
+ * `ACCOUNT_SCOPE`, so they never actually contribute a card here today —
+ * they're wired for consistency with the other two rails and in case this
+ * rail is ever given a character-scoped mode; the roster templates above
+ * already prevent this rail from reaching `rail.ts`'s synthetic fallback on
+ * a real account (verified against the shared 8k fixture, see
+ * `railBackfillRegression.test.ts`). Resolved once at module scope: the
+ * registry is a static, closed array.
+ */
+const ROSTER_CORE_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'rosterCore')!;
+const ROSTER_SHIFT_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'rosterShift')!;
+const SECONDARY_PAYOFF_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'secondaryPayoff')!;
+const POCKET_COST_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'pocketCost')!;
+const BEST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'bestMatchup')!;
+const WORST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'worstMatchup')!;
+const RAIL_TEMPLATES = [
+  ROSTER_CORE_TEMPLATE,
+  ROSTER_SHIFT_TEMPLATE,
+  SECONDARY_PAYOFF_TEMPLATE,
+  POCKET_COST_TEMPLATE,
+  BEST_MATCHUP_TEMPLATE,
+  WORST_MATCHUP_TEMPLATE,
+];
+
+/** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention. */
+function claimChipKindFor(kind: Insight['kind']): ClaimChipKind {
+  if (kind === 'inference') return 'trend';
+  if (kind === 'recommendation') return 'suggestion';
+  return 'fact';
+}
+
+/** Every one of the four rail templates supplies its own complete `copy.values` — the only gap is the engine's degenerate account-scope FALLBACK insight (`rail.ts`'s `FALLBACK_LOCKED_INSIGHT`, templateId `formNow`, copy key `insights.rail.unavailable` as of WR-A03), which needs a host-composed `{{entity}}`. */
+function copyValuesWithEntity(
+  insight: Insight,
+  accountName: string,
+): Record<string, string | number> {
+  return { entity: accountName, ...insight.copy.values };
+}
+
+/**
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page can build the
+ * SAME rendered verdict sentence this rail uses on a card, for
+ * `FilteredMatchList`'s `claimSummary` prop — mirrors
+ * `FighterInsightRail.tsx`'s `buildInsightVerdict`.
+ */
+export function buildMatchDataVerdict(insight: Insight, t: TFunction, accountName: string): string {
+  return t(insight.copy.key, copyValuesWithEntity(insight, accountName));
+}
+
+/**
+ * Plan 39.1-24: this rail's own door-label mapping — duplicated per this
+ * file's established small-helper-duplication convention (matches
+ * `FighterInsightRail.tsx`'s own precedent).
+ */
+function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
+  if (door.kind === 'games') return t('insights.door.seeGames', { count: door.count });
+  if (door.kind === 'matchup') return t('insights.door.openMatchup');
+  if (door.kind === 'opponent') return t('insights.door.openOpponent');
+  return t('insights.door.openMatchup');
+}
+
+function buildDoorNodes(
+  insight: Insight,
+  t: TFunction,
+  subjectPath: (personalPath: string) => string,
+): InsightCardDoors | undefined {
+  const descriptors = buildInsightDoors({ insight, subjectPath }).slice(0, 3);
+  if (descriptors.length === 0) return undefined;
+  const nodes = descriptors.map((door) => (
+    <Link key={door.kind} to={door.href}>
+      {insightDoorLabel(door, t)}
+    </Link>
+  ));
+  if (nodes.length === 1) return [nodes[0]!] as const;
+  if (nodes.length === 2) return [nodes[0]!, nodes[1]!] as const;
+  return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
+}
+
+function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
+  const claim = insight.recent;
+  if (claim.kind !== 'evidenced') {
+    return '';
+  }
+  const record = `${claim.value.wins}–${claim.value.losses}`;
+  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
+  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
+  // literal, which baked in the English convention (no space before `%`)
+  // inside every locale's translated evidence sentence.
+  const rate = formatPercent(claim.value.rate, locale);
+  const tier = claim.sample.confidenceTier;
+  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
+  const baselineClaim = insight.baseline;
+  const baselineRate =
+    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
+  const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
+  return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
+    recentRecord: `${record} · ${rate}`,
+    baselineRate,
+    baselineGames,
+    cue,
+  });
+}
+
+function buildSpan(insight: Insight, t: TFunction): string | undefined {
+  if (insight.window.fromMs == null || insight.window.toMs == null) {
+    return undefined;
+  }
+  return t('insights.evidence.span', {
+    count: insight.window.games,
+    from: new Date(insight.window.fromMs).toLocaleDateString(),
+    to: new Date(insight.window.toMs).toLocaleDateString(),
+  });
+}
+
+export interface UseMatchDataInsightsInput {
+  matches: Match[];
+  horizon: HorizonKey;
+}
+
+export interface UseMatchDataInsightsResult {
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+}
+
+/**
+ * Plan 39.1-24 (gap closure, Task 2): exported so a host page calls this
+ * ONCE and hands the result DOWN to both `MatchDataRail` (which renders the
+ * cards/doors) and its own `FilteredMatchList` terminus (whose
+ * `resolveClaim` needs the SAME `Insight[]` a rendered door's `claim=<id>`
+ * was built from) — "one insight computation per page", mirroring
+ * `FighterInsightRail.tsx`'s `useFighterInsights`. `MatchDataRail` itself no
+ * longer computes `insights`; it takes the result as props.
+ */
+export function useMatchDataInsights({
+  matches,
+  horizon,
+}: UseMatchDataInsightsInput): UseMatchDataInsightsResult {
+  const { dismissedIds, dismiss, restoreAll } = useInsightDismissals();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — the lazy `useState` initializer is this codebase's established
+  // one-time-read escape hatch.
+  const [nowMs] = useState(() => Date.now());
+
+  const insights = useMemo(() => {
+    const built: Insight[] = [];
+    for (const template of RAIL_TEMPLATES) {
+      try {
+        const results = template.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs });
+        for (const insight of results) {
+          if (!dismissedIds.includes(insight.id)) {
+            built.push({ ...insight, salience: scoreInsight(insight, nowMs) });
+          }
+        }
+      } catch (err) {
+        // WR-C03 (39.1-REVIEW.md): a template crash must not silently drop
+        // its card with zero signal — `template.id` carries no user
+        // identifiers, only the closed template-registry id.
+        console.error('[insight-rail] template failed', template.id, err);
+        continue;
+      }
+    }
+    return built;
+  }, [matches, horizon, nowMs, dismissedIds]);
+
+  return { insights, dismissedIds, dismiss, restoreAll };
+}
+
+export interface MatchDataRailProps {
+  /** The one shared computation — see `useMatchDataInsights` above. */
+  insights: Insight[];
+  dismissedIds: string[];
+  dismiss: (id: string) => void;
+  restoreAll: () => void;
+  horizon: HorizonKey;
+}
+
+/**
+ * The Match Data roster rail (INS-05, UI-SPEC §8.4's rail table): the closed
+ * `InsightRail` primitive (plan 39.1-07) wired to the real engine at
+ * whole-account scope — `RosterCore`/`RosterShift`/`SecondaryPayoff`/
+ * `PocketCost`, four candidates, top 3 by salience render (`RAIL_CARD_CAP`).
+ * `SecondaryPayoff`/`PocketCost` return no candidate at all (`build()`
+ * returns `[]`, or the engine's own `hidden` state, dropped by
+ * `assembleRail`) when their group doesn't exist in the roster model —
+ * absent, never rendered locked (UI-SPEC §8.4). Per-card error boundaries
+ * and dismissal promotion both come from `InsightRail` itself — the host
+ * never wires either separately (`FighterInsightRail.tsx`/
+ * `TrendsReadsRail.tsx`'s established pattern).
+ */
+export function MatchDataRail({
+  insights,
+  dismissedIds,
+  dismiss,
+  restoreAll,
+  horizon,
+}: MatchDataRailProps) {
+  const { t, i18n } = useTranslation();
+  const subjectPath = useSubjectPath();
+
+  // A dedicated name distinct from `matchData.title` ("Match History", the
+  // table card's own heading) — reusing that key would render the SAME text
+  // twice on the page (once as the table's CardTitle, once per rail card's
+  // `InsightCard` name slot), breaking every existing test that queries for
+  // it uniquely.
+  const accountName = t('matchData.roster.railName');
+
+  const insightById = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
+
+  const assembled = useMemo(() => assembleRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
+
+  function insightToRailCard(insight: Insight): InsightRailCard {
+    const chipKind = claimChipKindFor(insight.kind);
+    const verdict = buildMatchDataVerdict(insight, t, accountName);
+    const evidence = buildEvidenceLine(insight, t, i18n.language);
+    const span = buildSpan(insight, t);
+    const doors = buildDoorNodes(insight, t, subjectPath);
+    return {
+      id: insight.id,
+      render: ({ onDismiss }) => (
+        <InsightCard
+          key={insight.id}
+          chip={<ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />}
+          name={accountName}
+          verdict={verdict}
+          evidence={evidence}
+          span={span}
+          doors={doors}
+          onDismiss={onDismiss}
+          dismissLabel={t('insights.rail.dismiss')}
+        />
+      ),
+    };
+  }
+
+  function buildUnlocksNextCard(unlocked: {
+    meters: { key: string; have: number; need: number; unit: string }[];
+  }): InsightRailCard {
+    const chip = (
+      <ClaimChip
+        locked
+        kind="fact"
+        label={t('insights.kind.unlocksNext', { defaultValue: 'Unlocks next' })}
+      />
+    );
+    const meters: UnlocksNextMeter[] = unlocked.meters.map((meter) => {
+      const insight = insightById.get(meter.key);
+      const sentence = insight
+        ? t(insight.copy.key, copyValuesWithEntity(insight, accountName))
+        : '';
+      return {
+        sentence,
+        have: meter.have,
+        need: meter.need,
+        countLabel: t('insights.state.lockedMeter', { have: meter.have, need: meter.need }),
+      };
+    });
+    const id = `unlocksNext:${unlocked.meters.map((m) => m.key).join(',')}`;
+    const tuple =
+      meters.length >= 3
+        ? ([meters[0]!, meters[1]!, meters[2]!] as const)
+        : ([meters[0]!, meters[1]!] as const);
+    return {
+      id,
+      render: () => <UnlocksNext key={id} chip={chip} name={accountName} meters={tuple} />,
+    };
+  }
+
+  const rail: InsightRailShape = useMemo(() => {
+    // A locked insight already summarised inside `unlocksNext` (2+ locked
+    // candidates) must not ALSO render as its own regular card — the same
+    // de-duplication `FighterInsightRail.tsx`/`TrendsReadsRail.tsx` established
+    // (D-14: "one unlock card", singular).
+    const dedupeLocked = (candidate: Insight) =>
+      !(assembled.unlocksNext && candidate.state === 'locked');
+    const cards = assembled.cards.filter(dedupeLocked).map((i) => insightToRailCard(i));
+    const promotionQueue = assembled.promotionQueue
+      .filter((i) => i.state !== 'locked')
+      .map((i) => insightToRailCard(i));
+    const lines = assembled.lines.map((insight) => (
+      <InsightLine
+        key={insight.id}
+        text={t(insight.copy.key, copyValuesWithEntity(insight, accountName))}
+        tone="steady"
+      />
+    ));
+    const unlocksNext = assembled.unlocksNext ? buildUnlocksNextCard(assembled.unlocksNext) : null;
+    return { cards, unlocksNext, lines, promotionQueue };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assembled, insightById, t, accountName, i18n.language]);
+
+  const legend = (
+    <>
+      <ClaimChip kind="fact" label={t('insights.kind.fact')} />
+      <ClaimChip kind="trend" label={t('insights.kind.trend')} />
+      <ClaimChip kind="suggestion" label={t('insights.kind.suggestion')} />
+    </>
+  );
+
+  const fallbackCard = (
+    <InsightCard
+      chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
+      name={accountName}
+      verdict={t('insights.rail.unavailable')}
+      evidence=""
+    />
+  );
+
+  return (
+    <div data-slot="match-data-rail">
+      <InsightRail
+        rail={rail}
+        header={t(`insights.rail.title.${horizon}`)}
+        legend={legend}
+        labels={{
+          dismissedCount: (count) => t('insights.rail.dismissedCount', { count }),
+          allDismissed: t('insights.rail.allDismissed'),
+          restore: t('insights.rail.restore'),
+          railError: t('insights.rail.error'),
+        }}
+        dismissedIds={dismissedIds}
+        onDismiss={dismiss}
+        onRestore={restoreAll}
+        fallbackCard={fallbackCard}
+      />
+    </div>
+  );
+}

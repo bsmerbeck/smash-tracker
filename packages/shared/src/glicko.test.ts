@@ -4,6 +4,8 @@ import {
   DEFAULT_RATING,
   DEFAULT_RD,
   DEFAULT_VOLATILITY,
+  RATING_MODEL_VERSION,
+  SESSION_REFERENCE_RATING,
   computeRatingHistory,
   updateRating,
 } from './glicko.js';
@@ -266,5 +268,80 @@ describe('computeRatingHistory', () => {
     expect(Number.isInteger(history.periods[0]?.rating)).toBe(true);
     expect(Number.isInteger(history.periods[0]?.rd)).toBe(true);
     expect(history.periods[0]?.volatility).not.toBe(DEFAULT_VOLATILITY);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2 fixed-reference session model (TRND-01)
+//
+// The v1 model scored every session game against a SYNTHETIC opponent whose
+// rating equaled the player's OWN pre-session rating, which pins Glicko-2's
+// expected-score function at exactly 0.5 forever (see the MODEL comment
+// above `computeRatingHistory` in glicko.ts) — a constant win rate above 50%
+// therefore produces an unbounded biased walk. The tests below prove the v2
+// fixed-reference model has a genuine fixed point for ANY constant win rate,
+// and record the pre-fix divergent value for the SAME 70% series as the
+// must-fail evidence TRND-01 requires (http://www.glicko.net/glicko/glicko2.pdf).
+// ---------------------------------------------------------------------------
+describe('v2 fixed-reference session model (TRND-01)', () => {
+  /**
+   * A fully deterministic session series: `sessionCount` sessions of
+   * `gamesPerSession` games each, with exactly `winsPerSession` wins per
+   * session (no randomness needed — Glicko-2's period update only sums over
+   * a period's win/loss counts, see the comment in `computeRatingHistory`).
+   * Sessions are spaced 4h apart (> the 3h default gap), so each session is
+   * its own rating period with no idle periods synthesized in between.
+   */
+  function buildSessionSeries(
+    sessionCount: number,
+    gamesPerSession: number,
+    winsPerSession: number,
+  ): Match[] {
+    const matches: Match[] = [];
+    let t = 0;
+    for (let session = 0; session < sessionCount; session++) {
+      for (let g = 0; g < gamesPerSession; g++) {
+        matches.push(makeMatch({ id: `${session}-${g}`, time: t, win: g < winsPerSession }));
+        t += HOUR_MS;
+      }
+      t += 4 * HOUR_MS;
+    }
+    return matches;
+  }
+
+  it('a constant 50% session win rate settles at the reference rating — the degenerate fixed point', () => {
+    const matches = buildSessionSeries(300, 10, 5);
+    const history = computeRatingHistory(matches);
+
+    expect(history.current?.rating).toBeGreaterThanOrEqual(SESSION_REFERENCE_RATING - 25);
+    expect(history.current?.rating).toBeLessThanOrEqual(SESSION_REFERENCE_RATING + 25);
+  });
+
+  it('a constant 70% session win rate settles at a higher, BOUNDED value — never an unbounded walk', () => {
+    const matches = buildSessionSeries(300, 10, 7);
+    const history = computeRatingHistory(matches);
+
+    // Above the 50% fixed point, but bounded — nowhere near the v1 model's
+    // divergent value for this SAME series (recorded pre-fix at 7351 in the
+    // plan's SUMMARY; this exact assertion is the one that fails against the
+    // v1 model and passes against v2 — the must-fail evidence TRND-01
+    // requires). A generous ceiling well below that divergent figure proves
+    // a fixed point exists, without pinning the test to one converged number.
+    expect(history.current?.rating).toBeGreaterThan(SESSION_REFERENCE_RATING);
+    expect(history.current?.rating).toBeLessThan(3000);
+
+    // Period-over-period delta over the last 20 periods shrinks toward
+    // zero — the rating has SETTLED, not merely slowed down.
+    const lastPeriods = history.periods.slice(-20);
+    const deltas = lastPeriods.slice(1).map((p, i) => Math.abs(p.rating - lastPeriods[i]!.rating));
+    const meanAbsDelta = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+    expect(meanAbsDelta).toBeLessThan(5);
+  });
+
+  it('tags every computed history with the current rating model version', () => {
+    const matches = buildSessionSeries(2, 10, 5);
+    const history = computeRatingHistory(matches);
+
+    expect(history.current?.ratingModelVersion).toBe(RATING_MODEL_VERSION);
   });
 });

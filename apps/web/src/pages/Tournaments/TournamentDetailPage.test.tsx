@@ -4,10 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { EVENT_ANCHOR_PROXIMITY_MS } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { TournamentDetailPage } from './TournamentDetailPage';
+import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { SpriteList } from '@/data/sprites';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
 
@@ -38,6 +41,7 @@ const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const createVodShare = vi.fn();
 const getMe = vi.fn();
+const listAliases = vi.fn();
 
 /** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
 function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
@@ -67,6 +71,11 @@ vi.mock('@/lib/api', async () => {
       },
       vodShares: {
         create: (...args: unknown[]) => createVodShare(...args),
+      },
+      opponents: {
+        aliases: {
+          list: (...args: unknown[]) => listAliases(...args),
+        },
       },
     },
   };
@@ -135,12 +144,41 @@ function renderPage(eventId = '42') {
   );
 }
 
+/**
+ * CR-03 (38-REVIEW-FIX): the real cross-page chain the pre-fix bug broke —
+ * `TournamentDetailPage` mounted alongside the REAL `StageDetailPage` (not a
+ * stub), so a "Stages Played" row's destination is exercised end-to-end
+ * rather than only asserting the raw `href` string. Needs
+ * `AnalyticsFilterProvider` (`StageDetailPage` reads `useFilteredMatches`)
+ * on top of `renderPage`'s harness.
+ */
+function renderTournamentAndStagePages(eventId = '42') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/tournaments/${eventId}`]}>
+        <AuthProvider>
+          <AnalyticsFilterProvider>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/tournaments/:eventId" element={<TournamentDetailPage />} />
+                <Route path="/stages/:stageId" element={<StageDetailPage />} />
+              </Routes>
+            </TooltipProvider>
+          </AnalyticsFilterProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe('TournamentDetailPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
     getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
     // Default: resolved, no brief — individual prep-CTA tests override this.
     mockPrepBrief({ isPending: false, activated: false });
   });
@@ -513,5 +551,210 @@ describe('TournamentDetailPage', () => {
 
       expect(await screen.findByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * CR-03 (38-REVIEW-FIX): the actual TournamentDetailPage -> CharactersAndStages
+ * -> StageDetailPage chain, rendered end-to-end (real StageDetailPage, not a
+ * stub) — pre-fix, `entry.entryKey` (a foreign registry key, unrelated to
+ * `eventSeries.ts`'s anchor-key format) was passed as the `event=` param, so
+ * `StageDetailPage`'s anchor lookup always missed and the destination always
+ * rendered its "nothing recorded" empty state, for every real tournament
+ * entry, every time.
+ */
+describe('TournamentDetailPage -> StageDetailPage stage-row drill-down (CR-03)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
+    mockPrepBrief({ isPending: false, activated: false });
+  });
+
+  it('a "Stages Played" row lands on a StageDetailPage that shows this event\'s games, not the empty state', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: Date.UTC(2021, 0, 1),
+        lastSetAt: Date.UTC(2021, 0, 1, 6),
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'g1',
+        time: Date.UTC(2021, 0, 1, 1),
+        win: true,
+        externalId: 'sgg:100:g1',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'g2',
+        time: Date.UTC(2021, 0, 1, 1, 5),
+        win: false,
+        externalId: 'sgg:100:g2',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'g3',
+        time: Date.UTC(2021, 0, 1, 1, 10),
+        win: true,
+        externalId: 'sgg:100:g3',
+        map: { id: 1, name: 'Battlefield' },
+      }),
+    ]);
+
+    const user = userEvent.setup();
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    const stageLink = screen.getByRole('link', {
+      name: 'Battlefield — Stages Played, opens details',
+    });
+    // Pre-fix this was `/stages/1?event=42` (the raw entryKey) — a key
+    // StageDetailPage's own event series never produces.
+    expect(stageLink.getAttribute('href')).toMatch(/^\/stages\/1\?event=/);
+    expect(stageLink.getAttribute('href')).not.toContain('event=42');
+
+    await user.click(stageLink);
+
+    // The empty state never renders, AND the by-opponent table shows this
+    // opponent's real record from the three fixture games above.
+    expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
+    expect(await screen.findByText('By Opponent')).toBeInTheDocument();
+    const rivalLink = screen.getByRole('link', { name: 'rival' });
+    expect(rivalLink).toBeInTheDocument();
+    const row = rivalLink.closest('tr')!;
+    expect(row.textContent).toContain('2');
+    expect(row.textContent).toContain('1');
+    expect(screen.getAllByText('3 games · low confidence').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * WR-04/WR-05 (38-REVIEW-FIX): CR-03's per-stage lookup computed exactly ONE
+ * anchor key per stage — the block containing the EARLIEST match on that
+ * stage. `buildStageEventSeries` (what `StageDetailPage` actually queries)
+ * splits a stage's matches into a NEW anchor block whenever two consecutive
+ * plays are more than `EVENT_ANCHOR_PROXIMITY_MS` apart — a real condition
+ * for a multi-day entry. WR-04 fixed the block resolved from being always
+ * the EARLIEST one; WR-05 then found that the "Stages Played" aggregate
+ * row's displayed W-L/games figure spans EVERY block for the stage, while a
+ * single `event=<key>` link can only ever resolve to ONE block — for this
+ * fixture's two games (one per block), that meant the row read "1-1 · 2
+ * games" but its link landed on a destination showing only 1 of them, with
+ * nothing disclosing the narrowing. This test now asserts the row's link
+ * instead spans a `from`/`to` date window covering every block, so the
+ * destination lists BOTH games — exactly what the row's own "2 games" count
+ * promises.
+ */
+describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a proximity-window gap (WR-04/WR-05)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    getMe.mockResolvedValue(defaultProfile());
+    listAliases.mockResolvedValue({});
+    mockPrepBrief({ isPending: false, activated: false });
+  });
+
+  it("links a stage played across a proximity-window gap to a window spanning every block, matching the row's own aggregate count", async () => {
+    const earlyTime = Date.UTC(2021, 0, 1);
+    // Strictly more than the proximity window apart — the engine's own
+    // `splitTournamentBlocks` starts a new block past this gap.
+    const lateTime = earlyTime + EVENT_ANCHOR_PROXIMITY_MS + 24 * 60 * 60 * 1000;
+
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: earlyTime,
+        lastSetAt: lateTime,
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'early-game',
+        time: earlyTime,
+        win: true,
+        opponent: 'earlyrival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+      makeMatch({
+        id: 'late-game',
+        time: lateTime,
+        win: false,
+        opponent: 'laterival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+    ]);
+
+    const user = userEvent.setup();
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    // The row's own aggregate count spans both blocks: 1 win + 1 loss = 2
+    // games — this is the number the destination must match exactly. (Other
+    // cards on this page, e.g. "Your Characters", may show the identical
+    // "1-1 · 2 games" text for this fixture's single fighter matchup, so
+    // this only asserts the text renders somewhere, not that it's unique.)
+    expect(screen.getAllByText('1-1 · 2 games').length).toBeGreaterThan(0);
+    const stageLink = screen.getByRole('link', {
+      name: 'Big Battlefield — Stages Played, opens details',
+    });
+    // WR-05: more than one block for this stage — the link now carries an
+    // inclusive from/to window (drillDownParams.ts's existing axes) spanning
+    // both blocks' match times, never a single `event=` anchor that could
+    // only ever resolve to one of them.
+    const href = stageLink.getAttribute('href')!;
+    expect(href).not.toContain('event=');
+    expect(href).toContain(`from=${earlyTime}`);
+    expect(href).toContain(`to=${lateTime}`);
+
+    await user.click(stageLink);
+
+    // Both blocks' games show up on the destination — exactly the 2 games
+    // the row's own count promised, not just the most recent block's 1.
+    expect(await screen.findByText('By Opponent')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'laterival' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'earlyrival' })).toBeInTheDocument();
+    expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
+  });
+
+  it("keeps a single-block stage's link on the unchanged event= anchor form", async () => {
+    const time = Date.UTC(2021, 0, 1);
+
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        eventName: 'Ultimate Singles',
+        firstSetAt: time,
+        lastSetAt: time,
+      }),
+    ]);
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'only-game',
+        time,
+        win: true,
+        opponent: 'solorival',
+        map: { id: 2, name: 'Big Battlefield' },
+      }),
+    ]);
+
+    renderTournamentAndStagePages('42');
+
+    await screen.findByText('Stages Played');
+    const stageLink = screen.getByRole('link', {
+      name: 'Big Battlefield — Stages Played, opens details',
+    });
+    // A single block: byte-identical to the pre-WR-05 `event=<key>` link —
+    // no `from`/`to` at all.
+    const href = stageLink.getAttribute('href')!;
+    expect(href).toMatch(/^\/stages\/2\?event=/);
+    expect(href).not.toContain('from=');
+    expect(href).not.toContain('to=');
   });
 });

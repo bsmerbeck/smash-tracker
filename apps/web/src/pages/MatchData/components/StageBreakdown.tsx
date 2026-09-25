@@ -1,41 +1,91 @@
-import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectTrigger } from '@/components/ui/select';
-import { NO_SELECTION_STAGE } from '@/data/stages';
-import { getFighterById } from '@/data/sprites';
-import { localizedFighterName } from '@/lib/fighterNames';
-import { getStageRecords, getWinLossRecord } from '@/lib/stats';
-import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { Record } from '@/components/analytics/Record';
+import { RecordBar } from '@/components/charts/inlineMarks';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { getStageById } from '@/data/stages';
+import { getStageRecords, type StageRecord } from '@/lib/stats';
 import { stageAbbreviation } from '@/components/StageOption';
-import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
+
+const STAGE_THUMB_WIDTH_PX = 32;
+const STAGE_THUMB_HEIGHT_PX = 20;
 
 /**
- * Ports legacy/src/screens/MatchData/components/StageBreakdown — pick a
- * stage, see the overall record for it (via `getStageRecords`) plus a
- * per-fighter breakdown for matches played on that stage.
+ * One stage row (UI-SPEC §8.4): a 32x20 stage thumbnail, the localised
+ * stage name in the row's one flexible truncating slot, a `Record` and a
+ * `RecordBar`, navigating to Phase 38's `/stages/:stageId` route. Wraps in
+ * `DrillableRow` (`as="overlay"`), matching `PairingOpponents.tsx`'s
+ * established multi-segment-row pattern.
  */
-export function StageBreakdown({
-  matches,
-  usageMatches,
-  favoriteStageIds,
-  onToggleFavorite,
+function StageRow({
+  record,
+  t,
+  subjectPath,
 }: {
-  matches: Match[];
-  /** Unfiltered matches used to compute "Most played" ordering; defaults to `matches` when omitted. */
-  usageMatches?: Match[];
-  /** The user's favorited stage ids, pinned as a "Favorites" group. Passed in as a prop (rather than read via `useStageFavorites` here) to keep this component hook/provider-free for tests. */
-  favoriteStageIds?: number[];
-  /** Heart-button toggle for the picker rows (see `StageSelectGroups`); a prop for the same provider-free reason as `favoriteStageIds`. */
-  onToggleFavorite?: (stageId: number) => void;
+  record: StageRecord;
+  t: ReturnType<typeof useTranslation>['t'];
+  subjectPath: (path: string) => string;
 }) {
-  const { t } = useTranslation();
-  const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
-  const stageGroups = useMemo(
-    () => getGroupedStageOptions(usageMatches ?? matches, favoriteStageIds),
-    [usageMatches, matches, favoriteStageIds],
+  const stage = getStageById(record.stageId);
+  const name = stage?.name ?? t('common.unknown');
+  const to = subjectPath(`/stages/${record.stageId}`);
+  const recordText = `${record.wins}–${record.losses}`;
+
+  return (
+    <li
+      className="relative flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+      data-slot="stage-row"
+    >
+      <DrillableRow
+        as="overlay"
+        to={to}
+        ariaLabel={t('shared.drillableRow.aria', { subject: name, context: recordText })}
+      />
+      {stage?.url ? (
+        <img
+          src={stage.url}
+          alt=""
+          className="shrink-0 rounded object-cover"
+          style={{ width: STAGE_THUMB_WIDTH_PX, height: STAGE_THUMB_HEIGHT_PX }}
+        />
+      ) : (
+        <span
+          className="flex shrink-0 items-center justify-center rounded bg-muted text-[9px] font-semibold text-muted-foreground"
+          style={{ width: STAGE_THUMB_WIDTH_PX, height: STAGE_THUMB_HEIGHT_PX }}
+          aria-hidden="true"
+        >
+          {stageAbbreviation(name)}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
+        {name}
+      </span>
+      <span className="shrink-0">
+        <RecordBar wins={record.wins} losses={record.losses} />
+      </span>
+      <Record wins={record.wins} losses={record.losses} cue="none" />
+      <DrillableRowChevron />
+    </li>
   );
+}
+
+/**
+ * The Match Data stage card (UIX-02/UIX-04, UI-SPEC §8.4, owner note 7):
+ * a stage-first `BoundedList` ordered by games (`getStageRecords`), each row
+ * navigating to the stage detail route. The old centred stage-art header and
+ * the colliding flex-distribution stat row are gone — replaced by a
+ * `StatRow` headlining the most-played stage's rate/wins/losses (the same
+ * three figures the deleted local `Stat` used, same `common.*` keys, now on
+ * a gapped grid that cannot collide) — and the per-fighter split no longer
+ * renders here; it lives on the stage detail route (Phase 38).
+ */
+export function StageBreakdown({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
 
   if (matches.length === 0) {
     return (
@@ -50,90 +100,41 @@ export function StageBreakdown({
     );
   }
 
-  const selectedStage = stageOptions.find((s) => s.id === stageId) ?? NO_SELECTION_STAGE;
-  const stageRecords = getStageRecords(matches);
-  const record = stageRecords.find((r) => r.stageId === stageId);
+  const records = [...getStageRecords(matches)].sort(
+    (a, b) => b.total - a.total || a.stageId - b.stageId,
+  );
+  const top = records[0]!;
 
-  const stageMatches = matches.filter((m) => (m.map?.id ?? 0) === stageId);
-  const fighterIds = [...new Set(stageMatches.map((m) => m.fighter_id))];
-  const fighterStats = fighterIds
-    .map((fid) => {
-      const fighter = getFighterById(fid);
-      if (!fighter) return null;
-      const fighterMatches = stageMatches.filter((m) => m.fighter_id === fid);
-      return { fighter, ...getWinLossRecord(fighterMatches) };
-    })
-    .filter((f): f is NonNullable<typeof f> => f != null);
+  const rows = records.map((record) => (
+    <StageRow key={record.stageId} record={record} t={t} subjectPath={subjectPath} />
+  ));
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('matchData.stages.title')}</CardTitle>
+        <CardDescription>{t('analytics.list.sortMostGames')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <Select value={String(stageId)} onValueChange={(v) => setStageId(Number(v))}>
-          <SelectTrigger className="w-full max-w-xs" aria-label={t('matchData.stages.selectAria')}>
-            <StageSelectValue stageId={stageId} />
-          </SelectTrigger>
-          <SelectContent>
-            <StageSelectGroups groups={stageGroups} onToggleFavorite={onToggleFavorite} />
-          </SelectContent>
-        </Select>
-
-        <div className="flex flex-col items-center gap-2 text-center">
-          {selectedStage.id !== NO_SELECTION_STAGE.id &&
-            ('url' in selectedStage && selectedStage.url ? (
-              <img
-                src={selectedStage.url}
-                alt=""
-                className="h-20 w-36 rounded-md object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <span
-                className="flex h-20 w-36 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground"
-                aria-hidden="true"
-              >
-                {stageAbbreviation(selectedStage.name)}
-              </span>
-            ))}
-          <h3 className="text-lg font-medium">{selectedStage.name}</h3>
-          {!record || record.total === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('matchData.stages.noneOnStage')}</p>
-          ) : (
-            <div className="flex justify-evenly pt-2">
-              <Stat label={t('common.rate')} value={`${record.winRate}%`} />
-              <Stat label={t('common.wins')} value={record.wins} />
-              <Stat label={t('common.losses')} value={record.losses} />
-            </div>
-          )}
-        </div>
-
-        {fighterStats.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {fighterStats.map(({ fighter, wins, losses, winRate }) => (
-              <li key={fighter.id} className="flex items-center gap-3 rounded-md border p-2">
-                <img src={fighter.url} alt="" className="size-8 object-contain" />
-                <span className="flex-1 font-medium">{localizedFighterName(fighter.id, t)}</span>
-                <div className="flex gap-4 text-sm text-muted-foreground">
-                  <span>{winRate}%</span>
-                  <span>{t('matchData.stages.winsShort', { count: wins })}</span>
-                  <span>{t('matchData.stages.lossesShort', { count: losses })}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <StatRow
+          figures={[
+            <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
+            <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
+            <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
+          ]}
+        />
+        <BoundedList
+          cap={LIST_CAP}
+          rows={rows}
+          labels={{
+            showAll: t('analytics.list.showAll', { count: records.length }),
+            showFewer: t('analytics.list.showFewer'),
+            showMore: t('analytics.list.showMore50'),
+            terminus: t('analytics.list.allStages', { count: records.length }),
+          }}
+          empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
+        />
       </CardContent>
     </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex flex-col items-center text-center">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-lg font-medium">{value}</span>
-    </div>
   );
 }

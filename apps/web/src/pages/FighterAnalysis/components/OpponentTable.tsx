@@ -1,3 +1,4 @@
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -8,25 +9,84 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { Match } from '@smash-tracker/shared';
-import { getOpponentRecords } from '@/lib/stats';
+import { Button } from '@/components/ui/button';
+import { LIST_CAP } from '@/components/analytics/BoundedList';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 
-/** Ports legacy/src/screens/FighterAnalysis/components/OpponentTable — per-human-opponent records for the selected fighter. */
-export function OpponentTable({ fighterMatches }: { fighterMatches: Match[] }) {
+/**
+ * One row's prepared data — the shape a HOST builds, never something this
+ * component derives itself. `key` must be stable across renders (the
+ * own-subject host uses the engine's resolved identity string; the
+ * third-party host uses the raw scouted tag).
+ */
+export interface OpponentTableRow {
+  key: string;
+  /** The label shown in the Opponent column. */
+  displayLabel: string;
+  wins: number;
+  losses: number;
+  total: number;
+  winRate: number;
+}
+
+/**
+ * Ports legacy/src/screens/FighterAnalysis/components/OpponentTable —
+ * per-human-opponent records for the selected fighter.
+ *
+ * Phase 38-07 (H-02/Q11.4): this component has TWO hosts with INCOMPATIBLE
+ * data scopes — `FighterAnalysisPage.tsx` (the viewer's own, alias-resolved
+ * identities) and `Scout/components/FullAnalysisSection.tsx` (a SCOUTED
+ * THIRD PARTY's raw-tag-grouped history). It is therefore purely
+ * PRESENTATIONAL: it takes an already-ordered `rows` array (the host decides
+ * identity resolution AND the descending-by-games sort — this component
+ * renders the array in the order given, unchanged) plus an OPTIONAL
+ * `hubHref` destination builder. It resolves nothing, fetches nothing, and
+ * calls no hook that needs a provider (no `useQuery`, no router hook) —
+ * `Link` is only ever rendered from inside `DrillableRow`'s `to`-branch,
+ * which never fires when `hubHref` is absent or returns `undefined` for a
+ * given row, so the third-party host's bare (no `MemoryRouter`, no
+ * `QueryClientProvider`) render stays valid.
+ *
+ * A row for which `hubHref` returns `undefined` (its identity cannot be
+ * addressed — the engine's unnamed bucket has no `displayTag` to link) is
+ * rendered as plain text with no chevron and no link, matching D-14's
+ * per-row exemption contract.
+ */
+export function OpponentTable({
+  rows,
+  hubHref,
+}: {
+  rows: OpponentTableRow[];
+  /** Host-supplied destination builder. Absent entirely at the third-party host (Scout); may still return `undefined` for an individual unaddressable row at the own-subject host. */
+  hubHref?: (row: OpponentTableRow) => string | undefined;
+}) {
   const { t } = useTranslation();
-  const records = getOpponentRecords(fighterMatches).sort((a, b) => b.total - a.total);
+  // T-39.1-14: this surface's nested vertical scroller is replaced by the
+  // bounded-list cap ladder (UI-SPEC §6.4) — capped at `LIST_CAP` (8), with a
+  // "Show all"/"Show fewer" toggle instead of an `overflow-y-auto` box. Table
+  // semantics stay a real `<table>` (this component's own row/cell-count
+  // tests depend on it) rather than `BoundedList`'s own `<ul>`.
+  const [expanded, setExpanded] = useState(false);
+  // WR-C06 (39.1-REVIEW.md): `useId()`, not a hardcoded string — this
+  // component has TWO hosts (`FighterAnalysisPage.tsx`'s own-subject render
+  // and Scout's third-party render) and could in principle mount more than
+  // once in one tree, so the show-all toggle's `aria-controls` target needs
+  // a per-instance-unique id.
+  const tableId = useId();
+  const visibleRows = expanded ? rows : rows.slice(0, LIST_CAP);
+  const hasMore = rows.length > LIST_CAP;
 
   return (
-    <Card className="flex-1">
+    <Card>
       <CardHeader>
         <CardTitle>{t('fighterAnalysis.opponents.title')}</CardTitle>
       </CardHeader>
       <CardContent>
-        {records.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('fighterAnalysis.opponents.empty')}</p>
         ) : (
-          <div className="max-h-[400px] overflow-y-auto">
-            <Table>
+          <>
+            <Table id={tableId}>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('matchups.opponent')}</TableHead>
@@ -37,18 +97,52 @@ export function OpponentTable({ fighterMatches }: { fighterMatches: Match[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((record) => (
-                  <TableRow key={record.opponent}>
-                    <TableCell className="capitalize">{record.opponent}</TableCell>
-                    <TableCell>{record.winRate}%</TableCell>
-                    <TableCell>{record.total}</TableCell>
-                    <TableCell>{record.wins}</TableCell>
-                    <TableCell>{record.losses}</TableCell>
-                  </TableRow>
-                ))}
+                {visibleRows.map((row) => {
+                  const destination = hubHref?.(row);
+                  return (
+                    <TableRow key={row.key} className="relative hover:bg-accent">
+                      <TableCell className="relative capitalize">
+                        {destination != null && (
+                          <DrillableRow
+                            to={destination}
+                            as="overlay"
+                            ariaLabel={t('shared.drillableRow.aria', {
+                              subject: row.displayLabel,
+                              context: t('fighterAnalysis.opponents.title'),
+                            })}
+                          />
+                        )}
+                        {row.displayLabel}
+                      </TableCell>
+                      <TableCell>{row.winRate}%</TableCell>
+                      <TableCell>{row.total}</TableCell>
+                      <TableCell>{row.wins}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center justify-between gap-2">
+                          {row.losses}
+                          {destination != null && <DrillableRowChevron />}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
-          </div>
+            {hasMore && (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                aria-controls={tableId}
+              >
+                {expanded
+                  ? t('analytics.list.showFewer')
+                  : t('analytics.list.showAll', { count: rows.length })}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

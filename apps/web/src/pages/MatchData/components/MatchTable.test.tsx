@@ -316,3 +316,39 @@ describe('MatchTable — character evidence (Phase 30.3 Gate 5)', () => {
     expect(await screen.findByText('Some Unrecognized Tag')).toBeInTheDocument();
   });
 });
+
+/**
+ * T-39.1-16-03 / UI-SPEC §6.4's per-pass rule (Task 3): MatchTable was
+ * already bounded before this plan — `@tanstack/react-table`'s
+ * `getPaginationRowModel` renders only the CURRENT page's rows regardless of
+ * total data size, `PAGE_SIZE_OPTIONS`' maximum (50) is well under
+ * `LIST_PASS_MAX` (100), and the default `pageSize` is 10 — so no code
+ * change was needed here (recorded in this plan's SUMMARY). This suite
+ * proves the bound holds on a 250-row fixture and that the pagination
+ * controls (`Button`s, not a `BoundedList` "show more" label — a full
+ * prev/next/page-size pager, a superset of "show more") let a user reach
+ * every row.
+ */
+describe('MatchTable — per-pass row bound (UI-SPEC §6.4, T-39.1-16-03)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
+  });
+
+  it('renders at most 100 rows in one DOM pass on a 250-row fixture, and offers a control to see more', async () => {
+    const matches = Array.from({ length: 250 }, (_, i) => makeMatch({ id: `m-${i}` }));
+    renderTable(matches);
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+
+    const rows = screen
+      .getAllByRole('row')
+      .filter((r) => within(r).queryAllByRole('cell').length > 0);
+    expect(rows.length).toBeLessThanOrEqual(100);
+    expect(rows.length).toBe(10); // the default page size
+
+    const nextPage = screen.getByRole('button', { name: '>' });
+    expect(nextPage).toBeEnabled();
+  });
+});

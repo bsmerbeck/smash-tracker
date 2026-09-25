@@ -1,4 +1,4 @@
-import type { Match, OpponentAliasMap } from '@smash-tracker/shared';
+import { resolveAliasChain, type Match, type OpponentAliasMap } from '@smash-tracker/shared';
 
 /**
  * Phase 30.3 (Gate 4): "Analyze opponent" deep links. Every affordance
@@ -56,9 +56,10 @@ export function buildAnalyzeOpponentPath(identity: AnalyzeOpponentIdentity): str
  *   Provider IDs are preferred because they survive tag changes and alias
  *   merges without any string matching.
  * - `opponent=<tag>` (fallback, or when the ID matched nothing): the tag is
- *   run through the alias map one hop (`aliasMap[tag] ?? tag`) — the same
- *   single-hop rule `applyOpponentAliases` uses — so a merged alias still
- *   lands on its canonical profile.
+ *   run through the shared `resolveAliasChain` primitive (CR-01/WR-04) —
+ *   the same full-chain rule `applyOpponentAliases` uses — so a merged
+ *   alias, even a chained one, still lands on its terminal canonical
+ *   profile.
  */
 export function resolveAnalyzeOpponentPreselection(
   params: URLSearchParams,
@@ -83,7 +84,47 @@ export function resolveAnalyzeOpponentPreselection(
 
   const tag = params.get(ANALYZE_OPPONENT_TAG_PARAM);
   if (tag) {
-    return Object.prototype.hasOwnProperty.call(aliasMap, tag) ? aliasMap[tag]! : tag;
+    return resolveAliasChain(tag, aliasMap);
   }
   return null;
+}
+
+/**
+ * Plan 38-05 (D-01/D-02): the opponent HUB path — a child route of the SAME
+ * `/opponents` base the list route already owns, carrying the resolved tag
+ * as a single path segment. Left as its own pair (not folded into the
+ * query-form builder above) because the two forms serve different callers:
+ * the query form is the legacy/provider-identity deep-link shape this module
+ * already owned, and D-02 keeps it working forever via the redirect in
+ * `OpponentsPage.tsx`; every NEW affordance this phase adds links straight to
+ * the hub path instead.
+ *
+ * Encoded/decoded EXPLICITLY, never via a naive template literal:
+ * `normalizeOpponentTag`'s RTDB-illegal strip (`identity.ts`) happens to
+ * remove the path separator, but it does not guarantee ASCII and does not
+ * strip a percent sign, so an un-encoded tag containing either could corrupt
+ * the path segment or collide with an adjacent route. This mirrors the
+ * decode-on-read discipline `useActiveSubject.ts` already uses for the
+ * `/coach/:clientId` id segment.
+ */
+export function buildOpponentHubPath(tag: string): string {
+  return `/opponents/${encodeURIComponent(tag)}`;
+}
+
+/**
+ * Decodes a raw (still percent-encoded) path segment back to the opponent
+ * tag it names. Returns `null` for an empty/nullish segment or one that
+ * fails to decode (a malformed percent sequence) — never throws, so a
+ * crafted or truncated URL degrades to "no tag" rather than crashing the
+ * hub route.
+ */
+export function readOpponentHubTagParam(rawSegment: string | null | undefined): string | null {
+  if (!rawSegment) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(rawSegment);
+  } catch {
+    return null;
+  }
 }

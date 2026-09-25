@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { AuthContext } from '@/context/AuthContext';
 import { useMatches } from '@/hooks/useMatches';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
+import { useEffectiveSubject } from '@/hooks/useEffectiveSubject';
 import { filterByRange } from '@/hooks/useFilteredMatches';
+import { subjectSegment } from '@/lib/subjectQueryKey';
 import type { AnalyticsRangeFilter } from '@/context/AnalyticsFilterContext';
 
 /**
@@ -14,8 +17,23 @@ import type { AnalyticsRangeFilter } from '@/context/AnalyticsFilterContext';
  * Without this session-level flag, a user who deliberately picks `12m` and
  * then navigates to another page would have that pick silently auto-flipped
  * back to `all` on the next mount, which is exactly what D-01 forbids.
+ *
+ * Phase 35-03 (Task 4, M-2): demoted to the key PREFIX — the flag itself is
+ * now scoped per (uid, subject) via `rangeAutoWidenSessionKey` below, so a
+ * coach whose personal scope has already spent the session's one evaluation
+ * still gets an independent evaluation for an active client whose own
+ * persisted range excludes everything.
  */
 export const RANGE_AUTO_WIDEN_SESSION_KEY = 'smash-tracker.analyticsRangeAutoWiden';
+
+/**
+ * Phase 35-03 (Task 4, M-2/NEW-M2): composes the uid + subject segment into
+ * the scoped session-flag key, the same shared `subjectSegment` speller the
+ * other two phase key builders use — never a locally re-spelled `client:`.
+ */
+export function rangeAutoWidenSessionKey(uid: string | null, clientId: string | null): string {
+  return `${RANGE_AUTO_WIDEN_SESSION_KEY}.${uid ?? 'anonymous'}.${subjectSegment(clientId)}`;
+}
 
 /** Reuses the same labels `AnalyticsFilterControls` renders (D-03) rather than re-typing them. */
 const RANGE_LABEL_KEYS: Record<Exclude<AnalyticsRangeFilter, 'all'>, string> = {
@@ -24,9 +42,9 @@ const RANGE_LABEL_KEYS: Record<Exclude<AnalyticsRangeFilter, 'all'>, string> = {
   '12m': 'filters.months12',
 };
 
-function readSessionFlag(): boolean {
+function readSessionFlag(key: string): boolean {
   try {
-    return window.sessionStorage.getItem(RANGE_AUTO_WIDEN_SESSION_KEY) != null;
+    return window.sessionStorage.getItem(key) != null;
   } catch {
     // sessionStorage can throw (private browsing, disabled storage) — treat
     // as "not yet evaluated"; the in-memory ref guard still protects this
@@ -35,9 +53,9 @@ function readSessionFlag(): boolean {
   }
 }
 
-function writeSessionFlag(): void {
+function writeSessionFlag(key: string): void {
   try {
-    window.sessionStorage.setItem(RANGE_AUTO_WIDEN_SESSION_KEY, '1');
+    window.sessionStorage.setItem(key, '1');
   } catch {
     // Ignore storage failures — nothing else depends on this write succeeding.
   }
@@ -66,15 +84,48 @@ function writeSessionFlag(): void {
  * query `useFilteredMatches` reads) rather than `useFilteredMatches`, since
  * the opponent-alias query it also pulls in can't affect a time-range
  * emptiness test.
+ *
+ * Phase 35-03 (Task 4, M-2/NEW-H1): this hook is the phase's one
+ * PROGRAMMATIC filter writer — it calls `setRange('all')` from an effect,
+ * and `MainLayout` mounts it on every authenticated route including
+ * `/coach/:clientId/*` and `/workspace/:tenantId/*`. Mounted INSIDE the
+ * router (unlike `AnalyticsFilterProvider`), so it resolves its own subject
+ * via `useEffectiveSubject()` directly. Two mitigations: (1) the session
+ * flag is scoped per (uid, subject) so one subject's spent evaluation can
+ * never strand a second subject on a range that excludes everything (M-2);
+ * (2) the effect returns — WITHOUT burning the session's one shot —
+ * whenever the provider's reported `subjectClientId` (the subject its
+ * CURRENT `range` was seeded from) differs from this hook's own subject
+ * (NEW-H1), because the provider can render the previous subject's `range`
+ * for up to one commit after an in-app switch (T-35-14); judging that stale
+ * range and writing the verdict under the new subject's key would be the
+ * exact bleed M-2 exists to prevent, approached from the other direction.
  */
 export function useAutoWidenEmptyRange(): void {
   const { t } = useTranslation();
   const { data: matches, isLoading } = useMatches();
-  const { range, setRange } = useAnalyticsFilter();
-  const evaluatedRef = useRef(false);
+  const { range, setRange, subjectClientId } = useAnalyticsFilter();
+  const { clientId } = useEffectiveSubject();
+  const auth = useContext(AuthContext);
+  const uid = auth?.user?.uid ?? null;
+  // Remembers WHICH (uid, subject) key the evaluation was last spent on —
+  // not a plain boolean — so a subject change within one mount re-arms the
+  // evaluation instead of inheriting the previous subject's spent shot.
+  const evaluatedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (evaluatedRef.current || isLoading || matches == null) {
+    // NEW-H1: the `range` this effect is about to JUDGE must belong to the
+    // same subject as the key it would WRITE. On a mismatch, return before
+    // touching `evaluatedKeyRef`, the session flag, or `setRange` — the
+    // evaluation re-runs on the commit after the provider re-seeds
+    // (`subjectClientId`/`clientId` are both effect dependencies).
+    if (subjectClientId !== clientId) {
+      return;
+    }
+
+    const sessionKey = rangeAutoWidenSessionKey(uid, clientId);
+
+    if (evaluatedKeyRef.current === sessionKey || isLoading || matches == null) {
       // The data-null check is load-bearing: when the query is disabled
       // (signed out), TanStack v5 reports isLoading === false with
       // data === undefined — marking the session evaluated here would burn
@@ -82,15 +133,15 @@ export function useAutoWidenEmptyRange(): void {
       return;
     }
 
-    if (readSessionFlag()) {
-      evaluatedRef.current = true;
+    if (readSessionFlag(sessionKey)) {
+      evaluatedKeyRef.current = sessionKey;
       return;
     }
 
     // The evaluation is spent whether or not it widens (D-01: "evaluate ONCE
     // per app session") — this is what makes a later in-session pick immune.
-    evaluatedRef.current = true;
-    writeSessionFlag();
+    evaluatedKeyRef.current = sessionKey;
+    writeSessionFlag(sessionKey);
 
     if (range === 'all' || matches.length === 0) {
       return;
@@ -104,5 +155,5 @@ export function useAutoWidenEmptyRange(): void {
     const label = t(RANGE_LABEL_KEYS[range]);
     setRange('all');
     toast.info(t('filters.autoWidened', { range: label }));
-  }, [matches, isLoading, range, setRange, t]);
+  }, [matches, isLoading, range, setRange, t, subjectClientId, clientId, uid]);
 }

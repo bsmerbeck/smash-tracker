@@ -1,23 +1,18 @@
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { Record } from '@/components/analytics/Record';
+import { BoundedList, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
 import { getSessions, type SessionStats } from '@/lib/stats';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { FilteredMatchList } from '@/components/FilteredMatchList';
+import { sortMatchesNewestFirst, type DrillDownAxes } from '@/lib/drillDownParams';
 
-/** Loss runs at or above this length are highlighted in destructive tone in the recent-sessions table. */
+/** Loss runs at or above this length are called out in the recent-sessions list. */
 export const TILT_HIGHLIGHT_THRESHOLD = 3;
-
-/** How many of the most recent sessions to list in the table. */
-const RECENT_SESSION_LIMIT = 10;
 
 export interface SessionsHeadline {
   totalSessions: number;
@@ -77,117 +72,169 @@ function formatDuration(session: SessionStats, t: TFunction): string {
     : t('trends.sessions.durationH', { hours });
 }
 
+interface SessionRowProps {
+  session: SessionStats;
+  isExpanded: boolean;
+  onToggle: () => void;
+  sortedMatches: Match[];
+  axes: DrillDownAxes;
+  locale: string;
+  t: TFunction;
+}
+
+function SessionRow({
+  session,
+  isExpanded,
+  onToggle,
+  sortedMatches,
+  axes,
+  locale,
+  t,
+}: SessionRowProps) {
+  const dateLabel = formatDate(session.start, locale);
+  return (
+    <li className="flex flex-col gap-2 rounded-md p-2 hover:bg-accent">
+      <div className="relative flex items-center gap-2">
+        <DrillableRow
+          as="overlay"
+          onActivate={onToggle}
+          expanded={isExpanded}
+          ariaLabel={t('shared.drillableRow.aria', {
+            subject: dateLabel,
+            context: t('trends.sessions.title'),
+          })}
+        />
+        <span className="min-w-0 flex-1 truncate">{dateLabel}</span>
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {formatDuration(session, t)}
+        </span>
+        <Record wins={session.wins} losses={session.losses} cue="none" />
+        {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD && (
+          <span className="shrink-0 text-xs font-medium text-destructive tabular-nums">
+            {t('trends.sessions.tiltRun', { count: session.longestLossRun })}
+          </span>
+        )}
+        <DrillableRowChevron />
+      </div>
+      {isExpanded && <FilteredMatchList matches={sortedMatches} axes={axes} />}
+    </li>
+  );
+}
+
+export interface SessionsAndTiltProps {
+  matches: Match[];
+}
+
 /**
- * V3 Phase F: session grouping (default gap from `getSessions`) with a
- * headline stats row and a recent-sessions table. "Tilt" = the longest
- * intra-session loss streak; the worst one across all sessions is called out
- * by date.
+ * The left rail's first card (UI-SPEC §8.2 Row 3): a 2×2 `StatRow`
+ * (Sessions · Avg games · Best session + date · Longest loss run + date),
+ * then recent session rows on the `BoundedList` primitive (cap
+ * `LIST_CAP_RAIL`, inline expansion, terminus). "Tilt" = the longest
+ * intra-session loss streak. Rows navigate with the session's `from`/`to`
+ * axes, unchanged from Phase 38 (this plan changes the container and the
+ * idiom, not the destinations).
  */
-export function SessionsAndTilt({ matches }: { matches: Match[] }) {
+export function SessionsAndTilt({ matches }: SessionsAndTiltProps) {
   const { t, i18n } = useTranslation();
-  const sessions = getSessions(matches);
-  const headline = buildSessionsHeadline(sessions);
-  const recentSessions = [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT);
+  const sessions = useMemo(() => getSessions(matches), [matches]);
+  const headline = useMemo(() => buildSessionsHeadline(sessions), [sessions]);
+  const recentSessions = useMemo(() => [...sessions].reverse(), [sessions]);
+  // Phase 38-07 (D-14): a session row toggles an inline `FilteredMatchList`
+  // for that session's inclusive start-to-end window — single-open, keyed on
+  // the session's own `start` (unique per session per `getSessions`).
+  const [expandedStart, setExpandedStart] = useState<number | null>(null);
+  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  // WR-03 (38-REVIEW-FIX): one stable `{ from, to }` object PER session,
+  // built once per `recentSessions` change — never a fresh object literal
+  // per render inside the row map below.
+  const axesBySessionStart = useMemo(() => {
+    const map = new Map<number, DrillDownAxes>();
+    for (const s of recentSessions) {
+      map.set(s.start, { from: s.start, to: s.end });
+    }
+    return map;
+  }, [recentSessions]);
+
+  const empty = <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>;
 
   return (
-    <Card className="h-full">
+    <Card>
       <CardHeader>
         <CardTitle>{t('trends.sessions.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
+          empty
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Headline label={t('trends.sessions.total')} value={headline.totalSessions} />
-              <Headline label={t('trends.sessions.avgGames')} value={headline.avgGamesPerSession} />
-              <Headline
-                label={t('trends.sessions.best')}
-                value={
-                  headline.bestSession
-                    ? `${headline.bestSession.wins}-${headline.bestSession.losses}`
-                    : '—'
-                }
-                sub={
-                  headline.bestSession
-                    ? formatDate(headline.bestSession.start, i18n.language)
-                    : undefined
-                }
-              />
-              <Headline
-                label={t('trends.sessions.worstTilt')}
-                value={
-                  headline.worstTiltSession
-                    ? t('trends.sessions.tiltRun', {
-                        count: headline.worstTiltSession.longestLossRun,
-                      })
-                    : '—'
-                }
-                sub={
-                  headline.worstTiltSession
-                    ? formatDate(headline.worstTiltSession.start, i18n.language)
-                    : undefined
-                }
-                tone={headline.worstTiltSession ? 'destructive' : undefined}
-              />
-            </div>
+            <StatRow
+              figures={[
+                <StatFigure
+                  key="total"
+                  label={t('trends.sessions.total')}
+                  value={`${headline.totalSessions}`}
+                />,
+                <StatFigure
+                  key="avg"
+                  label={t('trends.sessions.avgGames')}
+                  value={`${headline.avgGamesPerSession}`}
+                />,
+                headline.bestSession ? (
+                  <StatFigure
+                    key="best"
+                    label={t('trends.sessions.best')}
+                    value={`${headline.bestSession.wins}-${headline.bestSession.losses}`}
+                    support={formatDate(headline.bestSession.start, i18n.language)}
+                  />
+                ) : (
+                  <StatFigure key="best" label={t('trends.sessions.best')} state="empty" />
+                ),
+                headline.worstTiltSession ? (
+                  <StatFigure
+                    key="worstTilt"
+                    label={t('trends.sessions.worstTilt')}
+                    value={t('trends.sessions.tiltRun', {
+                      count: headline.worstTiltSession.longestLossRun,
+                    })}
+                    support={formatDate(headline.worstTiltSession.start, i18n.language)}
+                  />
+                ) : (
+                  <StatFigure
+                    key="worstTilt"
+                    label={t('trends.sessions.worstTilt')}
+                    state="empty"
+                  />
+                ),
+              ]}
+            />
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('trends.sessions.date')}</TableHead>
-                  <TableHead>{t('trends.sessions.duration')}</TableHead>
-                  <TableHead>{t('trends.monthly.wl')}</TableHead>
-                  <TableHead>{t('common.rate')}</TableHead>
-                  <TableHead>{t('trends.sessions.lossRun')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentSessions.map((session) => (
-                  <TableRow key={session.start}>
-                    <TableCell>{formatDate(session.start, i18n.language)}</TableCell>
-                    <TableCell>{formatDuration(session, t)}</TableCell>
-                    <TableCell>
-                      {session.wins}-{session.losses}
-                    </TableCell>
-                    <TableCell>{session.winRate}%</TableCell>
-                    <TableCell>
-                      {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD ? (
-                        <Badge variant="destructive">{session.longestLossRun}</Badge>
-                      ) : (
-                        session.longestLossRun
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <BoundedList
+              cap={LIST_CAP_RAIL}
+              rows={recentSessions.map((session) => (
+                <SessionRow
+                  key={session.start}
+                  session={session}
+                  isExpanded={expandedStart === session.start}
+                  onToggle={() =>
+                    setExpandedStart(expandedStart === session.start ? null : session.start)
+                  }
+                  sortedMatches={sortedMatches}
+                  axes={axesBySessionStart.get(session.start) ?? {}}
+                  locale={i18n.language}
+                  t={t}
+                />
+              ))}
+              labels={{
+                showAll: t('analytics.list.showAll', { count: recentSessions.length }),
+                showFewer: t('analytics.list.showFewer'),
+                showMore: t('analytics.list.showMore50'),
+                terminus: t('analytics.list.allSessions', { count: recentSessions.length }),
+              }}
+              empty={empty}
+            />
           </>
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function Headline({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  tone?: 'destructive';
-}) {
-  return (
-    <div>
-      <h3 className="text-sm text-muted-foreground">{label}</h3>
-      <p className={`text-xl font-semibold ${tone === 'destructive' ? 'text-destructive' : ''}`}>
-        {value}
-      </p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
   );
 }

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "budget": "vitest run --config vitest.budget.config.ts",
     "seed:demo": "tsx scripts/seedDemo.ts"
   },
   "dependencies": {

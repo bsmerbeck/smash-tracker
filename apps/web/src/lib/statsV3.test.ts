@@ -48,11 +48,18 @@ describe('wilsonLowerBound', () => {
 });
 
 describe('rankMatchupsByEvidence', () => {
-  it('ranks a proven record above a lucky 1-0', () => {
+  // Phase 36 (D-05/D-07): the default floor is now ABSTENTION_FLOOR_GAMES
+  // (3), so opponent 10's record is raised from a single game to a thin-but
+  // -qualifying 3-0 — it still tests what it was written to test (a proven
+  // record outranks a thin one), it just needs enough games to clear the
+  // gate at all.
+  it('ranks a proven record above a thin one', () => {
     const matches = [
-      // 1-0 vs opponent 10
-      makeMatch({ id: 'a', time: 1, win: true, opponent_id: 10 }),
-      // 8-2 vs opponent 20
+      // 3-0 vs opponent 10 (thin, perfect record)
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeMatch({ id: `a${i}`, time: 1 + i, win: true, opponent_id: 10 }),
+      ),
+      // 8-2 vs opponent 20 (proven record)
       ...Array.from({ length: 8 }, (_, i) =>
         makeMatch({ id: `w${i}`, time: 10 + i, win: true, opponent_id: 20 }),
       ),
@@ -65,28 +72,38 @@ describe('rankMatchupsByEvidence', () => {
     expect(ranked[0]?.wilson).toBeGreaterThan(ranked[1]?.wilson ?? 1);
   });
 
-  it('hides rows below minMatches without affecting ranking math', () => {
-    const matches = [
+  it('gates an explicit sub-floor minMatches at the floor instead of reopening it (D-07/R1-HIGH-1)', () => {
+    const belowFloor = [
       makeMatch({ id: 'a', time: 1, win: true, opponent_id: 10 }),
       makeMatch({ id: 'b', time: 2, win: true, opponent_id: 20 }),
       makeMatch({ id: 'c', time: 3, win: false, opponent_id: 20 }),
     ];
-    expect(rankMatchupsByEvidence(matches, 2)).toHaveLength(1);
+    expect(rankMatchupsByEvidence(belowFloor, 2)).toHaveLength(0);
+
+    const atFloor = [...belowFloor, makeMatch({ id: 'd', time: 4, win: true, opponent_id: 20 })];
+    expect(rankMatchupsByEvidence(atFloor, 2)).toHaveLength(1);
   });
 });
 
 describe('rankStagesByEvidence', () => {
+  // Phase 36 (D-05/D-07): the default floor is now ABSTENTION_FLOOR_GAMES
+  // (3), so both stages below need >=3 games to clear the gate at all —
+  // Battlefield is given a thinner, more mixed record than Smashville's
+  // proven 5-1 so the wilson-ranking assertion still tests what it was
+  // written to test (a proven record outranks a thinner one).
   it('excludes the unknown-stage sentinel and ranks by wilson', () => {
     const stage = (id: number, name: string) => ({ id, name });
     const matches = [
       makeMatch({ id: 'u', time: 1, win: true }), // stage 0 sentinel
       makeMatch({ id: 'b1', time: 2, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b2', time: 3, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b3', time: 4, win: false, map: stage(1, 'Battlefield') }),
       ...Array.from({ length: 6 }, (_, i) =>
         makeMatch({ id: `s${i}`, time: 10 + i, win: i < 5, map: stage(3, 'Smashville') }),
       ),
     ];
     const ranked = rankStagesByEvidence(matches);
-    expect(ranked.map((r) => r.stageId)).toEqual([3, 1]); // 5-1 beats 1-0
+    expect(ranked.map((r) => r.stageId)).toEqual([3, 1]); // proven 5-1 beats thinner 2-1
     expect(ranked.find((r) => r.stageId === 0)).toBeUndefined();
   });
 });
@@ -164,22 +181,29 @@ describe('getSessions', () => {
 });
 
 describe('getOpponentProfile', () => {
+  // Phase 36 (D-05/D-07): `byTheirFighter` is `rankMatchupsByEvidence`,
+  // whose default floor is now ABSTENTION_FLOOR_GAMES (3) — both
+  // character-pair groups below are raised to 3 games each so they both
+  // still clear the gate and appear in `byTheirFighter`.
   it('builds a head-to-head profile with their characters ranked', () => {
     const matches = [
       makeMatch({ id: '1', time: 1, win: true, opponent: 'powpow', opponent_id: 41 }),
       makeMatch({ id: '2', time: 2, win: false, opponent: 'powpow', opponent_id: 41 }),
-      makeMatch({ id: '3', time: 3, win: true, opponent: 'powpow', opponent_id: 7 }),
-      makeMatch({ id: '4', time: 4, win: true, opponent: 'someone-else', opponent_id: 41 }),
+      makeMatch({ id: '3', time: 3, win: true, opponent: 'powpow', opponent_id: 41 }),
+      makeMatch({ id: '4', time: 4, win: true, opponent: 'powpow', opponent_id: 7 }),
+      makeMatch({ id: '5', time: 5, win: true, opponent: 'powpow', opponent_id: 7 }),
+      makeMatch({ id: '6', time: 6, win: false, opponent: 'powpow', opponent_id: 7 }),
+      makeMatch({ id: '7', time: 7, win: true, opponent: 'someone-else', opponent_id: 41 }),
     ];
     const profile = getOpponentProfile(matches, 'powpow');
     expect(profile).not.toBeNull();
-    expect(profile?.record).toMatchObject({ wins: 2, losses: 1, total: 3 });
+    expect(profile?.record).toMatchObject({ wins: 4, losses: 2, total: 6 });
     expect(profile?.firstPlayedAt).toBe(1);
-    expect(profile?.lastPlayedAt).toBe(3);
+    expect(profile?.lastPlayedAt).toBe(6);
     expect(profile?.byTheirFighter.map((f) => f.opponentFighterId).sort((a, b) => a - b)).toEqual([
       7, 41,
     ]);
-    expect(profile?.recent[0]?.id).toBe('3'); // newest first
+    expect(profile?.recent[0]?.id).toBe('6'); // newest first
   });
 
   it('returns null for an opponent never played', () => {

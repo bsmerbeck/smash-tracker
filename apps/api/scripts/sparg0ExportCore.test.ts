@@ -1,0 +1,452 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+import type { Database } from 'firebase-admin/database';
+import { FakeDatabase, type FakeReference } from '../src/test-support/fakeDatabase.js';
+import { UnsafeOutputPathError } from './outputPathGuard.js';
+import {
+  exportMatchesForUid,
+  buildExportReceipt,
+  assertSafeSparg0ExportOutPath,
+  assertSafeSparg0ExportInputPath,
+} from './sparg0ExportCore.js';
+// The CLI-arg parsing/emulator-refusal guard helpers live in the thin CLI
+// composition root, not the core — importing them here (rather than
+// invoking `main()`) is exactly the "assert by invoking the parsed-args/
+// guard helper in the test, not by running against production" pattern
+// this plan's acceptance criteria calls for. Importing `sparg0Export.ts` is
+// safe: its `main()` invocation is guarded by an argv[1] check that never
+// matches under the test runner.
+import { parseSparg0ExportArgs, assertNotEmulator } from './sparg0Export.js';
+
+const UID = 'sparg0-uid-0000000000000001';
+
+function asDatabase(database: FakeDatabase): Database {
+  return database as unknown as Database;
+}
+
+/**
+ * Wraps `database.ref` so every `FakeReference` it hands back has its write
+ * methods spied on BEFORE `exportMatchesForUid` ever touches it — the
+ * read-only proof this test asserts (mirrors
+ * `acctTopologyAuditCore.test.ts`'s in-memory `Database` double, per this
+ * task's `read_first`).
+ */
+function watchWrites(database: FakeDatabase): { refs: FakeReference[] } {
+  const originalRef = database.ref.bind(database);
+  const refs: FakeReference[] = [];
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    vi.spyOn(ref, 'set');
+    vi.spyOn(ref, 'update');
+    vi.spyOn(ref, 'remove');
+    vi.spyOn(ref, 'push');
+    vi.spyOn(ref, 'transaction');
+    refs.push(ref);
+    return ref;
+  });
+  return { refs };
+}
+
+function assertNoWrites(refs: readonly FakeReference[]): void {
+  expect(refs.length).toBeGreaterThan(0); // the read actually happened through a watched ref
+  for (const ref of refs) {
+    expect(ref.set).not.toHaveBeenCalled();
+    expect(ref.update).not.toHaveBeenCalled();
+    expect(ref.remove).not.toHaveBeenCalled();
+    expect(ref.push).not.toHaveBeenCalled();
+    expect(ref.transaction).not.toHaveBeenCalled();
+  }
+}
+
+describe('exportMatchesForUid — read-only proof', () => {
+  it('performs zero write-method invocations on the database double', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      pushKey1: { fighter_id: 1, opponent_id: 8, time: 1_700_000_000_000, win: true },
+      pushKey2: { fighter_id: 1, opponent_id: 22, time: 1_700_000_100_000, win: false },
+    });
+    const { refs } = watchWrites(database);
+
+    const result = await exportMatchesForUid({ database: asDatabase(database), uid: UID });
+
+    assertNoWrites(refs);
+    expect(result.uid).toBe(UID);
+    expect(result.matchCount).toBe(2);
+    expect(result.matches).toHaveLength(2);
+  });
+
+  it('self-check: the fixture database is non-empty, so a silently-empty double cannot vacuously pass', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      pushKey1: { fighter_id: 1, opponent_id: 8, time: 1_700_000_000_000, win: true },
+    });
+
+    const before = database.dump();
+    expect(Object.keys(before)).not.toHaveLength(0);
+
+    const result = await exportMatchesForUid({ database: asDatabase(database), uid: UID });
+    expect(result.matchCount).toBeGreaterThan(0);
+  });
+
+  it('returns matchCount 0 and an empty matches array for a uid with no matches node — no write attempted either', async () => {
+    const database = new FakeDatabase();
+    const { refs } = watchWrites(database);
+
+    const result = await exportMatchesForUid({ database: asDatabase(database), uid: UID });
+
+    assertNoWrites(refs);
+    expect(result.matchCount).toBe(0);
+    expect(result.matches).toEqual([]);
+  });
+
+  it('exportedAt comes from the injected clock, never a bare Date.now() at call time', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      pushKey1: { fighter_id: 1, opponent_id: 8, time: 1_700_000_000_000, win: true },
+    });
+
+    const result = await exportMatchesForUid({
+      database: asDatabase(database),
+      uid: UID,
+      clock: () => 1_800_000_000_000,
+    });
+
+    expect(result.exportedAt).toBe(1_800_000_000_000);
+  });
+});
+
+describe('buildExportReceipt', () => {
+  it('produces a stable sha256 over the serialized matches and carries every required field', async () => {
+    const matches = [{ fighter_id: 1, opponent_id: 8, time: 1_700_000_000_000, win: true }];
+    const receipt = await buildExportReceipt({
+      uid: UID,
+      matchCount: matches.length,
+      matches,
+      exportedAt: 1_800_000_000_000,
+      databaseHost: 'smash-tracker-f97b7.firebaseio.com',
+    });
+
+    expect(receipt.uid).toBe(UID);
+    expect(receipt.matchCount).toBe(1);
+    expect(receipt.exportedAt).toBe(1_800_000_000_000);
+    expect(receipt.databaseHost).toBe('smash-tracker-f97b7.firebaseio.com');
+    expect(receipt.matchesSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(receipt.matches).toEqual(matches);
+
+    // Same input, same hash — the harness can confirm it is reading the file the owner produced.
+    const receiptAgain = await buildExportReceipt({
+      uid: UID,
+      matchCount: matches.length,
+      matches,
+      exportedAt: 1_800_000_000_000,
+      databaseHost: 'smash-tracker-f97b7.firebaseio.com',
+    });
+    expect(receiptAgain.matchesSha256).toBe(receipt.matchesSha256);
+
+    // A different payload produces a different hash.
+    const differentReceipt = await buildExportReceipt({
+      uid: UID,
+      matchCount: 0,
+      matches: [],
+      exportedAt: 1_800_000_000_000,
+      databaseHost: 'smash-tracker-f97b7.firebaseio.com',
+    });
+    expect(differentReceipt.matchesSha256).not.toBe(receipt.matchesSha256);
+  });
+});
+
+describe('parseSparg0ExportArgs', () => {
+  it('requires both --uid and --out', () => {
+    expect(() => parseSparg0ExportArgs([])).toThrow(/--uid is required/);
+    expect(() => parseSparg0ExportArgs(['--uid', UID])).toThrow(/--out is required/);
+  });
+
+  it('parses both flags into Sparg0ExportArgs', () => {
+    expect(parseSparg0ExportArgs(['--uid', UID, '--out', 'apps/api/sparg0-export.json'])).toEqual({
+      uid: UID,
+      outPath: 'apps/api/sparg0-export.json',
+    });
+  });
+
+  it('rejects an unknown flag rather than silently ignoring it', () => {
+    expect(() => parseSparg0ExportArgs(['--uid', UID, '--out', 'x.json', '--wat', 'y'])).toThrow(
+      /unknown flag: --wat/,
+    );
+  });
+
+  it('rejects a duplicate flag', () => {
+    expect(() =>
+      parseSparg0ExportArgs(['--uid', UID, '--uid', 'other', '--out', 'x.json']),
+    ).toThrow(/duplicate flag: --uid/);
+  });
+});
+
+describe('assertSafeSparg0ExportOutPath (WR-03/D-28)', () => {
+  const REPO_ROOT = '/repo';
+
+  it('refuses a path that traverses outside the repo root', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: '../x.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(UnsafeOutputPathError);
+  });
+
+  it('refuses a path that does not match the sparg0-export naming pattern', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/wrong-name.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+  });
+
+  // WR-04-i2: the wildcard segment must not cross a `/` — gitignore's `*`
+  // glob never crosses directory boundaries, so a nested path like this one
+  // is genuinely NOT covered by the .gitignore rule the docstring claims is
+  // "the exact glob", even though the pre-fix regex's `.*` wildcard matched
+  // it (relying entirely on `git check-ignore` to reject it in practice).
+  // Uses a real fixture directory (rather than the fake REPO_ROOT above) so
+  // the WR-03-i2 filesystem-safety check — which needs `sparg0-export-dir/`
+  // to genuinely exist — isn't what rejects this path; the pattern check
+  // must be the one doing the rejecting.
+  it('refuses a nested path even though it starts with the allowed filename prefix', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+    mkdirSync(path.join(root, 'apps', 'api', 'sparg0-export-dir'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export-dir/evil.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        }),
+      ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // WR-03-i2: the filesystem-target safety check (`lstat`/`realpath`) touches
+  // real disk, so these two tests (which exercise code past the pattern
+  // check) need a repo root that genuinely exists on disk — a fake `/repo`
+  // string now fails closed with a filesystem-resolution error first.
+  it('refuses a matching path that git reports as tracked (not ignored)', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => false,
+        }),
+      ).toThrow(/not confirmed ignored by git/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('allows the happy path: matching name, confirmed ignored', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        }),
+      ).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('happy path holds against the real repo .gitignore (no injected double)', () => {
+    // No `isGitIgnored` override — exercises the real `git check-ignore -q`
+    // against this repo's actual `.gitignore`, proving the D-28 rule is
+    // really in place, not just asserted by a test double.
+    const realRepoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/sparg0-export.json',
+        repoRoot: realRepoRoot,
+      }),
+    ).not.toThrow();
+  });
+
+  // Fix A regression: the owner's first live run of the sibling liq-spike
+  // probe validated the correct repo-root-relative resolution here, then
+  // separately called `writeFile(outPath, ...)` with the raw `--out`
+  // string — which `fs.writeFile` resolves against `process.cwd()`, not
+  // `repoRoot`. `pnpm --filter <pkg> exec` sets `cwd` to `apps/api/`, so
+  // that second resolution silently targeted a DIFFERENT, nonexistent path
+  // and the write failed with ENOENT after the run had already spent its
+  // request budget. `sparg0Export.ts`'s `main()` now writes to the value
+  // THIS function returns, never to a second resolution of `args.outPath`.
+  describe('write-target resolution (fix A regression)', () => {
+    it('resolves the write target from repoRoot, independent of process.cwd()', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+      const apiDir = path.join(root, 'apps', 'api');
+      mkdirSync(apiDir, { recursive: true });
+      const originalCwd = process.cwd();
+      try {
+        // Simulate `pnpm --filter @smash-tracker/api exec` setting cwd to
+        // apps/api/ — the exact condition under which a second, independent
+        // resolution of the same relative --out string diverged from the
+        // one validated here.
+        process.chdir(apiDir);
+        const resolved = assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(path.join(root, 'apps', 'api', 'sparg0-export.json'));
+      } finally {
+        process.chdir(originalCwd);
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('resolves an absolute --out inside apps/api/ to itself', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+      mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+      try {
+        const absoluteOut = path.join(root, 'apps', 'api', 'sparg0-export.json');
+        const resolved = assertSafeSparg0ExportOutPath({
+          outPath: absoluteOut,
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(absoluteOut);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+describe('assertSafeSparg0ExportInputPath (WR-05-i3: read-side symmetric guard)', () => {
+  const REPO_ROOT = '/repo';
+
+  it('refuses a path that traverses outside the repo root', () => {
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: '../../../etc/passwd',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(UnsafeOutputPathError);
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: '../../../etc/passwd',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/no path traversal outside the repo root/);
+  });
+
+  it('refuses a path that does not match the sparg0-export naming pattern', () => {
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: 'apps/api/wrong-name.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+  });
+
+  it('refuses a matching path that git reports as tracked (not ignored)', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => false,
+        }),
+      ).toThrow(/not confirmed ignored by git/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a matching, ignored path that already exists as a symlink (never follows it to read)', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      const outsideTarget = path.join(root, 'outside-target.json');
+      writeFileSync(outsideTarget, '{"matches":[]}');
+      const linkPath = path.join(root, 'apps', 'api', 'sparg0-export.json');
+      symlinkSync(outsideTarget, linkPath);
+
+      let called = false;
+      expect(() =>
+        assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => {
+            called = true;
+            return true;
+          },
+        }),
+      ).toThrow(/already exists as a symlink/);
+      // Fails closed before ever shelling out to git.
+      expect(called).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('allows the happy path: matching name, confirmed ignored, not a symlink', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      const filePath = path.join(root, 'apps', 'api', 'sparg0-export.json');
+      writeFileSync(filePath, '{"matches":[]}');
+      let resolved: string | undefined;
+      expect(() => {
+        resolved = assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+      }).not.toThrow();
+      expect(resolved).toBe(filePath);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('happy path holds against the real repo .gitignore (no injected double)', () => {
+    // No `isGitIgnored` override — exercises the real `git check-ignore -q`
+    // against this repo's actual `.gitignore`, mirroring the write side's
+    // identical real-gitignore proof.
+    const realRepoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: 'apps/api/sparg0-export.json',
+        repoRoot: realRepoRoot,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('assertNotEmulator', () => {
+  it('does nothing when no emulator host is set', () => {
+    expect(() => assertNotEmulator(undefined)).not.toThrow();
+  });
+
+  it('throws naming the emulator variable when FIREBASE_DATABASE_EMULATOR_HOST is set', () => {
+    expect(() => assertNotEmulator('127.0.0.1:9000')).toThrow(
+      /FIREBASE_DATABASE_EMULATOR_HOST is set \(127\.0\.0\.1:9000\)/,
+    );
+  });
+});

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { OnboardingIntent } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -87,28 +88,33 @@ function defaultProfile(
 
 function renderDashboard(initialEntry = '/dashboard') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <Routes>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-              {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror — the
-                  Dashboard's Add Match must stay VOD-optional there too. */}
-              <Route path="/coach/:clientId/dashboard" element={<DashboardPage />} />
-              {/* Phase 13 (ONBD-03): next-best-action area link targets. */}
-              <Route path="/welcome" element={<div>Welcome page</div>} />
-              <Route path="/coach" element={<div>Client Hub page</div>} />
-              <Route path="/fighter-analysis" element={<div>Fighter Analysis page</div>} />
-            </Routes>
+            {/* Plan 39.1-17: DashboardToolbar now renders HorizonSwitch, whose
+                disabled "lastEvent" option needs a TooltipProvider ancestor. */}
+            <TooltipProvider>
+              <Routes>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+                <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+                {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror — the
+                    Dashboard's Add Match must stay VOD-optional there too. */}
+                <Route path="/coach/:clientId/dashboard" element={<DashboardPage />} />
+                {/* Phase 13 (ONBD-03): next-best-action area link targets. */}
+                <Route path="/welcome" element={<div>Welcome page</div>} />
+                <Route path="/coach" element={<div>Client Hub page</div>} />
+                <Route path="/fighter-analysis" element={<div>Fighter Analysis page</div>} />
+              </Routes>
+            </TooltipProvider>
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 describe('DashboardPage', () => {
@@ -214,6 +220,146 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Form Curve')).toBeInTheDocument();
     expect(screen.getByText('Most-Played Stages')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
+  });
+
+  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's five cards
+  // render as `GridCell span={3}` — 4 per row at the widest breakpoint, the
+  // fifth wrapping to a second row LEFT-ALIGNED (never stretched to a
+  // sibling's height — `PageGrid`'s `items-start` is hardcoded, never a prop).
+  it('renders the hero row as five span-3 grid cells, the fifth wrapping left-aligned', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const heroCells = Array.from(container.querySelectorAll('[data-span="3"]'));
+    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating —
+    // exactly the hero row's five cards, no more.
+    expect(heroCells).toHaveLength(5);
+    for (const cell of heroCells) {
+      expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
+    }
+  });
+
+  it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const gridCells = Array.from(container.querySelectorAll('[data-span]'));
+    expect(gridCells.length).toBeGreaterThan(0);
+    for (const cell of gridCells) {
+      expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
+    }
+  });
+
+  // Plan 39.1-17 (UI-SPEC §10.4): DashboardToolbar (now carrying
+  // HorizonSwitch) is PageShell's filterRow — the one row above everything
+  // it scopes, so it renders exactly once and it precedes the page grid.
+  it('renders exactly one HorizonSwitch, ahead of the page grid', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+    const switches = container.querySelectorAll('[data-slot="horizon-switch"]');
+    expect(switches).toHaveLength(1);
+    const grid = container.querySelector('[data-slot="page-grid"]');
+    expect(grid).not.toBeNull();
+    // DOCUMENT_POSITION_FOLLOWING (4): the switch precedes the grid in the DOM.
+    expect(switches[0]!.compareDocumentPosition(grid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+  });
+
+  // 39.1-REVIEW iteration 2 CR-01: the page's HorizonSwitch must drive the
+  // page's OWN horizon. Before the fix, the switch and the page each held a
+  // separate `useHorizon()` record — a press re-highlighted the switch and
+  // wrote localStorage but the hero delta stayed on the old horizon until
+  // remount. Fixture: the newest 30 games (all losses, one a day) are the
+  // `last30` window; 10 older wins inside 90 days widen `last90` to 10–30;
+  // 60 wins from ~200 days ago keep both windows under the engine's 60%
+  // collapse ratio of the 70–30 all-time baseline, so the chip always shows.
+  describe('CR-01: pressing the HorizonSwitch updates the headline delta on the same page', () => {
+    const day = 24 * 60 * 60 * 1000;
+    function horizonFixture() {
+      const now = Date.now();
+      return [
+        ...Array.from({ length: 30 }, (_, i) => ({
+          id: `recent-loss-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (i + 1) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: false,
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          id: `older-win-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (40 + i) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })),
+        ...Array.from({ length: 60 }, (_, i) => ({
+          id: `ancient-win-${i}`,
+          fighter_id: mario.id,
+          opponent_id: 10,
+          time: now - (200 + i) * day,
+          map: { id: 1, name: 'Battlefield' },
+          opponent: 'rival',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })),
+      ];
+    }
+
+    function overallRecordChip(): HTMLElement {
+      return screen.getByLabelText(/^Overall Record, .* recent vs .* all time$/);
+    }
+
+    it.each([
+      ['personal', '/dashboard'],
+      ['coach-mounted', '/coach/tetra/dashboard'],
+    ])('%s: the Overall Record delta follows a switch press', async (_label, entry) => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonFixture());
+
+      const { container } = renderDashboard(entry);
+
+      await waitFor(() =>
+        expect(overallRecordChip()).toHaveAttribute(
+          'aria-label',
+          'Overall Record, 0–30 recent vs 70–30 all time',
+        ),
+      );
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      expect(container.querySelector('[data-slot="horizon-switch"]')).toHaveAttribute(
+        'data-horizon',
+        'last90',
+      );
+      await waitFor(() =>
+        expect(overallRecordChip()).toHaveAttribute(
+          'aria-label',
+          'Overall Record, 10–30 recent vs 70–30 all time',
+        ),
+      );
+    });
   });
 
   it('shows a no-matches empty state for a new user with fighters but no matches yet', async () => {
@@ -369,6 +515,80 @@ describe('DashboardPage', () => {
       await screen.findAllByText('Overall Record');
       await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
       expect(screen.queryByTestId('dashboard-next-best-action')).not.toBeInTheDocument();
+    });
+  });
+
+  // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('one loading pattern (UIX-07)', () => {
+    it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      const status = container.querySelector('[role="status"][aria-busy="true"]');
+      expect(status).not.toBeNull();
+      expect(status).toHaveTextContent('Loading your dashboard...');
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+      // The retired idiom is gone — no bare muted-text loading line anywhere.
+      expect(container.querySelector('div.text-muted-foreground')).toBeNull();
+    });
+
+    it('renders zero skeleton blocks once the dashboard has loaded', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+      expect(container.querySelector('[data-slot="dashboard-body"]')).not.toBeNull();
+    });
+
+    it('renders zero skeleton blocks in the empty (no-matches) state', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      expect(screen.getByText('No matches recorded yet.')).toBeInTheDocument();
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+    });
+
+    it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container, queryClient } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      let resolveSecondFetch: (value: unknown) => void = () => {};
+      listMatches.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSecondFetch = resolve;
+          }),
+      );
+
+      queryClient.invalidateQueries();
+
+      // opacity-60 is applied to the PageGrid itself, not the surrounding
+      // `data-slot="dashboard-body"` marker — that marker is a `display:
+      // contents` passthrough, which generates no box for `opacity` to
+      // apply to.
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).toMatch(/opacity-60/);
+      });
+      // Still holding the previous frame — no skeleton, previous content stays mounted.
+      expect(screen.getAllByText('Overall Record').length).toBeGreaterThan(0);
+      expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
+
+      resolveSecondFetch([]);
+      await waitFor(() => {
+        const grid = container.querySelector('[data-slot="page-grid"]');
+        expect(grid?.className).not.toMatch(/opacity-60/);
+      });
     });
   });
 });

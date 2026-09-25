@@ -107,9 +107,21 @@ describe('LikelyOpponentsCard', () => {
   });
 
   it('renders a curated opponent with matches showing character sprites, not the no-characters line', () => {
+    // Phase 36 (D-05/D-07): `byTheirFighter` is `rankMatchupsByEvidence`,
+    // whose default floor is now ABSTENTION_FLOOR_GAMES (3) — 3 matches
+    // against the same character clear the gate; a single match no longer
+    // would.
     const likelyOpponents: PrepPresenceMap = { alpha: true };
     const matches: Match[] = [
       makeMatch({ id: 'a1', time: NOW - DAY_MS, win: true, opponent: 'alpha', opponent_id: 1 }),
+      makeMatch({
+        id: 'a2',
+        time: NOW - DAY_MS + 1,
+        win: false,
+        opponent: 'alpha',
+        opponent_id: 1,
+      }),
+      makeMatch({ id: 'a3', time: NOW - DAY_MS + 2, win: true, opponent: 'alpha', opponent_id: 1 }),
     ];
     render(
       <LikelyOpponentsCard
