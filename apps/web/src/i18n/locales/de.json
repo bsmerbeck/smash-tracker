@@ -1577,7 +1577,24 @@
     "groupedBy": "Nach Spieler gruppiert, zuletzt gescoutete zuerst.",
     "olderReport": "Älterer Bericht",
     "hideOlder": "Ältere Berichte ausblenden",
-    "showOlder": "Ältere Berichte anzeigen"
+    "showOlder": "Ältere Berichte anzeigen",
+    "claimKind": {
+      "fact": "Fakt",
+      "inference": "Schlussfolgerung",
+      "recommendation": "Empfehlung"
+    },
+    "claimPredicate": {
+      "stageRecord": "Stage-Bilanz",
+      "stagePickRate": "Stage-Wahlquote",
+      "characterMatchupRecord": "Matchup-Bilanz",
+      "myCharacterRecord": "Charakter-Bilanz",
+      "headToHeadRecord": "Bilanz im Direktvergleich",
+      "recentForm": "Aktuelle Form",
+      "opponentCharacterUsage": "Charakterwahl des Gegners",
+      "matchupAdvisorPick": "Empfohlener Pick",
+      "vodAnnotation": "VOD-Momente",
+      "cohortDisclosure": "Session-Mix"
+    }
   },
   "groups": {
     "title": "Gruppen",

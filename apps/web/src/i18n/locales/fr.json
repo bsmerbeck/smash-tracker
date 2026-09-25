@@ -1577,7 +1577,24 @@
     "groupedBy": "Regroupés par joueur, du plus récemment analysé au plus ancien.",
     "olderReport": "Rapport plus ancien",
     "hideOlder": "Masquer les anciens rapports",
-    "showOlder": "Afficher les anciens rapports"
+    "showOlder": "Afficher les anciens rapports",
+    "claimKind": {
+      "fact": "Fait",
+      "inference": "Inférence",
+      "recommendation": "Recommandation"
+    },
+    "claimPredicate": {
+      "stageRecord": "Bilan sur le stage",
+      "stagePickRate": "Taux de choix du stage",
+      "characterMatchupRecord": "Bilan du matchup",
+      "myCharacterRecord": "Bilan du personnage",
+      "headToHeadRecord": "Bilan en face-à-face",
+      "recentForm": "Forme récente",
+      "opponentCharacterUsage": "Personnages joués par l’adversaire",
+      "matchupAdvisorPick": "Pick suggéré",
+      "vodAnnotation": "Moments de VOD",
+      "cohortDisclosure": "Répartition des sessions"
+    }
   },
   "groups": {
     "title": "Groupes",

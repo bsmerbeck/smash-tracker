@@ -1577,7 +1577,24 @@
     "groupedBy": "プレイヤーごとにグループ化し、最近スカウトした順に表示します。",
     "olderReport": "過去のレポート",
     "hideOlder": "過去のレポートを隠す",
-    "showOlder": "過去のレポートを表示"
+    "showOlder": "過去のレポートを表示",
+    "claimKind": {
+      "fact": "事実",
+      "inference": "推論",
+      "recommendation": "推奨"
+    },
+    "claimPredicate": {
+      "stageRecord": "ステージ別戦績",
+      "stagePickRate": "ステージ選択率",
+      "characterMatchupRecord": "キャラ対戦績",
+      "myCharacterRecord": "キャラ別戦績",
+      "headToHeadRecord": "直接対決の戦績",
+      "recentForm": "最近の調子",
+      "opponentCharacterUsage": "相手のキャラ使用率",
+      "matchupAdvisorPick": "おすすめピック",
+      "vodAnnotation": "VODの場面",
+      "cohortDisclosure": "セッション構成"
+    }
   },
   "groups": {
     "title": "グループ",

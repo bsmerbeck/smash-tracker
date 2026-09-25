@@ -1577,7 +1577,24 @@
     "groupedBy": "Agrupados por jogador, do scouting mais recente para o mais antigo.",
     "olderReport": "Relatório mais antigo",
     "hideOlder": "Ocultar relatórios antigos",
-    "showOlder": "Mostrar relatórios antigos"
+    "showOlder": "Mostrar relatórios antigos",
+    "claimKind": {
+      "fact": "Fato",
+      "inference": "Inferência",
+      "recommendation": "Recomendação"
+    },
+    "claimPredicate": {
+      "stageRecord": "Retrospecto no stage",
+      "stagePickRate": "Taxa de escolha do stage",
+      "characterMatchupRecord": "Retrospecto do confronto",
+      "myCharacterRecord": "Retrospecto do personagem",
+      "headToHeadRecord": "Retrospecto no confronto direto",
+      "recentForm": "Forma recente",
+      "opponentCharacterUsage": "Uso de personagens do adversário",
+      "matchupAdvisorPick": "Pick sugerido",
+      "vodAnnotation": "Momentos do VOD",
+      "cohortDisclosure": "Mistura de sessões"
+    }
   },
   "groups": {
     "title": "Grupos",
