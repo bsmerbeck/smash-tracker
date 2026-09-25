@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  claimAtomSchema,
+  evidenceSnapshotRecordSchema,
+  prepReportReasonSchema,
+  reportFailureReasonSchema,
+  reportValidationSchema,
+  storedScoutReportSchema,
   generatedPracticePlanSchema,
   generatedScoutReportSchema,
   generateReportRequestSchema,
@@ -587,5 +593,265 @@ describe('practicePlanResponseSchema', () => {
     });
     const result = practicePlanResponseSchema.safeParse({ plan: stored });
     expect(result.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06, D-08/RPT-10): the additive stored contracts.
+// ---------------------------------------------------------------------------
+
+const PERSISTED_SAMPLE = {
+  rawSampleSize: 12,
+  eligibleDenominator: 12,
+  knownFieldCoverage: 1,
+  dateRange: { firstMs: 1_700_000_000_000, lastMs: 1_700_000_600_000 },
+  refreshedAt: 1_700_000_900_000,
+  evidencePolicyVersion: 1,
+  recencyTreatment: 'unweighted' as const,
+  confidenceTier: 'medium' as const,
+};
+
+const PERSISTED_CLAIM = {
+  id: 'c01',
+  predicate: 'stage_record' as const,
+  subject: { myFighterId: 1, opponentFighterId: 8, stageId: 3, opponentTag: 'Rival' },
+  value: { kind: 'record' as const, wins: 4, losses: 8, games: 12 },
+  claimKind: 'fact' as const,
+  evidenceIds: ['sr-f1-g8-s3'],
+  tier: 'medium' as const,
+  policyVersion: 1,
+  sample: PERSISTED_SAMPLE,
+};
+
+const SNAPSHOT_RECORD = {
+  policyVersion: 1,
+  claimSchemaVersion: 1,
+  refreshedAt: 1_700_000_900_000,
+  cohort: {
+    online: 0,
+    offline: 12,
+    unspecified: 0,
+    manual: 12,
+    startgg: 0,
+    parrygg: 0,
+    mixedContext: false,
+    minorityShare: 0,
+    minorityLabel: 'offline',
+    majorityLabel: 'offline',
+  },
+  rows: {
+    'sr-f1-g8-s3': {
+      predicate: 'stage_record' as const,
+      subject: { myFighterId: 1, opponentFighterId: 8, stageId: 3 },
+      value: { kind: 'record' as const, wins: 4, losses: 8, games: 12 },
+      sample: PERSISTED_SAMPLE,
+    },
+  },
+  matchIdDigest: { count: 12, hash: 'fixture-digest' },
+};
+
+/** Returns a deep copy of `value` with the member at `path` deleted — the RTDB-vanished form of that member. */
+function without(value: unknown, path: readonly string[]): unknown {
+  const copy = JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  let node = copy;
+  for (const segment of path.slice(0, -1)) {
+    node = node[segment] as Record<string, unknown>;
+  }
+  delete node[path[path.length - 1]!];
+  return copy;
+}
+
+describe('reportJobSchema.failureReason (Phase 39 — never the job-kind `reason`)', () => {
+  const BASE_JOB = {
+    status: 'refunded',
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_100,
+    attempt: 0,
+    creditRef: 'job-abc-123',
+  };
+
+  it('round-trips with and without failureReason', () => {
+    expect(reportJobSchema.parse(BASE_JOB)).not.toHaveProperty('failureReason');
+    for (const failureReason of reportFailureReasonSchema.options) {
+      expect(reportJobSchema.parse({ ...BASE_JOB, failureReason }).failureReason).toBe(
+        failureReason,
+      );
+    }
+  });
+
+  it('carries the job KIND and the failure CAUSE independently on one record', () => {
+    const parsed = reportJobSchema.parse({
+      ...BASE_JOB,
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    expect(parsed.reason).toBe('prep_report');
+    expect(parsed.failureReason).toBe('validation');
+  });
+
+  it("the job-kind enum is untouched: 'validation' is not a reason and a failure cause is not a kind", () => {
+    expect(prepReportReasonSchema.options).toEqual([
+      'prep_report',
+      'prep_bundle',
+      'post_event_synthesis',
+    ]);
+    expect(reportJobSchema.safeParse({ ...BASE_JOB, reason: 'validation' }).success).toBe(false);
+    expect(reportJobSchema.safeParse({ ...BASE_JOB, failureReason: 'prep_report' }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('storedScoutReportSchema — Phase 39 additive fields (RPT-10: absence means legacy)', () => {
+  const CLAIMS_ERA = {
+    ...RTDB_STRIPPED_REPORT,
+    claimSchemaVersion: 1,
+    validation: {
+      status: 'passed',
+      policyVersion: 1,
+      snapshotId: 'a'.repeat(64),
+      claimSchemaVersion: 1,
+    },
+    claims: { c01: PERSISTED_CLAIM },
+    sections: {
+      overview: { claimIds: ['c01'], connective: 'Stay patient.' },
+      gameplan: { connective: '' },
+    },
+    actions: { action1: { actionId: 'a01', claimId: 'c01' }, action3: { actionId: 'a02' } },
+    droppedClaimCount: 1,
+    strippedSectionCount: 1,
+  };
+
+  it('a stored report with NONE of the new fields still parses (the legacy tolerant read)', () => {
+    const parsed = storedScoutReportSchema.parse(RTDB_STRIPPED_REPORT);
+    for (const field of [
+      'claimSchemaVersion',
+      'validation',
+      'claims',
+      'sections',
+      'actions',
+      'droppedClaimCount',
+      'strippedSectionCount',
+    ]) {
+      expect(parsed).not.toHaveProperty(field);
+    }
+  });
+
+  it('a claims-era record parses, with an absent section claimIds list read back as []', () => {
+    const parsed = storedScoutReportSchema.parse(CLAIMS_ERA);
+    expect(parsed.sections?.gameplan).toEqual({ claimIds: [], connective: '' });
+    expect(parsed.actions).toEqual({
+      action1: { actionId: 'a01', claimId: 'c01' },
+      action3: { actionId: 'a02' },
+    });
+  });
+
+  it('omitting each new keyed map in turn still parses (C1-H5)', () => {
+    for (const field of ['claims', 'sections', 'actions', 'validation', 'claimSchemaVersion']) {
+      expect(storedScoutReportSchema.safeParse(without(CLAIMS_ERA, [field])).success).toBe(true);
+    }
+  });
+
+  it('strippedSectionCount parses present, absent, and as the no-key result of a zero-count conditional spread (C3-M1)', () => {
+    const zero = 0;
+    const written = {
+      ...RTDB_STRIPPED_REPORT,
+      ...(zero > 0 ? { strippedSectionCount: zero } : {}),
+    };
+    expect(written).not.toHaveProperty('strippedSectionCount');
+    expect(storedScoutReportSchema.safeParse(written).success).toBe(true);
+    expect(storedScoutReportSchema.parse(CLAIMS_ERA).strippedSectionCount).toBe(1);
+    expect(
+      storedScoutReportSchema.safeParse({ ...RTDB_STRIPPED_REPORT, strippedSectionCount: -1 })
+        .success,
+    ).toBe(false);
+  });
+
+  it('storedPracticePlanSchema carries the same strippedSectionCount and claim maps', () => {
+    const plan = {
+      entryKey: 'evo-2026-ult',
+      createdAt: 1,
+      summary: 'Plan.',
+      strippedSectionCount: 2,
+      claims: { c01: PERSISTED_CLAIM },
+    };
+    expect(storedPracticePlanSchema.parse(plan).strippedSectionCount).toBe(2);
+    expect(
+      storedPracticePlanSchema.safeParse(without(plan, ['strippedSectionCount'])).success,
+    ).toBe(true);
+  });
+
+  it('the validation block requires status passed', () => {
+    expect(
+      reportValidationSchema.safeParse({
+        status: 'failed',
+        policyVersion: 1,
+        snapshotId: 'x',
+        claimSchemaVersion: 1,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('claimAtomSchema / evidenceSnapshotRecordSchema — .nullish() at EVERY level that can vanish (C2-H1)', () => {
+  it('parses the full shape', () => {
+    expect(claimAtomSchema.safeParse(PERSISTED_CLAIM).success).toBe(true);
+    expect(evidenceSnapshotRecordSchema.safeParse(SNAPSHOT_RECORD).success).toBe(true);
+  });
+
+  it('omitting subject, each subject axis, tier, sample.dateRange and sample.confidenceTier in turn still parses (claim)', () => {
+    const paths = [
+      ['subject'],
+      ['subject', 'myFighterId'],
+      ['subject', 'opponentFighterId'],
+      ['subject', 'stageId'],
+      ['subject', 'opponentTag'],
+      ['tier'],
+      ['sample', 'dateRange'],
+      ['sample', 'confidenceTier'],
+    ];
+    for (const path of paths) {
+      expect(claimAtomSchema.safeParse(without(PERSISTED_CLAIM, path)).success).toBe(true);
+    }
+  });
+
+  it('an all-null subject read back ABSENT (not null-valued) parses on both a claim and a snapshot row', () => {
+    const axisFreeClaim = without(
+      { ...PERSISTED_CLAIM, predicate: 'recent_form', evidenceIds: ['rf-all'] },
+      ['subject'],
+    );
+    expect(claimAtomSchema.safeParse(axisFreeClaim).success).toBe(true);
+    const axisFreeSnapshot = without(SNAPSHOT_RECORD, ['rows', 'sr-f1-g8-s3', 'subject']);
+    expect(evidenceSnapshotRecordSchema.safeParse(axisFreeSnapshot).success).toBe(true);
+  });
+
+  it('omitting rows, each row subject axis, the cohort labels, dateRange and confidenceTier in turn still parses (snapshot)', () => {
+    const paths = [
+      ['rows'],
+      ['rows', 'sr-f1-g8-s3', 'subject', 'myFighterId'],
+      ['rows', 'sr-f1-g8-s3', 'subject', 'opponentFighterId'],
+      ['rows', 'sr-f1-g8-s3', 'subject', 'stageId'],
+      ['rows', 'sr-f1-g8-s3', 'sample', 'dateRange'],
+      ['rows', 'sr-f1-g8-s3', 'sample', 'confidenceTier'],
+      ['cohort', 'minorityLabel'],
+      ['cohort', 'majorityLabel'],
+    ];
+    for (const path of paths) {
+      expect(evidenceSnapshotRecordSchema.safeParse(without(SNAPSHOT_RECORD, path)).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it('an absent evidenceIds list (RTDB-dropped empty array) reads back as []', () => {
+    expect(claimAtomSchema.parse(without(PERSISTED_CLAIM, ['evidenceIds'])).evidenceIds).toEqual(
+      [],
+    );
+  });
+
+  it('FALSIFIER: a member that can NOT vanish is still required (value, sample, predicate)', () => {
+    for (const path of [['value'], ['sample'], ['predicate'], ['sample', 'eligibleDenominator']]) {
+      expect(claimAtomSchema.safeParse(without(PERSISTED_CLAIM, path)).success).toBe(false);
+    }
   });
 });

@@ -87,6 +87,24 @@ export const EVENT_CATALOG = {
   report_started: 'B',
   report_completed: 'B',
   report_failed: 'B',
+  // Phase 39 (plan 39-06, D-07/D-20): report-validation occurrence events,
+  // emitted by plans 39-07/39-08. `report_failed_validation` fires when a job
+  // fails the validator (or the D-21 fail-fast); `report_claims_dropped` when
+  // a delivered report lost claims; `report_prose_stripped` when a delivered
+  // report lost section prose (review C3-M1). NONE belongs in
+  // `RECONCILED_EVENT_NAMES` (apps/api/src/jobs/reconcile.ts): they have no
+  // durable domain mirror, so reconciling them would manufacture permanent
+  // missing/phantom exceptions. The stripped signal is a THIRD name rather
+  // than a key on `report_completed` because that envelope's payload is
+  // pinned by exact-key assertions (`Object.keys(payload)` toEqual
+  // `['reason']` in routes/reports.test.ts and routes/reportsSynthesis.test.ts);
+  // a separate occurrence event keeps the shipped envelope byte-unchanged.
+  // All three are deliberately absent from `GA4_PAYLOAD_ALLOWLIST`
+  // (apps/api/src/events/ga4Project.ts) — no GA4 projection, the Phase 23
+  // precedent.
+  report_failed_validation: 'B',
+  report_claims_dropped: 'B',
+  report_prose_stripped: 'B',
   share_view_loaded: 'X',
   signup_cta_clicked: 'X',
   // Phase 11 (TEN-01/PAR-02): coaching_client_selected is deliberately NOT

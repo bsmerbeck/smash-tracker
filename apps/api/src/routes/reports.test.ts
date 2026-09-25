@@ -22,6 +22,7 @@ import {
   viableParryMatchesList,
 } from '../test-support/viableEvidenceFixture.js';
 import {
+  CLAIM_SCHEMA_VERSION,
   MIN_VIABLE_CLAIMS,
   validateReportOutput,
   type ReportSurface,
@@ -4096,9 +4097,21 @@ describe('C3-B1 viable-evidence fixture: locked-block reachability and original-
     it(`${shape} shape: projectScoutSelection re-derives STORED_VALID_REPORT, and the validator passes the selection with nothing dropped or stripped`, async () => {
       const payload = await assembleShape(shape);
       const claims = payload.claimSet.claims;
-      expect(projectScoutSelection({ selection: VALID_REPORT, claims })).toEqual(
-        STORED_VALID_REPORT,
-      );
+      const {
+        claimSchemaVersion,
+        claims: storedClaims,
+        sections,
+        actions,
+        ...legacyFields
+      } = projectScoutSelection({ selection: VALID_REPORT, claims });
+      // The legacy fields are EXACTLY the module-level stored fixture...
+      expect(legacyFields).toEqual(STORED_VALID_REPORT);
+      // ...and the additive claim fields carry the issued claims and the
+      // selection's sections (no action was selected, so no actions map).
+      expect(claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
+      expect(Object.keys(storedClaims ?? {})).toEqual(claims.map((claim) => claim.id));
+      expect(Object.keys(sections ?? {})).toEqual(['overview', 'gameplan', 'watchFor']);
+      expect(actions).toBeUndefined();
       const outcome = validateReportOutput({
         snapshot: payload.snapshot,
         issuedClaims: claims,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CLAIM_PREDICATES } from './evidence/claims.js';
 import { entryKeyInputSchema } from './prep.js';
 import {
   combineWithLookupSchema,
@@ -61,6 +62,176 @@ export const generatedScoutReportSchema = z.object({
 });
 export type GeneratedScoutReport = z.infer<typeof generatedScoutReportSchema>;
 
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06, D-08/RPT-10): the PERSISTED claim contracts.
+//
+// Every field below is ADDITIVE and `.nullish()` on the stored records:
+// ABSENCE means a legacy/unvalidated record — there is no backfill, no
+// migration and no `createdAt` cutoff anywhere in the read path.
+//
+// RTDB write semantics these shapes are built for (reviews C1-H5 + C2-H1):
+// RTDB deletes a null-valued member FIRST, the empty object that deletion
+// leaves behind is then deleted too, cascading upward to the first non-empty
+// parent; an empty array or `{}` written directly is deleted the same way;
+// and an array carrying a `null` member reads back sparse/short. So:
+// - every collection is a KEYED MAP, never a positional array of nullable
+//   members;
+// - `.nullish()` (or a `.default`) reaches EVERY level that can vanish — not
+//   only the four top-level maps (`claims`, `sections`, `actions`, `rows`),
+//   but `subject` itself and each axis inside it: a `recent_form` or
+//   `cohort_disclosure` claim carries all four axes `null`, RTDB deletes all
+//   four keys, then deletes `subject`;
+// - a required `z.record(...)` would fail its own schema on the cold-start
+//   state (an empty map reads back ABSENT) — the empty-OBJECT sibling of the
+//   2026-08-03 empty-ARRAY incident `storedScoutReportSchema` records below.
+// ---------------------------------------------------------------------------
+
+const confidenceTierRecordSchema = z.enum(['low', 'medium', 'high']);
+
+/** The persisted `SampleMeta` (`evidence/types.ts`). `dateRange`/`confidenceTier` are `null` on an empty or sub-floor sample, so both are `.nullish()`; every other member is a number or literal RTDB keeps. */
+const sampleMetaRecordSchema = z.object({
+  rawSampleSize: z.number().int().nonnegative(),
+  eligibleDenominator: z.number().int().nonnegative(),
+  knownFieldCoverage: z.number(),
+  dateRange: z.object({ firstMs: z.number(), lastMs: z.number() }).nullish(),
+  refreshedAt: z.number(),
+  evidencePolicyVersion: z.number().int(),
+  recencyTreatment: z.literal('unweighted'),
+  confidenceTier: confidenceTierRecordSchema.nullish(),
+});
+
+/** The persisted `ClaimSubject` — every axis `.nullish()`, and the whole object `.nullish()` wherever it is used (an axis-free subject vanishes entirely on write). */
+export const claimSubjectRecordSchema = z.object({
+  myFighterId: z.number().int().nullish(),
+  opponentFighterId: z.number().int().nullish(),
+  stageId: z.number().int().nullish(),
+  opponentTag: z.string().nullish(),
+});
+
+/** The persisted `ClaimValue` — the five closed arms, none of which carries a nullable member. */
+const claimValueRecordSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('record'),
+    wins: z.number().int(),
+    losses: z.number().int(),
+    games: z.number().int(),
+  }),
+  z.object({ kind: z.literal('rate'), numerator: z.number().int(), denominator: z.number().int() }),
+  z.object({ kind: z.literal('count'), count: z.number().int() }),
+  z.object({ kind: z.literal('entity'), entityKind: z.string(), entityId: z.string() }),
+  z.object({ kind: z.literal('abstained'), gamesNeeded: z.number().int() }),
+]);
+
+/**
+ * The persisted mirror of the shared `ClaimAtom` (`evidence/claims.ts`).
+ * `evidenceIds` is an array of non-empty STRINGS (safe — it is arrays of
+ * NULLABLE members RTDB shreds) with a `[]` default for the same empty-array
+ * reason every stored array here has one. `subject` is `.nullish()` as a
+ * WHOLE (review C2-H1), `tier` is `null` on an abstained claim.
+ */
+export const claimAtomSchema = z.object({
+  id: z.string().min(1),
+  predicate: z.enum(CLAIM_PREDICATES),
+  subject: claimSubjectRecordSchema.nullish(),
+  value: claimValueRecordSchema,
+  claimKind: z.enum(['fact', 'inference', 'recommendation']),
+  evidenceIds: z.array(z.string().min(1)).default([]),
+  tier: confidenceTierRecordSchema.nullish(),
+  policyVersion: z.number().int(),
+  sample: sampleMetaRecordSchema,
+});
+export type ClaimAtomRecord = z.infer<typeof claimAtomSchema>;
+
+/** One persisted evidence row (`EvidenceRow`, `evidence/snapshot.ts`) — the same vanishing rules as a claim's subject. */
+export const evidenceRowRecordSchema = z.object({
+  predicate: z.enum(CLAIM_PREDICATES),
+  subject: claimSubjectRecordSchema.nullish(),
+  value: claimValueRecordSchema,
+  sample: sampleMetaRecordSchema,
+});
+
+/** The persisted `CohortComposition` (`evidence/cohort.ts`) — the two labels are `null` on a single-bucket or empty sample. */
+const cohortRecordSchema = z.object({
+  online: z.number().int(),
+  offline: z.number().int(),
+  unspecified: z.number().int(),
+  manual: z.number().int(),
+  startgg: z.number().int(),
+  parrygg: z.number().int(),
+  mixedContext: z.boolean(),
+  minorityShare: z.number(),
+  minorityLabel: z.string().nullish(),
+  majorityLabel: z.string().nullish(),
+});
+
+/**
+ * `evidenceSnapshots/{uid}/{snapshotId}` (D-05; written create-if-absent by
+ * plan 39-07, content-addressed by the API's `snapshotIdFor`). `rows` is a
+ * keyed map and is `.nullish()`: a snapshot over an EMPTY evidence set is an
+ * expected state, not an error, and RTDB deletes a `{}` it is written as.
+ * `createdAt` is the write time a writer may add; `refreshedAt` mirrors the
+ * in-memory `EvidenceSnapshot`.
+ */
+export const evidenceSnapshotRecordSchema = z.object({
+  policyVersion: z.number().int(),
+  claimSchemaVersion: z.number().int(),
+  refreshedAt: z.number(),
+  createdAt: z.number().int().nonnegative().nullish(),
+  cohort: cohortRecordSchema,
+  rows: z.record(z.string(), evidenceRowRecordSchema).nullish(),
+  matchIdDigest: z.object({ count: z.number().int().nonnegative(), hash: z.string() }),
+});
+export type EvidenceSnapshotRecord = z.infer<typeof evidenceSnapshotRecordSchema>;
+
+/** The stored validation block (D-08): present only on a record that PASSED validation; absent means unvalidated/legacy. */
+export const reportValidationSchema = z.object({
+  status: z.literal('passed'),
+  policyVersion: z.number().int(),
+  snapshotId: z.string(),
+  claimSchemaVersion: z.number().int(),
+});
+
+/** One stored report section: the ordered claim ids it references and its connective prose (`''` when the validator stripped it). `claimIds` defaults to `[]` — an empty list vanishes on write. */
+export const storedReportSectionSchema = z.object({
+  claimIds: z.array(z.string()).default([]),
+  connective: z.string(),
+});
+
+/** The three fixed D-12 action slot names — the only keys the stored `actions` map may carry. */
+export const ACTION_SLOT_KEYS = ['action1', 'action2', 'action3'] as const;
+
+/** One stored action slot — mirrors the model selection's `{ actionId, claimId }`. */
+export const storedActionSlotSchema = z.object({
+  actionId: z.string().min(1),
+  claimId: z.string().nullish(),
+});
+
+/**
+ * The Phase 39 additive fields shared by BOTH stored report schemas. Every
+ * one is `.nullish()`: written by conditional spread, never as an explicit
+ * null, and absent on every legacy record.
+ */
+const claimRecordFields = {
+  claimSchemaVersion: z.number().int().nullish(),
+  validation: reportValidationSchema.nullish(),
+  /** Keyed map claim id -> claim atom. `.nullish()` — a cold-start `{}` reads back ABSENT (C1-H5). */
+  claims: z.record(z.string(), claimAtomSchema).nullish(),
+  /** Keyed map section name -> `{ claimIds, connective }` — what plan 39-09 renders claim-anchored bullets from. */
+  sections: z.record(z.string(), storedReportSectionSchema).nullish(),
+  /** Keyed slot map (`action1`/`action2`/`action3`): a slot the model left empty simply has no key, never a shredded positional null. */
+  actions: z.partialRecord(z.enum(ACTION_SLOT_KEYS), storedActionSlotSchema).nullish(),
+  /**
+   * D-20 / review C3-M1: how many sections' prose the validator STRIPPED.
+   * Persisted because a prose fault strips a section without dropping a
+   * claim (plan 39-04's penalty decoupling), so `droppedClaimCount` stays
+   * zero and `report_claims_dropped` never fires for it — without this
+   * field systematic prose stripping is invisible at every rate. Derived
+   * from the validator outcome's `strippedSectionIds.length`; absent means
+   * zero (never written as an explicit `0`).
+   */
+  strippedSectionCount: z.number().int().nonnegative().nullish(),
+};
+
 /**
  * Stored-record variant of the generated report — differs from
  * `generatedScoutReportSchema` in two absence-tolerances, both required for
@@ -109,6 +280,9 @@ export const storedScoutReportSchema = generatedScoutReportSchema
       picks: z.array(z.string()).default([]),
       reasoning: z.string(),
     }),
+    /** Count of claims the validator dropped, if any (plan 39-07) — the same definition the practice plan carries. */
+    droppedClaimCount: z.number().int().nonnegative().nullish(),
+    ...claimRecordFields,
   });
 export type StoredScoutReport = z.infer<typeof storedScoutReportSchema>;
 
@@ -385,6 +559,15 @@ export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
  * stuck-job sweep, a later plan, is the one other writer, and it only acts
  * on jobs that have gone stale, never racing a live in-flight request).
  */
+/** Phase 39 (plan 39-06): why a report job failed — the four causes, `'validation'` being D-07's new one. */
+export const reportFailureReasonSchema = z.enum([
+  'refusal',
+  'truncated',
+  'unparseable',
+  'validation',
+]);
+export type ReportFailureReason = z.infer<typeof reportFailureReasonSchema>;
+
 export const reportJobStatusSchema = z.enum([
   'queued',
   'running',
@@ -414,6 +597,13 @@ export const reportJobSchema = z.object({
    * Disclosure mitigation).
    */
   reason: prepReportReasonSchema.nullish(),
+  // TRAP (39-RESEARCH Pitfall 1): `failureReason` is NOT `reason` above —
+  // `reason` is the job KIND (consumed by bundle-slot detection and the
+  // synthesis retry window) and must never gain a failure-cause member — and
+  // it is NOT `ReportGenerationError`'s constructor argument either. It is
+  // the WHY of a failed/refunded job, `.nullish()` because it is a stored
+  // field written by conditional spread (plan 39-07).
+  failureReason: reportFailureReasonSchema.nullish(),
 });
 export type ReportJob = z.infer<typeof reportJobSchema>;
 
@@ -514,6 +704,7 @@ export const storedPracticePlanSchema = z.object({
     .default([]),
   /** Count of focusAreas dropped by 28-06's citation validation, if any. */
   droppedClaimCount: z.number().int().nonnegative().nullish(),
+  ...claimRecordFields,
 });
 export type StoredPracticePlan = z.infer<typeof storedPracticePlanSchema>;
 

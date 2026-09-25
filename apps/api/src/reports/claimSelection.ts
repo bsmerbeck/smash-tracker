@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import {
   ACTION_ID_VOCABULARY,
+  ACTION_SLOT_KEYS,
   CLAIM_ID_VOCABULARY,
+  CLAIM_SCHEMA_VERSION,
   resolveSubjectDisplayName,
   type ClaimAtom,
+  type ClaimAtomRecord,
+  type ClaimSubject,
   type ReportSelectionOutput,
   type StoredScoutReport,
 } from '@smash-tracker/shared';
@@ -194,6 +198,8 @@ export function projectScoutSelection(input: ProjectScoutSelectionInput): Stored
   const gameplan = proseOf('gameplan');
   const watchFor = proseOf('watchFor');
 
+  const actions = persistActions(selection);
+
   return {
     overview: overview ?? '',
     gameplan: gameplan === null ? [] : [gameplan],
@@ -204,5 +210,99 @@ export function projectScoutSelection(input: ProjectScoutSelectionInput): Stored
       reasoning: gameplan ?? '',
     },
     confidenceNotes: '',
+    // Phase 39 additive fields (D-08) — each by CONDITIONAL SPREAD, never an
+    // explicit null, so the written shape IS the read-back shape.
+    claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    ...(claims.length > 0
+      ? { claims: Object.fromEntries(claims.map((claim) => [claim.id, persistClaim(claim)])) }
+      : {}),
+    sections: Object.fromEntries(
+      CLAIM_SELECTION_SECTION_IDS.map((sectionId) => [
+        sectionId,
+        persistSection(selection.sections[sectionId], proseOf(sectionId)),
+      ]),
+    ),
+    ...(actions ? { actions } : {}),
+    ...(stripped.size > 0 ? { strippedSectionCount: stripped.size } : {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Persisted-form converters (reviews C1-H5 + C2-H1): typed conditional
+// spreads that drop every `null` member and every member that would vanish,
+// so what `ref.set` writes is exactly what RTDB hands back — and TOTAL (a
+// generic normaliser that could throw has no place on the store step, which
+// runs after the credit is spent). `snapshotId.test.ts` asserts these fields
+// are a fixed point of `normalizeRtdbWriteShape`.
+// ---------------------------------------------------------------------------
+
+type PersistedClaim = ClaimAtomRecord;
+type PersistedSubject = NonNullable<PersistedClaim['subject']>;
+
+function persistSubject(subject: ClaimSubject): PersistedSubject | null {
+  const persisted: PersistedSubject = {
+    ...(subject.myFighterId !== null ? { myFighterId: subject.myFighterId } : {}),
+    ...(subject.opponentFighterId !== null ? { opponentFighterId: subject.opponentFighterId } : {}),
+    ...(subject.stageId !== null ? { stageId: subject.stageId } : {}),
+    ...(subject.opponentTag !== null ? { opponentTag: subject.opponentTag } : {}),
+  };
+  return Object.keys(persisted).length > 0 ? persisted : null;
+}
+
+function persistClaim(claim: ClaimAtom): PersistedClaim {
+  const subject = persistSubject(claim.subject);
+  const { dateRange, confidenceTier, ...sampleRest } = claim.sample;
+  return {
+    id: claim.id,
+    predicate: claim.predicate,
+    ...(subject ? { subject } : {}),
+    value: claim.value,
+    claimKind: claim.claimKind,
+    evidenceIds: [...claim.evidenceIds],
+    ...(claim.tier !== null ? { tier: claim.tier } : {}),
+    policyVersion: claim.policyVersion,
+    sample: {
+      ...sampleRest,
+      ...(dateRange !== null ? { dateRange } : {}),
+      ...(confidenceTier !== null ? { confidenceTier } : {}),
+    },
+  };
+}
+
+function persistSection(
+  section: ClaimSelection['sections'][ClaimSelectionSectionId],
+  prose: string | null,
+): { claimIds: string[]; connective: string } {
+  // An empty `claimIds` list is OMITTED on write (RTDB would drop it). The
+  // cast is only because the stored schema's OUTPUT type makes `claimIds`
+  // required — it defaults to `[]` when the key is absent on read.
+  return {
+    ...(section.claimIds.length > 0 ? { claimIds: [...section.claimIds] } : {}),
+    connective: prose ?? '',
+  } as { claimIds: string[]; connective: string };
+}
+
+function persistActions(
+  selection: ClaimSelection,
+): Partial<
+  Record<(typeof ACTION_SLOT_KEYS)[number], { actionId: string; claimId?: string }>
+> | null {
+  const slots = Object.fromEntries(
+    ACTION_SLOT_KEYS.flatMap((slot) => {
+      const action = selection[slot];
+      if (action === null) {
+        return [];
+      }
+      return [
+        [
+          slot,
+          {
+            actionId: action.actionId,
+            ...(action.claimId !== null ? { claimId: action.claimId } : {}),
+          },
+        ],
+      ];
+    }),
+  );
+  return Object.keys(slots).length > 0 ? slots : null;
 }
