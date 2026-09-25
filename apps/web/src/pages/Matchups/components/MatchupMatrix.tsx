@@ -80,7 +80,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
           <p className="text-sm text-muted-foreground">{t('matchups.matrix.empty')}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="mx-auto w-max border-separate border-spacing-0 text-sm">
+            {/* Plan 39.1-31 (item 4): no `mx-auto` — the table starts at the
+                card's own content edge like every other card body, instead
+                of auto-centering inside the full-width card. */}
+            <table className="w-max border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   <th className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left align-bottom">
@@ -157,7 +160,7 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                                   losses: cell.losses,
                                 })}
                                 title={`${cell.wins}-${cell.losses} ${t('common.rateOverSample', { rate: cell.winRate, total: cell.total })}`}
-                                className="flex size-14 items-center justify-center rounded font-medium text-white transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                className="flex size-14 items-center justify-center rounded font-medium text-foreground transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                                 style={{
                                   backgroundColor: matchupCellBackground(
                                     cell.total > 0 ? cell.wins / cell.total : 0,

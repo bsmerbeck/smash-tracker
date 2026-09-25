@@ -162,6 +162,19 @@ describe('MatchupMatrix', () => {
     );
   });
 
+  it('starts at the card content edge (no auto-centering) and renders every cell button in the foreground text token (39.1-31, item 4)', () => {
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
+
+    // `renderMatrix` (this file's own helper) doesn't return `container` —
+    // `screen` is document-bound and finds the table the same way.
+    const table = screen.getByRole('table');
+    expect(table.className).not.toMatch(/\bmx-auto\b/);
+
+    const cell = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` });
+    expect(cell.className).toMatch(/\btext-foreground\b/);
+    expect(cell.className).not.toMatch(/\btext-white\b/);
+  });
+
   it('under a coach route, clicking a cell navigates to the coach-prefixed Matchups destination', async () => {
     const user = userEvent.setup();
     mockNavigate.mockClear();

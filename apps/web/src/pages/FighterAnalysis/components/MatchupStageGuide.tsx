@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { LIST_CAP } from '@/components/analytics/BoundedList';
 import { buildStageEvidence, getMatchupStageGuide, type StageRecord } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
@@ -108,6 +109,9 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
   const [threshold, setThreshold] = useMinStageMatches();
+  // IN-06 (39.1-REVIEW iteration 2): associates the visible caption with the
+  // select trigger — the Matchups page's WR-05 pattern (label-in-name).
+  const minMatchesSelectId = useId();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
@@ -139,9 +143,12 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
           <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('matchups.insights.minMatches')}</span>
+          <Label htmlFor={minMatchesSelectId} className="text-sm text-muted-foreground">
+            {t('matchups.insights.minMatches')}
+          </Label>
           <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-            <SelectTrigger className="w-[72px]" aria-label={t('matchups.insights.minMatchesAria')}>
+            {/* Named by the visible <Label htmlFor> above — no aria-label override. */}
+            <SelectTrigger id={minMatchesSelectId} className="w-[72px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

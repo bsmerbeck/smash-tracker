@@ -523,10 +523,32 @@ describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () =
     expect(link.getAttribute('href')).toContain('vid-3');
   });
 
-  it('scroll-cap parity: the stacked list renders inside the shared max-height scroll wrapper', () => {
+  /**
+   * Plan 39.1-32 (item 13, UI-SPEC §6.4 exemption 2 narrowed to the table
+   * layout only): supersedes the Phase 38-08 "scroll-cap parity" case above,
+   * which pinned the stacked layout INSIDE the shared `max-h-[500px]
+   * overflow-y-auto` wrapper. That exemption existed because Phase 38's list
+   * was unbounded; plan 39.1-28 now bounds every DOM pass at
+   * `FILTERED_MATCH_LIST_ROW_CAP` rows + "Show 50 more" paging, so the
+   * stacked (phone) layout drops the inner scroller and flows in the page —
+   * the table layout keeps the grandfathered wrapper (next case).
+   */
+  it('stacked layout: no ancestor between the root and the list carries a max-height or overflow-y utility (item 13)', () => {
     const { container } = renderList({ matches: [makeMatch()], layout: 'stack' });
-    const stack = container.querySelector('[data-slot="filtered-match-stack"]');
-    expect(stack?.closest('.max-h-\\[500px\\]')).not.toBeNull();
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(stack).not.toBeNull();
+    let node: HTMLElement | null = stack.parentElement;
+    while (node && node !== container) {
+      expect(node.className).not.toMatch(/max-h-|overflow-y-auto|overflow-y-scroll/);
+      node = node.parentElement;
+    }
+  });
+
+  it('table layout: the wrapper around the table still carries the grandfathered 500px scroll box (exemption 2 unchanged)', () => {
+    const { container } = renderList({ matches: [makeMatch()], layout: 'table' });
+    const table = container.querySelector('[data-slot="filtered-match-table"]');
+    expect(table?.closest('.max-h-\\[500px\\]')).not.toBeNull();
+    expect(table?.closest('.overflow-y-auto')).not.toBeNull();
   });
 });
 
@@ -615,14 +637,20 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
   });
 
-  it('stacked layout: same cap, count, data-total-rows and paging control against <li> rows', () => {
+  it('stacked layout: count, data-total-rows and paging control against <li> rows, at the layout-appropriate cap (plan 39.1-33: stack no longer shares the table cap — see the dedicated stack-paging describe below for its 20-row bound)', () => {
     const matches = makeManyMatches(1000);
     const { container } = renderList({ matches, axes: {}, layout: 'stack' });
     const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
-    expect(within(stack).getAllByRole('listitem')).toHaveLength(FILTERED_MATCH_LIST_ROW_CAP);
+    // Plan 39.1-33 local literal, mirrors the not-yet-imported
+    // FILTERED_MATCH_LIST_STACK_ROW_CAP/PAGE_SIZE (see the dedicated describe
+    // below) — this case predates the stack/table cap split (plan 39.1-28)
+    // and originally pinned the shared FILTERED_MATCH_LIST_ROW_CAP (100).
+    const stackRowCap = 20;
+    const stackPageSize = 20;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(stackRowCap);
     expect(stack).toHaveAttribute('data-total-rows', '1000');
     const showMore = screen.getByRole('button', {
-      name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE),
+      name: showMoreName(stackPageSize),
     });
     expect(showMore).toHaveAttribute('aria-controls', stack.id);
   });
@@ -647,17 +675,16 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
   });
 
   it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', () => {
-    // `fireEvent.click` (not `userEvent.click`) — this loop clicks ~18 times
-    // for a 1000-row fixture; real-pointer-event simulation per click made
-    // this test time out at the 15s default. Focus at the end is asserted
-    // via the component's own `document.getElementById(rootId)?.focus()`
-    // effect, which `fireEvent.click` triggers identically to `userEvent`.
-    // Measured standalone: ~18-24s. Under `pnpm --filter @smash-tracker/web
-    // test`'s full concurrent run it measured ~31s (timed out once at the
-    // 30s bound) — the explicit 60s timeout below keeps ~2x headroom over
-    // that measurement, the same margin `insightDoorSameN.test.tsx`'s
-    // SAME_N_DOOR_TIMEOUT_MS uses for its own slow-render cases.
-    const matches = makeManyMatches(1000);
+    // `fireEvent.click` (not `userEvent.click`) — real-pointer-event
+    // simulation per click is far slower. Focus at the end is asserted via the
+    // component's own `document.getElementById(rootId)?.focus()` effect, which
+    // `fireEvent.click` triggers identically to `userEvent`.
+    // EXHAUSTION_ROWS = cap + 3 full pages + a 10-row partial page: it still
+    // exercises repeated full pages, a partial last page and the final focus
+    // hand-off, without the 1000-row fixture that took ~90 s on the CI runner
+    // (timed out at 60 s on PR #183 while passing locally).
+    const EXHAUSTION_ROWS = FILTERED_MATCH_LIST_ROW_CAP + 3 * FILTERED_MATCH_LIST_PAGE_SIZE + 10;
+    const matches = makeManyMatches(EXHAUSTION_ROWS);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
     let mounted = within(table).getAllByRole('row').length - 1;
@@ -672,13 +699,13 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
       button = screen.queryByRole('button', { name: /show \d+ more/i });
     }
 
-    expect(mounted).toBe(1000);
+    expect(mounted).toBe(EXHAUSTION_ROWS);
     expect(document.activeElement).toBe(table);
     expect(document.activeElement).not.toBe(document.body);
     // The progress line stays present (and states the final, exhausted
     // count) even once the paging control itself has unmounted.
     const progress = document.querySelector('[aria-live="polite"]');
-    expect(progress).toHaveTextContent(/1000 .* 1000/);
+    expect(progress).toHaveTextContent(new RegExp(`${EXHAUSTION_ROWS} .* ${EXHAUSTION_ROWS}`));
   }, 60_000);
 
   it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
@@ -822,6 +849,124 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
     renderList({ matches: [makeMatch()], axes: {}, layout: 'table' });
     expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+  });
+});
+
+/**
+ * Plan 39.1-33 (R2, UIX-02, owner decision 2026-09-24: phone rows = 20): the
+ * stacked (phone) layout's DOM bound tightens from the shared
+ * FILTERED_MATCH_LIST_ROW_CAP/PAGE_SIZE (100/50) to a stricter phone-only
+ * first-pass cap and page size of 20 — the stacked layout flows in the page
+ * (plan 39.1-32 item 13 removed its inner scroller), so about two phone
+ * screens (20 rows of ~82px + 8px gap) is the bound, still well inside
+ * UI-SPEC §6.4's 100-per-pass ceiling. The table layout (640px and up) keeps
+ * its 100 + "Show 50 more" byte-unchanged. `STACK_FIRST_PASS`/`STACK_PAGE`
+ * are LOCAL literals (not imported) — the production component does not yet
+ * export `FILTERED_MATCH_LIST_STACK_ROW_CAP`/`FILTERED_MATCH_LIST_STACK_PAGE_SIZE`
+ * at RED time, and importing a not-yet-existing named export would fail the
+ * whole file at import instead of on an assertion (#3770 INVALID_RED).
+ */
+describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged (plan 39.1-33, R2)', () => {
+  // Mirrors the not-yet-exported FILTERED_MATCH_LIST_STACK_ROW_CAP / _PAGE_SIZE.
+  const STACK_FIRST_PASS = 20;
+  const STACK_PAGE = 20;
+
+  it('stacked layout: 150 matches (active fighterId axis) mount exactly 20 rows, data-total-rows is 150, the summary states 150 games, and "Show 20 more" renders with the right aria-controls', () => {
+    const matches = makeManyMatches(150);
+    const { container } = renderList({ matches, axes: { fighterId: mario.id }, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
+    expect(stack).toHaveAttribute('data-total-rows', '150');
+    expect(screen.getByText(/150 games ·/)).toBeInTheDocument();
+
+    const showMore = screen.getByRole('button', { name: showMoreName(STACK_PAGE) });
+    expect(showMore).toHaveAttribute('aria-controls', stack.id);
+
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
+  });
+
+  it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', async () => {
+    const user = userEvent.setup();
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
+    const matches = makeManyMatches(50);
+    const { container } = renderList({ matches, axes: {}, layout: 'stack' });
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
+
+    // First activation: 20 -> 40, control remains (10 rows left). userEvent
+    // (not fireEvent) — jsdom only moves native post-click focus for a real
+    // pointer-event simulation, mirroring the table-layout paging test above.
+    await user.click(screen.getByRole('button', { name: showMoreName(STACK_PAGE) }));
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(40);
+    expect(screen.getByRole('button', { name: showMoreName(10) })).toBe(document.activeElement);
+
+    // Second (final) activation: 40 -> 50, exhausts the list.
+    focusSpy.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: showMoreName(10) }));
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(50);
+
+    expect(document.activeElement).toBe(stack);
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 50 of 50 games/);
+
+    focusSpy.mockRestore();
+  });
+
+  it('stacked layout: exactly 20 matches show no paging control and no progress line', () => {
+    const matches = makeManyMatches(20);
+    renderList({ matches, axes: {}, layout: 'stack' });
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+  });
+
+  it('stacked layout: 21 matches show "Show 1 more" (singular key) and the progress line reads "Showing 20 of 21 games"', () => {
+    const matches = makeManyMatches(21);
+    renderList({ matches, axes: {}, layout: 'stack' });
+    expect(screen.getByRole('button', { name: showMoreName(1) })).toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 21 games/);
+  });
+
+  it('table layout: 77 matches mount all 77 rows with no paging control (unchanged)', () => {
+    const matches = makeManyMatches(77);
+    renderList({ matches, axes: {}, layout: 'table' });
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(77 + 1);
+    expect(screen.queryByRole('button', { name: /show \d+ more/i })).not.toBeInTheDocument();
+  });
+
+  it('rerendering the same 150 matches with the layout prop switched from table (after one "Show 50 more") to stack mounts exactly 20 rows — a layout change re-bounds', async () => {
+    const user = userEvent.setup();
+    const matches = makeManyMatches(150);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const Wrapper = ({ layout }: { layout: 'table' | 'stack' }) => (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/matchups"
+                element={<FilteredMatchList matches={matches} axes={{}} layout={layout} />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { rerender, container } = render(<Wrapper layout="table" />);
+    await user.click(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(
+      FILTERED_MATCH_LIST_ROW_CAP + FILTERED_MATCH_LIST_PAGE_SIZE + 1,
+    );
+
+    rerender(<Wrapper layout="stack" />);
+    const stack = container.querySelector('[data-slot="filtered-match-stack"]') as HTMLElement;
+    expect(within(stack).getAllByRole('listitem')).toHaveLength(STACK_FIRST_PASS);
   });
 });
 

@@ -32,6 +32,7 @@ import {
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
+import { formStripSessionLabel } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -215,6 +216,7 @@ function buildOpponentFormStripEvents(
   recentWindow: { fromMs: number | null; toMs: number | null },
   opponentTag: string,
   t: TFunction,
+  locale: string,
 ): FormStripEvent[] {
   const inWindow = (m: Match): boolean =>
     recentWindow.fromMs != null &&
@@ -225,19 +227,23 @@ function buildOpponentFormStripEvents(
   const oldestFirst = [...groups].reverse();
 
   return oldestFirst.map((group) => {
-    const gamesWon = group.sets.reduce((sum, set) => sum + set.gamesWon, 0);
-    const gamesLost = group.sets.reduce((sum, set) => sum + set.gamesLost, 0);
+    // WR-02 (review iteration 2): a session group is labelled by the SAME
+    // helper the other two strip hosts use — date only. The kit appends the
+    // record of the games it draws, so a session the limit trim or width fit
+    // cuts never states the whole session's record.
     const label =
       group.kind === 'event'
         ? group.label
-        : t('analytics.encounters.sessionHeader', {
-            date: new Date(group.dateMs).toLocaleDateString(),
-            record: `${gamesWon}–${gamesLost}`,
+        : formStripSessionLabel({
+            firstGameMs: Math.min(
+              ...group.sets.flatMap((set) => set.games.map((game) => game.match.time)),
+            ),
+            t,
+            locale,
           });
     return {
       key: group.key,
       label,
-      record: `${gamesWon}–${gamesLost}`,
       sets: [...group.sets].reverse().map((set) => ({
         key: set.key,
         label: t('analytics.strip.setAria', {
@@ -245,6 +251,8 @@ function buildOpponentFormStripEvents(
           record: `${set.gamesWon}–${set.gamesLost}`,
         }),
         inRecentWindow: set.games.some((game) => inWindow(game.match)),
+        // WR-01: the kit orders sets by this across events before its trim/fit.
+        lastGameMs: Math.max(...set.games.map((game) => game.match.time)),
         games: set.games.map((game) => ({
           key: game.match.id,
           won: game.match.win,
@@ -686,8 +694,9 @@ export function OpponentHubPage() {
         trendRecentWindow,
         profile?.opponent ?? pathTag ?? '',
         t,
+        i18n.language,
       ),
-    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t],
+    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t, i18n.language],
   );
 
   const headToHeadSample: SampleMeta | null = useMemo(() => {
@@ -1003,12 +1012,14 @@ export function OpponentHubPage() {
               events={formStripEvents}
               limit={20}
               labels={{
-                summary: t('analytics.strip.aria', { count: trendSourceMatches.length }),
+                // WR-03: names the games actually DRAWN of the total (kit-computed).
+                summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
                 legend: t('analytics.strip.legend'),
-                shownOfTotal:
-                  trendSourceMatches.length > 20
-                    ? t('analytics.strip.shownOf', { shown: 20, total: trendSourceMatches.length })
-                    : undefined,
+                // Plan 39.1-33 (R1): a formatter — only the kit knows how
+                // many games it actually drew after `limit` AND its own
+                // measured-width fit, so the host no longer computes `shown`
+                // itself.
+                shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
                 empty: <span>{t('analytics.strip.empty')}</span>,
                 windowEmpty:
                   trendInsight && trendInsight.window.games === 0

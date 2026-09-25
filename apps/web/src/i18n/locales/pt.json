@@ -874,6 +874,7 @@
     "you": "Você",
     "opponent": "Oponente",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "Tendência da taxa de vitórias",
     "results": "Resultados do confronto",
     "selectFighterAria": "Selecionar seu lutador",
@@ -903,11 +904,14 @@
     "insights": {
       "title": "Insights do confronto",
       "minMatches": "Mín. de partidas por stage",
-      "minMatchesAria": "Mínimo de partidas por stage",
       "empty": "Nenhuma partida registrada para este confronto ainda.",
       "currentStreak": "Sequência atual",
-      "streakWins": "{{count}} vitórias",
-      "streakLosses": "{{count}} derrotas",
+      "streakUnit": {
+        "win_one": "vitória",
+        "win_other": "vitórias",
+        "loss_one": "derrota",
+        "loss_other": "derrotas"
+      },
       "longestWin": "Maior sequência de vitórias",
       "longestLoss": "Maior sequência de derrotas",
       "recentForm": "Forma recente (mais recente primeiro)",
@@ -920,7 +924,9 @@
       "title": "Detalhamento por stage",
       "stage": "Stage",
       "record": "Retrospecto",
-      "winRate": "Taxa de vitórias"
+      "winRate": "Taxa de vitórias",
+      "noStage_one": "{{count}} partida sem stage registrado",
+      "noStage_other": "{{count}} partidas sem stage registrado"
     },
     "counterpick": {
       "title": "Conselheiro de counterpick",
@@ -933,6 +939,7 @@
       "setState": {
         "summary": "Assumindo {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Alterar a fase do jogo, o papel, os stages anteriores e os banimentos assumidos",
+        "editLabel": "Alterar suposição",
         "phase": {
           "game1": "Jogo 1",
           "game2plus": "Jogo 2+"
@@ -3214,12 +3221,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Essas {{count}} partidas vão de {{from}} a {{to}}.",
-      "range": "{{rate}} em {{count}}, dentro da faixa habitual ({{lower}}–{{upper}})."
+      "range": "{{rate}} em {{count}}, dentro da faixa habitual ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "As últimas 30 partidas são todo o histórico — um só número, sem comparação.",
         "last90": "Os últimos 90 dias são todo o histórico — um só número, sem comparação."
+      },
+      "noneRecent": {
+        "scoped": "Sem partidas vs {{fighter}} nos últimos 12 meses — mostrando o histórico."
       },
       "thinRecent": {
         "scoped_one": "Só {{count}} partida vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
@@ -3390,8 +3401,10 @@
     },
     "strip": {
       "legend": "acima = vitória · abaixo = derrota · espaço = novo set · rótulo = evento",
-      "aria": "Faixa de forma, {{count}} partidas",
+      "aria_one": "Faixa de forma, {{shown}} de {{count}} partida",
+      "aria_other": "Faixa de forma, {{shown}} de {{count}} partidas",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Sessão · {{date}}",
       "windowHighlighted": {
         "last30": "Últimas 30 partidas destacadas",
         "lastEvent": "Último evento destacado",

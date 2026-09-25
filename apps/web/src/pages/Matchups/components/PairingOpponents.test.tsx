@@ -110,4 +110,43 @@ describe('PairingOpponents (owner note 11, UIX-02, INS-05)', () => {
     const tag = screen.getByText('a-fairly-long-opponent-tag-name');
     expect(tag).toHaveAttribute('title', 'a-fairly-long-opponent-tag-name');
   });
+
+  describe('item 12 (plan 39.1-32): the tag owns its own line above a whole-token metrics line below a 480px row', () => {
+    it("every row's li holds one pairing-opponent-body whose children are, in order, the tag then the metrics group; the body is flex-col with the 480px row-cohesion breakpoint; the chevron is the li's last child", () => {
+      renderPairing([makeMatch({ opponent: 'onlyOne' })]);
+      const li = screen.getByRole('listitem');
+      const body = li.querySelector('[data-slot="pairing-opponent-body"]') as HTMLElement;
+      expect(body).not.toBeNull();
+      expect(body.className).toMatch(/\bflex-col\b/);
+      expect(body.className).toMatch(/@min-\[480px\]\/pairing-opponent-row:flex-row/);
+
+      const bodyChildren = Array.from(body.children) as HTMLElement[];
+      expect(bodyChildren).toHaveLength(2);
+      expect(bodyChildren[0]!.getAttribute('data-slot')).toBe('pairing-opponent-tag');
+      expect(bodyChildren[1]!.getAttribute('data-slot')).toBe('pairing-opponent-metrics');
+
+      const metrics = bodyChildren[1]!;
+      expect(metrics.className).toMatch(/\bflex-wrap\b/);
+      expect(metrics.textContent).toContain('1–0');
+
+      expect(body.contains(bodyChildren[0]!)).toBe(true);
+      // The tag is not inside the metrics group.
+      expect(metrics.querySelector('[data-slot="pairing-opponent-tag"]')).toBeNull();
+
+      // The chevron (a lucide ChevronRight <svg>, aria-hidden) is the li's
+      // last element child.
+      expect(li.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+      expect(li.lastElementChild).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('the RecordBar wrapper drops below a 300px row and the Record wrapper drops below a 220px row (§6.5 rule 3 last-resort)', () => {
+      renderPairing([makeMatch({ opponent: 'onlyOne' })]);
+      const li = screen.getByRole('listitem');
+      const metrics = li.querySelector('[data-slot="pairing-opponent-metrics"]')!;
+      const recordBarWrapper = metrics.children[0] as HTMLElement;
+      const recordWrapper = metrics.children[1] as HTMLElement;
+      expect(recordBarWrapper.className).toMatch(/@max-\[300px\]\/pairing-opponent-row:hidden/);
+      expect(recordWrapper.className).toMatch(/@max-\[220px\]\/pairing-opponent-row:hidden/);
+    });
+  });
 });

@@ -874,6 +874,7 @@
     "you": "You",
     "opponent": "Opponent",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "Win Rate Trend",
     "results": "Matchup Results",
     "selectFighterAria": "Select your fighter",
@@ -903,11 +904,14 @@
     "insights": {
       "title": "Matchup Insights",
       "minMatches": "Min matches per stage",
-      "minMatchesAria": "Minimum matches per stage",
       "empty": "No matches recorded for this matchup yet.",
       "currentStreak": "Current Streak",
-      "streakWins": "{{count}} wins",
-      "streakLosses": "{{count}} losses",
+      "streakUnit": {
+        "win_one": "win",
+        "win_other": "wins",
+        "loss_one": "loss",
+        "loss_other": "losses"
+      },
       "longestWin": "Longest Win Streak",
       "longestLoss": "Longest Loss Streak",
       "recentForm": "Recent Form (newest first)",
@@ -920,7 +924,9 @@
       "title": "Stage Breakdown",
       "stage": "Stage",
       "record": "Record",
-      "winRate": "Win Rate"
+      "winRate": "Win Rate",
+      "noStage_one": "{{count}} game with no stage recorded",
+      "noStage_other": "{{count}} games with no stage recorded"
     },
     "counterpick": {
       "title": "Counterpick Advisor",
@@ -933,6 +939,7 @@
       "setState": {
         "summary": "Assuming {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Change the game-phase, role, prior-stages and bans assumption",
+        "editLabel": "Change assumption",
         "phase": {
           "game1": "Game 1",
           "game2plus": "Game 2+"
@@ -3214,12 +3221,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Those {{count}} games span {{from}} – {{to}}.",
-      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}})."
+      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "The last 30 games are the whole record — one figure, no comparison.",
         "last90": "The last 90 days are the whole record — one figure, no comparison."
+      },
+      "noneRecent": {
+        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime."
       },
       "thinRecent": {
         "scoped_one": "Only {{count}} game vs {{fighter}} in the last 12 months — showing lifetime.",
@@ -3390,8 +3401,10 @@
     },
     "strip": {
       "legend": "up = win · down = loss · gap = new set · label = event",
-      "aria": "Form strip, {{count}} games",
+      "aria_one": "Form strip, {{shown}} of {{count}} game",
+      "aria_other": "Form strip, {{shown}} of {{count}} games",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {
         "last30": "Last 30 games highlighted",
         "lastEvent": "Last event highlighted",

@@ -84,38 +84,66 @@ function PairingOpponentRow({
         to={to}
         ariaLabel={t('shared.drillableRow.aria', { subject: record.opponent, context: recordText })}
       />
-      <span
-        className="min-w-0 flex-1 truncate"
-        title={record.opponent.length > 0 ? record.opponent : undefined}
-        data-slot="pairing-opponent-tag"
+      {/*
+        Plan 39.1-32 (item 12, UI-SPEC §6.5 rules 1-3, §8.5 two-line
+        precedent, §14.6 touch rows): below a 480px row container the tag
+        owns its own line above a whole-token-wrapping metrics line — chosen
+        over §8.3's literal "drop RecordBar then the record" because
+        stacking keeps the record visible, keeps the tag readable, and keeps
+        the touch row taller than 44px. The §6.5 priority drops (RecordBar
+        below 300px, Record below 220px) remain the last resort at narrower
+        row widths. Module-private to this file (not shared with Scout's
+        FullAnalysisSection, OpponentTable or WhatTheyPlayTable).
+      */}
+      <div
+        data-slot="pairing-opponent-body"
+        className="flex min-w-0 flex-1 flex-col gap-1 @min-[480px]/pairing-opponent-row:flex-row @min-[480px]/pairing-opponent-row:items-center @min-[480px]/pairing-opponent-row:gap-2"
       >
-        {record.opponent}
-      </span>
-      <span className="shrink-0 @max-[380px]/pairing-opponent-row:hidden">
-        <RecordBar wins={record.wins} losses={record.losses} />
-      </span>
-      <span className="shrink-0 @max-[280px]/pairing-opponent-row:hidden" title={recordText}>
-        <Record wins={record.wins} losses={record.losses} cue="none" />
-      </span>
-      {chipState !== null && chipState !== 'collapsed' && (
-        <span className="shrink-0">
-          <DeltaChip
-            state={chipState}
-            valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-            horizonOwnedByParent
-            ariaLabel={t('analytics.dumbbell.rowAria', {
-              label: record.opponent,
-              recentRecord: recordText,
-              baselineRecord: `${overallRate.wins}–${overallRate.losses}`,
-            })}
-          />
+        <span
+          className="min-w-0 truncate @min-[480px]/pairing-opponent-row:flex-1"
+          title={record.opponent.length > 0 ? record.opponent : undefined}
+          data-slot="pairing-opponent-tag"
+        >
+          {record.opponent}
         </span>
-      )}
-      {tier && (
-        <span role="img" aria-label={cueLabel} className="shrink-0 tabular-nums">
-          {tier === 'high' ? '●●●' : tier === 'medium' ? '●●○' : '●○○'}
-        </span>
-      )}
+        <div
+          data-slot="pairing-opponent-metrics"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 @min-[480px]/pairing-opponent-row:shrink-0 @min-[480px]/pairing-opponent-row:flex-nowrap"
+        >
+          <span className="shrink-0 whitespace-nowrap @max-[300px]/pairing-opponent-row:hidden">
+            <RecordBar wins={record.wins} losses={record.losses} />
+          </span>
+          <span
+            className="shrink-0 whitespace-nowrap @max-[220px]/pairing-opponent-row:hidden"
+            title={recordText}
+          >
+            <Record wins={record.wins} losses={record.losses} cue="none" />
+          </span>
+          {chipState !== null && chipState !== 'collapsed' && (
+            <span className="shrink-0 whitespace-nowrap">
+              <DeltaChip
+                state={chipState}
+                valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
+                horizonOwnedByParent
+                ariaLabel={t('analytics.dumbbell.rowAria', {
+                  label: record.opponent,
+                  recentRecord: recordText,
+                  baselineRecord: `${overallRate.wins}–${overallRate.losses}`,
+                })}
+              />
+            </span>
+          )}
+          {tier && (
+            <span
+              role="img"
+              aria-label={cueLabel}
+              className="shrink-0 whitespace-nowrap tabular-nums"
+            >
+              {tier === 'high' ? '●●●' : tier === 'medium' ? '●●○' : '●○○'}
+            </span>
+          )}
+        </div>
+      </div>
       <DrillableRowChevron />
     </li>
   );
@@ -132,6 +160,15 @@ function PairingOpponentRow({
  * NOTE for plan 39.1-21: this surface must be added to Phase 38's
  * no-inert-row enumeration (`noInertRow.test.tsx`) — 39.1-13 does not fork
  * that test itself (per this plan's own `<action>` instruction).
+ *
+ * Plan 39.1-32 (item 12, UI-SPEC §6.5 rules 1-3, §8.5 two-line row
+ * precedent): below a 480px row container the tag owns its own line above a
+ * whole-token-wrapping metrics line (record, RecordBar, delta chip,
+ * confidence glyph) — preferred over §8.3's literal "drop RecordBar then
+ * the record" because stacking keeps the record visible on a phone while
+ * still giving the tag room to read in full. The §6.5 priority drops remain
+ * the last resort at narrower row widths (RecordBar below 300px, Record
+ * below 220px).
  */
 export function PairingOpponents({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();

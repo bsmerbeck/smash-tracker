@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -54,6 +56,11 @@ function matchTypeLabel(matchType: string, t: TFunction): string {
 export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [threshold, setThreshold] = useMinStageMatches();
+  // Plan 39.1-30 (item 6): the "Min matches per stage" select moved out of
+  // the header into the card body, directly above the best/worst stage list
+  // it governs — a stable id (`useId`) associates the visible `<Label>`
+  // with the select trigger.
+  const minMatchesSelectId = useId();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
@@ -75,67 +82,77 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <CardTitle>{t('matchups.insights.title')}</CardTitle>
-            <MixedContextBadge cohort={cohort} />
-          </div>
-          <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
-        </div>
+      <CardHeader>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('matchups.insights.minMatches')}</span>
-          <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-            <SelectTrigger className="w-[72px]" aria-label={t('matchups.insights.minMatchesAria')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CardTitle>{t('matchups.insights.title')}</CardTitle>
+          <MixedContextBadge cohort={cohort} />
         </div>
+        <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {matchupMatches.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.currentStreak')}
-                </h3>
-                <p
-                  className={`text-lg font-semibold ${streaks.currentStreakIsWin ? 'text-emerald-500' : 'text-destructive'}`}
-                >
-                  {streaks.currentStreakIsWin
-                    ? t('matchups.insights.streakWins', { count: streaks.currentStreak })
-                    : t('matchups.insights.streakLosses', { count: streaks.currentStreak })}
-                </p>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.longestWin')}
-                </h3>
-                <p className="text-lg font-semibold">{streaks.bestWinStreak}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.longestLoss')}
-                </h3>
-                <p className="text-lg font-semibold">{streaks.worstLossStreak}</p>
-              </div>
-            </div>
+            {/*
+              Plan 39.1-32 (item 10, UI-SPEC §7.3 StatRow, §4.3 rule 2): one
+              fixedColumns StatRow — the kit's 860px two-column collapse
+              would otherwise orphan the third of these three short counts
+              (2+1). The current streak's direction is carried by the unit
+              WORD ("win"/"loss"), never by a coloured value — no chip, no
+              delta (D-07: no insight asserts a direction here).
+            */}
+            <StatRow
+              fixedColumns
+              figures={[
+                <StatFigure
+                  key="current"
+                  label={t('matchups.insights.currentStreak')}
+                  value={streaks.currentStreak}
+                  unitSuffix={t(
+                    streaks.currentStreakIsWin
+                      ? 'matchups.insights.streakUnit.win'
+                      : 'matchups.insights.streakUnit.loss',
+                    { count: streaks.currentStreak },
+                  )}
+                />,
+                <StatFigure
+                  key="longestWin"
+                  label={t('matchups.insights.longestWin')}
+                  value={streaks.bestWinStreak}
+                />,
+                <StatFigure
+                  key="longestLoss"
+                  label={t('matchups.insights.longestLoss')}
+                  value={streaks.worstLossStreak}
+                />,
+              ]}
+            />
 
             <div>
               <h3 className="mb-2 text-sm font-medium text-muted-foreground">
                 {t('matchups.insights.recentForm')}
               </h3>
               <WinLossPips matches={matchupMatches} limit={10} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor={minMatchesSelectId} className="text-sm text-muted-foreground">
+                {t('matchups.insights.minMatches')}
+              </Label>
+              <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
+                {/* WR-05: named by the visible <Label htmlFor> above — no aria-label override. */}
+                <SelectTrigger id={minMatchesSelectId} className="w-[72px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">

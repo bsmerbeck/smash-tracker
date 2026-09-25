@@ -1,8 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { MatchupInsights } from './MatchupInsights';
+
+/**
+ * `useMinStageMatches` is a no-op on write when unauthenticated
+ * (`persistSelection`'s documented D-06 unauthenticated-no-persist
+ * contract) — this file renders with no `AuthProvider` at all, matching
+ * every other test here. Mocked to a plain in-memory `useState` (same
+ * default, 3) so the reactivity test below can drive the control without
+ * pulling in the whole auth/localStorage stack just to prove the select
+ * and the best-stage line share one value.
+ */
+vi.mock('@/hooks/useMinStageMatches', () => ({
+  useMinStageMatches: () => useState(3),
+}));
 
 /**
  * WR-02 regression: `MatchupInsights` reused the generic
@@ -104,5 +119,115 @@ describe('MatchupInsights — WR-02 single-qualifying-stage worst-stage copy', (
     expect(screen.getByText('Final Destination')).toBeInTheDocument();
     expect(screen.queryByText(/not enough distinct stages/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/more games? needed/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 6)', () => {
+  it('the card header holds no combobox — the Min matches per stage control is not in [data-slot="card-header"]', () => {
+    const matches = [
+      ...matchesOnStage(BATTLEFIELD, 3, 0),
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2),
+    ];
+    const { container } = renderInsights(matches);
+    const header = container.querySelector('[data-slot="card-header"]');
+    expect(header).not.toBeNull();
+    expect(header!.querySelector('[role="combobox"]')).not.toBeInTheDocument();
+  });
+
+  it('the Min matches per stage select is labelled by a visible label, sits before the best/worst stage list, and changing it changes the best-stage line (same shared useMinStageMatches value)', async () => {
+    const user = userEvent.setup();
+    const matches = [
+      ...matchesOnStage(BATTLEFIELD, 3, 0), // exactly 3 games — drops out once threshold rises to 5
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2), // 5 games — qualifies at both thresholds
+    ];
+    const { container } = renderInsights(matches);
+
+    const label = screen.getByText('Min matches per stage');
+    // WR-05 (39.1-REVIEW.md): the visible <label for> IS the accessible name
+    // (WCAG 2.5.3 label in name) — no aria-label overriding it.
+    const select = screen.getByRole('combobox', { name: 'Min matches per stage' });
+    expect(select).not.toHaveAttribute('aria-label');
+    expect(label.tagName.toLowerCase()).toBe('label');
+    expect(label.getAttribute('for')).toBe(select.id);
+
+    // The control sits in the card BODY, before the best/worst stage list —
+    // never in the header.
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.contains(select)).toBe(true);
+    const bestHeading = screen.getByText('Best Stage');
+    const bestHeadingFollowsSelect =
+      select.compareDocumentPosition(bestHeading) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(bestHeadingFollowsSelect).not.toBe(0);
+
+    expect(screen.getByText('Battlefield')).toBeInTheDocument();
+
+    await user.click(select);
+    await user.click(await screen.findByRole('option', { name: '5' }));
+
+    // Battlefield (3 games) no longer qualifies at the 5-game floor — only
+    // Final Destination remains, which is the single-qualifying-stage case
+    // (best-stage line shows Final Destination, worst shows the dedicated
+    // "not enough distinct stages" copy).
+    expect(screen.queryByText('Battlefield')).not.toBeInTheDocument();
+    expect(screen.getByText('Final Destination')).toBeInTheDocument();
+  });
+});
+
+describe('MatchupInsights — streak StatRow (plan 39.1-32, item 10)', () => {
+  it('the streak block is one fixedColumns StatRow carrying grid-cols-3, with the three labels at the overline role', () => {
+    const matches = matchesOnStage(BATTLEFIELD, 3, 0);
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]');
+    expect(statRow).not.toBeNull();
+    expect((statRow as HTMLElement).className).toContain('grid-cols-3');
+    const children = Array.from(statRow!.children) as HTMLElement[];
+    expect(children).toHaveLength(3);
+    const overlineClasses = [
+      'text-[0.6875rem]',
+      'leading-4',
+      'font-semibold',
+      'tracking-wider',
+      'text-muted-foreground',
+      'uppercase',
+    ];
+    const expectedLabels = ['Current Streak', 'Longest Win Streak', 'Longest Loss Streak'];
+    children.forEach((child, i) => {
+      const label = child.firstElementChild as HTMLElement;
+      expect(label.textContent).toBe(expectedLabels[i]);
+      for (const cls of overlineClasses) {
+        expect(label.className).toContain(cls);
+      }
+    });
+  });
+
+  it('a single win after a loss renders the current streak as "1" with unit "win"; no streak element carries a colour token', () => {
+    // Newest-first: a win (id 'w1'), then a loss — current streak is 1 win.
+    const matches = [
+      makeMatch({ id: 'w1', time: 2000, win: true }),
+      makeMatch({ id: 'l1', time: 1000, win: false }),
+    ];
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]')!;
+    const currentStreakFigure = statRow.children[0] as HTMLElement;
+    expect(currentStreakFigure.textContent).toContain('1');
+    expect(currentStreakFigure.textContent).toContain('win');
+    expect(statRow.querySelector('.text-emerald-500')).toBeNull();
+    expect(statRow.querySelector('.text-destructive')).toBeNull();
+  });
+
+  it('three straight newest losses render the current streak as "3" with unit "losses"', () => {
+    const matches = [
+      makeMatch({ id: 'l1', time: 3000, win: false }),
+      makeMatch({ id: 'l2', time: 2000, win: false }),
+      makeMatch({ id: 'l3', time: 1000, win: false }),
+    ];
+    const { container } = renderInsights(matches);
+    const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]')!;
+    const currentStreakFigure = statRow.children[0] as HTMLElement;
+    expect(currentStreakFigure.textContent).toContain('3');
+    expect(currentStreakFigure.textContent).toContain('losses');
+    expect(statRow.querySelector('.text-emerald-500')).toBeNull();
+    expect(statRow.querySelector('.text-destructive')).toBeNull();
   });
 });

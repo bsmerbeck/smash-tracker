@@ -874,6 +874,7 @@
     "you": "自分",
     "opponent": "相手",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "勝率の推移",
     "results": "対戦結果",
     "selectFighterAria": "自分のファイターを選択",
@@ -903,11 +904,14 @@
     "insights": {
       "title": "相性の分析",
       "minMatches": "ステージごとの最低対戦数",
-      "minMatchesAria": "ステージごとの最低対戦数",
       "empty": "この相性の対戦はまだ記録されていません。",
       "currentStreak": "現在の連続記録",
-      "streakWins": "{{count}}連勝",
-      "streakLosses": "{{count}}連敗",
+      "streakUnit": {
+        "win_one": "連勝",
+        "win_other": "連勝",
+        "loss_one": "連敗",
+        "loss_other": "連敗"
+      },
       "longestWin": "最長連勝",
       "longestLoss": "最長連敗",
       "recentForm": "最近の調子（新しい順）",
@@ -920,7 +924,9 @@
       "title": "ステージ別集計",
       "stage": "ステージ",
       "record": "戦績",
-      "winRate": "勝率"
+      "winRate": "勝率",
+      "noStage_one": "ステージが未記録の試合が{{count}}戦あります",
+      "noStage_other": "ステージが未記録の試合が{{count}}戦あります"
     },
     "counterpick": {
       "title": "カウンターピック指南",
@@ -933,6 +939,7 @@
       "setState": {
         "summary": "前提: {{phase}} ・ {{role}} ・ {{priorSummary}}",
         "editAria": "ゲーム数、役割、これまでのステージとバンの前提を変更する",
+        "editLabel": "前提を変更",
         "phase": {
           "game1": "1ゲーム目",
           "game2plus": "2ゲーム目以降"
@@ -3214,12 +3221,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "この{{count}}試合の期間は{{from}}〜{{to}}です。",
-      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。"
+      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
+      "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "直近30試合が記録の全体です — 比較対象のない単一の数値です。",
         "last90": "直近90日間が記録の全体です — 比較対象のない単一の数値です。"
+      },
+      "noneRecent": {
+        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。"
       },
       "thinRecent": {
         "scoped_one": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
@@ -3390,8 +3401,10 @@
     },
     "strip": {
       "legend": "上 = 勝利 · 下 = 敗北 · 間隔 = 新しいセット · ラベル = イベント",
-      "aria": "調子ストリップ、{{count}}試合",
+      "aria_one": "調子ストリップ、{{count}}試合中{{shown}}試合",
+      "aria_other": "調子ストリップ、{{count}}試合中{{shown}}試合",
       "setAria": "vs {{opponent}}のセット、{{record}}",
+      "sessionLabel": "セッション · {{date}}",
       "windowHighlighted": {
         "last30": "直近30試合を強調表示",
         "lastEvent": "直近のイベントを強調表示",

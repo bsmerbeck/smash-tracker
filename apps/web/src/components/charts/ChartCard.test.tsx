@@ -141,3 +141,67 @@ describe('ChartCard — insight slot and density (UI-SPEC §7.9, §6.2)', () => 
     expect(card?.className).not.toMatch(/shadow-none/);
   });
 });
+
+describe('ChartCard — toolbar slot (plan 39.1-30, item 1: header holds only title/caption)', () => {
+  it('with a toolbar supplied, one [data-slot="chart-card-toolbar"] renders as the first child of the card content in the POPULATED branch', () => {
+    const { container } = render(
+      <ChartCard
+        title="Counterpick Advisor"
+        toolbar={<div data-testid="toolbar-body">controls</div>}
+      >
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.firstElementChild?.getAttribute('data-slot')).toBe('chart-card-toolbar');
+    expect(screen.getByTestId('toolbar-body')).toBeInTheDocument();
+  });
+
+  it('with a toolbar supplied AND the card abstained, the toolbar STILL renders as the first child of the card content (EVID-05 always-visible)', () => {
+    const { container } = render(
+      <ChartCard
+        title="Counterpick Advisor"
+        abstained={{ gamesNeeded: 2 }}
+        toolbar={<div data-testid="toolbar-body">controls</div>}
+      >
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    const content = container.querySelector('[data-slot="card-content"]');
+    expect(content).not.toBeNull();
+    expect(content!.firstElementChild?.getAttribute('data-slot')).toBe('chart-card-toolbar');
+    expect(screen.getByTestId('toolbar-body')).toBeInTheDocument();
+    expect(screen.getByText(/2/)).toBeInTheDocument();
+  });
+
+  it('without a toolbar prop, no [data-slot="chart-card-toolbar"] element renders — existing markup is byte-identical', () => {
+    const { container } = render(
+      <ChartCard title="Win Rate Trend" caption="Recorded fact from your match log.">
+        <div data-testid="chart-body">chart</div>
+      </ChartCard>,
+    );
+    expect(container.querySelector('[data-slot="chart-card-toolbar"]')).not.toBeInTheDocument();
+  });
+
+  it('WR-08: the toolbar slot carries its own bottom spacing (mb-4, the compact density 16px header-to-content step) in both densities and both branches, so the next block never sits flush under it', () => {
+    for (const density of ['default', 'compact'] as const) {
+      for (const abstained of [null, { gamesNeeded: 3 }]) {
+        const { container, unmount } = render(
+          <ChartCard
+            title="Counterpick"
+            density={density}
+            abstained={abstained}
+            toolbar={<p>assumption line</p>}
+          >
+            <p>threshold sentence</p>
+          </ChartCard>,
+        );
+        const toolbar = container.querySelector('[data-slot="chart-card-toolbar"]')!;
+        expect(toolbar.className.split(/\s+/)).toContain('mb-4');
+        expect(toolbar.className.split(/\s+/)).toContain('min-w-0');
+        unmount();
+      }
+    }
+  });
+});

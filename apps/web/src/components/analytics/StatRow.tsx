@@ -28,6 +28,16 @@ export interface StatRowProps {
   figures: ReactNode[];
   /** Widens column 1 to `minmax(0, 1.5fr)` for the lead figure. */
   leadWidth?: boolean;
+  /**
+   * Plan 39.1-32 (item 10, UI-SPEC §7.3): keeps the N columns at EVERY
+   * container width — for up to 3 non-lead figures only, where the 860px
+   * two-column collapse below would leave a 2+1 orphan (e.g. Matchup
+   * Insights' three short streak counts). Ignored with more than 3 figures
+   * or with `leadWidth` (the lead-figure spanning behaviour needs the
+   * collapse). Absent, every existing caller is byte-unchanged apart from
+   * the `data-slot` this component now always carries.
+   */
+  fixedColumns?: boolean;
   className?: string;
 }
 
@@ -37,15 +47,30 @@ export interface StatRowProps {
  * with a container query so it responds to the CARD'S width, not the
  * viewport's.
  */
-export function StatRow({ figures, leadWidth = false, className }: StatRowProps) {
+export function StatRow({
+  figures,
+  leadWidth = false,
+  fixedColumns = false,
+  className,
+}: StatRowProps) {
   const count = figures.length;
   const columnClass =
     (leadWidth ? LEAD_COLUMN_CLASSES[count] : COLUMN_CLASSES[count]) ?? 'grid-cols-2';
+  const applyFixedColumns = fixedColumns && !leadWidth && count <= 3;
 
   return (
     <div
+      data-slot="stat-row"
+      data-fixed-columns={applyFixedColumns ? '' : undefined}
       className={cn(
-        '@container grid items-start gap-x-6 gap-y-3 @max-[860px]:grid-cols-2',
+        '@container grid items-start gap-x-6 gap-y-3',
+        applyFixedColumns
+          ? // A long label (e.g. de "Niederlagenserie") wraps inside its own
+            // column instead of overflowing it — both properties are
+            // inherited, so StatFigure's label/value text picks them up
+            // with no change there.
+            'hyphens-auto break-words'
+          : '@max-[860px]:grid-cols-2',
         columnClass,
         leadWidth && '@max-[860px]:[&>*:first-child]:col-span-2',
         className,

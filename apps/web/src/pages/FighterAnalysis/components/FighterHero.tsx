@@ -18,12 +18,11 @@ import {
   confidenceTierFor,
   resolveWindow,
   toRateValue,
-  trimmedEventKey,
 } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
-import { FormStrip, type FormStripEvent, type FormStripSet } from '@/components/charts/FormStrip';
+import { FormStrip } from '@/components/charts/FormStrip';
 import { ShareBar, type ShareBarSegment } from '@/components/charts/inlineMarks';
 import { CHART_H_COMPACT } from '@/components/charts/tokens';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
@@ -31,7 +30,7 @@ import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
-import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
+import { buildFormStripEvents } from '@/lib/formStripEvents';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
@@ -81,86 +80,6 @@ const CONFIDENCE_GLYPHS: Record<'high' | 'medium' | 'low' | 'none', string> = {
   low: '●○○',
   none: '○○○',
 };
-
-/**
- * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only. Plan
- * 39.1-25 (gap closure, SC6/TRND-04): events group by `trimmedEventKey`
- * (`eventSeries.ts`'s single name-priority rule — `eventName` first,
- * `tournamentName` as fallback, ported here rather than the file's former
- * hand-rolled `eventName ?? tournamentName` trim), and sets group by
- * `formStripEventKeyForMatch` (the Matchups tracer's single set rule — a
- * real parsed start.gg/parry.gg set id, else a per-game synthetic key, so a
- * manual game is its own one-game set) — the SAME function
- * `FighterAnalysisPage.tsx` hands `FilteredMatchList` as `eventKeyForMatch`,
- * so a rendered set's own click narrows to precisely those games.
- * `recentWindow` marks each set `inRecentWindow` from the SAME
- * `Insight.window` `formNow` already resolved.
- */
-function buildFighterFormStripEvents(
-  matches: Match[],
-  recentWindow: { fromMs: number | null; toMs: number | null },
-  t: TFunction,
-): FormStripEvent[] {
-  const sorted = [...matches].sort((a, b) => a.time - b.time);
-  const byEvent = new Map<string, Match[]>();
-  for (const match of sorted) {
-    const key = trimmedEventKey(match) ?? '__manual__';
-    const group = byEvent.get(key);
-    if (group) {
-      group.push(match);
-    } else {
-      byEvent.set(key, [match]);
-    }
-  }
-
-  const inWindow = (m: Match): boolean =>
-    recentWindow.fromMs != null &&
-    recentWindow.toMs != null &&
-    m.time >= recentWindow.fromMs &&
-    m.time <= recentWindow.toMs;
-
-  const events: FormStripEvent[] = [];
-  for (const [key, eventMatches] of byEvent) {
-    const bySet = new Map<string, Match[]>();
-    for (const match of eventMatches) {
-      const setKey = formStripEventKeyForMatch(match);
-      const group = bySet.get(setKey);
-      if (group) {
-        group.push(match);
-      } else {
-        bySet.set(setKey, [match]);
-      }
-    }
-    const sets: FormStripSet[] = [...bySet.entries()].map(([setKey, setMatches]) => {
-      const wins = setMatches.filter((m) => m.win).length;
-      const losses = setMatches.length - wins;
-      const opponentTag = setMatches.find((m) => m.opponent)?.opponent ?? t('common.unknown');
-      return {
-        key: setKey,
-        label: t('analytics.strip.setAria', {
-          opponent: opponentTag,
-          record: `${wins}–${losses}`,
-        }),
-        inRecentWindow: setMatches.some(inWindow),
-        games: setMatches.map((match) => ({
-          key: match.id,
-          won: match.win,
-          label: `${match.win ? t('common.win') : t('common.loss')} · ${new Date(match.time).toLocaleDateString()}`,
-        })),
-      };
-    });
-    const wins = eventMatches.filter((m) => m.win).length;
-    const losses = eventMatches.length - wins;
-    events.push({
-      key,
-      label: key === '__manual__' ? t('common.unknown') : key,
-      record: `${wins}–${losses}`,
-      sets,
-    });
-  }
-
-  return events;
-}
 
 /**
  * Plan 39.1-25 (gap closure, SC6/TRND-04): the axes a hero drill (a trend
@@ -269,8 +188,11 @@ export function FighterHero({
     [formNowInsight],
   );
   const formStripEvents = useMemo(
-    () => buildFighterFormStripEvents(fighterMatches, recentWindow, t),
-    [fighterMatches, recentWindow, t],
+    // WR-04 (39.1-REVIEW.md): the SAME builder Matchups uses — manual games
+    // split into 3-hour sessions named "Session · <date>", never one
+    // `__manual__` bucket captioned "Unknown".
+    () => buildFormStripEvents(fighterMatches, recentWindow, t, i18n.language),
+    [fighterMatches, recentWindow, t, i18n.language],
   );
 
   const typeRecords = useMemo(() => getMatchTypeRecords(fighterMatches), [fighterMatches]);
@@ -534,12 +456,13 @@ export function FighterHero({
             events={formStripEvents}
             limit={60}
             labels={{
-              summary: t('analytics.strip.aria', { count: fighterMatches.length }),
+              // WR-03: names the games actually DRAWN of the total (kit-computed).
+              summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
               legend: t('analytics.strip.legend'),
-              shownOfTotal:
-                fighterMatches.length > 60
-                  ? t('analytics.strip.shownOf', { shown: 60, total: fighterMatches.length })
-                  : undefined,
+              // Plan 39.1-33 (R1): a formatter — only the kit knows how many
+              // games it actually drew after `limit` AND its own measured-
+              // width fit, so the host no longer computes `shown` itself.
+              shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
               empty: <span>{t('analytics.strip.empty')}</span>,
               windowEmpty:
                 formNowInsight && formNowInsight.window.games === 0

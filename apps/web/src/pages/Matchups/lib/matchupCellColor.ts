@@ -10,6 +10,19 @@
  * interpolated at render time — mirrors the chartTheme.ts approach of
  * mirroring (not reading) the design tokens for cases that need real color
  * math.
+ *
+ * Plan 39.1-31 (item 4, UI-SPEC §4.3 rule 2): the opacity band is capped to
+ * 15%/50% — mirroring `MatrixHeat.tsx`'s own 15/30/50% tint tiers (the kit
+ * precedent for a heat cell that always carries FOREGROUND text) — instead
+ * of the old 25%-100% band. At full opacity the old band composited a
+ * near-opaque red/emerald fill under white cell text at roughly 2.3:1
+ * contrast against the `--card` surface, well under WCAG's 4.5:1 floor; the
+ * new ceiling keeps every cell's composited background light enough for
+ * `text-foreground` (not `text-white`, see `MatchupMatrix.tsx`) to clear
+ * 4.5:1 at every rate x sample-size combination (`matchupCellColor.test.ts`'s
+ * committed contrast oracle). Hue (red -> grey -> emerald by raw rate) and
+ * DD-11's red-as-loss convention are UNCHANGED — only the opacity ceiling
+ * moved.
  */
 
 /** oklch(0.63 0.23 29) ~= destructive red, from index.css. */
@@ -22,8 +35,9 @@ const HIGH_RGB: [number, number, number] = [16, 185, 129];
 /** Sample size at which cell opacity reaches full saturation. */
 export const FULL_SAMPLE_SIZE = 10;
 /** Minimum opacity for a 1-game cell — faint but still visible/legible. */
-const MIN_OPACITY = 0.25;
-const MAX_OPACITY = 1;
+const MIN_OPACITY = 0.15;
+/** Plan 39.1-31 (item 4): capped at 50%, matching `MatrixHeat.tsx`'s own highest tier — the ceiling that keeps `text-foreground` at >=4.5:1 on every composited cell. */
+const MAX_OPACITY = 0.5;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;

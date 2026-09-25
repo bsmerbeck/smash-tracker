@@ -140,7 +140,7 @@ describe('FighterHero', () => {
     expect(slots).toEqual([
       'fighter-hero-identity',
       'fighter-hero-verdict',
-      null, // StatRow root carries no data-slot
+      'stat-row', // Plan 39.1-32 (item 10): StatRow now always carries data-slot="stat-row"
       'fighter-hero-strip',
       'fighter-hero-trend',
       'share-bar-root',
@@ -303,6 +303,37 @@ describe('FighterHero', () => {
         .map((el) => el.querySelectorAll('[data-slot="form-strip-tick"]').length)
         .sort();
       expect(tickCounts).toEqual([1, 2]);
+    });
+  });
+
+  describe('WR-04 (39.1-REVIEW.md): manual games are named as sessions, never "Unknown"', () => {
+    it('a manual-only history captions and names every group "Session · <date>" (Matchups\' naming), split into 3-hour sessions', () => {
+      const hourMs = 60 * 60 * 1000;
+      const base = Date.now() - 3 * 24 * hourMs;
+      const matches: Match[] = [
+        makeMatch({ id: 'sA1', time: base, win: true }),
+        makeMatch({ id: 'sA2', time: base + 30 * 60 * 1000, win: false }),
+        makeMatch({ id: 'sB1', time: base + 10 * hourMs, win: true }),
+        makeMatch({ id: 'sB2', time: base + 10.5 * hourMs, win: true }),
+      ];
+      renderHero({ fighterMatches: matches });
+
+      const expectedDate = new Intl.DateTimeFormat('en', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      }).format(new Date(base));
+      const groups = Array.from(document.querySelectorAll('[data-slot="form-strip-event"]'));
+      expect(groups).toHaveLength(2);
+      for (const group of groups) {
+        expect(group.getAttribute('aria-label')).toMatch(/^Session · /);
+      }
+      const captionFirst = document.querySelector('[data-slot="form-strip-caption-first"]');
+      expect(captionFirst).toHaveTextContent(`Session · ${expectedDate}`);
+      const captions = Array.from(
+        document.querySelectorAll('[data-slot^="form-strip-caption-"]'),
+      ).map((el) => el.textContent);
+      expect(captions.some((text) => text?.includes('Unknown'))).toBe(false);
     });
   });
 

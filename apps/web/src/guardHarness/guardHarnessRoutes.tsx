@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { StretchedCardFixture } from '@/components/analytics/guardFixtures/StretchedCardFixture';
+import { PeriodAxisTicksFixture } from '@/components/analytics/guardFixtures/PeriodAxisTicksFixture';
 import { DashboardPage } from '@/pages/Dashboard/DashboardPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
@@ -45,6 +46,14 @@ export interface GuardHarnessRouteEntry {
   element: ReactNode;
   /** The page-loaded-marker CSS selector — see the contract note above. Never a skeleton block. */
   loadedMarker: string;
+  /**
+   * Plan 39.1-30 (T-39.1-30-01): opts this route into the harness's
+   * MainLayout-geometry wrapper (`GuardAppShell.tsx`) so its content is
+   * measured at production content widths, not the harness's default raw
+   * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
+   * route except `matchups`.
+   */
+  shell?: 'app';
 }
 
 /**
@@ -82,6 +91,15 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     loadedMarker: '[data-guard-loaded="stretched-card-fixture"]',
   },
   {
+    // CR-01 (39.1-REVIEW.md): the period axis's real-Chrome failing series
+    // lengths, measured by guard:layout's `axis-ticks` family.
+    id: 'period-axis-ticks-fixture',
+    path: '/guard-harness/period-axis-ticks-fixture',
+    initialEntry: '/guard-harness/period-axis-ticks-fixture',
+    element: <PeriodAxisTicksFixture />,
+    loadedMarker: '[data-guard-loaded="period-axis-ticks-fixture"]',
+  },
+  {
     id: 'dashboard',
     path: '/dashboard',
     initialEntry: '/dashboard',
@@ -101,6 +119,7 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/matchups',
     element: <MatchupsPage />,
     loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
   },
   {
     id: 'match-data',

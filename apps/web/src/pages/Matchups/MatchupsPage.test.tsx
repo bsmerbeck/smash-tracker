@@ -290,10 +290,10 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(await screen.findByRole('option', { name: new RegExp(luigi.name) }));
 
     await waitFor(() => {
@@ -334,8 +334,16 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
-    // Current streak: 1 loss (most recent match lost)
-    expect(screen.getByText('1 losses')).toBeInTheDocument();
+    // Current streak: 1 loss (most recent match lost). Plan 39.1-32 (item
+    // 10): the count and unit word render as two separate StatFigure
+    // elements now (a fixedColumns StatRow), and the non-plural
+    // "{{count}} losses" key (which used to render "1 losses" even for a
+    // single loss) was replaced by the plural streakUnit.loss key — "1"
+    // singularizes correctly to "loss".
+    const currentStreakFigure = screen.getByText('Current Streak').closest('div')!;
+    expect(currentStreakFigure).toHaveTextContent('1');
+    expect(currentStreakFigure).toHaveTextContent('loss');
+    expect(currentStreakFigure).not.toHaveTextContent('losses');
     // Plan 39.1-13 (UIX-04): the record card's trend row is now a `MiniStrip`
     // (role="img", a different accessible-name shape), not `WinLossPips` —
     // `WinLossPips`'s "Last N results" aria-label survives only on
@@ -364,9 +372,9 @@ describe('MatchupsPage', () => {
     // faced), which has a match — explicitly switch to a fighter Mario has
     // never faced to exercise the pairing's own empty state.
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(
       await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
     );
@@ -468,8 +476,8 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
-    const fighterTrigger = screen.getByLabelText('Select your fighter');
-    const opponentTrigger = screen.getByLabelText('Select opponent fighter');
+    const fighterTrigger = screen.getByRole('combobox', { name: 'You' });
+    const opponentTrigger = screen.getByRole('combobox', { name: 'Opponent' });
     expect(within(fighterTrigger).getByText(mario.name)).toBeInTheDocument();
     expect(within(opponentTrigger).getByText(luigi.name)).toBeInTheDocument();
 
@@ -500,22 +508,22 @@ describe('MatchupsPage', () => {
     const { unmount } = renderMatchups();
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+      expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
     );
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(luigi.name),
       ).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
     await user.click(
       await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
     );
 
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(
           alphabeticallyFirstSprite.name,
         ),
       ).toBeInTheDocument();
@@ -526,7 +534,7 @@ describe('MatchupsPage', () => {
 
     await waitFor(() => {
       expect(
-        within(screen.getByLabelText('Select opponent fighter')).getByText(
+        within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(
           alphabeticallyFirstSprite.name,
         ),
       ).toBeInTheDocument();
@@ -552,7 +560,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(bowser.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(bowser.name),
         ).toBeInTheDocument(),
       );
       // The win-loss card also reflects Bowser's own 1-0 record, not Mario's.
@@ -569,7 +577,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(mario.name),
         ).toBeInTheDocument(),
       );
       expect(screen.getByText('Matchup Results')).toBeInTheDocument();
@@ -598,14 +606,14 @@ describe('MatchupsPage', () => {
       renderMatchups();
 
       await waitFor(() =>
-        expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+        expect(screen.getByRole('combobox', { name: 'Opponent' })).toBeInTheDocument(),
       );
       await waitFor(() => {
         expect(
-          within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+          within(screen.getByRole('combobox', { name: 'Opponent' })).getByText(luigi.name),
         ).toBeInTheDocument();
       });
-      await user.click(screen.getByLabelText('Select opponent fighter'));
+      await user.click(screen.getByRole('combobox', { name: 'Opponent' }));
       await user.click(
         await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
       );
@@ -805,7 +813,7 @@ describe('MatchupsPage', () => {
 
       await waitFor(() =>
         expect(
-          within(screen.getByLabelText('Select your fighter')).getByText(mario.name),
+          within(screen.getByRole('combobox', { name: 'You' })).getByText(mario.name),
         ).toBeInTheDocument(),
       );
 
@@ -1269,6 +1277,254 @@ describe('MatchupsPage', () => {
         const table = within(gamesCard).getByRole('table');
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
       });
+    });
+  });
+
+  describe('Task 3 (plan 39.1-30, items 3/5): PageShell + two-stack pairing block + section-label identity', () => {
+    /** 40 games, Mario vs Luigi, 4 distinct opponent tags — clears MatchupOrPlayer's floors so the rail's fourth card actually renders. */
+    function richPairingFixture() {
+      const now = Date.now();
+      const opponents = ['alice', 'bob', 'carol', 'dave'];
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: now - (40 - i) * 60 * 60 * 1000,
+          opponent: opponents[i % opponents.length],
+          win: i % 3 !== 0,
+        }),
+      );
+    }
+
+    async function renderLoadedPairing() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(richPairingFixture());
+      const { container } = renderMatchups();
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      return container;
+    }
+
+    it('the loaded page is capped at the PageShell max-width', async () => {
+      const container = await renderLoadedPairing();
+      const shell = Array.from(container.querySelectorAll('div')).find((el) =>
+        el.className.includes('max-w-[1440px]'),
+      );
+      expect(shell).toBeTruthy();
+    });
+
+    it('the pairing heading is a left-aligned h2 naming the pairing with 24px sprites, precedes the ONE page-grid inside #matchup-detail', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]');
+      expect(heading).not.toBeNull();
+      expect(heading!.tagName.toLowerCase()).toBe('h2');
+      expect(heading!.textContent).toContain('Mario');
+      expect(heading!.textContent).toContain('Luigi');
+      expect(heading!.className).not.toMatch(/justify-center/);
+      const sprites = heading!.querySelectorAll('img');
+      expect(sprites.length).toBeGreaterThan(0);
+      for (const sprite of Array.from(sprites)) {
+        expect(sprite.className).toMatch(/size-6/);
+      }
+
+      const grids = detail.querySelectorAll('[data-slot="page-grid"]');
+      expect(grids).toHaveLength(1);
+      const headingFollowedByGrid =
+        heading!.compareDocumentPosition(grids[0]!) & Node.DOCUMENT_POSITION_FOLLOWING;
+      expect(headingFollowedByGrid).not.toBe(0);
+    });
+
+    it('the page-grid holds exactly two direct children, data-span "4" then "8", each a column stack', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const children = Array.from(grid.children);
+      expect(children).toHaveLength(2);
+      expect(children[0]!.getAttribute('data-span')).toBe('4');
+      expect(children[1]!.getAttribute('data-span')).toBe('8');
+    });
+
+    it('the rail (span 4) holds Record, Matchup Insights, MatchupOrPlayer and Counterpick Advisor in document order', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const rail = grid.children[0] as HTMLElement;
+
+      const recordTitle = within(rail)
+        .getAllByText('Record')
+        .find((el) => el.getAttribute('data-slot') === 'card-title')!;
+      const insightsHeading = within(rail).getByText('Matchup Insights');
+      const insightCard = rail.querySelector('[data-slot="insight-card"]')!;
+      const advisorHeading = within(rail).getByText('Counterpick Advisor');
+      expect(insightCard).not.toBeNull();
+
+      const order = [recordTitle, insightsHeading, insightCard, advisorHeading];
+      for (let i = 1; i < order.length; i += 1) {
+        const prev = order[i - 1]!;
+        const cur = order[i]!;
+        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    it('the chart stack (span 8) holds Win Rate Trend, By Opponent and Stage Breakdown in document order', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const grid = detail.querySelector('[data-slot="page-grid"]')!;
+      const chart = grid.children[1] as HTMLElement;
+
+      const trendTitle = within(chart).getByText('Win Rate Trend');
+      const byOpponentTitle = within(chart).getByText('By Opponent');
+      const stageBreakdownTitle = within(chart).getByText('Stage Breakdown');
+
+      const order = [trendTitle, byOpponentTitle, stageBreakdownTitle];
+      for (let i = 1; i < order.length; i += 1) {
+        const prev = order[i - 1]!;
+        const cur = order[i]!;
+        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    it('no other grid inside #matchup-detail holds two card-bearing children — the old advisor/stage-table and record/insights 2-ups are gone', async () => {
+      await renderLoadedPairing();
+      const detail = document.getElementById('matchup-detail')!;
+      const cardBearingGrids: Element[] = [];
+      for (const el of Array.from(detail.querySelectorAll('*'))) {
+        const cls = typeof el.className === 'string' ? el.className : '';
+        if (!/\bgrid\b/.test(cls)) continue;
+        const cardBearingChildren = Array.from(el.children).filter(
+          (child) =>
+            child.matches('[data-slot="card"]') || child.querySelector('[data-slot="card"]'),
+        );
+        if (cardBearingChildren.length >= 2) cardBearingGrids.push(el);
+      }
+      // Exactly the one [data-slot="page-grid"] — its own two GridCell
+      // stacks are themselves card-bearing (they wrap multiple cards each).
+      expect(cardBearingGrids).toHaveLength(1);
+      expect(cardBearingGrids[0]!.getAttribute('data-slot')).toBe('page-grid');
+    });
+
+    it('mirrors the two-stack composition in the loading skeleton: PageGrid children carry data-span "4" then "8"', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderMatchups();
+      const shell = Array.from(container.querySelectorAll('div')).find((el) =>
+        el.className.includes('max-w-[1440px]'),
+      );
+      expect(shell).toBeTruthy();
+      const grid = container.querySelector('[data-slot="page-grid"]')!;
+      expect(grid).not.toBeNull();
+      const children = Array.from(grid.children);
+      expect(children).toHaveLength(2);
+      expect(children[0]!.getAttribute('data-span')).toBe('4');
+      expect(children[1]!.getAttribute('data-span')).toBe('8');
+    });
+  });
+
+  describe('Task 2 (plan 39.1-32, item 9): aligned pairing picker grid', () => {
+    async function renderLoadedPairingForPicker() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      const now = Date.now();
+      listMatches.mockResolvedValue(
+        Array.from({ length: 10 }, (_, i) =>
+          makeMatch({
+            id: `picker-m${i}`,
+            fighter_id: mario.id,
+            opponent_id: luigi.id,
+            time: now - (10 - i) * 60 * 60 * 1000,
+            opponent: 'alice',
+            win: i % 2 === 0,
+          }),
+        ),
+      );
+      renderMatchups();
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+    }
+
+    it('WR-07: the "You" / "Opponent" captions are <label for> the two selects (their accessible names), not headings', async () => {
+      await renderLoadedPairingForPicker();
+      const labels = Array.from(document.querySelectorAll('[data-slot="matchup-pairing-label"]'));
+      expect(labels.map((el) => el.tagName.toLowerCase())).toEqual(['label', 'label']);
+      const you = screen.getByRole('combobox', { name: 'You' });
+      const opponent = screen.getByRole('combobox', { name: 'Opponent' });
+      expect(labels[0]!.getAttribute('for')).toBe(you.id);
+      expect(labels[1]!.getAttribute('for')).toBe(opponent.id);
+      expect(screen.queryByRole('heading', { name: 'You' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Opponent' })).not.toBeInTheDocument();
+    });
+
+    it('WR-07: the heading outline never skips a level — nothing deeper than the pairing h2 precedes it, and each heading is at most one level below the previous', async () => {
+      await renderLoadedPairingForPicker();
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+      const levels = headings.map((el) => Number(el.tagName.slice(1)));
+      const pairingIndex = headings.findIndex(
+        (el) => el.getAttribute('data-slot') === 'matchup-detail-heading',
+      );
+      expect(pairingIndex).toBeGreaterThanOrEqual(0);
+      for (const level of levels.slice(0, pairingIndex)) {
+        expect(level).toBeLessThanOrEqual(2);
+      }
+      for (let i = 1; i < levels.length; i += 1) {
+        expect(levels[i]!, `heading ${i} after h${levels[i - 1]}`).toBeLessThanOrEqual(
+          levels[i - 1]! + 1,
+        );
+      }
+    });
+
+    it('WR-06: the pairing detail block is a region named by the pairing heading (a named section, never aria-labelledby on a generic div)', async () => {
+      await renderLoadedPairingForPicker();
+      const detail = document.getElementById('matchup-detail')!;
+      expect(detail.tagName.toLowerCase()).toBe('section');
+      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]')!;
+      expect(detail.getAttribute('aria-labelledby')).toBe(heading.id);
+      expect(screen.getByRole('region', { name: heading.textContent ?? '' })).toBe(detail);
+    });
+
+    it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same filter card, after the picker', async () => {
+      await renderLoadedPairingForPicker();
+      const picker = document.querySelector('[data-slot="matchup-pairing-picker"]');
+      expect(picker).not.toBeNull();
+      const pickerEl = picker as HTMLElement;
+      expect(pickerEl.className).toMatch(/\bgrid\b/);
+      expect(pickerEl.className).toMatch(/\bgrid-cols-1\b/);
+      expect(pickerEl.className).toMatch(/sm:grid-cols-\[15rem_auto_15rem\]/);
+
+      const children = Array.from(pickerEl.children) as HTMLElement[];
+      expect(children).toHaveLength(3);
+      const [fighterCol, vsEl, opponentCol] = children;
+      expect(vsEl!.getAttribute('data-slot')).toBe('matchup-pairing-vs');
+
+      const overlineClasses = [
+        'text-[0.6875rem]',
+        'leading-4',
+        'font-semibold',
+        'tracking-wider',
+        'text-muted-foreground',
+        'uppercase',
+      ];
+      for (const col of [fighterCol!, opponentCol!]) {
+        const label = col.firstElementChild as HTMLElement;
+        expect(label.getAttribute('data-slot')).toBe('matchup-pairing-label');
+        for (const cls of overlineClasses) {
+          expect(label.className).toContain(cls);
+        }
+        const trigger = col.querySelector('[data-slot="select-trigger"]');
+        expect(trigger).not.toBeNull();
+        expect(trigger!.className).toMatch(/\bw-full\b/);
+        expect(trigger!.className).not.toMatch(/w-\[220px\]/);
+      }
+
+      const card = pickerEl.closest('[data-slot="card"]')!;
+      const horizonSwitch = card.querySelector('[data-slot="horizon-switch"]');
+      expect(horizonSwitch).not.toBeNull();
+      const pickerFollowedByHorizon =
+        pickerEl.compareDocumentPosition(horizonSwitch!) & Node.DOCUMENT_POSITION_FOLLOWING;
+      expect(pickerFollowedByHorizon).not.toBe(0);
     });
   });
 

@@ -874,6 +874,7 @@
     "you": "Vous",
     "opponent": "Adversaire",
     "vs": "vs",
+    "pairingHeading": "{{fighter}} vs {{opponent}}",
     "winRateTrend": "Évolution du taux de victoire",
     "results": "Résultats du matchup",
     "selectFighterAria": "Sélectionner votre combattant",
@@ -903,11 +904,14 @@
     "insights": {
       "title": "Analyse du matchup",
       "minMatches": "Min. de matchs par stage",
-      "minMatchesAria": "Minimum de matchs par stage",
       "empty": "Aucun match enregistré pour ce matchup pour l'instant.",
       "currentStreak": "Série en cours",
-      "streakWins": "{{count}} victoires",
-      "streakLosses": "{{count}} défaites",
+      "streakUnit": {
+        "win_one": "victoire",
+        "win_other": "victoires",
+        "loss_one": "défaite",
+        "loss_other": "défaites"
+      },
       "longestWin": "Plus longue série de victoires",
       "longestLoss": "Plus longue série de défaites",
       "recentForm": "Forme récente (du plus récent au plus ancien)",
@@ -920,7 +924,9 @@
       "title": "Détail par stage",
       "stage": "Stage",
       "record": "Bilan",
-      "winRate": "Taux de victoire"
+      "winRate": "Taux de victoire",
+      "noStage_one": "{{count}} partie sans stage enregistré",
+      "noStage_other": "{{count}} parties sans stage enregistré"
     },
     "counterpick": {
       "title": "Conseiller de counterpick",
@@ -933,6 +939,7 @@
       "setState": {
         "summary": "En supposant {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Modifier la phase de jeu, le rôle, les stages précédents et les bans supposés",
+        "editLabel": "Modifier l'hypothèse",
         "phase": {
           "game1": "Manche 1",
           "game2plus": "Manche 2+"
@@ -3214,12 +3221,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Ces {{count}} matchs s'étendent de {{from}} à {{to}}.",
-      "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}})."
+      "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} historique · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "Les 30 derniers matchs sont tout l'historique — un seul chiffre, pas de comparaison.",
         "last90": "Les 90 derniers jours sont tout l'historique — un seul chiffre, pas de comparaison."
+      },
+      "noneRecent": {
+        "scoped": "Aucun match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché."
       },
       "thinRecent": {
         "scoped_one": "Seulement {{count}} match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
@@ -3390,8 +3401,10 @@
     },
     "strip": {
       "legend": "haut = victoire · bas = défaite · espace = nouveau set · étiquette = événement",
-      "aria": "Frise de forme, {{count}} matchs",
+      "aria_one": "Frise de forme, {{shown}} sur {{count}} match",
+      "aria_other": "Frise de forme, {{shown}} sur {{count}} matchs",
       "setAria": "Set vs {{opponent}}, {{record}}",
+      "sessionLabel": "Session · {{date}}",
       "windowHighlighted": {
         "last30": "30 derniers matchs surlignés",
         "lastEvent": "Dernier événement surligné",

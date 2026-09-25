@@ -874,6 +874,7 @@
     "you": "Du",
     "opponent": "Gegner",
     "vs": "vs.",
+    "pairingHeading": "{{fighter}} vs. {{opponent}}",
     "winRateTrend": "Winrate-Verlauf",
     "results": "Matchup-Ergebnisse",
     "selectFighterAria": "Deinen Kämpfer auswählen",
@@ -903,11 +904,14 @@
     "insights": {
       "title": "Matchup-Einblicke",
       "minMatches": "Min. Matches pro Stage",
-      "minMatchesAria": "Minimale Matches pro Stage",
       "empty": "Für dieses Matchup sind noch keine Matches erfasst.",
       "currentStreak": "Aktuelle Serie",
-      "streakWins": "{{count}} Siege",
-      "streakLosses": "{{count}} Niederlagen",
+      "streakUnit": {
+        "win_one": "Sieg",
+        "win_other": "Siege",
+        "loss_one": "Niederlage",
+        "loss_other": "Niederlagen"
+      },
       "longestWin": "Längste Siegesserie",
       "longestLoss": "Längste Niederlagenserie",
       "recentForm": "Aktuelle Form (neueste zuerst)",
@@ -920,7 +924,9 @@
       "title": "Stage-Auswertung",
       "stage": "Stage",
       "record": "Bilanz",
-      "winRate": "Winrate"
+      "winRate": "Winrate",
+      "noStage_one": "{{count}} Spiel ohne erfassten Stage",
+      "noStage_other": "{{count}} Spiele ohne erfassten Stage"
     },
     "counterpick": {
       "title": "Counterpick-Berater",
@@ -933,6 +939,7 @@
       "setState": {
         "summary": "Angenommen {{phase}} · {{role}} · {{priorSummary}}",
         "editAria": "Spielphase, Rolle, vorherige Stages und Bans der Annahme ändern",
+        "editLabel": "Annahme ändern",
         "phase": {
           "game1": "Spiel 1",
           "game2plus": "Spiel 2+"
@@ -3214,12 +3221,16 @@
       },
       "single": "{{record}} · {{cue}}",
       "span": "Diese {{count}} Matches erstrecken sich von {{from}} bis {{to}}.",
-      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}})."
+      "range": "{{rate}} über {{count}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}}).",
+      "allTimeOnly": "{{record}} · {{rate}} gesamt · {{cue}}"
     },
     "state": {
       "collapsed": {
         "last30": "Die letzten 30 Matches sind der gesamte Datensatz — eine Zahl, kein Vergleich.",
         "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
+      },
+      "noneRecent": {
+        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
       },
       "thinRecent": {
         "scoped_one": "Nur {{count}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
@@ -3390,8 +3401,10 @@
     },
     "strip": {
       "legend": "oben = Sieg · unten = Niederlage · Lücke = neuer Satz · Label = Event",
-      "aria": "Formleiste, {{count}} Matches",
+      "aria_one": "Formleiste, {{shown}} von {{count}} Match",
+      "aria_other": "Formleiste, {{shown}} von {{count}} Matches",
       "setAria": "Satz vs. {{opponent}}, {{record}}",
+      "sessionLabel": "Sitzung · {{date}}",
       "windowHighlighted": {
         "last30": "Letzte 30 Matches hervorgehoben",
         "lastEvent": "Letztes Event hervorgehoben",

@@ -17,6 +17,16 @@ export interface ChartCardProps {
   caption?: string;
   /** Header-right slot (sample cue, ruleset control, min-matches select) — `CardAction`. */
   headerRight?: ReactNode;
+  /**
+   * Controls that scope the card (plan 39.1-30, UI-SPEC §6.5 whole-token
+   * wrap): rendered as `[data-slot="chart-card-toolbar"]`, the FIRST child of
+   * the card content, in BOTH the abstained and the populated branch — a
+   * control that scopes an abstained card (e.g. the assumption used to
+   * compute it) must stay visible even when the card has nothing to show
+   * (EVID-05 always-visible). The kit keeps its single abstention branch —
+   * `toolbar` does not add a second one.
+   */
+  toolbar?: ReactNode;
   /** Non-null below the engine's abstention floor: swaps the body for the abstention sentence. */
   abstained?: { gamesNeeded: number } | null;
   /**
@@ -38,6 +48,14 @@ export interface ChartCardProps {
 const COMPACT_CARD_CLASSES = 'gap-4 py-4 shadow-none sm:py-5';
 const COMPACT_HEADER_CLASSES = 'px-4 sm:px-5';
 const COMPACT_CONTENT_CLASSES = 'px-4 sm:px-5';
+/**
+ * WR-08 (39.1-REVIEW.md): the toolbar slot owns its separation from the
+ * content under it — `CardContent` has no gap, so a toolbar line (e.g. the
+ * Counterpick advisor's assumption sentence) otherwise sat flush against
+ * the next paragraph. `mb-4` is the kit's existing 16px step (the compact
+ * density's header-to-content `gap-4` above) — no new spacing value.
+ */
+const TOOLBAR_CLASSES = 'mb-4 min-w-0';
 
 /**
  * The single chart frame every kit chart renders inside (CHRT-01). Every
@@ -52,6 +70,7 @@ export function ChartCard({
   title,
   caption,
   headerRight,
+  toolbar,
   abstained,
   insight,
   density = 'default',
@@ -69,6 +88,11 @@ export function ChartCard({
         {headerRight && <CardAction>{headerRight}</CardAction>}
       </CardHeader>
       <CardContent className={isCompact ? COMPACT_CONTENT_CLASSES : undefined}>
+        {toolbar && (
+          <div data-slot="chart-card-toolbar" className={TOOLBAR_CLASSES}>
+            {toolbar}
+          </div>
+        )}
         {abstained ? (
           <>
             <p className="text-sm text-muted-foreground">

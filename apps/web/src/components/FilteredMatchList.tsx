@@ -99,6 +99,11 @@ export type FilteredMatchListLayout = 'table' | 'stack';
  * rows in one pass" and UI-SPEC §6.4's literal text, so this plan lowers the
  * cap to 100 and replaces the one-step reveal with `FILTERED_MATCH_LIST_PAGE_SIZE`-row
  * paging below.
+ *
+ * Plan 39.1-33 (R2): this constant now governs the TABLE layout only — the
+ * stacked (phone) layout uses its own, stricter `FILTERED_MATCH_LIST_STACK_ROW_CAP`
+ * (see below), because a phone list that flows in the page (plan 39.1-32
+ * item 13) needs a phone-appropriate bound, not the shared 100-row table cap.
  */
 export const FILTERED_MATCH_LIST_ROW_CAP = 100;
 
@@ -108,6 +113,21 @@ export const FILTERED_MATCH_LIST_ROW_CAP = 100;
  * above for the first-pass bound this pairs with.
  */
 export const FILTERED_MATCH_LIST_PAGE_SIZE = 50;
+
+/**
+ * Plan 39.1-33 (R2, UIX-02, owner decision 2026-09-24: phone rows = 20): a
+ * stricter phone-only bound inside UI-SPEC §6.4's "<= 100 rows per DOM pass"
+ * ceiling. Since plan 39.1-32 (item 13) the stacked (phone) layout flows in
+ * the page with no inner scroller, so its first pass is about two phone
+ * screens (20 rows of ~82px + 8px gap, measured at 390x844 in the
+ * guard-layout harness) and it pages by the same step. The table layout
+ * (640px and up) keeps `FILTERED_MATCH_LIST_ROW_CAP`/`_PAGE_SIZE` (100/50)
+ * inside its grandfathered 500px wrapper, byte-unchanged.
+ */
+export const FILTERED_MATCH_LIST_STACK_ROW_CAP = 20;
+
+/** Plan 39.1-33: the stacked layout's own "Show N more" page size — see `FILTERED_MATCH_LIST_STACK_ROW_CAP` above. */
+export const FILTERED_MATCH_LIST_STACK_PAGE_SIZE = 20;
 
 /** Tailwind's `sm` breakpoint (640px) — matches the UI-SPEC's "Mobile (<640px)" clause and `MatrixHeat.tsx`'s own constant. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -376,10 +396,20 @@ export function FilteredMatchList({
   // `rootId` names whichever layout root actually mounts (table or stack are
   // mutually exclusive) so the paging control's `aria-controls` always
   // points at a real element. `visibleCount` replaces plan 39.1-23's
-  // one-step `expanded` boolean — the first pass mounts
-  // `FILTERED_MATCH_LIST_ROW_CAP` rows, and each activation of the paging
-  // control mounts up to `FILTERED_MATCH_LIST_PAGE_SIZE` more.
-  const [visibleCount, setVisibleCount] = useState(FILTERED_MATCH_LIST_ROW_CAP);
+  // one-step `expanded` boolean — the first pass mounts the active layout's
+  // own row cap, and each activation of the paging control mounts up to the
+  // active layout's own page size more.
+  //
+  // Plan 39.1-33 (R2): the stacked (phone) layout uses its own, stricter
+  // cap/page size (`FILTERED_MATCH_LIST_STACK_ROW_CAP`/`_PAGE_SIZE`, 20/20);
+  // the table layout keeps the shared 100/50 pair byte-unchanged.
+  const activeRowCap =
+    resolvedLayout === 'stack' ? FILTERED_MATCH_LIST_STACK_ROW_CAP : FILTERED_MATCH_LIST_ROW_CAP;
+  const activePageSize =
+    resolvedLayout === 'stack'
+      ? FILTERED_MATCH_LIST_STACK_PAGE_SIZE
+      : FILTERED_MATCH_LIST_PAGE_SIZE;
+  const [visibleCount, setVisibleCount] = useState(() => activeRowCap);
   const rootId = useId();
 
   // A re-narrowing must not keep stale paging progress. WR-07 (39.1-REVIEW):
@@ -394,6 +424,12 @@ export function FilteredMatchList({
   // react-compiler lint rule flags the equivalent
   // `useEffect(() => setState(...), [dep])` form as a
   // synchronous-setState-in-an-effect cascading-render risk).
+  // Plan 39.1-33: `resolvedLayout` joins the narrowing key so a layout
+  // change (the stacked/table `matchMedia` boundary, or a host/test's
+  // explicit `layout` prop flip) also re-bounds `visibleCount` to the NEW
+  // active cap — the two layouts have different caps, so carrying stale
+  // progress across a layout switch would either strand a stacked list at
+  // 100 mounted rows or under-mount a table that just gained rows.
   const narrowingKey = JSON.stringify([
     axes.fighterId ?? null,
     axes.vsFighterId ?? null,
@@ -402,21 +438,23 @@ export function FilteredMatchList({
     axes.from ?? null,
     axes.to ?? null,
     axes.claimId ?? null,
+    resolvedLayout,
   ]);
   const [trackedNarrowingKey, setTrackedNarrowingKey] = useState(narrowingKey);
   if (narrowingKey !== trackedNarrowingKey) {
     setTrackedNarrowingKey(narrowingKey);
-    setVisibleCount(FILTERED_MATCH_LIST_ROW_CAP);
+    setVisibleCount(activeRowCap);
   }
 
   const mountedMatches = narrowedMatches.slice(0, visibleCount);
   const remaining = narrowedMatches.length - mountedMatches.length;
-  const nextPageSize = Math.min(FILTERED_MATCH_LIST_PAGE_SIZE, remaining);
+  const nextPageSize = Math.min(activePageSize, remaining);
   const pagingControlVisible = remaining > 0;
-  // Shown whenever the FULL narrowed count exceeds the cap — including once
-  // the final page is revealed (`remaining === 0`) — so paging progress
-  // stays announced to assistive technology throughout, not just mid-page.
-  const progressVisible = narrowedMatches.length > FILTERED_MATCH_LIST_ROW_CAP;
+  // Shown whenever the FULL narrowed count exceeds the active cap —
+  // including once the final page is revealed (`remaining === 0`) — so
+  // paging progress stays announced to assistive technology throughout, not
+  // just mid-page.
+  const progressVisible = narrowedMatches.length > activeRowCap;
 
   // The paging control unmounts itself once the activation that reveals the
   // final page fires; move focus to the (now-larger) list root at exactly
@@ -435,7 +473,13 @@ export function FilteredMatchList({
   useEffect(() => {
     if (shouldFocusRootRef.current) {
       shouldFocusRootRef.current = false;
-      document.getElementById(rootId)?.focus();
+      // Plan 39.1-32 (item 13): `preventScroll` for BOTH layouts. The
+      // stacked layout no longer renders inside the 500px scroll wrapper
+      // below — without it, a plain `focus()` on a long list would scroll
+      // the whole phone page back to the top instead of staying put (the
+      // removed wrapper used to contain that jump). The `aria-live="polite"`
+      // progress announcement (below) remains the screen-reader feedback.
+      document.getElementById(rootId)?.focus({ preventScroll: true });
     }
   });
 
@@ -481,7 +525,7 @@ export function FilteredMatchList({
   });
 
   function handleShowMore() {
-    const next = visibleCount + FILTERED_MATCH_LIST_PAGE_SIZE;
+    const next = visibleCount + activePageSize;
     setVisibleCount(next);
     if (next >= narrowedMatches.length) {
       shouldFocusRootRef.current = true;
@@ -564,143 +608,156 @@ export function FilteredMatchList({
         </div>
       ) : (
         <>
-          <div className="max-h-[500px] overflow-y-auto">
-            {resolvedLayout === 'stack' ? (
-              <ul
-                id={rootId}
-                tabIndex={-1}
-                data-total-rows={narrowedMatches.length}
-                className="flex flex-col gap-2"
-                data-slot="filtered-match-stack"
-              >
-                {mountedMatches.map((match) => {
-                  const facts = buildMatchRowFacts(
-                    match,
-                    t,
-                    eventLabelForMatch,
-                    tournamentLinkForMatch,
-                  );
-                  const isExpanded = expandedId === match.id;
+          {/*
+            Plan 39.1-32 (item 13, UI-SPEC §6.4 exemption 2 narrowed to the
+            table layout only): below 640px (the stacked phone layout) the
+            list flows in the PAGE, because §6.4 bans nested vertical
+            scrollers and exemption 2's original reason — a Phase 38
+            unbounded list — no longer holds once plan 39.1-28 bounds every
+            DOM pass. Plan 39.1-33 (R2) tightens the stacked pass specifically
+            to FILTERED_MATCH_LIST_STACK_ROW_CAP rows (20) + "Show 20 more"
+            paging — about two phone screens — because a page that flows in
+            the page (no inner scroller) needs a phone-appropriate bound, not
+            the shared 100-row table cap. The table layout (640px and up)
+            keeps the grandfathered max-h-[500px] overflow-y-auto wrapper and
+            its own FILTERED_MATCH_LIST_ROW_CAP/_PAGE_SIZE (100/50) exactly
+            as before.
+          */}
+          {resolvedLayout === 'stack' ? (
+            <ul
+              id={rootId}
+              tabIndex={-1}
+              data-total-rows={narrowedMatches.length}
+              className="flex flex-col gap-2"
+              data-slot="filtered-match-stack"
+            >
+              {mountedMatches.map((match) => {
+                const facts = buildMatchRowFacts(
+                  match,
+                  t,
+                  eventLabelForMatch,
+                  tournamentLinkForMatch,
+                );
+                const isExpanded = expandedId === match.id;
 
-                  return (
-                    <Fragment key={match.id}>
-                      <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
-                        <MatchRowOverlay
-                          matchId={match.id}
-                          facts={facts}
-                          isExpanded={isExpanded}
-                          onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
-                          subjectPath={subjectPath}
-                          t={t}
-                        />
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-sm text-muted-foreground">
-                            {new Date(match.time).toLocaleDateString(i18n.language)}
-                          </span>
-                          <span className="text-sm">{facts.opponentTag}</span>
-                          {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
-                            <span className="flex items-center gap-1 text-sm">
-                              {!hideMyCharacterColumn && (
-                                <>
-                                  {facts.fighterSprite?.url && (
-                                    <img
-                                      src={facts.fighterSprite.url}
-                                      alt=""
-                                      className="size-5 object-contain"
-                                    />
-                                  )}
-                                  {facts.fighterSprite
-                                    ? localizedFighterName(match.fighter_id, t)
-                                    : '—'}
-                                </>
-                              )}
-                              {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
-                                <span className="text-xs text-muted-foreground">
-                                  {t('matchups.vs')}
-                                </span>
-                              )}
-                              {!hideTheirCharacterColumn && (
-                                <>
-                                  {facts.opponentSprite?.url && (
-                                    <img
-                                      src={facts.opponentSprite.url}
-                                      alt=""
-                                      className="size-5 object-contain"
-                                    />
-                                  )}
-                                  {facts.opponentSprite
-                                    ? localizedFighterName(match.opponent_id, t)
-                                    : '—'}
-                                </>
-                              )}
-                            </span>
-                          )}
-                          {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
-                          {facts.eventLabel && (
-                            <span className="text-xs text-muted-foreground">
-                              {facts.eventLabel}
-                            </span>
-                          )}
-                        </div>
-                        <span className="flex items-center gap-2">
-                          <Badge variant={match.win ? 'success' : 'destructive'}>
-                            {facts.resultText}
-                          </Badge>
-                          {facts.hasVideo ? (
-                            <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                          ) : (
-                            <ChevronDown
-                              className={cn(
-                                'size-4 shrink-0 text-muted-foreground transition-transform',
-                                isExpanded && 'rotate-180',
-                              )}
-                              aria-hidden="true"
-                            />
-                          )}
-                          {showDelete && (
-                            <span className="relative">
-                              <Button
-                                variant="outline"
-                                size="icon-sm"
-                                aria-label={t('shared.matchDelete.aria')}
-                                data-slot="filtered-match-delete"
-                                data-match-id={match.id}
-                                onClick={() => openDeleteDialog(match)}
-                              >
-                                <Trash2 />
-                              </Button>
-                            </span>
-                          )}
+                return (
+                  <Fragment key={match.id}>
+                    <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
+                      <MatchRowOverlay
+                        matchId={match.id}
+                        facts={facts}
+                        isExpanded={isExpanded}
+                        onToggleExpand={() => setExpandedId(isExpanded ? null : match.id)}
+                        subjectPath={subjectPath}
+                        t={t}
+                      />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm text-muted-foreground">
+                          {new Date(match.time).toLocaleDateString(i18n.language)}
                         </span>
-                      </li>
-                      {isExpanded && !facts.hasVideo && (
-                        <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
-                          <p>
-                            {facts.fighterSprite
-                              ? localizedFighterName(match.fighter_id, t)
-                              : t('common.unknown')}{' '}
-                            {t('matchups.vs')}{' '}
-                            {facts.opponentSprite
-                              ? localizedFighterName(match.opponent_id, t)
-                              : t('common.unknown')}
-                          </p>
-                          <p>{facts.stageName}</p>
-                          <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
-                          {facts.tournamentLink && (
-                            <Link
-                              to={facts.tournamentLink.href}
-                              className="text-primary hover:underline"
+                        <span className="text-sm">{facts.opponentTag}</span>
+                        {(!hideMyCharacterColumn || !hideTheirCharacterColumn) && (
+                          <span className="flex items-center gap-1 text-sm">
+                            {!hideMyCharacterColumn && (
+                              <>
+                                {facts.fighterSprite?.url && (
+                                  <img
+                                    src={facts.fighterSprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {facts.fighterSprite
+                                  ? localizedFighterName(match.fighter_id, t)
+                                  : '—'}
+                              </>
+                            )}
+                            {!hideMyCharacterColumn && !hideTheirCharacterColumn && (
+                              <span className="text-xs text-muted-foreground">
+                                {t('matchups.vs')}
+                              </span>
+                            )}
+                            {!hideTheirCharacterColumn && (
+                              <>
+                                {facts.opponentSprite?.url && (
+                                  <img
+                                    src={facts.opponentSprite.url}
+                                    alt=""
+                                    className="size-5 object-contain"
+                                  />
+                                )}
+                                {facts.opponentSprite
+                                  ? localizedFighterName(match.opponent_id, t)
+                                  : '—'}
+                              </>
+                            )}
+                          </span>
+                        )}
+                        {!hideStageColumn && <span className="text-sm">{facts.stageName}</span>}
+                        {facts.eventLabel && (
+                          <span className="text-xs text-muted-foreground">{facts.eventLabel}</span>
+                        )}
+                      </div>
+                      <span className="flex items-center gap-2">
+                        <Badge variant={match.win ? 'success' : 'destructive'}>
+                          {facts.resultText}
+                        </Badge>
+                        {facts.hasVideo ? (
+                          <Video className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown
+                            className={cn(
+                              'size-4 shrink-0 text-muted-foreground transition-transform',
+                              isExpanded && 'rotate-180',
+                            )}
+                            aria-hidden="true"
+                          />
+                        )}
+                        {showDelete && (
+                          <span className="relative">
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              aria-label={t('shared.matchDelete.aria')}
+                              data-slot="filtered-match-delete"
+                              data-match-id={match.id}
+                              onClick={() => openDeleteDialog(match)}
                             >
-                              {facts.tournamentLink.label}
-                            </Link>
-                          )}
-                        </li>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </ul>
-            ) : (
+                              <Trash2 />
+                            </Button>
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                    {isExpanded && !facts.hasVideo && (
+                      <li className="flex flex-col gap-1 rounded-md border border-dashed p-2 text-sm text-muted-foreground">
+                        <p>
+                          {facts.fighterSprite
+                            ? localizedFighterName(match.fighter_id, t)
+                            : t('common.unknown')}{' '}
+                          {t('matchups.vs')}{' '}
+                          {facts.opponentSprite
+                            ? localizedFighterName(match.opponent_id, t)
+                            : t('common.unknown')}
+                        </p>
+                        <p>{facts.stageName}</p>
+                        <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
+                        {facts.tournamentLink && (
+                          <Link
+                            to={facts.tournamentLink.href}
+                            className="text-primary hover:underline"
+                          >
+                            {facts.tournamentLink.label}
+                          </Link>
+                        )}
+                      </li>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto">
               <div data-slot="filtered-match-table">
                 <Table id={rootId} tabIndex={-1} data-total-rows={narrowedMatches.length}>
                   <TableHeader>
@@ -853,8 +910,8 @@ export function FilteredMatchList({
                   </TableBody>
                 </Table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
           {(pagingControlVisible || progressVisible) && (
             <div className="flex flex-wrap items-center gap-3">
               {pagingControlVisible && (

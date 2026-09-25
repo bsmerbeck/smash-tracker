@@ -39,7 +39,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createShutdownHandler } from './guardLayout.mjs';
+import { createShutdownHandler, createHardTimeoutExit } from './guardLayout.mjs';
 
 const SCRIPT_PATH = fileURLToPath(new URL('./guardLayout.mjs', import.meta.url));
 
@@ -143,4 +143,94 @@ test('guardLayout.mjs disables every competing signal handler (Puppeteer default
   // This script's own handler is registered for both signals.
   assert.match(source, /process\.on\(['"]SIGINT['"],\s*sigintHandler\)/);
   assert.match(source, /process\.on\(['"]SIGTERM['"],\s*sigtermHandler\)/);
+});
+
+/**
+ * WR-10 (39.1-REVIEW.md): the HARD-TIMEOUT exit path. Puppeteer launches
+ * Chrome `detached` on POSIX (its own process-group leader), so SIGKILLing
+ * only the leader pid can orphan its helpers (crashpad, zygote); and an
+ * unbounded `await server.close()` can hang the very exit the timeout
+ * exists to force. Fakes only — no real browser, server or process exit.
+ */
+function makeTimeoutFixture({ serverClose, groupKillThrows = false, closeTimeoutMs = 50 } = {}) {
+  const events = [];
+  const browserProcess = {
+    pid: 4242,
+    kill(signal) {
+      events.push(['leader-kill', signal]);
+    },
+  };
+  const browser = {
+    process: () => browserProcess,
+    async close() {
+      events.push(['browser-close']);
+    },
+  };
+  const server = {
+    close:
+      serverClose ??
+      (async () => {
+        events.push(['server-close']);
+      }),
+  };
+  const forceExit = createHardTimeoutExit({
+    browser,
+    server,
+    offListeners: () => events.push(['off-listeners']),
+    printSummary: () => events.push(['summary']),
+    exit: (code) => events.push(['exit', code]),
+    kill: (pid, signal) => {
+      events.push(['group-kill', pid, signal]);
+      if (groupKillThrows) {
+        throw new Error('ESRCH / unsupported negative pid');
+      }
+    },
+    serverCloseTimeoutMs: closeTimeoutMs,
+  });
+  return { events, forceExit };
+}
+
+test('WR-10: the hard-timeout exit SIGKILLs the browser\'s whole process group (negative pid), not only its leader', async () => {
+  const { events, forceExit } = makeTimeoutFixture();
+  await forceExit();
+  assert.deepEqual(
+    events.find(([kind]) => kind === 'group-kill'),
+    ['group-kill', -4242, 'SIGKILL'],
+  );
+  assert.equal(
+    events.some(([kind]) => kind === 'leader-kill'),
+    false,
+    'the group kill already covers the leader',
+  );
+  assert.deepEqual(events[events.length - 1], ['exit', 1]);
+});
+
+test('WR-10: where a process-group kill is unsupported it falls back to SIGKILLing the leader', async () => {
+  const { events, forceExit } = makeTimeoutFixture({ groupKillThrows: true });
+  await forceExit();
+  assert.deepEqual(events.find(([kind]) => kind === 'leader-kill'), ['leader-kill', 'SIGKILL']);
+  assert.deepEqual(events[events.length - 1], ['exit', 1]);
+});
+
+test('WR-10: a server.close() that never settles cannot hang the exit — it is bounded and the process still exits 1 promptly', async () => {
+  const { events, forceExit } = makeTimeoutFixture({
+    serverClose: () => new Promise(() => {}),
+    closeTimeoutMs: 50,
+  });
+  const started = Date.now();
+  await forceExit();
+  const elapsedMs = Date.now() - started;
+  assert.ok(elapsedMs < 1_000, `expected a prompt exit, took ${elapsedMs}ms`);
+  assert.deepEqual(
+    events.map(([kind]) => kind),
+    ['off-listeners', 'group-kill', 'summary', 'exit'],
+  );
+  assert.deepEqual(events[events.length - 1], ['exit', 1]);
+});
+
+test('WR-10: firing the hard-timeout exit twice kills and exits once', async () => {
+  const { events, forceExit } = makeTimeoutFixture();
+  await Promise.all([forceExit(), forceExit()]);
+  assert.equal(events.filter(([kind]) => kind === 'exit').length, 1);
+  assert.equal(events.filter(([kind]) => kind === 'group-kill').length, 1);
 });

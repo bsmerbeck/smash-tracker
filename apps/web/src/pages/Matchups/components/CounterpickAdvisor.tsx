@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveRuleset, legalStagesFor, DEFAULT_SET_STATE } from '@smash-tracker/shared';
 import type { Match, SetState } from '@smash-tracker/shared';
@@ -50,10 +50,14 @@ import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
  * can never silently carry into the next.
  *
  * D-12/EVID-05: the ruleset control and the set-state assumption are BOTH
- * always visible — the ruleset/set-state controls sit in the frame's header
- * slot beside the sample cue, and the composed assumption sentence renders
- * once, as plain muted text directly under the title (never inside a
- * tooltip or a hover-only surface). When the active ruleset+set-state
+ * always visible — the sample cue, ruleset control and set-state control sit
+ * together in one whole-token-wrapping toolbar row (`ChartCard`'s `toolbar`
+ * slot, plan 39.1-30 item 1) that renders in BOTH the abstained and the
+ * populated branch, and the composed assumption sentence renders once, as
+ * plain muted text directly under that row (never inside a tooltip or a
+ * hover-only surface, and never restated on the set-state trigger itself —
+ * the trigger's own accessible name is a short constant label, described by
+ * the sentence via `aria-describedby`). When the active ruleset+set-state
  * combination leaves NO stage legal, the card says exactly that
  * (`noLegalStages`) instead of the generic abstention sentence, which would
  * misdescribe a full sample as a thin one.
@@ -76,6 +80,11 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   // escape hatch; a stale `refreshedAt` across re-renders is harmless since
   // it's provenance metadata on the claim, not part of the ranking math.
   const [refreshedAt] = useState(() => Date.now());
+  // Stable across re-renders (`useId`, never `Date.now()`/`Math.random()`) —
+  // wires the set-state trigger's `aria-describedby` to the sentence that
+  // describes it, so the trigger's own accessible name can stay a short
+  // constant label without losing the association (plan 39.1-30 item 1).
+  const assumptionLineId = useId();
 
   const resolvedRuleset = resolveRuleset(undefined);
 
@@ -138,15 +147,25 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
     <ChartCard
       title={t('matchups.counterpick.title')}
       caption={t('shared.evidence.type.recommendation')}
-      headerRight={
-        <div className="flex max-w-[180px] flex-wrap items-center justify-end gap-2 sm:max-w-none">
-          <SampleCue sample={claim.sample} />
-          <RulesetDisclosure resolved={resolvedRuleset} />
-          <SetStateControl
-            ruleset={resolvedRuleset.ruleset}
-            setState={setState}
-            onChange={setSetState}
-          />
+      toolbar={
+        <div className="flex flex-col gap-2">
+          <div data-slot="counterpick-controls" className="flex flex-wrap items-center gap-2">
+            <SampleCue sample={claim.sample} />
+            <RulesetDisclosure resolved={resolvedRuleset} />
+            <SetStateControl
+              ruleset={resolvedRuleset.ruleset}
+              setState={setState}
+              onChange={setSetState}
+              describedById={assumptionLineId}
+            />
+          </div>
+          <p
+            id={assumptionLineId}
+            className="text-sm text-muted-foreground"
+            data-testid="set-state-assumption-line"
+          >
+            {describeSetStateAssumption(t, setState)}
+          </p>
         </div>
       }
       abstained={
@@ -154,9 +173,6 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground" data-testid="set-state-assumption-line">
-          {describeSetStateAssumption(t, setState)}
-        </p>
         {noLegalStages ? (
           <p className="text-sm text-muted-foreground">{t('matchups.counterpick.noLegalStages')}</p>
         ) : (

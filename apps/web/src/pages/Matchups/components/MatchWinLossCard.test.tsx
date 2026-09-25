@@ -79,4 +79,11 @@ describe('MatchWinLossCard', () => {
     const root = container.querySelector('[data-slot="card"]') ?? container.firstElementChild;
     expect(root?.className ?? '').not.toMatch(/\bflex-1\b|\bgrow\b/);
   });
+
+  it('WR-01 (review iteration 2): the mini strip is named for the games drawn of the total, with no raw {{placeholder}}', () => {
+    render(<MatchWinLossCard matchupMatches={recentSequence(35)} horizon="last30" />);
+    const strip = screen.getByRole('img', { name: /form strip/i });
+    expect(strip.getAttribute('aria-label')).not.toMatch(/\{\{/);
+    expect(strip).toHaveAccessibleName('Form strip, 30 of 35 games');
+  });
 });

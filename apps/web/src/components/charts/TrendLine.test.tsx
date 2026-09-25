@@ -8,6 +8,7 @@ import {
 } from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
+import { formatPeriodRowLabel, selectPeriodTickLayout } from './periodTicks';
 import type { PeriodPoint } from '@smash-tracker/shared';
 import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import fs from 'node:fs';
@@ -499,7 +500,15 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     rows.forEach((row, i) => {
       const point = points[i]!;
       const cells = row.querySelectorAll('td');
-      expect(cells[0]?.textContent).toBe(point.label);
+      // Plan 39.1-30: the row label now goes through `formatPeriodRowLabel`
+      // (the same period-ticks module the axis reads), not the engine's raw
+      // `point.label` directly — byte-identical here since these fixture
+      // points are week-grain (formatPeriodRowLabel keeps a week/quarter/
+      // year point's engine label unchanged), but the CONTRACT is now the
+      // formatter, not the raw field, so a future non-date-shaped label
+      // change here is caught by this module's own tests, not silently
+      // absorbed by an assertion that duplicated the raw value.
+      expect(cells[0]?.textContent).toBe(formatPeriodRowLabel(point, 'en'));
       expect(cells[1]?.textContent).toBe(`${point.wins}–${point.losses}`);
       expect(cells[2]?.textContent).toBe(`${Math.round(point.rate * 100)}%`);
       expect(cells[3]?.textContent).toBe(String(point.total));
@@ -533,14 +542,19 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     expect(onSelectPoint).toHaveBeenCalledWith(points[0]);
   });
 
-  it('TrendLine.tsx imports nothing from the shared engine but period TYPES and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
+  it('TrendLine.tsx imports nothing from the shared engine but the period TYPE and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
+    // Plan 39.1-30: `PeriodGrain` dropped from this assertion (and from the
+    // file's own import) — the grain-rule tick selection that was the ONLY
+    // reader of that type moved out to `periodTicks.ts` wholesale (action E),
+    // so `TrendLine.tsx` no longer has any legitimate reference to it; kept
+    // here would be a dead import failing `pnpm lint`'s no-unused-vars gate.
+    // `PeriodPoint` stays — the chart still consumes `PeriodPoint[]` directly.
     const filePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'TrendLine.tsx');
     const source = fs.readFileSync(filePath, 'utf8');
     const sharedImportLines = source
       .split('\n')
       .filter((line) => line.includes("from '@smash-tracker/shared'"));
     expect(sharedImportLines).toHaveLength(2);
-    expect(sharedImportLines.join('\n')).toMatch(/PeriodGrain/);
     expect(sharedImportLines.join('\n')).toMatch(/PeriodPoint/);
     expect(sharedImportLines.join('\n')).toMatch(/PERIOD_TREND_MIN_PERIODS/);
     expect(sharedImportLines.join('\n')).not.toMatch(/buildPeriodSeries|regrainFor/);
@@ -556,5 +570,110 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
     );
     expect(container.querySelectorAll('circle')).toHaveLength(60);
+  });
+});
+
+/** 8 daily game-grain points with ISO engine labels — the shape a small account's period series actually takes (`periodSeries.ts` `buildGamePoints`). */
+function makeGamePeriodSeries(count: number): PeriodPoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    const startMs = Date.UTC(2023, 10, 1 + i);
+    return makePeriodPoint({
+      grain: 'game',
+      key: `game:${i}`,
+      label: new Date(startMs).toISOString(),
+      startMs,
+      endMs: startMs + 1,
+      rate: 0.5,
+    });
+  });
+}
+
+describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', () => {
+  it('no rendered x-tick text is a raw ISO timestamp', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const tickTexts = Array.from(
+      container.querySelectorAll('.recharts-xAxis-tick-labels text'),
+    ).map((el) => el.textContent ?? '');
+    expect(tickTexts.length).toBeGreaterThan(0);
+    for (const text of tickTexts) {
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it('the first rendered x tick is start-anchored and the last is end-anchored', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const ticks = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'));
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    const sorted = [...ticks].sort(
+      (a, b) => Number(a.getAttribute('x')) - Number(b.getAttribute('x')),
+    );
+    expect(sorted[0]!.getAttribute('text-anchor')).toBe('start');
+    expect(sorted[sorted.length - 1]!.getAttribute('text-anchor')).toBe('end');
+  });
+
+  it('CR-01: every rendered tick takes its text, x and text-anchor from selectPeriodTickLayout — never a second derivation', () => {
+    // game grain, n=10 at an 829px plot — one of the review's reproduced
+    // overlap cases (the old renderer re-derived anchors from the selected
+    // set and drew a middle tick into the appended final one).
+    const points = Array.from({ length: 10 }, (_, i) => {
+      const startMs = Date.UTC(2023, 10, 1 + i, 12);
+      return makePeriodPoint({
+        grain: 'game',
+        key: `game:${i}`,
+        label: new Date(startMs).toISOString(),
+        startMs,
+        endMs: startMs + 1,
+        rate: 0.5,
+      });
+    });
+    const chartMargin = 5;
+    const yAxisWidth = 60;
+    const xPadding = 16;
+    const plotWidthPx = 829;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={plotWidthPx + chartMargin * 2 + yAxisWidth + xPadding * 2}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const rendered = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'))
+      .map((el) => ({
+        x: Number(el.getAttribute('x')),
+        label: el.textContent ?? '',
+        anchor: el.getAttribute('text-anchor'),
+      }))
+      .sort((a, b) => a.x - b.x);
+    const layout = selectPeriodTickLayout(points, { plotWidthPx, locale: 'en' });
+    expect(rendered.map(({ label, anchor }) => ({ label, anchor }))).toEqual(
+      layout.map(({ label, anchor }) => ({ label, anchor })),
+    );
+    rendered.forEach((tick, j) => {
+      expect(tick.x).toBeCloseTo(layout[j]!.x + chartMargin + yAxisWidth + xPadding, 0);
+    });
+  });
+
+  it('every period circle carries data-slot "trend-period-dot" and every direct value label carries data-slot "trend-period-value-label"', () => {
+    const points = makeGamePeriodSeries(8);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const circles = Array.from(container.querySelectorAll('circle'));
+    expect(circles.length).toBe(8);
+    for (const circle of circles) {
+      expect(circle.getAttribute('data-slot')).toBe('trend-period-dot');
+    }
+    const valueLabels = Array.from(
+      container.querySelectorAll('[data-slot="trend-period-value-label"]'),
+    );
+    expect(valueLabels.length).toBeGreaterThan(0);
   });
 });
