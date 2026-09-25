@@ -658,3 +658,35 @@ describe('StageDetailPage — design-fidelity loop (plan 39.1-37 Task 3)', () =>
     expect(rateCell.parentElement!.className).toMatch(/\bwhitespace-normal\b/);
   });
 });
+
+describe('StageDetailPage — the By Opponent rail uses the glyph cue (UI-SPEC §14.3, plan 39.1-37 Task 3)', () => {
+  it('each rate carries the one-line ●●○ glyph (aria-label = the whole sentence), never the words form that makes the 4-col rail three lines a row', async () => {
+    resetAuthMock();
+    setMockUser(makeMockUser());
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listMatches.mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) =>
+        makeMatch({ id: `g${i}`, time: i + 1, win: i % 2 === 0 }),
+      ),
+    );
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+    const table = document.getElementById('stage-by-opponent-table')!;
+    const rateCell = table.querySelector('tbody tr td:nth-child(3)')!;
+    const glyph = rateCell.querySelector('[role="img"]');
+    expect(glyph).not.toBeNull();
+    expect(glyph!.textContent).toMatch(/^[●○]{3}$/);
+    expect(glyph!.getAttribute('aria-label')).toMatch(/6 games/);
+    expect(rateCell.textContent).not.toMatch(/confidence/);
+  });
+});
