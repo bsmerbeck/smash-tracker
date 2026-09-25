@@ -231,7 +231,11 @@ describe('TrendsPage', () => {
       const gamesCard = document.getElementById('games') as HTMLElement;
       const table = within(gamesCard).getByRole('table');
       expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
-      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+      // Anchored to the terminus summary line ("<n> games · …"): a bare /<n>/ also matched
+      // date cells in the table, so this failed on any calendar day containing the digit.
+      expect(
+        within(gamesCard).getByText(new RegExp(`^${expectedCount} games\\b`)),
+      ).toBeInTheDocument();
     });
 
     it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw)', async () => {
