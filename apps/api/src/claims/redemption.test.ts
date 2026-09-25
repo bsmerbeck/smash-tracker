@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { hashClaimCode, normalizeClaimCode } from './crypto.js';
 import {
@@ -365,6 +365,32 @@ describe('floorDelay', () => {
     const before = Date.now();
     await floorDelay(start, 40);
     expect(Date.now() - before).toBeLessThan(40);
+  });
+
+  it('keeps waiting when the timer wakes before the floor (a Node timer can fire ~1 ms early by Date.now)', async () => {
+    // CI observed a 199 ms redeem response against the 200 ms floor: one setTimeout sized to the
+    // remainder is not a guarantee. Drive the wall clock by hand so the first wake lands 1 ms short.
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    let now = 1_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const start = now;
+      let resolved = false;
+      const pending = floorDelay(start, 200).then(() => {
+        resolved = true;
+      });
+      now += 199;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(resolved).toBe(false);
+      now += 1;
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(resolved).toBe(true);
+      expect(now - start).toBeGreaterThanOrEqual(200);
+    } finally {
+      nowSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 
