@@ -629,3 +629,30 @@ describe('StageDetailPage', () => {
     });
   });
 });
+
+describe('StageDetailPage — design-fidelity loop (plan 39.1-37 Task 3)', () => {
+  it('the By Opponent win-rate cell wraps its sample cue under the rate instead of overflowing the 4-col card', async () => {
+    resetAuthMock();
+    setMockUser(makeMockUser());
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true }),
+      makeMatch({ id: 'm2', time: 2, win: false }),
+    ]);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+    const table = document.getElementById('stage-by-opponent-table')!;
+    const rateCell = table.querySelector('tbody tr td:nth-child(3) > span')!;
+    expect(rateCell.className).toMatch(/\bflex-wrap\b/);
+  });
+});

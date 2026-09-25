@@ -172,3 +172,10 @@ describe('placeReferenceLabel — the all-time label never overprints a value la
     ).toBe('insideTopRight');
   });
 });
+
+describe('rateDomainTicks — design-fidelity loop (plan 39.1-37 Task 3)', () => {
+  it('never appends an off-step top tick that crowds its neighbour ([20, 90] on 80px -> 20 / 40 / 60 / 80)', async () => {
+    const { rateDomainTicks } = await loadGeometry();
+    expect(rateDomainTicks([20, 90], 80)).toEqual([20, 40, 60, 80]);
+  });
+});

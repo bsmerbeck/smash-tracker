@@ -1000,3 +1000,105 @@ describe('TrendLine — event mode human axis, fitted domain, label cap (plan 39
     }
   });
 });
+
+describe('TrendLine — design-fidelity loop (plan 39.1-37 Task 3): marks at the domain edge are whole, labels stay legible', () => {
+  it('period mode: a pinned or edge dot is never clipped — the dots layer carries no clip-path', () => {
+    const points = makePeriodSeries(8, (i) =>
+      i === 7 ? { subFloor: true, wins: 0, losses: 2, total: 2, rate: 0 } : { rate: 1 },
+    );
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const dotLayers = Array.from(container.querySelectorAll('.recharts-line-dots'));
+    expect(dotLayers.length).toBeGreaterThan(0);
+    for (const layer of dotLayers) {
+      expect(layer.getAttribute('clip-path')).toBeNull();
+    }
+  });
+
+  it('period mode: a context series outside the fitted domain never re-extends it (y ticks stay 40-70)', () => {
+    const joined = [0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58, 0.5];
+    const points = makePeriodSeries(8, (i) => ({ rate: joined[i] }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        contextRatePercents={[0, 100, 0, 100, 0, 100, 0, 100]}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const ticks = renderedYTickValues(container);
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const tick of ticks) {
+      expect(tick).toBeGreaterThanOrEqual(40);
+      expect(tick).toBeLessThanOrEqual(70);
+    }
+  });
+
+  it('event mode: a first anchor at 100% keeps its whole dot — the dots layer carries no clip-path', () => {
+    const points = eventKeysFor(6).map((eventKey, i) =>
+      makeEventPoint({ eventKey, cumulativeWinRate: i === 0 ? 100 : 60 - i }),
+    );
+    const { container } = render(
+      <TrendLine mode="event" points={points} width={640} height={288} />,
+    );
+    const dotLayers = Array.from(container.querySelectorAll('.recharts-line-dots'));
+    expect(dotLayers.length).toBeGreaterThan(0);
+    for (const layer of dotLayers) {
+      expect(layer.getAttribute('clip-path')).toBeNull();
+    }
+  });
+
+  it('event mode: two same-day sessions never print the same date twice on the axis', () => {
+    const day = Date.UTC(2023, 10, 18, 12);
+    const times = [
+      Date.UTC(2023, 10, 14, 12),
+      Date.UTC(2023, 10, 16, 12),
+      Date.UTC(2023, 10, 17, 12),
+      day,
+      day + 4 * 60 * 60 * 1000,
+    ];
+    const points = times.map((dateMs) =>
+      makeEventPoint({
+        eventKey: `session::${dateMs}`,
+        context: { opponentTag: 'rival', eventLabel: new Date(dateMs).toISOString(), dateMs },
+      }),
+    );
+    const { container } = render(
+      <TrendLine mode="event" points={points} width={1390} height={288} />,
+    );
+    const tickTexts = renderedTickTexts(container);
+    expect(tickTexts.length).toBeGreaterThan(1);
+    expect(new Set(tickTexts).size).toBe(tickTexts.length);
+    expect(tickTexts[tickTexts.length - 1]).toBe('Nov 18, 2023');
+  });
+
+  it('event and period value labels carry a surface-coloured halo so a crossing line never overprints them', () => {
+    const { container: eventContainer } = render(
+      <TrendLine
+        mode="event"
+        points={eventKeysFor(3).map((eventKey) => makeEventPoint({ eventKey }))}
+        width={640}
+        height={288}
+      />,
+    );
+    const eventLabel = eventContainer.querySelector('[data-slot="trend-event-value-label"]')!;
+    expect(eventLabel.getAttribute('stroke')).toBe('var(--card)');
+    expect(eventLabel.getAttribute('paint-order')).toBe('stroke');
+
+    const { container: periodContainer } = render(
+      <TrendLine
+        mode="period"
+        points={makePeriodSeries(8, (i) => ({ rate: 0.4 + i * 0.02 }))}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const periodLabel = periodContainer.querySelector('[data-slot="trend-period-value-label"]')!;
+    expect(periodLabel.getAttribute('stroke')).toBe('var(--card)');
+    expect(periodLabel.getAttribute('paint-order')).toBe('stroke');
+  });
+});
