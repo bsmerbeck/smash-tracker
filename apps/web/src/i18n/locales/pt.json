@@ -3526,6 +3526,24 @@
         },
         "strips": "taxa = taxa de vitórias em relação à taxa histórica de {{baseline}} — azul acima, âmbar abaixo, sem cor com menos de {{floor}} partidas",
         "model": "Glicko-2, não oficial."
+      },
+      "readout": {
+        "rating": "Pontuação {{rating}} ±{{rd}}",
+        "ratingAtClose": "Pontuação no fechamento de {{period}} · {{rating}} ±{{rd}}",
+        "record_one": "{{wins}}–{{losses}} · {{rate}} · {{count}} partida",
+        "record_other": "{{wins}}–{{losses}} · {{rate}} · {{count}} partidas",
+        "delta": {
+          "above": "+{{points}} pts em relação à taxa histórica de {{baseline}}",
+          "below": "−{{points}} pts em relação à taxa histórica de {{baseline}}",
+          "level": "no nível da taxa histórica de {{baseline}}"
+        },
+        "noStep_one": "{{count}} partida — menos de {{floor}}, sem nível de cor",
+        "noStep_other": "{{count}} partidas — menos de {{floor}}, sem nível de cor",
+        "capped": "menos de {{cap}} partidas — cor limitada"
+      },
+      "period": {
+        "quarter": "T{{quarter}} {{year}}",
+        "week": "Sem. {{week}} {{year}}"
       }
     }
   }

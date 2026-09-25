@@ -25,6 +25,7 @@ import {
   DRILL_DOWN_STAGE_PARAM,
   DRILL_DOWN_TO_PARAM,
   DRILL_DOWN_VS_PARAM,
+  buildDrillDownSearch,
   readDrillDownParams,
   sortMatchesNewestFirst,
   type DrillDownAxes,
@@ -193,7 +194,8 @@ export function TrendsPage() {
   // the URL, and this page's doors write one — Clear filters drops every
   // axis the terminus reads (and the `#games` hash), which unmounts it.
   const navigate = useNavigate();
-  function handleClearFilters(): void {
+  /** The current search minus every axis this page's terminus narrows by — the ONE spelling every writer below shares. */
+  function searchWithoutDrillAxes(): URLSearchParams {
     const params = new URLSearchParams(searchParams);
     for (const key of [
       DRILL_DOWN_FIGHTER_PARAM,
@@ -206,8 +208,30 @@ export function TrendsPage() {
     ]) {
       params.delete(key);
     }
-    const search = params.toString();
+    return params;
+  }
+  function handleClearFilters(): void {
+    const search = searchWithoutDrillAxes().toString();
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // Plan 39.1-35 (UI-SPEC §10.3, §12.1 "click a period → from / to →
+  // FilteredMatchList"): a career-timeline period or month drills through
+  // Phase 38's URL contract, built exactly like FighterAnalysisPage's
+  // `handleHeroDrill` — a drill REPLACES any prior narrowing or claim axis,
+  // keeps every other param, and lands on this page's own terminus. The
+  // page's own pathname, never a subject prefix (Trends is own-account only,
+  // 38 D-04).
+  function handleTimelineDrill({ fromMs, toMs }: { fromMs: number; toMs: number }): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ from: fromMs, to: toMs })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
   }
 
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
@@ -298,7 +322,11 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={12}>
-          <CareerTimelineCard matches={matches} horizon={horizon} />
+          <CareerTimelineCard
+            matches={matches}
+            horizon={horizon}
+            onSelectPeriod={handleTimelineDrill}
+          />
         </GridCell>
 
         <GridCell span={4} stack>

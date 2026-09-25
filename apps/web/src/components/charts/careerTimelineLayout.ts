@@ -152,3 +152,28 @@ export function careerTimelineYDomain(
   for (let v = lo; v <= hi; v += step) ticks.push(v);
   return { lo, hi, step, ticks };
 }
+
+/** UI-SPEC §10.2: a tooltip (here, the timeline's one readout) is at most 280px wide. */
+export const CAREER_TIMELINE_READOUT_MAX_WIDTH_PX = 280;
+/** Sketch 002-C `showTip`: the tooltip sits 14px beside the pointer. */
+export const CAREER_TIMELINE_READOUT_GAP_PX = 14;
+
+/**
+ * Plan 39.1-35 (UI-SPEC §10.2, sketch 002-C `showTip`): the readout's left
+ * edge, px from the timeline root's left — right of the crosshair when it
+ * fits, flipped to the left of it near the right edge, and clamped inside
+ * the container otherwise (a readout wider than the container sits at 0).
+ * The readout never leaves the card.
+ */
+export function clampReadoutLeft(input: {
+  anchorX: number;
+  readoutWidth: number;
+  containerWidth: number;
+}): number {
+  const { anchorX, readoutWidth, containerWidth } = input;
+  if (readoutWidth >= containerWidth) return 0;
+  const right = anchorX + CAREER_TIMELINE_READOUT_GAP_PX;
+  if (right + readoutWidth <= containerWidth) return right;
+  const left = anchorX - CAREER_TIMELINE_READOUT_GAP_PX - readoutWidth;
+  return Math.min(containerWidth - readoutWidth, Math.max(0, left));
+}

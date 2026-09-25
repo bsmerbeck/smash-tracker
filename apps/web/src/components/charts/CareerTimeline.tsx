@@ -1,5 +1,10 @@
-import { useState } from 'react';
-import type { ReactElement } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import type {
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Area,
@@ -16,6 +21,7 @@ import {
 } from 'recharts';
 import type {
   CareerRatingPoint,
+  CareerStripCell,
   CareerStripSet,
   CareerTimeline as CareerTimelineData,
 } from '@smash-tracker/shared';
@@ -26,16 +32,34 @@ import {
   CAREER_TIMELINE_GAMES_ROW_OFFSET_PX,
   CAREER_TIMELINE_LABEL_GAP_PX,
   CAREER_TIMELINE_RATE_ROW_OFFSET_PX,
+  CAREER_TIMELINE_READOUT_MAX_WIDTH_PX,
   CAREER_TIMELINE_STRIP_ROW_HEIGHT_PX,
   careerGamesFill,
   careerStripFill,
   careerTimelineGeometry,
   careerTimelineIsNarrow,
   careerTimelineYDomain,
+  clampReadoutLeft,
   type CareerTimelineGeometry,
   type CareerTimelineYDomain,
 } from './careerTimelineLayout';
 import { TIME_AXIS_LABEL_OFFSET_PX, selectTimeAxisTicks } from './timeAxisTicks';
+
+/** What the one readout describes: a rating close (plot band) or a strip cell (strip band). */
+export type CareerTimelineReadoutTarget =
+  { kind: 'point'; point: CareerRatingPoint } | { kind: 'cell'; cell: CareerStripCell };
+
+/** The readout's content — a title and its lines, every string composed by the host. */
+export interface CareerTimelineReadout {
+  title: string;
+  lines: string[];
+}
+
+/** An inclusive drill window in epoch ms — Phase 38's `from` / `to` axes (UI-SPEC §10.3). */
+export interface CareerTimelineSelection {
+  fromMs: number;
+  toMs: number;
+}
 
 /** Every string the timeline draws — the chart never localises (its host passes them in). */
 export interface CareerTimelineLabels {
@@ -59,6 +83,8 @@ export interface CareerTimelineLabels {
   low: (rating: number) => string;
   /** The recent-window band's label — the active horizon's short name. */
   band?: string;
+  /** The one readout's title and lines for a target (UI-SPEC §10.2 order) — the kit composes nothing itself. */
+  readout: (target: CareerTimelineReadoutTarget) => CareerTimelineReadout;
 }
 
 export interface CareerTimelineProps {
@@ -71,6 +97,12 @@ export interface CareerTimelineProps {
    * jsdom's ResponsiveContainer.
    */
   width?: number;
+  /**
+   * UI-SPEC §10.3 / §12.1: a period or strip cell was clicked (mouse / pen),
+   * Entered (keyboard) or tapped twice (touch) — the host writes the
+   * inclusive window as the `from` / `to` drill axes. Omitted: nothing drills.
+   */
+  onSelectPeriod?: (selection: CareerTimelineSelection) => void;
 }
 
 /** The container width assumed before `ResponsiveContainer`'s first measurement lands. */
@@ -109,6 +141,33 @@ const ROW_LABEL_BASELINE_PX = 12;
  * SVG clips by default, which cut "games" to "ames".
  */
 const SURFACE_OVERFLOW_CLASSES = '[&_.recharts-surface]:overflow-visible';
+/** Sketch 002-C `#cx`: the crosshair's active dot. */
+const CROSSHAIR_DOT_RADIUS = 4.5;
+/** Phase 38's focus-ring recipe (UI-SPEC §10.1). */
+const PLOT_FOCUS_CLASSES =
+  'rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+/** `ChartTooltip`'s own surface (UI-SPEC §10.2: max 280px, meta size, tabular). */
+const READOUT_CLASSES =
+  'pointer-events-none absolute z-10 w-max max-w-[min(280px,100%)] rounded-md border border-border bg-card p-2 text-xs tabular-nums';
+
+/** The readout's target — a rating close or a strip cell of the strip set currently drawn. */
+type ActiveTarget = { kind: 'point'; index: number } | { kind: 'cell'; index: number };
+
+/**
+ * Who showed the readout: a fine pointer hovering, the keyboard stepping (the
+ * only source mirrored into the polite live region) or a first touch tap
+ * (armed — a second tap on the same target drills).
+ */
+type ActiveSource = 'pointer' | 'keyboard' | 'touch';
+
+interface ActiveState {
+  target: ActiveTarget;
+  source: ActiveSource;
+}
+
+function sameTarget(a: ActiveTarget, b: ActiveTarget): boolean {
+  return a.kind === b.kind && a.index === b.index;
+}
 
 interface TimelineRow {
   key: string;
@@ -175,6 +234,164 @@ interface LayerProps {
   geometry: CareerTimelineGeometry;
   yDomain: CareerTimelineYDomain;
   locale: string;
+}
+
+interface InteractionLayerProps extends LayerProps {
+  active: ActiveTarget | null;
+  selectable: boolean;
+  /** A fine pointer moved over the hit rect (`null`: over nothing locatable). */
+  onHover: (target: ActiveTarget | null) => void;
+  /** A fine pointer left the hit rect. */
+  onLeave: () => void;
+  /** A click / tap landed on a target; `touch` says it came from a finger. */
+  onPress: (target: ActiveTarget, touch: boolean) => void;
+}
+
+/**
+ * The TOP layer (plan 39.1-35, UI-SPEC §10.1 / §12.1, sketch 002-C `#cx` +
+ * `.hit` + `locate()`): ONE crosshair through the plot and both strips, a
+ * dot at the active rating close, and a transparent hit rect over plot +
+ * strip band. A pointer above the plot bottom snaps to the nearest close by
+ * x; inside the strip band it takes the cell under it (falling back to the
+ * nearest close in a month with no cell). Every x is the chart's own scale.
+ */
+function InteractionLayer({
+  timeline,
+  strips,
+  geometry,
+  active,
+  selectable,
+  onHover,
+  onLeave,
+  onPress,
+}: InteractionLayerProps): ReactElement | null {
+  const xScale = useXAxisScale();
+  const yScale = useYAxisScale();
+  const plot = usePlotArea();
+  // The pointerType of the press that precedes a click — a React click is a
+  // MouseEvent in some engines, so the pointerdown is the reliable source.
+  const pressTypeRef = useRef<string | null>(null);
+  if (!xScale || !yScale || !plot) return null;
+  const points = timeline.rating.points;
+  const x0 = plot.x;
+  const x1 = plot.x + plot.width;
+  const y0 = plot.y;
+  const plotBottom = plot.y + plot.height;
+  const bandBottom = plotBottom + geometry.stripBand;
+
+  const cellSpan = (cell: CareerStripCell): [number, number] | null => {
+    const start = xScale(cell.startMs);
+    const end = xScale(cell.endMs);
+    if (start == null || end == null) return null;
+    return [Math.max(x0, start), Math.min(x1, end)];
+  };
+
+  function locate(x: number, y: number): ActiveTarget | null {
+    if (strips && y > plotBottom) {
+      const index = strips.cells.findIndex((cell) => {
+        const span = cellSpan(cell);
+        return span !== null && x >= span[0] && x < span[1];
+      });
+      if (index >= 0) return { kind: 'cell', index };
+    }
+    let best = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    points.forEach((point, i) => {
+      const px = xScale!(point.closeMs);
+      if (px == null) return;
+      const distance = Math.abs(px - x);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    });
+    return best >= 0 ? { kind: 'point', index: best } : null;
+  }
+
+  function locateEvent(event: ReactPointerEvent<SVGRectElement> | ReactMouseEvent<SVGRectElement>) {
+    const svg = event.currentTarget.ownerSVGElement;
+    const rect = svg ? svg.getBoundingClientRect() : { left: 0, top: 0 };
+    return locate(event.clientX - rect.left, event.clientY - rect.top);
+  }
+
+  let crosshairX: number | null = null;
+  let dotPoint: CareerRatingPoint | null = null;
+  if (active?.kind === 'point') {
+    const point = points[active.index];
+    if (point) {
+      crosshairX = xScale(point.closeMs) ?? null;
+      dotPoint = point;
+    }
+  } else if (active?.kind === 'cell' && strips) {
+    const cell = strips.cells[active.index];
+    const span = cell ? cellSpan(cell) : null;
+    if (cell && span) {
+      crosshairX = (span[0] + span[1]) / 2;
+      const inForce = cell.ratingAtClose?.key;
+      dotPoint = inForce ? (points.find((point) => point.key === inForce) ?? null) : null;
+    }
+  }
+  const dotX = dotPoint ? xScale(dotPoint.closeMs) : undefined;
+  const dotY = dotPoint ? yScale(dotPoint.rating) : undefined;
+
+  return (
+    <g data-slot="career-timeline-interaction-layer">
+      {crosshairX !== null && (
+        <g pointerEvents="none">
+          <line
+            data-slot="career-timeline-crosshair"
+            x1={crosshairX}
+            x2={crosshairX}
+            y1={y0}
+            y2={bandBottom}
+            stroke={CHART_TOKENS.deemphasisStrong}
+            strokeWidth={1}
+          />
+          {dotX != null && dotY != null && (
+            <circle
+              data-slot="career-timeline-crosshair-dot"
+              cx={dotX}
+              cy={dotY}
+              r={CROSSHAIR_DOT_RADIUS}
+              fill={CHART_TOKENS.series1}
+              stroke={CHART_TOKENS.surface}
+              strokeWidth={DOT_RING_WIDTH}
+            />
+          )}
+        </g>
+      )}
+      <rect
+        data-slot="career-timeline-hit"
+        x={x0}
+        y={y0}
+        width={x1 - x0}
+        height={bandBottom - y0}
+        fill="transparent"
+        style={selectable ? { cursor: 'pointer' } : undefined}
+        onPointerDown={(event) => {
+          pressTypeRef.current = event.pointerType || null;
+        }}
+        onPointerMove={(event) => {
+          // A finger dragging over the plot scrolls the page; only fine
+          // pointers hover (the touch rule is tap-to-read, tap-again-to-drill).
+          if (event.pointerType === 'touch') return;
+          onHover(locateEvent(event));
+        }}
+        onPointerLeave={(event) => {
+          // Every lifted finger fires a pointerleave — it must not hide a
+          // tapped readout.
+          if (event.pointerType === 'touch') return;
+          onLeave();
+        }}
+        onClick={(event) => {
+          const touch = pressTypeRef.current === 'touch';
+          pressTypeRef.current = null;
+          const target = locateEvent(event);
+          if (target) onPress(target, touch);
+        }}
+      />
+    </g>
+  );
 }
 
 /**
@@ -541,9 +758,34 @@ function TopLayer({ timeline, labels, geometry }: LayerProps) {
  * the chart never bins; below a 520px plot it switches to the engine's
  * narrow (quarter) strip set, a 170px plot bottom and 200-point hairlines.
  */
-export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps): ReactElement {
+export function CareerTimeline({
+  timeline,
+  labels,
+  width,
+  onSelectPeriod,
+}: CareerTimelineProps): ReactElement {
   const { i18n } = useTranslation();
   const [measuredWidth, setMeasuredWidth] = useState(RESPONSIVE_FALLBACK_WIDTH);
+  const [active, setActive] = useState<ActiveState | null>(null);
+  const [readoutWidth, setReadoutWidth] = useState(0);
+  const readoutRef = useRef<HTMLDivElement>(null);
+
+  // Every hook lives ABOVE the locked early return below. The readout's own
+  // width decides which side of the crosshair it sits on (clampReadoutLeft);
+  // re-measured whenever it shows a different target.
+  const activeKey = active ? `${active.target.kind}:${active.target.index}` : null;
+  useLayoutEffect(() => {
+    const el = readoutRef.current;
+    if (!el) return undefined;
+    function measure() {
+      if (el) setReadoutWidth(el.offsetWidth);
+    }
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeKey]);
 
   const points = timeline.rating.points;
   if (timeline.state === 'locked' || points.length === 0 || timeline.domain === null) {
@@ -553,6 +795,7 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
       </div>
     );
   }
+  const domain = timeline.domain;
 
   const containerWidth = typeof width === 'number' ? width : measuredWidth;
   const narrow = careerTimelineIsNarrow(containerWidth);
@@ -573,6 +816,123 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
     locale: i18n.language,
   };
 
+  // The same linear time mapping the chart's hidden XAxis draws with (its
+  // domain is explicit and its range is the plot area) — used only to place
+  // the HTML readout beside the crosshair the chart itself draws.
+  const plotLeft = geometry.marginLeft;
+  const plotRight = containerWidth - geometry.marginRight;
+  const xOf = (ms: number) =>
+    domain.endMs === domain.startMs
+      ? plotLeft
+      : plotLeft +
+        ((ms - domain.startMs) / (domain.endMs - domain.startMs)) * (plotRight - plotLeft);
+
+  function readoutTargetOf(target: ActiveTarget): CareerTimelineReadoutTarget | null {
+    if (target.kind === 'point') {
+      const point = points[target.index];
+      return point ? { kind: 'point', point } : null;
+    }
+    const cell = strips?.cells[target.index];
+    return cell ? { kind: 'cell', cell } : null;
+  }
+
+  function selectionOf(target: ActiveTarget): CareerTimelineSelection | null {
+    const resolved = readoutTargetOf(target);
+    if (!resolved) return null;
+    const span = resolved.kind === 'point' ? resolved.point : resolved.cell;
+    // The engine's periods are `[startMs, endMs)`; the drill axes are inclusive.
+    return { fromMs: span.startMs, toMs: span.endMs - 1 };
+  }
+
+  function select(target: ActiveTarget): void {
+    if (!onSelectPeriod) return;
+    const selection = selectionOf(target);
+    if (selection) onSelectPeriod(selection);
+  }
+
+  function handlePress(target: ActiveTarget, touch: boolean): void {
+    if (touch) {
+      // Planner decision 2: the first tap shows the readout; a second tap on
+      // the same target drills — a single tap never navigates unseen.
+      if (active?.source === 'touch' && sameTarget(active.target, target)) {
+        select(target);
+        return;
+      }
+      setActive({ target, source: 'touch' });
+      return;
+    }
+    setActive({ target, source: 'pointer' });
+    select(target);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    const last = points.length - 1;
+    const current = active?.target.kind === 'point' ? active.target.index : null;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft':
+        // Planner decision 3: the first press starts at the latest period.
+        next = current === null ? last : Math.max(0, current - 1);
+        break;
+      case 'ArrowRight':
+        next = current === null ? last : Math.min(last, current + 1);
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = last;
+        break;
+      case 'Enter':
+        if (!active) return;
+        event.preventDefault();
+        select(active.target);
+        return;
+      case 'Escape':
+        if (!active) return;
+        event.preventDefault();
+        setActive(null);
+        return;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setActive({ target: { kind: 'point', index: next }, source: 'keyboard' });
+  }
+
+  const readoutTarget = active ? readoutTargetOf(active.target) : null;
+  const readout = readoutTarget ? labels.readout(readoutTarget) : null;
+  let readoutAnchorX = plotLeft;
+  if (readoutTarget?.kind === 'point') {
+    readoutAnchorX = xOf(readoutTarget.point.closeMs);
+  } else if (readoutTarget?.kind === 'cell') {
+    readoutAnchorX =
+      (Math.max(plotLeft, xOf(readoutTarget.cell.startMs)) +
+        Math.min(plotRight, xOf(readoutTarget.cell.endMs))) /
+      2;
+  }
+  const readoutLeft = clampReadoutLeft({
+    anchorX: readoutAnchorX,
+    readoutWidth: Math.min(readoutWidth, CAREER_TIMELINE_READOUT_MAX_WIDTH_PX),
+    containerWidth,
+  });
+  const readoutBody = (content: CareerTimelineReadout) => (
+    <>
+      <p data-slot="career-timeline-readout-title" className="text-sm font-semibold">
+        {content.title}
+      </p>
+      {content.lines.map((line, i) => (
+        <p
+          key={`${i}:${line}`}
+          data-slot="career-timeline-readout-line"
+          className="text-muted-foreground"
+        >
+          {line}
+        </p>
+      ))}
+    </>
+  );
+
   const chart = (
     <ComposedChart
       {...(typeof width === 'number' ? { width, height: geometry.height } : {})}
@@ -588,7 +948,7 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
         type="number"
         dataKey="closeMs"
         scale="linear"
-        domain={[timeline.domain.startMs, timeline.domain.endMs]}
+        domain={[domain.startMs, domain.endMs]}
         allowDataOverflow
         hide
       />
@@ -629,6 +989,16 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
       <StripsLayer {...layerProps} />
       <ZIndexLayer zIndex={DefaultZIndexes.label}>
         <TopLayer {...layerProps} />
+        {/* Same (pre-registered) label layer, drawn after the labels: a new
+            zIndex value would only mount its portal on a later commit. */}
+        <InteractionLayer
+          {...layerProps}
+          active={active?.target ?? null}
+          selectable={onSelectPeriod !== undefined}
+          onHover={(target) => setActive(target ? { target, source: 'pointer' } : null)}
+          onLeave={() => setActive((prev) => (prev?.source === 'pointer' ? null : prev))}
+          onPress={handlePress}
+        />
       </ZIndexLayer>
     </ComposedChart>
   );
@@ -637,21 +1007,44 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
     <div
       data-slot="career-timeline"
       data-state={timeline.state}
-      role="img"
-      aria-label={labels.aria}
-      className={SURFACE_OVERFLOW_CLASSES}
+      className={`relative ${SURFACE_OVERFLOW_CLASSES}`}
     >
-      {typeof width === 'number' ? (
-        chart
-      ) : (
-        <ResponsiveContainer
-          width="100%"
-          height={geometry.height}
-          onResize={(w) => setMeasuredWidth(w)}
+      <div
+        data-slot="career-timeline-plot"
+        tabIndex={0}
+        role="img"
+        aria-label={labels.aria}
+        className={PLOT_FOCUS_CLASSES}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setActive(null)}
+      >
+        {typeof width === 'number' ? (
+          chart
+        ) : (
+          <ResponsiveContainer
+            width="100%"
+            height={geometry.height}
+            onResize={(w) => setMeasuredWidth(w)}
+          >
+            {chart}
+          </ResponsiveContainer>
+        )}
+      </div>
+      {readout && (
+        <div
+          ref={readoutRef}
+          data-slot="career-timeline-readout"
+          aria-hidden="true"
+          className={READOUT_CLASSES}
+          style={{ left: readoutLeft, top: geometry.marginTop }}
         >
-          {chart}
-        </ResponsiveContainer>
+          {readoutBody(readout)}
+        </div>
       )}
+      {/* UI-SPEC §14.7: keyboard steps are announced politely; a pointer hover never is. */}
+      <div data-slot="career-timeline-live" aria-live="polite" className="sr-only">
+        {readout && active?.source === 'keyboard' ? readoutBody(readout) : null}
+      </div>
     </div>
   );
 }

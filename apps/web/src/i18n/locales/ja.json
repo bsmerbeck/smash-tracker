@@ -3526,6 +3526,24 @@
         },
         "strips": "勝率 = 通算勝率{{baseline}}との差 — 上回れば青、下回れば琥珀色、{{floor}}戦未満は無色",
         "model": "Glicko-2・非公式。"
+      },
+      "readout": {
+        "rating": "レーティング {{rating}} ±{{rd}}",
+        "ratingAtClose": "{{period}}終了時のレーティング · {{rating}} ±{{rd}}",
+        "record_one": "{{wins}}–{{losses}} · {{rate}} · {{count}}戦",
+        "record_other": "{{wins}}–{{losses}} · {{rate}} · {{count}}戦",
+        "delta": {
+          "above": "通算勝率{{baseline}}より+{{points}}pt",
+          "below": "通算勝率{{baseline}}より−{{points}}pt",
+          "level": "通算勝率{{baseline}}と同水準"
+        },
+        "noStep_one": "{{count}}戦 — {{floor}}戦未満のため色分けなし",
+        "noStep_other": "{{count}}戦 — {{floor}}戦未満のため色分けなし",
+        "capped": "{{cap}}戦未満 — 色の段階を制限"
+      },
+      "period": {
+        "quarter": "{{year}}年 第{{quarter}}四半期",
+        "week": "{{year}}年 第{{week}}週"
       }
     }
   }

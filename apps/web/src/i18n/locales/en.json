@@ -3526,6 +3526,24 @@
         },
         "strips": "rate = win rate vs the {{baseline}} all-time rate — blue above, amber below, no colour under {{floor}} games",
         "model": "Glicko-2, unofficial."
+      },
+      "readout": {
+        "rating": "Rating {{rating}} ±{{rd}}",
+        "ratingAtClose": "Rating at the {{period}} close · {{rating}} ±{{rd}}",
+        "record_one": "{{wins}}–{{losses}} · {{rate}} · {{count}} game",
+        "record_other": "{{wins}}–{{losses}} · {{rate}} · {{count}} games",
+        "delta": {
+          "above": "+{{points}} pts vs the {{baseline}} all-time rate",
+          "below": "−{{points}} pts vs the {{baseline}} all-time rate",
+          "level": "level with the {{baseline}} all-time rate"
+        },
+        "noStep_one": "{{count}} game — under {{floor}}, no colour step",
+        "noStep_other": "{{count}} games — under {{floor}}, no colour step",
+        "capped": "under {{cap}} games — colour capped"
+      },
+      "period": {
+        "quarter": "{{year}} Q{{quarter}}",
+        "week": "{{year}} W{{week}}"
       }
     }
   }

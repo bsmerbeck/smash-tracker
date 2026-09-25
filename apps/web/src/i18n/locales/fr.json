@@ -3526,6 +3526,24 @@
         },
         "strips": "taux = taux de victoire comparé au taux global de {{baseline}} — bleu au-dessus, ambre en dessous, sans couleur sous {{floor}} matchs",
         "model": "Glicko-2, non officiel."
+      },
+      "readout": {
+        "rating": "Classement {{rating}} ±{{rd}}",
+        "ratingAtClose": "Classement à la clôture de {{period}} · {{rating}} ±{{rd}}",
+        "record_one": "{{wins}}–{{losses}} · {{rate}} · {{count}} match",
+        "record_other": "{{wins}}–{{losses}} · {{rate}} · {{count}} matchs",
+        "delta": {
+          "above": "+{{points}} pts par rapport au taux global de {{baseline}}",
+          "below": "−{{points}} pts par rapport au taux global de {{baseline}}",
+          "level": "au niveau du taux global de {{baseline}}"
+        },
+        "noStep_one": "{{count}} match — moins de {{floor}}, pas de palier de couleur",
+        "noStep_other": "{{count}} matchs — moins de {{floor}}, pas de palier de couleur",
+        "capped": "moins de {{cap}} matchs — couleur plafonnée"
+      },
+      "period": {
+        "quarter": "T{{quarter}} {{year}}",
+        "week": "S{{week}} {{year}}"
       }
     }
   }

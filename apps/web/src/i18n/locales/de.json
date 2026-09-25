@@ -3526,6 +3526,24 @@
         },
         "strips": "Quote = Siegquote gegenüber der Gesamtquote von {{baseline}} — blau darüber, bernsteinfarben darunter, keine Farbe unter {{floor}} Matches",
         "model": "Glicko-2, inoffiziell."
+      },
+      "readout": {
+        "rating": "Wertung {{rating}} ±{{rd}}",
+        "ratingAtClose": "Wertung zum Abschluss von {{period}} · {{rating}} ±{{rd}}",
+        "record_one": "{{wins}}–{{losses}} · {{rate}} · {{count}} Match",
+        "record_other": "{{wins}}–{{losses}} · {{rate}} · {{count}} Matches",
+        "delta": {
+          "above": "+{{points}} Pkt. gegenüber der Gesamtquote von {{baseline}}",
+          "below": "−{{points}} Pkt. gegenüber der Gesamtquote von {{baseline}}",
+          "level": "gleichauf mit der Gesamtquote von {{baseline}}"
+        },
+        "noStep_one": "{{count}} Match — unter {{floor}}, keine Farbstufe",
+        "noStep_other": "{{count}} Matches — unter {{floor}}, keine Farbstufe",
+        "capped": "unter {{cap}} Matches — Farbe begrenzt"
+      },
+      "period": {
+        "quarter": "Q{{quarter}} {{year}}",
+        "week": "KW {{week}} {{year}}"
       }
     }
   }
