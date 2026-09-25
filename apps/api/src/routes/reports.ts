@@ -47,6 +47,7 @@ import {
   ReportGenerationError,
   type AnthropicLikeClient,
 } from '../reports/generate.js';
+import { projectScoutSelection } from '../reports/claimSelection.js';
 // Phase 28 (28-07, REV-03): the synthesis engine (28-06) — payload assembly,
 // the Claude call, and post-generation citation validation. `SynthesisAnthropicClient`
 // is a separate structural type from `AnthropicLikeClient` above (the
@@ -576,16 +577,29 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       throw err;
     }
 
+    // Phase 39 (plan 39-06, review C1-B1): the model's output is now a claim
+    // SELECTION, not a stored-report shape — `projectScoutSelection` projects
+    // it (plus the claims the engine issued for this payload) onto the
+    // unchanged `storedScoutReportSchema`. BOUNDARY: this store-step call is
+    // the ONLY line of this file plan 39-06 touches; `failJob` and its
+    // parameters, the activation gate, every failure branch, the snapshot
+    // write and the validator seam are plan 39-07's.
+    //
     // RTDB deletes null-valued keys on write, so persisting the model's
     // `headToHead: null` (a legitimate "no head-to-head history" output)
     // would come back with the key ABSENT and previously corrupted the
     // stored record (see storedScoutReportSchema's doc). Strip null fields
     // before writing — house conditional-spread convention — so records
-    // are stored in exactly the shape they'll be read back in.
-    const { headToHead, ...reportRest } = report;
+    // are stored in exactly the shape they'll be read back in. (The
+    // projection omits `headToHead` by construction, so this strip currently
+    // has nothing to remove; the pattern stays for any future nullable field.)
+    const { headToHead, ...reportRest } = projectScoutSelection({
+      selection: report,
+      claims: payload.claimSet.claims,
+    });
     const storedReport = {
       ...reportRest,
-      ...(headToHead !== null ? { headToHead } : {}),
+      ...(headToHead != null ? { headToHead } : {}),
     };
 
     const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();

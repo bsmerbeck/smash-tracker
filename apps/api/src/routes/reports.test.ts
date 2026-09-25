@@ -9,13 +9,32 @@ import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { FakeAuth } from '../test-support/fakeAuth.js';
 import {
   authHeader,
-  buildTestApp,
+  buildTestApp as buildBareTestApp,
   TEST_EMAIL,
   TEST_TOKEN,
   TEST_UID,
 } from '../test-support/testApp.js';
+import {
+  seedViableEvidence,
+  VIABLE_CLAIM_SELECTION,
+  VIABLE_OPPONENT_SETS_RESPONSE,
+  VIABLE_SELECTED_CLAIM_IDS,
+  viableParryMatchesList,
+} from '../test-support/viableEvidenceFixture.js';
+import {
+  MIN_VIABLE_CLAIMS,
+  validateReportOutput,
+  type ReportSurface,
+  type ScoutBinding,
+  type ScoutReportData,
+} from '@smash-tracker/shared';
 import { buildApp } from '../app.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
+import { assembleReportPayload } from '../reports/generate.js';
+import { projectScoutSelection } from '../reports/claimSelection.js';
+import { buildScoutReport } from '../startgg/scout.js';
+import { buildParryScoutReport } from '../parrygg/scout.js';
+import { FakeDatabase as FakeDatabaseImpl } from '../test-support/fakeDatabase.js';
 
 const STARTGG_CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -43,7 +62,25 @@ const EMPTY_SETS_RESPONSE = {
   player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } },
 };
 
+/**
+ * Phase 39 (plan 39-06, review C3-B1): the scouted opponent's public history
+ * is now VIABLE by default — three characters across two known stages
+ * (`test-support/viableEvidenceFixture.ts`) — so every generation-success
+ * case in this file assembles enough claims to clear `MIN_VIABLE_CLAIMS`
+ * once plan 39-07's validator seam and D-21 fail-fast land.
+ */
 function scoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return gqlResponse(RESOLVE_RESPONSE);
+    }
+    return gqlResponse(VIABLE_OPPONENT_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+/** The explicit EMPTY opponent-history stub for thin-evidence cases (plans 39-07/39-08) — pair it with `buildBareTestApp`. */
+function emptyScoutFetchMock(): typeof fetch {
   return (async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as { query: string };
     if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
@@ -54,30 +91,65 @@ function scoutFetchMock(): typeof fetch {
 }
 
 /**
- * What VALID_REPORT looks like once persisted (V9-B fix): the write path
- * strips null-valued fields before the RTDB write (RTDB would delete them
- * anyway — deleting on OUR side keeps the stored shape and the read-back
- * shape identical), so `headToHead: null` is simply absent. Defined as the
- * BASE shape; `VALID_REPORT` (the model's generation output, where the field
- * is required) composes it with the explicit null.
+ * C3-B1: THE VIABLE-EVIDENCE WRAPPER. Every `buildTestApp(...)` call site in
+ * this file — INCLUDING the ones inside the LOCKED `paid prep activation
+ * gate (RPT-04)` and `bundle failure math (RPT-02/RPT-03, owner battery item
+ * 3)` describe blocks — resolves this name at MODULE scope to this wrapper,
+ * so those locked bodies run against a viable workspace without one byte
+ * inside them changing. Do NOT "tidy" this back to a direct import of
+ * `test-support/testApp.ts`'s `buildTestApp`: that would silently return
+ * every generation-success case here to a zero-evidence workspace, which
+ * plan 39-07's D-21 fail-fast turns into a refund. `testApp.ts` itself is
+ * deliberately NOT modified (a default seed there would reach every API
+ * suite). Thin-evidence cases use `buildBareTestApp` directly.
+ */
+function buildTestApp(options: Parameters<typeof buildBareTestApp>[0] = {}) {
+  const built = buildBareTestApp(options);
+  seedViableEvidence(built.database, TEST_UID, {
+    opponentTag: RESOLVE_RESPONSE.user.player.gamerTag,
+  });
+  return built;
+}
+
+/**
+ * C4-M1: the claim ids the module-level selection names — exactly the
+ * contiguous LOWEST ids `c01`..`c{K}`, `K` the largest `MIN_VIABLE_CLAIMS`
+ * among this file's generation surfaces (scout, prep single, bundle child),
+ * read from the shared export inside the fixture module, never a literal.
+ */
+const SELECTED_CLAIM_IDS = VIABLE_SELECTED_CLAIM_IDS;
+
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION over the
+ * fixed claim-id vocabulary (`reports/claimSelection.ts`), not a free-prose
+ * report — the shared `VIABLE_CLAIM_SELECTION` (lint-clean connectives; the
+ * union of its section ids is exactly `SELECTED_CLAIM_IDS`).
+ */
+const VALID_REPORT = VIABLE_CLAIM_SELECTION;
+
+/**
+ * What VALID_REPORT becomes once stored: `projectScoutSelection`'s output
+ * over the claims the viable workspace issues (review C1-B1). Prose fields
+ * carry the selection's own connectives; `stageStrategy` is ENGINE-derived
+ * from the issued stage claims — the fixture's first stage is a winning
+ * record against every opponent character and its second a losing one, so
+ * bans/picks are exactly one stage each; `confidenceNotes` is empty (D-03);
+ * there is no `characterStrategy` and no `headToHead` own-property. The
+ * `C3-B1` describe block at the end of this file RE-DERIVES this constant
+ * from the projection under every workspace shape and asserts it matches —
+ * it is never trusted as hand-written.
  */
 const STORED_VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player.',
-  gameplan: ['Punish landing lag.'],
-  characterStrategy: {
-    picks: ['Mario'],
-    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
-  },
+  overview: VALID_REPORT.sections.overview.connective,
+  gameplan: [VALID_REPORT.sections.gameplan.connective],
   stageStrategy: {
     bans: ['Final Destination'],
     picks: ['Battlefield'],
-    reasoning: 'Flat stages favor us.',
+    reasoning: VALID_REPORT.sections.gameplan.connective,
   },
-  watchFor: ['Shine spikes off stage.'],
-  confidenceNotes: 'No sampled sets — treat this as a cold read.',
+  watchFor: [VALID_REPORT.sections.watchFor.connective],
+  confidenceNotes: '',
 };
-
-const VALID_REPORT = { ...STORED_VALID_REPORT, headToHead: null };
 
 /** Pre-V7-B.1 stored report shape: lacks `characterStrategy` entirely. */
 const PRE_B1_REPORT = {
@@ -756,13 +828,13 @@ describe('GET /api/reports (configured, allowlisted)', () => {
         createdAt: 1000,
         model: 'claude-opus-4-8',
         player: { id: 1, gamerTag: 'Old' },
-        report: VALID_REPORT,
+        report: STORED_VALID_REPORT,
       },
       newer: {
         createdAt: 2000,
         model: 'claude-opus-4-8',
         player: { id: 2, gamerTag: 'New' },
-        report: VALID_REPORT,
+        report: STORED_VALID_REPORT,
       },
     });
 
@@ -867,7 +939,7 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       createdAt: 1234,
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
 
     const response = await app.inject({
@@ -880,7 +952,7 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       id: 'report1',
       createdAt: 1234,
       player: { gamerTag: 'Pandem1c' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
   });
 });
@@ -891,8 +963,16 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
 
 const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
 
+/**
+ * Phase 39 (plan 39-06, C3-B1): `matches.getMatches` now returns the VIABLE
+ * public history for `PARRY_USER_ID` by default; `matches: 'empty'` asks for
+ * the empty list back (thin-evidence cases, plans 39-07/39-08). The
+ * `users.getUser` behaviour is unchanged — `getUser: () => null` still fails
+ * to resolve.
+ */
 function parryClients(overrides: {
   getUser?: () => { id: string; gamerTag: string } | null;
+  matches?: 'viable' | 'empty';
 }): ParryggClients {
   return {
     users: {
@@ -905,7 +985,10 @@ function parryClients(overrides: {
       getUsers: vi.fn(async () => ({ getUsersList: () => [] })),
     } as unknown as ParryggClients['users'],
     matches: {
-      getMatches: vi.fn(async () => ({ getMatchesList: () => [] })),
+      getMatches: vi.fn(async () => ({
+        getMatchesList: () =>
+          overrides.matches === 'empty' ? [] : viableParryMatchesList(PARRY_USER_ID),
+      })),
     } as unknown as ParryggClients['matches'],
   };
 }
@@ -3724,4 +3807,308 @@ describe('research-subject report refusal (RTEN-05A/RTEN-04, plan 29-11)', () =>
     const dump = database.dump() as Record<string, unknown>;
     expect(dump.eventLedger).toBeDefined();
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06, review C3-B1 / C4-M1): the viable-evidence fixture is
+// PROVEN, not assumed. Every app below is built EXACTLY as the named locked
+// case builds its own — through this file's module-level `buildTestApp`
+// wrapper and stubs, with nothing seeded in the test body — and the claims
+// the assembled payload issues are read back off the ONE model call. This
+// block lives OUTSIDE both locked describes and adds no test to them.
+// ---------------------------------------------------------------------------
+
+describe('C3-B1 viable-evidence fixture: locked-block reachability and original-cause preservation (plan 39-06)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const STRIPE_CONFIG: StripeConfig = { secretKey: 'sk-test-123', webhookSecret: 'whsec-test-456' };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const BUNDLE_BINDING: ScoutBinding = {
+    provider: 'parrygg',
+    parryUserId: PARRY_USER_ID,
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+
+  /**
+   * The claim ids the assembled payload issued, read off the model call's
+   * user message — the one place the route hands the assembled payload
+   * across a seam a test can observe without mocking a module.
+   */
+  function issuedClaimIdsFromModelCall(params: unknown): string[] {
+    const content = (params as { messages: Array<{ content: string }> }).messages[0]!.content;
+    const payload = JSON.parse(content) as { claimSet: { claims: Array<{ id: string }> } };
+    return payload.claimSet.claims.map((claim) => claim.id);
+  }
+
+  function capturingClient(failCalls: ReadonlySet<number> = new Set()) {
+    const calls: unknown[] = [];
+    const modelSpy = vi.fn(async (params: unknown) => {
+      calls.push(params);
+      return failCalls.has(calls.length)
+        ? { stop_reason: 'refusal' as const, parsed_output: null }
+        : { stop_reason: 'end_turn' as const, parsed_output: VALID_REPORT };
+    });
+    return { client: stubClient(modelSpy), calls, modelSpy };
+  }
+
+  /**
+   * Block A's shape — `a request without reason behaves exactly as today
+   * whether the gate is on or off` (locked, `paid prep activation gate
+   * (RPT-04)`): module-level `buildTestApp` + `scoutFetchMock()` +
+   * REPORTS_CONFIG + a stripe config, nothing seeded in the body. Seeds and
+   * stubs: the wrapper seeds the own history (three opponent characters x two
+   * stages, at the floor, all against the scouted tag); `scoutFetchMock()`
+   * returns the viable public history. Families licensed: stage_record +
+   * stage_pick_rate (6+6), character_matchup_record (3), my_character_record,
+   * head_to_head_record, recent_form, cohort_disclosure, opponent_character_usage
+   * (3), matchup_advisor_pick (3) — 25 rows, 25 claims, all well above the
+   * scout minimum. The gate-on half of that locked case is the same shape.
+   */
+  it('block A: the locked legacy-scout shape issues at least MIN_VIABLE_CLAIMS.scout claims, and every selected id is among them', async () => {
+    for (const prepPaid of [null, PREP_PAID_CONFIG]) {
+      const { client, calls } = capturingClient();
+      const { app } = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+        ...(prepPaid ? { prepPaid } : {}),
+        reportsClient: client,
+      });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { query: 'user/07dc2239' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(calls).toHaveLength(1);
+      const issued = issuedClaimIdsFromModelCall(calls[0]);
+      expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+      for (const id of SELECTED_CLAIM_IDS) {
+        expect(issued).toContain(id);
+      }
+    }
+  });
+
+  /**
+   * The parry.gg-scouted shape (`generates and stores a report for a
+   * parry.gg-scouted player`): no start.gg config, `parryClients({ getUser })`
+   * whose default `getMatches` is the viable public history. Same families
+   * as block A (the tag matches, so head-to-head is present too).
+   */
+  it('parry-scouted shape: issues at least MIN_VIABLE_CLAIMS.scout claims, and every selected id is among them', async () => {
+    const { client, calls } = capturingClient();
+    const { app } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const issued = issuedClaimIdsFromModelCall(calls[0]);
+    expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+    for (const id of SELECTED_CLAIM_IDS) {
+      expect(issued).toContain(id);
+    }
+  });
+
+  /** Builds an app EXACTLY as the locked `runFailureMathCase` does, submits the bundle, and returns the child jobs. */
+  async function bundleMathShape(failCalls: ReadonlySet<number>) {
+    const { client, calls, modelSpy } = capturingClient(failCalls);
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-c3b1',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submit.statusCode).toBe(202);
+    const { jobs } = submit.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    return { app, database, jobs, calls, modelSpy };
+  }
+
+  /**
+   * Block B's shape — `runFailureMathCase` (locked, `bundle failure math`):
+   * `parryClients({ getUser })` + `seedBundleBrief`, NO start.gg config. The
+   * wrapper's own history is against the scouted TAG, and a bound prep child
+   * matches head-to-head by IDENTITY (the binding's parry id) or the curated
+   * name ('rival1'..'rival3') — never by that tag — so head-to-head is ABSENT
+   * here: 24 rows (block A's families minus head_to_head_record), still far
+   * above the bundle-child minimum.
+   */
+  it('block B: the locked bundle-math shape issues at least MIN_VIABLE_CLAIMS.prep_bundle_child claims per child, and every selected id is among them', async () => {
+    const { app, jobs, calls } = await bundleMathShape(new Set());
+    for (const job of jobs) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: {
+          reason: 'prep_report',
+          entryKey: ENTRY_KEY,
+          opponentName: job.opponentName,
+          jobId: job.jobId,
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ report: STORED_VALID_REPORT });
+    }
+    expect(calls).toHaveLength(jobs.length);
+    for (const call of calls) {
+      const issued = issuedClaimIdsFromModelCall(call);
+      expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.prep_bundle_child);
+      for (const id of SELECTED_CLAIM_IDS) {
+        expect(issued).toContain(id);
+      }
+    }
+  });
+
+  it('original cause preserved: a locked-shaped refusal (stop_reason refusal, parsed_output null) against the VIABLE fixture still reaches the model, refunds once, and records no validation cause', async () => {
+    const { app, database, jobs, modelSpy } = await bundleMathShape(new Set([1]));
+    const firstChild = jobs[0]!;
+    const balanceBefore = (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+    // The model WAS reached — the failure is the refusal, never thin evidence.
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const job = (await database.ref(`reportJobs/${TEST_UID}/${firstChild.jobId}`).get()).val() as {
+      status: string;
+      failureReason?: string;
+    };
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).not.toBe('validation');
+    // Money oracle: the balance and the refund ledger — never the deduped
+    // `credit_refunded` event.
+    const balanceAfter = (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+    expect(balanceAfter).toBe((balanceBefore as number) + 1);
+    const ledger = (database.dump() as { creditLedger: Record<string, Record<string, unknown>> })
+      .creditLedger[TEST_UID]!;
+    const refunds = Object.values(ledger).filter(
+      (entry) => (entry as { type: string; ref: string }).type === 'refund',
+    ) as Array<{ ref: string }>;
+    expect(refunds.map((entry) => entry.ref)).toEqual([firstChild.jobId]);
+  });
+
+  it('FALSIFIER: the bare harness with the empty opponent stub issues FEWER than the scout minimum — the fixture, not the harness, is what makes block A viable', async () => {
+    const { client, calls } = capturingClient();
+    const { app } = buildBareTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: emptyScoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: client,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(issuedClaimIdsFromModelCall(calls[0]).length).toBeLessThan(MIN_VIABLE_CLAIMS.scout);
+    expect(EMPTY_SETS_RESPONSE.player.sets.nodes).toHaveLength(0);
+  });
+
+  /**
+   * The stored fixture is RE-DERIVED from the projection under each shape,
+   * and the selection is validated against the real snapshot the shape
+   * assembles — so `STORED_VALID_REPORT` is never a hand-written guess, and
+   * `VALID_REPORT`'s prose is lint-clean (no stripped section, no dropped
+   * claim) under plan 39-04's validator ahead of plan 39-07 wiring it in.
+   */
+  async function assembleShape(shape: 'startgg' | 'parry' | 'bundle') {
+    const database = new FakeDatabaseImpl();
+    seedViableEvidence(database, TEST_UID, { opponentTag: RESOLVE_RESPONSE.user.player.gamerTag });
+    let scout: ScoutReportData;
+    if (shape === 'startgg') {
+      scout = await buildScoutReport(
+        'server-data-token',
+        { id: RESOLVE_RESPONSE.user.player.id, gamerTag: RESOLVE_RESPONSE.user.player.gamerTag },
+        scoutFetchMock(),
+      );
+    } else {
+      scout = await buildParryScoutReport(
+        'parry-key',
+        { parryUserId: PARRY_USER_ID, gamerTag: 'Pandem1c' },
+        parryClients({}),
+      );
+    }
+    return assembleReportPayload(
+      TEST_UID,
+      scout,
+      database as unknown as Database,
+      shape === 'bundle'
+        ? { binding: BUNDLE_BINDING, curatedCanonicalName: BUNDLE_OPPONENT_NAMES[0] }
+        : undefined,
+    );
+  }
+
+  const SHAPES: ReadonlyArray<{ shape: 'startgg' | 'parry' | 'bundle'; surface: ReportSurface }> = [
+    { shape: 'startgg', surface: 'scout' },
+    { shape: 'parry', surface: 'scout' },
+    { shape: 'bundle', surface: 'prep_bundle_child' },
+  ];
+
+  for (const { shape, surface } of SHAPES) {
+    it(`${shape} shape: projectScoutSelection re-derives STORED_VALID_REPORT, and the validator passes the selection with nothing dropped or stripped`, async () => {
+      const payload = await assembleShape(shape);
+      const claims = payload.claimSet.claims;
+      expect(projectScoutSelection({ selection: VALID_REPORT, claims })).toEqual(
+        STORED_VALID_REPORT,
+      );
+      const outcome = validateReportOutput({
+        snapshot: payload.snapshot,
+        issuedClaims: claims,
+        output: VALID_REPORT,
+        surface,
+      });
+      expect(outcome.status).toBe('passed');
+      expect(outcome.droppedClaimCount).toBe(0);
+      expect(outcome.strippedSectionIds).toEqual([]);
+      expect([...outcome.survivingClaimIds].sort()).toEqual([...SELECTED_CLAIM_IDS].sort());
+    });
+  }
 });

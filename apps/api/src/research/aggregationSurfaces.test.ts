@@ -194,6 +194,11 @@ const CONTENT_TREE_READER_ALLOWLIST: ContentReaderEntry[] = [
     reason:
       "Writes matches/{uid} and opponents/{uid} for the SYNCING user's own uid (the authenticated caller importing their own start.gg history) — never a foreign id.",
   },
+  {
+    file: 'src/test-support/viableEvidenceFixture.ts',
+    reason:
+      'TEST SUPPORT, never imported by production code (plan 39-06, review C3-B1): seeds matches/{uid}, primaryFighters/{uid} and secondaryFighters/{uid} into an in-memory FakeDatabase for the uid a test passes in — no aggregation, no cross-subject read, no real RTDB.',
+  },
 ];
 
 const ALLOWLISTED_CONTENT_READER_FILES = CONTENT_TREE_READER_ALLOWLIST.map(

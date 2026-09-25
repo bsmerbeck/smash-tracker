@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ABSTENTION_FLOOR_GAMES,
+  CLAIM_SCHEMA_VERSION,
   EVIDENCE_POLICY_VERSION,
   RECENCY_TREATMENT,
   type ScoutBinding,
@@ -15,6 +16,8 @@ import {
   type AnthropicLikeClient,
   type ReportPayload,
 } from './generate.js';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { claimSelectionSchema } from './claimSelection.js';
 
 const UID = 'test-uid-123';
 
@@ -674,21 +677,19 @@ describe('assembleReportPayload (binding-aware evidence, RPT-01)', () => {
   });
 });
 
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION over the
+ * fixed claim-id vocabulary, not a free-prose report.
+ */
 const VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player who plays aggressively.',
-  gameplan: ['Punish landing lag hard.'],
-  characterStrategy: {
-    picks: ['Mario'],
-    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario — favorable matchup either way.',
+  sections: {
+    overview: { claimIds: ['c01'], connective: 'Start the set patient and steady.' },
+    gameplan: { claimIds: ['c02'], connective: 'Punish landing habits and reset to neutral.' },
+    watchFor: { claimIds: ['c03'], connective: 'Watch for the same ledge option under pressure.' },
   },
-  stageStrategy: {
-    bans: ['Final Destination'],
-    picks: ['Battlefield'],
-    reasoning: 'They perform best on flat stages.',
-  },
-  headToHead: null,
-  watchFor: ['Likes to shine spike off stage.'],
-  confidenceNotes: 'Only 20 games sampled — treat character splits as light samples.',
+  action1: null,
+  action2: null,
+  action3: null,
 };
 
 function stubClient(response: {
@@ -731,6 +732,27 @@ const PAYLOAD: ReportPayload = {
     matchupAdvisor: [],
   },
   notes: null,
+  rows: {},
+  snapshot: {
+    policyVersion: EVIDENCE_POLICY_VERSION,
+    claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    refreshedAt: 0,
+    cohort: {
+      online: 0,
+      offline: 0,
+      unspecified: 0,
+      manual: 0,
+      startgg: 0,
+      parrygg: 0,
+      mixedContext: false,
+      minorityShare: 0,
+      minorityLabel: null,
+      majorityLabel: null,
+    },
+    rows: {},
+    matchIdDigest: { count: 0, hash: 'fixture-empty-digest' },
+  },
+  claimSet: { claims: [], issuedClaimIds: [], truncatedCandidateCount: 0 },
 };
 
 describe('generateScoutReport', () => {
@@ -759,5 +781,51 @@ describe('generateScoutReport', () => {
     await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject(
       new ReportGenerationError('unparseable'),
     );
+  });
+});
+
+describe('generateScoutReport: claim-selection schema and guard order (Phase 39, plan 39-06)', () => {
+  it('passes the claim-selection schema to messages.parse — the enum over the fixed vocabulary, never the free-prose report schema', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    await generateScoutReport(client, PAYLOAD);
+
+    const expected = zodOutputFormat(claimSelectionSchema);
+    expect(JSON.stringify(captured!.output_config.format.schema)).toBe(
+      JSON.stringify(expected.schema),
+    );
+    // Call SHAPE is byte-preserved: same model, token budget and adaptive thinking.
+    expect(captured).toMatchObject({
+      model: 'claude-opus-4-8',
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+    });
+    for (const forbidden of ['temperature', 'top_p', 'citations']) {
+      expect(captured).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('checks refusal FIRST: a refusal whose parsed_output is also null throws the refusal reason, not unparseable', async () => {
+    const client = stubClient({ stop_reason: 'refusal', parsed_output: null });
+    await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject({
+      name: 'ReportGenerationError',
+      reason: 'refusal',
+    });
+  });
+
+  it('checks truncation before the null-output guard: max_tokens with a null parse throws truncated', async () => {
+    const client = stubClient({ stop_reason: 'max_tokens', parsed_output: null });
+    await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject({
+      reason: 'truncated',
+    });
   });
 });

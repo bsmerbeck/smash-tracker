@@ -5,7 +5,12 @@ import { X_EVENT_ALLOWLIST } from '@smash-tracker/shared';
 import type { ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import { authHeader, buildTestApp as buildBareTestApp, TEST_UID } from '../test-support/testApp.js';
+import {
+  seedViableEvidence,
+  VIABLE_CLAIM_SELECTION,
+  VIABLE_OPPONENT_SETS_RESPONSE,
+} from '../test-support/viableEvidenceFixture.js';
 import { issueClaimInvitation, revokeClaimInvitation } from '../claims/invitations.js';
 import { redeemClaimCode } from '../claims/redemption.js';
 import { revokeCoachDelegation } from '../claims/delegation.js';
@@ -669,9 +674,8 @@ const REPORT_AUDIT_STRIPE_CONFIG: StripeConfig = {
 const REPORT_AUDIT_RESOLVE_RESPONSE = {
   user: { id: 1111624, slug: 'user/07dc2239', player: { id: 1802316, gamerTag: 'Pandem1c' } },
 };
-const REPORT_AUDIT_EMPTY_SETS_RESPONSE = {
-  player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } },
-};
+/** Plan 39-06 (C3-B1): the scouted opponent's public history is viable, not empty. */
+const REPORT_AUDIT_SETS_RESPONSE = VIABLE_OPPONENT_SETS_RESPONSE;
 
 function reportAuditGqlResponse(data: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify({ data }), init);
@@ -683,26 +687,31 @@ function reportAuditScoutFetchMock(): typeof fetch {
     if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
       return reportAuditGqlResponse(REPORT_AUDIT_RESOLVE_RESPONSE);
     }
-    return reportAuditGqlResponse(REPORT_AUDIT_EMPTY_SETS_RESPONSE);
+    return reportAuditGqlResponse(REPORT_AUDIT_SETS_RESPONSE);
   }) as typeof fetch;
 }
 
-const REPORT_AUDIT_VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player.',
-  gameplan: ['Punish landing lag.'],
-  characterStrategy: {
-    picks: ['Mario'],
-    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
-  },
-  stageStrategy: {
-    bans: ['Final Destination'],
-    picks: ['Battlefield'],
-    reasoning: 'Flat stages favor us.',
-  },
-  headToHead: null,
-  watchFor: ['Shine spikes off stage.'],
-  confidenceNotes: 'No sampled sets — treat this as a cold read.',
-};
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION
+ * (`reports/claimSelection.ts`) — the shared lint-clean `VIABLE_CLAIM_SELECTION`.
+ */
+const REPORT_AUDIT_VALID_REPORT = VIABLE_CLAIM_SELECTION;
+
+/**
+ * Plan 39-06 (review C3-B1): this file's positive control asserts a
+ * generation SUCCESS (`report_completed`), so the one app it builds for the
+ * report route runs against a VIABLE workspace, seeded at MODULE scope
+ * through this same-named wrapper — or plan 39-07's D-21 fail-fast would
+ * turn that success into a refund. `test-support/testApp.ts` is
+ * deliberately not modified.
+ */
+function buildTestApp(options: Parameters<typeof buildBareTestApp>[0] = {}) {
+  const built = buildBareTestApp(options);
+  seedViableEvidence(built.database, TEST_UID, {
+    opponentTag: REPORT_AUDIT_RESOLVE_RESPONSE.user.player.gamerTag,
+  });
+  return built;
+}
 
 function reportAuditStubClient(
   impl: (params: unknown) => Promise<{ stop_reason: string | null; parsed_output: unknown }>,
