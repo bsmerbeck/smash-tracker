@@ -6003,7 +6003,7 @@ describe('post-plan fix (39-10): wasCharged is persisted on the job at spend tim
     expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
   });
 
-  it('the stale-job sweep carries wasCharged forward on its failed terminal (and its refund is unchanged)', async () => {
+  it('the stale-job sweep carries wasCharged forward on its failed terminal (and refunds only the charged and legacy jobs)', async () => {
     const database = new FakeDatabaseImpl();
     const now = Date.now();
     for (const [jobId, wasCharged] of [
@@ -6032,7 +6032,7 @@ describe('post-plan fix (39-10): wasCharged is persisted on the job at spend tim
 
     const result = await runSweepStuckReportJobs(database as never, { now });
 
-    expect(result).toEqual({ swept: 3, refunded: 3 });
+    expect(result).toEqual({ swept: 3, refunded: 2 });
     expect(await jobRecord(database, 'wc-swept-paid')).toMatchObject({
       status: 'failed',
       wasCharged: true,
