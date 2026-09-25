@@ -3,10 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Auth } from 'firebase-admin/auth';
 import type { Database } from 'firebase-admin/database';
 import {
+  CLAIM_ID_VOCABULARY,
+  extractCitationTokens,
   isSnapshotId,
   MIN_VIABLE_CLAIMS,
+  serializeCitationToken,
   storedPracticePlanSchema,
+  validateReportOutput,
   vodEvidenceId,
+  type GeneratedPracticePlan,
   type StoredPracticePlan,
 } from '@smash-tracker/shared';
 import type { PrepPaidConfig, ReportsConfig, StripeConfig } from '../config/env.js';
@@ -18,7 +23,11 @@ import {
   type ClaimSelectionSectionId,
 } from '../reports/claimSelection.js';
 import { snapshotIdFor } from '../reports/snapshotId.js';
-import { assembleSynthesisPayload } from '../reports/synthesis.js';
+import {
+  assembleSynthesisPayload,
+  SynthesisValidationError,
+  validatePracticePlanCitations,
+} from '../reports/synthesis.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { FakeAuth } from '../test-support/fakeAuth.js';
 import {
@@ -1929,6 +1938,209 @@ describe('C2-H2(c) strip/drop lattice on post_event_synthesis: every cell ends i
     } else {
       expect(parsed.summary).toBe(CLEAN_PROSE.overview);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-08 Task 2): the migration battery — the shared
+// validator is AT LEAST AS STRICT as the shipped citation rule on synthesis
+// evidence, exercised through the REAL assembly plumbing (the payload's own
+// pre-serialized cite tokens, `extractCitationTokens`, `vodEvidenceId` and the
+// issued claim set), before the shipped rule is retired.
+// ---------------------------------------------------------------------------
+
+describe('migration battery: shared validator vs the shipped validatePracticePlanCitations on real synthesis evidence (plan 39-08 Task 2)', () => {
+  type FocusArea = GeneratedPracticePlan['focusAreas'][number];
+
+  async function realEvidence() {
+    const { database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    const assembled = await assembledFor(database);
+    const citeOf = (matchId: string, seconds: number): string =>
+      assembled.payload.evidence.find(
+        (item) => item.matchId === matchId && item.seconds === seconds,
+      )!.cite;
+    return { assembled, citeOf };
+  }
+
+  /** The shipped rule's verdict: which focusAreas survive, or a whole-plan rejection. */
+  function shippedVerdict(
+    focusAreas: FocusArea[],
+    allowedPairs: ReadonlySet<string>,
+  ): { planAccepted: boolean; survivingTitles: string[]; storedEvidence: string[] } {
+    try {
+      const result = validatePracticePlanCitations(
+        { summary: 'Battery plan', focusAreas },
+        allowedPairs,
+      );
+      return {
+        planAccepted: true,
+        survivingTitles: result.plan.focusAreas.map((area) => area.title),
+        storedEvidence: result.plan.focusAreas.map((area) => area.evidence),
+      };
+    } catch (error) {
+      expect(error).toBeInstanceOf(SynthesisValidationError);
+      return { planAccepted: false, survivingTitles: [], storedEvidence: [] };
+    }
+  }
+
+  /**
+   * Translates the SAME model output into the claim-selection world through
+   * the real plumbing: each focusArea becomes one section; each citation
+   * token resolves through `vodEvidenceId` to the issued claim carrying that
+   * evidence id, and a token resolving to no issued claim becomes the first
+   * never-issued vocabulary id (the only way a selection can name something
+   * the engine did not issue). The prose is the focusArea text minus tokens.
+   */
+  function toSelection(
+    focusAreas: FocusArea[],
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ): { selection: ClaimSelection; claimIdsByTitle: Map<string, string[]> } {
+    expect(focusAreas.length).toBeLessThanOrEqual(CLAIM_SELECTION_SECTION_IDS.length);
+    const issued = new Set(assembled.claimSet.claims.map((claim) => claim.id as string));
+    const unissued = CLAIM_ID_VOCABULARY.find((id) => !issued.has(id))!;
+    const claimIdsByTitle = new Map<string, string[]>();
+    const sections = Object.fromEntries(
+      CLAIM_SELECTION_SECTION_IDS.map((sectionId, index) => {
+        const area = focusAreas[index];
+        if (!area) {
+          return [sectionId, { claimIds: [], connective: 'Nothing here.' }];
+        }
+        const claimIds = extractCitationTokens(area.evidence).map((token) => {
+          const evidenceId = vodEvidenceId(token.sourceVodRef, token.seconds);
+          const claim = assembled.claimSet.claims.find((candidate) =>
+            candidate.evidenceIds.includes(evidenceId),
+          );
+          return claim ? claim.id : unissued;
+        });
+        claimIdsByTitle.set(area.title, claimIds);
+        const connective = area.evidence.replace(/\{\{cite:[^}]*\}\}/g, '').trim() || 'See clip.';
+        return [sectionId, { claimIds, connective }];
+      }),
+    ) as ClaimSelection['sections'];
+    return {
+      selection: { sections, action1: null, action2: null, action3: null },
+      claimIdsByTitle,
+    };
+  }
+
+  function sharedVerdict(
+    selection: ClaimSelection,
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ) {
+    return validateReportOutput({
+      snapshot: assembled.snapshot,
+      issuedClaims: assembled.claimSet.claims,
+      output: selection,
+      surface: 'post_event_synthesis',
+    });
+  }
+
+  /**
+   * The law, per citation and per plan: every citation token the shipped
+   * rule cannot resolve (its `(matchId, seconds)` pair is outside
+   * `allowedPairs`) maps to a claim the shared validator does NOT keep; a
+   * focusArea with no tokens contributes no claim at all; and a plan the
+   * shipped rule rejects outright is a `failed` outcome.
+   */
+  function expectAtLeastAsStrict(
+    focusAreas: FocusArea[],
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ) {
+    const shipped = shippedVerdict(focusAreas, assembled.allowedPairs);
+    const { selection, claimIdsByTitle } = toSelection(focusAreas, assembled);
+    const outcome = sharedVerdict(selection, assembled);
+    for (const area of focusAreas) {
+      const claimIds = claimIdsByTitle.get(area.title) ?? [];
+      const tokens = extractCitationTokens(area.evidence);
+      expect(claimIds).toHaveLength(tokens.length);
+      tokens.forEach((token, index) => {
+        if (!assembled.allowedPairs.has(`${token.sourceVodRef}:${token.seconds}`)) {
+          expect(outcome.survivingClaimIds).not.toContain(claimIds[index]);
+        }
+      });
+    }
+    if (!shipped.planAccepted) {
+      expect(outcome.status).toBe('failed');
+    }
+    return { shipped, outcome };
+  }
+
+  it('an ACCEPTED citation set: both accept, and the shared survivors are exactly the cited moments’ claims', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      { title: 'A', evidence: `${citeOf('m1', 42)} Good read here.`, drills: ['d'] },
+      { title: 'B', evidence: `${citeOf('viable-2', 10)} Shield less.`, drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    expect(shipped).toMatchObject({ planAccepted: true, survivingTitles: ['A', 'B'] });
+    expect(outcome.status).toBe('passed');
+    expect([...outcome.survivingClaimIds].sort()).toEqual(['c01', 'c02']);
+    expect(outcome.strippedSectionIds).toEqual([]);
+  });
+
+  it('a citation naming an UNKNOWN pair: the shipped rule drops that focusArea; the shared validator drops the claim (R1) and, with nothing viable left, fails', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const unknown = serializeCitationToken({
+      sourceVodRef: 'no-such-match',
+      seconds: 999,
+      label: 'x',
+    });
+    const onlyUnknown: FocusArea[] = [
+      { title: 'U', evidence: `${unknown} Looks right.`, drills: ['d'] },
+    ];
+    const first = expectAtLeastAsStrict(onlyUnknown, assembled);
+    expect(first.shipped.planAccepted).toBe(false);
+    expect(first.outcome.droppedClaims.map((dropped) => dropped.rule)).toEqual(['R1']);
+    expect(first.outcome.survivingClaimIds).toEqual([]);
+
+    // Mixed with one real citation: the shipped rule STORES the real one; the
+    // shared validator keeps the real claim but, below the surface minimum,
+    // refuses the plan — strictly stricter, never looser.
+    const mixed: FocusArea[] = [
+      { title: 'Real', evidence: `${citeOf('m1', 42)} Real moment.`, drills: ['d'] },
+      { title: 'U', evidence: `${unknown} Looks right.`, drills: ['d'] },
+    ];
+    const second = expectAtLeastAsStrict(mixed, assembled);
+    expect(second.shipped).toMatchObject({ planAccepted: true, survivingTitles: ['Real'] });
+    expect(second.outcome.survivingClaimIds).toEqual(['c01']);
+    expect(second.outcome.status).toBe('failed');
+  });
+
+  it('an EMPTY citation set: the shipped rule rejects the plan (INV-2) and the shared validator fails it', async () => {
+    const { assembled } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      { title: 'E', evidence: 'Just prose, no citation tokens at all.', drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    expect(shipped.planAccepted).toBe(false);
+    expect(outcome.status).toBe('failed');
+    expect(outcome.survivingClaimIds).toEqual([]);
+  });
+
+  it('a citation whose pair EXISTS but whose surrounding claim is WRONG: the shipped rule stores the wrong number verbatim; the shared validator withholds it (R4 strips that prose)', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      {
+        title: 'Wrong',
+        evidence: `${citeOf('m1', 42)} Your record here is actually 18-2, a dominant showing.`,
+        drills: ['d'],
+      },
+      { title: 'B', evidence: `${citeOf('viable-2', 10)} Shield less.`, drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    // The RPT-08 hard case: citation existence alone let the wrong claim ship.
+    expect(shipped.planAccepted).toBe(true);
+    expect(shipped.survivingTitles).toContain('Wrong');
+    expect(shipped.storedEvidence.some((text) => text.includes('18-2'))).toBe(true);
+    // The shared validator keeps the engine's claim (its value is recomputed
+    // from the snapshot, never the model's) and strips the section whose prose
+    // states the unlicensed figure — the wrong number never reaches storage.
+    expect(outcome.status).toBe('passed');
+    expect(outcome.strippedSectionIds).toContain('overview');
+    expect(outcome.strippedSectionIds).not.toContain('gameplan');
   });
 });
 
