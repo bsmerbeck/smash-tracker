@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildActionCandidates,
+  DRILL_TEMPLATE_TABLE,
   MAX_RECOMMENDED_ACTIONS,
   rankActionCandidates,
   selectTopActions,
   type ActionInput,
+  type VodRef,
 } from './actions.js';
 import { buildClaimSet, type ClaimAtom, type ClaimPredicate, type ClaimSubject } from './claims.js';
 import type { EvidenceRow } from './snapshot.js';
+import { vodEvidenceId } from './snapshot.js';
 import {
   ABSTENTION_FLOOR_GAMES,
   CONFIDENCE_TIER_BOUNDS,
   EVIDENCE_POLICY_VERSION,
+  PRACTICE_STAGE_MIN_GAMES,
   confidenceTierFor,
 } from './policy.js';
 import type { ClaimValue, SampleMeta } from './types.js';
@@ -92,10 +96,13 @@ describe('buildActionCandidates: matchup_practice', () => {
 
     const candidates = buildActionCandidates({ claims, vodRefs: [] });
 
-    expect(candidates).toHaveLength(1);
-    const candidate = candidates[0]!;
-    expect(candidate.kind).toBe('matchup_practice');
-    expect(candidate.claimIds).toEqual([claim.id]);
+    // The same claim also satisfies the matchup_punish drill condition (same
+    // shape) — buildActionCandidates emits both RAW candidates; the D-18
+    // non-duplication suppression that keeps only the matchup_practice one
+    // is rankActionCandidates's job (see "D-18 non-duplication" below).
+    const matchupPractice = candidates.filter((c) => c.kind === 'matchup_practice');
+    expect(matchupPractice).toHaveLength(1);
+    expect(matchupPractice[0]!.claimIds).toEqual([claim.id]);
   });
 
   it('the candidate carries a door target expressed as axes, never a URL, and every field is a plain value (no string starts with "/")', () => {
@@ -237,5 +244,260 @@ describe('selectTopActions', () => {
 
   it('returns an empty array for an empty candidate list', () => {
     expect(selectTopActions(rankActionCandidates(buildActionCandidates(emptyInput())))).toEqual([]);
+  });
+});
+
+describe('buildActionCandidates: vod_review', () => {
+  it('a claim whose opponent axes match a lost VodRef yields one vod_review candidate citing that claim', () => {
+    const games = 6;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 5, losses: 1, games },
+        games,
+      ),
+    });
+    const vodRefs: VodRef[] = [
+      { matchId: 'm1', opponentTag: null, opponentFighterId: 23, lost: true },
+    ];
+
+    const candidates = buildActionCandidates({ claims, vodRefs });
+    const vodReview = candidates.find((c) => c.kind === 'vod_review');
+
+    expect(vodReview).toBeDefined();
+    expect(vodReview!.claimIds).toEqual([claims[0]!.id]);
+    expect(vodReview!.target.matchId).toBe('m1');
+  });
+
+  it('a won VodRef (lost: false) never contributes to a vod_review candidate', () => {
+    const games = 6;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 5, losses: 1, games },
+        games,
+      ),
+    });
+    const vodRefs: VodRef[] = [
+      { matchId: 'm1', opponentTag: null, opponentFighterId: 23, lost: false },
+    ];
+
+    const candidates = buildActionCandidates({ claims, vodRefs });
+    expect(candidates.some((c) => c.kind === 'vod_review')).toBe(false);
+  });
+
+  it('multiple matching lost VodRefs leave target.matchId null (axes only, several matches)', () => {
+    const games = 6;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 5, losses: 1, games },
+        games,
+      ),
+    });
+    const vodRefs: VodRef[] = [
+      { matchId: 'm1', opponentTag: null, opponentFighterId: 23, lost: true },
+      { matchId: 'm2', opponentTag: null, opponentFighterId: 23, lost: true },
+    ];
+
+    const [vodReview] = buildActionCandidates({ claims, vodRefs }).filter(
+      (c) => c.kind === 'vod_review',
+    );
+    expect(vodReview!.target.matchId).toBeNull();
+  });
+
+  it('no VodRef behind a claim means no vod_review candidate is ever emitted for it', () => {
+    const games = 6;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 5, losses: 1, games },
+        games,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    expect(candidates.some((c) => c.kind === 'vod_review')).toBe(false);
+  });
+});
+
+describe('D-18 drill template table: non-vacuity', () => {
+  it('sparse fixture: at least one drill candidate is produced, naming the template that fired', () => {
+    const games = PRACTICE_STAGE_MIN_GAMES;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, stageId: 1 };
+    const claims = claimsFrom({
+      'sr-f8-s1': row(
+        'stage_record',
+        subject,
+        { kind: 'record', wins: 0, losses: games, games },
+        games,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    const drills = candidates.filter((c) => c.kind === 'drill');
+
+    expect(drills.length).toBeGreaterThanOrEqual(1);
+    expect(drills[0]!.titleKey).toBe('reports.actions.drill.stageHabit');
+  });
+
+  it('rich fixture: at least two distinct template ids fire across the set', () => {
+    const games = 8;
+    const claims = claimsFrom({
+      'sr-f8-s1': row(
+        'stage_record',
+        { ...NULL_SUBJECT, myFighterId: 8, stageId: 1 },
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+      'ocu-g23': row(
+        'opponent_character_usage',
+        { ...NULL_SUBJECT, opponentFighterId: 23 },
+        { kind: 'rate', numerator: 6, denominator: 10 },
+        10,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    const drillTemplateIds = new Set(
+      candidates.filter((c) => c.kind === 'drill').map((c) => c.titleKey),
+    );
+
+    expect(drillTemplateIds.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('vod_pattern fires when two vod_annotation claims share a match id', () => {
+    const claims = claimsFrom({
+      [vodEvidenceId('m1', 30)]: row(
+        'vod_annotation',
+        NULL_SUBJECT,
+        { kind: 'count', count: 30 },
+        3,
+      ),
+      [vodEvidenceId('m1', 45)]: row(
+        'vod_annotation',
+        NULL_SUBJECT,
+        { kind: 'count', count: 45 },
+        3,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    const vodPatternDrills = candidates.filter(
+      (c) => c.kind === 'drill' && c.titleKey === 'reports.actions.drill.vodPattern',
+    );
+    expect(vodPatternDrills.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a lone vod_annotation claim (no shared match id) never fires vod_pattern', () => {
+    const claims = claimsFrom({
+      [vodEvidenceId('m1', 30)]: row(
+        'vod_annotation',
+        NULL_SUBJECT,
+        { kind: 'count', count: 30 },
+        3,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    expect(candidates.some((c) => c.titleKey === 'reports.actions.drill.vodPattern')).toBe(false);
+  });
+
+  it('COVERAGE: every row of DRILL_TEMPLATE_TABLE fires in at least one fixture in this file', () => {
+    const games = 8;
+    const claims = claimsFrom({
+      'sr-f8-s1': row(
+        'stage_record',
+        { ...NULL_SUBJECT, myFighterId: 8, stageId: 1 },
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 },
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+      'ocu-g24': row(
+        'opponent_character_usage',
+        { ...NULL_SUBJECT, opponentFighterId: 24 },
+        { kind: 'rate', numerator: 6, denominator: 10 },
+        10,
+      ),
+      [vodEvidenceId('m1', 30)]: row(
+        'vod_annotation',
+        NULL_SUBJECT,
+        { kind: 'count', count: 30 },
+        3,
+      ),
+      [vodEvidenceId('m1', 45)]: row(
+        'vod_annotation',
+        NULL_SUBJECT,
+        { kind: 'count', count: 45 },
+        3,
+      ),
+    });
+
+    const candidates = buildActionCandidates({ claims, vodRefs: [] });
+    const firedTitleKeys = new Set(
+      candidates.filter((c) => c.kind === 'drill').map((c) => c.titleKey),
+    );
+
+    for (const templateRow of DRILL_TEMPLATE_TABLE) {
+      expect(firedTitleKeys.has(templateRow.titleKey)).toBe(true);
+    }
+  });
+});
+
+describe('D-18 non-duplication: a drill can never be a matchup_practice re-emission', () => {
+  it('a claim set licensing both kinds yields the matchup_practice candidate and NO drill citing the same claim', () => {
+    const games = 8;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+    });
+    const claimId = claims[0]!.id;
+
+    const raw = buildActionCandidates({ claims, vodRefs: [] });
+    // Both a matchup_practice candidate and a matchup_punish drill candidate
+    // exist in the RAW (pre-suppression) output — the suppression is
+    // rankActionCandidates's job.
+    expect(raw.some((c) => c.kind === 'matchup_practice')).toBe(true);
+    expect(raw.some((c) => c.kind === 'drill')).toBe(true);
+
+    const ranked = rankActionCandidates(raw);
+    const rankedDrills = ranked.filter((c) => c.kind === 'drill' && c.claimIds.includes(claimId));
+    expect(rankedDrills).toEqual([]);
+    expect(ranked.some((c) => c.kind === 'matchup_practice' && c.claimIds.includes(claimId))).toBe(
+      true,
+    );
+  });
+
+  it('a claim set licensing only a drill still yields it after ranking', () => {
+    const games = 8;
+    const claims = claimsFrom({
+      'sr-f8-s1': row(
+        'stage_record',
+        { ...NULL_SUBJECT, myFighterId: 8, stageId: 1 },
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+    });
+
+    const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
+    expect(ranked.some((c) => c.kind === 'drill')).toBe(true);
   });
 });
