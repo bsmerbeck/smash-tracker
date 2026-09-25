@@ -678,4 +678,61 @@ describe('TrendsPage', () => {
     expect(h1.closest('[data-slot="card"]')).toBeNull();
     expect(horizonSwitch.closest('[data-slot="card"]')).toBeNull();
   });
+
+  // Plan 39.1-38 (design-audit item 9; UI-SPEC §8.2 "insight before chart"):
+  // DOM order = the phone reading order; the desktop composition is restored
+  // by lg grid placement, never a CSS `order` utility (UI-SPEC §14.5).
+  describe('plan 39.1-38 insight-first phone order', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    it('DOM order is stat row, reads rail, career timeline, left stack (Sessions, Recent events), right stack (Setting, Mix)', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+        makeMatch({
+          id: 'm2',
+          win: false,
+          time: Date.UTC(2021, 1, 1),
+          matchType: 'offline-tourney',
+        }),
+      ]);
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const indexOf = (predicate: (cell: HTMLElement) => boolean) => cells.findIndex(predicate);
+      const hero = indexOf((c) => Boolean(c.querySelector('[data-slot="trends-hero-body"]')));
+      const reads = indexOf((c) => Boolean(c.querySelector('[data-slot="trends-reads-rail"]')));
+      const timeline = indexOf((c) => Boolean(c.querySelector('[data-slot="career-timeline"]')));
+      const left = indexOf((c) => (c.textContent ?? '').includes('Sessions & Tilt'));
+      const right = indexOf((c) => (c.textContent ?? '').includes('Setting Comparison'));
+      expect([hero, reads, timeline, left, right]).toEqual([0, 1, 2, 3, 4]);
+      expect(cells[left]!.textContent).toContain('Recent Events');
+      expect(cells[right]!.textContent).toContain('Match-Type Mix');
+
+      expect(cls(cells[hero]!)).toContain('lg:row-start-1');
+      expect(cls(cells[timeline]!)).toContain('lg:row-start-2');
+      expect(cls(cells[left]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']),
+      );
+      expect(cls(cells[reads]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']),
+      );
+      expect(cls(cells[right]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']),
+      );
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+    });
+
+    it('the loading skeleton uses the same order and placement', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderTrends();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['12', '4', '12', '4', '4']);
+      expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']));
+      expect(cls(cells[2]!)).toContain('lg:row-start-2');
+      expect(cls(cells[3]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']));
+      expect(cls(cells[4]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']));
+    });
+  });
 });

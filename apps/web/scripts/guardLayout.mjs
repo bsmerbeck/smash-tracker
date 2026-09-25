@@ -161,9 +161,16 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="match-data-rail"]',
     // Plan 39.1-38: one unboxed filter row owning the page h1 and the switch;
     // phone StatRows collapse to two columns.
-    checks: ['filter-row'],
+    // Plan 39.1-38 Task 3 (UI-SPEC §8.4 "insight before chart"): on a phone
+    // the rail renders before the match table; at 1024+ the table keeps its
+    // desktop place above the rail (grid placement, never `order`).
+    checks: ['filter-row', 'placement'],
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
-    narrowChecks: ['stat-row-columns'],
+    placement: [
+      { kind: 'above', first: '#match-data-table', then: '[data-slot="match-data-rail"]' },
+    ],
+    narrowChecks: ['stat-row-columns', 'insight-order'],
+    orderPairs: [{ first: '[data-slot="match-data-rail"]', then: '#match-data-table' }],
   },
   {
     id: 'trends',
@@ -172,9 +179,24 @@ export const LAYOUT_ORACLE_ROUTES = [
     // thin) account — alignment, mark bounds and the no-canvas rule.
     // Plan 39.1-38: one unboxed filter row owning the h1 and the switch;
     // phone StatRows collapse to two columns (the KPI lead spans, 002-C).
-    checks: ['career-timeline', 'filter-row'],
+    // Plan 39.1-38 Task 3 (UI-SPEC §8.2 "insight before chart"): on a phone
+    // the reads rail renders directly after the stat row and before the
+    // career timeline; at 1024+ the timeline keeps its desktop place above
+    // the rails (grid placement, never `order`).
+    checks: ['career-timeline', 'filter-row', 'placement'],
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
-    narrowChecks: ['stat-row-columns'],
+    placement: [
+      {
+        kind: 'above',
+        first: '[data-slot="career-timeline"]',
+        then: '[data-slot="trends-reads-rail"]',
+      },
+    ],
+    narrowChecks: ['stat-row-columns', 'insight-order'],
+    orderPairs: [
+      { first: '[data-slot="trends-hero-body"]', then: '[data-slot="trends-reads-rail"]' },
+      { first: '[data-slot="trends-reads-rail"]', then: '[data-slot="career-timeline"]' },
+    ],
   },
   {
     // Plan 39.1-34: the ONE sparg0-shaped dataset (8,400 games over ~7.7

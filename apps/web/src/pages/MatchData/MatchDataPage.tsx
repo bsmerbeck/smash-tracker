@@ -38,6 +38,8 @@ import {
   useMatchDataInsights,
 } from './components/MatchDataRail';
 
+/** Plan 39.1-38: the match table card's stable hook (the insight-order / placement oracle). */
+const MATCH_TABLE_ANCHOR_ID = 'match-data-table';
 const GAMES_ANCHOR_ID = 'games';
 
 /**
@@ -287,7 +289,7 @@ export function MatchDataPage() {
         )}
       >
         <GridCell span={12}>
-          <Card>
+          <Card id={MATCH_TABLE_ANCHOR_ID}>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>{t('matchData.title')}</CardTitle>
               <AddMatchForm fighterSprites={fighterSprites} fighter={fighterSprites[0]} />

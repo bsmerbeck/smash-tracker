@@ -1314,4 +1314,50 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
       expect(container).toBeTruthy();
     });
   });
+
+  // Plan 39.1-38 (design-audit item 9; UI-SPEC §8.4 "insight before chart"):
+  // DOM order = the phone reading order (rail, [Roster, Stages], table); the
+  // desktop composition (table row 1, stack + rail row 2) by lg placement.
+  describe('plan 39.1-38 insight-first phone order', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    it('DOM order is rail, [Roster, Stages] stack, match table card; at lg the table is row 1 and the stack / rail share row 2', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+      ]);
+      const { container } = renderMatchData();
+      await screen.findByText('Match History');
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const rail = cells.findIndex((c) => c.querySelector('[data-slot="match-data-rail"]'));
+      const stack = cells.findIndex((c) => (c.textContent ?? '').includes('Stage Breakdown'));
+      const table = cells.findIndex((c) => c.querySelector('#match-data-table'));
+      expect([rail, stack, table]).toEqual([0, 1, 2]);
+      expect(cls(cells[table]!)).toContain('lg:row-start-1');
+      expect(cls(cells[stack]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']),
+      );
+      expect(cls(cells[rail]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-2']),
+      );
+      expect((container.querySelector('#match-data-table') as HTMLElement).textContent).toContain(
+        'Match History',
+      );
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+    });
+
+    it('the loading skeleton uses the same order and placement', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderMatchData();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8', '12']);
+      expect(cls(cells[0]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-2']));
+      expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']));
+      expect(cls(cells[2]!)).toContain('lg:row-start-1');
+    });
+  });
 });
