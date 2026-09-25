@@ -5740,3 +5740,307 @@ describe('post-plan fix (39-08): a 200 is the PARSED record — an empty-section
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): the job record
+// carries `wasCharged` — the SAME `spent` fact the money path acts on —
+// written at spend time and carried on every later whole-node `.set()`, so
+// the web's refund wording can never claim a refund on a job that was never
+// charged, even after the viewer's free-access status changes. Additive and
+// RTDB-safe (a boolean, never null). Money is unchanged: every case below
+// also pins balance + `spend`/`refund` ledger refs.
+// ---------------------------------------------------------------------------
+
+interface RecordedJobWrite {
+  op: 'set' | 'update' | 'transaction';
+  path: string;
+  value?: unknown;
+}
+
+/** Records every write with its path AND value, so a test can find WHEN `wasCharged` first lands on the job node. */
+function recordWritesWithValues(database: FakeDatabase): RecordedJobWrite[] {
+  const writes: RecordedJobWrite[] = [];
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        writes.push({ op: 'set', path: path ?? '', value });
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        writes.push({ op: 'update', path: path ?? '', value: values });
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        writes.push({ op: 'transaction', path: path ?? '' });
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return writes;
+}
+
+/** The index of the first write that puts `wasCharged === expected` on `reportJobs/{uid}/{jobId}` (a set/update of the node itself). */
+function firstWasChargedWrite(
+  writes: RecordedJobWrite[],
+  jobId: string,
+  expected: boolean,
+): number {
+  const jobPath = `reportJobs/${TEST_UID}/${jobId}`;
+  return writes.findIndex(
+    (write) =>
+      write.path === jobPath &&
+      (write.op === 'set' || write.op === 'update') &&
+      (write.value as { wasCharged?: unknown } | null)?.wasCharged === expected,
+  );
+}
+
+function firstRunningWrite(writes: RecordedJobWrite[], jobId: string): number {
+  const jobPath = `reportJobs/${TEST_UID}/${jobId}`;
+  return writes.findIndex(
+    (write) =>
+      write.path === jobPath &&
+      (write.op === 'transaction' ||
+        (write.op === 'set' && (write.value as { status?: string }).status === 'running')),
+  );
+}
+
+function spendTransactionIndex(writes: RecordedJobWrite[]): number {
+  return writes.findIndex(
+    (write) => write.op === 'transaction' && write.path === `credits/${TEST_UID}/balance`,
+  );
+}
+
+/** A free-access (allowlisted) prep app over the viable workspace. */
+function prepFreeAccessApp(respond: () => { stop_reason: string; parsed_output: unknown }) {
+  const modelSpy = vi.fn(async () => respond());
+  const built = buildTestApp({
+    reports: REPORTS_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    }),
+  });
+  return { ...built, modelSpy };
+}
+
+describe('post-plan fix (39-10): wasCharged is persisted on the job at spend time and survives every terminal write', () => {
+  it('legacy scout, billable: wasCharged true lands on the job AFTER the spend and BEFORE running; the succeeded record keeps it; money unchanged (one spend, zero refunds)', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    const writes = recordWritesWithValues(database);
+
+    const response = await postLegacy(app, 'wc-legacy-paid');
+
+    expect(response.statusCode).toBe(200);
+    const spendAt = spendTransactionIndex(writes);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-legacy-paid', true);
+    const runningAt = firstRunningWrite(writes, 'wc-legacy-paid');
+    expect(spendAt).toBeGreaterThan(-1);
+    expect(chargedAt).toBeGreaterThan(spendAt);
+    expect(chargedAt).toBeLessThan(runningAt);
+    expect(await jobRecord(database, 'wc-legacy-paid')).toMatchObject({
+      status: 'succeeded',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wc-legacy-paid']);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('legacy scout, free-access: wasCharged false is written before running and kept on the succeeded record; no ledger movement', async () => {
+    const built = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const writes = recordWritesWithValues(built.database);
+
+    const response = await postLegacy(built.app, 'wc-legacy-free');
+
+    expect(response.statusCode).toBe(200);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-legacy-free', false);
+    expect(chargedAt).toBeGreaterThan(-1);
+    expect(chargedAt).toBeLessThan(firstRunningWrite(writes, 'wc-legacy-free'));
+    expect(await jobRecord(built.database, 'wc-legacy-free')).toMatchObject({
+      status: 'succeeded',
+      wasCharged: false,
+    });
+    expect((built.database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('legacy scout, billable model refusal: the failed terminal carries wasCharged true; exactly one refund, balance restored', async () => {
+    const refusing = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+    });
+    refusing.database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(refusing.app, 'wc-legacy-refusal');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(refusing.database, 'wc-legacy-refusal')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(refusing.database)).toEqual(['wc-legacy-refusal']);
+    expect(refundLedgerRefs(refusing.database)).toEqual(['wc-legacy-refusal']);
+    expect(await balanceOf(refusing.database)).toBe(1);
+  });
+
+  it('prep_report, billable validation failure: the AUTHORITATIVE refunded write carries wasCharged true beside failureReason (C1-H1 shape); one spend, one refund', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const writes = recordWritesWithValues(database);
+
+    const response = await postPrepSingle(app, 'wc-prep-paid');
+
+    expect(response.statusCode).toBe(502);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-prep-paid', true);
+    expect(chargedAt).toBeGreaterThan(spendTransactionIndex(writes));
+    expect(chargedAt).toBeLessThan(firstRunningWrite(writes, 'wc-prep-paid'));
+    const job = await jobRecord(database, 'wc-prep-paid');
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wc-prep-paid']);
+    expect(refundLedgerRefs(database)).toEqual(['wc-prep-paid']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report, free-access failure: rests at failed with wasCharged false; no spend, no refund, no ledger', async () => {
+    const { app, database } = prepFreeAccessApp(() => ({
+      stop_reason: 'refusal',
+      parsed_output: null,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+
+    const response = await postPrepSingle(app, 'wc-prep-free');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'wc-prep-free')).toMatchObject({
+      status: 'failed',
+      reason: 'prep_report',
+      wasCharged: false,
+    });
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('prep_bundle, billable: the three queued children carry wasCharged true from the bundle debit; an executed child keeps it on its succeeded record; the one 3-credit debit is the only spend', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const jobs = await submitBundle(app, 'bundle-wc-paid');
+
+    for (const child of jobs) {
+      expect(await jobRecord(database, child.jobId)).toMatchObject({
+        status: 'queued',
+        reason: 'prep_bundle',
+        wasCharged: true,
+      });
+    }
+    expect(await balanceOf(database)).toBe(7);
+    const spends = spendLedgerRefs(database);
+    expect(spends).toHaveLength(3);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(200);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'succeeded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(spends);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(7);
+  });
+
+  it('prep_bundle, free-access: the three queued children carry wasCharged false; no ledger movement', async () => {
+    const { app, database } = prepFreeAccessApp(() => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+
+    const jobs = await submitBundle(app, 'bundle-wc-free');
+
+    expect(jobs).toHaveLength(3);
+    for (const child of jobs) {
+      expect(await jobRecord(database, child.jobId)).toMatchObject({
+        status: 'queued',
+        reason: 'prep_bundle',
+        wasCharged: false,
+      });
+    }
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('the stale-job sweep carries wasCharged forward on its failed terminal (and its refund is unchanged)', async () => {
+    const database = new FakeDatabaseImpl();
+    const now = Date.now();
+    for (const [jobId, wasCharged] of [
+      ['wc-swept-paid', true],
+      ['wc-swept-free', false],
+    ] as const) {
+      database.seed(`reportJobs/${TEST_UID}/${jobId}`, {
+        status: 'running',
+        reason: 'prep_report',
+        createdAt: now - 40 * 60 * 1000,
+        updatedAt: now - 40 * 60 * 1000,
+        attempt: 0,
+        creditRef: jobId,
+        wasCharged,
+      });
+      database.seed(`reportJobsByStatus/running/${TEST_UID}/${jobId}`, true);
+    }
+    database.seed(`reportJobs/${TEST_UID}/wc-swept-legacy`, {
+      status: 'running',
+      createdAt: now - 40 * 60 * 1000,
+      updatedAt: now - 40 * 60 * 1000,
+      attempt: 0,
+      creditRef: 'wc-swept-legacy',
+    });
+    database.seed(`reportJobsByStatus/running/${TEST_UID}/wc-swept-legacy`, true);
+
+    const result = await runSweepStuckReportJobs(database as never, { now });
+
+    expect(result).toEqual({ swept: 3, refunded: 3 });
+    expect(await jobRecord(database, 'wc-swept-paid')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(await jobRecord(database, 'wc-swept-free')).toMatchObject({
+      status: 'failed',
+      wasCharged: false,
+    });
+    expect(await jobRecord(database, 'wc-swept-legacy')).not.toHaveProperty('wasCharged');
+  });
+});

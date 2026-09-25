@@ -2169,3 +2169,107 @@ function buildAppSharingDatabase(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): `wasCharged` on
+// the synthesis job. The zero-spend free-access failure is THE case the web's
+// "your credit was refunded" badge got wrong — `failJob` writes the
+// `refunded` terminal for it (Phase 28 CR-02) with no refund — so the record
+// itself must say no credit was taken. Money is pinned alongside.
+// ---------------------------------------------------------------------------
+
+function freeAccessSynthesisApp(
+  respond: () => Promise<{ stop_reason: string | null; parsed_output: unknown }>,
+) {
+  return buildTestApp({
+    reports: REPORTS_CONFIG,
+    prepPaid: PREP_PAID_CONFIG,
+    parrygg: { apiKey: 'parry-key' },
+    reportsClient: stubClient(respond),
+  });
+}
+
+describe('post-plan fix (39-10): wasCharged on the post_event_synthesis job', () => {
+  it('billable: the QUEUED write (after the spend) already carries wasCharged true; the succeeded record keeps it; one spend, zero refunds', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const queuedValues: unknown[] = [];
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          if (
+            (path ?? '').startsWith(`reportJobs/${TEST_UID}/`) &&
+            (value as { status?: string } | null)?.status === 'queued'
+          ) {
+            queuedValues.push(value);
+          }
+          return ref.set(value);
+        },
+      };
+    });
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    expect(queuedValues).toHaveLength(1);
+    expect(queuedValues[0]).toMatchObject({ status: 'queued', wasCharged: true });
+    const { job } = await onlyJob(database);
+    expect(job).toMatchObject({ status: 'succeeded', wasCharged: true });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(0);
+  });
+
+  it('billable validation failure: the refunded terminal carries wasCharged true; exactly one refund, balance restored', async () => {
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: uncitablePlan(),
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+  });
+
+  it('CR-02 zero-spend free-access failure: the refunded terminal carries wasCharged FALSE — no spend, no refund, no ledger', async () => {
+    const { app, database } = freeAccessSynthesisApp(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: uncitablePlan(),
+    }));
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+      wasCharged: false,
+    });
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).exists()).toBe(false);
+  });
+});

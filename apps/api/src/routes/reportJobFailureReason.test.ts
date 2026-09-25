@@ -183,3 +183,103 @@ describe('the wire field is an OPEN string (tolerant client read)', () => {
     expect(parsedSynthesis.success).toBe(true);
   });
 });
+
+/**
+ * Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): the two job-status
+ * reads also project `wasCharged` — the spend fact persisted on the job — so
+ * the paid cards' refund wording reads the record, not the viewer's CURRENT
+ * free-access status. Present only when the stored job carries a boolean;
+ * absent on older records (the web then falls back to the credits read).
+ */
+describe('GET /api/reports/jobs and /api/reports/synthesis project wasCharged (post-plan fix 39-10)', () => {
+  it('jobs: true and false are both carried (false is a value, not an absence); a record without it omits the key', async () => {
+    const { app: server, database } = app();
+    seedPrepJob(database, 'rival1', 'job-charged', {
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    seedPrepJob(database, 'rival2', 'job-free', { status: 'failed', wasCharged: false });
+    seedPrepJob(database, 'rival3', 'job-old', { status: 'failed' });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      jobs: [
+        {
+          opponentName: 'rival1',
+          jobId: 'job-charged',
+          status: 'refunded',
+          updatedAt: 5,
+          wasCharged: true,
+        },
+        {
+          opponentName: 'rival2',
+          jobId: 'job-free',
+          status: 'failed',
+          updatedAt: 5,
+          wasCharged: false,
+        },
+        { opponentName: 'rival3', jobId: 'job-old', status: 'failed', updatedAt: 5 },
+      ],
+    });
+  });
+
+  it('synthesis: the zero-spend refunded terminal reads wasCharged false; an older record omits it', async () => {
+    const { app: server, database } = app();
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'synth-free',
+      updatedAt: 5,
+    });
+    database.seed(`reportJobs/${TEST_UID}/synth-free`, {
+      status: 'refunded',
+      createdAt: 1,
+      updatedAt: 5,
+      attempt: 0,
+      creditRef: 'synth-free',
+      reason: 'post_event_synthesis',
+      wasCharged: false,
+    });
+    const free = await server.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(free.json()).toEqual({
+      job: { jobId: 'synth-free', status: 'refunded', updatedAt: 5, wasCharged: false },
+    });
+
+    database.seed(`reportJobs/${TEST_UID}/synth-free`, {
+      status: 'refunded',
+      createdAt: 1,
+      updatedAt: 6,
+      attempt: 0,
+      creditRef: 'synth-free',
+      reason: 'post_event_synthesis',
+    });
+    const old = await server.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(old.json()).toEqual({ job: { jobId: 'synth-free', status: 'refunded', updatedAt: 6 } });
+  });
+
+  it('a stored null (RTDB-stripped / legacy writer) reads as absent, never as false', async () => {
+    const { app: server, database } = app();
+    seedPrepJob(database, 'rival1', 'job-null', { status: 'failed', wasCharged: null });
+    const response = await server.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    const [entry] = (response.json() as { jobs: Array<Record<string, unknown>> }).jobs;
+    expect(entry).toBeDefined();
+    expect(entry).not.toHaveProperty('wasCharged');
+  });
+});
