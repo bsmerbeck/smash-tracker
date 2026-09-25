@@ -155,7 +155,6 @@ function buildReadout(input: {
 }): CareerTimelineReadout {
   const { target, t, locale, baselineRate, pointsByKey } = input;
   const baseline = formatPercent(baselineRate, locale);
-  const pointsFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const record = (wins: number, losses: number, total: number) =>
     t('analytics.timeline.readout.record', {
       count: total,
@@ -167,7 +166,10 @@ function buildReadout(input: {
     if (Math.abs(deltaPoints) < LEVEL_DELTA_POINTS) {
       return t('analytics.timeline.readout.delta.level', { baseline });
     }
-    const points = pointsFormat.format(Math.abs(deltaPoints));
+    // Sketch 002-C precision: whole points, one decimal only below 1 pt.
+    const points = new Intl.NumberFormat(locale, {
+      maximumFractionDigits: Math.abs(deltaPoints) < 1 ? 1 : 0,
+    }).format(Math.abs(deltaPoints));
     return deltaPoints > 0
       ? t('analytics.timeline.readout.delta.above', { points, baseline })
       : t('analytics.timeline.readout.delta.below', { points, baseline });

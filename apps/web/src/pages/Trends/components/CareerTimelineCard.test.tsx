@@ -212,9 +212,10 @@ describe('CareerTimelineCard (plan 39.1-35) — the readout copy', () => {
   }
 
   function ptsLine(deltaPoints: number): string {
-    const magnitude = new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(
-      Math.abs(deltaPoints),
-    );
+    // Sketch 002-C precision: whole points, one decimal only below 1 pt.
+    const magnitude = new Intl.NumberFormat('en', {
+      maximumFractionDigits: Math.abs(deltaPoints) < 1 ? 1 : 0,
+    }).format(Math.abs(deltaPoints));
     if (Math.abs(deltaPoints) < 0.5) return `level with the ${baseline} all-time rate`;
     return deltaPoints > 0
       ? `+${magnitude} pts vs the ${baseline} all-time rate`
@@ -233,6 +234,10 @@ describe('CareerTimelineCard (plan 39.1-35) — the readout copy', () => {
       `${aug.wins}–${aug.losses} · ${formatPercent(aug.rate, 'en')} · ${aug.total} games`,
       ptsLine(aug.deltaPoints),
     ]);
+    // plan 39.1-35 fidelity: sketch 002-C prints whole points at 1 pt and above.
+    if (Math.abs(aug.deltaPoints) >= 1) {
+      expect(readoutLines(container)[3]).toMatch(/^[+−]\d+ pts /);
+    }
   });
 
   it('a 5-game month shows the under-8 reason INSTEAD of a points line', () => {
