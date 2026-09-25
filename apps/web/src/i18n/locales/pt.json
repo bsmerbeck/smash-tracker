@@ -996,8 +996,6 @@
         "lastEvent": "FormNow · último evento vs sempre",
         "last90": "FormNow · últimos 90 dias vs sempre"
       },
-      "figureLocked_one": "{{count}} partida a mais desbloqueia isso",
-      "figureLocked_other": "{{count}} partidas a mais desbloqueiam isso",
       "formStrip": {
         "title": "Forma · últimas 60 partidas, por evento"
       },
@@ -3176,8 +3174,14 @@
       "down": "Desce",
       "steady": "Estável",
       "thin": "Poucos dados",
-      "none_one": "{{count}} confronto sem mudança notável",
-      "none_other": "{{count}} confrontos sem mudança notável",
+      "noDirection_one": "n {{count}} · sem direção",
+      "noDirection_other": "n {{count}} · sem direção",
+      "noGames": "sem partidas",
+      "horizon": {
+        "last30": "últimas 30",
+        "lastEvent": "último evento",
+        "last90": "últimos 90 dias"
+      },
       "aria": {
         "up": "Em alta",
         "down": "Em queda",

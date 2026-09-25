@@ -996,8 +996,6 @@
         "lastEvent": "FormNow · dernier événement contre toujours",
         "last90": "FormNow · 90 derniers jours contre toujours"
       },
-      "figureLocked_one": "{{count}} partie de plus débloque ceci",
-      "figureLocked_other": "{{count}} parties de plus débloquent ceci",
       "formStrip": {
         "title": "Forme · 60 dernières parties, par événement"
       },
@@ -3176,8 +3174,14 @@
       "down": "En baisse",
       "steady": "Stable",
       "thin": "Peu de données",
-      "none_one": "{{count}} duel sans changement notable",
-      "none_other": "{{count}} duels sans changement notable",
+      "noDirection_one": "n {{count}} · sans tendance",
+      "noDirection_other": "n {{count}} · sans tendance",
+      "noGames": "aucun match",
+      "horizon": {
+        "last30": "30 derniers",
+        "lastEvent": "dernier événement",
+        "last90": "90 derniers jours"
+      },
       "aria": {
         "up": "En hausse",
         "down": "En baisse",

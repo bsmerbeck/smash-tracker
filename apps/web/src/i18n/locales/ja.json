@@ -996,8 +996,6 @@
         "lastEvent": "FormNow · 直近イベント 対 通算",
         "last90": "FormNow · 直近90日 対 通算"
       },
-      "figureLocked_one": "あと{{count}}試合でこれが解放されます",
-      "figureLocked_other": "あと{{count}}試合でこれが解放されます",
       "formStrip": {
         "title": "フォーム · 直近60試合、イベント別"
       },
@@ -3176,8 +3174,14 @@
       "down": "下降",
       "steady": "横ばい",
       "thin": "データ不足",
-      "none_one": "有意な変化のない対戦{{count}}件",
-      "none_other": "有意な変化のない対戦{{count}}件",
+      "noDirection_one": "n {{count}} · 方向なし",
+      "noDirection_other": "n {{count}} · 方向なし",
+      "noGames": "試合なし",
+      "horizon": {
+        "last30": "直近30戦",
+        "lastEvent": "直近の大会",
+        "last90": "直近90日"
+      },
       "aria": {
         "up": "上昇傾向",
         "down": "下降傾向",

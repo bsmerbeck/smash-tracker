@@ -996,8 +996,6 @@
         "lastEvent": "FormNow · last event vs all time",
         "last90": "FormNow · last 90 days vs all time"
       },
-      "figureLocked_one": "{{count}} more game unlocks this",
-      "figureLocked_other": "{{count}} more games unlock this",
       "formStrip": {
         "title": "Form · last 60 games, by event"
       },
@@ -3176,8 +3174,14 @@
       "down": "Down",
       "steady": "Steady",
       "thin": "Thin",
-      "none_one": "{{count}} match with no notable change",
-      "none_other": "{{count}} matches with no notable change",
+      "noDirection_one": "n {{count}} · no direction",
+      "noDirection_other": "n {{count}} · no direction",
+      "noGames": "no games",
+      "horizon": {
+        "last30": "last 30",
+        "lastEvent": "last event",
+        "last90": "last 90 days"
+      },
       "aria": {
         "up": "Trending up",
         "down": "Trending down",

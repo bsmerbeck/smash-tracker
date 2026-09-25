@@ -13,6 +13,12 @@ export interface DeltaChipProps {
   ariaLabel: string;
   /** Set when the enclosing figure's overline already carries the horizon (see the guard below). */
   horizonOwnedByParent?: boolean;
+  /**
+   * Plan 39.1-36: the recent window's real game count, rendered as
+   * `data-recent-games` (no visual change) so tests, captures and browser
+   * oracles can see a chip's sample size.
+   */
+  recentGames?: number;
 }
 
 /**
@@ -77,6 +83,7 @@ export function DeltaChip({
   horizonLabel,
   ariaLabel,
   horizonOwnedByParent = false,
+  recentGames,
 }: DeltaChipProps) {
   if (state === 'collapsed') {
     return null;
@@ -98,6 +105,9 @@ export function DeltaChip({
 
   return (
     <span
+      data-slot="delta-chip"
+      data-state={state}
+      data-recent-games={recentGames}
       tabIndex={0}
       aria-label={ariaLabel}
       style={backgroundStyle}

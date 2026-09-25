@@ -996,8 +996,6 @@
         "lastEvent": "FormNow · letztes Event gegen Gesamt",
         "last90": "FormNow · letzte 90 Tage gegen Gesamt"
       },
-      "figureLocked_one": "{{count}} weiteres Spiel schaltet dies frei",
-      "figureLocked_other": "{{count}} weitere Spiele schalten dies frei",
       "formStrip": {
         "title": "Form · letzte 60 Spiele, nach Event"
       },
@@ -3176,8 +3174,14 @@
       "down": "Fällt",
       "steady": "Stabil",
       "thin": "Zu wenig Daten",
-      "none_one": "{{count}} Matchup ohne nennenswerte Veränderung",
-      "none_other": "{{count}} Matchups ohne nennenswerte Veränderung",
+      "noDirection_one": "n {{count}} · keine Richtung",
+      "noDirection_other": "n {{count}} · keine Richtung",
+      "noGames": "keine Matches",
+      "horizon": {
+        "last30": "letzte 30",
+        "lastEvent": "letztes Event",
+        "last90": "letzte 90 Tage"
+      },
       "aria": {
         "up": "Steigender Trend",
         "down": "Fallender Trend",
