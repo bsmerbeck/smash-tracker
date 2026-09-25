@@ -621,3 +621,124 @@ describe('PrepPaidReportsCard — validation-failure caption (plan 39-10, D-21)'
     }
   });
 });
+
+/**
+ * Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25) — LIVE BUG: the
+ * v2.5 status badges said "refunding your credit" / "your credit was
+ * refunded" on free-access jobs that were never charged. Refund wording now
+ * renders only when the job was actually charged: the job's own `wasCharged`
+ * decides when present (even if the viewer's free-access status changed
+ * later); an older job without it falls back to the loaded credits read; and
+ * an unknown charge says only "Failed". Each badge is ONE i18n string.
+ */
+describe('PrepPaidReportsCard — honest failure badge (post-plan fix 39-10)', () => {
+  const RIVAL = {
+    likelyOpponents: { Rival: true } as PrepPresenceMap,
+    scoutBindings: { Rival: makeBinding({ displayTag: 'Rival' }) },
+  };
+  const PENDING_REFUND = 'Failed — refunding your credit…';
+  const REFUNDED = 'Failed — your credit was refunded.';
+  const NO_CHARGE = 'Failed — no credit was used.';
+  const CHARGE_UNKNOWN = 'Failed';
+  const RETURN = 'Your credit was returned.';
+  const FREE_ACCESS = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+
+  function expectNoRefundWording() {
+    expect(screen.queryByText(PENDING_REFUND)).not.toBeInTheDocument();
+    expect(screen.queryByText(REFUNDED)).not.toBeInTheDocument();
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/refund/i);
+  }
+
+  it('paid, refunded (wasCharged true): the refunded badge AND the caption return clause', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'refunded',
+        failureReason: 'validation',
+        wasCharged: true,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+  });
+
+  it('paid, failed (wasCharged true): the pending-refund badge', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: true }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(PENDING_REFUND)).toBeInTheDocument();
+  });
+
+  it('THE LIVE BUG — free-access viewer, older job (no wasCharged), failed: "no credit was used", no refund wording anywhere', () => {
+    creditsResult = FREE_ACCESS;
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('wasCharged false on a failed job: "no credit was used" even for a billable viewer', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: false }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('STATUS CHANGED LATER — charged while billable, viewer now free-access: wasCharged true beats the current freeAccess read', () => {
+    creditsResult = FREE_ACCESS;
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'refunded',
+        failureReason: 'validation',
+        wasCharged: true,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
+  });
+
+  it('STATUS CHANGED LATER — ran free, viewer now billable: wasCharged false beats the current freeAccess read', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'failed',
+        failureReason: 'validation',
+        wasCharged: false,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('unknown charge (no wasCharged, credits not loaded): a plain "Failed" — never refund wording, never a no-charge claim', () => {
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed' }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(CHARGE_UNKNOWN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('each badge is ONE translated string (no concatenation): the badge element text equals the whole key value', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: false }),
+    };
+    renderCard(RIVAL);
+    const badge = screen.getByText(NO_CHARGE);
+    expect(badge.textContent).toBe(NO_CHARGE);
+    expect(badge.childElementCount).toBe(0);
+  });
+});

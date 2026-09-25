@@ -625,3 +625,96 @@ describe('PostEventSynthesisCard — dropped-claims and withheld-prose footer (p
     expect(container.querySelector('[data-withheld-prose-note]')).toBeNull();
   });
 });
+
+/**
+ * Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25) — LIVE BUG: a
+ * zero-spend free-access synthesis failure terminates at `refunded` (Phase 28
+ * CR-02) with no refund, yet the v2.5 badge said "your credit was refunded".
+ * Refund wording now renders only for a charged job; `wasCharged` decides when
+ * present, older jobs fall back to the loaded credits read, unknown says only
+ * "Failed".
+ */
+describe('PostEventSynthesisCard — honest failure badge (post-plan fix 39-10)', () => {
+  const PENDING_REFUND = 'Failed — refunding your credit…';
+  const REFUNDED = 'Failed — your credit was refunded.';
+  const NO_CHARGE = 'Failed — no credit was used.';
+  const CHARGE_UNKNOWN = 'Failed';
+  const RETURN = 'Your credit was returned.';
+  const FREE_ACCESS = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+
+  function job(overrides: Partial<NonNullable<SynthesisJobStatusResponse['job']>>) {
+    synthesisJobResult = {
+      data: { job: { jobId: 'job-1', status: 'refunded', updatedAt: 1, ...overrides } },
+    };
+  }
+
+  function expectNoRefundWording() {
+    expect(screen.queryByText(PENDING_REFUND)).not.toBeInTheDocument();
+    expect(screen.queryByText(REFUNDED)).not.toBeInTheDocument();
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/refund/i);
+  }
+
+  it('paid, refunded (wasCharged true): the refunded badge and the caption return clause', () => {
+    job({ status: 'refunded', failureReason: 'validation', wasCharged: true });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+  });
+
+  it('paid, failed (wasCharged true): the pending-refund badge', () => {
+    job({ status: 'failed', wasCharged: true });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(PENDING_REFUND)).toBeInTheDocument();
+  });
+
+  it('THE LIVE BUG — CR-02 zero-spend free-access refunded terminal, recorded wasCharged false: "no credit was used", no refund wording', () => {
+    creditsResult = FREE_ACCESS;
+    job({ status: 'refunded', failureReason: 'validation', wasCharged: false });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('THE LIVE BUG — older CR-02 record (no wasCharged), free-access viewer: falls back to the credits read, "no credit was used"', () => {
+    creditsResult = FREE_ACCESS;
+    job({ status: 'refunded' });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('free-access failed (pending) job: "no credit was used" under the destructive badge slot', () => {
+    creditsResult = FREE_ACCESS;
+    job({ status: 'failed', failureReason: 'validation' });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(NO_CHARGE).nextElementSibling).toBe(
+      document.querySelector('[data-validation-caption]'),
+    );
+    expectNoRefundWording();
+  });
+
+  it('STATUS CHANGED LATER — charged, viewer now free-access: wasCharged true beats the current freeAccess read', () => {
+    creditsResult = FREE_ACCESS;
+    job({ status: 'refunded', failureReason: 'validation', wasCharged: true });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+  });
+
+  it('STATUS CHANGED LATER — ran free, viewer now billable: wasCharged false beats the current freeAccess read', () => {
+    job({ status: 'refunded', failureReason: 'validation', wasCharged: false });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('unknown charge (no wasCharged, credits not loaded): a plain "Failed", never refund wording, never a no-charge claim', () => {
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    job({ status: 'refunded' });
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText(CHARGE_UNKNOWN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
+    expectNoRefundWording();
+  });
+});
