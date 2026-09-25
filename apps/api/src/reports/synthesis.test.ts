@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
@@ -8,9 +10,9 @@ import {
   parseVodEvidenceId,
   serializeCitationToken,
   storedPracticePlanSchema,
+  validateReportOutput,
   vodEvidenceId,
   type ClaimAtom,
-  type GeneratedPracticePlan,
 } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
@@ -21,10 +23,9 @@ import {
 import { ReportGenerationError, toModelFacingClaim } from './generate.js';
 import {
   assembleSynthesisPayload,
+  buildSynthesisModelMessage,
   generatePracticePlan,
   projectPracticePlanSelection,
-  SynthesisValidationError,
-  validatePracticePlanCitations,
   type SynthesisAnthropicClient,
   type SynthesisPayload,
 } from './synthesis.js';
@@ -298,131 +299,214 @@ describe('assembleSynthesisPayload', () => {
   });
 });
 
-describe('validatePracticePlanCitations', () => {
-  function plan(focusAreas: GeneratedPracticePlan['focusAreas']): GeneratedPracticePlan {
-    return { summary: 'Overall plan summary', focusAreas };
+/**
+ * Plan 39-08 Task 2 (D-02): 28-06's `validatePracticePlanCitations` is
+ * RETIRED from production — its rule is rule R1 of the ONE shared validator,
+ * run over the synthesis `vod_annotation` claim set. Every scenario the
+ * pre-migration block covered is MIGRATED here (not deleted), re-pointed at
+ * `validateReportOutput` over a REAL synthesis assembly. The model no longer
+ * cites a `(matchId, seconds)` token: it names a claim id, and each claim's
+ * evidence id is `vodEvidenceId(matchId, seconds)`.
+ */
+describe('the retired citation rule, migrated onto the shared validator’s vod_annotation rule (plan 39-08 Task 2)', () => {
+  /** A real event: three annotated games (so each moment is one evidenced claim), m1 carrying two moments. */
+  async function realClaims() {
+    const database = new FakeDatabase();
+    seedEntry(database);
+    seedBrief(database);
+    seedMatch(database, 'match-1', {
+      source: 'startgg',
+      vodTimestamps: [
+        { seconds: 30, note: 'exact label text' },
+        { seconds: 60, note: 'second moment' },
+      ],
+    });
+    seedMatch(database, 'match-2', {
+      source: 'startgg',
+      vodTimestamps: [{ seconds: 20, note: 'x' }],
+    });
+    seedMatch(database, 'match-3', {
+      source: 'startgg',
+      vodTimestamps: [{ seconds: 40, note: 'y' }],
+    });
+    const result = await assemble(database);
+    if (!result.found) throw new Error('expected found');
+    const claimFor = (matchId: string, seconds: number) =>
+      result.claimSet.claims.find((claim) =>
+        claim.evidenceIds.includes(vodEvidenceId(matchId, seconds)),
+      )!;
+    const validate = (sections: Record<string, { claimIds: string[]; connective: string }>) =>
+      validateReportOutput({
+        snapshot: result.snapshot,
+        issuedClaims: result.claimSet.claims,
+        output: {
+          sections: sections as Parameters<typeof validateReportOutput>[0]['output']['sections'],
+          action1: null,
+          action2: null,
+          action3: null,
+        },
+        surface: 'post_event_synthesis',
+      });
+    return { result, claimFor, validate };
   }
 
-  function token(matchId: string, seconds: number, label = 'note'): string {
-    return serializeCitationToken({ sourceVodRef: matchId, seconds, label });
-  }
-
-  it('INV-1: citation tokens resolve to exact stored evidence IDs, not display text — a byte-identical label with a non-allowed pair is dropped; a mangled label with an allowed pair survives', () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const droppedByLabelTrick = {
-      title: 'Fake grounding',
-      evidence: `Looks right: ${token('match-2', 30, 'exact label text')}`,
-      drills: ['drill'],
-    };
-    const survivesDespiteMangledLabel = {
-      title: 'Real grounding',
-      evidence: `${token('match-1', 30, 'trun...')}`,
-      drills: ['drill'],
-    };
-
-    const result = validatePracticePlanCitations(
-      plan([droppedByLabelTrick, survivesDespiteMangledLabel]),
-      allowedPairs,
-    );
-
-    expect(result.plan.focusAreas).toEqual([survivesDespiteMangledLabel]);
-    expect(result.droppedClaimCount).toBe(1);
-  });
-
-  it("INV-1: resolution is set-membership against the server-assembled universe — a pair absent from THIS payload's allowedPairs is dropped even though it names a real match", () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const fromAnotherPayload = {
-      title: 'Different assembly',
-      evidence: token('match-9', 999),
-      drills: ['drill'],
-    };
-    const inThisPayload = {
-      title: 'This assembly',
-      evidence: token('match-1', 30),
-      drills: ['drill'],
-    };
-
-    const result = validatePracticePlanCitations(
-      plan([fromAnotherPayload, inThisPayload]),
-      allowedPairs,
-    );
-
-    expect(result.plan.focusAreas).toEqual([inThisPayload]);
-    expect(result.droppedClaimCount).toBe(1);
-  });
-
-  it('a focusArea with zero citation tokens is dropped', () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const uncited = { title: 'No grounding', evidence: 'Just prose, no tokens.', drills: ['d'] };
-    const cited = { title: 'Grounded', evidence: token('match-1', 30), drills: ['d'] };
-
-    const result = validatePracticePlanCitations(plan([uncited, cited]), allowedPairs);
-
-    expect(result.plan.focusAreas).toEqual([cited]);
-    expect(result.droppedClaimCount).toBe(1);
-  });
-
-  it('a focusArea with one valid and one invalid token is dropped (all-tokens-must-resolve)', () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const mixed = {
-      title: 'Half grounded',
-      evidence: `${token('match-1', 30)} and also ${token('match-2', 999)}`,
-      drills: ['d'],
-    };
-    const cited = { title: 'Fully grounded', evidence: token('match-1', 30), drills: ['d'] };
-
-    const result = validatePracticePlanCitations(plan([mixed, cited]), allowedPairs);
-
-    expect(result.plan.focusAreas).toEqual([cited]);
-    expect(result.droppedClaimCount).toBe(1);
-  });
-
-  it('malformed tokens are treated as invalid, never a crash', () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const malformed = {
-      title: 'Broken token',
-      evidence: '{{cite:matchId=match-1;seconds=not-a-number;label=x}}',
-      drills: ['d'],
-    };
-    const cited = { title: 'Grounded', evidence: token('match-1', 30), drills: ['d'] };
-
-    expect(() =>
-      validatePracticePlanCitations(plan([malformed, cited]), allowedPairs),
-    ).not.toThrow();
-    const result = validatePracticePlanCitations(plan([malformed, cited]), allowedPairs);
-    expect(result.plan.focusAreas).toEqual([cited]);
-    expect(result.droppedClaimCount).toBe(1);
-  });
-
-  it("INV-2: zero surviving claims throws SynthesisValidationError with reason 'uncitable'", () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const allDropped = [
-      { title: 'No grounding', evidence: 'no tokens here', drills: ['d'] },
-      { title: 'Bad pair', evidence: token('match-9', 999), drills: ['d'] },
-    ];
-
-    expect(() => validatePracticePlanCitations(plan(allDropped), allowedPairs)).toThrow(
-      SynthesisValidationError,
-    );
-    try {
-      validatePracticePlanCitations(plan(allDropped), allowedPairs);
-      expect.unreachable();
-    } catch (error) {
-      expect(error).toBeInstanceOf(SynthesisValidationError);
-      expect((error as SynthesisValidationError).reason).toBe('uncitable');
+  it('INV-1 (migrated): resolution is by stable evidence id, never display text — rows are keyed by vodEvidenceId(pair) alone, the note plays no role, and a reference to nothing issued is dropped', async () => {
+    const { result, claimFor, validate } = await realClaims();
+    // No label/note text anywhere in the evidence-id space.
+    for (const id of Object.keys(result.rows)) {
+      expect(id).not.toContain('exact');
+      expect(parseVodEvidenceId(id)).not.toBeNull();
     }
+    const real = claimFor('match-1', 30);
+    const outcome = validate({
+      overview: { claimIds: [real.id, 'c30'], connective: 'Looks right.' },
+    });
+    expect(outcome.survivingClaimIds).toEqual([real.id]);
+    expect(outcome.droppedClaims).toEqual([
+      { claimId: 'c30', rule: 'R1', detail: 'claim id not issued for this job' },
+    ]);
   });
 
-  it('droppedClaimCount reports the number of dropped focusAreas and survivors keep their original order', () => {
-    const allowedPairs = new Set(['match-1:30']);
-    const first = { title: 'First', evidence: token('match-1', 30), drills: ['d'] };
-    const second = { title: 'Second', evidence: 'no tokens', drills: ['d'] };
-    const third = { title: 'Third', evidence: token('match-1', 30), drills: ['d'] };
+  it('INV-1 (migrated): resolution is set-membership against THIS assembly — a claim whose evidence id is outside this snapshot is dropped even though it names a real-looking match', async () => {
+    const { result, claimFor } = await realClaims();
+    const real = claimFor('match-1', 30);
+    const foreign: ClaimAtom = {
+      ...real,
+      id: 'c31',
+      evidenceIds: [vodEvidenceId('match-9', 999)],
+    };
+    const outcome = validateReportOutput({
+      snapshot: result.snapshot,
+      issuedClaims: [...result.claimSet.claims, foreign],
+      output: {
+        sections: { overview: { claimIds: ['c31', real.id], connective: 'Two moments.' } },
+        action1: null,
+        action2: null,
+        action3: null,
+      },
+      surface: 'post_event_synthesis',
+    });
+    expect(outcome.survivingClaimIds).toEqual([real.id]);
+    expect(outcome.droppedClaims[0]).toMatchObject({ claimId: 'c31', rule: 'R1' });
+  });
 
-    const result = validatePracticePlanCitations(plan([first, second, third]), allowedPairs);
+  it('(migrated) a section that cites nothing contributes no surviving claim', async () => {
+    const { claimFor, validate } = await realClaims();
+    const cited = claimFor('match-2', 20);
+    const outcome = validate({
+      overview: { claimIds: [], connective: 'Just prose, no claims.' },
+      gameplan: { claimIds: [cited.id], connective: 'Grounded.' },
+    });
+    expect(outcome.survivingClaimIds).toEqual([cited.id]);
+  });
 
-    expect(result.plan.focusAreas).toEqual([first, third]);
-    expect(result.droppedClaimCount).toBe(1);
+  it('(migrated) one valid and one invalid reference: the invalid one is dropped, and the section prose is licensed only by what survived', async () => {
+    const { claimFor, validate } = await realClaims();
+    const valid = claimFor('match-1', 30);
+    const other = claimFor('match-2', 20);
+    // The shipped rule tainted the whole focusArea. The shared rule is
+    // per-claim: the valid claim's value is the engine's, recomputed from
+    // the snapshot, so it cannot be tainted by its neighbour — but prose
+    // stating a figure only the dropped reference could have licensed is
+    // stripped, so the invalid half can carry nothing through.
+    const outcome = validate({
+      overview: { claimIds: [valid.id, 'c29'], connective: 'The moment at 999 decided it.' },
+      gameplan: { claimIds: [other.id], connective: 'Grounded.' },
+    });
+    expect(outcome.survivingClaimIds).toEqual([valid.id, other.id]);
+    expect(outcome.droppedClaims.map((dropped) => dropped.claimId)).toEqual(['c29']);
+    expect(outcome.strippedSectionIds).toEqual(['overview']);
+  });
+
+  it('(migrated) malformed references are dropped, never a crash', async () => {
+    const { claimFor, validate } = await realClaims();
+    const valid = claimFor('match-1', 30);
+    expect(() =>
+      validate({ overview: { claimIds: ['not-a-claim-id', valid.id], connective: 'x' } }),
+    ).not.toThrow();
+    const outcome = validate({
+      overview: { claimIds: ['not-a-claim-id', valid.id], connective: 'x' },
+    });
+    expect(outcome.droppedClaims[0]).toMatchObject({ claimId: 'not-a-claim-id', rule: 'R1' });
+    // Client-side, the model's output schema already refuses an id outside
+    // the fixed vocabulary.
+    expect(
+      claimSelectionSchema.safeParse({
+        sections: {
+          overview: { claimIds: ['not-a-claim-id'], connective: 'x' },
+          gameplan: { claimIds: [], connective: 'y' },
+          watchFor: { claimIds: [], connective: 'z' },
+        },
+        action1: null,
+        action2: null,
+        action3: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('INV-2 (migrated): zero surviving claims is a FAILED outcome (the route turns it into one refund)', async () => {
+    const { validate } = await realClaims();
+    const outcome = validate({
+      overview: { claimIds: ['c28'], connective: 'No grounding.' },
+      gameplan: { claimIds: [], connective: 'Nothing.' },
+    });
+    expect(outcome.status).toBe('failed');
+    expect(outcome.survivingClaimIds).toEqual([]);
+  });
+
+  it('(migrated) droppedClaimCount reports the dropped references and survivors keep their selection order', async () => {
+    const { claimFor, validate } = await realClaims();
+    const first = claimFor('match-3', 40);
+    const third = claimFor('match-1', 60);
+    const outcome = validate({
+      overview: { claimIds: [first.id, 'c27', third.id], connective: 'Ordered.' },
+    });
+    expect(outcome.survivingClaimIds).toEqual([first.id, third.id]);
+    expect(outcome.droppedClaimCount).toBe(1);
+    expect(outcome.status).toBe('passed');
+  });
+});
+
+describe('one validator decides storability: no production API file imports a retired or frozen citation rule (plan 39-08 Task 2)', () => {
+  /** Every non-test, non-test-support `.ts` file under `apps/api/src`. */
+  function productionSources(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        if (entry !== 'test-support') {
+          productionSources(path, out);
+        }
+      } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+        out.push(path);
+      }
+    }
+    return out;
+  }
+  const SRC = join(process.cwd(), 'src');
+
+  it('scans a non-empty production tree, including the synthesis module and the route (anti-vacuous guard)', () => {
+    const files = productionSources(SRC).map((path) => relative(SRC, path));
+    expect(files).toContain(join('reports', 'synthesis.ts'));
+    expect(files).toContain(join('routes', 'reports.ts'));
+  });
+
+  it('no production file names legacyCitationOnlyVerdict, legacyCitationRule, retiredCitationRule, validatePracticePlanCitations or SynthesisValidationError', () => {
+    const offenders = productionSources(SRC).flatMap((path) => {
+      const code = readFileSync(path, 'utf-8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      return /legacyCitationOnlyVerdict|legacyCitationRule|retiredCitationRule|validatePracticePlanCitations|SynthesisValidationError/.test(
+        code,
+      )
+        ? [relative(SRC, path)]
+        : [];
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it('the route decides storability through validateReportOutput alone', () => {
+    const route = readFileSync(join(SRC, 'routes', 'reports.ts'), 'utf-8');
+    expect(route.match(/validateReportOutput\(/g)).toHaveLength(2);
   });
 });
 
@@ -536,6 +620,12 @@ describe('generatePracticePlan', () => {
 
     const sent = JSON.parse(capturedContent) as SynthesisPayload;
     expect(sent.evidence.map((item) => item.claimId)).toEqual(['c01', 'c02']);
+    // Plan 39-08 Task 2: the pre-serialized cite token is RETIRED from the
+    // model-facing message — the model names claim ids, never tokens.
+    expect(capturedContent).not.toContain('{{cite:');
+    for (const item of sent.evidence) {
+      expect(Object.prototype.hasOwnProperty.call(item, 'cite')).toBe(false);
+    }
     expect(capturedSystem).toContain('choose which moments matter most');
     expect(capturedSystem).toContain('Do not compute, count, rank or estimate anything');
     expect(capturedSystem).toContain('Use only claim ids and action ids that appear in the input');
@@ -751,7 +841,9 @@ describe('generatePracticePlan: claim-selection schema and guard order (plan 39-
     expect(params.model).toBe('claude-opus-4-8');
     expect(params.max_tokens).toBe(16000);
     expect(params.thinking).toEqual({ type: 'adaptive' });
-    expect(params.messages).toEqual([{ role: 'user', content: JSON.stringify(PAYLOAD) }]);
+    expect(params.messages).toEqual([
+      { role: 'user', content: JSON.stringify(buildSynthesisModelMessage(PAYLOAD)) },
+    ]);
     expect(JSON.stringify(params.output_config.format.schema)).toBe(
       JSON.stringify(zodOutputFormat(claimSelectionSchema).schema),
     );

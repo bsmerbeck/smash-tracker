@@ -9,7 +9,6 @@ import {
   describeCohort,
   EVIDENCE_ID_PREFIX,
   EVIDENCE_POLICY_VERSION,
-  extractCitationTokens,
   isRtdbSafeKeySegment,
   makeCanonicalizer,
   matchRecordSchema,
@@ -28,7 +27,6 @@ import {
   type ClaimSubject,
   type EvidenceRow,
   type EvidenceSnapshot,
-  type GeneratedPracticePlan,
   type Match,
   type SampleMeta,
   type StoredPracticePlan,
@@ -59,15 +57,14 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * One citable moment of the caller's own stored evidence for this event.
- * `cite` is the server-pre-serialized `{{cite:...}}` token for this exact
- * item — the model is instructed to copy it verbatim (anti-hallucination
- * hardening, 28-RESEARCH Q3) rather than construct a token itself.
- * `matchId`/`seconds` are ALSO carried as plain fields (not just embedded in
- * `cite`) purely for payload readability; validation NEVER re-derives them
- * from `cite` — it re-extracts from the MODEL's output body via
- * `extractCitationTokens`, and resolves those against `allowedPairs`
- * (assembled here, see `assembleSynthesisPayload`'s return value).
+ * One annotated moment of the caller's own stored evidence for this event.
+ * Phase 39 (plan 39-08): the model references a moment by `claimId` — the
+ * `vod_annotation` claim it was issued as — and the validator resolves that
+ * claim's evidence id (`vodEvidenceId(matchId, seconds)`) against the
+ * snapshot's rows. `cite` is the pre-serialized `{{cite:...}}` token 28-06's
+ * retired citation rule resolved; it is no longer sent to the model (see
+ * `buildSynthesisModelMessage`) and survives here only as the TESTS-ONLY
+ * token universe behind `allowedTokens`.
  *
  * `tags` ride the evidence item's own text (embedded, (timestamp, string)
  * pairs) — there is no separate tag registry or tag-level citable id
@@ -125,15 +122,19 @@ export type AssembleSynthesisResult =
       payload: SynthesisPayload;
       /**
        * Exactly `new Set(evidence.map((item) => item.cite))` — the
-       * server-pre-serialized token universe the model was shown.
-       * TESTS-ONLY (review IN-01): no production code path consumes this —
-       * the route resolves citations against `allowedPairs` exclusively
-       * (set-membership on `(matchId, seconds)`, owner invariant 1); no
-       * token-level (label-bearing) validation happens anywhere. It exists
-       * so `synthesis.test.ts` can pin the payload's token set.
+       * pre-serialized token universe of 28-06's retired citation rule.
+       * TESTS-ONLY (review IN-01): no production code path consumes this.
+       * It exists so `synthesis.test.ts` can pin the token set and the
+       * migration battery can build shipped-rule outputs from real tokens.
        */
       allowedTokens: Set<string>;
-      /** Exactly `new Set(evidence.map((item) => \`${item.matchId}:${item.seconds}\`))` — the set-membership universe `validatePracticePlanCitations` resolves against (owner invariant 1). */
+      /**
+       * Exactly `new Set(evidence.map((item) => \`${item.matchId}:${item.seconds}\`))`
+       * — the shipped set-membership universe (owner invariant 1). Phase 39:
+       * TESTS-ONLY as well; the SAME universe, re-expressed through
+       * `vodEvidenceId`, is the key set of `rows` (the C1-M8 set-equality
+       * proof in `synthesis.test.ts` goes through that bijection).
+       */
       allowedPairs: Set<string>;
       evidenceCount: number;
       /**
@@ -441,70 +442,22 @@ function buildVodAnnotationRows(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Citation validation (owner invariants 1-2)
+// Citation validation — RETIRED (Phase 39, plan 39-08, D-02)
 // ---------------------------------------------------------------------------
-
-/**
- * Thrown when citation validation drops EVERY focusArea — a summary alone
- * is never a shippable practice plan (owner invariant 2). The route maps
- * this to `failJob` (refund + `refunded` terminal), never to storing a
- * partial/empty "Ready" plan.
- */
-export class SynthesisValidationError extends Error {
-  readonly reason = 'uncitable' as const;
-
-  constructor() {
-    super(
-      "Practice-plan synthesis produced no claim that could be grounded in the player's own stored evidence",
-    );
-    this.name = 'SynthesisValidationError';
-  }
-}
-
-/**
- * Post-generation citation validator (owner invariant 1): resolves every
- * `{{cite:...}}` token embedded in a focusArea's `evidence` body by EXACT
- * set-membership against `allowedPairs` — the stable `(matchId, seconds)`
- * pair Phase 12 standardized, never the timestamp entry's `id` (dense-array
- * record ids are synthesized and non-durable, RESEARCH Pitfall 3) and never
- * display text (a token's `label` plays ZERO role in resolution).
- *
- * A focusArea SURVIVES iff it carries at least one extracted token AND
- * EVERY extracted token resolves — a conservative all-tokens-must-resolve
- * rule: one bad token taints the whole claim rather than partially trusting
- * it. `extractCitationTokens` already skips malformed tokens without
- * throwing (coachingReview.ts), so a body whose only tokens were malformed
- * simply extracts to zero tokens and is dropped as uncited, never crashes
- * this function.
- *
- * Zero survivors throws `SynthesisValidationError` (owner invariant 2) —
- * the caller (28-07's route) maps this to `failJob`, which refunds the
- * credit and writes the `refunded` terminal. Survivors keep their original
- * order; `summary` is untouched.
- */
-export function validatePracticePlanCitations(
-  plan: GeneratedPracticePlan,
-  allowedPairs: ReadonlySet<string>,
-): { plan: GeneratedPracticePlan; droppedClaimCount: number } {
-  const survivors = plan.focusAreas.filter((focusArea) => {
-    const tokens = extractCitationTokens(focusArea.evidence);
-    if (tokens.length === 0) {
-      return false;
-    }
-    return tokens.every((token) => allowedPairs.has(`${token.sourceVodRef}:${token.seconds}`));
-  });
-
-  if (survivors.length === 0) {
-    throw new SynthesisValidationError();
-  }
-
-  const droppedClaimCount = plan.focusAreas.length - survivors.length;
-
-  return {
-    plan: { ...plan, focusAreas: survivors },
-    droppedClaimCount,
-  };
-}
+//
+// 28-06's `validatePracticePlanCitations` (set-membership of each cited
+// `(matchId, seconds)` pair in `allowedPairs`) is no longer a production
+// validator: its rule is now rule R1 of the ONE shared validator
+// (`validateReportOutput`, `packages/shared/src/evidence/validateReport.ts`),
+// which the route runs over the `vod_annotation` claim set — an evidence id
+// that is not a key of the snapshot, or a claim id this job never issued, is
+// dropped. It was retired only after the shared validator was proven at
+// least as strict on every fixture (plan 39-04's corpus-wide property test)
+// and on real synthesis evidence (the migration battery in
+// `routes/reportsSynthesis.test.ts`). Its body is frozen VERBATIM in
+// `apps/api/src/test-support/retiredCitationRule.ts` so that battery and the
+// RPT-08 fail-first binding (`rpt08LegacyOracle.test.ts`) keep running
+// against the exact rule that shipped; no production file imports it.
 
 // ---------------------------------------------------------------------------
 // Claude call
@@ -571,7 +524,7 @@ export async function generatePracticePlan(
     max_tokens: SYNTHESIS_MAX_TOKENS,
     thinking: { type: 'adaptive' },
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    messages: [{ role: 'user', content: JSON.stringify(buildSynthesisModelMessage(payload)) }],
     output_config: { format: zodOutputFormat(claimSelectionSchema) },
   });
 
@@ -586,6 +539,41 @@ export async function generatePracticePlan(
   }
 
   return response.parsed_output;
+}
+
+/** One evidence moment as the MODEL sees it: everything but the retired `cite` token. */
+export type ModelFacingSynthesisEvidenceItem = Omit<SynthesisEvidenceItem, 'cite'>;
+
+/** The synthesis user message: the payload with each moment's `cite` token removed. */
+export type SynthesisModelMessage = Omit<SynthesisPayload, 'evidence'> & {
+  evidence: ModelFacingSynthesisEvidenceItem[];
+};
+
+/**
+ * Phase 39 (plan 39-08 Task 2, D-02): the model-facing synthesis message.
+ * DECISION: the pre-serialized `{{cite:...}}` token is RETIRED from what the
+ * model is sent. The model references a moment by its claim id (each
+ * moment's `claimId`), and a token in its input only invites it to paste
+ * `{{cite:matchId=...;seconds=...}}` — a match id and a number no claim
+ * licenses — into connective prose, which the prose lint (rule R4) would
+ * then strip. `cite` stays on `SynthesisEvidenceItem`, with `allowedTokens`,
+ * as the TESTS-ONLY historical token universe the migration battery builds
+ * shipped-rule outputs from; no production code path consumes it.
+ */
+export function buildSynthesisModelMessage(payload: SynthesisPayload): SynthesisModelMessage {
+  return {
+    ...payload,
+    evidence: payload.evidence.map((item) => ({
+      matchId: item.matchId,
+      opponent: item.opponent,
+      result: item.result,
+      time: item.time,
+      seconds: item.seconds,
+      note: item.note,
+      tags: item.tags,
+      claimId: item.claimId,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------

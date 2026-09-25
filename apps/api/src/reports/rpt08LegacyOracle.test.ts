@@ -12,17 +12,25 @@ import {
   type GeneratedPracticePlan,
   type SampleMeta,
 } from '@smash-tracker/shared';
-import { validatePracticePlanCitations } from './synthesis.js';
+import { validatePracticePlanCitations } from '../test-support/retiredCitationRule.js';
 
 /**
  * Review C1-H3 (RPT-08 / D-09, phase 39 plan 01, wave 1): the wave-1
  * failing direction must be a property of SHIPPED code, not of a module
- * authored beside its own fixture. This file imports the REAL
- * `validatePracticePlanCitations` from `apps/api/src/reports/synthesis.ts`
- * and proves it, TODAY, accepts a wrong number behind a real citation — and
- * that the shared package's frozen `legacyCitationOnlyVerdict` agrees with
- * it, so the shared corpus's fail-first result (`rpt08Oracle.test.ts`) is a
- * property of shipped code, not of a module authored beside its own fixture.
+ * authored beside its own fixture. This file proves the shipped
+ * `validatePracticePlanCitations` accepts a wrong number behind a real
+ * citation — and that the shared package's frozen `legacyCitationOnlyVerdict`
+ * agrees with it, so the shared corpus's fail-first result
+ * (`rpt08Oracle.test.ts`) is a property of shipped code, not of a module
+ * authored beside its own fixture.
+ *
+ * Plan 39-08 retired that rule from production (its rule is now rule R1 of
+ * the shared validator). It is imported from
+ * `test-support/retiredCitationRule.ts`, whose body is BYTE-IDENTICAL to the
+ * one that shipped in `reports/synthesis.ts` up to commit `885aa919` — so
+ * this binding still speaks about the rule that shipped. The migration
+ * battery in `routes/reportsSynthesis.test.ts` proves the replacement is at
+ * least as strict, including on this exact wrong-number case.
  */
 
 const STUB_SAMPLE: SampleMeta = {

@@ -23,11 +23,14 @@ import {
   type ClaimSelectionSectionId,
 } from '../reports/claimSelection.js';
 import { snapshotIdFor } from '../reports/snapshotId.js';
+import { assembleSynthesisPayload } from '../reports/synthesis.js';
+// The shipped citation rule, retired from production by plan 39-08 and
+// frozen byte-identically as test support — the migration battery below
+// runs against the rule that SHIPPED.
 import {
-  assembleSynthesisPayload,
   SynthesisValidationError,
   validatePracticePlanCitations,
-} from '../reports/synthesis.js';
+} from '../test-support/retiredCitationRule.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { FakeAuth } from '../test-support/fakeAuth.js';
 import {
