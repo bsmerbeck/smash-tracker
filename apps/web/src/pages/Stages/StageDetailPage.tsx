@@ -466,7 +466,7 @@ export function StageDetailPage() {
                           <TableCell className="text-sm">
                             {row.wins}-{row.losses}
                           </TableCell>
-                          <TableCell className="text-sm">
+                          <TableCell className="text-sm whitespace-normal">
                             {/* Plan 39.1-37: the 4-col rail cell is narrow —
                                 the sample cue wraps under the rate instead of
                                 pushing the table past the card edge. */}

@@ -173,6 +173,8 @@ const EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH = 800;
 
 /** Vertical offset (px) of the always-visible per-anchor W-L label above its dot. */
 const EVENT_POINT_LABEL_OFFSET_PX = 12;
+/** Horizontal inset (px) of a W-L label from its dot, clear of the step riser. */
+const EVENT_POINT_LABEL_INSET_PX = 4;
 
 /**
  * Plan 39.1-37 (design-fidelity loop): a card-coloured halo painted under
@@ -357,11 +359,16 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
             if (!point || !labelledKeys.has(point.eventKey)) {
               return <g />;
             }
+            // The stepAfter riser runs vertically THROUGH the dot's x, so a
+            // centred label is cut by it: each label starts just right of its
+            // dot (above the level it steps to), the last ends just left of
+            // its dot so it stays inside the plot.
+            const isLast = index === eventPoints.length - 1;
             return (
               <text
-                x={x}
+                x={isLast ? x - EVENT_POINT_LABEL_INSET_PX : x + EVENT_POINT_LABEL_INSET_PX}
                 y={y - EVENT_POINT_LABEL_OFFSET_PX}
-                textAnchor="middle"
+                textAnchor={isLast ? 'end' : 'start'}
                 fill={CHART_TOKENS.axisText}
                 fontSize={CHART_AXIS_FONT_SIZE}
                 {...VALUE_LABEL_HALO}
