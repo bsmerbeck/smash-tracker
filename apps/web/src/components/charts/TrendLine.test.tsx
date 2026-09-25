@@ -1128,3 +1128,22 @@ describe('TrendLine — event labels clear the step riser (plan 39.1-37 Task 3 d
     });
   });
 });
+
+describe('TrendLine — the reference label sits on a card-coloured ground (sketch 001-C .ref-label background; plan 39.1-37 Task 3)', () => {
+  it('the all-time reference label carries the same --card halo as the value labels', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={makePeriodSeries(8, () => ({ rate: 0.55 }))}
+        referenceRate={55}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS_WITH_REFERENCE}
+      />,
+    );
+    const label = container.querySelector('text.trend-period-reference-label')!;
+    expect(label).not.toBeNull();
+    expect(label.getAttribute('stroke')).toBe('var(--card)');
+    expect(label.getAttribute('paint-order')).toBe('stroke');
+  });
+});
