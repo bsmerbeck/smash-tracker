@@ -138,7 +138,24 @@ describe('TrendsHero', () => {
       const chip = winRateFigure().querySelector('[data-slot="delta-chip"]')!;
       expect(chip.getAttribute('data-state')).toBe('steady');
       expect(chip.getAttribute('data-recent-games')).toBe('30');
-      expect(chip.textContent).toBe('Steady· last 30');
+      expect(chip.textContent).toBe('steady· last 30');
+    });
+
+    it("the rating chip never labels a rating move with 'pts' (sketch 002-C chipRating)", () => {
+      const matches = [
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({ id: `o${i}`, time: NOW - (400 + i) * DAY_MS, win: true }),
+        ),
+        ...Array.from({ length: 30 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: NOW - (30 - i) * DAY_MS, win: false }),
+        ),
+      ];
+      render(<TrendsHero matches={matches} horizon="last30" />);
+      const ratingFigure = screen.getByText('Rating').parentElement as HTMLElement;
+      const chip = ratingFigure.querySelector('[data-slot="delta-chip"]');
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('down');
+      expect(chip!.textContent).toMatch(/^\u2212\d+· last 30$/);
     });
 
     it('an empty last-90-days window on a stale account reads "no games · last 90 days"', () => {

@@ -159,7 +159,30 @@ describe('SettingComparison', () => {
       const chip = onlineFigureChip();
       expect(chip).not.toBeNull();
       expect(chip!.getAttribute('data-state')).toBe('steady');
-      expect(chip!.textContent).toBe('Steady· last 30');
+      expect(chip!.textContent).toBe('steady· last 30');
+    });
+
+    it('the online/offline dumbbell rows carry no chip (sketch 002-C: the figures above carry the read)', () => {
+      const both = (['quickplay', 'offline-tourney'] as const).flatMap((matchType) =>
+        Array.from({ length: 120 }, (_, i) =>
+          makeMatch({
+            id: `${matchType}${i}`,
+            time: NOW - (i < 60 ? 400 + i : 120 - i) * DAY_MS,
+            win: i % 2 === 0,
+            matchType,
+          }),
+        ),
+      );
+      renderCard(both, 'last30');
+      // Non-vacuity: the two figures still carry their chips.
+      expect(
+        document.querySelectorAll('[data-slot="stat-row"] [data-slot="delta-chip"]').length,
+      ).toBe(2);
+      const tracks = document.querySelectorAll('[data-slot="dumbbell-track"]');
+      expect(tracks.length).toBe(2);
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      const allChips = Array.from(document.querySelectorAll('[data-slot="delta-chip"]'));
+      expect(allChips.filter((chip) => !statRow.contains(chip))).toHaveLength(0);
     });
 
     it('an empty last-90-days online window reads "no games · last 90 days"', () => {

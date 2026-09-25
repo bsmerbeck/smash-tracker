@@ -153,7 +153,7 @@ describe('HeroStats', () => {
         ),
       ];
       render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
-      expect(overallChip()!.textContent).toBe('Steady· last 30');
+      expect(overallChip()!.textContent).toBe('steady· last 30');
     });
   });
 

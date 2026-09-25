@@ -295,7 +295,7 @@ describe('FighterHero', () => {
       renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
       const body = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
       const steady = Array.from(body.querySelectorAll('*')).filter((el) =>
-        (el.textContent ?? '').trim().startsWith('Steady'),
+        /^steady/i.test((el.textContent ?? '').trim()),
       );
       expect(steady.map((el) => el.outerHTML.slice(0, 120))).toEqual([]);
     });
@@ -332,7 +332,7 @@ describe('FighterHero', () => {
       }
     });
 
-    it("a type whose last 30 games are recent and inside its own baseline interval reads 'Steady · last 30'", () => {
+    it("a type whose last 30 games are recent and inside its own baseline interval reads 'steady · last 30'", () => {
       const now = Date.now();
       const matches: Match[] = [
         // 60 old offline-tourney games at 50%.
@@ -369,7 +369,7 @@ describe('FighterHero', () => {
       ) as HTMLElement;
       const chip = offlineRow.querySelector('[data-slot="delta-chip"]')!;
       expect(chip.getAttribute('data-state')).toBe('steady');
-      expect(chip.textContent).toBe('Steady· last 30');
+      expect(chip.textContent).toBe('steady· last 30');
     });
   });
 

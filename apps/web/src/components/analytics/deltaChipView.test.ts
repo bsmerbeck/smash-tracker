@@ -103,7 +103,7 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
     }
   });
 
-  it('steady on 30 recent games reads "Steady" with the horizon', async () => {
+  it('steady on 30 recent games reads "steady" (lower-case, UI-SPEC §7.5 / sketch 002-C) with the horizon', async () => {
     const deltaChipView = await loadView();
     const view = deltaChipView({
       state: 'steady',
@@ -114,11 +114,11 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
       t,
     });
     expect(view!.state).toBe('steady');
-    expect(view!.valueLabel).toBe('Steady');
+    expect(view!.valueLabel).toBe('steady');
     expect(view!.horizonLabel).toBe('last 30');
   });
 
-  it('trend maps to down "-7 pts" and up "+9 pts"; suggestion maps like trend', async () => {
+  it('trend maps to down "−7 pts" (U+2212, UI-SPEC §7.5) and up "+9 pts"; suggestion maps like trend', async () => {
     const deltaChipView = await loadView();
     const down = deltaChipView({
       state: 'trend',
@@ -129,7 +129,7 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
       t,
     });
     expect(down!.state).toBe('down');
-    expect(down!.valueLabel).toBe('-7 pts');
+    expect(down!.valueLabel).toBe('\u22127 pts');
     const up = deltaChipView({
       state: 'trend',
       deltaPoints: 9,
@@ -149,7 +149,7 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
       t,
     });
     expect(suggestion!.state).toBe('down');
-    expect(suggestion!.valueLabel).toBe('-12 pts');
+    expect(suggestion!.valueLabel).toBe('\u221212 pts');
     expect(suggestion!.horizonLabel).toBe('last 90 days');
   });
 
@@ -208,6 +208,31 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
     });
     expect(seven!.state).toBe('thin');
     expect(eight!.state).toBe('steady');
+  });
+
+  it("a rating delta carries no 'pts' unit (sketch 002-C chipRating: '▲ +24 · last 30')", async () => {
+    const deltaChipView = await loadView();
+    const up = deltaChipView({
+      state: 'trend',
+      deltaPoints: 24,
+      recentGames: 30,
+      horizon: 'last30',
+      horizonOwnedByParent: false,
+      deltaUnit: 'rating',
+      t,
+    });
+    expect(up!.state).toBe('up');
+    expect(up!.valueLabel).toBe('+24');
+    const down = deltaChipView({
+      state: 'trend',
+      deltaPoints: -84,
+      recentGames: 30,
+      horizon: 'last30',
+      horizonOwnedByParent: false,
+      deltaUnit: 'rating',
+      t,
+    });
+    expect(down!.valueLabel).toBe('\u221284');
   });
 
   it('all three chip horizon labels resolve', async () => {

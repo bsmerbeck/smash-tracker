@@ -410,7 +410,7 @@ describe('FighterAnalysisPage', () => {
     const chips = Array.from(hero.querySelectorAll('[data-slot="delta-chip"]'));
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.filter((chip) => chip.getAttribute('data-state') === 'steady')).toHaveLength(0);
-    expect(within(hero).queryAllByText(/^Steady/)).toHaveLength(0);
+    expect(within(hero).queryAllByText(/^steady/i)).toHaveLength(0);
   });
 
   it('the hero is the first grid cell in DOM order (T-39.1-14, DD-07)', async () => {
