@@ -266,6 +266,26 @@ export function PrepPaidReportsCard({
                 kind: 'single',
                 name,
               });
+              // Plan 39-10 (D-21, review C4-M2): the validation caption sits
+              // under whichever status badge this row shows, and is TWO
+              // clauses on TWO conditions. The CAUSE keys on an allowlist of
+              // ONE value (`failureReason === 'validation'`) — any other or
+              // unknown reason renders nothing new. The RETURN clause keys on
+              // the terminal status, never on the reason: a zero-spend
+              // (free-access) prep failure rests at `failed` with no refund,
+              // because `failJob` gates its refunded write on
+              // `reason && (spent || reason === 'post_event_synthesis')`. It
+              // also requires the loaded credits read to say
+              // `freeAccess === false` (every spend site sets
+              // `spent = !freeAccess`), so an unknown billing state says less,
+              // never something false.
+              const statusBadgeShown =
+                job?.status === 'failed' || (reportReady && job?.status === 'refunded');
+              const showValidationCause = statusBadgeShown && job?.failureReason === 'validation';
+              const showCreditReturned =
+                showValidationCause &&
+                job?.status === 'refunded' &&
+                creditsData?.freeAccess === false;
 
               return (
                 <div key={name} className="flex flex-col gap-2 rounded-md border p-3">
@@ -330,6 +350,20 @@ export function PrepPaidReportsCard({
                       )}
                     </div>
                   </div>
+
+                  {showValidationCause && (
+                    <p
+                      className="flex flex-wrap gap-x-1 text-xs text-muted-foreground"
+                      data-validation-caption=""
+                    >
+                      <span>{t('prepPaid.jobStatus.failedReason.validation')}</span>
+                      {showCreditReturned && (
+                        <span data-validation-caption-return="">
+                          {t('prepPaid.jobStatus.failedReason.validationRefunded')}
+                        </span>
+                      )}
+                    </p>
+                  )}
 
                   <OpponentBindingConfirm entryKey={entryKey} name={name} binding={binding} />
 

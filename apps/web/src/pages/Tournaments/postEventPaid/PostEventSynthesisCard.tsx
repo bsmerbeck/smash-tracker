@@ -17,6 +17,8 @@ import {
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
+import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
+import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
 import { resolveClaimSection, type ResolvedClaimSection } from '@/components/claims/claimSection';
 import { usePostEventCheckoutReturn } from './usePostEventCheckoutReturn';
 
@@ -116,6 +118,34 @@ export function PostEventSynthesisCard({
   const hasNoActiveJob = !job || job.status === 'refunded';
   const hasAnnotations = annotatedEvidenceCount > 0;
 
+  // Plan 39-10 (D-21, review C4-M2): the validation caption is TWO clauses on
+  // TWO conditions, never one sentence. The CAUSE keys on an allowlist of ONE
+  // value — `failureReason === 'validation'`; an absent reason or any other
+  // (including one this client does not know yet) renders nothing new.
+  const showValidationCause = job?.failureReason === 'validation';
+  // The RETURN clause ("your credit was returned") must be true FOR THIS
+  // VIEWER. `status === 'refunded'` alone is not enough here: `failJob` also
+  // writes the refunded terminal for a ZERO-SPEND post_event_synthesis failure
+  // (Phase 28 CR-02 — so the entry stays resubmittable) with no refundCredit
+  // call, and the job record persists no spend fact. Every spend site sets
+  // `spent = !freeAccess`, so the clause additionally requires the viewer's
+  // credits read to have LOADED and to say `freeAccess === false`: a
+  // free-access viewer was never debited, and an unknown billing state says
+  // less rather than something false. Residual: a uid whose allowlist status
+  // changed between the job and this view — recorded in the 39-10 SUMMARY.
+  const showCreditReturned =
+    showValidationCause && job?.status === 'refunded' && creditsData?.freeAccess === false;
+  const validationCaption = showValidationCause ? (
+    <p className="flex flex-wrap gap-x-1 text-xs text-muted-foreground" data-validation-caption="">
+      <span>{t('postEventPaid.jobStatus.failedReason.validation')}</span>
+      {showCreditReturned && (
+        <span data-validation-caption-return="">
+          {t('postEventPaid.jobStatus.failedReason.validationRefunded')}
+        </span>
+      )}
+    </p>
+  ) : null;
+
   function handleSubmitError(error: unknown) {
     if (error instanceof ApiError && error.status === 402) {
       setInsufficientCredits(true);
@@ -174,6 +204,7 @@ export function PostEventSynthesisCard({
                 {t('postEventPaid.jobStatus.refunded')}
               </Badge>
             )}
+            {job?.status === 'refunded' && validationCaption}
             <div className="flex items-center justify-between gap-3 rounded-md border p-3">
               <Button type="button" disabled={submitPending} onClick={handleBuy}>
                 <Sparkles className={submitPending ? 'animate-spin' : ''} />
@@ -221,8 +252,9 @@ export function PostEventSynthesisCard({
         )}
 
         {job?.status === 'failed' && (
-          <div className="flex items-center gap-3 rounded-md border p-3">
+          <div className="flex flex-col items-start gap-2 rounded-md border p-3">
             <Badge variant="destructive">{t('postEventPaid.jobStatus.failedPendingRefund')}</Badge>
+            {validationCaption}
           </div>
         )}
 
@@ -277,6 +309,14 @@ export function PostEventSynthesisCard({
                       </div>
                     );
                   })}
+                {/* Plan 39-10 (D-07 / D-20): once each, after the last
+                    focus area / claim section, from the stored counts. */}
+                <DroppedClaimsNote count={planData.plan.droppedClaimCount} />
+                <WithheldProseNote
+                  strippedSectionCount={planData.plan.strippedSectionCount}
+                  claimSchemaVersion={planData.plan.claimSchemaVersion}
+                  validation={planData.plan.validation}
+                />
               </div>
             )}
           </div>

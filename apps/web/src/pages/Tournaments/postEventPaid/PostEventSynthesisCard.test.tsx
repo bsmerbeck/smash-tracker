@@ -465,3 +465,163 @@ describe('PostEventSynthesisCard — claims-era practice plan (plan 39-09)', () 
     expect(container.querySelectorAll('[data-claim-id]')).toHaveLength(0);
   });
 });
+
+/**
+ * Plan 39-10 (D-21, review C4-M2): the post-event validation caption. The
+ * CAUSE keys on `failureReason === 'validation'` (an allowlist of one); the
+ * RETURN clause keys on the terminal `refunded` status AND a loaded
+ * `freeAccess === false` credits read.
+ *
+ * Why the extra viewer check on THIS card: `failJob` writes the refunded
+ * terminal for a ZERO-SPEND post_event_synthesis failure too (Phase 28
+ * CR-02, so the entry stays resubmittable) with no refundCredit call, and
+ * the job record persists no spend fact — so `status === 'refunded'` alone
+ * would tell a free-access viewer a credit came back that was never debited.
+ * Every spend site sets `spent = !freeAccess`, which is the fact the client
+ * CAN read. Residual (recorded in the 39-10 SUMMARY): a uid whose allowlist
+ * status changed between the job and this view.
+ */
+describe('PostEventSynthesisCard — validation-failure caption (plan 39-10, D-21)', () => {
+  const CAUSE = "There isn't enough match evidence yet to build a verified practice plan.";
+  const RETURN = 'Your credit was returned.';
+
+  function caption(): HTMLElement | null {
+    return document.querySelector('[data-validation-caption]');
+  }
+
+  it('C1-H1: a SPENT synthesis at the refunded terminal renders BOTH clauses under the refunded badge, cause then return', () => {
+    synthesisJobResult = {
+      data: {
+        job: { jobId: 'job-1', status: 'refunded', updatedAt: 1, failureReason: 'validation' },
+      },
+    };
+    renderCard({ annotatedEvidenceCount: 3 });
+    const spans = Array.from(caption()!.querySelectorAll('span')).map((span) => span.textContent);
+    expect(spans).toEqual([CAUSE, RETURN]);
+    expect(caption()!.textContent).toBe(`${CAUSE}${RETURN}`);
+    const badge = screen.getByText('Failed — your credit was refunded.');
+    expect(badge.nextElementSibling).toBe(caption());
+  });
+
+  it('the ZERO-SPEND free-access synthesis (refunded terminal, no refund ever — Phase 28 CR-02) renders the cause and NOT the return clause', () => {
+    creditsResult = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+    synthesisJobResult = {
+      data: {
+        job: { jobId: 'job-1', status: 'refunded', updatedAt: 1, failureReason: 'validation' },
+      },
+    };
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-validation-caption-return]')).toBeNull();
+  });
+
+  it('an unloaded credits read withholds the return clause (says less, never something false)', () => {
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    synthesisJobResult = {
+      data: {
+        job: { jobId: 'job-1', status: 'refunded', updatedAt: 1, failureReason: 'validation' },
+      },
+    };
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(caption()!.textContent).toBe(CAUSE);
+  });
+
+  it('a failed (pending) validation job renders the cause under the destructive badge, without the return clause', () => {
+    synthesisJobResult = {
+      data: {
+        job: { jobId: 'job-1', status: 'failed', updatedAt: 1, failureReason: 'validation' },
+      },
+    };
+    renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.getByText('Failed — refunding your credit…').nextElementSibling).toBe(caption());
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { label: 'absent', failureReason: undefined },
+    { label: 'refusal', failureReason: 'refusal' },
+    { label: 'truncated', failureReason: 'truncated' },
+    { label: 'unparseable', failureReason: 'unparseable' },
+    { label: 'an unrecognised future value', failureReason: 'some_future_cause' },
+  ])('failureReason $label renders NO caption on either terminal shape', ({ failureReason }) => {
+    for (const status of ['failed', 'refunded'] as const) {
+      synthesisJobResult = {
+        data: {
+          job: {
+            jobId: 'job-1',
+            status,
+            updatedAt: 1,
+            ...(failureReason ? { failureReason } : {}),
+          },
+        },
+      };
+      const { unmount } = renderCard({ annotatedEvidenceCount: 3 });
+      expect(caption()).toBeNull();
+      expect(screen.queryByText(CAUSE)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('the caption carries no amount and no digit in either shape (D-21)', () => {
+    for (const status of ['failed', 'refunded'] as const) {
+      synthesisJobResult = {
+        data: { job: { jobId: 'job-1', status, updatedAt: 1, failureReason: 'validation' } },
+      };
+      const { unmount } = renderCard({ annotatedEvidenceCount: 3 });
+      expect(caption()!.textContent).not.toMatch(/\p{Nd}/u);
+      unmount();
+    }
+  });
+});
+
+describe('PostEventSynthesisCard — dropped-claims and withheld-prose footer (plan 39-10, D-07 / D-20)', () => {
+  const succeeded = {
+    data: {
+      job: { jobId: 'job-1', status: 'succeeded' as const, updatedAt: 1, resultRef: 'plan-1' },
+    },
+  };
+  const WITHHELD_TWO =
+    "Commentary for 2 sections was withheld because it couldn't be verified against your match data.";
+  const DROPPED_ONE = "1 claim couldn't be verified and was removed from this report.";
+
+  it('a claims-era plan renders each note exactly once in the expanded plan view, after the last section', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = {
+      data: { plan: { ...CLAIMS_ERA_PLAN, droppedClaimCount: 1, strippedSectionCount: 2 } },
+    };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+    expect(screen.queryByText(WITHHELD_TWO)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(screen.getAllByText(WITHHELD_TWO)).toHaveLength(1);
+    expect(screen.getAllByText(DROPPED_ONE)).toHaveLength(1);
+    const sections = container.querySelectorAll('[data-plan-claim-section]');
+    const last = sections[sections.length - 1]!;
+    const dropped = container.querySelector('[data-dropped-claims-note]')!;
+    expect(last.compareDocumentPosition(dropped) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.textContent).not.toContain('NaN');
+  });
+
+  it("a LEGACY plan discloses its stored dropped count (28-06's field) but never a withheld-prose note", async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = {
+      data: {
+        plan: makePlan({
+          focusAreas: [{ title: 'Ledge', evidence: 'Watch the ledge.', drills: [] }],
+          droppedClaimCount: 1,
+          strippedSectionCount: 2,
+        }),
+      },
+    };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(screen.getAllByText(DROPPED_ONE)).toHaveLength(1);
+    expect(container.querySelector('[data-withheld-prose-note]')).toBeNull();
+  });
+});

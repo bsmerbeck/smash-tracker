@@ -8,6 +8,8 @@ import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { ClaimAtomLine } from '@/components/claims/ClaimAtomLine';
 import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
+import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
+import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
 import {
   isClaimsEraReport,
   resolveClaimSection,
@@ -143,7 +145,9 @@ function PrintClaimSection({
  *
  * Phase 39 (plan 39-10, RPT-10): a record that is not validated (no
  * `claimSchemaVersion` / passed `validation` — see `isValidatedRecord`)
- * carries the legacy provenance line under the "Generated" caption.
+ * carries the legacy provenance line under the "Generated" caption, and the
+ * card footer discloses dropped claims (`DroppedClaimsNote`) and withheld
+ * commentary (`WithheldProseNote`, D-20) whenever the stored counts say so.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
   const { t } = useTranslation();
@@ -296,6 +300,14 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           {hasConfidenceNotes && (
             <p className="text-xs text-muted-foreground">{report.confidenceNotes}</p>
           )}
+          {/* Plan 39-10 (D-07 / D-20): the two footer disclosures, once each,
+              from the stored counts — never recomputed. */}
+          <DroppedClaimsNote count={report.droppedClaimCount} />
+          <WithheldProseNote
+            strippedSectionCount={report.strippedSectionCount}
+            claimSchemaVersion={report.claimSchemaVersion}
+            validation={report.validation}
+          />
         </CardContent>
       </Card>
 

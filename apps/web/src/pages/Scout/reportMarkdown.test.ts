@@ -216,3 +216,75 @@ describe('reportMarkdownFilename', () => {
     expect(reportMarkdownFilename(record)).toBe('scout-report-pandem1c-tsm-2026-07-05.md');
   });
 });
+
+/**
+ * Plan 39-10 (decision D-20): the withheld-prose disclosure reaches the copy
+ * the reader keeps. Claims-era, validated records only; the legacy pin above
+ * must keep passing unchanged.
+ */
+describe('reportToMarkdown — withheld-prose disclosure line (plan 39-10, D-20)', () => {
+  const ONE =
+    "Commentary for 1 section was withheld because it couldn't be verified against your match data.";
+  const TWO =
+    "Commentary for 2 sections was withheld because it couldn't be verified against your match data.";
+  const PREFIX = 'Commentary for ';
+
+  function withCount(count: unknown): ScoutReportRecord {
+    return {
+      ...CLAIMS_ERA_RECORD,
+      report: {
+        ...CLAIMS_ERA_RECORD.report,
+        strippedSectionCount: count as number | undefined,
+      },
+    };
+  }
+
+  function occurrences(markdown: string, needle: string): number {
+    return markdown.split(needle).length - 1;
+  }
+
+  it('a claims-era record with strippedSectionCount 1 carries the singular line exactly once, last', () => {
+    const md = reportToMarkdown(withCount(1));
+    expect(occurrences(md, ONE)).toBe(1);
+    expect(md.endsWith(`\n\n${ONE}`)).toBe(true);
+    expect(emptyHeadings(md)).toEqual([]);
+  });
+
+  it('a claims-era record with strippedSectionCount 2 carries the plural line exactly once', () => {
+    const md = reportToMarkdown(withCount(2));
+    expect(occurrences(md, TWO)).toBe(1);
+    expect(occurrences(md, PREFIX)).toBe(1);
+  });
+
+  it.each([
+    { label: 'absent', count: undefined },
+    { label: '0', count: 0 },
+    { label: '-1', count: -1 },
+    { label: '1.5', count: 1.5 },
+    { label: 'NaN', count: Number.NaN },
+  ])(
+    'a claims-era record with strippedSectionCount $label carries no disclosure line',
+    ({ count }) => {
+      const md = reportToMarkdown(withCount(count));
+      expect(md).not.toContain(PREFIX);
+      expect(md).not.toContain('NaN');
+    },
+  );
+
+  it('a claims-era record that is NOT validated (half-written) carries no line even with a positive count', () => {
+    const md = reportToMarkdown({
+      ...CLAIMS_ERA_RECORD,
+      report: { ...CLAIMS_ERA_RECORD.report, validation: undefined, strippedSectionCount: 2 },
+    });
+    expect(md).not.toContain(PREFIX);
+  });
+
+  it('the LEGACY path is untouched: a legacy record with a stray count still equals the 39-09 byte-identity pin', () => {
+    const legacyWithCount: ScoutReportRecord = {
+      ...BASE_RECORD,
+      report: { ...BASE_RECORD.report, strippedSectionCount: 3 },
+    };
+    expect(reportToMarkdown(legacyWithCount)).toBe(LEGACY_BASELINE_MARKDOWN);
+    expect(reportToMarkdown(BASE_RECORD)).toBe(LEGACY_BASELINE_MARKDOWN);
+  });
+});

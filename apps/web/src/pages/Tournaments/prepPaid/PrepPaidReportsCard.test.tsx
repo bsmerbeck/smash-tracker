@@ -470,3 +470,154 @@ describe('PrepPaidReportsCard — demo account gating', () => {
     expect(screen.getByTestId('buy-credits-dialog')).toBeInTheDocument();
   });
 });
+
+/**
+ * Plan 39-10 (D-21, review C4-M2): the validation caption under the job-status
+ * badge — a CAUSE sentence keyed on `failureReason === 'validation'` (an
+ * allowlist of one) and a separate RETURN clause keyed on the terminal
+ * `refunded` status AND a loaded `freeAccess === false` credits read.
+ *
+ * The fixtures are the two terminal shapes `failJob` actually writes (plans
+ * 39-07/39-08 prove them on the FINAL record): a SPENT prep job's second,
+ * authoritative `.set()` is `status: 'refunded'` carrying the cause (C1-H1);
+ * a ZERO-SPEND free-access prep job never gets that write (it is gated on
+ * `reason && (spent || reason === 'post_event_synthesis')`) and rests at
+ * `status: 'failed'` with no refund at all.
+ */
+describe('PrepPaidReportsCard — validation-failure caption (plan 39-10, D-21)', () => {
+  const CAUSE = "There isn't enough match evidence yet to build a verified report.";
+  const RETURN = 'Your credit was returned.';
+  const RIVAL = {
+    likelyOpponents: { Rival: true } as PrepPresenceMap,
+    scoutBindings: { Rival: makeBinding({ displayTag: 'Rival' }) },
+  };
+
+  function caption(): HTMLElement | null {
+    return document.querySelector('[data-validation-caption]');
+  }
+
+  it('C1-H1: a SPENT job at the refunded terminal with failureReason validation renders BOTH clauses, cause then return, matched exactly', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'refunded', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    const rendered = caption();
+    expect(rendered).not.toBeNull();
+    const spans = Array.from(rendered!.querySelectorAll('span')).map((span) => span.textContent);
+    expect(spans).toEqual([CAUSE, RETURN]);
+    expect(rendered!.textContent).toBe(`${CAUSE}${RETURN}`);
+    // It sits under the existing refunded badge, which keeps its own wording.
+    expect(screen.getByText('Failed — your credit was refunded.')).toBeInTheDocument();
+  });
+
+  it('C4-M2: the ZERO-SPEND allowlisted prep job (terminal failed, failureReason validation, no refund ever) renders the cause and NOT the return clause', () => {
+    // Free-access uid: `spent` was false, so failJob never wrote `refunded`
+    // and refundCredit never ran. The one case this status rule alone would
+    // still overstate — a zero-spend post_event_synthesis failure, which DOES
+    // rest at `refunded` with no refund (Phase 28 CR-02) and carries no spend
+    // fact on the record — is closed on that card by the freeAccess check.
+    creditsResult = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(caption()).toHaveTextContent(CAUSE);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-validation-caption-return]')).toBeNull();
+  });
+
+  it('a failed (not yet refunded) validation job renders the cause only, even for a billable viewer', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+  });
+
+  it('the return clause is withheld when the viewer is free-access, and while the credits read has not loaded', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'refunded', failureReason: 'validation' }),
+    };
+    creditsResult = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+    const { unmount } = renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    unmount();
+
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { label: 'absent', failureReason: undefined },
+    { label: 'refusal', failureReason: 'refusal' },
+    { label: 'truncated', failureReason: 'truncated' },
+    { label: 'unparseable', failureReason: 'unparseable' },
+    { label: 'an unrecognised future value', failureReason: 'some_future_cause' },
+  ])('failureReason $label renders NO caption on either terminal shape', ({ failureReason }) => {
+    for (const status of ['failed', 'refunded'] as const) {
+      jobsByOpponentName = {
+        Rival: makeJob({ opponentName: 'Rival', status, failureReason }),
+      };
+      const { unmount } = renderCard(RIVAL);
+      expect(caption()).toBeNull();
+      expect(screen.queryByText(CAUSE)).not.toBeInTheDocument();
+      expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('a bundle with several failed children renders one caption per child row', () => {
+    jobsByOpponentName = {
+      Alpha: makeJob({
+        opponentName: 'Alpha',
+        jobId: 'a',
+        status: 'refunded',
+        failureReason: 'validation',
+      }),
+      Bravo: makeJob({
+        opponentName: 'Bravo',
+        jobId: 'b',
+        status: 'failed',
+        failureReason: 'validation',
+      }),
+      Charlie: makeJob({
+        opponentName: 'Charlie',
+        jobId: 'c',
+        status: 'refunded',
+        failureReason: 'validation',
+      }),
+    };
+    renderCard({
+      likelyOpponents: { Alpha: true, Bravo: true, Charlie: true },
+      scoutBindings: {
+        Alpha: makeBinding({ displayTag: 'Alpha' }),
+        Bravo: makeBinding({ displayTag: 'Bravo' }),
+        Charlie: makeBinding({ displayTag: 'Charlie' }),
+      },
+    });
+    const captions = document.querySelectorAll('[data-validation-caption]');
+    expect(captions).toHaveLength(3);
+    for (const name of ['Alpha', 'Bravo', 'Charlie']) {
+      const row = screen.getByText(name).closest('.rounded-md.border');
+      expect(row?.querySelectorAll('[data-validation-caption]')).toHaveLength(1);
+    }
+    // Refund clause on exactly the two refunded children, never on the failed one.
+    expect(document.querySelectorAll('[data-validation-caption-return]')).toHaveLength(2);
+  });
+
+  it('the caption carries no amount and no digit in either shape (D-21)', () => {
+    for (const status of ['failed', 'refunded'] as const) {
+      jobsByOpponentName = {
+        Rival: makeJob({ opponentName: 'Rival', status, failureReason: 'validation' }),
+      };
+      const { unmount } = renderCard(RIVAL);
+      expect(caption()!.textContent).not.toMatch(/\p{Nd}/u);
+      unmount();
+    }
+  });
+});

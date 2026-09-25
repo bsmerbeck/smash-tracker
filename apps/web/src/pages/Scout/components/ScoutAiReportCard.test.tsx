@@ -393,3 +393,79 @@ describe('ScoutAiReportCard — legacy provenance line (plan 39-10, RPT-10)', ()
     expect(screen.getByText(EXPLAIN)).toBeInTheDocument();
   });
 });
+
+describe('ScoutAiReportCard — dropped-claims and withheld-prose footer (plan 39-10, D-07 / D-20)', () => {
+  const WITHHELD_ONE =
+    "Commentary for 1 section was withheld because it couldn't be verified against your match data.";
+  const DROPPED_TWO = "2 claims couldn't be verified and were removed from this report.";
+
+  it('a claims-era record renders each note EXACTLY once in the scouting card', () => {
+    const record: ScoutReportRecord = {
+      ...CLAIMS_ERA_RECORD,
+      report: { ...CLAIMS_ERA_RECORD.report, droppedClaimCount: 2, strippedSectionCount: 1 },
+    };
+    const { container } = render(<ScoutAiReportCard record={record} />);
+    expect(screen.getAllByText(WITHHELD_ONE)).toHaveLength(1);
+    expect(screen.getAllByText(DROPPED_TWO)).toHaveLength(1);
+    expect(container.querySelectorAll('[data-withheld-prose-note]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-dropped-claims-note]')).toHaveLength(1);
+    expect(container.textContent).not.toContain('NaN');
+  });
+
+  it('zero / absent counts render neither note', () => {
+    const record: ScoutReportRecord = {
+      ...CLAIMS_ERA_RECORD,
+      report: {
+        ...CLAIMS_ERA_RECORD.report,
+        droppedClaimCount: 0,
+        strippedSectionCount: undefined,
+      },
+    };
+    const { container } = render(<ScoutAiReportCard record={record} />);
+    expect(container.querySelector('[data-withheld-prose-note]')).toBeNull();
+    expect(container.querySelector('[data-dropped-claims-note]')).toBeNull();
+  });
+
+  it('a LEGACY record never shows the withheld-prose note, even with a stray count', () => {
+    const record: ScoutReportRecord = {
+      ...RECORD,
+      report: { ...RECORD.report, strippedSectionCount: 2 },
+    };
+    const { container } = render(<ScoutAiReportCard record={record} />);
+    expect(container.querySelector('[data-withheld-prose-note]')).toBeNull();
+    expect(screen.queryByText(/was withheld/)).not.toBeInTheDocument();
+  });
+
+  it('the paid prep card inherits the withheld-prose note through its reuse of the card', async () => {
+    const user = userEvent.setup();
+    prepJobs = {
+      Rival: {
+        opponentName: 'Rival',
+        jobId: 'job-1',
+        status: 'succeeded',
+        updatedAt: 1,
+        resultRef: CLAIMS_ERA_RECORD.id,
+      },
+    };
+    reportsGetSpy.mockResolvedValue(CLAIMS_ERA_RECORD);
+    render(
+      <MemoryRouter initialEntries={['/tournaments/entry-1/prep']}>
+        <PrepPaidReportsCard
+          entryKey="entry-1"
+          likelyOpponents={{ Rival: true }}
+          scoutBindings={{
+            Rival: {
+              provider: 'startgg',
+              startggUserSlug: 'user/abc',
+              displayTag: 'Rival',
+              method: 'matchHistory',
+              confirmedAt: 1,
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: 'View report' }));
+    expect(await screen.findAllByText(WITHHELD_ONE)).toHaveLength(1);
+  });
+});

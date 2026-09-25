@@ -1599,7 +1599,11 @@
       "badge": "Legacy",
       "tooltip": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data.",
       "explain": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data."
-    }
+    },
+    "droppedClaims_one": "1 claim couldn't be verified and was removed from this report.",
+    "droppedClaims_other": "{{count}} claims couldn't be verified and were removed from this report.",
+    "withheldProse_one": "Commentary for 1 section was withheld because it couldn't be verified against your match data.",
+    "withheldProse_other": "Commentary for {{count}} sections was withheld because it couldn't be verified against your match data."
   },
   "groups": {
     "title": "Groups",
@@ -2970,7 +2974,11 @@
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
       "viewReport": "View report",
-      "hideReport": "Hide report"
+      "hideReport": "Hide report",
+      "failedReason": {
+        "validation": "There isn't enough match evidence yet to build a verified report.",
+        "validationRefunded": "Your credit was returned."
+      }
     },
     "insufficientCredits": {
       "body": "You're out of credits.",
@@ -3072,7 +3080,11 @@
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
       "viewPlan": "View plan",
-      "hidePlan": "Hide plan"
+      "hidePlan": "Hide plan",
+      "failedReason": {
+        "validation": "There isn't enough match evidence yet to build a verified practice plan.",
+        "validationRefunded": "Your credit was returned."
+      }
     },
     "insufficientCredits": {
       "body": "You're out of credits.",

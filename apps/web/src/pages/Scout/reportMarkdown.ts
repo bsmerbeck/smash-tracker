@@ -6,6 +6,7 @@ import {
   type ScoutReportRecord,
   type StoredScoutReport,
 } from '@smash-tracker/shared';
+import { isValidatedRecord } from '@/components/claims/provenance';
 
 /**
  * V7-B.1: "Download (.md)" support — a pure content builder for turning a
@@ -217,11 +218,38 @@ function claimsEraSections(report: StoredScoutReport): MarkdownSection[] {
   ];
 }
 
+/**
+ * Plan 39-10 (decision D-20): the withheld-prose disclosure the card shows
+ * (`WithheldProseNote`), carried into the copy the reader keeps. Emitted only
+ * for a VALIDATED record (the shared fail-closed `isValidatedRecord` — a
+ * pre-Phase-39 record cannot have had prose withheld) whose stored
+ * `strippedSectionCount` is a finite integer of at least one — an explicit
+ * guard, never truthiness, so no line can ever read `NaN`. English mirror of
+ * `reports.withheldProse_one` / `_other` (en.json); the export has no i18n.
+ */
+function withheldProseLine(report: StoredScoutReport): string | null {
+  const count: unknown = report.strippedSectionCount;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+    return null;
+  }
+  if (!isValidatedRecord(report)) {
+    return null;
+  }
+  return count === 1
+    ? "Commentary for 1 section was withheld because it couldn't be verified against your match data."
+    : `Commentary for ${COUNT.format(count)} sections was withheld because it couldn't be verified against your match data.`;
+}
+
 export function reportToMarkdown(record: ScoutReportRecord): string {
   const { player, report, createdAt } = record;
   const generatedDate = new Date(createdAt).toLocaleDateString();
   const title = `# Scout Report: ${player.gamerTag} — ${generatedDate}`;
-  return assemble(title, report.sections ? claimsEraSections(report) : legacySections(report));
+  if (!report.sections) {
+    return assemble(title, legacySections(report));
+  }
+  const markdown = assemble(title, claimsEraSections(report));
+  const disclosure = withheldProseLine(report);
+  return disclosure ? `${markdown}\n\n${disclosure}` : markdown;
 }
 
 /**
