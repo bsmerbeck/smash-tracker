@@ -5212,3 +5212,380 @@ describe('bundle failure math is cause-independent: validation vs a pre-existing
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07, Task 3): the money-path REAFFIRMATION battery — the
+// properties v2.5's money safety rests on, re-proven on the tree this plan
+// commits. NEW block; the locked blocks it sits beside are run, never edited.
+// ---------------------------------------------------------------------------
+
+const PREP_KIND_REASONS = new Set(['prep_report', 'prep_bundle', 'post_event_synthesis']);
+
+/** Counts terminal (`failed`/`refunded`) writes to ONE job node, optionally failing the scout-report store write. */
+function instrumentJobWrites(
+  database: FakeDatabase,
+  jobPath: string,
+  options: { failScoutReportStore?: boolean } = {},
+): { failed: number; refunded: number } {
+  const counts = { failed: 0, refunded: 0 };
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    if (path === jobPath) {
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          const status = (value as { status?: string } | null)?.status;
+          if (status === 'failed') counts.failed += 1;
+          if (status === 'refunded') counts.refunded += 1;
+          return ref.set(value);
+        },
+      };
+    }
+    if (options.failScoutReportStore && path === `scoutReports/${TEST_UID}`) {
+      return {
+        ...ref,
+        push: () => {
+          const child = ref.push();
+          return {
+            ...child,
+            set: async () => {
+              throw new Error('simulated scout-report store failure');
+            },
+          };
+        },
+      };
+    }
+    return ref;
+  });
+  return counts;
+}
+
+/** Every job record in the database, for the job-KIND position check. */
+function allJobRecords(database: FakeDatabase): Array<Record<string, unknown>> {
+  const dump = database.dump() as { reportJobs?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.reportJobs ?? {}).flatMap(
+    (jobs) => Object.values(jobs) as Array<Record<string, unknown>>,
+  );
+}
+
+describe('money-path reaffirmation battery (plan 39-07 Task 3)', () => {
+  it('1. the activation gate is still the FIRST statement: a reason-bearing request with the gate absent answers 503 with NO job record, NO credit spend, NO model call and NO snapshot', async () => {
+    const cases = [
+      {
+        reason: 'prep_report',
+        payload: {
+          reason: 'prep_report',
+          entryKey: P39_ENTRY_KEY,
+          opponentName: 'rival',
+          jobId: 'p39-gate-prep',
+        },
+      },
+      {
+        reason: 'prep_bundle',
+        payload: {
+          reason: 'prep_bundle',
+          entryKey: P39_ENTRY_KEY,
+          bundleId: 'bundle-p39-gate',
+          opponentNames: BUNDLE_OPPONENT_NAMES,
+        },
+      },
+      {
+        reason: 'post_event_synthesis',
+        payload: { reason: 'post_event_synthesis', entryKey: P39_ENTRY_KEY },
+      },
+    ];
+    for (const { reason, payload } of cases) {
+      for (const reports of [P39_NON_ALLOWLIST_CONFIG, REPORTS_CONFIG]) {
+        const modelSpy = vi.fn(async () => ({
+          stop_reason: 'end_turn' as const,
+          parsed_output: VALID_REPORT,
+        }));
+        // Gate ABSENT: no `prepPaid` option at all (production ships UNSET).
+        const { app, database } = buildTestApp({
+          reports,
+          stripe: P39_STRIPE_CONFIG,
+          reportsClient: stubClient(modelSpy),
+          parrygg: { apiKey: 'parry-key' },
+          parryggClients: parryClients({
+            getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+          }),
+        });
+        seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+        database.seed(`credits/${TEST_UID}/balance`, 5);
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/reports',
+          headers: authHeader(),
+          payload,
+        });
+
+        const dump = database.dump() as Record<string, unknown>;
+        expect(response.statusCode, reason).toBe(503);
+        expect(dump.reportJobs, reason).toBeUndefined();
+        expect(dump.creditLedger, reason).toBeUndefined();
+        expect(dump.creditBundleOps, reason).toBeUndefined();
+        expect(await balanceOf(database), reason).toBe(5);
+        expect(modelSpy, reason).toHaveBeenCalledTimes(0);
+        expect(dump.evidenceSnapshots, reason).toBeUndefined();
+      }
+    }
+  });
+
+  it('2. every reachable failure cause on the job path writes exactly ONE terminal record and exactly ONE refund effect per attempt', async () => {
+    type Cause = {
+      name: string;
+      expectedStatus: number;
+      fixture?: 'thin';
+      failStore?: boolean;
+      startggFetch?: typeof fetch;
+      respond: () => Promise<{ stop_reason: string; parsed_output: unknown }>;
+    };
+    const rateLimit = new Anthropic.RateLimitError(
+      429,
+      { type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } },
+      'slow down',
+      new Headers(),
+    );
+    const apiError = new Anthropic.InternalServerError(
+      500,
+      { type: 'error', error: { type: 'api_error', message: 'boom' } },
+      'boom',
+      new Headers(),
+    );
+    const causes: Cause[] = [
+      {
+        name: 'refusal',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'refusal', parsed_output: null }),
+      },
+      {
+        name: 'truncated',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'max_tokens', parsed_output: null }),
+      },
+      {
+        name: 'unparseable',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: null }),
+      },
+      {
+        name: 'rate-limited',
+        expectedStatus: 429,
+        respond: async () => {
+          throw rateLimit;
+        },
+      },
+      {
+        name: 'provider-error',
+        expectedStatus: 502,
+        respond: async () => {
+          throw apiError;
+        },
+      },
+      {
+        name: 'unexpected-throw (catch-all, rethrown)',
+        expectedStatus: 500,
+        respond: async () => {
+          throw new Error('simulated unexpected client failure');
+        },
+      },
+      {
+        name: 'validation',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION }),
+      },
+      {
+        name: 'stored-schema reject',
+        expectedStatus: 502,
+        respond: async () => ({
+          stop_reason: 'end_turn',
+          parsed_output: selectionOf(
+            { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+            {},
+            { action1: { actionId: '', claimId: 'c01' } },
+          ),
+        }),
+      },
+      {
+        name: 'D-21 thin evidence',
+        expectedStatus: 502,
+        fixture: 'thin',
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+      {
+        name: 'store failure (catch, rethrown)',
+        expectedStatus: 500,
+        failStore: true,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+      {
+        name: 'scout not found',
+        expectedStatus: 404,
+        startggFetch: (async () => gqlResponse({ user: null })) as unknown as typeof fetch,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+    ];
+
+    for (const cause of causes) {
+      const options = {
+        startgg: STARTGG_CONFIG,
+        startggFetch:
+          cause.startggFetch ??
+          (cause.fixture === 'thin' ? emptyScoutFetchMock() : scoutFetchMock()),
+        reports: P39_NON_ALLOWLIST_CONFIG,
+        stripe: P39_STRIPE_CONFIG,
+        reportsClient: stubClient(cause.respond),
+      };
+      const { app, database } =
+        cause.fixture === 'thin' ? buildBareTestApp(options) : buildTestApp(options);
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const jobId = `p39-battery-${cause.name.replace(/[^a-z0-9]+/gi, '-')}`;
+      const counts = instrumentJobWrites(database, `reportJobs/${TEST_UID}/${jobId}`, {
+        failScoutReportStore: cause.failStore,
+      });
+
+      const response = await postLegacy(app, jobId);
+      vi.mocked(database.ref).mockRestore();
+
+      expect(response.statusCode, cause.name).toBe(cause.expectedStatus);
+      // Exactly ONE terminal write (a legacy job's terminal is always
+      // `failed`, never `refunded`) and exactly ONE refund effect.
+      expect(counts.failed, cause.name).toBe(1);
+      expect(counts.refunded, cause.name).toBe(0);
+      expect(refundLedgerRefs(database), cause.name).toEqual([jobId]);
+      expect(await balanceOf(database), cause.name).toBe(1);
+      expect(findEvents(database, 'report_failed'), cause.name).toHaveLength(1);
+      expect((await jobRecord(database, jobId)).status, cause.name).toBe('failed');
+    }
+  });
+
+  it('3. a validation failure and a truncation failure produce IDENTICAL refund effects for the same job shape (legacy and prep_report)', async () => {
+    async function legacyRun(respond: () => { stop_reason: string; parsed_output: unknown }) {
+      const built = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: P39_NON_ALLOWLIST_CONFIG,
+        stripe: P39_STRIPE_CONFIG,
+        reportsClient: stubClient(async () => respond()),
+      });
+      built.database.seed(`credits/${TEST_UID}/balance`, 1);
+      const response = await postLegacy(built.app, 'p39-same-shape');
+      const job = await jobRecord(built.database, 'p39-same-shape');
+      return {
+        statusCode: response.statusCode,
+        balance: await balanceOf(built.database),
+        refunds: refundLedgerRefs(built.database),
+        status: job.status,
+        failureReason: job.failureReason ?? null,
+      };
+    }
+    async function prepRun(respond: () => { stop_reason: string; parsed_output: unknown }) {
+      const { app, database } = prepBillableApp('viable', respond);
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const response = await postPrepSingle(app, 'p39-same-shape');
+      const job = await jobRecord(database, 'p39-same-shape');
+      return {
+        statusCode: response.statusCode,
+        balance: await balanceOf(database),
+        refunds: refundLedgerRefs(database),
+        status: job.status,
+        failureReason: job.failureReason ?? null,
+      };
+    }
+    const truncation = () => ({ stop_reason: 'max_tokens', parsed_output: null });
+    const validation = () => ({ stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION });
+
+    for (const run of [legacyRun, prepRun]) {
+      const truncated = await run(truncation);
+      const invalid = await run(validation);
+      expect(invalid.statusCode).toBe(truncated.statusCode);
+      expect(invalid.balance).toBe(truncated.balance);
+      expect(invalid.balance).toBe(1);
+      expect(invalid.refunds).toEqual(truncated.refunds);
+      expect(invalid.refunds).toEqual(['p39-same-shape']);
+      expect(invalid.status).toBe(truncated.status);
+      // The cause differs; the money does not.
+      expect(truncated.failureReason).toBeNull();
+      expect(invalid.failureReason).toBe('validation');
+    }
+  });
+
+  it('4. failureReason never lands in the job-KIND position: every failed, refunded or swept job’s reason is a prep kind or absent — never a failure cause', async () => {
+    // The job-kind enum itself refuses a failure cause.
+    expect(
+      reportJobSchema.safeParse({
+        status: 'failed',
+        createdAt: 1,
+        updatedAt: 1,
+        attempt: 0,
+        creditRef: 'x',
+        reason: 'validation',
+      }).success,
+    ).toBe(false);
+
+    const records: Array<Record<string, unknown>> = [];
+
+    // A legacy validation failure, a D-21 thin prep failure, and a bundle
+    // child validation failure.
+    const legacy = legacyBillableApp(() => BELOW_MINIMUM_SELECTION);
+    await postLegacy(legacy.app, 'p39-kind-legacy');
+    records.push(...allJobRecords(legacy.database));
+
+    const thin = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(thin.database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    thin.database.seed(`credits/${TEST_UID}/balance`, 1);
+    await postPrepSingle(thin.app, 'p39-kind-thin');
+    records.push(...allJobRecords(thin.database));
+
+    const bundle = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedBundleBrief(bundle.database, TEST_UID, P39_ENTRY_KEY);
+    bundle.database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(bundle.app, 'bundle-p39-kind');
+    await postPrepSingle(bundle.app, jobs[0]!.jobId, jobs[0]!.opponentName);
+    records.push(...allJobRecords(bundle.database));
+
+    // A swept stale prep job that carried a failure cause.
+    const sweepDb = new FakeDatabaseImpl();
+    sweepDb.seed(`reportJobs/${TEST_UID}/p39-kind-swept`, {
+      status: 'running',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'p39-kind-swept',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    sweepDb.seed(`reportJobsByStatus/running/${TEST_UID}/p39-kind-swept`, true);
+    await runSweepStuckReportJobs(sweepDb as unknown as Database, { now: 10 * 60 * 60 * 1000 });
+    records.push(...allJobRecords(sweepDb));
+
+    const failedOrSwept = records.filter(
+      (record) => record.status === 'failed' || record.status === 'refunded',
+    );
+    expect(failedOrSwept.length).toBeGreaterThanOrEqual(4);
+    for (const record of records) {
+      if (record.reason !== undefined) {
+        expect(PREP_KIND_REASONS.has(record.reason as string)).toBe(true);
+      }
+      expect(record.reason).not.toBe('validation');
+    }
+    expect(failedOrSwept.filter((record) => record.failureReason === 'validation')).toHaveLength(
+      failedOrSwept.length,
+    );
+  });
+});

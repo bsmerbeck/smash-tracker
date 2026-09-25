@@ -222,3 +222,70 @@ describe('runSweepStuckReportJobs', () => {
     expect(reportFailedEvents[0]).toMatchObject({ payload: {} });
   });
 });
+
+describe('runSweepStuckReportJobs — failureReason preservation (Phase 39, plan 39-07, review C2-M5)', () => {
+  function reportFailedPayloads(database: FakeDatabase): Array<Record<string, unknown>> {
+    return eventsNamed(database, 'report_failed').map(
+      (event) => (event as { payload: Record<string, unknown> }).payload,
+    );
+  }
+
+  it('carries a stale job’s failureReason onto the terminal job write, and leaves the report_failed payload byte-unchanged (reason only)', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 0);
+    seedRunningJob(
+      database,
+      'uid-1',
+      'job-1',
+      runningJob({ reason: 'prep_report', failureReason: 'validation' }),
+    );
+
+    await runSweepStuckReportJobs(database as never, { now: FIXED_NOW, staleMs: STALE_MS });
+
+    const job = (await database.ref('reportJobs/uid-1/job-1').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job).toMatchObject({
+      status: 'failed',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    const payloads = reportFailedPayloads(database);
+    expect(payloads).toHaveLength(1);
+    // The shipped class-B envelope's payload is EXACTLY `{ reason }` — the
+    // failure cause never rides it.
+    expect(Object.keys(payloads[0]!)).toEqual(['reason']);
+    expect(payloads[0]).toEqual({ reason: 'prep_report' });
+  });
+
+  it('a legacy reason-free stale job carrying a failureReason keeps the cause on the job, and the report_failed payload stays {}', async () => {
+    const database = new FakeDatabase();
+    seedRunningJob(database, 'uid-1', 'job-2', runningJob({ failureReason: 'validation' }));
+
+    await runSweepStuckReportJobs(database as never, { now: FIXED_NOW, staleMs: STALE_MS });
+
+    const job = (await database.ref('reportJobs/uid-1/job-2').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job.failureReason).toBe('validation');
+    expect(job).not.toHaveProperty('reason');
+    expect(reportFailedPayloads(database)).toEqual([{}]);
+  });
+
+  it('a stale job WITHOUT a failureReason gains none (no key, never an explicit null), and the job-kind reason never carries a cause', async () => {
+    const database = new FakeDatabase();
+    seedRunningJob(database, 'uid-1', 'job-3', runningJob({ reason: 'prep_bundle' }));
+
+    await runSweepStuckReportJobs(database as never, { now: FIXED_NOW, staleMs: STALE_MS });
+
+    const job = (await database.ref('reportJobs/uid-1/job-3').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job).not.toHaveProperty('failureReason');
+    expect(job.reason).toBe('prep_bundle');
+    expect(reportFailedPayloads(database)).toEqual([{ reason: 'prep_bundle' }]);
+  });
+});

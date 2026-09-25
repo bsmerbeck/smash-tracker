@@ -119,6 +119,12 @@ export async function runSweepStuckReportJobs(
           creditRef: job.creditRef,
           ...(job.reason ? { reason: job.reason } : {}),
           ...(job.resultRef ? { resultRef: job.resultRef } : {}),
+          // Phase 39 (D-07, review C2-M5): preserve the failure CAUSE on the
+          // terminal JOB write only — never on the `report_failed` envelope
+          // payload below, whose shape is a shipped class-B contract. Future-
+          // proofing, not a live path: the sweep only catches stale `running`
+          // jobs, before a validator could have written a cause.
+          ...(job.failureReason ? { failureReason: job.failureReason } : {}),
         }),
       );
 
