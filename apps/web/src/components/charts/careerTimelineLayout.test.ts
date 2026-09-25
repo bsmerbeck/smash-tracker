@@ -5,6 +5,7 @@ import {
   careerStripFill,
   careerTimelineSvgHeight,
   careerTimelineYDomain,
+  clampReadoutLeft,
 } from './careerTimelineLayout';
 
 /**
@@ -93,5 +94,29 @@ describe('careerTimelineSvgHeight — sketch 002-C: plot bottom + strip band 48 
     expect(careerTimelineSvgHeight({ narrow: true, strips: true })).toBe(244);
     expect(careerTimelineSvgHeight({ narrow: false, strips: false })).toBe(246);
     expect(careerTimelineSvgHeight({ narrow: true, strips: false })).toBe(196);
+  });
+});
+
+describe('clampReadoutLeft (plan 39.1-35) — the readout never leaves the card', () => {
+  it('places the readout right of the anchor when it fits', () => {
+    const left = clampReadoutLeft({ anchorX: 50, readoutWidth: 200, containerWidth: 400 });
+    expect(left).toBeGreaterThan(50);
+    expect(left + 200).toBeLessThanOrEqual(400);
+  });
+
+  it('flips it left of the anchor near the right edge', () => {
+    const left = clampReadoutLeft({ anchorX: 350, readoutWidth: 200, containerWidth: 400 });
+    expect(left + 200).toBeLessThan(350);
+    expect(left).toBeGreaterThanOrEqual(0);
+  });
+
+  it('clamps inside the container when neither side fits', () => {
+    const left = clampReadoutLeft({ anchorX: 150, readoutWidth: 280, containerWidth: 320 });
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + 280).toBeLessThanOrEqual(320);
+  });
+
+  it('a readout wider than the container clamps to 0', () => {
+    expect(clampReadoutLeft({ anchorX: 200, readoutWidth: 500, containerWidth: 400 })).toBe(0);
   });
 });

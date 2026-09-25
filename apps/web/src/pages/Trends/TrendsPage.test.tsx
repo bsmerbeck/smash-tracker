@@ -1,7 +1,8 @@
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -49,6 +50,41 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+/**
+ * Plan 39.1-35: the real CareerTimelineCard plus a probe button that calls
+ * whatever `onSelectPeriod` the page passes it with a fixed window — the page
+ * only forwards axes, so the page-level test drives the handler directly.
+ */
+const { DRILL_FROM_MS, DRILL_TO_MS } = vi.hoisted(() => ({
+  DRILL_FROM_MS: Date.UTC(2021, 0, 1),
+  DRILL_TO_MS: Date.UTC(2021, 0, 31, 23, 59, 59, 999),
+}));
+vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/CareerTimelineCard')>();
+  function CareerTimelineCardWithProbe(props: ComponentProps<typeof actual.CareerTimelineCard>) {
+    const selectPeriod = (props as { onSelectPeriod?: (range: object) => void }).onSelectPeriod;
+    return (
+      <>
+        <actual.CareerTimelineCard {...props} />
+        <button
+          type="button"
+          onClick={() => selectPeriod?.({ fromMs: DRILL_FROM_MS, toMs: DRILL_TO_MS })}
+        >
+          timeline-drill-probe
+        </button>
+      </>
+    );
+  }
+  return { ...actual, CareerTimelineCard: CareerTimelineCardWithProbe };
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
+}
+
 function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'm1',
@@ -73,7 +109,15 @@ function renderTrends(initialEntry = '/trends') {
           <AnalyticsFilterProvider>
             <TooltipProvider>
               <Routes>
-                <Route path="/trends" element={<TrendsPage />} />
+                <Route
+                  path="/trends"
+                  element={
+                    <>
+                      <TrendsPage />
+                      <LocationProbe />
+                    </>
+                  }
+                />
                 <Route path="/dashboard" element={<div>Dashboard page</div>} />
               </Routes>
             </TooltipProvider>
@@ -481,6 +525,36 @@ describe('TrendsPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('plan 39.1-35: a timeline period drills to the Trends terminus', () => {
+    it('writes from/to through the drill contract, keeps unrelated params, drops every other drill axis, lands on #games and mounts the terminus', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'in1', win: true, time: Date.UTC(2021, 0, 5) }),
+        makeMatch({ id: 'in2', win: false, time: Date.UTC(2021, 0, 20) }),
+        makeMatch({ id: 'out1', win: true, time: Date.UTC(2021, 1, 3) }),
+        makeMatch({ id: 'out2', win: true, time: Date.UTC(2020, 11, 30) }),
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends('/trends?keep=1&claim=x&event=y&stage=1&fighter=1&vs=2');
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-drill-probe' }));
+
+      await waitFor(() => expect(screen.getByTestId('location').textContent).toMatch(/#games$/));
+      const url = new URL(`http://x${screen.getByTestId('location').textContent}`);
+      expect(url.pathname).toBe('/trends');
+      expect(url.searchParams.get('from')).toBe(String(DRILL_FROM_MS));
+      expect(url.searchParams.get('to')).toBe(String(DRILL_TO_MS));
+      expect(url.searchParams.get('keep')).toBe('1');
+      for (const dropped of ['claim', 'event', 'stage', 'fighter', 'vs']) {
+        expect(url.searchParams.has(dropped), dropped).toBe(false);
+      }
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(2);
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
       listMatches.mockReturnValue(new Promise(() => {}));

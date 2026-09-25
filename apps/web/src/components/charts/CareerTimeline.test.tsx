@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import {
   buildCareerTimeline,
   type CareerTimeline as CareerTimelineData,
 } from '@smash-tracker/shared';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { ChartCard } from './ChartCard';
-import { CareerTimeline, type CareerTimelineLabels } from './CareerTimeline';
+import {
+  CareerTimeline,
+  type CareerTimelineLabels,
+  type CareerTimelineReadout,
+  type CareerTimelineReadoutTarget,
+} from './CareerTimeline';
 import { selectTimeAxisTicks } from './timeAxisTicks';
 import { CHART_AXIS_FONT_SIZE } from './tokens';
 
@@ -45,7 +50,25 @@ const LABELS: CareerTimelineLabels = {
   peak: (rating) => `${rating} · peak`,
   low: (rating) => `${rating} · low`,
   band: '30 games',
+  readout: readoutFor,
 };
+
+/** A deterministic readout per target — the kit composes nothing itself, so the test labels do. */
+function readoutFor(target: CareerTimelineReadoutTarget): CareerTimelineReadout {
+  if (target.kind === 'point') {
+    return {
+      title: `point ${target.point.key}`,
+      lines: [`rating ${target.point.rating}`, `${target.point.wins}-${target.point.losses}`],
+    };
+  }
+  if (target.kind === 'cell') {
+    return {
+      title: `cell ${target.cell.key}`,
+      lines: [`${target.cell.wins}-${target.cell.losses}`, `n ${target.cell.total}`],
+    };
+  }
+  return { title: 'other', lines: [] };
+}
 
 function renderTimeline(width: number, timeline: CareerTimelineData = TIMELINE) {
   return render(
@@ -285,5 +308,243 @@ describe('CareerTimeline (plan 39.1-34) — the shared-time-axis kit chart', () 
     for (const text of texts) {
       expect(text.getAttribute('font-size')).toBe(String(CHART_AXIS_FONT_SIZE));
     }
+  });
+});
+
+/**
+ * Plan 39.1-35 Task 1 (UI-SPEC §10.1 / §12.1, sketch 002-C `locate()` /
+ * `show()` / `onkeydown`): ONE synced crosshair, ONE readout, keyboard
+ * stepping with a polite live mirror, click / Enter / two-tap drill. Under
+ * jsdom the SVG's bounding rect is all zeros, so a pointer's clientX / clientY
+ * are the SVG's own x / y — events aim at the anchors' `cx` and the cells' `x`.
+ */
+describe('CareerTimeline (plan 39.1-35) — crosshair, readout, keyboard and drill', () => {
+  function renderInteractive(
+    width: number,
+    options: { onSelectPeriod?: boolean; timeline?: CareerTimelineData } = {},
+  ) {
+    const onSelectPeriod = vi.fn();
+    const utils = render(
+      <CareerTimeline
+        timeline={options.timeline ?? TIMELINE}
+        labels={LABELS}
+        width={width}
+        {...(options.onSelectPeriod === false ? {} : { onSelectPeriod })}
+      />,
+    );
+    return { ...utils, onSelectPeriod };
+  }
+
+  function plotBox(container: HTMLElement) {
+    const plot = container.querySelector('[data-slot="career-timeline-plot-area"]')!;
+    const top = numberAttr(plot, 'y');
+    return { top, bottom: top + numberAttr(plot, 'height') };
+  }
+
+  function hitTarget(container: HTMLElement): Element {
+    const hit = container.querySelector('[data-slot="career-timeline-hit"]');
+    expect(hit, 'the transparent career-timeline-hit rect').not.toBeNull();
+    return hit!;
+  }
+
+  function anchorAt(container: HTMLElement, index: number) {
+    const anchor = container.querySelectorAll('[data-slot="career-timeline-point"]')[index]!;
+    return { x: numberAttr(anchor, 'cx'), y: numberAttr(anchor, 'cy') };
+  }
+
+  function readoutOf(container: HTMLElement): CareerTimelineReadout | null {
+    const el = container.querySelector('[data-slot="career-timeline-readout"]');
+    if (!el) return null;
+    return {
+      title: el.querySelector('[data-slot="career-timeline-readout-title"]')?.textContent ?? '',
+      lines: Array.from(el.querySelectorAll('[data-slot="career-timeline-readout-line"]')).map(
+        (line) => line.textContent ?? '',
+      ),
+    };
+  }
+
+  function liveText(container: HTMLElement): string | null {
+    const live = container.querySelector('[data-slot="career-timeline-live"]');
+    expect(live, 'the polite live mirror').not.toBeNull();
+    expect(live!.getAttribute('aria-live')).toBe('polite');
+    return live!.textContent;
+  }
+
+  function cellCentre(cell: Element) {
+    return numberAttr(cell, 'x') + numberAttr(cell, 'width') / 2;
+  }
+
+  function cellOf(el: Element) {
+    const start = numberAttr(el, 'data-start-ms');
+    return TIMELINE.strips!.wide.cells.find((cell) => cell.startMs === start)!;
+  }
+
+  const points = TIMELINE.rating.points;
+
+  it('pointer over the plot band snaps to that anchor: crosshair from the plot top to the strip bottom, a dot on the point, one readout', () => {
+    const { container } = renderInteractive(1000);
+    const { top, bottom } = plotBox(container);
+    const at = anchorAt(container, 10);
+    fireEvent.pointerMove(hitTarget(container), {
+      clientX: at.x,
+      clientY: top + 40,
+      pointerType: 'mouse',
+    });
+    const crosshair = container.querySelector('[data-slot="career-timeline-crosshair"]');
+    expect(crosshair).not.toBeNull();
+    expect(numberAttr(crosshair!, 'x1')).toBeCloseTo(at.x, 3);
+    expect(numberAttr(crosshair!, 'x2')).toBeCloseTo(at.x, 3);
+    expect(numberAttr(crosshair!, 'y1')).toBe(top);
+    expect(numberAttr(crosshair!, 'y2')).toBe(bottom + 48);
+    const dot = container.querySelector('[data-slot="career-timeline-crosshair-dot"]');
+    expect(dot).not.toBeNull();
+    expect(numberAttr(dot!, 'cx')).toBeCloseTo(at.x, 3);
+    expect(numberAttr(dot!, 'cy')).toBeCloseTo(at.y, 3);
+    expect(container.querySelectorAll('[data-slot="career-timeline-readout"]')).toHaveLength(1);
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[10]! }));
+  });
+
+  it('a pointer between two anchors selects the nearer one', () => {
+    const { container } = renderInteractive(1000);
+    const { top } = plotBox(container);
+    const a = anchorAt(container, 12);
+    const b = anchorAt(container, 13);
+    const hit = hitTarget(container);
+    fireEvent.pointerMove(hit, { clientX: a.x + (b.x - a.x) * 0.4, clientY: top + 20 });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[12]! }));
+    fireEvent.pointerMove(hit, { clientX: a.x + (b.x - a.x) * 0.6, clientY: top + 20 });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[13]! }));
+  });
+
+  it('pointer over a rate cell inside the strip band: crosshair at the cell centre and the cell readout; pointerleave removes both', () => {
+    const { container } = renderInteractive(1000);
+    const { top, bottom } = plotBox(container);
+    const cellEl = container.querySelectorAll('[data-slot="career-timeline-rate-cell"]')[40]!;
+    const hit = hitTarget(container);
+    fireEvent.pointerMove(hit, {
+      clientX: cellCentre(cellEl),
+      clientY: numberAttr(cellEl, 'y') + 7,
+    });
+    const crosshair = container.querySelector('[data-slot="career-timeline-crosshair"]');
+    expect(crosshair).not.toBeNull();
+    expect(numberAttr(crosshair!, 'x1')).toBeCloseTo(cellCentre(cellEl), 3);
+    expect(numberAttr(crosshair!, 'y1')).toBe(top);
+    expect(numberAttr(crosshair!, 'y2')).toBe(bottom + 48);
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'cell', cell: cellOf(cellEl) }));
+    fireEvent.pointerLeave(hit);
+    expect(container.querySelector('[data-slot="career-timeline-crosshair"]')).toBeNull();
+    expect(container.querySelector('[data-slot="career-timeline-readout"]')).toBeNull();
+  });
+
+  it('the plot is one tab stop (role img + summary label); Arrow / Home / End step the periods, Escape hides, Enter drills the active period', () => {
+    const { container, onSelectPeriod } = renderInteractive(1000);
+    const plot = container.querySelector('[data-slot="career-timeline-plot"]');
+    expect(plot).not.toBeNull();
+    expect(plot!.getAttribute('tabindex')).toBe('0');
+    expect(plot!.getAttribute('role')).toBe('img');
+    expect(plot!.getAttribute('aria-label')).toBe(LABELS.aria);
+    const last = points.length - 1;
+    fireEvent.keyDown(plot!, { key: 'ArrowLeft' });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[last]! }));
+    fireEvent.keyDown(plot!, { key: 'ArrowLeft' });
+    expect(readoutOf(container)).toEqual(
+      LABELS.readout({ kind: 'point', point: points[last - 1]! }),
+    );
+    fireEvent.keyDown(plot!, { key: 'Home' });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[0]! }));
+    fireEvent.keyDown(plot!, { key: 'ArrowRight' });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[1]! }));
+    fireEvent.keyDown(plot!, { key: 'End' });
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[last]! }));
+    fireEvent.keyDown(plot!, { key: 'Enter' });
+    expect(onSelectPeriod).toHaveBeenCalledTimes(1);
+    expect(onSelectPeriod).toHaveBeenCalledWith({
+      fromMs: points[last]!.startMs,
+      toMs: points[last]!.endMs - 1,
+    });
+    fireEvent.keyDown(plot!, { key: 'Escape' });
+    expect(readoutOf(container)).toBeNull();
+    expect(container.querySelector('[data-slot="career-timeline-crosshair"]')).toBeNull();
+  });
+
+  it('a keyboard step is mirrored into the polite live region; a pointer hover never announces', () => {
+    const { container } = renderInteractive(1000);
+    const plot = container.querySelector('[data-slot="career-timeline-plot"]')!;
+    expect(plot).not.toBeNull();
+    fireEvent.keyDown(plot, { key: 'End' });
+    const readout = container.querySelector('[data-slot="career-timeline-readout"]')!;
+    expect(readout).not.toBeNull();
+    expect(liveText(container)).toBe(readout.textContent);
+    expect(liveText(container)).not.toBe('');
+    fireEvent.keyDown(plot, { key: 'Escape' });
+    const { top } = plotBox(container);
+    fireEvent.pointerMove(hitTarget(container), {
+      clientX: anchorAt(container, 5).x,
+      clientY: top + 30,
+    });
+    expect(readoutOf(container)).not.toBeNull();
+    expect(liveText(container)).toBe('');
+  });
+
+  it('a click on the plot band drills the nearest period; a click on a cell drills that cell', () => {
+    const { container, onSelectPeriod } = renderInteractive(1000);
+    const { top } = plotBox(container);
+    const hit = hitTarget(container);
+    fireEvent.click(hit, { clientX: anchorAt(container, 7).x + 1, clientY: top + 30 });
+    expect(onSelectPeriod).toHaveBeenCalledTimes(1);
+    expect(onSelectPeriod).toHaveBeenLastCalledWith({
+      fromMs: points[7]!.startMs,
+      toMs: points[7]!.endMs - 1,
+    });
+    const cellEl = container.querySelectorAll('[data-slot="career-timeline-rate-cell"]')[20]!;
+    fireEvent.click(hit, { clientX: cellCentre(cellEl), clientY: numberAttr(cellEl, 'y') + 5 });
+    const cell = cellOf(cellEl);
+    expect(onSelectPeriod).toHaveBeenCalledTimes(2);
+    expect(onSelectPeriod).toHaveBeenLastCalledWith({ fromMs: cell.startMs, toMs: cell.endMs - 1 });
+  });
+
+  it('touch: the first tap shows the readout without drilling; a second tap on the same target drills once', () => {
+    const { container, onSelectPeriod } = renderInteractive(400);
+    const { top } = plotBox(container);
+    const hit = hitTarget(container);
+    const at = { clientX: anchorAt(container, 3).x, clientY: top + 30 };
+    fireEvent.pointerDown(hit, { ...at, pointerType: 'touch' });
+    fireEvent.click(hit, at);
+    expect(onSelectPeriod).not.toHaveBeenCalled();
+    expect(readoutOf(container)).toEqual(LABELS.readout({ kind: 'point', point: points[3]! }));
+    // A touch pointerleave follows every lifted finger — it must not hide the readout.
+    fireEvent.pointerLeave(hit, { pointerType: 'touch' });
+    expect(readoutOf(container)).not.toBeNull();
+    fireEvent.pointerDown(hit, { ...at, pointerType: 'touch' });
+    fireEvent.click(hit, at);
+    expect(onSelectPeriod).toHaveBeenCalledTimes(1);
+    expect(onSelectPeriod).toHaveBeenCalledWith({
+      fromMs: points[3]!.startMs,
+      toMs: points[3]!.endMs - 1,
+    });
+  });
+
+  it('without an onSelectPeriod prop a click does nothing and throws nothing', () => {
+    const { container } = renderInteractive(1000, { onSelectPeriod: false });
+    const { top } = plotBox(container);
+    const hit = hitTarget(container);
+    expect(() =>
+      fireEvent.click(hit, { clientX: anchorAt(container, 2).x, clientY: top + 30 }),
+    ).not.toThrow();
+    const plot = container.querySelector('[data-slot="career-timeline-plot"]')!;
+    fireEvent.keyDown(plot, { key: 'End' });
+    expect(() => fireEvent.keyDown(plot, { key: 'Enter' })).not.toThrow();
+  });
+
+  it('without strips (a thin timeline) the crosshair ends at the plot bottom', () => {
+    const { container } = renderInteractive(1000, { timeline: THIN_TIMELINE });
+    const { top, bottom } = plotBox(container);
+    fireEvent.pointerMove(hitTarget(container), {
+      clientX: anchorAt(container, 2).x,
+      clientY: top + 30,
+    });
+    const crosshair = container.querySelector('[data-slot="career-timeline-crosshair"]');
+    expect(crosshair).not.toBeNull();
+    expect(numberAttr(crosshair!, 'y2')).toBe(bottom);
   });
 });
