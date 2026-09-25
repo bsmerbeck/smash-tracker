@@ -23,7 +23,7 @@ import { LIST_CAP, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
-import { SampleCue, UnknownRow } from '@/components/EvidenceCues';
+import { SampleCue, SampleCueGlyph, UnknownRow } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { PageShell } from '@/components/analytics/PageShell';
 import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
@@ -467,12 +467,16 @@ export function StageDetailPage() {
                             {row.wins}-{row.losses}
                           </TableCell>
                           <TableCell className="text-sm whitespace-normal">
-                            {/* Plan 39.1-37: the 4-col rail cell is narrow —
-                                the sample cue wraps under the rate instead of
-                                pushing the table past the card edge. */}
+                            {/* Plan 39.1-37: the 4-col rail cell is narrower
+                                than the words cue's 280px, so it carries the
+                                glyph form (UI-SPEC §14.3; the sentence is its
+                                aria-label) and may wrap rather than push the
+                                table past the card edge. */}
                             <span className="flex flex-wrap items-center gap-x-2">
                               {winRatePercent(row.wins, row.losses)}%
-                              <SampleCue sample={row.sample} />
+                              <span className="text-xs text-muted-foreground">
+                                <SampleCueGlyph sample={row.sample} />
+                              </span>
                             </span>
                           </TableCell>
                         </TableRow>
