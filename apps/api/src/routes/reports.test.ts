@@ -26,6 +26,7 @@ import {
   evidenceSnapshotRecordSchema,
   MIN_VIABLE_CLAIMS,
   reportJobSchema,
+  scoutReportRecordSchema,
   serializeCitationToken,
   storedScoutReportSchema,
   validateReportOutput,
@@ -5586,6 +5587,156 @@ describe('money-path reaffirmation battery (plan 39-07 Task 3)', () => {
     }
     expect(failedOrSwept.filter((record) => record.failureReason === 'validation')).toHaveLength(
       failedOrSwept.length,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-08, WINDOWS.md fixme #7): the 200 body on the three
+// scout-shaped surfaces is the PARSED (schema-applied) record, never the raw
+// in-memory one. `persistSection` omits an empty `claimIds` on write (RTDB
+// would drop it) and `storedReportSectionSchema.claimIds` defaults to `[]`
+// only in the PARSE direction; the response serializer ENCODES, so a raw
+// body with an omitted `claimIds` failed serialization with a 500 AFTER the
+// job succeeded, the report was stored and the credit was spent.
+// ---------------------------------------------------------------------------
+
+/** A viable selection (MIN_VIABLE_CLAIMS surviving claims) that leaves `watchFor` with NO claim ids. */
+function emptySectionSelection() {
+  const ids = [...SELECTED_CLAIM_IDS];
+  return selectionOf({ overview: ids.slice(0, 1), gameplan: ids.slice(1), watchFor: [] });
+}
+
+/** The one stored scout report as `{ id, ...record }` (id = its push key). */
+function storedScoutReportWithId(database: FakeDatabase): Record<string, unknown> {
+  const dump = database.dump() as { scoutReports?: Record<string, Record<string, unknown>> };
+  const entries = Object.entries(dump.scoutReports?.[TEST_UID] ?? {});
+  expect(entries).toHaveLength(1);
+  const [id, record] = entries[0]!;
+  return { id, ...(record as Record<string, unknown>) };
+}
+
+/** The shared post-success money/state assertions for a scout-shaped 200. */
+async function expectDeliveredOnce(
+  database: FakeDatabase,
+  response: Awaited<ReturnType<typeof postLegacy>>,
+  jobId: string,
+) {
+  // Money/state first: before the fix these all held while the status was
+  // 500 — the report was delivered and charged, the user saw an error.
+  const stored = storedScoutReportWithId(database);
+  const job = await jobRecord(database, jobId);
+  expect(job.status).toBe('succeeded');
+  expect(job.resultRef).toBe(stored.id);
+  expect(job).not.toHaveProperty('failureReason');
+  expect(refundLedgerRefs(database)).toEqual([]);
+  expect(findEvents(database, 'report_completed')).toHaveLength(1);
+  expect(findEvents(database, 'report_failed')).toHaveLength(0);
+  expect(response.statusCode).toBe(200);
+  // The guard: the 200 body IS the parsed stored record — schema defaults
+  // applied — so a raw-record response cannot regress unseen.
+  expect(response.json()).toEqual(scoutReportRecordSchema.parse(stored));
+}
+
+describe('post-plan fix (39-08): a 200 is the PARSED record — an empty-section selection is delivered, not a 500 after spend', () => {
+  it('legacy scout: an empty watchFor section answers 200 with claimIds [] — one spend, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => emptySectionSelection());
+
+    const response = await postLegacy(app, 'p39fix-legacy-empty');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(spendLedgerRefs(database)).toEqual(['p39fix-legacy-empty']);
+    expect(await balanceOf(database)).toBe(0);
+    await expectDeliveredOnce(database, response, 'p39fix-legacy-empty');
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('prep_report: an empty watchFor section answers 200 with claimIds [] — one spend, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: emptySectionSelection(),
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39fix-prep-empty');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(spendLedgerRefs(database)).toEqual(['p39fix-prep-empty']);
+    expect(await balanceOf(database)).toBe(0);
+    expect((await jobRecord(database, 'p39fix-prep-empty')).reason).toBe('prep_report');
+    await expectDeliveredOnce(database, response, 'p39fix-prep-empty');
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('prep_bundle child: an empty watchFor section answers 200 with claimIds [] — no re-spend beyond the bundle debit, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: emptySectionSelection(),
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39fix-empty');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+    expect(spendsAfterSubmit).toHaveLength(3);
+    const balanceAfterSubmit = await balanceOf(database);
+    expect(balanceAfterSubmit).toBe(7);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    // The ONE bundle debit is the only spend; the child neither re-spends nor refunds.
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(await balanceOf(database)).toBe(balanceAfterSubmit);
+    expect((await jobRecord(database, child.jobId)).reason).toBe('prep_bundle');
+    await expectDeliveredOnce(database, response, child.jobId);
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('guard: a fully-cited selection on every scout-shaped surface also answers with exactly schema.parse(stored)', async () => {
+    const legacy = legacyBillableApp(() => VALID_REPORT);
+    await expectDeliveredOnce(
+      legacy.database,
+      await postLegacy(legacy.app, 'p39fix-legacy-full'),
+      'p39fix-legacy-full',
+    );
+
+    const prep = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(prep.database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    prep.database.seed(`credits/${TEST_UID}/balance`, 1);
+    await expectDeliveredOnce(
+      prep.database,
+      await postPrepSingle(prep.app, 'p39fix-prep-full'),
+      'p39fix-prep-full',
+    );
+
+    const bundle = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(bundle.database, TEST_UID, P39_ENTRY_KEY);
+    bundle.database.seed(`credits/${TEST_UID}/balance`, 10);
+    const child = (await submitBundle(bundle.app, 'bundle-p39fix-full'))[0]!;
+    await expectDeliveredOnce(
+      bundle.database,
+      await postPrepSingle(bundle.app, child.jobId, child.opponentName),
+      child.jobId,
     );
   });
 });
