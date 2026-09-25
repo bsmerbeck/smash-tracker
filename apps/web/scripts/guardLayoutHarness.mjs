@@ -119,12 +119,19 @@ function buildSparseScale() {
   };
 }
 
-export async function startGuardLayoutHarnessServer() {
+/**
+ * Plan 39.1-34: `extraScales` merges caller-supplied in-memory datasets into
+ * the fixture plugin's scale map (selected per page via the
+ * `x-guard-layout-scale` header) — `captureTimelineFidelity.mjs` passes the
+ * owner's local export as `export`. Omitted, the server is unchanged.
+ */
+export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
   const scale = process.env.GUARD_LAYOUT_SCALE === 'sparse' ? 'sparse' : 'realistic';
   const scales = {
     realistic: buildRealisticScale(),
     sparse: buildSparseScale(),
     career: buildCareerScale(),
+    ...extraScales,
   };
   const server = await createViteServer({
     root: WEB_ROOT,

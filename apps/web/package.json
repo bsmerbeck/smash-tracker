@@ -19,6 +19,7 @@
     "guard:chart-bundle": "vitest run --config vitest.guard.config.ts src/components/charts/bundleIsolation.guard.test.ts",
     "guard:layout": "node scripts/guardLayout.mjs",
     "guard:palette": "node scripts/guardPalette.mjs",
+    "capture:timeline-fidelity": "node scripts/captureTimelineFidelity.mjs",
     "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {
