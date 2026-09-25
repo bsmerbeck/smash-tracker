@@ -3491,6 +3491,15 @@
       "online-friendly": "Online-Freundschaftsspiel",
       "offline-friendly": "Offline-Freundschaftsspiel",
       "none": "Nicht angegeben"
+    },
+    "timeline": {
+      "title": "Karriereverlauf",
+      "strip": {
+        "rate": "Quote",
+        "games": "Matches"
+      },
+      "aria_one": "Karriereverlauf — Wertung {{rating}} ±{{rd}} über {{count}} Zeitraum",
+      "aria_other": "Karriereverlauf — Wertung {{rating}} ±{{rd}} über {{count}} Zeiträume"
     }
   }
 }

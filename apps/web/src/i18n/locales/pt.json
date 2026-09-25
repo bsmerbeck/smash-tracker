@@ -3491,6 +3491,15 @@
       "online-friendly": "Amistoso online",
       "offline-friendly": "Amistoso presencial",
       "none": "Não especificado"
+    },
+    "timeline": {
+      "title": "Linha do tempo da carreira",
+      "strip": {
+        "rate": "taxa",
+        "games": "partidas"
+      },
+      "aria_one": "Linha do tempo da carreira — pontuação {{rating}} ±{{rd}} em {{count}} período",
+      "aria_other": "Linha do tempo da carreira — pontuação {{rating}} ±{{rd}} em {{count}} períodos"
     }
   }
 }

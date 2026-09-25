@@ -35,7 +35,7 @@ import {
   buildTrendsVerdict,
   useTrendsInsights,
 } from './components/TrendsReadsRail';
-import { CareerTimelineSlot } from './components/CareerTimelineSlot';
+import { CareerTimelineCard } from './components/CareerTimelineCard';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
@@ -50,10 +50,11 @@ const GAMES_ANCHOR_ID = 'games';
  * -> `PageGrid` rows. Own-account only (38 D-04) — every link this page
  * builds is an own-account link, never branched on coach state.
  *
- * Row 1 is the five-figure `StatRow` hero. Row 2 is the interim
- * career-timeline slot (`CareerTimelineSlot`: the existing `RatingCurve`/
- * `MonthlyPerformance` charts at 6+6, D-02/D-13 — Phase 41 replaces this with
- * the bound career-timeline chart, UI-SPEC §12.1). Row 3 is the three 4-col
+ * Row 1 is the five-figure `StatRow` hero. Row 2 is the 12-col career
+ * timeline (`CareerTimelineCard`, UI-SPEC §12.1, sketch 002-C) — plan
+ * 39.1-34 retired the interim chart.js Rating Curve / Monthly Performance
+ * slot here (owner decision 2026-09-25, superseding D-02 for the timeline
+ * only). Row 3 is the three 4-col
  * rails: left (Sessions & Tilt, Recent events), centre (`TrendsReadsRail`,
  * the engine-backed reads), right (Setting comparison, Match-type mix). The
  * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2) —
@@ -297,7 +298,7 @@ export function TrendsPage() {
         </GridCell>
 
         <GridCell span={12}>
-          <CareerTimelineSlot matches={matches} />
+          <CareerTimelineCard matches={matches} horizon={horizon} />
         </GridCell>
 
         <GridCell span={4} stack>

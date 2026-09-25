@@ -312,6 +312,65 @@ function yearKey(ms: number): string {
   return `${new Date(ms).getUTCFullYear()}`;
 }
 
+/** The four calendar grains — every one a UTC bucket with a closed-open `[startMs, endMs)` span. */
+export type CalendarGrain = 'week' | 'month' | 'quarter' | 'year';
+
+/** One UTC calendar bucket: its period key (identical to the key `buildPeriodSeries` emits for the same bucket), its locale-independent label and its `[startMs, endMs)` span. */
+export interface CalendarBucket {
+  key: string;
+  label: string;
+  startMs: number;
+  /** Exclusive — the next bucket's `startMs`. */
+  endMs: number;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Plan 39.1-34: THE one UTC calendar bucket rule, shared by
+ * `buildPeriodSeries` (through the same private key functions below) and
+ * the career timeline (`careerTimeline.ts`) — never a second bucketing
+ * algorithm. Returns the bucket containing `ms`: ISO weeks start Monday
+ * 00:00 UTC; months, quarters and years start on their UTC calendar
+ * boundaries. `endMs` is exclusive.
+ */
+export function calendarBucketBounds(grain: CalendarGrain, ms: number): CalendarBucket {
+  const d = new Date(ms);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  let label: string;
+  let startMs: number;
+  let endMs: number;
+  switch (grain) {
+    case 'week': {
+      const dayStart = Date.UTC(year, month, d.getUTCDate());
+      const isoDayNumber = new Date(dayStart).getUTCDay() || 7; // Monday=1 .. Sunday=7
+      startMs = dayStart - (isoDayNumber - 1) * MS_PER_DAY;
+      endMs = startMs + 7 * MS_PER_DAY;
+      label = isoWeekKey(ms);
+      break;
+    }
+    case 'month':
+      startMs = Date.UTC(year, month, 1);
+      endMs = Date.UTC(year, month + 1, 1);
+      label = monthKey(ms);
+      break;
+    case 'quarter': {
+      const firstMonth = Math.floor(month / 3) * 3;
+      startMs = Date.UTC(year, firstMonth, 1);
+      endMs = Date.UTC(year, firstMonth + 3, 1);
+      label = quarterKey(ms);
+      break;
+    }
+    case 'year':
+      startMs = Date.UTC(year, 0, 1);
+      endMs = Date.UTC(year + 1, 0, 1);
+      label = yearKey(ms);
+      break;
+  }
+  return { key: `${grain}:${label}`, label, startMs, endMs };
+}
+
 /** Groups `matches` by a UTC-derived key function into one `PeriodPoint` per distinct key. */
 function buildKeyedPoints(
   matches: Match[],

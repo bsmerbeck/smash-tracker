@@ -96,8 +96,18 @@ const CANVAS_CHART_IMPORT = /from\s+['"](chart\.js|react-chartjs-2)['"]/;
  * itself is deliberately NOT a member and has NO exemption clause here: it
  * composes only `@/components/ui/card` and never imports `recharts`, so an
  * exemption for it would be dead code that reads as a licensed bypass.
+ * Plan 39.1-34 adds the second member, `CareerTimeline.tsx` (VIZ-02's
+ * "exactly two members" is superseded for this chart by the owner's
+ * 2026-09-25 decision — see the kit README).
  */
-const KIT_CHART_PRIMITIVES = ['apps/web/src/components/charts/TrendLine.tsx'];
+const KIT_CHART_PRIMITIVES = [
+  'apps/web/src/components/charts/TrendLine.tsx',
+  // Plan 39.1-34 (owner decision 2026-09-25, UI-SPEC §12.1): the career
+  // timeline — the section 12.1 replacement for the chart.js Rating Curve /
+  // Monthly Performance pair, not a new idiom. Its colocated test renders it
+  // inside a ChartCard.
+  'apps/web/src/components/charts/CareerTimeline.tsx',
+];
 
 function toRepoRelative(absolutePath: string): string {
   return path.relative(REPO_ROOT, absolutePath).split(path.sep).join('/');

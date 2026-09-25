@@ -20,6 +20,7 @@ export * from './rail.js';
 export * from './engine.js';
 export * from './markBounds.js';
 export * from './periodSeries.js';
+export * from './careerTimeline.js';
 export * from './templates/registry.js';
 // #T-39.1-16: `buildRosterModel` and the roster thresholds (`ROSTER_MAIN_MIN_GAMES`,
 // `ROSTER_SECONDARY_MIN_SHARE`, `ROSTER_SECONDARY_MIN_GAMES`) were defined in plan

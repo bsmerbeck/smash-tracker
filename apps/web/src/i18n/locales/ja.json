@@ -3491,6 +3491,15 @@
       "online-friendly": "オンラインフレンドリー",
       "offline-friendly": "オフラインフレンドリー",
       "none": "未指定"
+    },
+    "timeline": {
+      "title": "キャリア推移",
+      "strip": {
+        "rate": "勝率",
+        "games": "対戦数"
+      },
+      "aria_one": "キャリア推移 — レーティング {{rating}} ±{{rd}}（{{count}}期間）",
+      "aria_other": "キャリア推移 — レーティング {{rating}} ±{{rd}}（{{count}}期間）"
     }
   }
 }

@@ -3491,6 +3491,15 @@
       "online-friendly": "Online friendly",
       "offline-friendly": "Offline friendly",
       "none": "Unspecified"
+    },
+    "timeline": {
+      "title": "Career timeline",
+      "strip": {
+        "rate": "rate",
+        "games": "games"
+      },
+      "aria_one": "Career timeline — rating {{rating}} ±{{rd}} across {{count}} period",
+      "aria_other": "Career timeline — rating {{rating}} ±{{rd}} across {{count}} periods"
     }
   }
 }

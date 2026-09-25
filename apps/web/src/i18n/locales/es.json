@@ -3491,6 +3491,15 @@
       "online-friendly": "Amistosa online",
       "offline-friendly": "Amistosa presencial",
       "none": "Sin especificar"
+    },
+    "timeline": {
+      "title": "Cronología de carrera",
+      "strip": {
+        "rate": "tasa",
+        "games": "partidas"
+      },
+      "aria_one": "Cronología de carrera — puntuación {{rating}} ±{{rd}} en {{count}} periodo",
+      "aria_other": "Cronología de carrera — puntuación {{rating}} ±{{rd}} en {{count}} periodos"
     }
   }
 }

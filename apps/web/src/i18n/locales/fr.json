@@ -3491,6 +3491,15 @@
       "online-friendly": "Amical en ligne",
       "offline-friendly": "Amical hors ligne",
       "none": "Non précisé"
+    },
+    "timeline": {
+      "title": "Chronologie de carrière",
+      "strip": {
+        "rate": "taux",
+        "games": "matchs"
+      },
+      "aria_one": "Chronologie de carrière — classement {{rating}} ±{{rd}} sur {{count}} période",
+      "aria_other": "Chronologie de carrière — classement {{rating}} ±{{rd}} sur {{count}} périodes"
     }
   }
 }
