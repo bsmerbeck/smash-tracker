@@ -1,5 +1,5 @@
 import type { PeriodGrain, PeriodPoint } from '@smash-tracker/shared';
-import { formatEventTickLabel } from './eventTicks';
+import { formatEventTickLabel, selectEventTicks } from './eventTicks';
 
 /**
  * VIZ-01/VIZ-03 (UI-SPEC §7.13, §11 — plan 39.1-30 Task 1): the ONLY place
@@ -118,6 +118,41 @@ export function formatPeriodRowLabel(point: PeriodPoint, locale: string): string
     return formatShortDate(point.startMs, locale);
   }
   return point.label;
+}
+
+/**
+ * Plan 39.1-37 (VIZ-03, design-audit item 5): the event-anchor key prefix of a
+ * SESSION anchor. `packages/shared/src/evidence/eventSeries.ts`'s
+ * `anchorKey(kind, name, startMs)` formats `${kind}:${name}:${startMs}`, and a
+ * session anchor's name is empty — so every session key starts `session::`.
+ * Tournament anchors carry their name between the colons.
+ */
+export const SESSION_ANCHOR_KEY_PREFIX = 'session::';
+
+/** The fields of an event-trend point the axis needs (`TrendEventPoint` flattened — this module imports no chart type). */
+export interface EventAnchorTickPoint {
+  eventKey: string;
+  eventLabel: string;
+  dateMs: number;
+}
+
+/**
+ * Plan 39.1-37: an event-anchored trend's axis text — NEVER the anchor's
+ * engine key. A session anchor reads as its locale short date (local time,
+ * WR-02 — the same cached formatter the fine-grain period ticks use; its
+ * engine label is an ISO string); a tournament anchor reads as its name
+ * through `formatEventTickLabel`'s 12-character truncation, falling back to
+ * the date when the name is empty.
+ */
+export function formatEventAnchorTickLabel(point: EventAnchorTickPoint, locale: string): string {
+  if (point.eventKey.startsWith(SESSION_ANCHOR_KEY_PREFIX)) {
+    return formatShortDate(point.dateMs, locale);
+  }
+  const name = point.eventLabel.trim();
+  if (name === '') {
+    return formatShortDate(point.dateMs, locale);
+  }
+  return formatEventTickLabel(name);
 }
 
 /** CHART_AXIS_FONT_SIZE (12px) sibling constant — the per-character pixel allowance a legible tick label needs, ASCII vs. wide (CJK et al.) characters. */
@@ -239,8 +274,32 @@ function spanFor(x: number, w: number, anchor: PeriodTickAnchor): { left: number
 
 /** Point-scale x of every key across the plot width — the same placement Recharts gives a padded category axis. */
 function xPositions(points: PeriodPoint[], plotWidthPx: number): Map<string, number> {
-  const n = points.length;
-  return new Map(points.map((point, i) => [point.key, n > 1 ? (i * plotWidthPx) / (n - 1) : 0]));
+  return xPositionsForKeys(
+    points.map((point) => point.key),
+    plotWidthPx,
+  );
+}
+
+function xPositionsForKeys(keys: readonly string[], plotWidthPx: number): Map<string, number> {
+  const n = keys.length;
+  return new Map(keys.map((key, i) => [key, n > 1 ? (i * plotWidthPx) / (n - 1) : 0]));
+}
+
+/** Lays SELECTED keys out from any key order + label function — the shared core of both axes' layouts. */
+function layoutLabelledTicks(
+  orderedKeys: readonly string[],
+  labelFor: (key: string) => string | undefined,
+  tickKeys: string[],
+  plotWidthPx: number,
+): PeriodTickLayout[] {
+  const xForKey = xPositionsForKeys(orderedKeys, plotWidthPx);
+  return tickKeys.flatMap((key, index) => {
+    const label = labelFor(key);
+    const x = xForKey.get(key);
+    if (label === undefined || x === undefined) return [];
+    const anchor = periodTickAnchor(index, tickKeys.length, x, plotWidthPx);
+    return [{ key, label, x, anchor, ...spanFor(x, estimateTickLabelWidthPx(label), anchor) }];
+  });
 }
 
 /**
@@ -256,15 +315,15 @@ export function layoutPeriodTicks(
 ): PeriodTickLayout[] {
   const { plotWidthPx, locale } = opts;
   const byKey = new Map(points.map((point) => [point.key, point]));
-  const xForKey = xPositions(points, plotWidthPx);
-  return tickKeys.flatMap((key, index) => {
-    const point = byKey.get(key);
-    const x = xForKey.get(key);
-    if (!point || x === undefined) return [];
-    const label = formatPeriodTickLabel(point, locale);
-    const anchor = periodTickAnchor(index, tickKeys.length, x, plotWidthPx);
-    return [{ key, label, x, anchor, ...spanFor(x, estimateTickLabelWidthPx(label), anchor) }];
-  });
+  return layoutLabelledTicks(
+    points.map((point) => point.key),
+    (key) => {
+      const point = byKey.get(key);
+      return point ? formatPeriodTickLabel(point, locale) : undefined;
+    },
+    tickKeys,
+    plotWidthPx,
+  );
 }
 
 /** Index of the first adjacent pair whose laid-out spans sit closer than the selection gap, or -1. */
@@ -333,17 +392,61 @@ export function selectPeriodTickLayout(
     if (keptKeys[keptKeys.length - 1] !== lastKey) keptKeys.push(lastKey);
   }
 
-  let layout = layoutPeriodTicks(points, keptKeys, opts);
+  return settleTickLayout(keptKeys, (keys) => layoutPeriodTicks(points, keys, opts), fine);
+}
+
+/**
+ * The CR-01 settle pass, shared by both axes: while any adjacent pair of the
+ * laid-out ticks collides, a MIDDLE tick of that pair is dropped (never the
+ * first or last); two colliding ticks keep the last when `keepLastOfPair`,
+ * else the first. Mutates nothing it was given.
+ */
+function settleTickLayout(
+  keys: string[],
+  layoutFor: (keys: string[]) => PeriodTickLayout[],
+  keepLastOfPair: boolean,
+): PeriodTickLayout[] {
+  const keptKeys = [...keys];
+  let layout = layoutFor(keptKeys);
   for (let j = firstCollision(layout); j !== -1; j = firstCollision(layout)) {
     if (keptKeys.length === 2) {
-      keptKeys.splice(fine ? 0 : 1, 1);
+      keptKeys.splice(keepLastOfPair ? 0 : 1, 1);
     } else {
       // j + 1 is the last tick only when j is a middle tick (length >= 3).
       keptKeys.splice(j + 1 === keptKeys.length - 1 ? j : j + 1, 1);
     }
-    layout = layoutPeriodTicks(points, keptKeys, opts);
+    layout = layoutFor(keptKeys);
   }
   return layout;
+}
+
+/**
+ * Plan 39.1-37 (VIZ-03, design-audit item 5): the event-anchored axis's tick
+ * layout — `selectEventTicks`' fixed-stride density rule over the anchor
+ * keys at the plotted width, then the same collision settle the period axis
+ * uses over the anchors' HUMAN labels (`formatEventAnchorTickLabel`): the
+ * first tick start-anchored, the last end-anchored (so neither clips at the
+ * plot edge), a middle tick dropped whenever two estimated spans sit closer
+ * than `MIN_TICK_LABEL_GAP_PX`, the most recent anchor kept when only two
+ * remain. `TrendLine.tsx`'s event-mode tick renderer draws exactly this.
+ */
+export function selectEventAnchorTickLayout(
+  points: readonly EventAnchorTickPoint[],
+  opts: { plotWidthPx: number; locale: string },
+): PeriodTickLayout[] {
+  if (points.length === 0) return [];
+  const { plotWidthPx, locale } = opts;
+  const keys = points.map((point) => point.eventKey);
+  const byKey = new Map(points.map((point) => [point.eventKey, point]));
+  const labelFor = (key: string): string | undefined => {
+    const point = byKey.get(key);
+    return point ? formatEventAnchorTickLabel(point, locale) : undefined;
+  };
+  return settleTickLayout(
+    selectEventTicks(keys, plotWidthPx),
+    (tickKeys) => layoutLabelledTicks(keys, labelFor, tickKeys, plotWidthPx),
+    true,
+  );
 }
 
 /** The selected tick keys alone — `selectPeriodTickLayout(...).map((tick) => tick.key)`. */

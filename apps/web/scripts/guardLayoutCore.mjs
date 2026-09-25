@@ -60,6 +60,14 @@ export const HEADER_SQUEEZE_MIN_SHARE = 0.5;
 export const MIN_TICK_GAP_PX = 4;
 
 /**
+ * Plan 39.1-37 (design-audit item 5): tick text that is a raw engine key —
+ * anything carrying `::` (the event-anchor key separator, e.g.
+ * `session::1700000000000`) or an ISO-8601 timestamp
+ * (`2023-11-15T19:30:20.000Z`). An identifier on an axis is never a label.
+ */
+export const RAW_AXIS_KEY_PATTERN = /::|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
  * UI-SPEC §13.1's stretch condition:
  * `card.height − (lastChild.bottom − card.top + paddingBottom) > 24px`.
  * Each `card` is `{ selectorPath, height, lastChildBottom, top, paddingBottom }`.
@@ -196,8 +204,9 @@ export function evaluateHeaderSqueeze(headers, minShare = HEADER_SQUEEZE_MIN_SHA
 /**
  * UI-SPEC §7.13/§11: x-axis tick clipping, tick-label overlap, a value label
  * or period dot colliding with a tick or axis line, and (plan 39.1-37,
- * design-audit item 10) the all-time reference label overprinting a value
- * label. Each `surface` is
+ * design-audit items 5 and 10) a raw engine key as tick text, value labels
+ * overprinting one another, and the all-time reference label overprinting a
+ * value label. Each `surface` is
  * `{ selectorPath, rect, xTicks: [{ left, right, top, bottom, text }], yTicks: [...],
  * valueLabels: [...], dots: [...], referenceLabels?: [...], xAxisLine: rect|null,
  * yAxisLine: rect|null }`.
@@ -215,6 +224,12 @@ export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
   const violations = [];
   for (const surface of surfaces) {
     const { selectorPath, rect, xTicks, yTicks, valueLabels, dots, xAxisLine, yAxisLine } = surface;
+
+    for (const tick of [...xTicks, ...yTicks]) {
+      if (RAW_AXIS_KEY_PATTERN.test(tick.text)) {
+        violations.push({ type: 'raw-axis-key', selectorPath, tick: tick.text });
+      }
+    }
 
     for (const tick of xTicks) {
       if (tick.left < rect.left - 0.5 || tick.right > rect.right + 0.5) {
@@ -249,6 +264,19 @@ export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
             tick: tick.text,
           });
           break;
+        }
+      }
+    }
+
+    for (let i = 0; i < valueLabels.length; i += 1) {
+      for (let j = i + 1; j < valueLabels.length; j += 1) {
+        if (rectsIntersect(valueLabels[i], valueLabels[j])) {
+          violations.push({
+            type: 'value-label-overlap',
+            selectorPath,
+            a: valueLabels[i].text,
+            b: valueLabels[j].text,
+          });
         }
       }
     }

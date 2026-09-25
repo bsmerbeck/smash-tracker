@@ -105,3 +105,58 @@ export function formatEventTickLabel(label: string): string {
   }
   return `${label.slice(0, MAX_EVENT_TICK_LABEL_LENGTH)}…`;
 }
+
+/**
+ * Plan 39.1-37 (design-audit item 5; the "decimate labels to at most 8"
+ * hand-off in 39.1-CONTEXT): the most per-anchor W-L labels an event trend
+ * draws. Phase 38 D-11 made the per-anchor record content, so labels are
+ * decimated rather than cut to last/max/min; every anchor's full record
+ * stays in its tooltip.
+ */
+export const MAX_EVENT_POINT_LABELS = 8;
+
+/** The minimum distance (px) between two labelled anchors' centres — a W-L label ("12–10") is about 35px wide at the axis font. */
+const MIN_EVENT_LABEL_SPACING_PX = 44;
+
+/**
+ * WHICH anchors carry an on-chart W-L label: a subsequence of
+ * `selectEventTicks(anchorKeys, width)` capped at `MAX_EVENT_POINT_LABELS` by
+ * the same fixed-stride rule (stride chosen so first + stride steps + last
+ * never exceeds the cap), the first and last always kept. `width` is the
+ * plotted category band (px); a kept middle anchor closer than
+ * `MIN_EVENT_LABEL_SPACING_PX` to its predecessor or to the last anchor is
+ * dropped, so two labels never overprint.
+ */
+export function selectEventLabelKeys(anchorKeys: readonly string[], width: number): string[] {
+  const ticks = selectEventTicks(anchorKeys, width);
+  if (ticks.length <= 2) {
+    return ticks;
+  }
+  let capped = ticks;
+  if (ticks.length > MAX_EVENT_POINT_LABELS) {
+    const stride = Math.ceil((ticks.length - 1) / (MAX_EVENT_POINT_LABELS - 1));
+    capped = ticks.filter((_, i) => i % stride === 0);
+    const lastTick = ticks[ticks.length - 1]!;
+    if (capped[capped.length - 1] !== lastTick) {
+      capped.push(lastTick);
+    }
+  }
+  if (!(width > 0) || anchorKeys.length < 2) {
+    return capped;
+  }
+  const indexOf = new Map(anchorKeys.map((key, i) => [key, i]));
+  const stepPx = width / (anchorKeys.length - 1);
+  const xOf = (key: string): number => (indexOf.get(key) ?? 0) * stepPx;
+  const first = capped[0]!;
+  const last = capped[capped.length - 1]!;
+  const kept = [first];
+  for (const key of capped.slice(1, -1)) {
+    const clearsPrevious = xOf(key) - xOf(kept[kept.length - 1]!) >= MIN_EVENT_LABEL_SPACING_PX;
+    const clearsLast = xOf(last) - xOf(key) >= MIN_EVENT_LABEL_SPACING_PX;
+    if (clearsPrevious && clearsLast) {
+      kept.push(key);
+    }
+  }
+  kept.push(last);
+  return kept;
+}

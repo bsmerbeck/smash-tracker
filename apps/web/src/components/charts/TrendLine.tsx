@@ -24,10 +24,11 @@ import {
   CHART_TOKENS,
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
-import { formatEventTickLabel, selectEventTicks } from './eventTicks';
+import { selectEventLabelKeys } from './eventTicks';
 import {
   estimateTickLabelWidthPx,
   formatPeriodRowLabel,
+  selectEventAnchorTickLayout,
   selectPeriodTickLayout,
   type PeriodTickLayout,
 } from './periodTicks';
@@ -175,7 +176,8 @@ const EVENT_POINT_LABEL_OFFSET_PX = 12;
 
 /**
  * The trend-with-context vocabulary member (D-05): a single-series line over
- * a fixed 0-100 win-rate domain. D-04: accepts an explicit numeric
+ * a win-rate domain (fixed 0-100 in the index mode; fitted to the data in the
+ * event and period modes — plan 39.1-37, UI-SPEC §7.13). D-04: accepts an explicit numeric
  * `width`/`height` — when `width` is a number the chart renders directly at
  * that size (what every test uses, since jsdom's no-op ResizeObserver stub
  * plus a zero-size bounding rect make a `ResponsiveContainer` render measure
@@ -188,7 +190,9 @@ const EVENT_POINT_LABEL_OFFSET_PX = 12;
  *   with linear interpolation.
  * - `'event'`: a CATEGORICAL x-axis keyed on the engine-built anchor key
  *   (never an array index), a stepped (`stepAfter`) line, and an
- *   always-visible per-point W-L label. Tick DENSITY is decided by this
+ *   per-point W-L label on at most `MAX_EVENT_POINT_LABELS` anchors (plan
+ *   39.1-37); each tick reads as the anchor's human label, never its key
+ *   (`selectEventAnchorTickLayout`). Tick DENSITY is decided by this
  *   component from the pure `eventTicks.ts` helper and handed to the axis as
  *   an explicit `ticks` array — never delegated to Recharts'
  *   `preserveStart`/`preserveStartEnd` interval modes. Those modes decide
@@ -203,8 +207,14 @@ const EVENT_POINT_LABEL_OFFSET_PX = 12;
  *   cases), rather than depending on jsdom's text measurement.
  */
 export function TrendLine(props: TrendLineProps): ReactElement | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { width, height = CHART_BODY_HEIGHT_PX, tooltip = <ChartTooltip /> } = props;
+  // Plan 39.1-37: the event mode's tick and label density come from the
+  // RENDERED width (the responsive wrapper's onResize), not a fixed 800px
+  // guess — above every early return (Rules of Hooks).
+  const [eventMeasuredWidth, setEventMeasuredWidth] = useState(
+    EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH,
+  );
 
   /**
    * The click surface is bound on the `LineChart` container, not on `Line` or
@@ -264,13 +274,31 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
   if (props.mode === 'event') {
     const eventPoints = props.points;
     const anchorKeys = eventPoints.map((point) => point.eventKey);
-    const tickWidth = typeof width === 'number' ? width : EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH;
-    const selectedTicks = selectEventTicks(anchorKeys, tickWidth);
+    const containerWidth = typeof width === 'number' ? width : eventMeasuredWidth;
+    const model = periodPlotModel(containerWidth, height);
+    // Plan 39.1-37 (VIZ-03, design-audit item 5): the axis names each anchor
+    // by its human label (a date for a session, the truncated name for a
+    // tournament) — never its engine key — laid out from the plotted width.
+    const tickLayout = selectEventAnchorTickLayout(
+      eventPoints.map((point) => ({
+        eventKey: point.eventKey,
+        eventLabel: point.context.eventLabel,
+        dateMs: point.context.dateMs,
+      })),
+      { plotWidthPx: model.plotWidthPx, locale: i18n.language },
+    );
+    // UI-SPEC §7.13's fitted domain (no fixed 0-100) over the cumulative rates.
+    const domain = fitRateDomain(eventPoints.map((point) => point.cumulativeWinRate));
+    const yTicks = rateDomainTicks(domain, model.valueBottomPx - model.valueTopPx);
+    // At most MAX_EVENT_POINT_LABELS anchors carry their W-L label; every
+    // anchor's record stays in its tooltip.
+    const labelledKeys = new Set(selectEventLabelKeys(anchorKeys, model.plotWidthPx));
 
     chart = (
       <LineChart
         {...(typeof width === 'number' ? { width, height } : {})}
         data={eventPoints}
+        margin={PERIOD_CHART_MARGIN}
         onClick={handleClick}
         accessibilityLayer
       >
@@ -279,13 +307,18 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
           dataKey="eventKey"
           type="category"
           domain={anchorKeys}
-          ticks={selectedTicks}
+          ticks={tickLayout.map((tick) => tick.key)}
           interval={0}
-          tickFormatter={(value: string) => formatEventTickLabel(value)}
-          tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+          padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
+          tick={periodTickRenderer(tickLayout)}
         />
         <YAxis
-          domain={[0, 100]}
+          domain={domain}
+          ticks={yTicks}
+          interval={0}
+          allowDataOverflow
+          width={PERIOD_Y_AXIS_WIDTH_PX}
+          padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
           tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
         />
         {tooltip && <Tooltip content={tooltip} cursor={{ stroke: CHART_TOKENS.border }} />}
@@ -307,7 +340,7 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
               return <g />;
             }
             const point = eventPoints[index];
-            if (!point) {
+            if (!point || !labelledKeys.has(point.eventKey)) {
               return <g />;
             }
             return (
@@ -317,6 +350,7 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
                 textAnchor="middle"
                 fill={CHART_TOKENS.axisText}
                 fontSize={CHART_AXIS_FONT_SIZE}
+                data-slot="trend-event-value-label"
               >
                 {t('opponents.hub.trend.pointLabel', { wins: point.wins, losses: point.losses })}
               </text>
@@ -366,7 +400,11 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer
+      width="100%"
+      height={height}
+      onResize={props.mode === 'event' ? (w) => setEventMeasuredWidth(w) : undefined}
+    >
       {chart}
     </ResponsiveContainer>
   );

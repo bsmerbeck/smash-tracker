@@ -157,10 +157,17 @@ export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'opponent-hub',
     loadedMarker: '[data-slot="opponent-hub-body"]',
-    // Plan 39.1-33: form-strip-fit only — no extra viewport, no scroll budget.
-    checks: ['form-strip-fit'],
+    // Plan 39.1-33: form-strip-fit — no extra viewport, no scroll budget.
+    // Plan 39.1-37: axis-ticks on the H2H event trend (raw-axis-key,
+    // value-label-overlap and the existing tick families).
+    checks: ['form-strip-fit', 'axis-ticks'],
   },
-  { id: 'stage-detail', loadedMarker: '[data-slot="stage-detail-body"]' },
+  {
+    id: 'stage-detail',
+    loadedMarker: '[data-slot="stage-detail-body"]',
+    // Plan 39.1-37: axis-ticks on the Over Time event trend.
+    checks: ['axis-ticks'],
+  },
 ];
 
 const HARD_TIMEOUT_MS = Number(process.env.GUARD_LAYOUT_HARD_TIMEOUT_MS) || 5 * 60 * 1000;
@@ -384,8 +391,11 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
       const xTicks = tickRects('.recharts-xAxis-tick-labels');
       const yTicks = tickRects('.recharts-yAxis-tick-labels');
 
+      // Plan 39.1-37: the event trend's per-anchor W-L labels are value labels too.
       const valueLabels = Array.from(
-        surfaceEl.querySelectorAll('[data-slot="trend-period-value-label"]'),
+        surfaceEl.querySelectorAll(
+          '[data-slot="trend-period-value-label"], [data-slot="trend-event-value-label"]',
+        ),
       ).map((el) => {
         const r = el.getBoundingClientRect();
         return {
