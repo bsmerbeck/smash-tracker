@@ -4,7 +4,10 @@
  * career timeline beside the implementation, on the owner's REAL data, at
  * 1440x900 and 390x844. Design fidelity is gated by a human-readable
  * difference table built from these PNGs, never asserted by layout checks
- * alone. Plan 39.1-35 extends this script (casual account, readout probes).
+ * alone. Plan 39.1-35 extends it: the casual account (guard:layout's
+ * `casual` scale, the thin state) beside the sketch's casual dataset, plus two
+ * readout probes on the sparg0 export (a hover over the 12th-newest month at
+ * 1440, a keyboard step at 390).
  *
  * USAGE (absolute paths only):
  *   TIMELINE_FIDELITY_EXPORT=/abs/sparg0-export.json \
@@ -20,10 +23,12 @@
  *
  * Output (T-39.1-34-07): every file is written inside `--out` (created if
  * missing; any path resolving outside it is refused); nothing is deleted.
- * Per viewport: app-sparg0-<w>.png (the timeline card), app-page-sparg0-<w>.png,
- * sketch-sparg0-<w>.png, sketch-page-sparg0-<w>.png and
- * side-by-side-sparg0-<w>.png; then manifest.json. Exits non-zero on any wait
- * timeout or any PNG under 2,048 bytes. ALWAYS shuts the browser and the Vite
+ * Per dataset (sparg0 = the owner's export ONLY; casual) and viewport:
+ * app-<ds>-<w>.png (the timeline card), app-page-<ds>-<w>.png,
+ * sketch-<ds>-<w>.png, sketch-page-<ds>-<w>.png and side-by-side-<ds>-<w>.png;
+ * the probes app-readout-hover-1440.png and app-readout-keyboard-390.png; then
+ * manifest.json. Exits non-zero on any wait timeout, a failed probe assertion
+ * or any PNG under 2,048 bytes. ALWAYS shuts the browser and the Vite
  * server down (try/finally plus a hard timeout using guardLayout's
  * prompt-exit helper).
  */
@@ -40,10 +45,21 @@ const VIEWPORTS = [
   { name: '1440x900', width: 1440, height: 900 },
   { name: '390x844', width: 390, height: 844 },
 ];
-const HARD_TIMEOUT_MS = 4 * 60 * 1000;
+const HARD_TIMEOUT_MS = 6 * 60 * 1000;
 const WAIT_TIMEOUT_MS = 30_000;
 const MIN_PNG_BYTES = 2_048;
 const APP_TIMELINE = '[data-slot="career-timeline-plot-area"]';
+const APP_THIN_STRIP = '[data-slot="career-timeline-thin-strip"] [data-slot="form-strip-root"]';
+const APP_READOUT = '[data-slot="career-timeline-readout"]';
+/**
+ * The two datasets: sparg0 is ALWAYS the owner's local export (the `export`
+ * scale — never a synthetic stand-in); casual is guard:layout's `casual`
+ * scale (41 games over three months) beside the sketch's casual dataset.
+ */
+const DATASETS = [
+  { name: 'sparg0', routeId: 'trends-career', scale: 'export', sketchDs: 'sparg0', thin: false },
+  { name: 'casual', routeId: 'trends-casual', scale: 'casual', sketchDs: 'casual', thin: true },
+];
 const SKETCH_TIMELINE = '#variant-c .c-timeline .plot svg';
 const SKETCH_CARD = '#variant-c .c-timeline section.card';
 
@@ -118,44 +134,106 @@ function outputPath(outDir, name) {
   return target;
 }
 
-async function captureApp({ browser, baseUrl, viewport, outDir, written }) {
+async function cardHandle(page) {
+  const card = await page.evaluateHandle(() =>
+    document.querySelector('[data-slot="career-timeline"]')?.closest('[data-slot="card"]'),
+  );
+  const cardElement = card.asElement();
+  if (!cardElement) throw new Error('the career timeline card was not found');
+  return cardElement;
+}
+
+/**
+ * Probe 1 (sparg0, 1440): hover the centre of the 12th-newest month cell —
+ * the one readout must name that cell's own W–L.
+ */
+async function probeHover({ page, outDir, written }) {
+  const target = await page.evaluate(() => {
+    const cells = Array.from(document.querySelectorAll('[data-slot="career-timeline-rate-cell"]'));
+    const cell = cells[cells.length - 12];
+    if (!cell) return null;
+    const r = cell.getBoundingClientRect();
+    return {
+      x: r.left + r.width / 2,
+      y: r.top + r.height / 2,
+      record: `${cell.getAttribute('data-wins')}–${cell.getAttribute('data-losses')}`,
+    };
+  });
+  if (!target) throw new Error('PROBE_HOVER_FAIL: fewer than 12 rate cells');
+  await page.mouse.move(target.x, target.y);
+  await page.waitForSelector(APP_READOUT, { timeout: WAIT_TIMEOUT_MS });
+  const text = await page.$eval(APP_READOUT, (el) => el.textContent ?? '');
+  if (!text.includes(target.record)) {
+    throw new Error(`PROBE_HOVER_FAIL: the readout does not name the cell's ${target.record}`);
+  }
+  const name = 'app-readout-hover-1440.png';
+  await (await cardHandle(page)).screenshot({ path: outputPath(outDir, name) });
+  written.push(name);
+  console.log(`PROBE_HOVER_OK record=${target.record}`);
+}
+
+/**
+ * Probe 2 (sparg0, 390): focus the plot, End then ArrowLeft twice — the
+ * readout is non-empty and the polite live region holds exactly its text.
+ */
+async function probeKeyboard({ page, outDir, written }) {
+  await page.focus('[data-slot="career-timeline-plot"]');
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForSelector(APP_READOUT, { timeout: WAIT_TIMEOUT_MS });
+  const { readout, live } = await page.evaluate(() => ({
+    readout: document.querySelector('[data-slot="career-timeline-readout"]')?.textContent ?? '',
+    live: document.querySelector('[data-slot="career-timeline-live"]')?.textContent ?? '',
+  }));
+  if (!readout || readout !== live) {
+    throw new Error('PROBE_KEYBOARD_FAIL: the readout is empty or differs from the live region');
+  }
+  const name = 'app-readout-keyboard-390.png';
+  await (await cardHandle(page)).screenshot({ path: outputPath(outDir, name) });
+  written.push(name);
+  console.log('PROBE_KEYBOARD_OK');
+}
+
+async function captureApp({ browser, baseUrl, dataset, viewport, outDir, written, probe }) {
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: viewport.width, height: viewport.height });
-    await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': 'export' });
-    await page.goto(`${baseUrl}/guard-layout.html?id=trends-career`, { waitUntil: 'networkidle0' });
-    await page.waitForSelector(APP_TIMELINE, { timeout: WAIT_TIMEOUT_MS });
-    const card = await page.evaluateHandle(() =>
-      document.querySelector('[data-slot="career-timeline"]')?.closest('[data-slot="card"]'),
-    );
-    const cardElement = card.asElement();
-    if (!cardElement) throw new Error('the career timeline card was not found');
-    const cardName = `app-sparg0-${viewport.width}.png`;
-    await cardElement.screenshot({ path: outputPath(outDir, cardName) });
+    await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': dataset.scale });
+    await page.goto(`${baseUrl}/guard-layout.html?id=${dataset.routeId}`, {
+      waitUntil: 'networkidle0',
+    });
+    await page.waitForSelector('[data-slot="career-timeline"]', { timeout: WAIT_TIMEOUT_MS });
+    await page.waitForSelector(dataset.thin ? APP_THIN_STRIP : APP_TIMELINE, {
+      timeout: WAIT_TIMEOUT_MS,
+    });
+    const cardName = `app-${dataset.name}-${viewport.width}.png`;
+    await (await cardHandle(page)).screenshot({ path: outputPath(outDir, cardName) });
     written.push(cardName);
-    const pageName = `app-page-sparg0-${viewport.width}.png`;
+    const pageName = `app-page-${dataset.name}-${viewport.width}.png`;
     await page.screenshot({ path: outputPath(outDir, pageName), fullPage: true });
     written.push(pageName);
+    if (probe) await probe({ page, outDir, written });
     return cardName;
   } finally {
     await page.close();
   }
 }
 
-async function captureSketch({ browser, sketchUrl, viewport, outDir, written }) {
+async function captureSketch({ browser, sketchUrl, dataset, viewport, outDir, written }) {
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: viewport.width, height: viewport.height });
     await page.goto(sketchUrl, { waitUntil: 'load' });
     await page.click('#tabs button[data-v="c"]');
-    await page.click('#ds button[data-ds="sparg0"]');
+    await page.click(`#ds button[data-ds="${dataset.sketchDs}"]`);
     await page.waitForSelector(SKETCH_TIMELINE, { timeout: WAIT_TIMEOUT_MS });
     const card = await page.$(SKETCH_CARD);
     if (!card) throw new Error('the sketch timeline card was not found');
-    const cardName = `sketch-sparg0-${viewport.width}.png`;
+    const cardName = `sketch-${dataset.name}-${viewport.width}.png`;
     await card.screenshot({ path: outputPath(outDir, cardName) });
     written.push(cardName);
-    const pageName = `sketch-page-sparg0-${viewport.width}.png`;
+    const pageName = `sketch-page-${dataset.name}-${viewport.width}.png`;
     await page.screenshot({ path: outputPath(outDir, pageName), fullPage: true });
     written.push(pageName);
     return cardName;
@@ -164,7 +242,15 @@ async function captureSketch({ browser, sketchUrl, viewport, outDir, written }) 
   }
 }
 
-async function composeSideBySide({ browser, viewport, sketchName, appName, outDir, written }) {
+async function composeSideBySide({
+  browser,
+  dataset,
+  viewport,
+  sketchName,
+  appName,
+  outDir,
+  written,
+}) {
   const dataUrl = (name) =>
     `data:image/png;base64,${fs.readFileSync(outputPath(outDir, name)).toString('base64')}`;
   const page = await browser.newPage();
@@ -175,12 +261,12 @@ async function composeSideBySide({ browser, viewport, sketchName, appName, outDi
         <div style="display:flex;gap:24px;align-items:flex-start;padding:16px;width:max-content">
           <figure style="margin:0"><figcaption style="margin-bottom:8px">sketch 002-C</figcaption>
             <img src="${dataUrl(sketchName)}" /></figure>
-          <figure style="margin:0"><figcaption style="margin-bottom:8px">implementation · sparg0 · ${viewport.width}</figcaption>
+          <figure style="margin:0"><figcaption style="margin-bottom:8px">implementation · ${dataset.name} · ${viewport.width}</figcaption>
             <img src="${dataUrl(appName)}" /></figure>
         </div></body></html>`,
       { waitUntil: 'load' },
     );
-    const name = `side-by-side-sparg0-${viewport.width}.png`;
+    const name = `side-by-side-${dataset.name}-${viewport.width}.png`;
     await page.screenshot({ path: outputPath(outDir, name), fullPage: true });
     written.push(name);
   } finally {
@@ -215,17 +301,42 @@ async function main() {
   const written = [];
   let exitCode = 0;
   try {
-    for (const viewport of VIEWPORTS) {
-      const appName = await captureApp({ browser, baseUrl, viewport, outDir, written });
-      const sketchName = await captureSketch({
-        browser,
-        sketchUrl: pathToFileURL(sketchPath).href,
-        viewport,
-        outDir,
-        written,
-      });
-      await composeSideBySide({ browser, viewport, sketchName, appName, outDir, written });
-      console.log(`CAPTURED viewport=${viewport.name}`);
+    for (const dataset of DATASETS) {
+      for (const viewport of VIEWPORTS) {
+        const probe =
+          dataset.name === 'sparg0' && viewport.width === 1440
+            ? probeHover
+            : dataset.name === 'sparg0' && viewport.width === 390
+              ? probeKeyboard
+              : undefined;
+        const appName = await captureApp({
+          browser,
+          baseUrl,
+          dataset,
+          viewport,
+          outDir,
+          written,
+          probe,
+        });
+        const sketchName = await captureSketch({
+          browser,
+          sketchUrl: pathToFileURL(sketchPath).href,
+          dataset,
+          viewport,
+          outDir,
+          written,
+        });
+        await composeSideBySide({
+          browser,
+          dataset,
+          viewport,
+          sketchName,
+          appName,
+          outDir,
+          written,
+        });
+        console.log(`CAPTURED dataset=${dataset.name} viewport=${viewport.name}`);
+      }
     }
     const files = written.map((name) => ({
       name,
