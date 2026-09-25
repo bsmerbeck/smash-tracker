@@ -112,13 +112,24 @@ export function DeltaChip({
       aria-label={ariaLabel}
       style={backgroundStyle}
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums whitespace-nowrap',
+        // Plan 39.1-36: `flex-wrap` + `min-h-5` (not a fixed `h-5`) — one
+        // 20px line wherever it fits (every desktop cell); in a cell narrower
+        // than the chip the horizon label wraps under the value INSIDE the
+        // chip instead of spilling into the next column.
+        'inline-flex min-h-5 flex-wrap items-center gap-x-1 rounded-full px-2 text-xs font-medium tabular-nums',
         !isTinted && 'bg-muted/40',
       )}
     >
       <Glyph state={state} color={color} />
-      <span className="text-foreground">{valueLabel}</span>
-      {horizonLabel && <span className="text-muted-foreground">{`· ${horizonLabel}`}</span>}
+      {/* UI-SPEC §7.5 / sketch 001-C `.chip--steady`: quiet states read muted. */}
+      <span
+        className={cn('whitespace-nowrap', isTinted ? 'text-foreground' : 'text-muted-foreground')}
+      >
+        {valueLabel}
+      </span>
+      {horizonLabel && (
+        <span className="whitespace-nowrap text-muted-foreground">{`· ${horizonLabel}`}</span>
+      )}
     </span>
   );
 }

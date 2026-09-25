@@ -202,7 +202,10 @@ export function ShareBar({
                     className="inline-block size-2 shrink-0 rounded-sm"
                     style={{ backgroundColor: FIXED_FILLS[index] }}
                   />
-                  <span className="min-w-0 flex-1 truncate">{segment.label}</span>
+                  {/* Plan 39.1-36 (sketch 001-C `.share-row .lbl{flex:1 1 120px}`): the
+                      label keeps a 120px basis; on a narrow card the row wraps and
+                      the chip drops to its own line instead of squeezing the label. */}
+                  <span className="min-w-0 flex-1 basis-[120px] truncate">{segment.label}</span>
                   <span className="shrink-0">{shareSuffix(shares[index]!)}</span>
                   {segment.record}
                   {segment.delta}
@@ -213,13 +216,15 @@ export function ShareBar({
                   {onSelectSegment ? (
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 text-left"
+                      className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 text-left"
                       onClick={() => onSelectSegment(segment)}
                     >
                       {rowContent}
                     </button>
                   ) : (
-                    <div className="flex items-center gap-2">{rowContent}</div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {rowContent}
+                    </div>
                   )}
                 </li>
               );
