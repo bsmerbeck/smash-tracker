@@ -44,6 +44,9 @@ import {
   evaluateCardHeightCeilings,
   evaluateFormStripFit,
 } from './guardLayoutCore.mjs';
+// Plan 39.1-37: read the new exports through the namespace so a RED run fails
+// on an assertion instead of a module-link error.
+import * as guardLayoutCoreNs from './guardLayoutCore.mjs';
 import {
   CAREER_TIMELINE_ALIGN_TOLERANCE_PX,
   CAREER_TIMELINE_LINE_RESIDUAL_TOLERANCE_PX,
@@ -407,6 +410,81 @@ test('axis-ticks: a surface with a reference label and no value labels has no re
 test('axis-ticks: a surface collected without a referenceLabels array (older collector) is not a crash', () => {
   const violations = evaluateAxisTicks([makeSurface()]);
   assert.equal(violations.filter((v) => v.type === 'reference-label-collision').length, 0);
+});
+
+// Plan 39.1-37 (item 5, human-event-axis): raw engine keys on an axis, and value labels
+// overprinting one another.
+
+test('axis-ticks: an x tick "session::1700000000000" is one raw-axis-key violation', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      xTicks: [{ left: 50, right: 140, top: 280, bottom: 296, text: 'session::1700000000000' }],
+    }),
+  ]);
+  const hits = violations.filter((v) => v.type === 'raw-axis-key');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].tick, 'session::1700000000000');
+});
+
+test('axis-ticks: an ISO timestamp tick "2023-11-15T19:30:20.000Z" is raw-axis-key', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      xTicks: [{ left: 50, right: 190, top: 280, bottom: 296, text: '2023-11-15T19:30:20.000Z' }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'raw-axis-key').length, 1);
+});
+
+test('axis-ticks: a y tick carrying a raw key is raw-axis-key too', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      yTicks: [{ left: 0, right: 40, top: 10, bottom: 26, text: 'tournament::1' }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'raw-axis-key').length, 1);
+});
+
+test('axis-ticks: a human tick "Nov 15, 2023" is not raw-axis-key', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      xTicks: [{ left: 50, right: 134, top: 280, bottom: 296, text: 'Nov 15, 2023' }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'raw-axis-key').length, 0);
+});
+
+test('axis-ticks: RAW_AXIS_KEY_PATTERN is exported and matches "::" and ISO timestamps only', () => {
+  const pattern = guardLayoutCoreNs.RAW_AXIS_KEY_PATTERN;
+  assert.ok(pattern instanceof RegExp, 'RAW_AXIS_KEY_PATTERN is an exported RegExp');
+  assert.equal(pattern.test('session::1700000000000'), true);
+  assert.equal(pattern.test('2023-11-15T19:30:20.000Z'), true);
+  assert.equal(pattern.test('Nov 15, 2023'), false);
+  assert.equal(pattern.test('Genesis Ten …'), false);
+});
+
+test('axis-ticks: two intersecting value labels are one value-label-overlap', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      valueLabels: [
+        { left: 100, right: 121, top: 40, bottom: 56, text: '9–7' },
+        { left: 112, right: 133, top: 44, bottom: 60, text: '8–5' },
+      ],
+    }),
+  ]);
+  const hits = violations.filter((v) => v.type === 'value-label-overlap');
+  assert.equal(hits.length, 1);
+});
+
+test('axis-ticks: disjoint value labels have no value-label-overlap', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      valueLabels: [
+        { left: 100, right: 121, top: 40, bottom: 56, text: '9–7' },
+        { left: 125, right: 146, top: 40, bottom: 56, text: '8–5' },
+      ],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'value-label-overlap').length, 0);
 });
 
 test('axis-unmeasured: a route whose surfaces carry zero x ticks fails non-vacuously', () => {

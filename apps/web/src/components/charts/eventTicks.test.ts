@@ -71,3 +71,57 @@ describe('formatEventTickLabel', () => {
     expect(result.length).toBe(MAX_EVENT_TICK_LABEL_LENGTH + 1);
   });
 });
+
+/**
+ * Plan 39.1-37 (VIZ-03, design-audit item 5; human-event-axis): at most
+ * MAX_EVENT_POINT_LABELS (8) per-anchor W-L labels, first and last always.
+ * Read through the module namespace so the RED run fails on an assertion.
+ */
+async function loadLabelKeys(): Promise<{
+  select: (keys: readonly string[], width: number) => string[];
+  max: unknown;
+}> {
+  const mod = (await import('./eventTicks')) as Record<string, unknown>;
+  expect(typeof mod.selectEventLabelKeys, 'selectEventLabelKeys is exported').toBe('function');
+  return {
+    select: mod.selectEventLabelKeys as (keys: readonly string[], width: number) => string[],
+    max: mod.MAX_EVENT_POINT_LABELS,
+  };
+}
+
+describe('selectEventLabelKeys (plan 39.1-37)', () => {
+  it('MAX_EVENT_POINT_LABELS is 8', async () => {
+    const { max } = await loadLabelKeys();
+    expect(max).toBe(8);
+  });
+
+  it('23 anchors at 1,390px -> at most 8 keys, first and last kept, a subsequence of selectEventTicks', async () => {
+    const { select } = await loadLabelKeys();
+    const input = keys(23);
+    const result = select(input, 1390);
+    expect(result.length).toBeLessThanOrEqual(8);
+    expect(result[0]).toBe(input[0]);
+    expect(result[result.length - 1]).toBe(input[22]);
+    const ticks = selectEventTicks(input, 1390);
+    let cursor = 0;
+    for (const key of result) {
+      const at = ticks.indexOf(key, cursor);
+      expect(at, key).toBeGreaterThanOrEqual(0);
+      cursor = at + 1;
+    }
+  });
+
+  it('5 anchors -> all 5', async () => {
+    const { select } = await loadLabelKeys();
+    expect(select(keys(5), 1390)).toEqual(keys(5));
+  });
+
+  it('at 326px -> at most what selectEventTicks allows there, capped at 8', async () => {
+    const { select } = await loadLabelKeys();
+    const input = keys(23);
+    const result = select(input, 326);
+    expect(result.length).toBeLessThanOrEqual(Math.min(8, selectEventTicks(input, 326).length));
+    expect(result[0]).toBe(input[0]);
+    expect(result[result.length - 1]).toBe(input[22]);
+  });
+});

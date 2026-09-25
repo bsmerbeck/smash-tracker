@@ -484,3 +484,77 @@ describe('layoutPeriodTicks / selectPeriodTickLayout (CR-01: one anchor rule)', 
     expect(selectPeriodTicks(month, { plotWidthPx: 60, locale: 'en' })).toEqual([month[0]!.key]);
   });
 });
+
+/**
+ * Plan 39.1-37 (VIZ-03, design-audit item 5; human-event-axis): the event
+ * trend's axis names an anchor — never its engine key. Read through the
+ * module namespace so the RED run fails on an assertion, not on a missing
+ * named import.
+ */
+type EventAnchorTickPoint = { eventKey: string; eventLabel: string; dateMs: number };
+type EventAnchorTickFormatter = (point: EventAnchorTickPoint, locale: string) => string;
+
+async function loadEventAnchorFormatter(): Promise<EventAnchorTickFormatter> {
+  const mod = (await import('./periodTicks')) as Record<string, unknown>;
+  expect(typeof mod.formatEventAnchorTickLabel, 'formatEventAnchorTickLabel is exported').toBe(
+    'function',
+  );
+  return mod.formatEventAnchorTickLabel as EventAnchorTickFormatter;
+}
+
+describe('formatEventAnchorTickLabel (plan 39.1-37, human-event-axis)', () => {
+  const sessionMs = Date.UTC(2023, 10, 15, 19, 30, 20);
+
+  it('a session anchor reads as the locale short date (en, TZ=UTC: "Nov 15, 2023")', async () => {
+    const format = await loadEventAnchorFormatter();
+    expect(
+      format(
+        {
+          eventKey: `session::${sessionMs}`,
+          eventLabel: new Date(sessionMs).toISOString(),
+          dateMs: sessionMs,
+        },
+        'en',
+      ),
+    ).toBe('Nov 15, 2023');
+  });
+
+  it('a tournament anchor reads as its name through the 12-character truncation', async () => {
+    const format = await loadEventAnchorFormatter();
+    expect(
+      format(
+        {
+          eventKey: `tournament:genesis ten major bracket:${sessionMs}`,
+          eventLabel: 'Genesis Ten Major Bracket',
+          dateMs: sessionMs,
+        },
+        'en',
+      ),
+    ).toBe('Genesis Ten …');
+  });
+
+  it('a tournament anchor with an empty name falls back to the date', async () => {
+    const format = await loadEventAnchorFormatter();
+    expect(
+      format({ eventKey: `tournament::${sessionMs}`, eventLabel: '  ', dateMs: sessionMs }, 'en'),
+    ).toBe('Nov 15, 2023');
+  });
+
+  it('never returns the key, "::" or an ISO timestamp', async () => {
+    const format = await loadEventAnchorFormatter();
+    const mod = (await import('./periodTicks')) as Record<string, unknown>;
+    expect(mod.SESSION_ANCHOR_KEY_PREFIX).toBe('session::');
+    for (const point of [
+      {
+        eventKey: `session::${sessionMs}`,
+        eventLabel: new Date(sessionMs).toISOString(),
+        dateMs: sessionMs,
+      },
+      { eventKey: `tournament:x:${sessionMs}`, eventLabel: 'X', dateMs: sessionMs },
+    ]) {
+      const label = format(point, 'en');
+      expect(label).not.toBe(point.eventKey);
+      expect(label).not.toMatch(/::|\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+});

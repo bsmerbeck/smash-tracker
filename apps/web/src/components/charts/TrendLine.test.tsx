@@ -7,8 +7,12 @@ import {
   type TrendLinePeriodLabels,
 } from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
-import { formatEventTickLabel, selectEventTicks } from './eventTicks';
-import { formatPeriodRowLabel, selectPeriodTickLayout } from './periodTicks';
+import { formatEventTickLabel } from './eventTicks';
+import {
+  estimateTickLabelWidthPx,
+  formatPeriodRowLabel,
+  selectPeriodTickLayout,
+} from './periodTicks';
 import type { PeriodPoint } from '@smash-tracker/shared';
 import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import fs from 'node:fs';
@@ -115,6 +119,41 @@ describe('TrendLine', () => {
   });
 });
 
+/**
+ * Plan 39.1-37 (human-event-axis): the new periodTicks exports are read
+ * through the module namespace so the RED run fails on an assertion.
+ */
+type EventAnchorTickPoint = { eventKey: string; eventLabel: string; dateMs: number };
+
+async function loadEventAnchorFormatter(): Promise<
+  (point: EventAnchorTickPoint, locale: string) => string
+> {
+  const mod = (await import('./periodTicks')) as Record<string, unknown>;
+  expect(typeof mod.formatEventAnchorTickLabel, 'formatEventAnchorTickLabel is exported').toBe(
+    'function',
+  );
+  return mod.formatEventAnchorTickLabel as (point: EventAnchorTickPoint, locale: string) => string;
+}
+
+async function loadEventAnchorLayout(): Promise<
+  (
+    points: EventAnchorTickPoint[],
+    opts: { plotWidthPx: number; locale: string },
+  ) => { key: string; label: string }[]
+> {
+  const mod = (await import('./periodTicks')) as Record<string, unknown>;
+  expect(typeof mod.selectEventAnchorTickLayout, 'selectEventAnchorTickLayout is exported').toBe(
+    'function',
+  );
+  return mod.selectEventAnchorTickLayout as (
+    points: EventAnchorTickPoint[],
+    opts: { plotWidthPx: number; locale: string },
+  ) => { key: string; label: string }[];
+}
+
+/** A 640px event chart's category band: 640 - 2 x 5 margin - 60 y-axis - 2 x 16 edge padding. */
+const EVENT_PLOT_WIDTH_AT_640 = 640 - 10 - 60 - 32;
+
 describe('TrendLine — event mode', () => {
   it('renders exactly one path and one dot per point for three anchors at an explicit size', () => {
     const points = [
@@ -140,17 +179,36 @@ describe('TrendLine — event mode', () => {
     expect(container.querySelectorAll('path').length).toBe(0);
   });
 
-  it('SPARSE (four anchors or fewer): every anchor label — mapped through the exported formatter — appears among the rendered tick texts, and each point shows its own W-L', () => {
+  it('SPARSE (four anchors or fewer): every anchor HUMAN label (formatEventAnchorTickLabel — plan 39.1-37, never the engine key) appears among the rendered tick texts, and each point shows its own W-L', async () => {
+    // Plan 39.1-37 rewrite: this case used to expect `formatEventTickLabel(key)`
+    // — the truncated ENGINE KEY — as the tick text (design-audit item 5's
+    // "session::170…" axis). The contract is now the anchor's human label.
+    const format = await loadEventAnchorFormatter();
     const keys = eventKeysFor(4);
     const points = keys.map((eventKey, i) =>
-      makeEventPoint({ eventKey, wins: i, losses: 1, context: { ...makeEventPoint().context } }),
+      makeEventPoint({
+        eventKey,
+        wins: i,
+        losses: 1,
+        context: { ...makeEventPoint().context, eventLabel: `Weekly ${i}` },
+      }),
     );
     const { container } = render(
       <TrendLine mode="event" points={points} width={640} height={288} />,
     );
     const tickTexts = renderedTickTexts(container);
-    for (const key of keys) {
-      expect(tickTexts).toContain(formatEventTickLabel(key));
+    for (const point of points) {
+      expect(tickTexts).toContain(
+        format(
+          {
+            eventKey: point.eventKey,
+            eventLabel: point.context.eventLabel,
+            dateMs: point.context.dateMs,
+          },
+          'en',
+        ),
+      );
+      expect(tickTexts).not.toContain(formatEventTickLabel(point.eventKey));
     }
     expect(container.querySelectorAll('circle')).toHaveLength(4);
     // The on-chart per-point label is a bare wins-en-dash-losses pair (D-11/ADV-02 spirit,
@@ -159,18 +217,35 @@ describe('TrendLine — event mode', () => {
     expect(container.textContent).toContain('3–1');
   });
 
-  it('DENSE (thirty anchors): the rendered tick labels equal the eventTicks helper output for the same keys and width, mapped through the exported formatter — strictly fewer than thirty — while thirty dots still render', () => {
+  it('DENSE (thirty anchors): the rendered tick labels equal the event-anchor tick layout for the same points and plot width — strictly fewer than thirty — while thirty dots still render', async () => {
+    // Plan 39.1-37 rewrite: this case used to expect `selectEventTicks(keys,
+    // 640)` mapped through `formatEventTickLabel` (the engine key). The tick
+    // set is now the width-aware layout over the anchors' human labels.
+    const layoutFor = await loadEventAnchorLayout();
     const keys = eventKeysFor(30);
-    const points = keys.map((eventKey) => makeEventPoint({ eventKey }));
+    const points = keys.map((eventKey, i) =>
+      makeEventPoint({
+        eventKey,
+        context: { ...makeEventPoint().context, eventLabel: `W${i}`, dateMs: 1700000000000 + i },
+      }),
+    );
     const { container } = render(
       <TrendLine mode="event" points={points} width={640} height={288} />,
     );
-    const expectedKeys = selectEventTicks(keys, 640);
-    const expectedLabels = expectedKeys.map((key) => formatEventTickLabel(key));
+    const expectedLabels = layoutFor(
+      points.map((point) => ({
+        eventKey: point.eventKey,
+        eventLabel: point.context.eventLabel,
+        dateMs: point.context.dateMs,
+      })),
+      { plotWidthPx: EVENT_PLOT_WIDTH_AT_640, locale: 'en' },
+    ).map((tick) => tick.label);
     const tickTexts = renderedTickTexts(container);
 
-    expect(expectedKeys.length).toBeLessThan(keys.length);
+    expect(expectedLabels.length).toBeLessThan(keys.length);
     expect(tickTexts).toEqual(expectedLabels);
+    expect(tickTexts[0]).toBe('W0');
+    expect(tickTexts[tickTexts.length - 1]).toBe('W29');
     expect(container.querySelectorAll('circle')).toHaveLength(30);
   });
 
@@ -845,5 +920,83 @@ describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitt
     const label = container.querySelector('text.recharts-label')!;
     expect(Number(label.getAttribute('y'))).toBeGreaterThan(Number(line.getAttribute('y1')));
     expect(label.getAttribute('text-anchor')).toBe('end');
+  });
+});
+
+describe('TrendLine — event mode human axis, fitted domain, label cap (plan 39.1-37, human-event-axis)', () => {
+  /** 23 SESSION anchors (key `session::<ms>`, ISO engine label) whose cumulative rate lives between 45 and 60. */
+  function sessionAnchors(count = 23): TrendEventPoint[] {
+    return Array.from({ length: count }, (_, i) => {
+      const dateMs = Date.UTC(2023, 10, 1 + i * 3, 19, 30);
+      return makeEventPoint({
+        eventKey: `session::${dateMs}`,
+        cumulativeWinRate: 45 + ((i * 7) % 16),
+        wins: 9,
+        losses: 7,
+        context: { opponentTag: 'rival', eventLabel: new Date(dateMs).toISOString(), dateMs },
+      });
+    });
+  }
+
+  it('no rendered tick text is a raw engine key ("::") or an ISO timestamp', () => {
+    const { container } = render(
+      <TrendLine mode="event" points={sessionAnchors()} width={1390} height={288} />,
+    );
+    const tickTexts = renderedTickTexts(container);
+    expect(tickTexts.length).toBeGreaterThan(1);
+    for (const text of tickTexts) {
+      expect(text).not.toMatch(/::/);
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it('fits the y-domain to the cumulative rates (45-60 renders ticks within 40-70, never 0 and 100)', () => {
+    const { container } = render(
+      <TrendLine mode="event" points={sessionAnchors()} width={1390} height={288} />,
+    );
+    const ticks = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text')).map(
+      (el) => Number(el.textContent),
+    );
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const tick of ticks) {
+      expect(tick).toBeGreaterThanOrEqual(40);
+      expect(tick).toBeLessThanOrEqual(70);
+    }
+  });
+
+  it('labels at most 8 anchors, every label carrying data-slot "trend-event-value-label"', () => {
+    const { container } = render(
+      <TrendLine mode="event" points={sessionAnchors()} width={1390} height={288} />,
+    );
+    const labels = container.querySelectorAll('[data-slot="trend-event-value-label"]');
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    expect(labels.length).toBeLessThanOrEqual(8);
+    const wlTexts = Array.from(container.querySelectorAll('text')).filter((el) =>
+      /^\d+–\d+$/.test(el.textContent ?? ''),
+    );
+    expect(wlTexts.length).toBe(labels.length);
+  });
+
+  it('at a phone width (326px) the tick labels never sit closer than 4px (modelled from the rendered x and anchor)', () => {
+    const { container } = render(
+      <TrendLine mode="event" points={sessionAnchors()} width={326} height={288} />,
+    );
+    const ticks = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'))
+      .map((el) => {
+        const x = Number(el.getAttribute('x'));
+        const w = estimateTickLabelWidthPx(el.textContent ?? '');
+        const anchor = el.getAttribute('text-anchor');
+        const left = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
+        return { left, right: left + w };
+      })
+      .sort((a, b) => a.left - b.left);
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < ticks.length; i += 1) {
+      expect(ticks[i]!.left - ticks[i - 1]!.right).toBeGreaterThanOrEqual(4);
+    }
+    for (const tick of ticks) {
+      expect(tick.left).toBeGreaterThanOrEqual(0);
+      expect(tick.right).toBeLessThanOrEqual(326);
+    }
   });
 });
