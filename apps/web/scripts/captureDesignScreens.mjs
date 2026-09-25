@@ -220,6 +220,13 @@ function collectMetrics(floorGames) {
       '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value, .recharts-xAxis .recharts-cartesian-axis-tick-value',
     ),
   ].map((tick) => (tick.textContent ?? '').trim());
+  // Plan 39.1-37: off-domain sub-floor dots drawn at the domain edge
+  // (owner decision 2026-09-25), counted per edge.
+  const pinnedDots = {
+    top: document.querySelectorAll('[data-slot="trend-period-dot"][data-pinned="top"]').length,
+    bottom: document.querySelectorAll('[data-slot="trend-period-dot"][data-pinned="bottom"]')
+      .length,
+  };
   const cards = [...document.querySelectorAll('[data-slot="card"]')].map((card) => {
     const rect = card.getBoundingClientRect();
     const title =
@@ -236,6 +243,7 @@ function collectMetrics(floorGames) {
     chips,
     steadyOnSubFloor,
     dotRadii,
+    pinnedDots,
     xTicks,
     cards,
   };
