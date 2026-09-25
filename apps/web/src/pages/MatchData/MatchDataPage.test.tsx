@@ -1273,4 +1273,45 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
       });
     });
   });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §8.4, §10.4).
+  describe('plan 39.1-38: the page frame', () => {
+    async function renderLoaded() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+      ]);
+      const result = renderMatchData();
+      await screen.findByText('Match History');
+      return result;
+    }
+
+    it('filter-row: the first child of the page shell is one unboxed page-filter-row with the page h1 and the HorizonSwitch; the table card keeps its own title', async () => {
+      const { container } = await renderLoaded();
+      const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+      const row = shell.firstElementChild as HTMLElement;
+      expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+      const h1 = screen.getByRole('heading', { level: 1, name: 'Match Data' });
+      expect(row.contains(h1)).toBe(true);
+      const horizonSwitch = container.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+      expect(row.contains(horizonSwitch)).toBe(true);
+      expect(h1.closest('[data-slot="card"]')).toBeNull();
+      expect(horizonSwitch.closest('[data-slot="card"]')).toBeNull();
+      // The table card's own CardTitle is unchanged.
+      expect(screen.getByText('Match History').closest('[data-slot="card"]')).not.toBeNull();
+    });
+
+    it('the stage headline StatRow (three short figures) keeps fixed columns', async () => {
+      const { container } = await renderLoaded();
+      const stageCard = screen
+        .getByText('Stage Breakdown')
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(stageCard).not.toBeNull();
+      const statRow = stageCard.querySelector('[data-slot="stat-row"]');
+      expect(statRow).not.toBeNull();
+      expect(statRow).toHaveAttribute('data-fixed-columns', '');
+      expect(container).toBeTruthy();
+    });
+  });
 });

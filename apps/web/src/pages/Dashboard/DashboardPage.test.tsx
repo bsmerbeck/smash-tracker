@@ -591,4 +591,42 @@ describe('DashboardPage', () => {
       });
     });
   });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §8.7, §10.4).
+  it("plan 39.1-38 filter-row: the toolbar is the page shell's first child, one unboxed page-filter-row holding the picker, Add Match and the HorizonSwitch, with no page h1", async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    const { container } = renderDashboard();
+    await screen.findAllByText('Overall Record');
+    const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+    const row = shell.firstElementChild as HTMLElement;
+    expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+    expect(row.querySelector('[data-slot="horizon-switch"]')).not.toBeNull();
+    expect(within(row).getByRole('button', { name: 'Add Match' })).toBeInTheDocument();
+    expect(row.querySelector('h1')).toBeNull();
+    expect(row.closest('[data-slot="card"]')).toBeNull();
+  });
+
+  it('plan 39.1-38: the Overall Record tracker (three short figures) keeps fixed columns', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    const base = {
+      fighter_id: 1,
+      opponent_id: 10,
+      map: { id: 1, name: 'Battlefield' },
+      opponent: 'rival',
+      notes: '',
+      matchType: 'none',
+    };
+    listMatches.mockResolvedValue([
+      { ...base, id: 'm1', time: Date.now() - 1000, win: true },
+      { ...base, id: 'm2', time: Date.now() - 2000, win: false },
+    ]);
+    renderDashboard();
+    const titles = await screen.findAllByText('Overall Record');
+    const rows = titles
+      .map((el) => el.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]'))
+      .filter((el): el is Element => Boolean(el));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const statRow of rows) expect(statRow).toHaveAttribute('data-fixed-columns', '');
+  });
 });

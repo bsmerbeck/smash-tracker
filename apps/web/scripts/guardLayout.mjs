@@ -82,7 +82,15 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: ['axis-ticks'],
     viewports: ['1440x900'],
   },
-  { id: 'dashboard', loadedMarker: '[data-slot="dashboard-body"]' },
+  {
+    id: 'dashboard',
+    loadedMarker: '[data-slot="dashboard-body"]',
+    // Plan 39.1-38: the toolbar is the one unboxed filter row (no page h1 —
+    // the Dashboard has none); phone StatRows collapse to two columns.
+    checks: ['filter-row'],
+    filterRow: { maxHeightPx: 72, owns: ['[data-slot="horizon-switch"]'] },
+    narrowChecks: ['stat-row-columns'],
+  },
   {
     id: 'fighter-analysis',
     loadedMarker: '[data-slot="fighter-hero-body"]',
@@ -148,13 +156,25 @@ export const LAYOUT_ORACLE_ROUTES = [
       },
     ],
   },
-  { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
+  {
+    id: 'match-data',
+    loadedMarker: '[data-slot="match-data-rail"]',
+    // Plan 39.1-38: one unboxed filter row owning the page h1 and the switch;
+    // phone StatRows collapse to two columns.
+    checks: ['filter-row'],
+    filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
+    narrowChecks: ['stat-row-columns'],
+  },
   {
     id: 'trends',
     loadedMarker: '[data-slot="trends-hero-body"]',
     // Plan 39.1-34: the career-timeline family on the realistic (one-month,
     // thin) account — alignment, mark bounds and the no-canvas rule.
-    checks: ['career-timeline'],
+    // Plan 39.1-38: one unboxed filter row owning the h1 and the switch;
+    // phone StatRows collapse to two columns (the KPI lead spans, 002-C).
+    checks: ['career-timeline', 'filter-row'],
+    filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
+    narrowChecks: ['stat-row-columns'],
   },
   {
     // Plan 39.1-34: the ONE sparg0-shaped dataset (8,400 games over ~7.7
@@ -187,7 +207,11 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-37: axis-ticks on the H2H event trend (raw-axis-key,
     // value-label-overlap and the existing tick families) and plot-aspect
     // (UI-SPEC §6.1, the 8 + 4 trend row).
-    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect'],
+    // Plan 39.1-38: the hub's filter bar is one unboxed filter row — no
+    // height limit and no owners (its h1 lives in the unchanged header row
+    // above; the hub has no HorizonSwitch, audit 7.5's second half).
+    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect', 'filter-row'],
+    filterRow: {},
   },
   {
     id: 'stage-detail',

@@ -660,4 +660,22 @@ describe('TrendsPage', () => {
       });
     });
   });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §10.4, sketch 002-C `.filters`).
+  it('plan 39.1-38 filter-row: the first child of the page shell is one unboxed page-filter-row with the h1 "Trends" and the HorizonSwitch; no card contains either', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+    ]);
+    const { container } = renderTrends();
+    await screen.findByText('Career timeline');
+    const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+    const row = shell.firstElementChild as HTMLElement;
+    expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Trends' });
+    expect(row.contains(h1)).toBe(true);
+    const horizonSwitch = container.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+    expect(row.contains(horizonSwitch)).toBe(true);
+    expect(h1.closest('[data-slot="card"]')).toBeNull();
+    expect(horizonSwitch.closest('[data-slot="card"]')).toBeNull();
+  });
 });

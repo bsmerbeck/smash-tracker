@@ -191,4 +191,13 @@ describe('TrendsHero', () => {
     expect(cardRoot?.className).not.toMatch(/\bh-full\b/);
     expect(cardRoot?.className).not.toMatch(/\bflex-1\b/);
   });
+
+  // Plan 39.1-38: sketch 002-C `.statrow.kpi .lead{grid-column:1/-1}` — the ONE
+  // StatRow whose lead spans both phone columns.
+  it('plan 39.1-38: the KPI StatRow opts into the phone lead span (data-lead-span)', () => {
+    const { container } = render(<TrendsHero matches={[]} horizon="last30" />);
+    const statRow = container.querySelector('[data-slot="stat-row"]');
+    expect(statRow).not.toBeNull();
+    expect(statRow).toHaveAttribute('data-lead-span', '');
+  });
 });

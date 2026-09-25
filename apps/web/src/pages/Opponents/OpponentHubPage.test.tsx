@@ -1043,4 +1043,26 @@ describe('OpponentHubPage', () => {
       expect(four!.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
     });
   });
+
+  // Plan 39.1-38 (design-audit item 6 / P5, row 7.5; UI-SPEC §10.4).
+  it('plan 39.1-38 filter-row: the hub filter bar is one unboxed page-filter-row (no border, no padding box, no card) keeping every control and aria-label; the h1 header row above it is unchanged', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: false }),
+    ]);
+    const { container } = renderHub('/opponents/rival');
+    await findRecordText('1-1');
+    const rows = container.querySelectorAll('[data-slot="page-filter-row"]');
+    expect(rows).toHaveLength(1);
+    const row = rows[0] as HTMLElement;
+    expect(row.closest('[data-slot="card"]')).toBeNull();
+    expect(row.className).not.toMatch(/(^|\s)(border|rounded-lg|p-4)(\s|$)/);
+    for (const name of ['My character', 'Their character', 'Stage']) {
+      expect(within(row).getByRole('combobox', { name })).toBeInTheDocument();
+    }
+    expect(within(row).getAllByRole('radio').length).toBeGreaterThanOrEqual(6);
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(row.contains(h1)).toBe(false);
+    expect(h1).toHaveTextContent('rival');
+  });
 });
