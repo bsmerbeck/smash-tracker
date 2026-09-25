@@ -271,6 +271,13 @@ describe('CareerTimeline (plan 39.1-34) — the shared-time-axis kit chart', () 
     expect(texts.some((text) => text.includes('close'))).toBe(false);
   });
 
+  it("does not clip text drawn in the chart's margins (sketch 002-C: the plot svg overflows visibly)", () => {
+    const { container } = renderTimeline(400);
+    const root = container.querySelector('[data-slot="career-timeline"]')!;
+    expect(root.className).toContain('[&_.recharts-surface]:overflow-visible');
+    expect(container.querySelector('svg.recharts-surface')).not.toBeNull();
+  });
+
   it('every SVG text uses the kit axis font size', () => {
     const { container } = renderTimeline(1000);
     const texts = container.querySelectorAll('svg text');

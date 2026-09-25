@@ -32,9 +32,13 @@ const FINER_GRAIN: Record<Exclude<CareerRatingGrain, 'session'>, CareerRatingGra
   year: 'quarter',
 };
 
-/** A caption item after the first carries a CSS middot separator — never JSX text between two t() calls. */
+/**
+ * Every caption item but the last ends with a CSS middot separator — never JSX
+ * text between two t() calls. Trailing (not leading), so a wrapped line never
+ * starts with a separator.
+ */
 const CAPTION_ITEM_CLASSES =
-  "[&:not(:first-child)]:before:mx-1.5 [&:not(:first-child)]:before:content-['·']";
+  "[&:not(:last-child)]:after:mx-1.5 [&:not(:last-child)]:after:content-['·']";
 
 /**
  * Trends Row 2 (plan 39.1-34, owner decision 2026-09-25 — supersedes D-02
@@ -74,7 +78,7 @@ export function CareerTimelineCard({ matches, horizon, chartWidth }: CareerTimel
       lowClose: (value: number) => t('analytics.timeline.label.lowClose', { rating: value }),
       peak: (value: number) => t('analytics.timeline.label.peak', { rating: value }),
       low: (value: number) => t('analytics.timeline.label.low', { rating: value }),
-      band: t(`insights.horizon.short.${horizon}`),
+      band: t(`insights.horizon.${horizon}`),
     }),
     [t, rating.points.length, current, timeline.gamesNeeded, horizon],
   );

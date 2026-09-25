@@ -75,6 +75,24 @@ describe('CareerTimelineCard (plan 39.1-34)', () => {
     ]);
   });
 
+  it("labels the recent-window band with the active horizon's full name", () => {
+    const { container } = renderCard(PRO_MATCHES);
+    const band = container.querySelector('[data-slot="career-timeline-recent-band"]');
+    expect(band?.textContent).toBe('Last 30 games');
+  });
+
+  it('separates caption items with a trailing middot, so a wrapped line never starts with one', () => {
+    const { container } = renderCard(PRO_MATCHES);
+    const items = Array.from(
+      container.querySelectorAll('[data-slot="career-timeline-caption-item"]'),
+    );
+    expect(items.length).toBeGreaterThan(1);
+    for (const item of items) {
+      expect(item.className).not.toMatch(/before:/);
+      expect(item.className).toContain("[&:not(:last-child)]:after:content-['·']");
+    }
+  });
+
   it('is plural-correct at count 1 and drops the strip legend on a thin timeline', () => {
     const oneSession = generateSyntheticMatches({
       seed: 39_134_003,

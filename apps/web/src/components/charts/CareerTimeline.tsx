@@ -102,6 +102,13 @@ const RD_BAND_OPACITY = 0.1;
 const X_LABEL_BOTTOM_PX = 8;
 /** Strip row labels' baseline inside their 15px row. */
 const ROW_LABEL_BASELINE_PX = 12;
+/**
+ * Sketch 002-C's `.plot svg{overflow:visible}`: the row labels, y tick labels
+ * and the last close's value are drawn in the chart's own margins and may run
+ * a few px past the surface edge (into the card padding) — an HTML-embedded
+ * SVG clips by default, which cut "games" to "ames".
+ */
+const SURFACE_OVERFLOW_CLASSES = '[&_.recharts-surface]:overflow-visible';
 
 interface TimelineRow {
   key: string;
@@ -632,6 +639,7 @@ export function CareerTimeline({ timeline, labels, width }: CareerTimelineProps)
       data-state={timeline.state}
       role="img"
       aria-label={labels.aria}
+      className={SURFACE_OVERFLOW_CLASSES}
     >
       {typeof width === 'number' ? (
         chart
