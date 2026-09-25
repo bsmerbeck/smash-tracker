@@ -935,6 +935,8 @@ function PeriodTrendChart({
                   position: referenceLabelPosition,
                   fill: CHART_TOKENS.axisText,
                   fontSize: CHART_AXIS_FONT_SIZE,
+                  // Sketch 001-C draws the label on the card surface.
+                  ...VALUE_LABEL_HALO,
                   // Recharts replaces its own `recharts-label` class with a custom one — keep both.
                   className: 'recharts-label trend-period-reference-label',
                 }
