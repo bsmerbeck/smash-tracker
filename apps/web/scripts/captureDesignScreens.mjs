@@ -212,8 +212,13 @@ function collectMetrics(floorGames) {
         .map(Number)
         .sort((a, b) => a - b)
     : [];
+  // Plan 39.1-37 [Rule 1]: Recharts 3 portals tick TEXT into a sibling
+  // `.recharts-xAxis-tick-labels` layer (not inside `.recharts-xAxis`), so the
+  // old descendant selector matched nothing and every capture recorded [].
   const xTicks = [
-    ...document.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value'),
+    ...document.querySelectorAll(
+      '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value, .recharts-xAxis .recharts-cartesian-axis-tick-value',
+    ),
   ].map((tick) => (tick.textContent ?? '').trim());
   const cards = [...document.querySelectorAll('[data-slot="card"]')].map((card) => {
     const rect = card.getBoundingClientRect();
