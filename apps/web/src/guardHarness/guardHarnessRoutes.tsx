@@ -51,7 +51,8 @@ export interface GuardHarnessRouteEntry {
    * MainLayout-geometry wrapper (`GuardAppShell.tsx`) so its content is
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
-   * route except `matchups` and (plan 39.1-34) `trends-career`.
+   * route except `matchups`, (plan 39.1-34) `trends-career` and (plan 39.1-35)
+   * `trends-casual`.
    */
   shell?: 'app';
 }
@@ -141,6 +142,17 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     // (guardLayout sends `x-guard-layout-scale: career` for this id) and
     // measured inside the MainLayout-geometry shell at production widths.
     id: 'trends-career',
+    path: '/trends',
+    initialEntry: '/trends',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-35: the casual-account oracle route — the Trends page at the
+    // SAME path, fed the harness's 41-game `casual` fixture (guardLayout sends
+    // `x-guard-layout-scale: casual` for this id): the timeline's thin state.
+    id: 'trends-casual',
     path: '/trends',
     initialEntry: '/trends',
     element: <TrendsPage />,

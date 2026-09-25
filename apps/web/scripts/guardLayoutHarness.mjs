@@ -107,6 +107,36 @@ function buildCareerScale() {
   };
 }
 
+/**
+ * Plan 39.1-35: the casual account — 41 games in sessions of 2-6 spaced by a
+ * fixed 156h (6.5-day) gap from 2026-07-03T19:00:00Z, so only three calendar
+ * months hold games: the career timeline's THIN state (a per-session line and
+ * the per-game FormStrip in place of the month strips). Selected per page by
+ * the `trends-casual` route's `x-guard-layout-scale: casual` header.
+ */
+const CASUAL_SESSION_GAP_MS = 156 * 60 * 60 * 1000;
+
+function buildCasualScale() {
+  const matches = generateSyntheticMatches({
+    seed: 39_135_001,
+    count: 41,
+    startMs: Date.UTC(2026, 6, 3, 19),
+    sessionSizeRange: [2, 6],
+    sessionGapMs: CASUAL_SESSION_GAP_MS,
+    winRate: 0.56,
+    mainFighterIds: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  });
+  return {
+    matches,
+    fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
 /** `twoGameWorkspace()` — the SAME sparse fixture `sparseWorkspaces.ts` names for exactly this switchability. Its own rows already carry unique ids. */
 function buildSparseScale() {
   const matches = twoGameWorkspace();
@@ -131,6 +161,7 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     realistic: buildRealisticScale(),
     sparse: buildSparseScale(),
     career: buildCareerScale(),
+    casual: buildCasualScale(),
     ...extraScales,
   };
   const server = await createViteServer({

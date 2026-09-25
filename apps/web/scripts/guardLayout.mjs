@@ -140,6 +140,17 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: ['career-timeline'],
     timelineExpect: { strips: true, state: 'full' },
   },
+  {
+    // Plan 39.1-35: the casual account (41 games over three months,
+    // `guardLayoutHarness.mjs`'s `casual` scale) — the timeline's THIN state
+    // must render its per-session line AND the per-game FormStrip in place of
+    // the month strips, inside the MainLayout-geometry shell.
+    id: 'trends-casual',
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    scale: 'casual',
+    checks: ['career-timeline'],
+    timelineExpect: { state: 'thin', formStrip: true },
+  },
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
   {
     id: 'opponent-hub',
