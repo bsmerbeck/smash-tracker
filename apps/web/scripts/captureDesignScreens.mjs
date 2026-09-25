@@ -72,7 +72,13 @@ function fail(code, message) {
 }
 
 function parseArgs(argv) {
-  const args = { out: null, routes: DEFAULT_ROUTES, widths: DEFAULT_WIDTHS, scale: 'realistic', shell: true };
+  const args = {
+    out: null,
+    routes: DEFAULT_ROUTES,
+    widths: DEFAULT_WIDTHS,
+    scale: 'realistic',
+    shell: true,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -344,10 +350,7 @@ async function main() {
     exitCode = 1;
   } finally {
     clearTimeout(timer);
-    fs.writeFileSync(
-      path.join(scaleDir, 'metrics.json'),
-      `${JSON.stringify(records, null, 2)}\n`,
-    );
+    fs.writeFileSync(path.join(scaleDir, 'metrics.json'), `${JSON.stringify(records, null, 2)}\n`);
     await browser.close().catch(() => {});
     await server.close().catch(() => {});
   }
