@@ -61,20 +61,17 @@ const PRIVATE_CHIP_HELPER_PATTERN =
  * never recalled. Shrink-only: an entry that no longer declares a private
  * helper fails the anti-rot assertion below.
  *
- * - The five hosts plan 39.1-36 Task 2 converts to `deltaChipView`.
+ * Task 1 seeded seven entries (HeroStats, VsCharactersList, VsPlayersList,
+ * SettingComparison, TrendsHero + the two below); Task 2 converted the five
+ * hosts to `deltaChipView` and shrank the list to its terminal state:
  * - `MatchWinLossCard.tsx` and `PairingOpponents.tsx`: the Matchups record
  *   card and By-opponent rows, which plans 39.1-44/45 remove or rebuild on
  *   sketch 003-A and adopt `deltaChipView` there (coordinator instruction
  *   2026-09-25: this plan does not edit them).
  */
 const KNOWN_PRIVATE_CHIP_HELPERS: readonly string[] = [
-  'apps/web/src/pages/Dashboard/components/HeroStats.tsx',
-  'apps/web/src/pages/FighterAnalysis/components/VsCharactersList.tsx',
-  'apps/web/src/pages/FighterAnalysis/components/VsPlayersList.tsx',
   'apps/web/src/pages/Matchups/components/MatchWinLossCard.tsx',
   'apps/web/src/pages/Matchups/components/PairingOpponents.tsx',
-  'apps/web/src/pages/Trends/components/SettingComparison.tsx',
-  'apps/web/src/pages/Trends/components/TrendsHero.tsx',
 ];
 
 /**

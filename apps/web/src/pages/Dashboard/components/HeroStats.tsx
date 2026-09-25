@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { classify, confidenceTierFor, resolveWindow, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,41 +17,8 @@ import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
 import { GridCell } from '@/components/analytics/PageGrid';
 import { StatFigure } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
-
-/**
- * `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union,
- * duplicated per this codebase's small-helper-duplication convention (see
- * `FighterHero.tsx`/`PairingOpponents.tsx`'s own copies). WR-C01
- * (39.1-REVIEW.md): callers MUST branch on `state === 'locked'` themselves
- * before ever calling this function (mirroring `FighterHero.tsx`'s own
- * `winRateFigure`/`ratingFigure` pattern) — `locked` has no `DeltaChip`
- * representation of its own (it is a below-the-abstention-floor read, a
- * different honesty tier than `thin`/`thinRecent`, which have enough games
- * to count but not to assert a direction) and must never fall through to
- * this function's `'none'` default, which `deltaValueLabel` then silently
- * relabels "Thin".
- */
-function deltaChipStateFor(
-  state: Exclude<ReturnType<typeof classify>['state'], 'locked'>,
-  deltaPoints: number | null,
-): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
-}
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
 
 /**
  * Account-wide hero row: overall record, recent form, casual-vs-competitive
@@ -135,11 +101,17 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
     scoped: true,
     hasAction: false,
   });
-  // WR-C01: `locked` (below the abstention floor) is a different honesty
-  // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-  // omit the chip entirely rather than let it fall through to
-  // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-  const chipState = state === 'locked' ? null : deltaChipStateFor(state, deltaPoints);
+  // Plan 39.1-36 (INS-04, UI-SPEC §7.5): the one ladder-to-chip mapping. The
+  // "Overall Record" overline does not name the horizon, so the chip carries
+  // its own ("Steady · last 30", "no games · last 30").
+  const chipView = deltaChipView({
+    state,
+    deltaPoints,
+    recentGames: recentRate.total,
+    horizon,
+    horizonOwnedByParent: false,
+    t,
+  });
   const allTimeTier = confidenceTierFor(baseline.total);
 
   return (
@@ -162,11 +134,9 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
               />
             }
             delta={
-              chipState === null || chipState === 'collapsed' ? null : (
+              chipView === null ? null : (
                 <DeltaChip
-                  state={chipState}
-                  valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-                  horizonLabel={t(`insights.horizon.short.${horizon}`)}
+                  {...chipView}
                   ariaLabel={t('analytics.dumbbell.rowAria', {
                     label: t('dashboard.hero.overallRecord'),
                     recentRecord: `${recentRate.wins}–${recentRate.losses}`,

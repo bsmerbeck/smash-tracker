@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-import type { HorizonKey, InsightState, Match } from '@smash-tracker/shared';
+import type { HorizonKey, Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   ACCOUNT_SCOPE,
@@ -12,7 +11,8 @@ import {
 } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { Record } from '@/components/analytics/Record';
 import { getSessions } from '@/lib/stats';
 import { computeRatingHistory } from '@/lib/glicko';
@@ -27,25 +27,6 @@ import { BEST_MONTH_MIN_GAMES, buildTrendsHero, formatMonthLabel } from '../lib/
  * card rather than a bespoke second rating-delta rule.
  */
 const RATING_MOVE_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'ratingMove')!;
-
-/** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union (duplicated per this codebase's small-helper-duplication convention — see `FighterHero.tsx`, `PairingOpponents.tsx`). */
-function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
-}
 
 function formatFullDate(timeMs: number, locale: string): string {
   return new Date(timeMs).toLocaleDateString(locale, {
@@ -103,8 +84,49 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
     [matches, horizon, nowMs],
   );
 
+  // Plan 39.1-36 (audit 2.2, UI-SPEC §7.5): the "Win rate" overline does not
+  // name the horizon, so the chip carries its own ("Steady · last 30").
+  const winRateChipView = deltaChipView({
+    state: winRateState,
+    deltaPoints: winRateDelta,
+    recentGames: recentRate.total,
+    horizon,
+    horizonOwnedByParent: false,
+    t,
+  });
+  const winRateChip = winRateChipView ? (
+    <DeltaChip
+      {...winRateChipView}
+      ariaLabel={t('analytics.dumbbell.rowAria', {
+        label: t('trends.hero.winRate'),
+        recentRecord: `${recentRate.wins}–${recentRate.losses}`,
+        baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
+      })}
+    />
+  ) : null;
+
   let winRateFigure;
-  if (winRateState === 'locked') {
+  if (winRateState === 'locked' && baselineAllTime.total > 0) {
+    // Plan 39.1-36: a sub-floor window on an account that HAS games is a
+    // muted em dash plus the honest chip ("no games · last 90 days",
+    // "n 2 · no direction"), with the Record only when the window holds a
+    // game — never an unlock sentence posing as the figure.
+    winRateFigure = (
+      <StatFigure
+        key="winRate"
+        label={t('trends.hero.winRate')}
+        lead
+        state="none"
+        value={<span className="text-muted-foreground">{'—'}</span>}
+        support={
+          recentRate.total > 0 ? (
+            <Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />
+          ) : undefined
+        }
+        delta={winRateChip}
+      />
+    );
+  } else if (winRateState === 'locked') {
     const needed = Math.max(0, ABSTENTION_FLOOR_GAMES - recentRate.total);
     winRateFigure = (
       <StatFigure
@@ -130,7 +152,6 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
       />
     );
   } else {
-    const chipState = deltaChipStateFor(winRateState, winRateDelta);
     winRateFigure = (
       <StatFigure
         key="winRate"
@@ -139,20 +160,7 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
         value={`${Math.round(recentRate.rate * 100)}%`}
         state={winRateState === 'thin' ? 'thinRecent' : 'populated'}
         support={<Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />}
-        delta={
-          chipState === 'collapsed' ? null : (
-            <DeltaChip
-              state={chipState}
-              valueLabel={deltaValueLabel(chipState, winRateDelta, t)}
-              horizonOwnedByParent
-              ariaLabel={t('analytics.dumbbell.rowAria', {
-                label: t('trends.hero.winRate'),
-                recentRecord: `${recentRate.wins}–${recentRate.losses}`,
-                baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
-              })}
-            />
-          )
-        }
+        delta={winRateChip}
       />
     );
   }
@@ -168,14 +176,17 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
       />
     );
   } else {
-    const rmState = ratingMoveInsight?.state ?? 'locked';
-    const rmDelta = ratingMoveInsight?.deltaPoints ?? null;
-    // WR-C01: `locked` (below the abstention floor) is a different honesty
-    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-    // omit the chip entirely rather than let it fall through to
-    // `deltaChipStateFor`'s `'none'` default, which reads "Thin" (mirrors
-    // `winRateFigure`'s own `state === 'locked'` guard above).
-    const chipState = rmState === 'locked' ? null : deltaChipStateFor(rmState, rmDelta);
+    // The rating figure keeps its ratingMove-driven state (a rating delta is
+    // not a win-rate window); its sample size is the insight's own window.
+    // The "Rating" overline does not name the horizon, so the chip does.
+    const ratingChipView = deltaChipView({
+      state: ratingMoveInsight?.state ?? 'locked',
+      deltaPoints: ratingMoveInsight?.deltaPoints ?? null,
+      recentGames: ratingMoveInsight?.window.games ?? 0,
+      horizon,
+      horizonOwnedByParent: false,
+      t,
+    });
     ratingFigure = (
       <StatFigure
         key="rating"
@@ -183,11 +194,9 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
         value={`${hero.currentRating.rating}`}
         unitSuffix={`±${hero.currentRating.rd}`}
         delta={
-          chipState === null || chipState === 'collapsed' ? null : (
+          ratingChipView === null ? null : (
             <DeltaChip
-              state={chipState}
-              valueLabel={deltaValueLabel(chipState, rmDelta, t)}
-              horizonOwnedByParent
+              {...ratingChipView}
               ariaLabel={t('analytics.dumbbell.rowAria', {
                 label: t('trends.hero.rating'),
                 recentRecord: `${hero.currentRating.rating}`,

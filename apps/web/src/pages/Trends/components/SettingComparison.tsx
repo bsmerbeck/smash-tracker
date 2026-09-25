@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { HorizonKey, Insight, InsightState, Match } from '@smash-tracker/shared';
+import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import { classify, resolveWindow, toRateValue, wilsonInterval } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { InsightLine } from '@/components/analytics/InsightLine';
@@ -13,17 +14,6 @@ import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-
-/** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union (duplicated per this codebase's small-helper-duplication convention). */
-function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
 
 interface SettingPartition {
   online: Match[];
@@ -127,12 +117,16 @@ export function SettingComparison({ matches, horizon, settingGapInsight }: Setti
         />
       );
     }
-    // WR-C01: `locked` (below the abstention floor) is a different honesty
-    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-    // omit the chip entirely rather than let it fall through to
-    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-    const chipState =
-      gate.state === 'locked' ? null : deltaChipStateFor(gate.state, gate.deltaPoints);
+    // Plan 39.1-36 (audit 2.2, UI-SPEC §7.5): the "Online" / "Offline"
+    // overline does not name the horizon, so the chip carries its own.
+    const chipView = deltaChipView({
+      state: gate.state,
+      deltaPoints: gate.deltaPoints,
+      recentGames: recent.total,
+      horizon,
+      horizonOwnedByParent: false,
+      t,
+    });
     return (
       <StatFigure
         key={label}
@@ -140,18 +134,9 @@ export function SettingComparison({ matches, horizon, settingGapInsight }: Setti
         value={`${Math.round(baseline.rate * 100)}%`}
         support={<Record wins={baseline.wins} losses={baseline.losses} cue="none" />}
         delta={
-          chipState === null || chipState === 'collapsed' ? null : (
+          chipView === null ? null : (
             <DeltaChip
-              state={chipState}
-              valueLabel={t(
-                chipState === 'up'
-                  ? 'analytics.record.deltaUp'
-                  : chipState === 'down'
-                    ? 'analytics.record.deltaDown'
-                    : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
-                { points: Math.abs(gate.deltaPoints ?? 0) },
-              )}
-              horizonOwnedByParent
+              {...chipView}
               ariaLabel={t('analytics.dumbbell.rowAria', {
                 label,
                 recentRecord: `${recent.wins}–${recent.losses}`,
@@ -175,30 +160,25 @@ export function SettingComparison({ matches, horizon, settingGapInsight }: Setti
       return null;
     }
     const collapsed = gate.state === 'collapsed';
-    // WR-C01: `locked` (below the abstention floor) is a different honesty
-    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-    // omit the chip entirely rather than let it fall through to
-    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-    const chipState =
-      gate.state === 'locked' ? null : deltaChipStateFor(gate.state, gate.deltaPoints);
+    // Plan 39.1-36: the dumbbell legend says "recent" without naming the
+    // horizon, so a row chip carries its own label too.
+    const chipView = deltaChipView({
+      state: gate.state,
+      deltaPoints: gate.deltaPoints,
+      recentGames: recent.total,
+      horizon,
+      horizonOwnedByParent: false,
+      t,
+    });
     const interval = wilsonInterval(recent.wins, recent.total);
     return {
       key,
       label,
       recentRecordNode: <Record wins={recent.wins} losses={recent.losses} cue="none" />,
       deltaNode:
-        collapsed || chipState === null ? null : (
+        collapsed || chipView === null ? null : (
           <DeltaChip
-            state={chipState}
-            valueLabel={t(
-              chipState === 'up'
-                ? 'analytics.record.deltaUp'
-                : chipState === 'down'
-                  ? 'analytics.record.deltaDown'
-                  : `insights.chip.${chipState === 'none' ? 'thin' : chipState}`,
-              { points: Math.abs(gate.deltaPoints ?? 0) },
-            )}
-            horizonOwnedByParent
+            {...chipView}
             ariaLabel={t('analytics.dumbbell.rowAria', {
               label,
               recentRecord: `${recent.wins}–${recent.losses}`,
