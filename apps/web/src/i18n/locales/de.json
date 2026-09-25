@@ -3437,6 +3437,7 @@
         "range": "95%-Bereich aktuell"
       },
       "legendHollow": "hohl = unter 3 Matches",
+      "referenceLabel": "{{rate}} gesamt",
       "lockedPeriods": {
         "week_one": "{{count}} weitere Woche schaltet diesen Zeitraum frei",
         "week_other": "{{count}} weitere Wochen schalten diesen Zeitraum frei",

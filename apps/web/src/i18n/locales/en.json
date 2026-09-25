@@ -3437,6 +3437,7 @@
         "range": "95% range of recent"
       },
       "legendHollow": "hollow = under 3 games",
+      "referenceLabel": "{{rate}} all time",
       "lockedPeriods": {
         "week_one": "{{count}} more week unlocks this period",
         "week_other": "{{count}} more weeks unlock this period",

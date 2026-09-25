@@ -3437,6 +3437,7 @@
         "range": "plage à 95% du récent"
       },
       "legendHollow": "creux = moins de 3 matchs",
+      "referenceLabel": "{{rate}} historique",
       "lockedPeriods": {
         "week_one": "{{count}} semaine de plus débloque cette période",
         "week_other": "{{count}} semaines de plus débloquent cette période",

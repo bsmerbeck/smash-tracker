@@ -442,8 +442,19 @@ export function selectEventAnchorTickLayout(
     const point = byKey.get(key);
     return point ? formatEventAnchorTickLabel(point, locale) : undefined;
   };
+  // Two anchors on one day (two sessions) read as the same date: keep one
+  // tick per label — the most recent, so the final tick stays the last anchor.
+  const candidates: string[] = [];
+  for (const key of selectEventTicks(keys, plotWidthPx)) {
+    const previous = candidates[candidates.length - 1];
+    if (previous !== undefined && labelFor(previous) === labelFor(key)) {
+      if (candidates.length > 1) candidates[candidates.length - 1] = key;
+      continue;
+    }
+    candidates.push(key);
+  }
   return settleTickLayout(
-    selectEventTicks(keys, plotWidthPx),
+    candidates,
     (tickKeys) => layoutLabelledTicks(keys, labelFor, tickKeys, plotWidthPx),
     true,
   );

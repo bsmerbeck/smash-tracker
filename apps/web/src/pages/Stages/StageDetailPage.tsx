@@ -467,7 +467,10 @@ export function StageDetailPage() {
                             {row.wins}-{row.losses}
                           </TableCell>
                           <TableCell className="text-sm">
-                            <span className="flex items-center gap-2">
+                            {/* Plan 39.1-37: the 4-col rail cell is narrow —
+                                the sample cue wraps under the rate instead of
+                                pushing the table past the card edge. */}
+                            <span className="flex flex-wrap items-center gap-x-2">
                               {winRatePercent(row.wins, row.losses)}%
                               <SampleCue sample={row.sample} />
                             </span>

@@ -71,12 +71,12 @@ export function rateDomainTicks(domain: readonly [number, number], valueRangePx:
     RATE_TICK_STEPS.find(
       (candidate) => (valueRangePx * candidate) / span >= MIN_RATE_TICK_GAP_PX,
     ) ?? span;
+  // Never an off-step top tick: appending `hi` when the step does not divide
+  // the span put it closer than the gap this function exists to keep (the
+  // hero's "80" / "90" overprint in the design-audit captures).
   const ticks: number[] = [];
   for (let value = lo; value <= hi + 1e-9; value += step) {
     ticks.push(Math.round(value * 1000) / 1000);
-  }
-  if (ticks[ticks.length - 1] !== hi) {
-    ticks.push(hi);
   }
   return ticks;
 }

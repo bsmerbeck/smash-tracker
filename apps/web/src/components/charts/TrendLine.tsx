@@ -175,6 +175,18 @@ const EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH = 800;
 const EVENT_POINT_LABEL_OFFSET_PX = 12;
 
 /**
+ * Plan 39.1-37 (design-fidelity loop): a card-coloured halo painted under
+ * every direct value label, so a line that crosses it (the event mode's step
+ * risers, a period segment) never overprints the text.
+ */
+const VALUE_LABEL_HALO = {
+  stroke: CHART_TOKENS.surface,
+  strokeWidth: 3,
+  strokeLinejoin: 'round',
+  paintOrder: 'stroke',
+} as const;
+
+/**
  * The trend-with-context vocabulary member (D-05): a single-series line over
  * a win-rate domain (fixed 0-100 in the index mode; fitted to the data in the
  * event and period modes — plan 39.1-37, UI-SPEC §7.13). D-04: accepts an explicit numeric
@@ -312,11 +324,13 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
           padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
           tick={periodTickRenderer(tickLayout)}
         />
+        {/* No allowDataOverflow here: the domain is fitted over every
+            plotted value, so Recharts has nothing to re-extend it for — and
+            allowDataOverflow's clip would cut a 0% / 100% dot in half. */}
         <YAxis
           domain={domain}
           ticks={yTicks}
           interval={0}
-          allowDataOverflow
           width={PERIOD_Y_AXIS_WIDTH_PX}
           padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
           tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
@@ -350,6 +364,7 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
                 textAnchor="middle"
                 fill={CHART_TOKENS.axisText}
                 fontSize={CHART_AXIS_FONT_SIZE}
+                {...VALUE_LABEL_HALO}
                 data-slot="trend-event-value-label"
               >
                 {t('opponents.hub.trend.pointLabel', { wins: point.wins, losses: point.losses })}
@@ -556,6 +571,7 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
         fontWeight={600}
+        {...VALUE_LABEL_HALO}
         data-slot="trend-period-value-label"
       >
         {`${Math.round(point.rate * 100)}%`}
@@ -731,6 +747,8 @@ const PERIOD_Y_AXIS_PADDING_TOP_PX = 24;
 const PERIOD_Y_AXIS_PADDING_BOTTOM_PX = 16;
 /** Recharts' default XAxis height (px) — the band below the plot the tick labels occupy. */
 const PERIOD_X_AXIS_HEIGHT_PX = 30;
+/** The hidden twin y-axis the Matchups context step series is drawn on. */
+const PERIOD_CONTEXT_Y_AXIS_ID = 'context';
 
 /**
  * The period plot's modelled pixel geometry — the same model
@@ -872,15 +890,30 @@ function PeriodTrendChart({
         padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
         tick={periodTickRenderer(tickLayout)}
       />
+      {/* The primary axis carries nothing outside the fitted domain (joined
+          periods are fitted, sub-floor dots are clamped to it), so it needs no
+          allowDataOverflow — whose clip would cut an edge dot in half. */}
       <YAxis
         domain={[yMin, yMax]}
         ticks={yTicks}
         interval={0}
-        allowDataOverflow
         width={PERIOD_Y_AXIS_WIDTH_PX}
         padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
       />
+      {/* The demoted context step series (Matchups) is the one series that may
+          leave the fitted domain: it lives on a hidden twin axis whose
+          allowDataOverflow clips it at the edge instead of letting Recharts
+          re-extend the domain the dots are drawn on. */}
+      {props.contextRatePercents && (
+        <YAxis
+          yAxisId={PERIOD_CONTEXT_Y_AXIS_ID}
+          hide
+          domain={[yMin, yMax]}
+          allowDataOverflow
+          padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
+        />
+      )}
       {props.tooltip && (
         <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
       )}
@@ -913,6 +946,7 @@ function PeriodTrendChart({
       )}
       {props.contextRatePercents && (
         <Line
+          yAxisId={PERIOD_CONTEXT_Y_AXIS_ID}
           type="stepAfter"
           dataKey="contextPercent"
           stroke={CHART_TOKENS.deemphasis}

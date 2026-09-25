@@ -3437,6 +3437,7 @@
         "range": "rango del 95% reciente"
       },
       "legendHollow": "hueco = menos de 3 partidas",
+      "referenceLabel": "{{rate}} histórico",
       "lockedPeriods": {
         "week_one": "{{count}} semana más desbloquea este período",
         "week_other": "{{count}} semanas más desbloquean este período",

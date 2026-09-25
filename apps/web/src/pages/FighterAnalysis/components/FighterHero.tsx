@@ -543,7 +543,10 @@ export function FighterHero({
                 rate: t('analytics.trend.tableHeaders.rate'),
                 sample: t('analytics.trend.tableHeaders.sample'),
               },
-              referenceLabel: `${Math.round(overallRatePercent)}%`,
+              // Plan 39.1-37 (UI-SPEC §7.13, sketch 001-C): "48% all time".
+              referenceLabel: t('analytics.trend.referenceLabel', {
+                rate: `${Math.round(overallRatePercent)}%`,
+              }),
             }}
           />
         </div>

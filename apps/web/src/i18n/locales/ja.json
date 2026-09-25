@@ -3437,6 +3437,7 @@
         "range": "直近の95%範囲"
       },
       "legendHollow": "白抜き = 3試合未満",
+      "referenceLabel": "全期間 {{rate}}",
       "lockedPeriods": {
         "week_one": "あと{{count}}週でこの期間が解放されます",
         "week_other": "あと{{count}}週でこの期間が解放されます",

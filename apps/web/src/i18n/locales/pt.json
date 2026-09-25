@@ -3437,6 +3437,7 @@
         "range": "faixa de 95% do recente"
       },
       "legendHollow": "vazio = menos de 3 partidas",
+      "referenceLabel": "{{rate}} histórico",
       "lockedPeriods": {
         "week_one": "{{count}} semana a mais desbloqueia este período",
         "week_other": "{{count}} semanas a mais desbloqueiam este período",
