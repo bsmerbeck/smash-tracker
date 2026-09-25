@@ -123,6 +123,7 @@ describe('DeltaChip', () => {
       expect(root.className).toMatch(/\bflex-wrap\b/);
       expect(root.className).not.toMatch(/(^|\s)h-5(\s|$)/);
       expect(root.className).toMatch(/\bmin-h-5\b/);
+      expect(root.className).toMatch(/\bmax-w-full\b/);
     });
 
     it('steady / thin / none values read in muted ink, up / down in foreground ink (UI-SPEC §7.5, sketch 001-C .chip--steady)', () => {

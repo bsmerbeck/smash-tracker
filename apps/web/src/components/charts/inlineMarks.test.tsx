@@ -36,7 +36,7 @@ describe('RecordBar', () => {
 });
 
 describe('ShareBar', () => {
-  it('plan 39.1-36 (sketch 001-C .share-row): a row wraps on a narrow card and the label keeps a 120px basis, so the chip drops to its own line instead of squeezing the label to nothing', () => {
+  it('plan 39.1-36 (sketch 001-C .share-row): a row wraps on a narrow card and the label keeps a 72px basis, so the chip drops to its own line instead of squeezing the label to nothing', () => {
     const { container } = render(
       <ShareBar
         segments={[segment('a', 10, 'Online tournament'), segment('b', 10)]}
@@ -50,7 +50,7 @@ describe('ShareBar', () => {
     const row = container.querySelector('[data-slot="share-bar-row"] > *') as HTMLElement;
     expect(row.className).toMatch(/\bflex-wrap\b/);
     const label = screen.getByText('Online tournament');
-    expect(label.className).toMatch(/basis-\[120px\]/);
+    expect(label.className).toMatch(/basis-\[72px\]/);
     expect(label.className).toMatch(/\btruncate\b/);
   });
 
