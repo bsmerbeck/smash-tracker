@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import type { StoredPracticePlan } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useCredits } from '@/hooks/useBilling';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
@@ -15,7 +16,36 @@ import {
 } from '@/hooks/usePostEventSynthesis';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
+import { resolveClaimSection, type ResolvedClaimSection } from '@/components/claims/claimSection';
 import { usePostEventCheckoutReturn } from './usePostEventCheckoutReturn';
+
+/**
+ * Plan 39-09 (RPT-06): the claims-era practice plan's claim-anchored
+ * sections, in the expanded plan view. The overview section's connective IS
+ * the plan's `summary` (plan 39-08's projection), so its claims render
+ * without restating it; the other two sections lead with their own heading.
+ * A heading renders only for a non-empty section.
+ */
+const PLAN_CLAIM_SECTIONS = [
+  { id: 'overview', headingKey: null },
+  { id: 'gameplan', headingKey: 'scout.aiReport.gameplan' },
+  { id: 'watchFor', headingKey: 'scout.aiReport.watchFor' },
+] as const;
+
+function planSection(
+  plan: StoredPracticePlan,
+  id: (typeof PLAN_CLAIM_SECTIONS)[number]['id'],
+): ResolvedClaimSection {
+  const resolved = resolveClaimSection(plan.sections?.[id], plan.claims);
+  if (id !== 'overview') {
+    return resolved;
+  }
+  if (resolved.kind === 'claims' || resolved.kind === 'abstained') {
+    return { ...resolved, connective: '' };
+  }
+  return { kind: 'empty' };
+}
 
 /**
  * `PostEventSynthesisCard` is the ONE intentionally monetized surface on
@@ -230,6 +260,23 @@ export function PostEventSynthesisCard({
                     )}
                   </div>
                 ))}
+                {planData.plan.sections != null &&
+                  PLAN_CLAIM_SECTIONS.map(({ id, headingKey }) => {
+                    const section = planSection(planData.plan, id);
+                    if (section.kind === 'empty') {
+                      return null;
+                    }
+                    return (
+                      <div key={id} className="flex flex-col gap-2" data-plan-claim-section={id}>
+                        {headingKey && <h3 className="text-sm font-semibold">{t(headingKey)}</h3>}
+                        <ClaimSectionBody
+                          section={planData.plan.sections?.[id]}
+                          claims={planData.plan.claims}
+                          resolved={section}
+                        />
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>

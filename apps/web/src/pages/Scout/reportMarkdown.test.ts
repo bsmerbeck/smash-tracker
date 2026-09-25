@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
+import {
+  CLAIMS_ERA_RECORD,
+  GAMEPLAN_CONNECTIVE,
+  OVERVIEW_CONNECTIVE,
+} from '@/test/claimReportFixtures';
 import { reportMarkdownFilename, reportToMarkdown } from './reportMarkdown';
 
 const BASE_RECORD: ScoutReportRecord = {
@@ -73,6 +78,128 @@ describe('reportToMarkdown', () => {
     const md = reportToMarkdown(record);
 
     expect(md).not.toContain('## Head-to-head');
+  });
+});
+
+/**
+ * Plan 39-09 (review C2-H4): the LEGACY export path is byte-identical to the
+ * pre-Phase-39 builder. This literal was captured from the builder as it
+ * stood at 7ad0089b (before plan 39-09 touched it) for `BASE_RECORD` above,
+ * and was run green against that unmodified builder before the claims-era
+ * branch was added. Plan 39-10 extends this module additively (D-20's
+ * withheld-prose line, claims-era only) — re-assert this pin, never rewrite it.
+ */
+const LEGACY_BASELINE_MARKDOWN = [
+  `# Scout Report: Pandem1c — ${new Date(BASE_RECORD.createdAt).toLocaleDateString()}`,
+  '',
+  '## Overview',
+  'A fast-falling Fox/Falco player who plays aggressively.',
+  '',
+  '## Game plan',
+  '- Punish landing lag hard.',
+  '- Avoid neutral vs their dash dance.',
+  '',
+  '## Character strategy',
+  'Picks: Mario',
+  '',
+  'Game 1: Mario; if they swap to Falco, keep Mario.',
+  '',
+  '## Stage strategy',
+  'Bans: Final Destination',
+  'Picks: Battlefield',
+  '',
+  'They perform best on flat stages with no platforms.',
+  '',
+  '## Head-to-head',
+  'You are 2-1 against this player, all on Battlefield.',
+  '',
+  '## Watch for',
+  '- Likes to shine spike off stage.',
+  '',
+  '## Confidence notes',
+  'Only 20 games sampled — treat character splits as light samples.',
+].join('\n');
+
+describe('reportToMarkdown — legacy byte identity (plan 39-09, C2-H4)', () => {
+  it('renders a legacy record (no claims, no sections) byte-identically to the pre-Phase-39 builder', () => {
+    expect(reportToMarkdown(BASE_RECORD)).toBe(LEGACY_BASELINE_MARKDOWN);
+  });
+});
+
+/** Every `## ` heading must be followed by at least one non-blank line before the next heading or the end. */
+function emptyHeadings(markdown: string): string[] {
+  const lines = markdown.split('\n');
+  const empty: string[] = [];
+  lines.forEach((line, index) => {
+    if (!line.startsWith('## ')) return;
+    const rest = lines.slice(index + 1);
+    const next = rest.findIndex((candidate) => candidate.startsWith('## '));
+    const body = next === -1 ? rest : rest.slice(0, next);
+    if (!body.some((candidate) => candidate.trim().length > 0)) empty.push(line);
+  });
+  return empty;
+}
+
+describe('reportToMarkdown — claims-era record (plan 39-09, C2-H4)', () => {
+  it("carries each surviving claim's FIGURE, sample and tier, read from the claim object", () => {
+    const md = reportToMarkdown(CLAIMS_ERA_RECORD);
+
+    expect(md).toContain(
+      '- [Fact] Stage record: Battlefield — 34–21 · 62% · 55 games · medium confidence',
+    );
+    expect(md).toContain(
+      '- [Trend] Their character usage: Donkey Kong — 60% (12/20) · 20 games · low confidence',
+    );
+    expect(md).toContain(
+      '- [Fact] Head-to-head record: Pandem1c — 7–3 · 70% · 10 games · medium confidence',
+    );
+  });
+
+  it("never takes a figure from the connective: the prose's numbers appear only inside the prose line", () => {
+    const md = reportToMarkdown(CLAIMS_ERA_RECORD);
+    const claimLines = md.split('\n').filter((line) => line.startsWith('- ['));
+    expect(claimLines.length).toBeGreaterThan(0);
+    for (const line of claimLines) {
+      expect(line).not.toMatch(/9-1|90%/);
+    }
+    expect(md).toContain(GAMEPLAN_CONNECTIVE);
+  });
+
+  it('orders claims as stored, renders only surviving claims in a partially-abstained section, and the abstention sentence for an all-abstained one', () => {
+    const md = reportToMarkdown(CLAIMS_ERA_RECORD);
+    const gameplan = md.slice(md.indexOf('## Game plan'), md.indexOf('## Stage strategy'));
+    expect(gameplan.indexOf('Stage record')).toBeLessThan(
+      gameplan.indexOf('Their character usage'),
+    );
+    expect(gameplan).not.toContain('Not enough data yet');
+    expect(gameplan).not.toContain('Matchup record');
+
+    const watchFor = md.slice(md.indexOf('## Watch for'));
+    expect(watchFor).toContain('Not enough data yet — 2 more games needed.');
+    expect(watchFor).not.toContain('- [');
+  });
+
+  it('contains NO heading whose body is empty — no `## Confidence notes` when confidenceNotes is empty', () => {
+    const md = reportToMarkdown(CLAIMS_ERA_RECORD);
+    expect(md).not.toContain('## Confidence notes');
+    expect(emptyHeadings(md)).toEqual([]);
+  });
+
+  it('leads a section with its connective and does not restate the projected stage reasoning', () => {
+    const md = reportToMarkdown(CLAIMS_ERA_RECORD);
+    expect(md).toContain(`## Overview\n${OVERVIEW_CONNECTIVE}\n- [Fact] Head-to-head record`);
+    expect(md).toContain('## Stage strategy\nPicks: Battlefield\n\n## Watch for');
+    expect(md.split(GAMEPLAN_CONNECTIVE)).toHaveLength(2);
+  });
+
+  it('suppresses an empty heading on the legacy path too', () => {
+    const md = reportToMarkdown({
+      ...BASE_RECORD,
+      report: { ...BASE_RECORD.report, watchFor: [], confidenceNotes: '' },
+    });
+    expect(md).not.toContain('## Watch for');
+    expect(md).not.toContain('## Confidence notes');
+    expect(emptyHeadings(md)).toEqual([]);
   });
 });
 

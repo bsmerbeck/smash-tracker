@@ -8,6 +8,15 @@ import type {
   StoredPracticePlan,
   SynthesisJobStatusResponse,
 } from '@smash-tracker/shared';
+import {
+  ABSTAINED_CLAIM,
+  CLAIMS_ERA_PLAN,
+  GAMEPLAN_CONNECTIVE,
+  OVERVIEW_CONNECTIVE,
+  STAGE_CLAIM,
+  USAGE_CLAIM,
+  H2H_CLAIM,
+} from '@/test/claimReportFixtures';
 import { PostEventSynthesisCard } from './PostEventSynthesisCard';
 
 const navigate = vi.fn();
@@ -390,5 +399,69 @@ describe('PostEventSynthesisCard — demo account gating', () => {
     });
 
     expect(screen.getByTestId('buy-credits-dialog')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-09, RPT-06): the expanded plan view renders a claims-era
+// plan's claim-anchored sections through the shared ClaimAtomLine.
+// ---------------------------------------------------------------------------
+describe('PostEventSynthesisCard — claims-era practice plan (plan 39-09)', () => {
+  const succeeded = {
+    data: {
+      job: {
+        jobId: 'job-1',
+        status: 'succeeded' as const,
+        updatedAt: 1,
+        resultRef: 'plan-1',
+      },
+    },
+  };
+
+  it('renders one claim line per surviving claim id in stored order, with app-rendered figures', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: CLAIMS_ERA_PLAN } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    const ids = [...container.querySelectorAll('[data-claim-id]')].map((node) =>
+      node.getAttribute('data-claim-id'),
+    );
+    expect(ids).toEqual([H2H_CLAIM.id, STAGE_CLAIM.id, USAGE_CLAIM.id]);
+    const figures = [...container.querySelectorAll('[data-claim-figure]')].map(
+      (node) => node.textContent,
+    );
+    expect(figures).toEqual(['7–3 · 70%', '34–21 · 62%', '60% (12/20)']);
+    // The summary (= overview connective) renders once; the game-plan connective leads its section.
+    expect(screen.getAllByText(OVERVIEW_CONNECTIVE)).toHaveLength(1);
+    expect(screen.getByText(GAMEPLAN_CONNECTIVE)).toBeInTheDocument();
+  });
+
+  it('an all-abstained section renders the abstention sentence and no bullets', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: CLAIMS_ERA_PLAN } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    const watchFor = container.querySelector('[data-plan-claim-section="watchFor"]') as HTMLElement;
+    expect(watchFor).toHaveTextContent('Not enough data yet — 2 more games needed.');
+    expect(watchFor.querySelectorAll('li')).toHaveLength(0);
+    expect(container.querySelector(`[data-claim-id="${ABSTAINED_CLAIM.id}"]`)).toBeNull();
+  });
+
+  it('a legacy plan (no claims/sections) keeps its focus-area rendering and renders no claim section', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: makePlan() } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(container.querySelectorAll('[data-plan-claim-section]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-claim-id]')).toHaveLength(0);
   });
 });
