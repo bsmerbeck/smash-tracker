@@ -619,6 +619,15 @@ export const prepReportJobStatusEntrySchema = z.object({
   status: reportJobStatusSchema,
   updatedAt: z.number(),
   resultRef: z.string().optional(),
+  /**
+   * Phase 39 (plan 39-10, D-21): the job's failure CAUSE, projected from
+   * `reportJobSchema.failureReason` so the paid prep card can caption a
+   * validation failure. Present only when the stored job carries one.
+   * Deliberately an OPEN string on the wire, not the enum: a cause added
+   * later must never fail an older client's whole status parse — the client
+   * allowlists the single value it captions and renders nothing for any other.
+   */
+  failureReason: z.string().min(1).optional(),
 });
 export type PrepReportJobStatusEntry = z.infer<typeof prepReportJobStatusEntrySchema>;
 
@@ -723,6 +732,8 @@ export const synthesisJobStatusResponseSchema = z.object({
       status: reportJobStatusSchema,
       updatedAt: z.number(),
       resultRef: z.string().optional(),
+      /** Phase 39 (plan 39-10, D-21): as `prepReportJobStatusEntrySchema.failureReason` — an open string, present only when the stored job carries one. */
+      failureReason: z.string().min(1).optional(),
     })
     .nullable(),
 });

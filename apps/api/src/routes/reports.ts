@@ -2671,6 +2671,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           status: parsed.data.status,
           updatedAt: parsed.data.updatedAt,
           ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+          // Phase 39 (plan 39-10, D-21): the terminal cause the paid card
+          // captions. Conditional spread — absent on every job without one.
+          ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
         });
       }
 
@@ -2750,6 +2753,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           status: parsed.data.status,
           updatedAt: parsed.data.updatedAt,
           ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+          // Phase 39 (plan 39-10, D-21): as `GET /reports/jobs` above.
+          ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
         },
       };
     },
