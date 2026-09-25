@@ -204,19 +204,172 @@ describe('FighterHero', () => {
   });
 
   describe('on a forty-game, no-event account', () => {
-    it('collapses the recent horizons with no delta chip and locks the last-event figure', () => {
+    it('collapses the recent horizons with no delta chip; the event-less last-event figure reads "no games"', () => {
       renderHero({ fighterMatches: fortyGameFixture(), horizon: 'last30' });
       const collapsedValues = screen.getAllByText('= all games');
       expect(collapsedValues.length).toBeGreaterThanOrEqual(1);
-      const statBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
-      const chips = within(statBody).queryAllByLabelText(/last 30|last event|90 days/i);
-      expect(chips.length).toBe(0);
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      // Plan 39.1-36 (rewritten assertion): the two collapsed figures still
+      // carry no chip; the last-event figure (no named event -> 0 games) now
+      // renders the honest "no games" chip instead of an unlock caption.
+      const chips = Array.from(statRow.querySelectorAll('[data-slot="delta-chip"]'));
+      expect(chips.map((chip) => chip.getAttribute('data-state'))).toEqual(['none']);
+      expect(chips[0]!.textContent).toBe('no games');
+      expect(screen.getByText('Last event').closest('button')).toContainElement(
+        chips[0] as HTMLElement,
+      );
     });
 
     it('asserts no direction anywhere on the surface', () => {
       renderHero({ fighterMatches: fortyGameFixture(), horizon: 'last30' });
       expect(screen.queryByText(/win rate up/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/win rate down/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('plan 39.1-36 (INS-04, honest-none-chip): a stale account never reads "Steady"', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const TYPES = ['quickplay', 'online-tourney', 'offline-tourney'] as const;
+
+    /** 40 games, every one dated more than 12 months ago, across three match types. */
+    function staleFixture(): Match[] {
+      const now = Date.now();
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `stale${i}`,
+          time: now - (400 + (40 - i)) * DAY_MS,
+          // Wins independent of type, so every type sits near the fighter's
+          // own 50% — the shipped all-time-vs-fighter comparison read "Steady".
+          win: i % 2 === 0,
+          matchType: TYPES[i % 3],
+        }),
+      );
+    }
+
+    /** The stale fixture plus two quickplay games in the last week. */
+    function staleWithTwoRecent(): Match[] {
+      const now = Date.now();
+      return [
+        ...staleFixture(),
+        makeMatch({ id: 'fresh1', time: now - 3 * DAY_MS, win: true, matchType: 'quickplay' }),
+        makeMatch({ id: 'fresh2', time: now - 2 * DAY_MS, win: false, matchType: 'quickplay' }),
+      ];
+    }
+
+    function shareRowChips(): Map<string, HTMLElement | null> {
+      const rows = Array.from(document.querySelectorAll('[data-slot="share-bar-row"]'));
+      return new Map(
+        rows.map((row) => [
+          row.textContent ?? '',
+          row.querySelector('[data-slot="delta-chip"]') as HTMLElement | null,
+        ]),
+      );
+    }
+
+    function figureButton(label: string): HTMLElement {
+      return screen.getByText(label).closest('button') as HTMLElement;
+    }
+
+    it('every by-match-type row reads "no games · last 30" (data-state none)', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      const chips = shareRowChips();
+      expect(chips.size).toBe(3);
+      for (const [row, chip] of chips) {
+        expect(chip, `row ${row}`).not.toBeNull();
+        expect(chip!.getAttribute('data-state')).toBe('none');
+        expect(chip!.textContent).toBe('no games· last 30');
+      }
+    });
+
+    it('a type with 2 recent games reads "n 2 · no direction" (data-state thin)', () => {
+      renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
+      const quickplayRow = Array.from(
+        document.querySelectorAll('[data-slot="share-bar-row"]'),
+      ).find((row) => row.textContent?.includes('Quickplay')) as HTMLElement;
+      const chip = quickplayRow.querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('thin');
+      expect(chip.textContent).toBe('n 2 · no direction');
+    });
+
+    it('no element in the hero reads "Steady"', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      const body = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      const steady = Array.from(body.querySelectorAll('*')).filter((el) =>
+        (el.textContent ?? '').trim().startsWith('Steady'),
+      );
+      expect(steady.map((el) => el.outerHTML.slice(0, 120))).toEqual([]);
+    });
+
+    it('the three recent figures render a muted em dash and the "no games" chip, never the unlock sentence', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      for (const label of ['30 games', 'Last event', '90 days']) {
+        const figure = figureButton(label);
+        const chip = figure.querySelector('[data-slot="delta-chip"]');
+        expect(chip, `figure ${label}`).not.toBeNull();
+        expect(chip!.getAttribute('data-state')).toBe('none');
+        expect(chip!.textContent).toBe('no games');
+        const dash = within(figure).getByText('—');
+        expect(dash.className).toMatch(/text-muted-foreground/);
+      }
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      expect(statRow.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('a figure whose window holds 2 games reads "n 2 · no direction"', () => {
+      renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
+      const chip = figureButton('30 games').querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('thin');
+      expect(chip.textContent).toBe('n 2 · no direction');
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      expect(statRow.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('with the page horizon last90 the row chips read "· last 90 days"', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last90' });
+      for (const [row, chip] of shareRowChips()) {
+        expect(chip, `row ${row}`).not.toBeNull();
+        expect(chip!.textContent).toBe('no games· last 90 days');
+      }
+    });
+
+    it("a type whose last 30 games are recent and inside its own baseline interval reads 'Steady · last 30'", () => {
+      const now = Date.now();
+      const matches: Match[] = [
+        // 60 old offline-tourney games at 50%.
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({
+            id: `ot-old${i}`,
+            time: now - (500 + i) * DAY_MS,
+            win: i % 2 === 0,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        // 30 recent offline-tourney games at 50% — inside the type's own interval.
+        ...Array.from({ length: 30 }, (_, i) =>
+          makeMatch({
+            id: `ot-new${i}`,
+            time: now - (60 - i) * DAY_MS,
+            win: i % 2 === 0,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        // A much stronger quickplay history (90%) the offline type must NOT be compared against.
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({
+            id: `qp${i}`,
+            time: now - (700 + i) * DAY_MS,
+            win: i % 10 !== 0,
+            matchType: 'quickplay',
+          }),
+        ),
+      ];
+      renderHero({ fighterMatches: matches, horizon: 'last30' });
+      const offlineRow = Array.from(document.querySelectorAll('[data-slot="share-bar-row"]')).find(
+        (row) => row.textContent?.includes('Offline tournament'),
+      ) as HTMLElement;
+      const chip = offlineRow.querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('steady');
+      expect(chip.textContent).toBe('Steady· last 30');
     });
   });
 

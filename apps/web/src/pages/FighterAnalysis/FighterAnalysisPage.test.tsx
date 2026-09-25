@@ -387,6 +387,32 @@ describe('FighterAnalysisPage', () => {
     expect(screen.queryByText('unspecified')).not.toBeInTheDocument();
   });
 
+  it('plan 39.1-36 (honest-none-chip): on a stale account the hero shows zero "Steady" chips', async () => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const types = ['quickplay', 'online-tourney', 'offline-tourney'];
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue(
+      Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `stale${i}`,
+          time: now - (400 + (40 - i)) * dayMs,
+          win: i % 2 === 0,
+          matchType: types[i % 3],
+        }),
+      ),
+    );
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
+    const hero = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+    const chips = Array.from(hero.querySelectorAll('[data-slot="delta-chip"]'));
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.filter((chip) => chip.getAttribute('data-state') === 'steady')).toHaveLength(0);
+    expect(within(hero).queryAllByText(/^Steady/)).toHaveLength(0);
+  });
+
   it('the hero is the first grid cell in DOM order (T-39.1-14, DD-07)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
