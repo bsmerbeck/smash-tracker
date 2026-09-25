@@ -675,17 +675,16 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
   });
 
   it('activating the control to exhaustion ends with every row mounted, no activation adding more than the page size, and focus finally on the list root (never <body>)', () => {
-    // `fireEvent.click` (not `userEvent.click`) — this loop clicks ~18 times
-    // for a 1000-row fixture; real-pointer-event simulation per click made
-    // this test time out at the 15s default. Focus at the end is asserted
-    // via the component's own `document.getElementById(rootId)?.focus()`
-    // effect, which `fireEvent.click` triggers identically to `userEvent`.
-    // Measured standalone: ~18-24s. Under `pnpm --filter @smash-tracker/web
-    // test`'s full concurrent run it measured ~31s (timed out once at the
-    // 30s bound) — the explicit 60s timeout below keeps ~2x headroom over
-    // that measurement, the same margin `insightDoorSameN.test.tsx`'s
-    // SAME_N_DOOR_TIMEOUT_MS uses for its own slow-render cases.
-    const matches = makeManyMatches(1000);
+    // `fireEvent.click` (not `userEvent.click`) — real-pointer-event
+    // simulation per click is far slower. Focus at the end is asserted via the
+    // component's own `document.getElementById(rootId)?.focus()` effect, which
+    // `fireEvent.click` triggers identically to `userEvent`.
+    // EXHAUSTION_ROWS = cap + 3 full pages + a 10-row partial page: it still
+    // exercises repeated full pages, a partial last page and the final focus
+    // hand-off, without the 1000-row fixture that took ~90 s on the CI runner
+    // (timed out at 60 s on PR #183 while passing locally).
+    const EXHAUSTION_ROWS = FILTERED_MATCH_LIST_ROW_CAP + 3 * FILTERED_MATCH_LIST_PAGE_SIZE + 10;
+    const matches = makeManyMatches(EXHAUSTION_ROWS);
     renderList({ matches, axes: {}, layout: 'table' });
     const table = screen.getByRole('table');
     let mounted = within(table).getAllByRole('row').length - 1;
@@ -700,13 +699,13 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
       button = screen.queryByRole('button', { name: /show \d+ more/i });
     }
 
-    expect(mounted).toBe(1000);
+    expect(mounted).toBe(EXHAUSTION_ROWS);
     expect(document.activeElement).toBe(table);
     expect(document.activeElement).not.toBe(document.body);
     // The progress line stays present (and states the final, exhausted
     // count) even once the paging control itself has unmounted.
     const progress = document.querySelector('[aria-live="polite"]');
-    expect(progress).toHaveTextContent(/1000 .* 1000/);
+    expect(progress).toHaveTextContent(new RegExp(`${EXHAUSTION_ROWS} .* ${EXHAUSTION_ROWS}`));
   }, 60_000);
 
   it('partial last page: 130 narrowed -> the control is named for the exact 30-row remainder, and one activation mounts all 130', async () => {
