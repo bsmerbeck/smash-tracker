@@ -8,7 +8,13 @@ import {
   type ActionInput,
   type VodRef,
 } from './actions.js';
-import { buildClaimSet, type ClaimAtom, type ClaimPredicate, type ClaimSubject } from './claims.js';
+import {
+  buildClaimSet,
+  type ClaimAtom,
+  type ClaimPredicate,
+  type ClaimSubject,
+  type ClaimValue,
+} from './claims.js';
 import type { EvidenceRow } from './snapshot.js';
 import { vodEvidenceId } from './snapshot.js';
 import {
@@ -18,7 +24,18 @@ import {
   PRACTICE_STAGE_MIN_GAMES,
   confidenceTierFor,
 } from './policy.js';
-import type { ClaimValue, SampleMeta } from './types.js';
+import type { SampleMeta } from './types.js';
+import { mulberry32 } from '../testUtils/prng.js';
+
+/** A deterministic Fisher-Yates shuffle driven by a `mulberry32` rng — the shuffled-input property test's one source of "random" order, never `Math.random()`. */
+function shuffle<T>(rng: () => number, items: readonly T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j]!, copy[i]!];
+  }
+  return copy;
+}
 
 /**
  * RPT-09/D-12/D-18 (phase 39 plan 05): the deterministic recommended-action
@@ -499,5 +516,187 @@ describe('D-18 non-duplication: a drill can never be a matchup_practice re-emiss
 
     const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
     expect(ranked.some((c) => c.kind === 'drill')).toBe(true);
+  });
+});
+
+describe('Task 3: collapse (adjacency)', () => {
+  it('two same-kind candidates with equal target axes collapse to one, unioning claimIds and keeping the higher rankScore', () => {
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-a': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 1, losses: 7, games: 8 },
+        8,
+      ),
+      'cmr-b': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 2, losses: 6, games: 8 },
+        8,
+      ),
+    });
+    expect(claims).toHaveLength(2);
+
+    const raw = buildActionCandidates({ claims, vodRefs: [] });
+    const rawMatchupPractice = raw.filter((c) => c.kind === 'matchup_practice');
+    expect(rawMatchupPractice).toHaveLength(2);
+
+    const ranked = rankActionCandidates(raw);
+    const collapsedMatchupPractice = ranked.filter((c) => c.kind === 'matchup_practice');
+
+    expect(collapsedMatchupPractice).toHaveLength(1);
+    expect(new Set(collapsedMatchupPractice[0]!.claimIds)).toEqual(
+      new Set(claims.map((c) => c.id)),
+    );
+    expect(collapsedMatchupPractice[0]!.rankScore).toBe(
+      Math.max(rawMatchupPractice[0]!.rankScore, rawMatchupPractice[1]!.rankScore),
+    );
+  });
+
+  it('two DIFFERENT-kind candidates with equal axes do NOT collapse', () => {
+    const games = 8;
+    const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 };
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        subject,
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+    });
+    const vodRefs: VodRef[] = [
+      { matchId: 'm1', opponentTag: null, opponentFighterId: 23, lost: true },
+    ];
+
+    // The matchup_practice and vod_review candidates here share the same
+    // subject axes (myFighterId 8, opponentFighterId 23) but are different
+    // kinds — they must both survive ranking (the drill sharing the claim id
+    // IS suppressed by the D-18 rule, which is a separate, intentional path).
+    const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs }));
+    expect(ranked.some((c) => c.kind === 'matchup_practice')).toBe(true);
+    expect(ranked.some((c) => c.kind === 'vod_review')).toBe(true);
+  });
+});
+
+describe('Task 3: empty, single, overflow', () => {
+  it('rankActionCandidates([]) and selectTopActions([]) both return an empty array', () => {
+    expect(rankActionCandidates([])).toEqual([]);
+    expect(selectTopActions([])).toEqual([]);
+  });
+
+  it('an all-abstained claim list yields an empty candidate array end-to-end', () => {
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 },
+        { kind: 'record', wins: 0, losses: 1, games: 1 },
+        1,
+      ),
+    });
+    expect(claims[0]!.value.kind).toBe('abstained');
+
+    const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
+    expect(ranked).toEqual([]);
+    expect(selectTopActions(ranked)).toEqual([]);
+  });
+
+  it('a single candidate is returned as a one-element array with no special-cased path', () => {
+    const games = 8;
+    const claims = claimsFrom({
+      'cmr-f8-g23': row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: 8, opponentFighterId: 23 },
+        { kind: 'record', wins: 1, losses: games - 1, games },
+        games,
+      ),
+    });
+
+    const ranked = rankActionCandidates(
+      buildActionCandidates({ claims, vodRefs: [] }).filter((c) => c.kind === 'matchup_practice'),
+    );
+    expect(ranked).toHaveLength(1);
+  });
+
+  it('more candidates than ACTION_ID_VOCABULARY_SIZE keeps the top N and assigns no id beyond the vocabulary; selectTopActions further caps at MAX_RECOMMENDED_ACTIONS', () => {
+    const rows: Record<string, EvidenceRow> = {};
+    const CANDIDATE_COUNT = 12;
+    for (let index = 0; index < CANDIDATE_COUNT; index += 1) {
+      rows[`cmr-f${index}-g${index}`] = row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: index, opponentFighterId: index },
+        { kind: 'record', wins: 0, losses: 4 + index, games: 4 + index },
+        4 + index,
+      );
+    }
+    const claims = claimsFrom(rows);
+    const matchupPracticeOnly = buildActionCandidates({ claims, vodRefs: [] }).filter(
+      (c) => c.kind === 'matchup_practice',
+    );
+    expect(matchupPracticeOnly).toHaveLength(CANDIDATE_COUNT);
+
+    const ranked = rankActionCandidates(matchupPracticeOnly);
+    expect(ranked.length).toBeLessThanOrEqual(9);
+    expect(new Set(ranked.map((c) => c.id)).size).toBe(ranked.length);
+
+    const selected = selectTopActions(ranked);
+    expect(selected).toHaveLength(MAX_RECOMMENDED_ACTIONS);
+  });
+});
+
+describe('Task 3: ordering is total under permutation', () => {
+  it('permuting the input candidates at least five times with a seeded PRNG produces an identical ranked output every time, including assigned action ids', () => {
+    const games = 8;
+    const rows: Record<string, EvidenceRow> = {};
+    for (let index = 0; index < 6; index += 1) {
+      rows[`cmr-f${index}-g${index}`] = row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: index, opponentFighterId: index },
+        { kind: 'record', wins: index % 2, losses: games - (index % 2), games: games + index },
+        games + index,
+      );
+    }
+    rows['sr-f0-s1'] = row(
+      'stage_record',
+      { ...NULL_SUBJECT, myFighterId: 0, stageId: 1 },
+      { kind: 'record', wins: 1, losses: games - 1, games },
+      games,
+    );
+    const claims = claimsFrom(rows);
+    const baseline = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
+
+    for (let seed = 1; seed <= 5; seed += 1) {
+      const rng = mulberry32(seed * 7919);
+      const shuffledClaims = shuffle(rng, claims);
+      const permuted = rankActionCandidates(
+        buildActionCandidates({ claims: shuffledClaims, vodRefs: [] }),
+      );
+      expect(permuted).toEqual(baseline);
+      expect(permuted.map((c) => c.id)).toEqual(baseline.map((c) => c.id));
+    }
+  });
+});
+
+describe('Task 3: FREE-vs-PAID parity', () => {
+  it('selectTopActions(rankActionCandidates(candidates), MAX_RECOMMENDED_ACTIONS) is a prefix of the ranked list', () => {
+    const games = 8;
+    const rows: Record<string, EvidenceRow> = {};
+    for (let index = 0; index < 6; index += 1) {
+      rows[`cmr-f${index}-g${index}`] = row(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: index, opponentFighterId: index },
+        { kind: 'record', wins: 0, losses: games + index, games: games + index },
+        games + index,
+      );
+    }
+    const claims = claimsFrom(rows);
+    const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
+    const freeSelection = selectTopActions(ranked, MAX_RECOMMENDED_ACTIONS);
+
+    expect(freeSelection).toEqual(ranked.slice(0, MAX_RECOMMENDED_ACTIONS));
+    // "the engine picked" and "the model picked from" can never disagree about the candidate set.
+    for (const candidate of freeSelection) {
+      expect(ranked).toContainEqual(candidate);
+    }
   });
 });

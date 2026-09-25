@@ -427,6 +427,57 @@ function compareActionCandidates(a: ActionCandidate, b: ActionCandidate): number
   return ACTION_KIND_ORDER[a.kind] - ACTION_KIND_ORDER[b.kind];
 }
 
+/** A deterministic composite key over an `ActionTarget`'s five axes — `null` and a real value can never collide (spelled out, never coerced to a falsy value), mirroring `claims.ts`'s own `subjectKey` discipline. */
+function targetKey(target: ActionTarget): string {
+  return [
+    target.kind,
+    target.myFighterId,
+    target.opponentFighterId,
+    target.stageId,
+    target.opponentTag,
+    target.matchId,
+  ]
+    .map((axis) => (axis === null ? 'null' : String(axis)))
+    .join('|');
+}
+
+/**
+ * The ADJACENCY collapse rule (Task 3): two candidates of the SAME kind
+ * whose target axes are EQUAL collapse into one, unioning their `claimIds`
+ * and keeping the higher `rankScore`. Two candidates of DIFFERENT kinds with
+ * equal axes never collapse here (a practice action and a VOD review of the
+ * same matchup are genuinely different doors) — that is a separate concern
+ * from the D-18 non-duplication rule below, which removes a `drill` entirely
+ * rather than merging it. Order-preserving: a group's position in the
+ * output is its first-encountered candidate's position, so collapsing an
+ * already-collapsed (or already-sorted) list is a no-op — required for
+ * `rankActionCandidates`'s own idempotency.
+ */
+function collapseAdjacentCandidates(
+  candidates: readonly ActionCandidate[],
+): readonly ActionCandidate[] {
+  const groups = new Map<string, ActionCandidate>();
+  const order: string[] = [];
+
+  for (const candidate of candidates) {
+    const key = `${candidate.kind}::${targetKey(candidate.target)}`;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, { ...candidate, claimIds: [...candidate.claimIds] });
+      order.push(key);
+      continue;
+    }
+    const mergedClaimIds = Array.from(new Set([...existing.claimIds, ...candidate.claimIds]));
+    groups.set(key, {
+      ...existing,
+      claimIds: mergedClaimIds,
+      rankScore: Math.max(existing.rankScore, candidate.rankScore),
+    });
+  }
+
+  return order.map((key) => groups.get(key)!);
+}
+
 /**
  * The D-18 NON-DUPLICATION rule: a `drill` candidate is suppressed when its
  * claim id set intersects ANY `matchup_practice` candidate's claim id set in
@@ -456,17 +507,21 @@ function suppressDuplicateDrills(
 }
 
 /**
- * Ranks and ID-assigns a raw candidate list: suppress duplicate drills
- * (D-18), sort by `compareActionCandidates`, keep at most
- * `ACTION_ID_VOCABULARY_SIZE` (assigning no id beyond the vocabulary), then
- * assign ids from `ACTION_ID_VOCABULARY` in rank order. Pure and idempotent:
+ * Ranks and ID-assigns a raw candidate list: collapse same-kind/same-target
+ * adjacency (Task 3), suppress duplicate drills (D-18), sort by
+ * `compareActionCandidates`, keep at most `ACTION_ID_VOCABULARY_SIZE`
+ * (assigning no id beyond the vocabulary — the OVERFLOW rule), then assign
+ * ids from `ACTION_ID_VOCABULARY` in rank order. Pure and idempotent:
  * calling this twice on the same candidate array produces byte-identical
- * output, including assigned ids.
+ * output, including assigned ids — an empty input yields an empty output
+ * (never a placeholder candidate), and a single candidate is returned as a
+ * one-element array with no special-cased path.
  */
 export function rankActionCandidates(
   candidates: readonly ActionCandidate[],
 ): readonly ActionCandidate[] {
-  const deduped = suppressDuplicateDrills(candidates);
+  const collapsed = collapseAdjacentCandidates(candidates);
+  const deduped = suppressDuplicateDrills(collapsed);
   const sorted = [...deduped].sort(compareActionCandidates);
   const bounded = sorted.slice(0, ACTION_ID_VOCABULARY_SIZE);
 
