@@ -677,3 +677,173 @@ describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', (
     expect(valueLabels.length).toBeGreaterThan(0);
   });
 });
+
+/** A 640-wide trend's y tick texts (numbers only). */
+function renderedYTickValues(container: HTMLElement): number[] {
+  return Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text')).map((el) =>
+    Number(el.textContent ?? 'NaN'),
+  );
+}
+
+function renderedValueLabels(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('[data-slot="trend-period-value-label"]')).map(
+    (el) => el.textContent ?? '',
+  );
+}
+
+const PERIOD_LABELS_WITH_REFERENCE: TrendLinePeriodLabels = {
+  ...PERIOD_LABELS,
+  referenceLabel: '55%',
+};
+
+describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitted-period-trend)', () => {
+  /** Joined periods between 45% and 60%, and one sub-floor 0% period last. */
+  function joinedWithSubFloorZero(): PeriodPoint[] {
+    const joined = [0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58];
+    return makePeriodSeries(8, (i) =>
+      i === 7
+        ? { subFloor: true, wins: 0, losses: 2, total: 2, rate: 0 }
+        : { rate: joined[i], total: 20 },
+    );
+  }
+
+  it('fits the y-domain to the joined periods and the reference rate — a sub-floor 0% period never stretches it to 0', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={joinedWithSubFloorZero()}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const ticks = renderedYTickValues(container);
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const tick of ticks) {
+      expect(tick).toBeGreaterThanOrEqual(30);
+      expect(tick).toBeLessThanOrEqual(70);
+    }
+  });
+
+  it('pins an off-domain sub-floor dot to the bottom edge (hollow, data-pinned="bottom") and keeps its true rate in the table twin', () => {
+    const points = joinedWithSubFloorZero();
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const circles = Array.from(container.querySelectorAll('circle'));
+    expect(circles).toHaveLength(8);
+    const pinned = circles[7]!;
+    expect(pinned.getAttribute('data-pinned')).toBe('bottom');
+    expect(pinned.getAttribute('fill')).toBe('var(--card)');
+    expect(pinned.getAttribute('stroke')).toBe('var(--viz-context)');
+    const bottomTick = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text'))
+      .map((el) => ({ value: Number(el.textContent), y: Number(el.getAttribute('y')) }))
+      .sort((a, b) => a.value - b.value)[0]!;
+    expect(Number(pinned.getAttribute('cy'))).toBeCloseTo(bottomTick.y, 0);
+    for (const circle of circles.slice(0, 7)) {
+      expect(circle.getAttribute('data-pinned')).toBeNull();
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: PERIOD_LABELS.tableToggle }));
+    const lastRow = container.querySelectorAll('table tbody tr')[7]!;
+    expect(lastRow.querySelectorAll('td')[2]?.textContent).toBe('0%');
+  });
+
+  it('labels exactly the last, max and min JOINED periods — a sub-floor point is never labelled', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={joinedWithSubFloorZero()}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    expect(renderedValueLabels(container).sort()).toEqual(['45%', '58%', '60%']);
+  });
+
+  it('a sub-floor 100% period is never the labelled maximum', () => {
+    const points = makePeriodSeries(8, (i) =>
+      i === 2 ? { subFloor: true, wins: 1, losses: 0, total: 1, rate: 1 } : { rate: 0.5 },
+    );
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(renderedValueLabels(container)).not.toContain('100%');
+  });
+
+  it('a series with no joined period renders no value label at all', () => {
+    const points = makePeriodSeries(8, () => ({
+      subFloor: true,
+      wins: 1,
+      losses: 1,
+      total: 2,
+      rate: 0.5,
+    }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(renderedValueLabels(container)).toEqual([]);
+  });
+
+  it('dot radii are half the 5 / 7 / 9 px diameters: 2.5 / 3.5 / 4.5 for 20 / 80 / 200 games', () => {
+    const totals = [20, 80, 200, 20, 20, 20, 20, 20];
+    const points = makePeriodSeries(8, (i) => ({ total: totals[i], rate: 0.5 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const radii = Array.from(container.querySelectorAll('circle')).map((c) =>
+      Number(c.getAttribute('r')),
+    );
+    expect(radii.slice(0, 3)).toEqual([2.5, 3.5, 4.5]);
+  });
+
+  it('the all-time reference label moves above the line when the last joined value label rises into its under-the-line slot', () => {
+    // 640 x 160: domain [40, 60] maps to y 29..109 (4px per point). The
+    // reference (55%) sits at y 49; the last joined point (48%) at y 77 has
+    // its value label box at y 53..69 — inside the default slot (y 54..70).
+    const rates = [0.5, 0.52, 0.54, 0.5, 0.53, 0.51, 0.5, 0.48];
+    const points = makePeriodSeries(8, (i) => ({ rate: rates[i] }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={55}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS_WITH_REFERENCE}
+      />,
+    );
+    const line = container.querySelector('.recharts-reference-line-line')!;
+    const label = container.querySelector('text.recharts-label')!;
+    expect(label).not.toBeNull();
+    expect(Number(label.getAttribute('y'))).toBeLessThan(Number(line.getAttribute('y1')));
+  });
+
+  it('with no value label near it, the reference label keeps the sketch placement: right-aligned under the line', () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.55 }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={55}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS_WITH_REFERENCE}
+      />,
+    );
+    const line = container.querySelector('.recharts-reference-line-line')!;
+    const label = container.querySelector('text.recharts-label')!;
+    expect(Number(label.getAttribute('y'))).toBeGreaterThan(Number(line.getAttribute('y1')));
+    expect(label.getAttribute('text-anchor')).toBe('end');
+  });
+});

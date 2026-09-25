@@ -378,6 +378,48 @@ describe('FighterHero', () => {
     expect(document.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
   });
 
+  describe('plan 39.1-37 (VIZ-01, UI-SPEC §11, fitted-period-trend): the trend legend names the hollow rule', () => {
+    /** Weekly four-game sessions, one day apart per game block; `thinWeek` gets one game only. */
+    function weeklySessions(thinWeek: number | null): Match[] {
+      const now = Date.now();
+      const week = 7 * 24 * 60 * 60 * 1000;
+      const matches: Match[] = [];
+      for (let w = 0; w < 20; w++) {
+        const games = w === thinWeek ? 1 : 4;
+        for (let g = 0; g < games; g++) {
+          matches.push(
+            makeMatch({
+              id: `w${w}g${g}`,
+              time: now - (20 - w) * week + g * 10 * 60 * 1000,
+              win: (w + g) % 2 === 0,
+            }),
+          );
+        }
+      }
+      return matches;
+    }
+
+    it('shows "hollow = under 3 games" when a sub-floor period is drawn', () => {
+      const matches = weeklySessions(10);
+      const series = buildPeriodSeries({ matches });
+      expect(series.points.some((p) => p.subFloor)).toBe(true);
+      renderHero({ fighterMatches: matches });
+      const legend = document.querySelector('[data-slot="fighter-hero-trend-legend"]');
+      expect(legend).not.toBeNull();
+      expect(legend!.textContent).toBe(i18n.t('analytics.trend.legendHollow'));
+    });
+
+    it('omits the hollow legend when every period is joined', () => {
+      const matches = weeklySessions(null);
+      const series = buildPeriodSeries({ matches });
+      expect(series.points.length).toBeGreaterThanOrEqual(8);
+      expect(series.points.some((p) => p.subFloor)).toBe(false);
+      renderHero({ fighterMatches: matches });
+      expect(document.querySelector('[data-slot="fighter-hero-trend-legend"]')).toBeNull();
+      expect(screen.queryByText(i18n.t('analytics.trend.legendHollow'))).toBeNull();
+    });
+  });
+
   describe('T-39.1-25 (gap closure, SC4/INS-04): the door is built from the claim axis, never a hand-built fighter axis', () => {
     it('renders the formNow counted-games door built from the claim axis, count equal to countedMatchIds.length', () => {
       const matches = largeFixture();

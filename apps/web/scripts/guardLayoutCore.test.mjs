@@ -370,6 +370,45 @@ test('axis-ticks: a dot box crossing the x-axis line is mark-on-axis', () => {
   assert.equal(violations.filter((v) => v.type === 'mark-on-axis').length, 1);
 });
 
+// Plan 39.1-37 (item 10, fitted-period-trend): the all-time reference label vs value labels.
+
+test('axis-ticks: a reference label intersecting a value label is one reference-label-collision', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      valueLabels: [{ left: 600, right: 621, top: 53, bottom: 69, text: '48%' }],
+      referenceLabels: [{ left: 609, right: 630, top: 54, bottom: 70, text: '55%' }],
+    }),
+  ]);
+  const hits = violations.filter((v) => v.type === 'reference-label-collision');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].label, '48%');
+  assert.equal(hits[0].reference, '55%');
+});
+
+test('axis-ticks: a reference label disjoint from every value label has no reference-label-collision', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      valueLabels: [{ left: 600, right: 621, top: 25, bottom: 41, text: '55%' }],
+      referenceLabels: [{ left: 609, right: 630, top: 54, bottom: 70, text: '55%' }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'reference-label-collision').length, 0);
+});
+
+test('axis-ticks: a surface with a reference label and no value labels has no reference-label-collision', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      referenceLabels: [{ left: 609, right: 630, top: 54, bottom: 70, text: '55%' }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'reference-label-collision').length, 0);
+});
+
+test('axis-ticks: a surface collected without a referenceLabels array (older collector) is not a crash', () => {
+  const violations = evaluateAxisTicks([makeSurface()]);
+  assert.equal(violations.filter((v) => v.type === 'reference-label-collision').length, 0);
+});
+
 test('axis-unmeasured: a route whose surfaces carry zero x ticks fails non-vacuously', () => {
   const violations = evaluateAxisPresence([makeSurface()]);
   assert.equal(violations.length, 1);
