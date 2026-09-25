@@ -4,8 +4,10 @@ import { z } from 'zod';
 import {
   entryKeyInputSchema,
   errorResponseSchema,
+  evidenceSnapshotRecordSchema,
   generateReportRequestSchema,
   isReportReadyBinding,
+  MIN_VIABLE_CLAIMS,
   practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
@@ -15,12 +17,17 @@ import {
   scoutReportRecordSchema,
   storedPracticePlanSchema,
   synthesisJobStatusResponseSchema,
+  validateReportOutput,
   type PrepReportJobStatusEntry,
   type PrepReportReason,
+  type ReportFailureReason,
   type ReportJob,
+  type ReportSurface,
+  type EvidenceSnapshot,
   type ScoutBinding,
   type ScoutReportData,
   type StoredScoutReport,
+  type ValidationOutcome,
 } from '@smash-tracker/shared';
 import type {
   ParryggConfig,
@@ -46,8 +53,10 @@ import {
   generateScoutReport,
   ReportGenerationError,
   type AnthropicLikeClient,
+  type ReportPayload,
 } from '../reports/generate.js';
-import { projectScoutSelection } from '../reports/claimSelection.js';
+import { projectScoutSelection, type ClaimSelection } from '../reports/claimSelection.js';
+import { normalizeRtdbWriteShape, snapshotIdFor } from '../reports/snapshotId.js';
 // Phase 28 (28-07, REV-03): the synthesis engine (28-06) — payload assembly,
 // the Claude call, and post-generation citation validation. `SynthesisAnthropicClient`
 // is a separate structural type from `AnthropicLikeClient` above (the
@@ -168,6 +177,120 @@ interface GeneratedReportRecord {
 
 type GenerationOutcome =
   { ok: true; record: GeneratedReportRecord } | { ok: false; failure: ReportFailureReply };
+
+/**
+ * Phase 39 (RPT-05/D-07): the claim-set surface a `runReportGeneration` job
+ * is validated against, derived from its job-KIND `reason`. A pre-paid
+ * bundle child keeps its stored `prep_bundle` reason, so it validates as a
+ * bundle child; a legacy (reason-free) job is the scout surface.
+ */
+function reportSurfaceFor(reason: PrepReportReason | undefined): ReportSurface {
+  switch (reason) {
+    case 'prep_bundle':
+      return 'prep_bundle_child';
+    case 'prep_report':
+      return 'prep_report';
+    case 'post_event_synthesis':
+      return 'post_event_synthesis';
+    default:
+      return 'scout';
+  }
+}
+
+/** The stored scout-report record minus its push key — the shape the store step writes and the 200 response serializes. */
+const storedScoutReportRecordSchema = scoutReportRecordSchema.omit({ id: true });
+
+type ValidatedScoutReportBuild =
+  | { ok: true; record: Omit<GeneratedReportRecord, 'id'>; outcome: ValidationOutcome }
+  | { ok: false };
+
+/** Keeps an action slot only when the claim it rests on SURVIVED validation (rule R8) — a dropped action is counted, never stored. */
+function survivingActionOrNull(
+  action: ClaimSelection['action1'],
+  surviving: ReadonlySet<string>,
+): ClaimSelection['action1'] {
+  return action !== null && action.claimId !== null && surviving.has(action.claimId)
+    ? action
+    : null;
+}
+
+/**
+ * Phase 39 (D-06/D-07/RPT-07, reviews C1-B1/C1-H4/C2-H2/C3-M1): runs the
+ * pure validator over the model's selection and, on `passed`, builds the
+ * stored record from the SURVIVING claims only — so a claim the validator
+ * dropped can never contribute a stage name to `stageStrategy`, and a
+ * section whose prose lost its licence is stored with an empty connective.
+ * TOTAL by construction: a `failed` outcome, a throw anywhere in validation
+ * or projection, and a record the stored schema rejects (`safeParse`, never
+ * a bare `.parse`) all return `{ ok: false }`, which the caller routes into
+ * its ONE `failJob({ failureReason: 'validation' })` call. Never touches the
+ * database and never refunds.
+ */
+function buildValidatedScoutReport(params: {
+  selection: ClaimSelection;
+  payload: ReportPayload;
+  surface: ReportSurface;
+  snapshotId: string;
+  player: ScoutReportData['player'];
+  log: ReportRequestContext['log'];
+}): ValidatedScoutReportBuild {
+  const { selection, payload, surface, snapshotId, player, log } = params;
+  try {
+    const outcome = validateReportOutput({
+      snapshot: payload.snapshot,
+      issuedClaims: payload.claimSet.claims,
+      output: selection,
+      surface,
+    });
+    if (outcome.status === 'failed') {
+      return { ok: false };
+    }
+    const surviving = new Set(outcome.survivingClaimIds);
+    const survivingClaims = payload.claimSet.claims.filter((claim) => surviving.has(claim.id));
+    const selectionForStore: ClaimSelection = {
+      ...selection,
+      action1: survivingActionOrNull(selection.action1, surviving),
+      action2: survivingActionOrNull(selection.action2, surviving),
+      action3: survivingActionOrNull(selection.action3, surviving),
+    };
+    // RTDB deletes null-valued keys on write, so a nullable field is stored
+    // by conditional spread in exactly the shape it reads back in. (The
+    // projection omits `headToHead` by construction; the strip stays for any
+    // future nullable field.)
+    const { headToHead, ...reportRest } = projectScoutSelection({
+      selection: selectionForStore,
+      claims: survivingClaims,
+      strippedSectionIds: outcome.strippedSectionIds,
+    });
+    const report: StoredScoutReport = {
+      ...reportRest,
+      ...(headToHead != null ? { headToHead } : {}),
+      validation: {
+        status: 'passed',
+        policyVersion: outcome.policyVersion,
+        snapshotId,
+        claimSchemaVersion: outcome.claimSchemaVersion,
+      },
+      ...(outcome.droppedClaimCount > 0 ? { droppedClaimCount: outcome.droppedClaimCount } : {}),
+    };
+    const record = { createdAt: Date.now(), model: 'claude-opus-4-8', player, report };
+    const checked = storedScoutReportRecordSchema.safeParse(record);
+    if (!checked.success) {
+      log.error(
+        { issues: checked.error.issues.map((issue) => ({ path: issue.path, code: issue.code })) },
+        'Stored scout report failed its schema — routed to the validation failure branch',
+      );
+      return { ok: false };
+    }
+    return { ok: true, record, outcome };
+  } catch (err) {
+    log.error(
+      { err },
+      'Scout report validation/projection threw — routed to the validation failure branch',
+    );
+    return { ok: false };
+  }
+}
 
 /**
  * Phase 28 (28-07): `runSynthesisGeneration`'s outcome — deliberately NOT
@@ -321,8 +444,14 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     attempt: number;
     /** The day shard the running transition (if reached) already wrote to; null when the job never left `queued`. */
     day: string | null;
+    /**
+     * Phase 39 (D-07): WHY the job failed, written by conditional spread on
+     * the terminal record(s). Deliberately NOT `reason` above — that is the
+     * job KIND (a prep enum) and must never carry a failure cause.
+     */
+    failureReason?: ReportFailureReason;
   }): Promise<void> {
-    const { uid, jobId, creditRef, spent, reason, createdAt, attempt, day } = params;
+    const { uid, jobId, creditRef, spent, reason, createdAt, attempt, day, failureReason } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${uid}/${jobId}`);
     const now = Date.now();
     await jobRef.set(
@@ -333,6 +462,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         attempt,
         creditRef,
         ...(reason ? { reason } : {}),
+        ...(failureReason ? { failureReason } : {}),
       }),
     );
     const resolvedDay = day ?? dayShardKey(now);
@@ -360,6 +490,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // byte-identically (their retry contracts mint fresh jobIds and never
     // gate on `refunded`).
     if (reason && (spent || reason === 'post_event_synthesis')) {
+      // Phase 39 (review C1-H1): `.set()` REPLACES the whole node, so this
+      // second terminal write is AUTHORITATIVE and erases any field the
+      // `failed` write above carried but this one omits — every field added
+      // to the terminal record must be carried on BOTH writes.
       await jobRef.set(
         reportJobSchema.parse({
           status: 'refunded',
@@ -368,6 +502,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           attempt,
           creditRef,
           reason,
+          ...(failureReason ? { failureReason } : {}),
         }),
       );
     }
@@ -383,6 +518,48 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: reason ? { reason } : {},
       }),
     );
+    // Phase 39 (AI-SPEC §7): an ADDITIONAL occurrence event for the
+    // validation cause — the funnel readout counts by event NAME, so the
+    // unchanged `report_failed` above cannot tell `'validation'` apart from
+    // the pre-existing causes. `report_failed`'s own shape is untouched.
+    if (failureReason === 'validation') {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_failed_validation',
+          source: 'job',
+          actorId: uid,
+          sessionId: uid,
+          causationId: `${jobId}:report_failed_validation`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
+  }
+
+  /**
+   * Phase 39 (D-05/RPT-07): persists a job's evidence snapshot ONCE at its
+   * CONTENT-ADDRESSED path `evidenceSnapshots/{uid}/{snapshotId}` and returns
+   * the id. The path is derived from the snapshot's content (`snapshotIdFor`)
+   * and never from a job id, so a swept-then-retried attempt over drifted
+   * evidence writes a NEW node instead of mutating the old one. The write is
+   * create-if-absent: the transaction aborts when a value already exists, so
+   * a concurrent or repeated attempt over identical evidence is a no-op, not
+   * a rewrite. The record goes through `evidenceSnapshotRecordSchema.parse`
+   * (after the RTDB write-shape normalisation) so an undefined-bearing or
+   * malformed payload fails HERE rather than inside the SDK.
+   */
+  async function writeEvidenceSnapshot(uid: string, snapshot: EvidenceSnapshot): Promise<string> {
+    const snapshotId = snapshotIdFor(snapshot);
+    const snapshotRecord = evidenceSnapshotRecordSchema.parse({
+      ...(normalizeRtdbWriteShape(snapshot) as Record<string, unknown>),
+      createdAt: Date.now(),
+    });
+    await app.firebase.database
+      .ref(`evidenceSnapshots/${uid}/${snapshotId}`)
+      .transaction((current) => (current === null ? snapshotRecord : undefined));
+    return snapshotId;
   }
 
   /**
@@ -500,6 +677,75 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }),
     );
 
+    // Phase 39 (D-05/RPT-07, review C4-H1): everything from here to the model
+    // call sits STRICTLY BELOW the queued->running claim above — below the
+    // prep `jobRef.transaction(...)` and its `!claim.committed` 409 return,
+    // and below the legacy branch's plain `jobRef.set(runningRecord)`. That
+    // claim is the single-writer window for two near-simultaneous executions
+    // of the SAME jobId, and `refundCredit` is NOT balance-idempotent (an
+    // unconditional increment transaction plus a ledger append; only its
+    // `credit_refunded` EVENT is deduped). Above the claim, both executions
+    // would reach the D-21 `failJob` below and return one spend twice; here,
+    // the loser is turned away by the existing 409 exactly like every other
+    // failure branch's loser. Legacy (no-`reason`) jobs gain NO transaction:
+    // their single-writer property is still the handler's pre-existing
+    // `running`-within-staleness pre-check, unchanged by this phase.
+    const surface = reportSurfaceFor(reason);
+    const issuedClaims = payload.claimSet.claims;
+    let snapshotId: string;
+    try {
+      snapshotId = await writeEvidenceSnapshot(request.uid, payload.snapshot);
+    } catch (err) {
+      // A snapshot that cannot be persisted is an internal fault, not a
+      // validation outcome: the catch-all sibling shape (one failJob, then
+      // rethrow) so the job never rests `running` with the credit held.
+      await failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: jobDay,
+      });
+      throw err;
+    }
+
+    // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
+    // The issued claim count is known before the model is called, so a
+    // workspace already below the surface minimum makes NO model call — the
+    // job goes through the one existing `failJob` (its unchanged refund)
+    // with `failureReason: 'validation'`, and nothing is stored. The
+    // snapshot above IS still written on this path, deliberately: it is the
+    // evidence for WHY the job failed, it is content-addressed so the write
+    // is idempotent, and a refunded job with no snapshot would leave the
+    // owner unable to tell a genuinely thin workspace from a broken
+    // assembler. This replaces the charged cold-read report the path used to
+    // deliver — that is the decision, not a gap to backfill with a degraded
+    // report.
+    if (issuedClaims.length < MIN_VIABLE_CLAIMS[surface]) {
+      await failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: jobDay,
+        failureReason: 'validation',
+      });
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message: 'There is not enough match evidence yet to build a verified report',
+        },
+      };
+    }
+
     let report;
     try {
       report = await generateScoutReport(client, payload);
@@ -577,38 +823,51 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       throw err;
     }
 
-    // Phase 39 (plan 39-06, review C1-B1): the model's output is now a claim
-    // SELECTION, not a stored-report shape — `projectScoutSelection` projects
-    // it (plus the claims the engine issued for this payload) onto the
-    // unchanged `storedScoutReportSchema`. BOUNDARY: this store-step call is
-    // the ONLY line of this file plan 39-06 touches; `failJob` and its
-    // parameters, the activation gate, every failure branch, the snapshot
-    // write and the validator seam are plan 39-07's.
-    //
-    // RTDB deletes null-valued keys on write, so persisting the model's
-    // `headToHead: null` (a legitimate "no head-to-head history" output)
-    // would come back with the key ABSENT and previously corrupted the
-    // stored record (see storedScoutReportSchema's doc). Strip null fields
-    // before writing — house conditional-spread convention — so records
-    // are stored in exactly the shape they'll be read back in. (The
-    // projection omits `headToHead` by construction, so this strip currently
-    // has nothing to remove; the pattern stays for any future nullable field.)
-    const { headToHead, ...reportRest } = projectScoutSelection({
+    // Phase 39 (D-06/D-07/RPT-07, review C2-H2): the validator seam and the
+    // store-step build, between the model's return and the store. After the
+    // model returns, EVERY outcome ends in exactly one of {a stored valid
+    // record + `report_completed`} or {one `failJob` with
+    // `failureReason: 'validation'`} — never an uncaught throw. A validation
+    // failure, a projection that throws, and a record the stored schema
+    // rejects all take the SAME single-call-then-return branch: a schema
+    // `.parse` (or any throw) outside the refund path would turn a future
+    // projection defect into a 500 with the job left `running` and the credit
+    // held until the stale-job sweeper, and — before this branch existed — an
+    // invalid record surfaced as a response-serialization failure AFTER the
+    // job was already marked `succeeded`.
+    const built = buildValidatedScoutReport({
       selection: report,
-      claims: payload.claimSet.claims,
+      payload,
+      surface,
+      snapshotId,
+      player: scout.player,
+      log: request.log,
     });
-    const storedReport = {
-      ...reportRest,
-      ...(headToHead != null ? { headToHead } : {}),
-    };
+    if (!built.ok) {
+      await failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: jobDay,
+        failureReason: 'validation',
+      });
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message:
+            'The generated report could not be verified against your match evidence — try again',
+        },
+      };
+    }
+    const { record, outcome } = built;
 
     const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
-    const record = {
-      createdAt: Date.now(),
-      model: 'claude-opus-4-8',
-      player: scout.player,
-      report: storedReport,
-    };
     try {
       await ref.set(record);
     } catch (err) {
@@ -666,6 +925,42 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: reason ? { reason } : {},
       }),
     );
+    // Phase 39 (AI-SPEC §7, review C3-M1/D-20): occurrence signals for a
+    // DELIVERED report that lost claims or section prose. No count rides the
+    // payload — the ledger is aggregate-only; the counts live on the stored
+    // record the owner samples. Separate names rather than keys on
+    // `report_completed`, because that envelope's payload is pinned by
+    // exact-key assertions (`Object.keys(payload)` toEqual `['reason']` in
+    // `reports.test.ts` and `reportsSynthesis.test.ts`) this phase has no
+    // reason to loosen.
+    if (outcome.droppedClaimCount > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_claims_dropped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_claims_dropped`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
+    if (outcome.strippedSectionIds.length > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_prose_stripped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_prose_stripped`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
 
     return { ok: true, record: { id, ...record } };
   }
@@ -711,7 +1006,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     const reason: PrepReportReason = 'post_event_synthesis';
     const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
 
-    const failCurrentJob = (day: string | null): Promise<void> =>
+    const failCurrentJob = (
+      day: string | null,
+      failureReason?: ReportFailureReason,
+    ): Promise<void> =>
       failJob({
         uid: request.uid,
         jobId,
@@ -721,6 +1019,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         createdAt: jobCreatedAt,
         attempt: jobAttempt,
         day,
+        ...(failureReason ? { failureReason } : {}),
       });
 
     // BILL-06/MEAS-03: transition to `running` immediately before the
@@ -831,7 +1130,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       validated = validatePracticePlanCitations(generated, allowedPairs);
     } catch (err) {
       if (err instanceof SynthesisValidationError) {
-        await failCurrentJob(jobDay);
+        // Phase 39 (D-07): the total citation drop IS this surface's
+        // validation failure, so it carries `failureReason: 'validation'`
+        // on both terminal writes (plan 39-08 re-points the whole synthesis
+        // seam at the shared validator; the cause stays the same).
+        await failCurrentJob(jobDay, 'validation');
         return { ok: false, failure: { status: 502, error: 'Bad Gateway', message: err.message } };
       }
       await failCurrentJob(jobDay);

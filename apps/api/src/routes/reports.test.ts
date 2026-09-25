@@ -23,7 +23,10 @@ import {
 } from '../test-support/viableEvidenceFixture.js';
 import {
   CLAIM_SCHEMA_VERSION,
+  evidenceSnapshotRecordSchema,
   MIN_VIABLE_CLAIMS,
+  serializeCitationToken,
+  storedScoutReportSchema,
   validateReportOutput,
   type ReportSurface,
   type ScoutBinding,
@@ -130,22 +133,24 @@ const VALID_REPORT = VIABLE_CLAIM_SELECTION;
 
 /**
  * What VALID_REPORT becomes once stored: `projectScoutSelection`'s output
- * over the claims the viable workspace issues (review C1-B1). Prose fields
- * carry the selection's own connectives; `stageStrategy` is ENGINE-derived
- * from the issued stage claims — the fixture's first stage is a winning
- * record against every opponent character and its second a losing one, so
- * bans/picks are exactly one stage each; `confidenceNotes` is empty (D-03);
- * there is no `characterStrategy` and no `headToHead` own-property. The
- * `C3-B1` describe block at the end of this file RE-DERIVES this constant
- * from the projection under every workspace shape and asserts it matches —
- * it is never trusted as hand-written.
+ * over the claims that SURVIVED validation (plan 39-07 re-pointed the
+ * projection from the issued claims to the surviving ones — review C1-B1).
+ * Prose fields carry the selection's own connectives; `stageStrategy` is
+ * ENGINE-derived from SURVIVING stage claims only — `VALID_REPORT` selects
+ * `c01`..`c03`, none of which is a `stage_record` claim, so bans/picks are
+ * empty (under 39-06's interim issued-claims projection they were one stage
+ * each); `confidenceNotes` is empty (D-03); there is no `characterStrategy`
+ * and no `headToHead` own-property. The `C3-B1` describe block at the end of
+ * this file RE-DERIVES this constant from the projection under every
+ * workspace shape and asserts it matches — it is never trusted as
+ * hand-written.
  */
 const STORED_VALID_REPORT = {
   overview: VALID_REPORT.sections.overview.connective,
   gameplan: [VALID_REPORT.sections.gameplan.connective],
   stageStrategy: {
-    bans: ['Final Destination'],
-    picks: ['Battlefield'],
+    bans: [] as string[],
+    picks: [] as string[],
     reasoning: VALID_REPORT.sections.gameplan.connective,
   },
   watchFor: [VALID_REPORT.sections.watchFor.connective],
@@ -429,8 +434,11 @@ describe('POST /api/reports (configured, allowlisted)', () => {
     expect(stored).toMatchObject({
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c' },
-      report: STORED_VALID_REPORT,
     });
+    // Plan 39-07: the surviving-claims projection stores empty stage lists,
+    // which RTDB (and the fake) drop on write — the stored schema's
+    // `.default([])` restores them, so compare the READ-BACK shape.
+    expect(storedScoutReportSchema.parse(stored.report)).toMatchObject(STORED_VALID_REPORT);
     expect(stored.report).not.toHaveProperty('headToHead');
     expect(body.report).not.toHaveProperty('headToHead');
   });
@@ -4035,6 +4043,9 @@ describe('C3-B1 viable-evidence fixture: locked-block reachability and original-
   });
 
   it('FALSIFIER: the bare harness with the empty opponent stub issues FEWER than the scout minimum — the fixture, not the harness, is what makes block A viable', async () => {
+    // Plan 39-07 (D-21): below the minimum the route now FAILS FAST with no
+    // model call, so the issued count is read from the same assembly the
+    // route runs rather than off a model call that no longer happens.
     const { client, calls } = capturingClient();
     const { app } = buildBareTestApp({
       startgg: STARTGG_CONFIG,
@@ -4048,8 +4059,19 @@ describe('C3-B1 viable-evidence fixture: locked-block reachability and original-
       headers: authHeader(),
       payload: { query: 'user/07dc2239' },
     });
-    expect(response.statusCode).toBe(200);
-    expect(issuedClaimIdsFromModelCall(calls[0]).length).toBeLessThan(MIN_VIABLE_CLAIMS.scout);
+    expect(response.statusCode).toBe(502);
+    expect(calls).toHaveLength(0);
+    const scout = await buildScoutReport(
+      'server-data-token',
+      { id: RESOLVE_RESPONSE.user.player.id, gamerTag: RESOLVE_RESPONSE.user.player.gamerTag },
+      emptyScoutFetchMock(),
+    );
+    const payload = await assembleReportPayload(
+      TEST_UID,
+      scout,
+      new FakeDatabaseImpl() as unknown as Database,
+    );
+    expect(payload.claimSet.claims.length).toBeLessThan(MIN_VIABLE_CLAIMS.scout);
     expect(EMPTY_SETS_RESPONSE.player.sets.nodes).toHaveLength(0);
   });
 
@@ -4097,31 +4119,718 @@ describe('C3-B1 viable-evidence fixture: locked-block reachability and original-
     it(`${shape} shape: projectScoutSelection re-derives STORED_VALID_REPORT, and the validator passes the selection with nothing dropped or stripped`, async () => {
       const payload = await assembleShape(shape);
       const claims = payload.claimSet.claims;
-      const {
-        claimSchemaVersion,
-        claims: storedClaims,
-        sections,
-        actions,
-        ...legacyFields
-      } = projectScoutSelection({ selection: VALID_REPORT, claims });
-      // The legacy fields are EXACTLY the module-level stored fixture...
-      expect(legacyFields).toEqual(STORED_VALID_REPORT);
-      // ...and the additive claim fields carry the issued claims and the
-      // selection's sections (no action was selected, so no actions map).
-      expect(claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
-      expect(Object.keys(storedClaims ?? {})).toEqual(claims.map((claim) => claim.id));
-      expect(Object.keys(sections ?? {})).toEqual(['overview', 'gameplan', 'watchFor']);
-      expect(actions).toBeUndefined();
       const outcome = validateReportOutput({
         snapshot: payload.snapshot,
         issuedClaims: claims,
         output: VALID_REPORT,
         surface,
       });
+      // Plan 39-07: the route projects over the SURVIVING claims (review
+      // C1-B1), so the re-derivation does too.
+      const survivingIds = new Set(outcome.survivingClaimIds);
+      const survivingClaims = claims.filter((claim) => survivingIds.has(claim.id));
+      const {
+        claimSchemaVersion,
+        claims: storedClaims,
+        sections,
+        actions,
+        ...legacyFields
+      } = projectScoutSelection({
+        selection: VALID_REPORT,
+        claims: survivingClaims,
+        strippedSectionIds: outcome.strippedSectionIds,
+      });
+      // The legacy fields are EXACTLY the module-level stored fixture...
+      expect(legacyFields).toEqual(STORED_VALID_REPORT);
+      // ...and the additive claim fields carry the surviving claims and the
+      // selection's sections (no action was selected, so no actions map).
+      expect(claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
+      expect(Object.keys(storedClaims ?? {})).toEqual(survivingClaims.map((claim) => claim.id));
+      expect(Object.keys(sections ?? {})).toEqual(['overview', 'gameplan', 'watchFor']);
+      expect(actions).toBeUndefined();
       expect(outcome.status).toBe('passed');
       expect(outcome.droppedClaimCount).toBe(0);
       expect(outcome.strippedSectionIds).toEqual([]);
       expect([...outcome.survivingClaimIds].sort()).toEqual([...SELECTED_CLAIM_IDS].sort());
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07): the snapshot, the validator seam and the D-21
+// fail-fast on the job path. EVERY block below is NEW — no assertion lands
+// inside a locked describe. Money oracle throughout: the credit BALANCE and
+// the `refund` entries of `creditLedger/{uid}` — NEVER the `credit_refunded`
+// event count, which `createEvent` dedupes on the causation id built from
+// the credit ref (a double refund still emits ONE event while the balance
+// gains two).
+// ---------------------------------------------------------------------------
+
+const P39_NON_ALLOWLIST_CONFIG: ReportsConfig = {
+  anthropicApiKey: 'sk-test-key',
+  allowedUids: new Set(['someone-else']),
+};
+const P39_STRIPE_CONFIG: StripeConfig = {
+  secretKey: 'sk-test-123',
+  webhookSecret: 'whsec-test-456',
+};
+const P39_PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+const P39_ENTRY_KEY = 'evo-2026-ult';
+const P39_PARRY_BINDING = {
+  provider: 'parrygg',
+  parryUserId: PARRY_USER_ID,
+  displayTag: 'Pandem1c',
+  method: 'matchHistory',
+  confirmedAt: 1,
+};
+const SNAPSHOT_ID_SHAPE = /^[0-9a-f]{64}$/;
+/** A connective carrying an unlicensed number — plan 39-04's R4 strips the section's prose, never its claims. */
+const UNLICENSED_NUMBER_CONNECTIVE = 'Keep the opening 97 games steady.';
+/** A connective naming the unknown bucket as real — R7 (lexical) DROPS the section's claims, not merely its prose. */
+const UNKNOWN_BUCKET_CONNECTIVE = 'Ban the Unknown Stage early.';
+
+interface ModelFacingClaimView {
+  id: string;
+  predicate: string;
+  value: { kind: string; wins?: number; losses?: number };
+  displayName: { stage?: string };
+}
+
+/** The engine-issued claims the route handed the model, read off the stub's own call. */
+function modelFacingClaims(params: unknown): ModelFacingClaimView[] {
+  const content = (params as { messages: Array<{ content: string }> }).messages[0]!.content;
+  return (JSON.parse(content) as { claims: ModelFacingClaimView[] }).claims;
+}
+
+/** A claim selection over explicit per-section claim ids, reusing VALID_REPORT's lint-clean connectives unless overridden. */
+function selectionOf(
+  claimIds: { overview: string[]; gameplan: string[]; watchFor: string[] },
+  connectives: Partial<Record<'overview' | 'gameplan' | 'watchFor', string>> = {},
+  actions: Partial<
+    Record<'action1' | 'action2' | 'action3', { actionId: string; claimId: string | null } | null>
+  > = {},
+) {
+  return {
+    sections: {
+      overview: {
+        claimIds: claimIds.overview,
+        connective: connectives.overview ?? VALID_REPORT.sections.overview.connective,
+      },
+      gameplan: {
+        claimIds: claimIds.gameplan,
+        connective: connectives.gameplan ?? VALID_REPORT.sections.gameplan.connective,
+      },
+      watchFor: {
+        claimIds: claimIds.watchFor,
+        connective: connectives.watchFor ?? VALID_REPORT.sections.watchFor.connective,
+      },
+    },
+    action1: actions.action1 ?? null,
+    action2: actions.action2 ?? null,
+    action3: actions.action3 ?? null,
+  };
+}
+
+function refundLedgerRefs(database: FakeDatabase): string[] {
+  const dump = database.dump() as { creditLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.creditLedger?.[TEST_UID] ?? {})
+    .filter((entry) => (entry as { type: string }).type === 'refund')
+    .map((entry) => (entry as { ref: string }).ref);
+}
+
+async function balanceOf(database: FakeDatabase): Promise<unknown> {
+  return (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+}
+
+async function jobRecord(database: FakeDatabase, jobId: string): Promise<Record<string, unknown>> {
+  return (await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get()).val() as Record<
+    string,
+    unknown
+  >;
+}
+
+function snapshotNodes(database: FakeDatabase): Record<string, unknown> {
+  const dump = database.dump() as { evidenceSnapshots?: Record<string, Record<string, unknown>> };
+  return dump.evidenceSnapshots?.[TEST_UID] ?? {};
+}
+
+function storedScoutReports(database: FakeDatabase): Array<Record<string, unknown>> {
+  const dump = database.dump() as { scoutReports?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.scoutReports?.[TEST_UID] ?? {}) as Array<Record<string, unknown>>;
+}
+
+/** A billable legacy start.gg scout app over the VIABLE workspace whose model returns `respond(params)`. */
+function legacyBillableApp(respond: (params: unknown) => unknown) {
+  const modelSpy = vi.fn(async (params: unknown) => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: respond(params),
+  }));
+  const built = buildTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: scoutFetchMock(),
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    reportsClient: stubClient(modelSpy),
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return { ...built, modelSpy };
+}
+
+async function postLegacy(app: ReturnType<typeof buildTestApp>['app'], jobId: string) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: { query: 'user/07dc2239', jobId },
+  });
+}
+
+describe('evidence snapshot + validator seam on the LEGACY scout path (plan 39-07, RPT-07/D-05/D-06/D-07)', () => {
+  it('writes the snapshot at evidenceSnapshots/{uid}/{64-hex id} BEFORE the model is called (the stub observes it)', async () => {
+    let observedAtModelCall: Record<string, unknown> | null = null;
+    let db: FakeDatabase | null = null;
+    const { app, database } = legacyBillableApp(() => {
+      observedAtModelCall = snapshotNodes(db!);
+      return VALID_REPORT;
+    });
+    db = database;
+
+    const response = await postLegacy(app, 'p39-snapshot-order');
+    expect(response.statusCode).toBe(200);
+    const ids = Object.keys(observedAtModelCall ?? {});
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(SNAPSHOT_ID_SHAPE);
+    // The node the model call observed IS the node the stored report cites.
+    const body = response.json() as { report: { validation: { snapshotId: string } } };
+    expect(body.report.validation.snapshotId).toBe(ids[0]);
+    // Content-addressed, never keyed by the job id.
+    expect(ids[0]).not.toContain('p39-snapshot-order');
+  });
+
+  it('a second submission over identical evidence reuses the SAME content-addressed node and leaves its content byte-identical', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    expect((await postLegacy(app, 'p39-snap-a')).statusCode).toBe(200);
+    const first = snapshotNodes(database);
+    const firstBytes = JSON.stringify(first);
+    expect(Object.keys(first)).toHaveLength(1);
+
+    expect((await postLegacy(app, 'p39-snap-b')).statusCode).toBe(200);
+    const second = snapshotNodes(database);
+    expect(Object.keys(second)).toEqual(Object.keys(first));
+    expect(JSON.stringify(second)).toBe(firstBytes);
+    // Both stored reports cite the one snapshot.
+    const cited = storedScoutReports(database).map(
+      (record) => (record.report as { validation: { snapshotId: string } }).validation.snapshotId,
+    );
+    expect(cited).toEqual([Object.keys(first)[0], Object.keys(first)[0]]);
+  });
+
+  it('a validation-FAILING response yields a failed job with failureReason validation, exactly one refund effect, no stored report, and one report_failed_validation', async () => {
+    // Two surviving claims — one below MIN_VIABLE_CLAIMS.scout — plus an
+    // UNISSUED in-vocabulary id (rule R1) that is dropped.
+    const { app, database, modelSpy } = legacyBillableApp(() =>
+      selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c32'] }),
+    );
+
+    const response = await postLegacy(app, 'p39-legacy-invalid');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+
+    const job = await jobRecord(database, 'p39-legacy-invalid');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(job).not.toHaveProperty('reason');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-legacy-invalid']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_completed')).toHaveLength(0);
+  });
+
+  it('a validation-PASSING response stores validation.snapshotId equal to the written snapshot id, keyed claims/sections maps, and a keyed action slot', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        { action1: null, action2: null, action3: null },
+      ),
+    );
+
+    const response = await postLegacy(app, 'p39-legacy-valid');
+    expect(response.statusCode).toBe(200);
+    const [snapshotId] = Object.keys(snapshotNodes(database));
+    const [stored] = storedScoutReports(database);
+    const report = stored!.report as Record<string, unknown>;
+    expect(report.validation).toEqual({
+      status: 'passed',
+      policyVersion: expect.any(Number),
+      snapshotId,
+      claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    });
+    expect(report.claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
+    expect(Array.isArray(report.claims)).toBe(false);
+    expect(Object.keys(report.claims as Record<string, unknown>).sort()).toEqual([
+      'c01',
+      'c02',
+      'c03',
+    ]);
+    expect(Array.isArray(report.sections)).toBe(false);
+    expect(Object.keys(report.sections as Record<string, unknown>)).toEqual([
+      'overview',
+      'gameplan',
+      'watchFor',
+    ]);
+    expect(report).not.toHaveProperty('droppedClaimCount');
+    expect(report).not.toHaveProperty('strippedSectionCount');
+    expect(storedScoutReportSchema.safeParse(report).success).toBe(true);
+    const job = await jobRecord(database, 'p39-legacy-valid');
+    expect(job.status).toBe('succeeded');
+    expect(job).not.toHaveProperty('failureReason');
+    expect(refundLedgerRefs(database)).toEqual([]);
+  });
+
+  it('C1-B1: a stage claim the validator DROPPED contributes no stage name to the stored stageStrategy (control: kept, it does)', async () => {
+    const stageNameOf = (claims: ModelFacingClaimView[]) => {
+      const stageClaim = claims.find(
+        (claim) =>
+          claim.predicate === 'stage_record' &&
+          claim.value.kind === 'record' &&
+          (claim.value.wins ?? 0) !== (claim.value.losses ?? 0) &&
+          claim.displayName.stage !== undefined,
+      );
+      expect(stageClaim).toBeDefined();
+      return stageClaim!;
+    };
+    let stageClaim: ModelFacingClaimView | null = null;
+
+    // Control: the stage claim survives, so its stage name IS projected.
+    const control = legacyBillableApp((params) => {
+      stageClaim = stageNameOf(modelFacingClaims(params));
+      return selectionOf({
+        overview: ['c01'],
+        gameplan: ['c02'],
+        watchFor: ['c03', stageClaim.id],
+      });
+    });
+    expect((await postLegacy(control.app, 'p39-stage-kept')).statusCode).toBe(200);
+    const kept = storedScoutReportSchema.parse(storedScoutReports(control.database)[0]!.report);
+    const stageName = stageClaim!.displayName.stage!;
+    expect([...kept.stageStrategy.bans, ...kept.stageStrategy.picks]).toContain(stageName);
+
+    // Dropped: the stage claim sits alone in a section whose prose names the
+    // unknown bucket (R7 lexical) — the claim is DROPPED, the other three
+    // still clear the minimum, and the report is stored without it.
+    const dropped = legacyBillableApp((params) => {
+      const claim = stageNameOf(modelFacingClaims(params));
+      return selectionOf(
+        { overview: ['c01', 'c03'], gameplan: ['c02'], watchFor: [claim.id] },
+        { watchFor: UNKNOWN_BUCKET_CONNECTIVE },
+      );
+    });
+    expect((await postLegacy(dropped.app, 'p39-stage-dropped')).statusCode).toBe(200);
+    const storedDropped = storedScoutReports(dropped.database)[0]!.report as Record<
+      string,
+      unknown
+    >;
+    const parsed = storedScoutReportSchema.parse(storedDropped);
+    expect([...parsed.stageStrategy.bans, ...parsed.stageStrategy.picks]).not.toContain(stageName);
+    expect(Object.keys(parsed.claims ?? {})).not.toContain(stageClaim!.id);
+    expect(parsed.droppedClaimCount).toBe(1);
+  });
+
+  it('C3-M1/D-20: one stripped section stores strippedSectionCount 1 and emits exactly one report_prose_stripped whose payload carries no count', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        { overview: UNLICENSED_NUMBER_CONNECTIVE },
+      ),
+    );
+    expect((await postLegacy(app, 'p39-stripped-one')).statusCode).toBe(200);
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report.strippedSectionCount).toBe(1);
+    expect((report.sections as Record<string, { connective: string }>).overview!.connective).toBe(
+      '',
+    );
+    expect(report.overview).toBe('');
+    const events = findEvents(database, 'report_prose_stripped');
+    expect(events).toHaveLength(1);
+    // Aggregate-only ledger: an occurrence signal, never a count.
+    expect(events[0]!.payload).toEqual({});
+    expect(Object.values(events[0]!.payload)).not.toContain(1);
+    // Delivered AND charged (D-20): no refund on stripped prose.
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('C3-M1/D-20: a report with zero stripped sections carries NO strippedSectionCount key and emits no report_prose_stripped', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    expect((await postLegacy(app, 'p39-stripped-none')).statusCode).toBe(200);
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report).not.toHaveProperty('strippedSectionCount');
+    expect(findEvents(database, 'report_prose_stripped')).toHaveLength(0);
+  });
+
+  it('C2-H2: a record the stored schema REJECTS (an empty action id the projection copies through) refunds once through failJob — no 500, no job left running', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        { action1: { actionId: '', claimId: 'c01' } },
+      ),
+    );
+    const response = await postLegacy(app, 'p39-schema-reject');
+    expect(response.statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-schema-reject');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(refundLedgerRefs(database)).toEqual(['p39-schema-reject']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    const running = await database
+      .ref(`reportJobsByStatus/running/${TEST_UID}/p39-schema-reject`)
+      .get();
+    expect(running.exists()).toBe(false);
+  });
+
+  it('C2-H2: a selection that makes the validator THROW (a malformed sections object) takes the same single-refund branch — never an uncaught error', async () => {
+    const { app, database } = legacyBillableApp(() => ({
+      sections: null,
+      action1: null,
+      action2: null,
+      action3: null,
+    }));
+    const response = await postLegacy(app, 'p39-validator-throw');
+    expect(response.statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-validator-throw');
+    expect(job).toMatchObject({ status: 'failed', failureReason: 'validation' });
+    expect(refundLedgerRefs(database)).toEqual(['p39-validator-throw']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  /**
+   * C2-H2 strip/drop LATTICE (property-style, scout surface): each of the
+   * three sections stripped or not (8 combinations) x the surviving-claim
+   * count driven below, exactly at and above MIN_VIABLE_CLAIMS.scout. EVERY
+   * cell ends in exactly one of {a stored record storedScoutReportSchema
+   * accepts + report_completed} or {one failJob, failureReason validation,
+   * EXACTLY ONE refund effect}, and no cell throws. The all-three-stripped
+   * cells at/above the minimum must land in the STORED branch: plan 39-04
+   * removed the total-prose-loss failure (review C2-H3) — prose is never a
+   * failure axis, the surviving claim count is.
+   */
+  it('C2-H2 lattice: every (strip combination x claim-count band) cell ends in exactly one of stored-valid or one-refund, and none throws', async () => {
+    const min = MIN_VIABLE_CLAIMS.scout;
+    const bands: Array<{
+      name: string;
+      ids: { overview: string[]; gameplan: string[]; watchFor: string[] };
+    }> = [
+      { name: 'below', ids: { overview: ['c01'], gameplan: ['c02'], watchFor: [] } },
+      { name: 'at', ids: { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] } },
+      { name: 'above', ids: { overview: ['c01', 'c04'], gameplan: ['c02'], watchFor: ['c03'] } },
+    ];
+    const sectionNames = ['overview', 'gameplan', 'watchFor'] as const;
+    let cells = 0;
+    for (const band of bands) {
+      const survivors = [...band.ids.overview, ...band.ids.gameplan, ...band.ids.watchFor].length;
+      for (let mask = 0; mask < 8; mask += 1) {
+        const strip = sectionNames.filter((_, index) => (mask & (1 << index)) !== 0);
+        const connectives = Object.fromEntries(
+          strip.map((section) => [section, UNLICENSED_NUMBER_CONNECTIVE]),
+        );
+        const { app, database } = legacyBillableApp(() => selectionOf(band.ids, connectives));
+        const jobId = `p39-lattice-${band.name}-${mask}`;
+        const response = await postLegacy(app, jobId);
+        cells += 1;
+        const job = await jobRecord(database, jobId);
+        const stored = storedScoutReports(database);
+        const refunds = refundLedgerRefs(database);
+        if (survivors >= min) {
+          expect(response.statusCode, `${jobId}`).toBe(200);
+          expect(stored, jobId).toHaveLength(1);
+          const report = storedScoutReportSchema.parse(stored[0]!.report);
+          expect(report.strippedSectionCount ?? 0, jobId).toBe(strip.length);
+          expect(findEvents(database, 'report_completed'), jobId).toHaveLength(1);
+          expect(job.status, jobId).toBe('succeeded');
+          expect(refunds, jobId).toEqual([]);
+          expect(await balanceOf(database), jobId).toBe(0);
+        } else {
+          expect(response.statusCode, jobId).toBe(502);
+          expect(stored, jobId).toHaveLength(0);
+          expect(job, jobId).toMatchObject({ status: 'failed', failureReason: 'validation' });
+          expect(refunds, jobId).toEqual([jobId]);
+          expect(await balanceOf(database), jobId).toBe(1);
+          expect(findEvents(database, 'report_completed'), jobId).toHaveLength(0);
+        }
+      }
+    }
+    expect(cells).toBe(24);
+  });
+});
+
+describe('D-21 thin-evidence FAIL FAST on the LEGACY scout path (plan 39-07) — opposite fixture: bare harness + empty stubs', () => {
+  it('makes ZERO model calls, refunds exactly once, records failureReason validation on the FINAL job record, stores nothing, fires report_failed_validation once, and still writes the snapshot', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    // C3-B1: the OPPOSITE fixture — the aliased bare harness (nothing seeded)
+    // plus the explicit empty opponent-history stub. The module-level viable
+    // wrapper every other case depends on is untouched.
+    const { app, database } = buildBareTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: emptyScoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'p39-thin-legacy');
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    const job = await jobRecord(database, 'p39-thin-legacy');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-thin-legacy']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
+    expect(findEvents(database, 'report_prose_stripped')).toHaveLength(0);
+    // The fail-fast path still records its evidence, content-addressed.
+    const ids = Object.keys(snapshotNodes(database));
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(SNAPSHOT_ID_SHAPE);
+    expect(evidenceSnapshotRecordSchema.safeParse(snapshotNodes(database)[ids[0]!]).success).toBe(
+      true,
+    );
+  });
+});
+
+describe('C1-H1: failureReason survives BOTH of failJob’s terminal writes (plan 39-07) — read from the FINAL record', () => {
+  it('a SPENT prep_report validation failure: the final read-back carries status refunded AND failureReason validation together', async () => {
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c32'] }),
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: P39_ENTRY_KEY,
+        opponentName: 'rival',
+        jobId: 'p39-c1h1-spent',
+      },
+    });
+    expect(response.statusCode).toBe(502);
+
+    // Read AFTER the whole failJob call completed — the SECOND (refunded)
+    // write is authoritative because `.set()` replaces the node.
+    const job = await jobRecord(database, 'p39-c1h1-spent');
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).toBe('validation');
+    expect(job.reason).toBe('prep_report');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-c1h1-spent']);
+  });
+
+  it('a ZERO-SPEND post_event_synthesis validation failure (Phase 28 CR-02 refunded-without-refund branch): the final read-back carries status refunded AND failureReason validation together', async () => {
+    const { app, database } = buildBareTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      // Every focus area cites a pair outside the real evidence — the
+      // synthesis surface's total citation drop (its validation failure).
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: {
+          summary: 'A strong showing overall.',
+          focusAreas: [
+            {
+              title: 'Neutral game',
+              evidence: `Good read here ${serializeCitationToken({ sourceVodRef: 'no-such-match', seconds: 9999, label: 'note' })}`,
+              drills: ['drill'],
+            },
+          ],
+        },
+      })),
+    });
+    database.seed(`tournamentEntries/${TEST_UID}/${P39_ENTRY_KEY}`, {
+      eventName: 'EVO 2026',
+      firstSetAt: 1_700_000_000_000,
+      lastSetAt: 1_700_000_000_000,
+      setsPlayed: 2,
+      source: 'manual',
+    });
+    database.seed(`prepBriefs/${TEST_UID}/${P39_ENTRY_KEY}`, {
+      eventDate: 1_700_000_000_000,
+      activatedAt: 1_700_000_000_000,
+      lastOpenedAt: 1_700_000_000_000,
+      reviewAt: 1_700_000_000_000,
+    });
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 1_700_000_000_000,
+      win: true,
+      eventName: 'EVO 2026',
+      source: 'startgg',
+      vodTimestamps: [{ seconds: 42, note: 'clean punish' }],
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { reason: 'post_event_synthesis', entryKey: P39_ENTRY_KEY },
+    });
+    expect(response.statusCode).toBe(502);
+
+    const dump = database.dump() as { reportJobs: Record<string, Record<string, unknown>> };
+    const jobId = Object.keys(dump.reportJobs[TEST_UID]!)[0]!;
+    const job = await jobRecord(database, jobId);
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).toBe('validation');
+    expect(job.reason).toBe('post_event_synthesis');
+    // Zero spend: no credit moved (the known residual — a free-access uid
+    // rests at `refunded` without a refund — is unchanged, not "fixed").
+    expect((database.dump() as { creditLedger?: unknown }).creditLedger).toBeUndefined();
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+  });
+});
+
+describe('C4-H1: the D-21 fail-fast sits BELOW the queued->running claim — two concurrent executions of one bundle child refund ONCE (plan 39-07)', () => {
+  it('two near-simultaneous executions of the SAME thin prep_bundle child: exactly one 409, the balance back at its pre-failure value, and exactly ONE refund ledger entry', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildBareTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(modelSpy),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+        matches: 'empty',
+      }),
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: P39_ENTRY_KEY,
+        bundleId: 'bundle-c4h1',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submit.statusCode).toBe(202);
+    const child = (submit.json() as { jobs: Array<{ opponentName: string; jobId: string }> })
+      .jobs[0]!;
+    const balanceBeforeFailure = await balanceOf(database);
+    expect(balanceBeforeFailure).toBe(7);
+
+    // Barrier: HOLD the winner between its committed claim and its terminal
+    // job write (the `failed` set inside failJob), so the loser's execution
+    // runs while the winner's record still reads `running`. Released when
+    // the loser answers — or, if a SECOND terminal write arrives (the
+    // double-refund failure this test exists to catch), immediately, so the
+    // test fails on its assertions instead of hanging.
+    const childPath = `reportJobs/${TEST_UID}/${child.jobId}`;
+    let releaseWinner: () => void = () => {};
+    const winnerHeld = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    let terminalWrites = 0;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      if (path !== childPath) {
+        return ref;
+      }
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          const status = (value as { status?: string } | null)?.status;
+          if (status === 'failed') {
+            terminalWrites += 1;
+            if (terminalWrites === 1) {
+              await winnerHeld;
+            } else {
+              releaseWinner();
+            }
+          }
+          return ref.set(value);
+        },
+      };
+    });
+
+    const post = () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: {
+          reason: 'prep_report',
+          entryKey: P39_ENTRY_KEY,
+          opponentName: child.opponentName,
+          jobId: child.jobId,
+        },
+      });
+    const first = post();
+    const second = post();
+    const settled = [first, second].map((pending) =>
+      pending.then((response) => {
+        if (response.statusCode === 409) {
+          releaseWinner();
+        }
+        return response;
+      }),
+    );
+    const responses = await Promise.all(settled);
+
+    const statuses = responses.map((response) => response.statusCode).sort();
+    expect(statuses).toEqual([409, 502]);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    // One bundle debit (10 -> 7), one refund (-> 8): the balance is back at
+    // exactly its pre-failure value plus the ONE returned slot credit.
+    expect(await balanceOf(database)).toBe((balanceBeforeFailure as number) + 1);
+    // The ledger — NOT the `credit_refunded` event, which createEvent dedupes
+    // on `${creditRef}:credit_refunded`, so a double refund would still show
+    // ONE event while the balance gained two.
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    const job = await jobRecord(database, child.jobId);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
 });
