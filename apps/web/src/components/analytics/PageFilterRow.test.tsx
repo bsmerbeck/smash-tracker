@@ -46,7 +46,7 @@ describe('PageFilterRow (plan 39.1-38, UI-SPEC §10.4)', () => {
     expect(kids[0]).toBe(h1);
     expect(kids[1]).toBe(screen.getByRole('button', { name: 'picker' }));
     expect(kids[2]).toHaveAttribute('aria-hidden');
-    expect(kids[2].className).toMatch(/\bflex-1\b/);
+    expect(kids[2]!.className).toMatch(/\bflex-1\b/);
     expect(kids[3]).toBe(screen.getByTestId('switch'));
   });
 

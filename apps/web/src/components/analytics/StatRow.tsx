@@ -38,30 +38,49 @@ export interface StatRowProps {
    * the `data-slot` this component now always carries.
    */
   fixedColumns?: boolean;
+  /**
+   * Plan 39.1-38: sketch 002-C's KPI row only (`.statrow.kpi .lead{grid-column:
+   * 1/-1}`) — under the phone collapse the lead figure spans both columns and
+   * the row carries `data-lead-span`. Every other row collapses to a PLAIN
+   * two-column grid (sketches 001-C / 003-A draw a 2 x 2 with no spanning lead).
+   */
+  leadSpanOnPhone?: boolean;
   className?: string;
 }
 
 /**
- * The one stat idiom (UIX-04). Below an 860px container it collapses to two
- * columns, with the lead figure (when present) spanning both — implemented
- * with a container query so it responds to the CARD'S width, not the
- * viewport's.
+ * The one stat idiom (UIX-04). Below an 860px PAGE container (PageShell's
+ * named `@container/page`, the sketches' `@container vp`) it collapses to a
+ * plain two-column grid (plan 39.1-38).
+ *
+ * Root cause of the 39.1 phone defect (real Chrome, 39.1-38-SUMMARY): the row
+ * used to be its own `@container`, and an element never queries itself — its
+ * `@max-[860px]:grid-cols-2` resolved against ancestors (none were
+ * containers) and never applied, while the first-child span resolved against
+ * the row and did, so the lead spanned two tracks of the UN-collapsed
+ * template (3-up then "90 DAYS" alone). Precedence: the collapse is a variant
+ * rule, which Tailwind emits after the N-column base utilities, and the named
+ * query cannot match outside a PageShell — so a StatRow with no `page`
+ * ancestor keeps its N columns.
  */
 export function StatRow({
   figures,
   leadWidth = false,
   fixedColumns = false,
+  leadSpanOnPhone = false,
   className,
 }: StatRowProps) {
   const count = figures.length;
   const columnClass =
     (leadWidth ? LEAD_COLUMN_CLASSES[count] : COLUMN_CLASSES[count]) ?? 'grid-cols-2';
   const applyFixedColumns = fixedColumns && !leadWidth && count <= 3;
+  const applyLeadSpan = leadSpanOnPhone && !applyFixedColumns;
 
   return (
     <div
       data-slot="stat-row"
       data-fixed-columns={applyFixedColumns ? '' : undefined}
+      data-lead-span={applyLeadSpan ? '' : undefined}
       className={cn(
         '@container grid items-start gap-x-6 gap-y-3',
         applyFixedColumns
@@ -70,9 +89,9 @@ export function StatRow({
             // inherited, so StatFigure's label/value text picks them up
             // with no change there.
             'hyphens-auto break-words'
-          : '@max-[860px]:grid-cols-2',
+          : '@max-[860px]/page:grid-cols-2',
         columnClass,
-        leadWidth && '@max-[860px]:[&>*:first-child]:col-span-2',
+        applyLeadSpan && '@max-[860px]/page:[&>*:first-child]:col-span-2',
         className,
       )}
     >

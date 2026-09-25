@@ -16,7 +16,7 @@ describe('StatRow', () => {
     const grid = container.firstElementChild as HTMLElement;
     expect(grid).toHaveAttribute('data-slot', 'stat-row');
     expect(grid).not.toHaveAttribute('data-fixed-columns');
-    expect(grid.className).toMatch(/@max-\[860px\]:grid-cols-2/);
+    expect(grid.className).toMatch(/@max-\[860px\]\/page:grid-cols-2/);
   });
 
   it('fixedColumns with 3 figures: grid-cols-3, no 860px collapse class, data-fixed-columns, hyphens-auto and break-words', () => {
@@ -32,7 +32,7 @@ describe('StatRow', () => {
     );
     const grid = container.firstElementChild as HTMLElement;
     expect(grid.className).toContain('grid-cols-3');
-    expect(grid.className).not.toMatch(/@max-\[860px\]:grid-cols-2/);
+    expect(grid.className).not.toMatch(/grid-cols-2/);
     expect(grid).toHaveAttribute('data-fixed-columns', '');
     expect(grid.className).toContain('hyphens-auto');
     expect(grid.className).toContain('break-words');
@@ -50,7 +50,7 @@ describe('StatRow', () => {
     );
     const grid = container.firstElementChild as HTMLElement;
     expect(grid.className).toContain('grid-cols-2');
-    expect(grid.className).not.toMatch(/@max-\[860px\]:grid-cols-2/);
+    expect(grid.className).not.toMatch(/\/page:grid-cols-2/);
     expect(grid).toHaveAttribute('data-fixed-columns', '');
   });
 
@@ -67,7 +67,7 @@ describe('StatRow', () => {
       />,
     );
     const grid = container.firstElementChild as HTMLElement;
-    expect(grid.className).toMatch(/@max-\[860px\]:grid-cols-2/);
+    expect(grid.className).toMatch(/@max-\[860px\]\/page:grid-cols-2/);
     expect(grid).not.toHaveAttribute('data-fixed-columns');
   });
 
@@ -84,7 +84,9 @@ describe('StatRow', () => {
       />,
     );
     const grid = container.firstElementChild as HTMLElement;
-    expect(grid.className).toMatch(/@max-\[860px\]:\[&>\*:first-child\]:col-span-2/);
+    expect(grid.className).toMatch(/@max-\[860px\]\/page:grid-cols-2/);
+    // Plan 39.1-38: leadWidth alone no longer spans the lead on a phone (sketches 001-C / 003-A).
+    expect(grid.className).not.toMatch(/col-span-2/);
     expect(grid).not.toHaveAttribute('data-fixed-columns');
   });
 

@@ -13,10 +13,20 @@ export interface PageShellProps {
  * gutter, it never replaces it: it is the first child rendered inside it.
  * Caps content at 1440px so ultra-wide monitors get margin, not 1,900px
  * charts. Declares no height of its own.
+ *
+ * Plan 39.1-38: also the NAMED inline-size container `page` — the sketches'
+ * `@container vp` viewport container — that StatRow's two-column collapse
+ * and Fighter Analysis' vs-list pair key on (`@max-[860px]/page:` /
+ * `@min-[860px]/page:`). No fixed-position element renders inside a PageShell
+ * (checked by grep in 39.1-38-SUMMARY), so the containment changes no fixed
+ * descendant's containing block; Radix portals render to `body`.
  */
 export function PageShell({ filterRow, children }: PageShellProps) {
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
+    <div
+      data-slot="page-shell"
+      className="@container/page mx-auto flex w-full max-w-[1440px] flex-col gap-6"
+    >
       {filterRow}
       {children}
     </div>

@@ -885,7 +885,9 @@ describe('FighterAnalysisPage', () => {
       const lists = container.querySelector('[data-slot="fighter-vs-lists"]') as HTMLElement;
       const classes = lists.className.split(/\s+/);
       expect(classes).toEqual(
-        expect.arrayContaining(['grid-cols-1', '@min-[860px]/page:grid-cols-2']),
+        // items-start: sketch 001-C `.duo{align-items:start}` — the shorter
+        // list never stretches to its neighbour (guard:layout stretch family).
+        expect.arrayContaining(['grid-cols-1', 'items-start', '@min-[860px]/page:grid-cols-2']),
       );
       expect(classes).not.toContain('@container');
       expect(lists.children).toHaveLength(2);
@@ -899,10 +901,10 @@ describe('FighterAnalysisPage', () => {
       expect(grid.className.split(/\s+/)).toContain('lg:grid-rows-[auto_1fr]');
       const cells = Array.from(grid.children) as HTMLElement[];
       expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['8', '4', '8', '12']);
-      expect(cells[1].className.split(/\s+/)).toEqual(
+      expect(cells[1]!.className.split(/\s+/)).toEqual(
         expect.arrayContaining(['lg:col-start-9', 'lg:row-start-1', 'lg:row-span-2']),
       );
-      expect(cells[2].className.split(/\s+/)).toEqual(
+      expect(cells[2]!.className.split(/\s+/)).toEqual(
         expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']),
       );
     });

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { PageShell } from '@/components/analytics/PageShell';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
@@ -57,6 +58,21 @@ import { MatchupStageGuide } from './components/MatchupStageGuide';
 import { OpponentTable, type OpponentTableRow } from './components/OpponentTable';
 
 const GAMES_ANCHOR_ID = 'games';
+
+/**
+ * Plan 39.1-38 (design-audit item 4; UI-SPEC §8.1, sketch 001-C): at lg the
+ * hero sits in row 1 (cols 1-8), the vs lists directly under it in row 2
+ * (cols 1-8), and the rail spans rows 1-2 (cols 9-12). The explicit
+ * `auto 1fr` row template sends a rail taller than the hero into row 2 (the
+ * flexible track), so it never opens a gap between hero and lists. Placement
+ * only — DOM order stays hero -> rail -> lists (DD-07, the phone order);
+ * never a CSS `order` utility. Below lg every cell spans 12 and stacks in DOM
+ * order. The loading skeleton uses the same constants.
+ */
+const FIGHTER_GRID_ROWS_CLASS = 'lg:grid-rows-[auto_1fr]';
+const HERO_CELL_PLACEMENT = 'lg:col-start-1 lg:row-start-1';
+const RAIL_CELL_PLACEMENT = 'lg:col-start-9 lg:row-start-1 lg:row-span-2';
+const LISTS_CELL_PLACEMENT = 'lg:col-start-1 lg:row-start-2';
 
 /**
  * Fighter Analysis command center, rebuilt onto the insight-first grid
@@ -334,8 +350,8 @@ export function FighterAnalysisPage() {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
-  // skeleton built from the SAME PageGrid spans as the loaded hero(8)/
-  // rail(4)/vs-lists(12)/existing-cards(12) layout, so nothing shifts when
+  // skeleton built from the SAME PageGrid spans and placement as the loaded
+  // hero(8)/rail(4)/vs-lists(8, plan 39.1-38)/existing-cards(12) layout, so nothing shifts when
   // data lands. The filter row (fighter picker + HorizonSwitch) needs the
   // resolved `fighter`/`orderedFighterSprites`, so it isn't rendered here —
   // `PageShell`'s `filterRow` is an optional slot.
@@ -344,14 +360,14 @@ export function FighterAnalysisPage() {
       <PageShell>
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('fighterAnalysis.loading')}</span>
-          <PageGrid>
-            <GridCell span={8}>
+          <PageGrid className={FIGHTER_GRID_ROWS_CLASS}>
+            <GridCell span={8} className={HERO_CELL_PLACEMENT}>
               <CardSkeleton variant="chart" statusLabel={t('fighterAnalysis.loading')} />
             </GridCell>
-            <GridCell span={4}>
+            <GridCell span={4} className={RAIL_CELL_PLACEMENT}>
               <CardSkeleton variant="insight" statusLabel={t('fighterAnalysis.loading')} />
             </GridCell>
-            <GridCell span={12}>
+            <GridCell span={8} className={LISTS_CELL_PLACEMENT}>
               <CardSkeleton variant="list" rows={4} statusLabel={t('fighterAnalysis.loading')} />
             </GridCell>
             <GridCell span={12} stack>
@@ -426,21 +442,21 @@ export function FighterAnalysisPage() {
     return subjectPath(`${buildOpponentHubPath(row.key)}${search ? `?${search}` : ''}`);
   }
 
+  // Plan 39.1-38 (design-audit item 6; UI-SPEC §10.4, sketch 001-C
+  // `.filters`): ONE unboxed row — title, picker, spacer, HorizonSwitch.
   const filterRow = (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
-        <div className="flex flex-1 flex-col items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('fighterAnalysis.title')}</h1>
-          <SelectFighter
-            fighter={fighter}
-            fighterSprites={orderedFighterSprites}
-            fighterUsageById={fighterUsageById}
-            onChange={handleSelectFighter}
-          />
-        </div>
-        <HorizonSwitch />
-      </CardContent>
-    </Card>
+    <PageFilterRow
+      title={t('fighterAnalysis.title')}
+      leading={
+        <SelectFighter
+          fighter={fighter}
+          fighterSprites={orderedFighterSprites}
+          fighterUsageById={fighterUsageById}
+          onChange={handleSelectFighter}
+        />
+      }
+      trailing={<HorizonSwitch />}
+    />
   );
 
   return (
@@ -451,13 +467,14 @@ export function FighterAnalysisPage() {
       {fighter && (
         <PageGrid
           className={cn(
+            FIGHTER_GRID_ROWS_CLASS,
             isRefetching &&
               'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
           )}
         >
           {/* DD-07: the hero leads at every width — first in DOM order,
               never reordered by a responsive class. */}
-          <GridCell span={8}>
+          <GridCell span={8} className={HERO_CELL_PLACEMENT}>
             <FighterHero
               fighter={fighter}
               fighterMatches={fighterMatches}
@@ -472,7 +489,7 @@ export function FighterAnalysisPage() {
             />
           </GridCell>
 
-          <GridCell span={4}>
+          <GridCell span={4} className={RAIL_CELL_PLACEMENT}>
             <FighterInsightRail
               fighterId={fighter.id}
               insights={fighterInsights}
@@ -483,11 +500,13 @@ export function FighterAnalysisPage() {
             />
           </GridCell>
 
-          {/* UI-SPEC §8.1: the 2-up "vs characters" / "vs players" list pair, stacking below 860px (container). */}
-          <GridCell span={12}>
+          {/* UI-SPEC §8.1 / sketch 001-C `.duo` (plan 39.1-38): the 2-up "vs
+              characters" / "vs players" pair directly under the hero, inside
+              its 8-col column at lg; one column below an 860px page. */}
+          <GridCell span={8} className={LISTS_CELL_PLACEMENT}>
             <div
               data-slot="fighter-vs-lists"
-              className="@container grid grid-cols-1 gap-4 @[860px]:grid-cols-2"
+              className="grid grid-cols-1 items-start gap-4 @min-[860px]/page:grid-cols-2"
             >
               <VsCharactersList fighterId={fighter.id} fighterMatches={fighterMatches} />
               <VsPlayersList
