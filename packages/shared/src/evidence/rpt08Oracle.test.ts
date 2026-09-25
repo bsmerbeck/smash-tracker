@@ -1,23 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  ACTION_ID_VOCABULARY,
-  ACTION_ID_VOCABULARY_SIZE,
-  CLAIM_ID_VOCABULARY,
-  CLAIM_ID_VOCABULARY_SIZE,
-  CLAIM_PREDICATES,
-  EVIDENCE_ID_PATTERN,
-  type ClaimSubject,
-} from './claims.js';
+import { EVIDENCE_ID_PATTERN, MIN_VIABLE_CLAIMS, type ClaimSubject } from './claims.js';
 import {
   EVIDENCE_ID_PREFIX,
-  UnsupportedEvidenceSubjectError,
   evidenceIdFor,
   orderSnapshotOpponents,
   parseVodEvidenceId,
   vodEvidenceId,
 } from './snapshot.js';
 import { legacyCitationOnlyVerdict } from './legacyCitationRule.js';
-import { ADVERSARIAL_FAMILIES, ADVERSARIAL_FIXTURES } from './adversarialFixtures.js';
+import {
+  ADVERSARIAL_FAMILIES,
+  ADVERSARIAL_FIXTURES,
+  RUBRIC_RULE_IDS,
+} from './adversarialFixtures.js';
 import { CONFIDENCE_TIER_BOUNDS, confidenceTierFor } from './policy.js';
 import { emptyWorkspace, oneGameWorkspace, twoGameWorkspace } from '../testUtils/index.js';
 
@@ -25,9 +23,9 @@ import { emptyWorkspace, oneGameWorkspace, twoGameWorkspace } from '../testUtils
  * RPT-08 / D-09 (phase 39 plan 01, wave 1): this suite's green-ness IS the
  * proof that today's shipped citation rule is insufficient — a claim citing
  * a REAL evidence id but stating a wrong number is ACCEPTED by the frozen
- * `legacyCitationOnlyVerdict`. It also carries the contract tests for the
- * `claims.ts`/`snapshot.ts` shapes every later plan compiles against, until
- * Task 3 relocates the contract-only assertions into `claimContracts.test.ts`.
+ * `legacyCitationOnlyVerdict`. It also carries the fixture-corpus coverage
+ * gates and the rubric<->corpus cross-checks. Pure contract tests for
+ * `claims.ts`/`snapshot.ts` shapes live in `claimContracts.test.ts`.
  */
 
 function findFixture(id: string) {
@@ -84,161 +82,6 @@ describe('vodEvidenceId / parseVodEvidenceId round-trip (C1-M8)', () => {
   it('parseVodEvidenceId returns null for a non-vod id and for a malformed seconds segment', () => {
     expect(parseVodEvidenceId('sr-f23-s1')).toBeNull();
     expect(parseVodEvidenceId('vod-abc-not-a-number')).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Contract tests (Task 1's acceptance criteria). These will be relocated to
-// claimContracts.test.ts in Task 3, once that file exists — until then this
-// is the only test file Task 1 has to carry them in.
-// ---------------------------------------------------------------------------
-
-describe('CLAIM_ID_VOCABULARY contract', () => {
-  it('has CLAIM_ID_VOCABULARY_SIZE members, each matching /^c\\d{2}$/, unique, ascending', () => {
-    expect(CLAIM_ID_VOCABULARY.length).toBe(CLAIM_ID_VOCABULARY_SIZE);
-    for (const id of CLAIM_ID_VOCABULARY) {
-      expect(id).toMatch(/^c\d{2}$/);
-    }
-    expect(new Set(CLAIM_ID_VOCABULARY).size).toBe(CLAIM_ID_VOCABULARY.length);
-    expect([...CLAIM_ID_VOCABULARY]).toEqual([...CLAIM_ID_VOCABULARY].sort());
-  });
-});
-
-describe('ACTION_ID_VOCABULARY contract', () => {
-  it('has ACTION_ID_VOCABULARY_SIZE members, each matching /^a\\d{2}$/, unique, ascending', () => {
-    expect(ACTION_ID_VOCABULARY.length).toBe(ACTION_ID_VOCABULARY_SIZE);
-    for (const id of ACTION_ID_VOCABULARY) {
-      expect(id).toMatch(/^a\d{2}$/);
-    }
-    expect(new Set(ACTION_ID_VOCABULARY).size).toBe(ACTION_ID_VOCABULARY.length);
-  });
-});
-
-describe('CLAIM_PREDICATES contract', () => {
-  it('has exactly the ten named members', () => {
-    expect(CLAIM_PREDICATES).toEqual([
-      'stage_record',
-      'stage_pick_rate',
-      'character_matchup_record',
-      'my_character_record',
-      'head_to_head_record',
-      'recent_form',
-      'opponent_character_usage',
-      'matchup_advisor_pick',
-      'vod_annotation',
-      'cohort_disclosure',
-    ]);
-  });
-});
-
-describe('EVIDENCE_ID_PREFIX contract (review C2-B2)', () => {
-  it('has a key for every member of CLAIM_PREDICATES, values are pairwise distinct and contain no dash', () => {
-    for (const predicate of CLAIM_PREDICATES) {
-      const prefix = EVIDENCE_ID_PREFIX[predicate];
-      expect(prefix).toBeDefined();
-      expect(prefix).not.toContain('-');
-      expect(prefix).toMatch(/^[a-z0-9]{2,4}$/);
-    }
-    const prefixes = CLAIM_PREDICATES.map((predicate) => EVIDENCE_ID_PREFIX[predicate]);
-    expect(new Set(prefixes).size).toBe(prefixes.length);
-  });
-});
-
-const NULL_SUBJECT: ClaimSubject = {
-  myFighterId: null,
-  opponentFighterId: null,
-  stageId: null,
-  opponentTag: null,
-};
-
-const AXIS_VALUES = {
-  myFighterId: 23,
-  opponentFighterId: 59,
-  stageId: 1,
-  opponentTag: 'ShadowOfTheOpponent',
-} as const;
-
-function buildSubjectBattery(): ClaimSubject[] {
-  const keys = ['myFighterId', 'opponentFighterId', 'stageId', 'opponentTag'] as const;
-  const subjects: ClaimSubject[] = [{ ...NULL_SUBJECT }];
-  for (const key of keys) {
-    subjects.push({ ...NULL_SUBJECT, [key]: AXIS_VALUES[key] });
-  }
-  for (let i = 0; i < keys.length; i += 1) {
-    for (let j = i + 1; j < keys.length; j += 1) {
-      subjects.push({
-        ...NULL_SUBJECT,
-        [keys[i]!]: AXIS_VALUES[keys[i]!],
-        [keys[j]!]: AXIS_VALUES[keys[j]!],
-      });
-    }
-  }
-  subjects.push({ ...AXIS_VALUES });
-  return subjects;
-}
-
-describe('evidenceIdFor injectivity across (predicate, subject) (review C2-B2)', () => {
-  it('every (predicate, subject) pair across all ten predicates and a full axis battery produces a distinct id', () => {
-    const opponentOrder = orderSnapshotOpponents([AXIS_VALUES.opponentTag]);
-    const subjects = buildSubjectBattery();
-    const nonVodPredicates = CLAIM_PREDICATES.filter((predicate) => predicate !== 'vod_annotation');
-
-    const ids: string[] = [];
-    for (const predicate of nonVodPredicates) {
-      for (const subject of subjects) {
-        ids.push(evidenceIdFor({ predicate, subject, opponentOrder }));
-      }
-    }
-    // vod_annotation supplied through vodEvidenceId, one distinct (matchId, seconds) per battery slot.
-    subjects.forEach((_, index) => {
-      ids.push(vodEvidenceId(`injectivity-battery-match-${index}`, index));
-    });
-
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it('evidenceIdFor throws UnsupportedEvidenceSubjectError for vod_annotation', () => {
-    expect(() =>
-      evidenceIdFor({ predicate: 'vod_annotation', subject: NULL_SUBJECT, opponentOrder: [] }),
-    ).toThrow(UnsupportedEvidenceSubjectError);
-  });
-
-  it('evidenceIdFor throws UnsupportedEvidenceSubjectError for an opponentTag absent from opponentOrder', () => {
-    const subject: ClaimSubject = { ...NULL_SUBJECT, opponentTag: 'NotInTheOrder' };
-    expect(() =>
-      evidenceIdFor({ predicate: 'recent_form', subject, opponentOrder: ['SomeoneElse'] }),
-    ).toThrow(UnsupportedEvidenceSubjectError);
-  });
-
-  it('every id evidenceIdFor/vodEvidenceId produces satisfies EVIDENCE_ID_PATTERN', () => {
-    const opponentOrder = orderSnapshotOpponents([AXIS_VALUES.opponentTag]);
-    for (const predicate of CLAIM_PREDICATES.filter((p) => p !== 'vod_annotation')) {
-      for (const subject of buildSubjectBattery()) {
-        expect(EVIDENCE_ID_PATTERN.test(evidenceIdFor({ predicate, subject, opponentOrder }))).toBe(
-          true,
-        );
-      }
-    }
-    expect(EVIDENCE_ID_PATTERN.test(vodEvidenceId('m-1', 5))).toBe(true);
-  });
-});
-
-describe('orderSnapshotOpponents contract (review C2-M10)', () => {
-  it('de-duplicates and is idempotent', () => {
-    const tags = ['b', 'a', 'b', 'a', 'c'];
-    const once = orderSnapshotOpponents(tags);
-    expect(once).toEqual(['a', 'b', 'c']);
-    expect(orderSnapshotOpponents(once)).toEqual(once);
-  });
-
-  it('orders by raw UTF-16 code-unit comparison, not localeCompare — a case where the two orders genuinely differ', () => {
-    const tags = ['apple', 'Zebra'];
-    const codeUnitOrder = [...tags].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    const localeOrder = [...tags].sort((a, b) => a.localeCompare(b));
-    // Sanity check: this input must actually exercise the divergence this
-    // test exists to prove, or the assertion below would pass vacuously.
-    expect(codeUnitOrder).not.toEqual(localeOrder);
-    expect(orderSnapshotOpponents(tags)).toEqual(codeUnitOrder);
   });
 });
 
@@ -373,5 +216,69 @@ describe('adversarial fixture corpus coverage (Task 2)', () => {
     for (const forbiddenTag of ['sparg0', 'MkLeo', 'IzAw', 'hbox']) {
       expect(serialized.toLowerCase()).not.toContain(forbiddenTag.toLowerCase());
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: the rubric record<->corpus cross-checks — the wave-1 gate that
+// keeps `RPT-08-rubric.md` and `adversarialFixtures.ts` from silently
+// drifting apart.
+// ---------------------------------------------------------------------------
+
+/** Parses the rule ids out of the rubric markdown's rule table (a single regex over the table's first column). */
+function parseRubricRuleIds(): string[] {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const rubricPath = join(here, 'records', 'RPT-08-rubric.md');
+  const markdown = readFileSync(rubricPath, 'utf8');
+  const ruleIdPattern = /^\|\s*(R[0-9]+)\s*\|/gm;
+  const ids: string[] = [];
+  for (const match of markdown.matchAll(ruleIdPattern)) {
+    if (match[1]) {
+      ids.push(match[1]);
+    }
+  }
+  return ids;
+}
+
+/** Parses the `MIN_VIABLE_CLAIMS` table the rubric records, keyed by surface name, so the record can be cross-checked against the exported constant. */
+function parseRubricMinViableClaims(): Record<string, number> {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const rubricPath = join(here, 'records', 'RPT-08-rubric.md');
+  const markdown = readFileSync(rubricPath, 'utf8');
+  const rowPattern = /^\|\s*`([a-z_]+)`\s*\|\s*([0-9]+)\s*\|/gm;
+  const values: Record<string, number> = {};
+  for (const match of markdown.matchAll(rowPattern)) {
+    const surface = match[1];
+    const value = match[2];
+    if (surface && value) {
+      values[surface] = Number(value);
+    }
+  }
+  return values;
+}
+
+describe('RPT-08-rubric.md <-> adversarialFixtures.ts cross-check (Task 3)', () => {
+  it('the rubric parses to a non-empty rule-id set equal to RUBRIC_RULE_IDS', () => {
+    const parsedRuleIds = parseRubricRuleIds();
+    expect(parsedRuleIds.length).toBeGreaterThan(0);
+    expect(new Set(parsedRuleIds)).toEqual(new Set(RUBRIC_RULE_IDS));
+  });
+
+  it('every rubric rule id is named by at least one fixture (a rule with no fixture fails here)', () => {
+    const namedByFixtures = new Set(
+      ADVERSARIAL_FIXTURES.flatMap((fixture) => fixture.rubricRuleIds),
+    );
+    for (const ruleId of RUBRIC_RULE_IDS) {
+      expect(namedByFixtures.has(ruleId)).toBe(true);
+    }
+  });
+
+  it('the corpus is not silently empty (anti-vacuous guard — at least as many fixtures as declared families)', () => {
+    expect(ADVERSARIAL_FIXTURES.length).toBeGreaterThanOrEqual(ADVERSARIAL_FAMILIES.length);
+  });
+
+  it('the MIN_VIABLE_CLAIMS values written in the rubric record equal the exported constant', () => {
+    const parsed = parseRubricMinViableClaims();
+    expect(parsed).toEqual(MIN_VIABLE_CLAIMS);
   });
 });

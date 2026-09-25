@@ -30,6 +30,15 @@ import {
 } from '../testUtils/index.js';
 
 /**
+ * The eight rule ids `records/RPT-08-rubric.md`'s rule table declares
+ * (Task 3). `rpt08Oracle.test.ts` parses the rubric markdown and asserts
+ * the parsed set equals this list exactly, and that every id is named by
+ * at least one fixture's `rubricRuleIds` — so the rubric and the corpus
+ * cannot silently drift apart.
+ */
+export const RUBRIC_RULE_IDS = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'] as const;
+
+/**
  * The full declared family list (review C1-H4/C2-H1/C2-H3 and the base
  * rubric families) — a family added to this list but never populated by
  * `ADVERSARIAL_FIXTURES` fails the anti-vacuous coverage test in
