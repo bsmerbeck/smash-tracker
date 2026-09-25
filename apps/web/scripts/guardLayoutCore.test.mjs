@@ -1457,3 +1457,56 @@ test('career-timeline: a multi-offender input returns ALL offenders (two timelin
   assert.equal(violations.filter((v) => v.type === 'career-timeline-axis-misaligned').length, 2);
   assert.equal(violations.filter((v) => v.type === 'career-timeline-legacy-canvas').length, 1);
 });
+
+// --- plot-aspect (plan 39.1-37, event-chart-aspect; UI-SPEC §6.1 aspect <= 4:1) ---
+
+function plotAspect() {
+  const fn = guardLayoutCoreNs.evaluatePlotAspect;
+  assert.equal(typeof fn, 'function', 'evaluatePlotAspect is exported');
+  return fn;
+}
+
+test('plot-aspect: PLOT_ASPECT_MAX is 4 and PLOT_ASPECT_MIN_VIEWPORT_WIDTH_PX is 1024', () => {
+  assert.equal(guardLayoutCoreNs.PLOT_ASPECT_MAX, 4);
+  assert.equal(guardLayoutCoreNs.PLOT_ASPECT_MIN_VIEWPORT_WIDTH_PX, 1024);
+});
+
+test('plot-aspect: a 1390x288 surface at 1440x900 is one plot-aspect violation (4.83 > 4)', () => {
+  const violations = plotAspect()({
+    viewportWidth: 1440,
+    surfaces: [{ selectorPath: '#trend', width: 1390, height: 288 }],
+  });
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'plot-aspect');
+  assert.equal(Math.round(violations[0].ratio * 100) / 100, 4.83);
+});
+
+test('plot-aspect: a 900x288 surface passes', () => {
+  const violations = plotAspect()({
+    viewportWidth: 1440,
+    surfaces: [{ selectorPath: '#trend', width: 900, height: 288 }],
+  });
+  assert.equal(violations.length, 0);
+});
+
+test("plot-aspect: a 700x160 surface (the hero's compact trend, at or under CHART_H_COMPACT + 8) is exempt", () => {
+  const violations = plotAspect()({
+    viewportWidth: 1440,
+    surfaces: [{ selectorPath: '#hero', width: 700, height: 160 }],
+  });
+  assert.equal(violations.length, 0);
+});
+
+test('plot-aspect: viewports under 1024 wide are not evaluated', () => {
+  const violations = plotAspect()({
+    viewportWidth: 390,
+    surfaces: [{ selectorPath: '#trend', width: 1390, height: 288 }],
+  });
+  assert.equal(violations.length, 0);
+});
+
+test('plot-aspect: no surface at all on an opted route is plot-aspect-unmeasured', () => {
+  const violations = plotAspect()({ viewportWidth: 1440, surfaces: [] });
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'plot-aspect-unmeasured');
+});

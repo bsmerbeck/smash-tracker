@@ -985,4 +985,62 @@ describe('OpponentHubPage', () => {
       });
     });
   });
+
+  // Plan 39.1-37 (UIX-01, UI-SPEC §6.1 "chart = 8 + 4"; OWNER DECISION 2026-09-25
+  // overriding §8.6's "39.1 leaves the hub layout unchanged"; event-chart-aspect).
+  describe('plan 39.1-37: the hub sits in the page container with its H2H trend in an 8 + 4 row', () => {
+    function threeGames() {
+      return [
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false }),
+      ];
+    }
+
+    function cardTitled(title: string): HTMLElement {
+      const card = [...document.querySelectorAll('[data-slot="card"]')].find(
+        (el) => el.querySelector('[data-slot="card-title"]')?.textContent === title,
+      );
+      expect(card, `card "${title}"`).toBeDefined();
+      return card as HTMLElement;
+    }
+
+    it('renders inside PageShell (content capped at 1440px)', async () => {
+      listMatches.mockResolvedValue(threeGames());
+      const { container } = renderHub('/opponents/rival');
+      await findRecordText('2-1');
+      const body = container.querySelector('[data-slot="opponent-hub-body"]')!;
+      const shell = body.closest('.max-w-\\[1440px\\]');
+      expect(shell).not.toBeNull();
+      expect(shell!.querySelector('h1')?.textContent).toBe('rival');
+    });
+
+    it('puts the H2H trend in an 8-col cell beside a 4-col stack of What They Play then Stages', async () => {
+      listMatches.mockResolvedValue(threeGames());
+      renderHub('/opponents/rival');
+      await findRecordText('2-1');
+
+      const trendCell = cardTitled('H2H Trend').closest('[data-span]');
+      expect(trendCell?.getAttribute('data-span')).toBe('8');
+      const listCell = trendCell!.nextElementSibling;
+      expect(listCell?.getAttribute('data-span')).toBe('4');
+      const stacked = [...listCell!.querySelectorAll('[data-slot="card"]')].map(
+        (card) => card.querySelector('[data-slot="card-title"]')?.textContent,
+      );
+      expect(stacked).toEqual(['What They Play', 'Stages']);
+      expect(trendCell!.parentElement?.getAttribute('data-slot')).toBe('page-grid');
+    });
+
+    it('the loading skeleton mirrors the loaded spans (an 8-col chart beside a 4-col list stack)', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderHub('/opponents/rival');
+      const status = container.querySelector('[role="status"][aria-busy="true"]')!;
+      expect(status.closest('.max-w-\\[1440px\\]')).not.toBeNull();
+      const eight = status.querySelector('[data-span="8"]');
+      expect(eight).not.toBeNull();
+      const four = eight!.nextElementSibling;
+      expect(four?.getAttribute('data-span')).toBe('4');
+      expect(four!.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -574,4 +574,58 @@ describe('StageDetailPage', () => {
       });
     });
   });
+
+  // Plan 39.1-37 (UIX-01, UI-SPEC §6.1 "chart = 8 + 4"; event-chart-aspect).
+  describe('plan 39.1-37: stage detail sits in the page container with Over Time in an 8 + 4 row', () => {
+    function cardTitled(title: string): HTMLElement {
+      const card = [...document.querySelectorAll('[data-slot="card"]')].find(
+        (el) => el.querySelector('[data-slot="card-title"]')?.textContent === title,
+      );
+      expect(card, `card "${title}"`).toBeDefined();
+      return card as HTMLElement;
+    }
+
+    it('renders inside PageShell (content capped at 1440px)', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true }),
+        makeMatch({ id: 'm2', time: 2, win: false }),
+      ]);
+      const { container } = renderStageAt('/stages/1');
+      await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+      const body = container.querySelector('[data-slot="stage-detail-body"]')!;
+      expect(body.closest('.max-w-\\[1440px\\]')).not.toBeNull();
+    });
+
+    it('puts Over Time in an 8-col cell beside a 4-col By Opponent cell; By Character and Games follow full-width', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true }),
+        makeMatch({ id: 'm2', time: 2, win: false, opponent: 'second' }),
+      ]);
+      renderStageAt('/stages/1');
+      await waitFor(() => expect(screen.getByText('Battlefield')).toBeInTheDocument());
+
+      const trendCell = cardTitled('Over Time').closest('[data-span]');
+      expect(trendCell?.getAttribute('data-span')).toBe('8');
+      const railCell = trendCell!.nextElementSibling;
+      expect(railCell?.getAttribute('data-span')).toBe('4');
+      expect(railCell!.contains(cardTitled('By Opponent'))).toBe(true);
+      expect(cardTitled('By Character').closest('[data-span]')?.getAttribute('data-span')).toBe(
+        '12',
+      );
+      expect(cardTitled('Games').closest('[data-span]')?.getAttribute('data-span')).toBe('12');
+      // The two tables keep their ids (aria-controls targets) and the body marker stays.
+      expect(document.getElementById('stage-by-opponent-table')).not.toBeNull();
+      expect(document.querySelector('[data-slot="stage-detail-body"]')).not.toBeNull();
+    });
+
+    it('the loading skeleton mirrors the loaded spans (an 8-col chart beside a 4-col list)', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderStageAt('/stages/1');
+      const status = container.querySelector('[role="status"][aria-busy="true"]')!;
+      expect(status.closest('.max-w-\\[1440px\\]')).not.toBeNull();
+      const eight = status.querySelector('[data-span="8"]');
+      expect(eight).not.toBeNull();
+      expect(eight!.nextElementSibling?.getAttribute('data-span')).toBe('4');
+    });
+  });
 });
