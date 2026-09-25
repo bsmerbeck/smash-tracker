@@ -38,6 +38,16 @@ import {
   useMatchDataInsights,
 } from './components/MatchDataRail';
 
+/**
+ * Plan 39.1-38 (design-audit item 9; UI-SPEC §8.4): below lg the cells stack
+ * in DOM order — rail, [Roster, Stages], the match table — so a phone reads
+ * the insight before the table. At lg these utilities restore the desktop
+ * composition (table row 1 full-width; stack cols 1-8 and rail cols 9-12 in
+ * row 2), never a CSS `order` utility; the loading skeleton uses them too.
+ */
+const MATCH_DATA_TABLE_PLACEMENT = 'lg:row-start-1';
+const MATCH_DATA_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-2';
+const MATCH_DATA_RAIL_PLACEMENT = 'lg:col-start-9 lg:row-start-2';
 /** Plan 39.1-38: the match table card's stable hook (the insight-order / placement oracle). */
 const MATCH_TABLE_ANCHOR_ID = 'match-data-table';
 const GAMES_ANCHOR_ID = 'games';
@@ -213,15 +223,15 @@ export function MatchDataPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('matchData.loading')}</span>
           <PageGrid>
-            <GridCell span={12}>
-              <CardSkeleton variant="list" rows={5} statusLabel={t('matchData.loading')} />
-            </GridCell>
-            <GridCell span={8} stack>
-              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
-              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
-            </GridCell>
-            <GridCell span={4}>
+            <GridCell span={4} className={MATCH_DATA_RAIL_PLACEMENT}>
               <CardSkeleton variant="insight" statusLabel={t('matchData.loading')} />
+            </GridCell>
+            <GridCell span={8} stack className={MATCH_DATA_STACK_PLACEMENT}>
+              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
+              <CardSkeleton variant="list" rows={4} statusLabel={t('matchData.loading')} />
+            </GridCell>
+            <GridCell span={12} className={MATCH_DATA_TABLE_PLACEMENT}>
+              <CardSkeleton variant="list" rows={5} statusLabel={t('matchData.loading')} />
             </GridCell>
           </PageGrid>
         </div>
@@ -288,7 +298,25 @@ export function MatchDataPage() {
             'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
         )}
       >
-        <GridCell span={12}>
+        {/* Plan 39.1-38 (UI-SPEC §8.4 "insight before chart"): DOM order is the
+            phone reading order — rail, [Roster, Stages], the match table; lg
+            placement keeps the desktop composition. */}
+        <GridCell span={4} className={MATCH_DATA_RAIL_PLACEMENT}>
+          <MatchDataRail
+            insights={matchDataInsights}
+            dismissedIds={dismissedIds}
+            dismiss={dismiss}
+            restoreAll={restoreAll}
+            horizon={horizon}
+          />
+        </GridCell>
+
+        <GridCell span={8} stack className={MATCH_DATA_STACK_PLACEMENT}>
+          <RosterUsage matches={matches} />
+          <StageBreakdown matches={matches} />
+        </GridCell>
+
+        <GridCell span={12} className={MATCH_DATA_TABLE_PLACEMENT}>
           <Card id={MATCH_TABLE_ANCHOR_ID}>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>{t('matchData.title')}</CardTitle>
@@ -298,21 +326,6 @@ export function MatchDataPage() {
               <MatchTable matches={matches} fighterSprites={fighterSprites} />
             </CardContent>
           </Card>
-        </GridCell>
-
-        <GridCell span={8} stack>
-          <RosterUsage matches={matches} />
-          <StageBreakdown matches={matches} />
-        </GridCell>
-
-        <GridCell span={4}>
-          <MatchDataRail
-            insights={matchDataInsights}
-            dismissedIds={dismissedIds}
-            dismiss={dismiss}
-            restoreAll={restoreAll}
-            horizon={horizon}
-          />
         </GridCell>
 
         {hasDrillAxis && (

@@ -48,6 +48,21 @@ import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCard
 const GAMES_ANCHOR_ID = 'games';
 
 /**
+ * Plan 39.1-38 (design-audit item 9; UI-SPEC §8.2 "insight before chart"):
+ * below lg the cells stack in DOM order — stat row, reads rail, career
+ * timeline, [Sessions, Recent events], [Setting, Mix] — so a phone reads the
+ * insight before the chart. At lg these placement utilities restore the
+ * desktop composition (stat row row 1, timeline row 2, the three 4-col cells
+ * row 3 with the reads in the centre), never a CSS `order` utility; the
+ * loading skeleton uses the same constants.
+ */
+const TRENDS_HERO_PLACEMENT = 'lg:row-start-1';
+const TRENDS_TIMELINE_PLACEMENT = 'lg:row-start-2';
+const TRENDS_LEFT_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-3';
+const TRENDS_READS_PLACEMENT = 'lg:col-start-5 lg:row-start-3';
+const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
+
+/**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
  * §8.2, TRND-02, INS-05): `PageShell` -> one filter row (title + `HorizonSwitch`)
  * -> `PageGrid` rows. Own-account only (38 D-04) — every link this page
@@ -279,20 +294,20 @@ export function TrendsPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('trends.loading')}</span>
           <PageGrid>
-            <GridCell span={12}>
+            <GridCell span={12} className={TRENDS_HERO_PLACEMENT}>
               <CardSkeleton variant="stat-row" rows={5} statusLabel={t('trends.loading')} />
             </GridCell>
-            <GridCell span={12}>
-              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
-            </GridCell>
-            <GridCell span={4} stack>
-              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
-              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
-            </GridCell>
-            <GridCell span={4}>
+            <GridCell span={4} className={TRENDS_READS_PLACEMENT}>
               <CardSkeleton variant="insight" statusLabel={t('trends.loading')} />
             </GridCell>
-            <GridCell span={4} stack>
+            <GridCell span={12} className={TRENDS_TIMELINE_PLACEMENT}>
+              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
             </GridCell>
@@ -331,25 +346,14 @@ export function TrendsPage() {
             'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
         )}
       >
-        <GridCell span={12}>
+        {/* Plan 39.1-38 (UI-SPEC §8.2 "insight before chart"): DOM order is
+            the phone reading order — stat row, reads, timeline, then the two
+            rail stacks; lg placement keeps the desktop composition. */}
+        <GridCell span={12} className={TRENDS_HERO_PLACEMENT}>
           <TrendsHero matches={matches} horizon={horizon} />
         </GridCell>
 
-        <GridCell span={12}>
-          <CareerTimelineCard
-            matches={matches}
-            horizon={horizon}
-            onSelectPeriod={handleTimelineDrill}
-            onSelectSet={handleTimelineSetDrill}
-          />
-        </GridCell>
-
-        <GridCell span={4} stack>
-          <SessionsAndTilt matches={matches} />
-          <RecentEvents matches={matches} />
-        </GridCell>
-
-        <GridCell span={4}>
+        <GridCell span={4} className={TRENDS_READS_PLACEMENT}>
           <TrendsReadsRail
             insights={trendsInsights}
             dismissedIds={dismissedIds}
@@ -359,7 +363,21 @@ export function TrendsPage() {
           />
         </GridCell>
 
-        <GridCell span={4} stack>
+        <GridCell span={12} className={TRENDS_TIMELINE_PLACEMENT}>
+          <CareerTimelineCard
+            matches={matches}
+            horizon={horizon}
+            onSelectPeriod={handleTimelineDrill}
+            onSelectSet={handleTimelineSetDrill}
+          />
+        </GridCell>
+
+        <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
+          <SessionsAndTilt matches={matches} />
+          <RecentEvents matches={matches} />
+        </GridCell>
+
+        <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
           <SettingComparison
             matches={matches}
             horizon={horizon}
