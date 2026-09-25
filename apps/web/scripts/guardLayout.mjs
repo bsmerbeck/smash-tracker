@@ -81,8 +81,10 @@ export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'fighter-analysis',
     loadedMarker: '[data-slot="fighter-hero-body"]',
-    // Plan 39.1-33: form-strip-fit only — no extra viewport, no scroll budget.
-    checks: ['form-strip-fit'],
+    // Plan 39.1-33: form-strip-fit — no extra viewport, no scroll budget.
+    // Plan 39.1-37: axis-ticks (incl. reference-label-collision) on the hero's
+    // period trend.
+    checks: ['form-strip-fit', 'axis-ticks'],
   },
   {
     id: 'matchups',
@@ -395,6 +397,25 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
         };
       });
 
+      // Plan 39.1-37: the period trend's all-time reference label. Recharts 3
+      // draws a ReferenceLine's label in a z-index layer, NOT inside
+      // `.recharts-reference-line`, so it is found by Recharts' own
+      // `recharts-label` text class (TrendLine keeps it next to its
+      // `trend-period-reference-label` class), which also matches the label
+      // on builds that predate that class.
+      const referenceLabels = Array.from(
+        surfaceEl.querySelectorAll('text.recharts-label, .trend-period-reference-label'),
+      ).map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          text: el.textContent ?? '',
+        };
+      });
+
       const dots = Array.from(surfaceEl.querySelectorAll('[data-slot="trend-period-dot"]')).map(
         (el) => {
           const r = el.getBoundingClientRect();
@@ -422,6 +443,7 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
         yTicks,
         valueLabels,
         dots,
+        referenceLabels,
         xAxisLine: axisLineRect('.recharts-xAxis'),
         yAxisLine: axisLineRect('.recharts-yAxis'),
       });

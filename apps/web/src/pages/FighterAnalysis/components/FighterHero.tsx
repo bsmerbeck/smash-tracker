@@ -510,6 +510,17 @@ export function FighterHero({
           <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
             {t(`fighterAnalysis.hero.trendTitle.${periodSeries.grain}`)}
           </p>
+          {/* Plan 39.1-37 (UI-SPEC §11): the legend names the hollow rule
+              whenever the drawn plot carries a sub-floor period. */}
+          {periodSeries.points.length >= PERIOD_TREND_MIN_PERIODS &&
+            periodSeries.points.some((point) => point.subFloor) && (
+              <p
+                className="truncate text-xs leading-4 text-muted-foreground"
+                data-slot="fighter-hero-trend-legend"
+              >
+                {t('analytics.trend.legendHollow')}
+              </p>
+            )}
           <TrendLine
             mode="period"
             points={periodSeries.points}

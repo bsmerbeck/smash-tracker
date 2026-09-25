@@ -195,9 +195,12 @@ export function evaluateHeaderSqueeze(headers, minShare = HEADER_SQUEEZE_MIN_SHA
 
 /**
  * UI-SPEC §7.13/§11: x-axis tick clipping, tick-label overlap, a value label
- * or period dot colliding with a tick or axis line. Each `surface` is
+ * or period dot colliding with a tick or axis line, and (plan 39.1-37,
+ * design-audit item 10) the all-time reference label overprinting a value
+ * label. Each `surface` is
  * `{ selectorPath, rect, xTicks: [{ left, right, top, bottom, text }], yTicks: [...],
- * valueLabels: [...], dots: [...], xAxisLine: rect|null, yAxisLine: rect|null }`.
+ * valueLabels: [...], dots: [...], referenceLabels?: [...], xAxisLine: rect|null,
+ * yAxisLine: rect|null }`.
  * Rect intersection is a standard AABB overlap test (both axes must overlap).
  */
 function rectsIntersect(a, b, expandPx = 0) {
@@ -246,6 +249,19 @@ export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
             tick: tick.text,
           });
           break;
+        }
+      }
+    }
+
+    for (const reference of surface.referenceLabels ?? []) {
+      for (const label of valueLabels) {
+        if (rectsIntersect(label, reference)) {
+          violations.push({
+            type: 'reference-label-collision',
+            selectorPath,
+            label: label.text,
+            reference: reference.text,
+          });
         }
       }
     }

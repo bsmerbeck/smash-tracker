@@ -25,7 +25,22 @@ import {
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
-import { formatPeriodRowLabel, selectPeriodTickLayout, type PeriodTickLayout } from './periodTicks';
+import {
+  estimateTickLabelWidthPx,
+  formatPeriodRowLabel,
+  selectPeriodTickLayout,
+  type PeriodTickLayout,
+} from './periodTicks';
+import {
+  PERIOD_DOT_DIAMETER_LARGE,
+  PERIOD_DOT_DIAMETER_MEDIUM,
+  PERIOD_DOT_DIAMETER_SMALL,
+  PERIOD_VALUE_LABEL_OFFSET_PX,
+  fitRateDomain,
+  periodDotDiameter,
+  placeReferenceLabel,
+  rateDomainTicks,
+} from './trendGeometry';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -77,13 +92,14 @@ export interface TrendEventPoint {
 }
 
 /**
- * VIZ-01 (UI-SPEC §7.13): the three dot-size steps by sample size, ×2 the
- * kit's existing `CHART_DOT_RADIUS` convention (radius, not diameter — the
- * "5/7/9px" the spec names). Exported per the plan's artifact list.
+ * VIZ-01 (UI-SPEC §7.13): the three dot-size steps by sample size, as SVG
+ * RADII — radius = diameter / 2; sketch 001-C draws 5 / 7 / 9px dots (owner
+ * decision 2026-09-25, `trendGeometry.ts` owns the diameters). The exported
+ * names are kept so existing callers compile.
  */
-export const PERIOD_DOT_RADIUS_SMALL = 5;
-export const PERIOD_DOT_RADIUS_MEDIUM = 7;
-export const PERIOD_DOT_RADIUS_LARGE = 9;
+export const PERIOD_DOT_RADIUS_SMALL = PERIOD_DOT_DIAMETER_SMALL / 2;
+export const PERIOD_DOT_RADIUS_MEDIUM = PERIOD_DOT_DIAMETER_MEDIUM / 2;
+export const PERIOD_DOT_RADIUS_LARGE = PERIOD_DOT_DIAMETER_LARGE / 2;
 
 /** UI-SPEC §7.13's table-twin column headers — fully composed by the host (Track B rule B1). */
 export interface TrendLinePeriodTableHeaders {
@@ -367,9 +383,7 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
 // ---------------------------------------------------------------------------
 
 function periodDotRadius(total: number): number {
-  if (total >= 150) return PERIOD_DOT_RADIUS_LARGE;
-  if (total >= 50) return PERIOD_DOT_RADIUS_MEDIUM;
-  return PERIOD_DOT_RADIUS_SMALL;
+  return periodDotDiameter(total) / 2;
 }
 
 /** UI-SPEC §7.13: 2px at `CHART_H_DEFAULT`, 1.5px at `CHART_H_COMPACT`. */
@@ -379,37 +393,50 @@ function periodLineStrokeWidth(height: number): number {
 
 /**
  * UI-SPEC §7.13/§11: direct value labels on the last, maximum and minimum
- * points only. Ties broken by keeping the FIRST (earlier) occurrence — only
+ * JOINED (3+ game) points only — sketch 001-C's `okPts` rule: a sub-floor
+ * point is never labelled, and a series with no joined point carries no
+ * label at all. Ties broken by keeping the FIRST (earlier) occurrence — only
  * updating on a STRICT `>`/`<` means a later point tying the current
  * max/min never displaces it.
  */
 function findPeriodLabeledIndices(points: PeriodPoint[]): Set<number> {
-  const lastIndex = points.length - 1;
-  let maxIndex = 0;
-  let minIndex = 0;
-  points.forEach((point, i) => {
-    const current = points[maxIndex]!;
-    if (point.rate > current.rate) maxIndex = i;
-    const currentMin = points[minIndex]!;
-    if (point.rate < currentMin.rate) minIndex = i;
-  });
+  const joined = points.flatMap((point, i) => (point.subFloor ? [] : [i]));
+  if (joined.length === 0) {
+    return new Set();
+  }
+  const lastIndex = joined[joined.length - 1]!;
+  let maxIndex = joined[0]!;
+  let minIndex = joined[0]!;
+  for (const i of joined) {
+    if (points[i]!.rate > points[maxIndex]!.rate) maxIndex = i;
+    if (points[i]!.rate < points[minIndex]!.rate) minIndex = i;
+  }
   return new Set([lastIndex, maxIndex, minIndex]);
 }
 
-/** UI-SPEC §11: fitted to data ± 4pts, snapped to 10s, minimum span 20pts, clamped to [0, 100]. */
-function computePeriodYDomain(points: PeriodPoint[]): [number, number] {
-  const rates = points.map((point) => point.rate * 100);
-  const dataMin = Math.min(...rates);
-  const dataMax = Math.max(...rates);
-  let lo = Math.max(0, Math.floor((dataMin - 4) / 10) * 10);
-  let hi = Math.min(100, Math.ceil((dataMax + 4) / 10) * 10);
-  if (hi - lo < 20) {
-    hi = Math.min(100, lo + 20);
-    if (hi - lo < 20) {
-      lo = Math.max(0, hi - 20);
-    }
+/**
+ * UI-SPEC §7.13 / sketch 001-C: the domain is fitted to the JOINED periods
+ * and the all-time reference rate — never to a sub-floor period (owner
+ * decision 2026-09-25: an off-domain sub-floor dot is pinned to the edge
+ * instead) and never to the demoted context step series, which may clip.
+ */
+function computePeriodYDomain(points: PeriodPoint[], referenceRate?: number): [number, number] {
+  const fitted = points.filter((point) => !point.subFloor).map((point) => point.rate * 100);
+  if (referenceRate !== undefined) {
+    fitted.push(referenceRate);
   }
-  return [lo, hi];
+  return fitRateDomain(fitted);
+}
+
+/** Owner decision 2026-09-25: which edge (if any) an off-domain sub-floor dot is pinned to. */
+type PinnedEdge = 'top' | 'bottom';
+
+function pinnedEdgeFor(point: PeriodPoint, [lo, hi]: [number, number]): PinnedEdge | undefined {
+  if (!point.subFloor) return undefined;
+  const ratePercent = point.rate * 100;
+  if (ratePercent < lo) return 'bottom';
+  if (ratePercent > hi) return 'top';
+  return undefined;
 }
 
 /** UI-SPEC §7.13: the emphasis band's left edge snaps to the period CONTAINING the window start; a window start that falls between periods snaps forward to the next period rather than inventing a partial one. */
@@ -422,7 +449,7 @@ function findEmphasisStartKey(points: PeriodPoint[], emphasisStartMs: number): s
   return (after ?? points[points.length - 1])?.key;
 }
 
-function periodDotRenderer(points: PeriodPoint[]) {
+function periodDotRenderer(points: PeriodPoint[], domain: [number, number]) {
   return function renderDot(dotProps: unknown): ReactElement {
     const { cx, cy, index } = dotProps as { cx?: number; cy?: number; index?: number };
     if (typeof cx !== 'number' || typeof cy !== 'number' || typeof index !== 'number') {
@@ -434,6 +461,11 @@ function periodDotRenderer(points: PeriodPoint[]) {
     }
     const radius = periodDotRadius(point.total);
     if (point.subFloor) {
+      // Owner decision 2026-09-25: an off-domain sub-floor dot is drawn at
+      // the nearest domain edge (never dropped, never widening the axis) and
+      // marked data-pinned; its native tooltip and the table twin carry its
+      // true rate.
+      const pinned = pinnedEdgeFor(point, domain);
       return (
         <circle
           key={point.key}
@@ -444,7 +476,10 @@ function periodDotRenderer(points: PeriodPoint[]) {
           stroke={CHART_TOKENS.deemphasis}
           strokeWidth={1.5}
           data-slot="trend-period-dot"
-        />
+          {...(pinned ? { 'data-pinned': pinned } : {})}
+        >
+          {pinned && <title>{`${Math.round(point.rate * 100)}%`}</title>}
+        </circle>
       );
     }
     return (
@@ -478,7 +513,7 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
     return (
       <text
         x={x}
-        y={y - 12}
+        y={y - PERIOD_VALUE_LABEL_OFFSET_PX}
         textAnchor="middle"
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
@@ -541,20 +576,29 @@ function periodTickRenderer(layout: PeriodTickLayout[]) {
 interface PeriodChartRow {
   key: string;
   lineRatePercent: number | null;
+  /** The period's TRUE rate — what a tooltip payload reads. */
   ratePercent: number;
+  /** Where the dot is drawn: the true rate, or the nearest domain edge for a pinned sub-floor dot. */
+  dotRatePercent: number;
   contextPercent?: number;
 }
 
 function buildPeriodChartData(
   points: PeriodPoint[],
+  domain: [number, number],
   contextRatePercents?: number[],
 ): PeriodChartRow[] {
-  return points.map((point, i) => ({
-    key: point.key,
-    lineRatePercent: point.subFloor ? null : point.rate * 100,
-    ratePercent: point.rate * 100,
-    contextPercent: contextRatePercents?.[i],
-  }));
+  const [lo, hi] = domain;
+  return points.map((point, i) => {
+    const ratePercent = point.rate * 100;
+    return {
+      key: point.key,
+      lineRatePercent: point.subFloor ? null : ratePercent,
+      ratePercent,
+      dotRatePercent: point.subFloor ? Math.min(hi, Math.max(lo, ratePercent)) : ratePercent,
+      contextPercent: contextRatePercents?.[i],
+    };
+  });
 }
 
 function renderPeriodLockedInset(props: TrendLinePeriodProps): ReactElement {
@@ -644,6 +688,52 @@ const PERIOD_CHART_MARGIN = {
   bottom: PERIOD_CHART_MARGIN_PX,
   left: PERIOD_CHART_MARGIN_PX,
 };
+/** The period YAxis's own top/bottom padding (px) inside the plot. */
+const PERIOD_Y_AXIS_PADDING_TOP_PX = 24;
+const PERIOD_Y_AXIS_PADDING_BOTTOM_PX = 16;
+/** Recharts' default XAxis height (px) — the band below the plot the tick labels occupy. */
+const PERIOD_X_AXIS_HEIGHT_PX = 30;
+
+/**
+ * The period plot's modelled pixel geometry — the same model
+ * `selectPeriodTickLayout` receives (container width minus margins, axis
+ * width and edge padding), extended vertically so `placeReferenceLabel` and
+ * the hairline ticks see the rendered plot.
+ */
+interface PeriodPlotModel {
+  plotLeftPx: number;
+  plotRightPx: number;
+  /** The first category's x (px). */
+  firstXPx: number;
+  /** The x-axis band width the categories spread across (px). */
+  plotWidthPx: number;
+  valueTopPx: number;
+  valueBottomPx: number;
+}
+
+function periodPlotModel(containerWidth: number, height: number): PeriodPlotModel {
+  const plotLeftPx = PERIOD_CHART_MARGIN_PX + PERIOD_Y_AXIS_WIDTH_PX;
+  const plotRightPx = containerWidth - PERIOD_CHART_MARGIN_PX;
+  return {
+    plotLeftPx,
+    plotRightPx,
+    firstXPx: plotLeftPx + PERIOD_X_AXIS_PADDING_PX,
+    plotWidthPx: Math.max(0, plotRightPx - plotLeftPx - PERIOD_X_AXIS_PADDING_PX * 2),
+    valueTopPx: PERIOD_CHART_MARGIN_PX + PERIOD_Y_AXIS_PADDING_TOP_PX,
+    valueBottomPx:
+      height - PERIOD_CHART_MARGIN_PX - PERIOD_X_AXIS_HEIGHT_PX - PERIOD_Y_AXIS_PADDING_BOTTOM_PX,
+  };
+}
+
+function modelY(model: PeriodPlotModel, [lo, hi]: [number, number], ratePercent: number): number {
+  const share = hi > lo ? (ratePercent - lo) / (hi - lo) : 0.5;
+  return model.valueTopPx + (1 - share) * (model.valueBottomPx - model.valueTopPx);
+}
+
+function modelX(model: PeriodPlotModel, index: number, count: number): number {
+  if (count <= 1) return model.firstXPx + model.plotWidthPx / 2;
+  return model.firstXPx + (index * model.plotWidthPx) / (count - 1);
+}
 
 /**
  * Used only to derive the initial plot-width estimate before
@@ -692,18 +782,33 @@ function PeriodTrendChart({
   }
 
   const containerWidth = typeof width === 'number' ? width : measuredWidth;
-  const plotWidthPx = Math.max(
-    0,
-    containerWidth -
-      PERIOD_CHART_MARGIN_PX * 2 -
-      PERIOD_Y_AXIS_WIDTH_PX -
-      PERIOD_X_AXIS_PADDING_PX * 2,
-  );
+  const model = periodPlotModel(containerWidth, height);
+  const { plotWidthPx } = model;
 
-  const data = buildPeriodChartData(points, props.contextRatePercents);
+  const domain = computePeriodYDomain(points, props.referenceRate);
+  const [yMin, yMax] = domain;
+  const yTicks = rateDomainTicks(domain, model.valueBottomPx - model.valueTopPx);
+  const data = buildPeriodChartData(points, domain, props.contextRatePercents);
   const labeledIndices = findPeriodLabeledIndices(points);
-  const [yMin, yMax] = computePeriodYDomain(points);
   const tickLayout = selectPeriodTickLayout(points, { plotWidthPx, locale });
+  const referenceLabel = props.labels.referenceLabel;
+  const referenceLabelPosition =
+    props.referenceRate !== undefined && referenceLabel
+      ? placeReferenceLabel({
+          referenceYPx: modelY(model, domain, props.referenceRate),
+          referenceLabelWidthPx: estimateTickLabelWidthPx(referenceLabel),
+          plotLeftPx: model.plotLeftPx,
+          plotRightPx: model.plotRightPx,
+          labelledPoints: [...labeledIndices].map((i) => {
+            const point = points[i]!;
+            return {
+              xPx: modelX(model, i, points.length),
+              yPx: modelY(model, domain, point.rate * 100),
+              labelWidthPx: estimateTickLabelWidthPx(`${Math.round(point.rate * 100)}%`),
+            };
+          }),
+        })
+      : undefined;
   const emphasisStartKey =
     props.emphasisStartMs !== undefined
       ? findEmphasisStartKey(points, props.emphasisStartMs)
@@ -731,8 +836,11 @@ function PeriodTrendChart({
       />
       <YAxis
         domain={[yMin, yMax]}
+        ticks={yTicks}
+        interval={0}
+        allowDataOverflow
         width={PERIOD_Y_AXIS_WIDTH_PX}
-        padding={{ top: 24, bottom: 16 }}
+        padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
       />
       {props.tooltip && (
@@ -743,8 +851,15 @@ function PeriodTrendChart({
           y={props.referenceRate}
           stroke={CHART_TOKENS.deemphasis}
           label={
-            props.labels.referenceLabel
-              ? { value: props.labels.referenceLabel, position: 'insideTopRight' }
+            referenceLabel && referenceLabelPosition
+              ? {
+                  value: referenceLabel,
+                  position: referenceLabelPosition,
+                  fill: CHART_TOKENS.axisText,
+                  fontSize: CHART_AXIS_FONT_SIZE,
+                  // Recharts replaces its own `recharts-label` class with a custom one — keep both.
+                  className: 'recharts-label trend-period-reference-label',
+                }
               : undefined
           }
         />
@@ -780,9 +895,9 @@ function PeriodTrendChart({
       />
       <Line
         type="linear"
-        dataKey="ratePercent"
+        dataKey="dotRatePercent"
         stroke="none"
-        dot={periodDotRenderer(points)}
+        dot={periodDotRenderer(points, domain)}
         label={periodLabelRenderer(points, labeledIndices)}
         isAnimationActive={false}
       />
