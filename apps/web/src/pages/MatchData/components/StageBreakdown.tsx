@@ -117,6 +117,9 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <StatRow
+          // Plan 39.1-38: three short figures stay three-up on a phone
+          // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
+          fixedColumns
           figures={[
             <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
             <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,

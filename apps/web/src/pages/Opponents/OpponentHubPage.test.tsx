@@ -1061,8 +1061,9 @@ describe('OpponentHubPage', () => {
       expect(within(row).getByRole('combobox', { name })).toBeInTheDocument();
     }
     expect(within(row).getAllByRole('radio').length).toBeGreaterThanOrEqual(6);
-    const h1 = screen.getByRole('heading', { level: 1 });
+    // The header row's h1 (the print-only H2H evidence packet carries its own).
+    const h1 = screen.getByRole('heading', { level: 1, name: 'rival' });
     expect(row.contains(h1)).toBe(false);
-    expect(h1).toHaveTextContent('rival');
+    expect(row.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });

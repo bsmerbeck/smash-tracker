@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
@@ -316,14 +317,9 @@ export function TrendsPage() {
     );
   }
 
-  const filterRow = (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('trends.title')}</h1>
-        <HorizonSwitch />
-      </CardContent>
-    </Card>
-  );
+  // Plan 39.1-38 (design-audit item 6; UI-SPEC §10.4, sketch 002-C
+  // `.filters`): ONE unboxed row — title, spacer, HorizonSwitch.
+  const filterRow = <PageFilterRow title={t('trends.title')} trailing={<HorizonSwitch />} />;
 
   return (
     <PageShell filterRow={filterRow}>

@@ -269,6 +269,9 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
       <CardContent className="pt-6" data-slot="trends-hero-body">
         <StatRow
           leadWidth
+          // Plan 39.1-38: sketch 002-C `.statrow.kpi .lead{grid-column:1/-1}` —
+          // the one StatRow whose lead spans both phone columns.
+          leadSpanOnPhone
           figures={[winRateFigure, ratingFigure, peakFigure, bestMonthFigure, sessionsFigure]}
         />
       </CardContent>

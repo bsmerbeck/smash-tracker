@@ -40,6 +40,7 @@ import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/i
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { PageShell } from '@/components/analytics/PageShell';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { cn } from '@/lib/utils';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -852,137 +853,144 @@ export function OpponentHubPage() {
             {headToHeadSample && <SampleCue sample={headToHeadSample} />}
           </div>
 
-          {/* Filter bar (D-05/D-10) */}
-          <div className="flex flex-col gap-3 rounded-lg border p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.fighter')}
-                </span>
-                <Select
-                  value={
-                    axesFromUrl.fighterId != null ? String(axesFromUrl.fighterId) : ALL_AXIS_VALUE
-                  }
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_FIGHTER_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.fighter')}
-                    className="w-full sm:w-[200px]"
+          {/* Filter bar (D-05/D-10). Plan 39.1-38 (design-audit row 7.5, UI-SPEC
+              §10.4): one unboxed PageFilterRow — the three selects and the
+              mixed-context badge lead, the two context/source toggle groups
+              trail; no border, no padding box, no card. */}
+          <PageFilterRow
+            leading={
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.fighter')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.fighterId != null ? String(axesFromUrl.fighterId) : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_FIGHTER_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {SpriteList.map((sprite) => (
-                      <SelectItem key={sprite.id} value={String(sprite.id)}>
-                        {localizedFighterName(sprite.id, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.fighter')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {SpriteList.map((sprite) => (
+                        <SelectItem key={sprite.id} value={String(sprite.id)}>
+                          {localizedFighterName(sprite.id, t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.vs')}
-                </span>
-                <Select
-                  value={
-                    axesFromUrl.vsFighterId != null
-                      ? String(axesFromUrl.vsFighterId)
-                      : ALL_AXIS_VALUE
-                  }
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_VS_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.vs')}
-                    className="w-full sm:w-[200px]"
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.vs')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.vsFighterId != null
+                        ? String(axesFromUrl.vsFighterId)
+                        : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_VS_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {SpriteList.map((sprite) => (
-                      <SelectItem key={sprite.id} value={String(sprite.id)}>
-                        {localizedFighterName(sprite.id, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.vs')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {SpriteList.map((sprite) => (
+                        <SelectItem key={sprite.id} value={String(sprite.id)}>
+                          {localizedFighterName(sprite.id, t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.stage')}
-                </span>
-                <Select
-                  value={axesFromUrl.stageId != null ? String(axesFromUrl.stageId) : ALL_AXIS_VALUE}
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_STAGE_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.stage')}
-                    className="w-full sm:w-[200px]"
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.stage')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.stageId != null ? String(axesFromUrl.stageId) : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_STAGE_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {alphaStageList.map((stage) => (
-                      <SelectItem key={stage.id} value={String(stage.id)}>
-                        {stage.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.stage')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {alphaStageList.map((stage) => (
+                        <SelectItem key={stage.id} value={String(stage.id)}>
+                          {stage.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
+              </>
+            }
+            trailing={
+              <div className="flex flex-wrap items-center gap-3">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={hubContext ?? ''}
+                  onValueChange={(next) => setUrlParam(HUB_CONTEXT_PARAM, next || null)}
+                >
+                  <ToggleGroupItem value="online">
+                    {t('shared.evidence.cohort.online')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="offline">
+                    {t('shared.evidence.cohort.offline')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="unspecified">
+                    {t('shared.evidence.cohort.unspecified')}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={hubSource ?? ''}
+                  onValueChange={(next) => setUrlParam(HUB_SOURCE_PARAM, next || null)}
+                >
+                  <ToggleGroupItem value="manual">
+                    {t('shared.evidence.cohort.manual')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="startgg">
+                    {t('shared.evidence.cohort.startgg')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="parrygg">
+                    {t('shared.evidence.cohort.parrygg')}
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
-
-              {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={hubContext ?? ''}
-                onValueChange={(next) => setUrlParam(HUB_CONTEXT_PARAM, next || null)}
-              >
-                <ToggleGroupItem value="online">
-                  {t('shared.evidence.cohort.online')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="offline">
-                  {t('shared.evidence.cohort.offline')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="unspecified">
-                  {t('shared.evidence.cohort.unspecified')}
-                </ToggleGroupItem>
-              </ToggleGroup>
-
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={hubSource ?? ''}
-                onValueChange={(next) => setUrlParam(HUB_SOURCE_PARAM, next || null)}
-              >
-                <ToggleGroupItem value="manual">
-                  {t('shared.evidence.cohort.manual')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="startgg">
-                  {t('shared.evidence.cohort.startgg')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="parrygg">
-                  {t('shared.evidence.cohort.parrygg')}
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          </div>
+            }
+          />
 
           {/* Cross-tab (OPP-02) */}
           <ChartCard title={t('matchups.matrix.title')}>

@@ -29,6 +29,9 @@ export function WinLossTracker({ matches }: { matches: Match[] }) {
       <CardContent>
         {hasMatches ? (
           <StatRow
+            // Plan 39.1-38: three short figures stay three-up on a phone
+            // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
+            fixedColumns
             figures={[
               <StatFigure key="wins" label={t('common.wins')} value={wins} />,
               <StatFigure key="rate" label={t('common.rate')} value={`${winRate}%`} />,

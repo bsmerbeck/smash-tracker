@@ -9,6 +9,7 @@ import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { cn } from '@/lib/utils';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFighters } from '@/hooks/useFighters';
@@ -269,13 +270,10 @@ export function MatchDataPage() {
     );
   }
 
-  const filterRow = (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-end gap-6 pt-6">
-        <HorizonSwitch />
-      </CardContent>
-    </Card>
-  );
+  // Plan 39.1-38 (design-audit item 6; UI-SPEC §8.4, §10.4): ONE unboxed
+  // row — the page title (the nav label, so it never repeats the table
+  // card's own "Match History" title), spacer, HorizonSwitch.
+  const filterRow = <PageFilterRow title={t('nav.matchData')} trailing={<HorizonSwitch />} />;
 
   return (
     <PageShell filterRow={filterRow}>
