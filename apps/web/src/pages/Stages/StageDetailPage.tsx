@@ -99,6 +99,23 @@ function isKnownStageSegment(stageId: number): boolean {
  * `StageCharacterGroup` carry `wins`/`losses`/`total` but no pre-computed
  * `winRate` field of their own, unlike `StageRecord`.
  */
+/**
+ * Plan 39.1-38 (UI-SPEC §6.6 "< 640 tables become stacked rows"): the same
+ * phone-layout mechanism FilteredMatchList and MatrixHeat use — Tailwind's
+ * `sm` breakpoint as a read-once `matchMedia` check, defaulting to the table
+ * when the API is unavailable (jsdom, unless a test stubs it).
+ */
+const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
+
+function useIsNarrowViewport(): boolean {
+  const [isNarrow] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(NARROW_LAYOUT_QUERY).matches
+      : false,
+  );
+  return isNarrow;
+}
+
 function winRatePercent(wins: number, losses: number): number {
   const total = wins + losses;
   return losses > 0 ? Math.round((wins / total) * 100) : 100;
@@ -120,6 +137,7 @@ export function StageDetailPage() {
   // `LIST_CAP_RAIL` (5) per this plan's own action text.
   const [byOpponentExpanded, setByOpponentExpanded] = useState(false);
   const [byCharacterExpanded, setByCharacterExpanded] = useState(false);
+  const isNarrowViewport = useIsNarrowViewport();
 
   const resolvedStageId = useMemo(() => {
     const parsed = parseStageIdSegment(params.stageId);
@@ -513,74 +531,156 @@ export function StageDetailPage() {
                   <CardTitle>{t('stages.detail.byCharacter')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Table id={BY_CHARACTER_TABLE_ID} data-slot="stage-by-character">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
-                        <TableHead>{t('shared.filteredMatchList.columnTheirCharacter')}</TableHead>
-                        <TableHead>{t('matchups.stageTable.record')}</TableHead>
-                        <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  {isNarrowViewport ? (
+                    // Plan 39.1-38 (UI-SPEC §6.6 / §6.5 rule 1; deferred from
+                    // 39.1-37): below 640px each pairing is one stacked
+                    // two-line row — the pairing in one truncating slot (with
+                    // its full text as a title), then record · rate · games
+                    // and the glyph confidence cue, each token wrapping whole —
+                    // so no column hides behind a horizontal scroll. One link
+                    // per row, same destination as the table's.
+                    <ul
+                      id={BY_CHARACTER_TABLE_ID}
+                      data-slot="stage-by-character"
+                      className="flex flex-col divide-y"
+                    >
                       {visibleByCharacter.map((row) => {
                         const mySprite = getFighterById(row.myFighterId);
                         const theirSprite = getFighterById(row.theirFighterId);
+                        const myName = mySprite
+                          ? localizedFighterName(row.myFighterId, t)
+                          : t('common.unknown');
+                        const theirName = theirSprite
+                          ? localizedFighterName(row.theirFighterId, t)
+                          : t('common.unknown');
+                        const pairingText = `${myName} ${t('matchups.vs')} ${theirName}`;
+                        const games = row.wins + row.losses;
                         return (
-                          <TableRow key={row.key}>
-                            <TableCell className="text-sm">
-                              <Link
-                                to={subjectPath(
-                                  `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
-                                )}
-                                className="flex items-center gap-1 text-primary hover:underline"
+                          <li key={row.key} className="flex min-w-0 flex-col gap-1 py-2">
+                            <Link
+                              to={subjectPath(
+                                `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
+                              )}
+                              className="flex min-w-0 items-center gap-1 text-sm text-primary hover:underline"
+                            >
+                              {mySprite?.url && (
+                                <img
+                                  src={mySprite.url}
+                                  alt=""
+                                  className="size-5 shrink-0 object-contain"
+                                />
+                              )}
+                              {theirSprite?.url && (
+                                <img
+                                  src={theirSprite.url}
+                                  alt=""
+                                  className="size-5 shrink-0 object-contain"
+                                />
+                              )}
+                              <span
+                                data-slot="stage-by-character-pairing"
+                                title={pairingText}
+                                className="min-w-0 flex-1 truncate"
                               >
-                                {mySprite?.url && (
-                                  <img
-                                    src={mySprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {mySprite
-                                  ? localizedFighterName(row.myFighterId, t)
-                                  : t('common.unknown')}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              <Link
-                                to={subjectPath(
-                                  `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
-                                )}
-                                className="flex items-center gap-1 text-primary hover:underline"
-                              >
-                                {theirSprite?.url && (
-                                  <img
-                                    src={theirSprite.url}
-                                    alt=""
-                                    className="size-5 object-contain"
-                                  />
-                                )}
-                                {theirSprite
-                                  ? localizedFighterName(row.theirFighterId, t)
-                                  : t('common.unknown')}
-                              </Link>
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {row.wins}-{row.losses}
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              <span className="flex items-center gap-2">
-                                {winRatePercent(row.wins, row.losses)}%
-                                <SampleCue sample={row.sample} />
+                                {pairingText}
                               </span>
-                            </TableCell>
-                          </TableRow>
+                            </Link>
+                            <div
+                              data-slot="stage-by-character-record"
+                              className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground tabular-nums"
+                            >
+                              <span className="sr-only">{t('matchups.stageTable.record')}</span>
+                              <span className="whitespace-nowrap text-foreground">
+                                {row.wins}-{row.losses}
+                              </span>
+                              <span className="sr-only">{t('matchups.stageTable.winRate')}</span>
+                              <span className="whitespace-nowrap">
+                                {winRatePercent(row.wins, row.losses)}%
+                              </span>
+                              <span className="whitespace-nowrap">
+                                {t('common.games', { count: games })}
+                              </span>
+                              <span className="whitespace-nowrap text-xs">
+                                <SampleCueGlyph sample={row.sample} />
+                              </span>
+                            </div>
+                          </li>
                         );
                       })}
-                      <UnknownRow bucket={unknownCharacterBucket} as="tr" />
-                    </TableBody>
-                  </Table>
+                      <UnknownRow bucket={unknownCharacterBucket} as="li" />
+                    </ul>
+                  ) : (
+                    <Table id={BY_CHARACTER_TABLE_ID} data-slot="stage-by-character">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>
+                          <TableHead>
+                            {t('shared.filteredMatchList.columnTheirCharacter')}
+                          </TableHead>
+                          <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                          <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleByCharacter.map((row) => {
+                          const mySprite = getFighterById(row.myFighterId);
+                          const theirSprite = getFighterById(row.theirFighterId);
+                          return (
+                            <TableRow key={row.key}>
+                              <TableCell className="text-sm">
+                                <Link
+                                  to={subjectPath(
+                                    `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
+                                  )}
+                                  className="flex items-center gap-1 text-primary hover:underline"
+                                >
+                                  {mySprite?.url && (
+                                    <img
+                                      src={mySprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
+                                  )}
+                                  {mySprite
+                                    ? localizedFighterName(row.myFighterId, t)
+                                    : t('common.unknown')}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <Link
+                                  to={subjectPath(
+                                    `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
+                                  )}
+                                  className="flex items-center gap-1 text-primary hover:underline"
+                                >
+                                  {theirSprite?.url && (
+                                    <img
+                                      src={theirSprite.url}
+                                      alt=""
+                                      className="size-5 object-contain"
+                                    />
+                                  )}
+                                  {theirSprite
+                                    ? localizedFighterName(row.theirFighterId, t)
+                                    : t('common.unknown')}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {row.wins}-{row.losses}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <span className="flex items-center gap-2">
+                                  {winRatePercent(row.wins, row.losses)}%
+                                  <SampleCue sample={row.sample} />
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        <UnknownRow bucket={unknownCharacterBucket} as="tr" />
+                      </TableBody>
+                    </Table>
+                  )}
                   {byCharacterHasMore && (
                     <Button
                       type="button"

@@ -764,8 +764,7 @@ describe('StageDetailPage — By Character as stacked rows below 640px (plan 39.
     const pairing = foxRow.querySelector('[data-slot="stage-by-character-pairing"]') as HTMLElement;
     expect(pairing).not.toBeNull();
     expect(pairing.className).toMatch(/\btruncate\b/);
-    expect(pairing.getAttribute('title')).toMatch(/Mario/);
-    expect(pairing.getAttribute('title')).toMatch(/Fox/);
+    expect(pairing.getAttribute('title')).toBe(`${mario.name} vs ${fox.name}`);
 
     const line2 = foxRow.querySelector('[data-slot="stage-by-character-record"]') as HTMLElement;
     expect(line2).not.toBeNull();
