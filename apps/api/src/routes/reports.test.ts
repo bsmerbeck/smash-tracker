@@ -25,6 +25,7 @@ import {
   CLAIM_SCHEMA_VERSION,
   evidenceSnapshotRecordSchema,
   MIN_VIABLE_CLAIMS,
+  reportJobSchema,
   serializeCitationToken,
   storedScoutReportSchema,
   validateReportOutput,
@@ -4833,4 +4834,381 @@ describe('C4-H1: the D-21 fail-fast sits BELOW the queued->running claim — two
       failureReason: 'validation',
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07, Task 2): the SAME seam on `prep_report` and the
+// `prep_bundle` child. There is ONE `runReportGeneration` call site shared
+// by the legacy, prep-single and bundle-child request shapes, so these are
+// per-surface PROOFS of one edit, not a second implementation.
+// ---------------------------------------------------------------------------
+
+/** A selection with exactly two surviving claims — below MIN_VIABLE_CLAIMS on every prep surface — plus one unissued id (R1). */
+const BELOW_MINIMUM_SELECTION = selectionOf({
+  overview: ['c01'],
+  gameplan: ['c02'],
+  watchFor: ['c32'],
+});
+
+function spendLedgerRefs(database: FakeDatabase): string[] {
+  const dump = database.dump() as { creditLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.creditLedger?.[TEST_UID] ?? {})
+    .filter((entry) => (entry as { type: string }).type === 'spend')
+    .map((entry) => (entry as { ref: string }).ref)
+    .sort();
+}
+
+/** A billable prep app. `fixture: 'viable'` is the module-level wrapper; `'thin'` is the bare harness + the empty parry history (the opposite fixture, C3-B1). */
+function prepBillableApp(
+  fixture: 'viable' | 'thin',
+  respond: (callIndex: number) => { stop_reason: string; parsed_output: unknown },
+) {
+  let calls = 0;
+  const modelSpy = vi.fn(async () => {
+    calls += 1;
+    return respond(calls);
+  });
+  const options = {
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      ...(fixture === 'thin' ? { matches: 'empty' as const } : {}),
+    }),
+  };
+  const built = fixture === 'viable' ? buildTestApp(options) : buildBareTestApp(options);
+  return { ...built, modelSpy };
+}
+
+async function postPrepSingle(
+  app: ReturnType<typeof buildTestApp>['app'],
+  jobId: string,
+  opponentName = 'rival',
+) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: { reason: 'prep_report', entryKey: P39_ENTRY_KEY, opponentName, jobId },
+  });
+}
+
+async function submitBundle(app: ReturnType<typeof buildTestApp>['app'], bundleId: string) {
+  const submit = await app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: {
+      reason: 'prep_bundle',
+      entryKey: P39_ENTRY_KEY,
+      bundleId,
+      opponentNames: BUNDLE_OPPONENT_NAMES,
+    },
+  });
+  expect(submit.statusCode).toBe(202);
+  return (submit.json() as { jobs: Array<{ opponentName: string; jobId: string; slot: number }> })
+    .jobs;
+}
+
+describe('validator seam on prep_report and the prep_bundle child (plan 39-07 Task 2)', () => {
+  it('a prep_report whose generation FAILS validation: failureReason validation, one refund, no stored report, report_failed_validation in addition to report_failed', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39-prep-invalid');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const job = await jobRecord(database, 'p39-prep-invalid');
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    // `reason` (job KIND) and `failureReason` (CAUSE) both survive the fake
+    // database round trip and the job schema, independently.
+    const parsed = reportJobSchema.parse(job);
+    expect(parsed.reason).toBe('prep_report');
+    expect(parsed.failureReason).toBe('validation');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-prep-invalid']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')[0]!.payload).toEqual({
+      reason: 'prep_report',
+    });
+  });
+
+  it('report_failed_validation fires ONLY for the validation cause — a refusal emits report_failed alone', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'refusal',
+      parsed_output: null,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    expect((await postPrepSingle(app, 'p39-prep-refusal')).statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-prep-refusal');
+    expect(job.status).toBe('refunded');
+    expect(job).not.toHaveProperty('failureReason');
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(0);
+  });
+
+  it('a prep_bundle child that FAILS validation consumes no additional credit and no additional bundle slot', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39-invalid');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+    expect(spendsAfterSubmit).toHaveLength(3);
+    const opsAfterSubmit = JSON.stringify(
+      (database.dump() as Record<string, unknown>).creditBundleOps ?? null,
+    );
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(502);
+
+    // No re-spend, no fourth slot, no new bundle-op marker — only the ONE
+    // refund of this child's pre-paid slot.
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(
+      JSON.stringify((database.dump() as Record<string, unknown>).creditBundleOps ?? null),
+    ).toBe(opsAfterSubmit);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    const bundleJobIds = Object.keys(
+      (database.dump() as { reportJobs: Record<string, Record<string, unknown>> }).reportJobs[
+        TEST_UID
+      ]!,
+    ).filter((jobId) => jobId.startsWith('bundle-p39-invalid'));
+    expect(bundleJobIds.sort()).toEqual(jobs.map((job) => job.jobId).sort());
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+
+  it('report_claims_dropped fires exactly once for a STORED prep report with a positive dropped count, and not at all when the count is zero', async () => {
+    for (const { jobId, selection, expectedDropped } of [
+      {
+        jobId: 'p39-prep-dropped',
+        // c01..c03 survive (at the minimum); c32 was never issued (R1).
+        selection: selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c03', 'c32'] }),
+        expectedDropped: 1,
+      },
+      { jobId: 'p39-prep-clean', selection: VALID_REPORT, expectedDropped: 0 },
+    ]) {
+      const { app, database } = prepBillableApp('viable', () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      }));
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+
+      expect((await postPrepSingle(app, jobId)).statusCode).toBe(200);
+      const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+      const events = findEvents(database, 'report_claims_dropped');
+      if (expectedDropped > 0) {
+        expect(report.droppedClaimCount).toBe(expectedDropped);
+        expect(events).toHaveLength(1);
+        // Occurrence signal — never a count in the payload.
+        expect(events[0]!.payload).toEqual({ reason: 'prep_report' });
+      } else {
+        expect(report).not.toHaveProperty('droppedClaimCount');
+        expect(events).toHaveLength(0);
+      }
+      // Delivered either way: charged, never refunded.
+      expect(refundLedgerRefs(database)).toEqual([]);
+    }
+  });
+
+  it('report_prose_stripped fires exactly once for a STORED prep report with a positive strippedSectionCount, and not at all when the count is zero', async () => {
+    for (const { jobId, selection, expectedStripped } of [
+      {
+        jobId: 'p39-prep-stripped',
+        selection: selectionOf(
+          { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+          { gameplan: UNLICENSED_NUMBER_CONNECTIVE },
+        ),
+        expectedStripped: 1,
+      },
+      { jobId: 'p39-prep-unstripped', selection: VALID_REPORT, expectedStripped: 0 },
+    ]) {
+      const { app, database } = prepBillableApp('viable', () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      }));
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+
+      expect((await postPrepSingle(app, jobId)).statusCode).toBe(200);
+      const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+      const events = findEvents(database, 'report_prose_stripped');
+      if (expectedStripped > 0) {
+        expect(report.strippedSectionCount).toBe(expectedStripped);
+        expect(events).toHaveLength(1);
+        expect(events[0]!.payload).toEqual({ reason: 'prep_report' });
+      } else {
+        expect(report).not.toHaveProperty('strippedSectionCount');
+        expect(events).toHaveLength(0);
+      }
+    }
+  });
+});
+
+describe('D-21 thin-evidence FAIL FAST on prep_report and the prep_bundle child (plan 39-07 Task 2) — opposite fixture: bare harness + empty parry history', () => {
+  it('a prep_report against an unseeded workspace makes ZERO model calls, refunds exactly once, and records failureReason validation on the FINAL record', async () => {
+    const { app, database, modelSpy } = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39-thin-prep');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    expect(await jobRecord(database, 'p39-thin-prep')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-thin-prep']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(Object.keys(snapshotNodes(database))).toHaveLength(1);
+  });
+
+  it('a prep_bundle child against an unseeded workspace makes ZERO model calls, refunds its slot once, and consumes no additional credit or bundle slot', async () => {
+    const { app, database, modelSpy } = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39-thin');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+
+    const child = jobs[1]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+    expect(Object.keys(snapshotNodes(database))).toHaveLength(1);
+
+    // A resolved child is never re-runnable on the returned credit.
+    const replay = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(replay.statusCode).toBe(409);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+  });
+});
+
+/**
+ * SUPPLEMENTS — never replaces — the locked `bundle failure math
+ * (RPT-02/RPT-03, owner battery item 3)` block above, whose own scenarios
+ * (0/1/2/3 failing children, refusal cause) this mirrors. The cause changes;
+ * the money does not: for every failing-child count the balance, the refund
+ * ledger refs and the terminal statuses are IDENTICAL whether the children
+ * fail by refusal (a pre-existing cause) or by validation.
+ */
+describe('bundle failure math is cause-independent: validation vs a pre-existing cause (plan 39-07 Task 2)', () => {
+  async function runCauseCase(cause: 'refusal' | 'validation', failureCount: number) {
+    const { app, database, modelSpy } = prepBillableApp('viable', (callIndex) => {
+      if (callIndex > failureCount) {
+        return { stop_reason: 'end_turn', parsed_output: VALID_REPORT };
+      }
+      return cause === 'refusal'
+        ? { stop_reason: 'refusal', parsed_output: null }
+        : { stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION };
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    const START_BALANCE = 10;
+    database.seed(`credits/${TEST_UID}/balance`, START_BALANCE);
+    const bundleId = `bundle-cause-${failureCount}`;
+    const jobs = await submitBundle(app, bundleId);
+    for (const job of jobs) {
+      const response = await postPrepSingle(app, job.jobId, job.opponentName);
+      expect(response.statusCode).toBe(job.slot <= failureCount ? 502 : 200);
+    }
+    expect(modelSpy).toHaveBeenCalledTimes(3);
+    const statuses: string[] = [];
+    const failureReasons: Array<string | null> = [];
+    for (const job of jobs) {
+      const record = await jobRecord(database, job.jobId);
+      statuses.push(record.status as string);
+      failureReasons.push((record.failureReason as string | undefined) ?? null);
+    }
+    return {
+      balance: await balanceOf(database),
+      expectedBalance: START_BALANCE - 3 + failureCount,
+      refundSlots: refundLedgerRefs(database)
+        .map((ref) => ref.slice(bundleId.length))
+        .sort(),
+      spendCount: spendLedgerRefs(database).length,
+      statuses,
+      failureReasons,
+      reportFailed: findEvents(database, 'report_failed').length,
+      reportFailedValidation: findEvents(database, 'report_failed_validation').length,
+    };
+  }
+
+  for (const failureCount of [0, 1, 2, 3]) {
+    it(`${failureCount} failing children: validation and refusal produce the identical balance, refund slots and terminal statuses`, async () => {
+      const refusal = await runCauseCase('refusal', failureCount);
+      const validation = await runCauseCase('validation', failureCount);
+
+      expect(refusal.balance).toBe(refusal.expectedBalance);
+      expect(validation.balance).toBe(validation.expectedBalance);
+      expect(validation.balance).toBe(refusal.balance);
+      expect(validation.refundSlots).toEqual(refusal.refundSlots);
+      expect(validation.refundSlots).toHaveLength(failureCount);
+      expect(validation.spendCount).toBe(refusal.spendCount);
+      expect(validation.statuses).toEqual(refusal.statuses);
+      expect(validation.reportFailed).toBe(refusal.reportFailed);
+      // Only the cause differs.
+      expect(refusal.failureReasons.every((value) => value === null)).toBe(true);
+      expect(validation.failureReasons.filter((value) => value === 'validation')).toHaveLength(
+        failureCount,
+      );
+      expect(refusal.reportFailedValidation).toBe(0);
+      expect(validation.reportFailedValidation).toBe(failureCount);
+    });
+  }
 });
