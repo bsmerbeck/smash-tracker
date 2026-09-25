@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -688,5 +688,108 @@ describe('StageDetailPage — the By Opponent rail uses the glyph cue (UI-SPEC �
     expect(glyph!.textContent).toMatch(/^[●○]{3}$/);
     expect(glyph!.getAttribute('aria-label')).toMatch(/6 games/);
     expect(rateCell.textContent).not.toMatch(/confidence/);
+  });
+});
+
+// Plan 39.1-38 Task 3 (deferred from 39.1-37; UI-SPEC §6.6 "< 640 tables
+// become stacked rows", §6.5 rule 1; the FilteredMatchList precedent): below
+// 640px the By Character list renders as stacked two-line rows, so nothing
+// hides behind a horizontal scroll. jsdom has no `matchMedia`, so the phone
+// branch is selected the way FilteredMatchList's tests select it — a stub.
+describe('StageDetailPage — By Character as stacked rows below 640px (plan 39.1-38)', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  function stubNarrowViewport(narrow: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches: narrow && query === '(max-width: 639px)',
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+  }
+
+  beforeEach(() => {
+    resetAuthMock();
+    setMockUser(makeMockUser());
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'c1', time: 1, win: true, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c2', time: 2, win: false, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c3', time: 3, win: true, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c4', time: 4, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+    ]);
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('below 640px: one stacked two-line row per pairing — a truncating pairing link with a title, then record · rate · games with the confidence cue; no table, no horizontal scroller', async () => {
+    stubNarrowViewport(true);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    const list = document.querySelector('[data-slot="stage-by-character"]') as HTMLElement;
+    expect(list).not.toBeNull();
+    expect(list.tagName).toBe('UL');
+    const card = list.closest('[data-slot="card"]') as HTMLElement;
+    expect(card.querySelector('table')).toBeNull();
+    expect(card.querySelector('.overflow-x-auto')).toBeNull();
+
+    const rows = Array.from(list.querySelectorAll(':scope > li'));
+    expect(rows).toHaveLength(2);
+    const foxRow = rows[0] as HTMLElement;
+    // Exactly one interactive element per row (plan 39.1-39's DrillableRow overlay later).
+    const links = within(foxRow).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    const href = links[0]!.getAttribute('href')!;
+    expect(href).toContain('/matchups?');
+    expect(href).toContain(`fighter=${mario.id}`);
+    expect(href).toContain(`vs=${fox.id}`);
+    expect(href).toContain('stage=1');
+
+    const pairing = foxRow.querySelector('[data-slot="stage-by-character-pairing"]') as HTMLElement;
+    expect(pairing).not.toBeNull();
+    expect(pairing.className).toMatch(/\btruncate\b/);
+    expect(pairing.getAttribute('title')).toMatch(/Mario/);
+    expect(pairing.getAttribute('title')).toMatch(/Fox/);
+
+    const line2 = foxRow.querySelector('[data-slot="stage-by-character-record"]') as HTMLElement;
+    expect(line2).not.toBeNull();
+    expect(line2.className).toMatch(/\bflex-wrap\b/);
+    expect(line2.textContent).toContain('2-1');
+    expect(line2.textContent).toContain('67%');
+    expect(line2.textContent).toContain('3 games');
+    // Each token wraps whole, never mid-token.
+    for (const token of Array.from(line2.children).filter(
+      (el) => !el.classList.contains('sr-only'),
+    )) {
+      expect(token.className).toMatch(/whitespace-nowrap/);
+    }
+    // The column headers stay available to assistive tech.
+    expect(within(foxRow).getByText('Record')).toHaveClass('sr-only');
+    expect(within(foxRow).getByText('Win Rate')).toHaveClass('sr-only');
+  });
+
+  it('at 640px and wider the By Character list stays the table (hook on the table element)', async () => {
+    stubNarrowViewport(false);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    const table = document.querySelector('[data-slot="stage-by-character"]') as HTMLElement;
+    expect(table.tagName).toBe('TABLE');
+    expect(within(table).getAllByRole('row')).toHaveLength(3);
   });
 });

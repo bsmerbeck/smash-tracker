@@ -1187,3 +1187,34 @@ export function evaluateInsightOrder(pairs) {
   }
   return violations;
 }
+
+/**
+ * UI-SPEC §6.6 "< 640 tables become stacked rows" (plan 39.1-38 Task 3): at a
+ * narrow viewport nothing in a declared list may hide behind a horizontal
+ * scroll. Each target: `{ selector, found, selectorPath, scrollWidth,
+ * clientWidth }` — the sizes are the target's nearest ancestor-or-self with
+ * `overflow-x` auto / scroll / hidden (`null` when it has none, which passes).
+ * A declared target matching nothing is `table-clip-unmeasured` naming it;
+ * an empty target list is exactly one.
+ */
+export function evaluateTableClip(targets, tolerancePx = 1) {
+  if (targets.length === 0) return [{ type: 'table-clip-unmeasured' }];
+  const violations = [];
+  for (const target of targets) {
+    if (!target.found) {
+      violations.push({ type: 'table-clip-unmeasured', selector: target.selector });
+      continue;
+    }
+    if (typeof target.scrollWidth !== 'number' || typeof target.clientWidth !== 'number') continue;
+    if (target.scrollWidth > target.clientWidth + tolerancePx) {
+      violations.push({
+        type: 'table-clipped',
+        selector: target.selector,
+        selectorPath: target.selectorPath,
+        scrollWidth: target.scrollWidth,
+        clientWidth: target.clientWidth,
+      });
+    }
+  }
+  return violations;
+}

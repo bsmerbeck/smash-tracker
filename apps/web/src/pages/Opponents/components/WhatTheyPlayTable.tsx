@@ -46,7 +46,7 @@ export function WhatTheyPlayTable({
         {byTheirFighter.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('opponents.whatTheyPlay.empty')}</p>
         ) : (
-          <Table>
+          <Table data-slot="what-they-play">
             <TableHeader>
               <TableRow>
                 <TableHead>{t('opponents.whatTheyPlay.character')}</TableHead>

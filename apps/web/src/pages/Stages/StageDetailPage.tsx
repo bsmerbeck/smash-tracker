@@ -513,7 +513,7 @@ export function StageDetailPage() {
                   <CardTitle>{t('stages.detail.byCharacter')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Table id={BY_CHARACTER_TABLE_ID}>
+                  <Table id={BY_CHARACTER_TABLE_ID} data-slot="stage-by-character">
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t('shared.filteredMatchList.columnMyCharacter')}</TableHead>

@@ -53,6 +53,7 @@ import {
   evaluateStatRowColumns,
   evaluatePlacement,
   evaluateInsightOrder,
+  evaluateTableClip,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -234,12 +235,21 @@ export const LAYOUT_ORACLE_ROUTES = [
     // above; the hub has no HorizonSwitch, audit 7.5's second half).
     checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect', 'filter-row'],
     filterRow: {},
+    // Plan 39.1-38 Task 3 (UI-SPEC §6.6): What they play never hides a column
+    // behind a horizontal scroll on a phone.
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="what-they-play"]'],
   },
   {
     id: 'stage-detail',
     loadedMarker: '[data-slot="stage-detail-body"]',
     // Plan 39.1-37: axis-ticks and plot-aspect on the Over Time event trend.
     checks: ['axis-ticks', 'plot-aspect'],
+    // Plan 39.1-38 Task 3 (UI-SPEC §6.6; deferred from 39.1-37): the By
+    // Character list never hides its Win Rate column behind a horizontal
+    // scroll on a phone.
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="stage-by-character"]'],
   },
 ];
 
@@ -300,6 +310,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantStatRowColumns = checks.includes('stat-row-columns');
   const wantPlacement = checks.includes('placement');
   const wantInsightOrder = checks.includes('insight-order');
+  const wantTableClip = checks.includes('table-clip');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -901,7 +912,37 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-38 Task 3: table-clip — each declared target's nearest
+  // ancestor-or-self horizontal scroll/clip container (one getComputedStyle
+  // per ancestor step, targets only), and its scroll / client widths.
+  const clipTargets = [];
+  if (wantTableClip) {
+    for (const selector of familyConfig.clipTargets || []) {
+      const targetEl = document.querySelector(selector);
+      if (!targetEl) {
+        clipTargets.push({ selector, found: false });
+        continue;
+      }
+      let clipEl = null;
+      for (let node = targetEl; node && node !== document.body; node = node.parentElement) {
+        const overflowX = window.getComputedStyle(node).overflowX;
+        if (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'hidden') {
+          clipEl = node;
+          break;
+        }
+      }
+      clipTargets.push({
+        selector,
+        found: true,
+        selectorPath: clipEl ? describeElement(clipEl) : null,
+        scrollWidth: clipEl ? clipEl.scrollWidth : null,
+        clientWidth: clipEl ? clipEl.clientWidth : null,
+      });
+    }
+  }
+
   return {
+    clipTargets,
     filterRows,
     filterRowOwnedInCards,
     statRows,
@@ -978,6 +1019,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       filterRow: route.filterRow ?? null,
       placement: route.placement ?? [],
       orderPairs: route.orderPairs ?? [],
+      clipTargets: route.clipTargets ?? [],
     };
     const measurements = await page.evaluate(
       collectPageMeasurements,
@@ -1106,6 +1148,9 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     }
     if (checks.includes('insight-order')) {
       violations.push(...evaluateInsightOrder(measurements.orderPairs));
+    }
+    if (checks.includes('table-clip')) {
+      violations.push(...evaluateTableClip(measurements.clipTargets));
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own

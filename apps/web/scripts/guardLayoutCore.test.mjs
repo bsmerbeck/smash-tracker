@@ -1906,3 +1906,102 @@ test('insight-order: a declared selector matching nothing is insight-order-unmea
   assert.equal(v[0].missing, '#reads');
   assert.deepEqual(typesOf(evaluateInsightOrder([])), ['insight-order-unmeasured']);
 });
+
+// Plan 39.1-38 Task 3: placement `above` (the desktop composition kept by grid
+// placement) and table-clip (nothing hidden behind a horizontal scroll at 390).
+
+test('placement: above — first starting above then passes; level or below is placement-not-above', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const at = (firstTop, thenTop) =>
+    evaluatePlacement({
+      viewportWidth: 1440,
+      items: [
+        {
+          kind: 'above',
+          firstSelector: '#timeline',
+          thenSelector: '#reads',
+          first: rect(0, 100, firstTop, firstTop + 50),
+          then: rect(0, 100, thenTop, thenTop + 50),
+        },
+      ],
+    });
+  assert.deepEqual(at(100, 400), []);
+  assert.deepEqual(typesOf(at(400, 400)), ['placement-not-above']);
+  assert.deepEqual(typesOf(at(900, 400)), ['placement-not-above']);
+});
+
+test('placement: above — a missing element is placement-unmeasured naming it', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 1440,
+    items: [
+      {
+        kind: 'above',
+        firstSelector: '#t',
+        thenSelector: '#r',
+        first: null,
+        then: rect(0, 1, 0, 1),
+      },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['placement-unmeasured']);
+  assert.equal(v[0].selector, '#t');
+});
+
+test('table-clip: a target whose scroll container is 420 wide in a 326 box is one table-clipped violation', () => {
+  const evaluateTableClip = fn38('evaluateTableClip');
+  const v = evaluateTableClip([
+    { selector: '#by-char', found: true, selectorPath: 'div', scrollWidth: 420, clientWidth: 326 },
+  ]);
+  assert.deepEqual(typesOf(v), ['table-clipped']);
+  assert.equal(v[0].selector, '#by-char');
+});
+
+test('table-clip: 327 in a 326 box passes (1px tolerance)', () => {
+  const evaluateTableClip = fn38('evaluateTableClip');
+  assert.deepEqual(
+    evaluateTableClip([
+      {
+        selector: '#by-char',
+        found: true,
+        selectorPath: 'div',
+        scrollWidth: 327,
+        clientWidth: 326,
+      },
+    ]),
+    [],
+  );
+});
+
+test('table-clip: a target with no clipping ancestor (null sizes) passes', () => {
+  const evaluateTableClip = fn38('evaluateTableClip');
+  assert.deepEqual(
+    evaluateTableClip([
+      {
+        selector: '#by-char',
+        found: true,
+        selectorPath: null,
+        scrollWidth: null,
+        clientWidth: null,
+      },
+    ]),
+    [],
+  );
+});
+
+test('table-clip: two clipping targets are two violations', () => {
+  const evaluateTableClip = fn38('evaluateTableClip');
+  const v = evaluateTableClip([
+    { selector: '#a', found: true, selectorPath: 'div', scrollWidth: 420, clientWidth: 326 },
+    { selector: '#b', found: true, selectorPath: 'div', scrollWidth: 500, clientWidth: 300 },
+  ]);
+  assert.deepEqual(typesOf(v), ['table-clipped', 'table-clipped']);
+});
+
+test('table-clip: a declared target matching nothing is exactly one table-clip-unmeasured naming it; empty input is exactly one', () => {
+  const evaluateTableClip = fn38('evaluateTableClip');
+  const v = evaluateTableClip([{ selector: '#by-char', found: false }]);
+  assert.deepEqual(typesOf(v), ['table-clip-unmeasured']);
+  assert.equal(v[0].selector, '#by-char');
+  assert.deepEqual(typesOf(evaluateTableClip([])), ['table-clip-unmeasured']);
+});
