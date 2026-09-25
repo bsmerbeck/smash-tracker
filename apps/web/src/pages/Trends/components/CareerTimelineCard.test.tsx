@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { buildCareerTimeline, type Match } from '@smash-tracker/shared';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { formatPercent } from '@/lib/formatPercent';
+import { formStripSetKeyForMatch } from '@/lib/formStripEvents';
 import { CareerTimelineCard } from './CareerTimelineCard';
 
 /**
@@ -317,3 +318,158 @@ describe('CareerTimelineCard (plan 39.1-35) — the readout copy', () => {
     expect(onSelectPeriod).toHaveBeenCalledWith({ fromMs: aug.startMs, toMs: aug.endMs - 1 });
   });
 });
+
+/**
+ * Plan 39.1-35 Task 2 (D-07, UI-SPEC §12.1 / §14.4, sketch 002-C 640): the
+ * thin account's per-game FormStrip, the locked inset, the table twin, and
+ * the owner's 2026-09-25 diamonds-off decision on the Trends host.
+ */
+describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, no diamonds', () => {
+  /** guard:layout's `casual` scale: 41 games over three months -> thin. */
+  const CASUAL_MATCHES: Match[] = generateSyntheticMatches({
+    seed: 39_135_001,
+    count: 41,
+    startMs: Date.UTC(2026, 6, 3, 19),
+    sessionSizeRange: [2, 6],
+    sessionGapMs: 156 * 60 * 60 * 1000,
+    winRate: 0.56,
+  });
+  /** 150 games inside two months -> thin, more games than the strip's 60. */
+  const THIN_150: Match[] = generateSyntheticMatches({
+    seed: 39_135_002,
+    count: 150,
+    startMs: Date.UTC(2026, 5, 1, 18),
+    sessionSizeRange: [4, 8],
+    sessionGapMs: 2 * 24 * 60 * 60 * 1000,
+    winRate: 0.55,
+  });
+
+  function renderThin(matches: Match[], onSelectSet = vi.fn()) {
+    const utils = render(
+      <CareerTimelineCard
+        matches={matches}
+        horizon="last30"
+        chartWidth={1000}
+        onSelectSet={onSelectSet}
+      />,
+    );
+    return { ...utils, onSelectSet };
+  }
+
+  it('thin (41 games, 3 months): per-session dots, no month strips, the per-game FormStrip with "All 41 games · by session"', () => {
+    const thin = buildCareerTimeline({
+      matches: CASUAL_MATCHES,
+      horizon: 'last30',
+      nowMs: Date.now(),
+    });
+    expect(thin.state).toBe('thin');
+    const { container } = renderThin(CASUAL_MATCHES);
+    const root = container.querySelector('[data-slot="career-timeline"][data-state="thin"]');
+    expect(root).not.toBeNull();
+    expect(root!.querySelector('[data-slot="career-timeline-strips"]')).toBeNull();
+    expect(root!.querySelectorAll('[data-slot="career-timeline-dot"]')).toHaveLength(
+      thin.rating.points.length,
+    );
+    const slot = root!.querySelector('[data-slot="career-timeline-thin-strip"]');
+    expect(slot).not.toBeNull();
+    const strip = slot!.querySelector('[data-slot="form-strip-root"]');
+    expect(strip).not.toBeNull();
+    expect(strip!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'All 41 games · by session — per-game grain replaces the month strips',
+    );
+    expect(strip!.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(41);
+  });
+
+  it('thin with more games than the strip draws: no "All N games" overline, the FormStrip states what it shows', () => {
+    const { container } = renderThin(THIN_150);
+    const slot = container.querySelector('[data-slot="career-timeline-thin-strip"]');
+    expect(slot).not.toBeNull();
+    expect(slot!.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
+    expect(slot!.textContent).not.toMatch(/All \d+ games/);
+    expect(slot!.querySelector('[data-slot="form-strip-shown-of-total"]')?.textContent).toMatch(
+      /of 150 games shown$/,
+    );
+  });
+
+  it("a form-strip set click calls onSelectSet with that set's key", () => {
+    const { container, onSelectSet } = renderThin(CASUAL_MATCHES);
+    const set = container.querySelector(
+      '[data-slot="career-timeline-thin-strip"] [data-slot="form-strip-set"]',
+    );
+    expect(set).not.toBeNull();
+    fireEvent.click(set!);
+    expect(onSelectSet).toHaveBeenCalledTimes(1);
+    const key = onSelectSet.mock.calls[0]![0] as string;
+    expect(CASUAL_MATCHES.some((m) => formStripSetKeyForMatch(m) === key)).toBe(true);
+  });
+
+  it('locked (3 games): the inset names how many games unlock the chart, with a 3-of-5 meter and no chart', () => {
+    const { container } = render(
+      <CareerTimelineCard matches={PRO_MATCHES.slice(0, 3)} horizon="last30" chartWidth={1000} />,
+    );
+    const inset = container.querySelector('[data-slot="career-timeline-locked"]');
+    expect(inset?.textContent).toContain('Career timeline — 2 more games unlock this chart');
+    expect(
+      within(inset as HTMLElement)
+        .getByRole('img')
+        .getAttribute('aria-label'),
+    ).toBe('3 of 5 games');
+    expect(container.querySelector('[data-slot="career-timeline"] svg')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View as table' })).toBeNull();
+  });
+
+  it('locked (0 games): "5 more games" and a 0-of-5 meter — never an empty frame', () => {
+    const { container } = render(
+      <CareerTimelineCard matches={[]} horizon="last30" chartWidth={1000} />,
+    );
+    const inset = container.querySelector('[data-slot="career-timeline-locked"]');
+    expect(inset?.textContent).toContain('Career timeline — 5 more games unlock this chart');
+    expect(
+      within(inset as HTMLElement)
+        .getByRole('img')
+        .getAttribute('aria-label'),
+    ).toBe('0 of 5 games');
+  });
+
+  it('is plural-correct at 1 game to unlock', () => {
+    const { container } = render(
+      <CareerTimelineCard matches={PRO_MATCHES.slice(0, 4)} horizon="last30" chartWidth={1000} />,
+    );
+    expect(container.querySelector('[data-slot="career-timeline-locked"]')?.textContent).toContain(
+      'Career timeline — 1 more game unlocks this chart',
+    );
+  });
+
+  it('table twin: "View as table" opens the rating-close and year x month tables', () => {
+    const pro = buildCareerTimeline({ matches: PRO_MATCHES, horizon: 'last30', nowMs: Date.now() });
+    const { container } = render(
+      <CareerTimelineCard matches={PRO_MATCHES} horizon="last30" chartWidth={1000} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'View as table' }));
+    const tables = container.querySelectorAll('[data-slot="career-timeline-table"] table');
+    expect(tables).toHaveLength(2);
+    expect(tables[0]!.querySelector('caption')?.textContent).toBe(
+      'Rating at the close of each period',
+    );
+    expect(tables[0]!.querySelectorAll('tbody tr')).toHaveLength(pro.rating.points.length);
+    expect(tables[0]!.querySelector('tbody tr th, tbody tr td')?.textContent).toBe(
+      periodTitleEn(pro.rating.points[0]!.startMs),
+    );
+    expect(tables[1]!.querySelector('caption')?.textContent).toBe('Win rate and games by month');
+    const years = new Set(PRO_MATCHES.map((m) => new Date(m.time).getUTCFullYear()));
+    expect(tables[1]!.querySelectorAll('tbody tr')).toHaveLength(years.size);
+    expect(tables[1]!.querySelector('tbody tr th')?.textContent).toBe(String(Math.max(...years)));
+  });
+
+  it("passes NO event markers (owner decision 2026-09-25: diamonds are off until Phase 39.2's tier data)", () => {
+    const { container } = renderCard(PRO_MATCHES);
+    expect(container.querySelector('[data-slot="career-timeline"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-slot="career-timeline-event"]')).toHaveLength(0);
+  });
+});
+
+/** The pro fixture's quarter title in en ("2018 Q4"). */
+function periodTitleEn(startMs: number): string {
+  const d = new Date(startMs);
+  return `${d.getUTCFullYear()} Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+}

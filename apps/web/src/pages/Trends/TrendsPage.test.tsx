@@ -62,7 +62,10 @@ const { DRILL_FROM_MS, DRILL_TO_MS } = vi.hoisted(() => ({
 vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./components/CareerTimelineCard')>();
   function CareerTimelineCardWithProbe(props: ComponentProps<typeof actual.CareerTimelineCard>) {
-    const selectPeriod = (props as { onSelectPeriod?: (range: object) => void }).onSelectPeriod;
+    const { onSelectPeriod: selectPeriod, onSelectSet: selectSet } = props as {
+      onSelectPeriod?: (range: object) => void;
+      onSelectSet?: (key: string) => void;
+    };
     return (
       <>
         <actual.CareerTimelineCard {...props} />
@@ -71,6 +74,9 @@ vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
           onClick={() => selectPeriod?.({ fromMs: DRILL_FROM_MS, toMs: DRILL_TO_MS })}
         >
           timeline-drill-probe
+        </button>
+        <button type="button" onClick={() => selectSet?.('SETA')}>
+          timeline-set-probe
         </button>
       </>
     );
@@ -552,6 +558,36 @@ describe('TrendsPage', () => {
       await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
       const gamesCard = document.getElementById('games') as HTMLElement;
       expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(2);
+    });
+  });
+
+  describe('plan 39.1-35: a thin-account FormStrip set drills to exactly its games', () => {
+    it('writes event=<set key> + #games, and the terminus uses the shared form-strip resolver so its count equals the set', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'a1', externalId: 'sgg:SETA:g1', time: Date.UTC(2021, 0, 5, 18) }),
+        makeMatch({ id: 'a2', externalId: 'sgg:SETA:g2', time: Date.UTC(2021, 0, 5, 18, 10) }),
+        makeMatch({ id: 'a3', externalId: 'sgg:SETA:g3', time: Date.UTC(2021, 0, 5, 18, 20) }),
+        makeMatch({ id: 'b1', externalId: 'sgg:SETB:g1', time: Date.UTC(2021, 0, 6, 18) }),
+        makeMatch({ id: 'm1', time: Date.UTC(2021, 0, 7, 18) }),
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends('/trends?keep=1&from=1&to=2');
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-set-probe' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location').textContent).toMatch(/event=SETA.*#games$/),
+      );
+      const url = new URL(`http://x${screen.getByTestId('location').textContent}`);
+      expect(url.searchParams.get('event')).toBe('SETA');
+      expect(url.searchParams.get('keep')).toBe('1');
+      expect(url.searchParams.has('from')).toBe(false);
+      expect(url.searchParams.has('to')).toBe(false);
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(3);
     });
   });
 

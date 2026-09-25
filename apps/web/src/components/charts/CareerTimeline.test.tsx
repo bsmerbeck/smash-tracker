@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
   buildCareerTimeline,
   type CareerTimeline as CareerTimelineData,
@@ -8,12 +8,14 @@ import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { ChartCard } from './ChartCard';
 import {
   CareerTimeline,
+  type CareerTimelineEventMarker,
   type CareerTimelineLabels,
+  type CareerTimelineMonthRecord,
   type CareerTimelineReadout,
   type CareerTimelineReadoutTarget,
 } from './CareerTimeline';
 import { selectTimeAxisTicks } from './timeAxisTicks';
-import { CHART_AXIS_FONT_SIZE } from './tokens';
+import { CHART_AXIS_FONT_SIZE, CHART_TOKENS } from './tokens';
 
 /**
  * Plan 39.1-34 (UI-SPEC §12.1, the kit's frame rule): the shared-time-axis
@@ -51,6 +53,29 @@ const LABELS: CareerTimelineLabels = {
   low: (rating) => `${rating} · low`,
   band: '30 games',
   readout: readoutFor,
+  eventAria: (marker) => `event ${marker.label}, rating after ${marker.ratingAfter}`,
+  table: {
+    toggle: 'View as table',
+    ratingCaption: 'Rating at each close',
+    monthCaption: 'Win rate and games by month',
+    headers: {
+      period: 'Period',
+      rating: 'Rating',
+      rd: '±RD',
+      record: 'W–L',
+      rate: 'Rate',
+      games: 'Games',
+      year: 'Year',
+      total: 'Year total',
+    },
+    months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    period: (point) => `period ${point.key}`,
+    rd: (rd) => `±${rd}`,
+    record: (wins, losses) => `${wins}–${losses}`,
+    rate: (rate) => `${Math.round(rate * 100)}%`,
+    monthCell: ({ rate, total }) => `${Math.round(rate * 100)}% · ${total}`,
+    yearTotal: ({ wins, losses, rate }) => `${wins}–${losses} · ${Math.round(rate * 100)}%`,
+  },
 };
 
 /** A deterministic readout per target — the kit composes nothing itself, so the test labels do. */
@@ -67,7 +92,10 @@ function readoutFor(target: CareerTimelineReadoutTarget): CareerTimelineReadout 
       lines: [`${target.cell.wins}-${target.cell.losses}`, `n ${target.cell.total}`],
     };
   }
-  return { title: 'other', lines: [] };
+  return {
+    title: `event ${target.marker.label}`,
+    lines: [`after ${target.marker.ratingAfter}`, `${target.marker.wins}-${target.marker.losses}`],
+  };
 }
 
 function renderTimeline(width: number, timeline: CareerTimelineData = TIMELINE) {
@@ -546,5 +574,261 @@ describe('CareerTimeline (plan 39.1-35) — crosshair, readout, keyboard and dri
     const crosshair = container.querySelector('[data-slot="career-timeline-crosshair"]');
     expect(crosshair).not.toBeNull();
     expect(numberAttr(crosshair!, 'y2')).toBe(bottom);
+  });
+});
+
+/**
+ * Plan 39.1-35 Task 2 (D-07, UI-SPEC §12.1 / §14.4 / §14.6, sketch 002-C 640 /
+ * 662-665 / 855-856): the thin account's slot, the locked inset, the table
+ * twin and the event-diamond layer (built to contract; Trends passes no
+ * markers until Phase 39.2 — the owner's 2026-09-25 decision).
+ */
+describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin, event layer', () => {
+  /** Month records from the engine's own month cells (the host bins them with the same calendar rule). */
+  const MONTH_RECORDS: CareerTimelineMonthRecord[] = TIMELINE.strips!.wide.cells.map((cell) => {
+    const d = new Date(cell.startMs);
+    return {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth(),
+      wins: cell.wins,
+      losses: cell.losses,
+      total: cell.total,
+    };
+  });
+
+  const LOCKED_LABELS: CareerTimelineLabels = {
+    ...LABELS,
+    locked: 'Career timeline — 2 more games unlock this chart',
+    lockedCount: '3 of 5 games',
+  };
+
+  const locked = (count: number) =>
+    buildCareerTimeline({
+      matches: MATCHES.slice(0, count),
+      horizon: 'last30',
+      nowMs: Date.UTC(2026, 8, 17),
+    });
+
+  it('thin: the thinStrip slot renders under the plot inside the root; a full timeline never renders it', () => {
+    const probe = <div data-slot="thin-probe">per-game strip</div>;
+    const thin = render(
+      <CareerTimeline timeline={THIN_TIMELINE} labels={LABELS} width={1000} thinStrip={probe} />,
+    );
+    const root = thin.container.querySelector('[data-slot="career-timeline"]')!;
+    expect(root.getAttribute('data-state')).toBe('thin');
+    expect(root.querySelector('[data-slot="career-timeline-strips"]')).toBeNull();
+    expect(root.querySelectorAll('[data-slot="career-timeline-dot"]')).toHaveLength(
+      THIN_TIMELINE.rating.points.length,
+    );
+    const slot = root.querySelector('[data-slot="career-timeline-thin-strip"]');
+    expect(slot).not.toBeNull();
+    expect(slot!.querySelector('[data-slot="thin-probe"]')).not.toBeNull();
+    thin.unmount();
+    const full = render(
+      <CareerTimeline timeline={TIMELINE} labels={LABELS} width={1000} thinStrip={probe} />,
+    );
+    expect(full.container.querySelector('[data-slot="career-timeline-thin-strip"]')).toBeNull();
+  });
+
+  it('locked (3 games): an inset with the sentence and a 3-of-5 meter — no svg, never an empty frame', () => {
+    const timeline = locked(3);
+    expect(timeline.state).toBe('locked');
+    const { container } = render(
+      <CareerTimeline timeline={timeline} labels={LOCKED_LABELS} width={1000} />,
+    );
+    const inset = container.querySelector('[data-slot="career-timeline-locked"]');
+    expect(inset).not.toBeNull();
+    expect(inset!.textContent).toContain('Career timeline — 2 more games unlock this chart');
+    const meter = within(inset as HTMLElement).getByRole('img');
+    expect(meter.getAttribute('aria-label')).toBe('3 of 5 games');
+    expect((meter.firstElementChild as HTMLElement).style.width).toBe('60%');
+    expect(container.querySelector('svg')).toBeNull();
+    expect(container.querySelector('[data-slot="career-timeline-table-toggle"]')).toBeNull();
+  });
+
+  it('locked (0 games): the meter is empty and the inset still renders', () => {
+    const timeline = locked(0);
+    const { container } = render(
+      <CareerTimeline
+        timeline={timeline}
+        labels={{ ...LOCKED_LABELS, locked: '5 more games', lockedCount: '0 of 5 games' }}
+        width={1000}
+      />,
+    );
+    const inset = container.querySelector('[data-slot="career-timeline-locked"]');
+    expect(inset?.textContent).toContain('5 more games');
+    const meter = within(inset as HTMLElement).getByRole('img');
+    expect((meter.firstElementChild as HTMLElement).style.width).toBe('0%');
+  });
+
+  it('table twin: closed by default; opens a captioned rating-close table with scoped headers and one row per close', () => {
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        monthRecords={MONTH_RECORDS}
+      />,
+    );
+    expect(container.querySelector('[data-slot="career-timeline-table"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'View as table' }));
+    const twin = container.querySelector('[data-slot="career-timeline-table"]');
+    expect(twin).not.toBeNull();
+    const [ratingTable, monthTable] = Array.from(twin!.querySelectorAll('table'));
+    expect(ratingTable!.querySelector('caption')?.textContent).toBe('Rating at each close');
+    const ratingHeaders = Array.from(ratingTable!.querySelectorAll('thead th'));
+    expect(ratingHeaders.map((th) => th.textContent)).toEqual([
+      'Period',
+      'Rating',
+      '±RD',
+      'W–L',
+      'Rate',
+      'Games',
+    ]);
+    for (const th of ratingHeaders) expect(th.getAttribute('scope')).toBe('col');
+    const rows = Array.from(ratingTable!.querySelectorAll('tbody tr'));
+    expect(rows).toHaveLength(TIMELINE.rating.points.length);
+    const first = TIMELINE.rating.points[0]!;
+    expect(Array.from(rows[0]!.children).map((cell) => cell.textContent)).toEqual([
+      `period ${first.key}`,
+      String(first.rating),
+      `±${first.rd}`,
+      `${first.wins}–${first.losses}`,
+      `${Math.round((first.wins / first.total) * 100)}%`,
+      String(first.total),
+    ]);
+    expect(monthTable!.querySelector('caption')?.textContent).toBe('Win rate and games by month');
+  });
+
+  it('table twin: the year x month table runs newest year first, 12 months + a year total, "<rate> · <n>" or "—", stacked per row below 640px', () => {
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        monthRecords={MONTH_RECORDS}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'View as table' }));
+    const monthTable = container.querySelectorAll('[data-slot="career-timeline-table"] table')[1]!;
+    const head = monthTable.querySelector('thead')!;
+    expect(head.className).toContain('max-sm:hidden');
+    const headers = Array.from(head.querySelectorAll('th'));
+    expect(headers.map((th) => th.textContent)).toEqual([
+      'Year',
+      ...LABELS.table!.months,
+      'Year total',
+    ]);
+    for (const th of headers) expect(th.getAttribute('scope')).toBe('col');
+    const years = [...new Set(MONTH_RECORDS.map((r) => r.year))];
+    const newest = Math.max(...years);
+    const oldest = Math.min(...years);
+    const bodyRows = Array.from(monthTable.querySelectorAll('tbody tr'));
+    expect(bodyRows).toHaveLength(newest - oldest + 1);
+    const yearCell = bodyRows[0]!.querySelector('th')!;
+    expect(yearCell.getAttribute('scope')).toBe('row');
+    expect(yearCell.textContent).toBe(String(newest));
+    const monthCells = Array.from(bodyRows[0]!.querySelectorAll('td[data-m]'));
+    expect(monthCells).toHaveLength(12);
+    expect(monthCells.map((td) => td.getAttribute('data-m'))).toEqual(LABELS.table!.months);
+    for (const td of monthCells) {
+      expect(td.className).toContain('max-sm:before:content-[attr(data-m)]');
+    }
+    expect(bodyRows[0]!.className).toContain('max-sm:flex');
+    const aRecord = MONTH_RECORDS.find((r) => r.year === newest)!;
+    expect(monthCells[aRecord.month]!.textContent).toBe(
+      `${Math.round((aRecord.wins / aRecord.total) * 100)}% · ${aRecord.total}`,
+    );
+    const emptyMonth = LABELS.table!.months.findIndex(
+      (_, m) => !MONTH_RECORDS.some((r) => r.year === newest && r.month === m),
+    );
+    expect(emptyMonth).toBeGreaterThanOrEqual(0);
+    expect(monthCells[emptyMonth]!.textContent).toBe('—');
+  });
+
+  const MARKERS: CareerTimelineEventMarker[] = [
+    {
+      key: 'evt-a',
+      label: 'Genesis 10',
+      atMs: TIMELINE.rating.points[8]!.closeMs,
+      wins: 5,
+      losses: 2,
+      ratingAfter: 1810,
+    },
+    {
+      key: 'evt-b',
+      label: 'Supernova',
+      atMs: TIMELINE.rating.points[20]!.closeMs,
+      wins: 3,
+      losses: 2,
+      ratingAfter: 1850,
+    },
+  ];
+
+  it('event layer: one baseline diamond per marker (11px, context ink, surface stroke) over a 24x24 hit area, focusable and labelled', () => {
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={MARKERS}
+        onSelectEventMarker={vi.fn()}
+      />,
+    );
+    const x = anchorMapping(container);
+    const plot = container.querySelector('[data-slot="career-timeline-plot-area"]')!;
+    const baseline = numberAttr(plot, 'y') + numberAttr(plot, 'height');
+    const events = container.querySelectorAll('[data-slot="career-timeline-event"]');
+    expect(events).toHaveLength(2);
+    events.forEach((el, i) => {
+      expect(el.getAttribute('tabindex')).toBe('0');
+      expect(el.getAttribute('aria-label')).toBe(LABELS.eventAria!(MARKERS[i]!));
+      const hit = el.querySelector('rect')!;
+      expect(numberAttr(hit, 'width')).toBe(24);
+      expect(numberAttr(hit, 'height')).toBe(24);
+      expect(hit.getAttribute('fill')).toBe('transparent');
+      const cx = numberAttr(hit, 'x') + 12;
+      const cy = numberAttr(hit, 'y') + 12;
+      expect(Math.abs(cx - x(MARKERS[i]!.atMs))).toBeLessThanOrEqual(0.5);
+      expect(cy).toBe(baseline);
+      const diamond = el.querySelector('path')!;
+      expect(diamond.getAttribute('fill')).toBe(CHART_TOKENS.deemphasis);
+      expect(diamond.getAttribute('stroke')).toBe(CHART_TOKENS.surface);
+      expect(diamond.getAttribute('stroke-width')).toBe('1.5');
+    });
+  });
+
+  it('event layer: focus shows the event readout, Enter and click select the marker', () => {
+    const onSelectEventMarker = vi.fn();
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={MARKERS}
+        onSelectEventMarker={onSelectEventMarker}
+      />,
+    );
+    const diamonds = Array.from(container.querySelectorAll('[data-slot="career-timeline-event"]'));
+    expect(diamonds, 'one focusable diamond per marker').toHaveLength(2);
+    const [first, second] = diamonds;
+    fireEvent.focus(first!);
+    const readout = container.querySelector('[data-slot="career-timeline-readout"]');
+    expect(readout?.querySelector('[data-slot="career-timeline-readout-title"]')?.textContent).toBe(
+      LABELS.readout({ kind: 'event', marker: MARKERS[0]! }).title,
+    );
+    fireEvent.keyDown(first!, { key: 'Enter' });
+    expect(onSelectEventMarker).toHaveBeenLastCalledWith('evt-a');
+    fireEvent.click(second!);
+    expect(onSelectEventMarker).toHaveBeenLastCalledWith('evt-b');
+    expect(onSelectEventMarker).toHaveBeenCalledTimes(2);
+  });
+
+  it('event layer: without markers there are no diamonds and no extra tab stops', () => {
+    const { container } = render(
+      <CareerTimeline timeline={TIMELINE} labels={LABELS} width={1000} />,
+    );
+    expect(container.querySelectorAll('[data-slot="career-timeline-event"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
   });
 });

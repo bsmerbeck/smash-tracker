@@ -5,11 +5,14 @@ import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
+  CAREER_TIMELINE_NARROW_STRIP_CELLS,
+  MARK_BOUND_HEAT_CELLS,
   MARK_BOUND_LINE_POINTS,
   MARK_BOUND_STRIP_TICKS,
   buildPeriodSeries,
 } from '@smash-tracker/shared';
 import {
+  generateSyntheticMatches,
   emptyWorkspace,
   oneGameWorkspace,
   twoGameWorkspace,
@@ -26,6 +29,7 @@ import {
 } from '@/pages/Matchups/components/MatchupChart';
 import { FighterHero } from '@/pages/FighterAnalysis/components/FighterHero';
 import { useFighterFormNow } from '@/pages/FighterAnalysis/lib/useFighterFormNow';
+import { CareerTimelineCard } from '@/pages/Trends/components/CareerTimelineCard';
 
 /**
  * Plan 39.1-21 Task 2 (VIZ-01, UI-SPEC §11/§7.13): the whole-phase mark-bound
@@ -264,5 +268,82 @@ describe('Whole-phase mark-bound oracle (VIZ-01)', () => {
       expect((container.textContent ?? '').trim().length).toBeGreaterThan(0);
       expect(directionChipTexts(container)).toEqual([]);
     });
+  });
+
+  /**
+   * Plan 39.1-35 (UI-SPEC §11 / §12.1, D-07): the Trends career timeline —
+   * rendered through its real host (`CareerTimelineCard`, explicit chart
+   * width) — obeys the line / strip / form-strip bounds on the realistic,
+   * casual and sparse fixtures, and a sparse account gets a designed state
+   * (the locked inset or the thin state), never an empty frame.
+   */
+  describe('career timeline (plan 39.1-35)', () => {
+    function renderTimelineCard(matches: Match[], width: number) {
+      return render(<CareerTimelineCard matches={matches} horizon="last30" chartWidth={width} />);
+    }
+
+    it('realistic fixture at 1000px: more than 20 and at most 60 anchors, at most 108 rate and games cells', () => {
+      const { container } = renderTimelineCard(realisticFixture(300), 1000);
+      const anchors = container.querySelectorAll('[data-slot="career-timeline-point"]');
+      expect(anchors.length).toBeGreaterThan(20);
+      expect(anchors.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+      const rate = container.querySelectorAll('[data-slot="career-timeline-rate-cell"]');
+      const games = container.querySelectorAll('[data-slot="career-timeline-games-cell"]');
+      expect(rate.length).toBeGreaterThan(0);
+      expect(rate.length).toBeLessThanOrEqual(MARK_BOUND_HEAT_CELLS);
+      expect(games.length).toBeLessThanOrEqual(MARK_BOUND_HEAT_CELLS);
+    });
+
+    it('realistic fixture at 400px: at most 36 rate and games cells (quarters)', () => {
+      const { container } = renderTimelineCard(realisticFixture(300), 400);
+      const rate = container.querySelectorAll('[data-slot="career-timeline-rate-cell"]');
+      const games = container.querySelectorAll('[data-slot="career-timeline-games-cell"]');
+      expect(rate.length).toBeGreaterThan(0);
+      expect(rate.length).toBeLessThanOrEqual(CAREER_TIMELINE_NARROW_STRIP_CELLS);
+      expect(games.length).toBeLessThanOrEqual(CAREER_TIMELINE_NARROW_STRIP_CELLS);
+    });
+
+    it('casual fixture (41 games, 3 months): the thin state with at most 60 anchors and a per-game strip of at most 60 ticks', () => {
+      const casual = generateSyntheticMatches({
+        seed: 39_135_001,
+        count: 41,
+        startMs: Date.UTC(2026, 6, 3, 19),
+        sessionSizeRange: [2, 6],
+        sessionGapMs: 156 * 60 * 60 * 1000,
+        winRate: 0.56,
+      });
+      const { container } = renderTimelineCard(casual, 1000);
+      const root = container.querySelector('[data-slot="career-timeline"]')!;
+      expect(root.getAttribute('data-state')).toBe('thin');
+      expect(
+        root.querySelectorAll('[data-slot="career-timeline-point"]').length,
+      ).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+      const ticks = root.querySelectorAll('[data-slot="form-strip-tick"]');
+      expect(ticks.length).toBeGreaterThan(0);
+      expect(ticks.length).toBeLessThanOrEqual(MARK_BOUND_STRIP_TICKS);
+    });
+
+    const sparse: { name: string; build: () => Match[] }[] = [
+      { name: 'empty workspace', build: emptyWorkspace },
+      { name: 'one-game workspace', build: oneGameWorkspace },
+      { name: 'two-game workspace', build: twoGameWorkspace },
+      { name: 'unknown-stage-only workspace', build: unknownStageOnlyWorkspace },
+    ];
+    for (const fixture of sparse) {
+      it(`on the ${fixture.name}: the locked inset or the thin state — never an empty frame — and no direction chip`, () => {
+        const { container } = renderTimelineCard(fixture.build(), 1000);
+        const root = container.querySelector('[data-slot="career-timeline"]');
+        expect(root).not.toBeNull();
+        const state = root!.getAttribute('data-state');
+        if (state === 'locked') {
+          expect(root!.querySelector('[data-slot="career-timeline-locked"]')).not.toBeNull();
+        } else {
+          expect(state).toBe('thin');
+          expect(root!.querySelector('[data-slot="career-timeline-thin-strip"]')).not.toBeNull();
+        }
+        expect((root!.textContent ?? '').trim().length).toBeGreaterThan(0);
+        expect(directionChipTexts(container)).toEqual([]);
+      });
+    }
   });
 });

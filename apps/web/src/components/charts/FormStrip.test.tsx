@@ -721,3 +721,48 @@ describe('FormStrip source-tree guards (UIX-05, VIZ-02)', () => {
     }
   });
 });
+
+/**
+ * Plan 39.1-35 (sketch 002-C thin account, planner decision 7): an optional
+ * overline formatter of the DRAWN vs total counts, rendered above the row
+ * only when it returns text — the career timeline's "All N games · by
+ * session" line names every game only when every game is actually drawn
+ * (the `limit` trim or the width fit may draw fewer).
+ */
+describe('FormStrip overline (plan 39.1-35)', () => {
+  const overline = ({ shown, total }: { shown: number; total: number }) =>
+    shown === total ? `All ${total} games` : undefined;
+
+  it('renders the overline above the row when every game is drawn', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        labels={{ ...emptyLabels, overline }}
+      />,
+    );
+    const el = container.querySelector('[data-slot="form-strip-overline"]');
+    expect(el?.textContent).toBe('All 12 games');
+    const root = container.querySelector('[data-slot="form-strip-root"]')!;
+    expect(root.firstElementChild).toBe(el);
+  });
+
+  it('renders no overline when the limit trims games (90 games at limit 60)', () => {
+    const { container } = render(
+      <FormStrip events={ninetyGameFixture()} limit={60} labels={{ ...emptyLabels, overline }} />,
+    );
+    expect(container.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
+  });
+
+  it('renders no overline when the width fit draws fewer than every game', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        availableWidthPx={100}
+        labels={{ ...emptyLabels, overline }}
+      />,
+    );
+    expect(container.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
+  });
+});
