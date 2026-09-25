@@ -2,12 +2,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildClaimSet,
   buildMatchupEvidence,
   rankMatchupsByEvidence,
   rankStagesByEvidence,
   wilsonLowerBound,
   type Match,
+  type ReportSurface,
+  type ScoutReportData,
 } from '@smash-tracker/shared';
+import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { assembleReportPayload } from './generate.js';
 
 /**
  * EVID-10 web/API parity (D-14, plan 36-03 Task 3). This is NOT a test of
@@ -302,22 +307,93 @@ describe('EVID-10 engine parity — SYSTEM_PROMPT reads claim fields, not a pros
     expect(hardCodedThresholds).toEqual([]);
   });
 
-  it('names evidencePolicy.abstentionFloorGames as the one sample threshold in play', () => {
-    expect(extractSystemPrompt()).toContain('evidencePolicy.abstentionFloorGames');
+  // Phase 39 (plan 39-06 Task 3, AI-SPEC §4b): the instructional grounding
+  // the three assertions below used to pin (a named sample threshold, a
+  // "ground every claim" rule, a "state the tier" rule, a "no bare
+  // percentage" rule) was DELETED, not kept alongside the structural version:
+  // the model now receives engine-issued claims only and cannot author a
+  // number the app displays. These assertions pin the replacement.
+
+  it('names no sample threshold at all — the claims carry their own tiers and abstentions (no digit anywhere in the prompt)', () => {
+    expect(extractSystemPrompt()).not.toMatch(/\d/);
   });
 
-  it('still contains the ground-every-claim, verbatim-names, and schema-conformance hard rules, unedited', () => {
+  it('states what the model is for — select and connect claims, never compute — and that only input ids may be used', () => {
     const prompt = extractSystemPrompt();
-    expect(prompt).toContain('Ground every claim in the provided JSON payload ONLY');
-    expect(prompt).toContain('come VERBATIM from the data provided');
-    expect(prompt).toContain('Output must conform to the provided JSON schema exactly');
+    expect(prompt).toContain('choose which claims matter most');
+    expect(prompt).toContain('Do not compute, count, rank or estimate anything');
+    expect(prompt).toContain('Use only claim ids and action ids that appear in the input');
+    expect(prompt).toContain('display names those claims give');
   });
 
-  it('describes the matchupAdvisor abstained arm explicitly', () => {
-    expect(extractSystemPrompt().toLowerCase()).toContain('abstained');
+  it('describes the abstained claim value explicitly, as a gap rather than a finding', () => {
+    expect(extractSystemPrompt()).toContain('"abstained" is a gap in the evidence');
   });
 
-  it('never instructs the model to state a bare win-probability percentage', () => {
-    expect(extractSystemPrompt()).toContain('Never state a bare win-probability percentage');
+  it('never asks the model to state or hedge a confidence level (the retired instructional grounding)', () => {
+    expect(extractSystemPrompt()).not.toMatch(/confidence|hedg|sample-size|percentage/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. RPT-05 surface identity, API side (plan 39-06 Task 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The API-side half of plan 39-03's surface-identity property: the claim set
+ * produced from one fixed fixture is IDENTICAL whichever assembly entry point
+ * produced the rows — `assembleReportPayload` for a legacy scout, the same
+ * function for a prep single and a bundle child (its `surface` option), and a
+ * direct `buildClaimSet` over the rows it emitted. The synthesis entry point
+ * (`assembleSynthesisPayload`) joins this assertion in plan 39-08, when it
+ * starts emitting `vod_annotation` rows through the same builder.
+ */
+describe('RPT-05 surface identity — the claim set is independent of the assembly entry point (plan 39-06)', () => {
+  const SCOUT: ScoutReportData = {
+    player: { id: 1, gamerTag: 'rival' },
+    sampledSets: 10,
+    sampledGames: 12,
+    characters: [
+      { fighterId: 8, games: 8, wins: 4 },
+      { fighterId: 22, games: 4, wins: 2 },
+    ],
+    stages: [],
+    recentEvents: [],
+    commonOpponents: [],
+  };
+
+  async function assemble(surface: ReportSurface) {
+    const database = new FakeDatabase();
+    database.seed(
+      'matches/uid',
+      Object.fromEntries(FIXTURE.map(({ id, ...record }) => [id, record])),
+    );
+    database.seed('opponentAliases/uid', ALIAS_MAP);
+    return assembleReportPayload(
+      'uid',
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+      { surface },
+    );
+  }
+
+  it('scout, prep_report and prep_bundle_child assemblies issue byte-identical claim sets, equal to buildClaimSet over the emitted rows', async () => {
+    const scout = await assemble('scout');
+    expect(scout.claimSet.claims.length).toBeGreaterThan(0);
+    for (const surface of ['prep_report', 'prep_bundle_child'] as const) {
+      const other = await assemble(surface);
+      expect(Object.keys(other.rows)).toEqual(Object.keys(scout.rows));
+      expect(stripRefreshedAt(other.claimSet)).toEqual(stripRefreshedAt(scout.claimSet));
+    }
+    expect(buildClaimSet({ rows: scout.rows, surface: 'post_event_synthesis' })).toEqual(
+      scout.claimSet,
+    );
+  });
+});
+
+/** Two assemblies stamp their own wall-clock refresh time into every sample — compare everything else. */
+function stripRefreshedAt(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (key, member) => (key === 'refreshedAt' ? undefined : member)),
+  );
+}

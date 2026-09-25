@@ -16,8 +16,20 @@ import {
   type AnthropicLikeClient,
   type ReportPayload,
 } from './generate.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { vi } from 'vitest';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import {
+  CLAIM_ID_VOCABULARY,
+  MIN_VIABLE_CLAIMS,
+  buildClaimSet,
+  resolveSubjectDisplayName,
+} from '@smash-tracker/shared';
 import { claimSelectionSchema } from './claimSelection.js';
+import { snapshotIdFor } from './snapshotId.js';
+import { seedViableEvidence } from '../test-support/viableEvidenceFixture.js';
+import { buildModelPayload } from './generate.js';
 
 const UID = 'test-uid-123';
 
@@ -753,6 +765,7 @@ const PAYLOAD: ReportPayload = {
     matchIdDigest: { count: 0, hash: 'fixture-empty-digest' },
   },
   claimSet: { claims: [], issuedClaimIds: [], truncatedCandidateCount: 0 },
+  actionCandidates: [],
 };
 
 describe('generateScoutReport', () => {
@@ -827,5 +840,215 @@ describe('generateScoutReport: claim-selection schema and guard order (Phase 39,
     await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject({
       reason: 'truncated',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06 Task 3): the payload emits rows, snapshot, claim set
+// and ranked actions; the MODEL sees only claims and action candidates.
+// ---------------------------------------------------------------------------
+
+describe('assembleReportPayload: evidence rows, snapshot, claim set and ranked actions (plan 39-06 Task 3)', () => {
+  /** A scouted opponent with three known characters and one unmapped (fighterId 0) bucket. */
+  const THREE_CHARACTER_SCOUT: ScoutReportData = {
+    player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+    sampledSets: 12,
+    sampledGames: 26,
+    characters: [
+      { fighterId: 8, games: 12, wins: 8 }, // Fox
+      { fighterId: 9, games: 8, wins: 4 }, // Pikachu
+      { fighterId: 23, games: 4, wins: 2 }, // Marth
+      { fighterId: 0, games: 2, wins: 1 }, // unmapped bucket — never a claim subject
+    ],
+    stages: [],
+    recentEvents: [],
+    commonOpponents: [],
+  };
+
+  async function assembleViable() {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    return assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+  }
+
+  it('every emitted claim id is a member of CLAIM_ID_VOCABULARY and every action candidate cites at least one issued claim id', async () => {
+    const payload = await assembleViable();
+    expect(payload.claimSet.claims.length).toBeGreaterThan(0);
+    for (const claim of payload.claimSet.claims) {
+      expect(CLAIM_ID_VOCABULARY).toContain(claim.id);
+    }
+    expect(payload.claimSet.claims).toEqual(
+      buildClaimSet({ rows: payload.rows, surface: 'scout' }).claims,
+    );
+    const issued = new Set(payload.claimSet.issuedClaimIds);
+    expect(payload.actionCandidates.length).toBeGreaterThan(0);
+    for (const candidate of payload.actionCandidates) {
+      expect(candidate.claimIds.length).toBeGreaterThan(0);
+      for (const claimId of candidate.claimIds) {
+        expect(issued.has(claimId)).toBe(true);
+      }
+    }
+  });
+
+  it('C2-B2: a stage_record AND a stage_pick_rate row exist for the same stage under two distinct keys', async () => {
+    const payload = await assembleViable();
+    const recordRow = payload.rows['sr-g8-s1'];
+    const rateRow = payload.rows['spr-g8-s1'];
+    expect(recordRow?.predicate).toBe('stage_record');
+    expect(rateRow?.predicate).toBe('stage_pick_rate');
+    expect(recordRow?.subject).toEqual(rateRow?.subject);
+  });
+
+  it('C3-B1: an EMPTY own history with a populated scouted opponent yields one opponent_character_usage row per known scout.characters entry, issuing at least MIN_VIABLE_CLAIMS.scout claims', async () => {
+    const database = new FakeDatabase();
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const usageRows = Object.values(payload.rows).filter(
+      (row) => row.predicate === 'opponent_character_usage',
+    );
+    const knownCharacters = THREE_CHARACTER_SCOUT.characters.filter((c) => c.fighterId !== 0);
+    expect(usageRows.map((row) => row.subject.opponentFighterId)).toEqual(
+      knownCharacters.map((c) => c.fighterId),
+    );
+    // The rate's denominator IS the sample's countable games (validator rule R7).
+    for (const row of usageRows) {
+      expect(row.value.kind === 'rate' && row.value.denominator).toBe(
+        row.sample.eligibleDenominator,
+      );
+    }
+    expect(payload.claimSet.claims.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+  });
+
+  it('the snapshot id is identical across two assemblies of the same input, even at different wall-clock times', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const first = await assembleViable();
+    nowSpy.mockReturnValue(1_800_086_400_000);
+    const second = await assembleViable();
+    nowSpy.mockRestore();
+    expect(first.snapshot.refreshedAt).not.toBe(second.snapshot.refreshedAt);
+    expect(snapshotIdFor(first.snapshot)).toBe(snapshotIdFor(second.snapshot));
+  });
+
+  it('VOD refs come from the existing selectOpponentMatches result: a LOST head-to-head match with a VOD timestamp licenses a vod_review candidate naming that match', async () => {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    // One extra lost game against the scouted tag, with a VOD moment.
+    database.seed(`matches/${UID}/vod-lost-1`, {
+      fighter_id: 1,
+      opponent_id: 23,
+      time: 1_700_100_000_000,
+      map: { id: 1, name: 'Battlefield' },
+      opponent: 'pandem1c',
+      matchType: 'offline-tourney',
+      win: false,
+      vodUrl: 'https://www.youtube.com/watch?v=fixture',
+      vodTimestamps: [{ seconds: 42, note: 'missed punish' }],
+    });
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const vodCandidates = payload.actionCandidates.filter((c) => c.kind === 'vod_review');
+    expect(vodCandidates.length).toBeGreaterThan(0);
+    expect(vodCandidates.some((c) => c.target.matchId === 'vod-lost-1')).toBe(true);
+  });
+});
+
+describe('the model-facing payload (plan 39-06 Task 3)', () => {
+  async function assembleViable() {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    return assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+  }
+
+  it('C2-M6: every claim carries a displayName for each non-null resolvable axis, equal to resolveSubjectDisplayName', async () => {
+    const model = buildModelPayload(await assembleViable());
+    expect(model.claims.length).toBeGreaterThan(0);
+    for (const claim of model.claims) {
+      const expected: Record<string, string> = {};
+      if (claim.subject.myFighterId !== null) {
+        expected.myFighter = resolveSubjectDisplayName('fighter', claim.subject.myFighterId);
+      }
+      if (claim.subject.opponentFighterId !== null) {
+        expected.opponentFighter = resolveSubjectDisplayName(
+          'fighter',
+          claim.subject.opponentFighterId,
+        );
+      }
+      if (claim.subject.stageId !== null) {
+        expected.stage = resolveSubjectDisplayName('stage', claim.subject.stageId);
+      }
+      expect(claim.displayName).toEqual(expected);
+    }
+    // The advisor's pick is on the subject, so its name is resolvable (and licensed).
+    const picks = model.claims.filter(
+      (claim) => claim.predicate === 'matchup_advisor_pick' && claim.value.kind === 'entity',
+    );
+    expect(picks.length).toBeGreaterThan(0);
+    for (const pick of picks) {
+      const entityId = pick.value.kind === 'entity' ? Number(pick.value.entityId) : NaN;
+      expect(pick.subject.myFighterId).toBe(entityId);
+      expect(pick.displayName.myFighter).toBe(resolveSubjectDisplayName('fighter', entityId));
+    }
+  });
+
+  it('the user message carries ONLY the claims and ranked action candidates — the named raw payload is not serialized', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    const payload = await assembleViable();
+    await generateScoutReport(client, payload);
+    const message = JSON.parse(captured!.messages[0]!.content) as Record<string, unknown>;
+    expect(Object.keys(message).sort()).toEqual(['actionCandidates', 'claims']);
+    expect(message).toEqual(JSON.parse(JSON.stringify(buildModelPayload(payload))));
+  });
+
+  it('the assembled system prompt carries no instruction to state or hedge a confidence level, and no per-job value', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    await generateScoutReport(client, await assembleViable());
+    const system = captured!.system;
+    expect(system.length).toBeGreaterThan(0);
+    expect(system).not.toMatch(/confidence|hedg/i);
+    expect(system).not.toMatch(/\d/);
+    expect(system).not.toContain('Pandem1c');
+  });
+
+  it('C2-M10: orderSnapshotOpponents is called exactly once in generate.ts (source read) — no second ordering derived locally', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/reports/generate.ts'), 'utf-8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+    expect(source.match(/orderSnapshotOpponents\(/g) ?? []).toHaveLength(1);
+    expect(source).not.toMatch(/localeCompare/);
   });
 });

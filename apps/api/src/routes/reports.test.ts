@@ -3842,8 +3842,8 @@ describe('C3-B1 viable-evidence fixture: locked-block reachability and original-
    */
   function issuedClaimIdsFromModelCall(params: unknown): string[] {
     const content = (params as { messages: Array<{ content: string }> }).messages[0]!.content;
-    const payload = JSON.parse(content) as { claimSet: { claims: Array<{ id: string }> } };
-    return payload.claimSet.claims.map((claim) => claim.id);
+    const payload = JSON.parse(content) as { claims: Array<{ id: string }> };
+    return payload.claims.map((claim) => claim.id);
   }
 
   function capturingClient(failCalls: ReadonlySet<number> = new Set()) {
