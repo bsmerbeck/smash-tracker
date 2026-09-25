@@ -4,6 +4,7 @@ import {
   ACTION_ID_VOCABULARY,
   CLAIM_ID_VOCABULARY,
   EVIDENCE_POLICY_VERSION,
+  FORBIDDEN_CONFIDENCE_WORDS,
   confidenceTierFor,
   resolveSubjectDisplayName,
   storedScoutReportSchema,
@@ -16,6 +17,7 @@ import {
 import {
   CLAIM_SELECTION_SECTION_IDS,
   claimSelectionSchema,
+  engineAuthoredSummary,
   projectScoutSelection,
   type ClaimSelection,
 } from './claimSelection.js';
@@ -403,5 +405,171 @@ describe('projectScoutSelection (review C1-B1)', () => {
       reasoning: WELL_FORMED.sections.gameplan.connective,
     });
     expect(storedScoutReportSchema.safeParse(projected).success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// engineAuthoredSummary (plan 39-08, reviews C2-H2(a) + C3-L1)
+// ---------------------------------------------------------------------------
+
+/** Word tokens: runs of letters or digits (names like "Pac-Man" split into their words, "3-2-5" into integers). */
+function tokensOf(text: string): string[] {
+  return text.match(/[\p{L}\p{N}']+/gu) ?? [];
+}
+
+/** The integers a claim value carries — the only numbers the summary may contain. */
+function integersOf(value: ClaimValue): Set<string> {
+  switch (value.kind) {
+    case 'record':
+      return new Set([value.wins, value.losses, value.games].map(String));
+    case 'rate':
+      return new Set([value.numerator, value.denominator].map(String));
+    case 'count':
+      return new Set([String(value.count)]);
+    case 'abstained':
+      return new Set([String(value.gamesNeeded)]);
+    case 'entity':
+      return new Set();
+  }
+}
+
+/** The word tokens a claim licenses by NAME: its resolved fighter/stage names, its opponent tag verbatim, and an entity value's resolved name. */
+function licensedNameTokens(target: ClaimAtom): Set<string> {
+  const names: string[] = [];
+  if (target.subject.myFighterId !== null) {
+    names.push(resolveSubjectDisplayName('fighter', target.subject.myFighterId));
+  }
+  if (target.subject.opponentFighterId !== null) {
+    names.push(resolveSubjectDisplayName('fighter', target.subject.opponentFighterId));
+  }
+  if (target.subject.stageId !== null) {
+    names.push(resolveSubjectDisplayName('stage', target.subject.stageId));
+  }
+  if (target.subject.opponentTag !== null) {
+    names.push(target.subject.opponentTag);
+  }
+  if (target.value.kind === 'entity' && target.value.entityKind === 'fighter') {
+    names.push(resolveSubjectDisplayName('fighter', Number(target.value.entityId)));
+  }
+  return new Set(names.flatMap(tokensOf));
+}
+
+/** Asserts every token of `summary` is licensed by `target` — a name it carries or an integer in its value — and no confidence word appears. */
+function expectInventionFree(summary: string, target: ClaimAtom): void {
+  const licensed = new Set([...licensedNameTokens(target), ...integersOf(target.value)]);
+  const tokens = tokensOf(summary);
+  expect(tokens.length).toBeGreaterThan(0);
+  for (const token of tokens) {
+    expect(licensed.has(token), `unlicensed token "${token}" in "${summary}"`).toBe(true);
+    expect(FORBIDDEN_CONFIDENCE_WORDS).not.toContain(token.toLowerCase());
+  }
+}
+
+describe('engineAuthoredSummary (plan 39-08, reviews C2-H2(a) + C3-L1)', () => {
+  // c01 is the axis-free recent_form claim — the C3-L1 trap: the LOWEST id,
+  // and the one the naive rule would pick.
+  const RECENT_FORM = claim(
+    'c01',
+    'recent_form',
+    {},
+    { kind: 'record', wins: 30, losses: 20, games: 50 },
+  );
+  const MY_CHARACTER = claim(
+    'c02',
+    'my_character_record',
+    { myFighterId: 1 },
+    { kind: 'record', wins: 7, losses: 4, games: 11 },
+  );
+  const STAGE = claim(
+    'c03',
+    'stage_record',
+    { opponentFighterId: 8, stageId: 1 },
+    { kind: 'record', wins: 4, losses: 2, games: 6 },
+  );
+  const COHORT = claim('c04', 'cohort_disclosure', {}, { kind: 'count', count: 50 });
+
+  it('C3-L1 (a): a subject-bearing claim wins over a LOWER-id axis-free claim, and the output names it', () => {
+    const summary = engineAuthoredSummary([RECENT_FORM, MY_CHARACTER, STAGE, COHORT]);
+    expect(summary).toBe(`${resolveSubjectDisplayName('fighter', 1)}: 7-4-11`);
+    expect(summary).toContain(resolveSubjectDisplayName('fighter', 1));
+    // Nothing from the axis-free c01 leaks in.
+    expect(summary).not.toContain('30');
+    expectInventionFree(summary, MY_CHARACTER);
+  });
+
+  it('C3-L1: among subject-bearing claims the LOWEST id is chosen, in fixed axis order (my fighter, their fighter, stage, tag)', () => {
+    const tagged = claim(
+      'c05',
+      'head_to_head_record',
+      { opponentTag: 'rival' },
+      { kind: 'record', wins: 1, losses: 3, games: 4 },
+    );
+    expect(engineAuthoredSummary([COHORT, STAGE, tagged])).toBe(
+      `${resolveSubjectDisplayName('fighter', 8)}, ${resolveSubjectDisplayName('stage', 1)}: 4-2-6`,
+    );
+    expect(engineAuthoredSummary([tagged, COHORT])).toBe('rival: 1-3-4');
+  });
+
+  it('C3-L1 (b): when EVERY claim is axis-free the output is the value alone — non-empty, integers only, no predicate word, verb or connective', () => {
+    const summary = engineAuthoredSummary([COHORT, RECENT_FORM]);
+    expect(summary).toBe('30-20-50');
+    expect(summary.trim().length).toBeGreaterThan(0);
+    for (const token of tokensOf(summary)) {
+      expect(token).toMatch(/^\d+$/);
+      expect(integersOf(RECENT_FORM.value).has(token)).toBe(true);
+    }
+    expectInventionFree(summary, RECENT_FORM);
+  });
+
+  it('C3-L1 (c): deterministic — the same input twice, and the same claims in any order, give the same string', () => {
+    const input = [COHORT, STAGE, RECENT_FORM, MY_CHARACTER];
+    const first = engineAuthoredSummary(input);
+    expect(engineAuthoredSummary(input)).toBe(first);
+    expect(engineAuthoredSummary([...input].reverse())).toBe(first);
+    expect(engineAuthoredSummary([MY_CHARACTER, RECENT_FORM, COHORT, STAGE])).toBe(first);
+  });
+
+  it('C2-H2(a): invention-free for every value variant — record, rate, count, entity and abstained — each token a licensed name or an integer the claim carries', () => {
+    const cases: ClaimAtom[] = [
+      claim(
+        'c01',
+        'stage_record',
+        { myFighterId: 1, stageId: 3 },
+        { kind: 'record', wins: 2, losses: 5, games: 7 },
+      ),
+      claim(
+        'c01',
+        'opponent_character_usage',
+        { opponentFighterId: 8, opponentTag: 'rival' },
+        { kind: 'rate', numerator: 6, denominator: 9 },
+      ),
+      claim(
+        'c01',
+        'vod_annotation',
+        { myFighterId: 1, opponentFighterId: 2, opponentTag: 'rival' },
+        { kind: 'count', count: 42 },
+      ),
+      claim(
+        'c01',
+        'matchup_advisor_pick',
+        { myFighterId: 1, opponentFighterId: 8 },
+        { kind: 'entity', entityKind: 'fighter', entityId: '1' },
+      ),
+      claim(
+        'c01',
+        'matchup_advisor_pick',
+        { opponentFighterId: 8 },
+        { kind: 'abstained', gamesNeeded: 2 },
+      ),
+    ];
+    for (const target of cases) {
+      const summary = engineAuthoredSummary([target]);
+      expect(summary.trim().length).toBeGreaterThan(0);
+      expectInventionFree(summary, target);
+    }
+  });
+
+  it('an empty claim list yields the empty string (a defect the store-step safeParse turns into a refund, never a throw)', () => {
+    expect(engineAuthoredSummary([])).toBe('');
   });
 });

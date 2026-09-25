@@ -198,8 +198,6 @@ export function projectScoutSelection(input: ProjectScoutSelectionInput): Stored
   const gameplan = proseOf('gameplan');
   const watchFor = proseOf('watchFor');
 
-  const actions = persistActions(selection);
-
   return {
     overview: overview ?? '',
     gameplan: gameplan === null ? [] : [gameplan],
@@ -210,8 +208,37 @@ export function projectScoutSelection(input: ProjectScoutSelectionInput): Stored
       reasoning: gameplan ?? '',
     },
     confidenceNotes: '',
-    // Phase 39 additive fields (D-08) — each by CONDITIONAL SPREAD, never an
-    // explicit null, so the written shape IS the read-back shape.
+    ...projectClaimRecordFields(input),
+  };
+}
+
+/** The Phase 39 additive fields both stored report schemas share (`claimRecordFields` in `packages/shared/src/reports.ts`). */
+export interface ProjectedClaimRecordFields {
+  claimSchemaVersion: number;
+  claims?: Record<string, ClaimAtomRecord>;
+  sections: Record<string, { claimIds: string[]; connective: string }>;
+  actions?: Partial<
+    Record<(typeof ACTION_SLOT_KEYS)[number], { actionId: string; claimId?: string }>
+  >;
+  strippedSectionCount?: number;
+}
+
+/**
+ * Phase 39 (D-08): the additive claim fields BOTH stored records carry —
+ * the scout report (`projectScoutSelection` above) and the practice plan
+ * (`projectPracticePlanSelection`, `./synthesis.ts`). ONE implementation, so
+ * the two surfaces cannot store the same selection in two shapes. Each field
+ * by CONDITIONAL SPREAD, never an explicit null, so the written shape IS the
+ * read-back shape; `strippedSectionCount` is ABSENT when zero (D-20), never
+ * an explicit `0`.
+ */
+export function projectClaimRecordFields(
+  input: ProjectScoutSelectionInput,
+): ProjectedClaimRecordFields {
+  const { selection, claims } = input;
+  const stripped = new Set(input.strippedSectionIds ?? []);
+  const actions = persistActions(selection);
+  return {
     claimSchemaVersion: CLAIM_SCHEMA_VERSION,
     ...(claims.length > 0
       ? { claims: Object.fromEntries(claims.map((claim) => [claim.id, persistClaim(claim)])) }
@@ -219,12 +246,131 @@ export function projectScoutSelection(input: ProjectScoutSelectionInput): Stored
     sections: Object.fromEntries(
       CLAIM_SELECTION_SECTION_IDS.map((sectionId) => [
         sectionId,
-        persistSection(selection.sections[sectionId], proseOf(sectionId)),
+        persistSection(
+          selection.sections[sectionId],
+          stripped.has(sectionId) ? null : selection.sections[sectionId].connective,
+        ),
       ]),
     ),
     ...(actions ? { actions } : {}),
     ...(stripped.size > 0 ? { strippedSectionCount: stripped.size } : {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// engineAuthoredSummary (plan 39-08, reviews C2-H2(a) + C3-L1)
+// ---------------------------------------------------------------------------
+
+/** True when at least one of the claim's four `ClaimSubject` axes is non-null. */
+function hasSubjectAxis(subject: ClaimSubject): boolean {
+  return (
+    subject.myFighterId !== null ||
+    subject.opponentFighterId !== null ||
+    subject.stageId !== null ||
+    subject.opponentTag !== null
+  );
+}
+
+/** The claim's subject as licensed names, in the fixed axis order: my fighter, their fighter, stage, opponent tag. */
+function subjectNames(subject: ClaimSubject): string[] {
+  const names: string[] = [];
+  if (subject.myFighterId !== null) {
+    names.push(resolveSubjectDisplayName('fighter', subject.myFighterId));
+  }
+  if (subject.opponentFighterId !== null) {
+    names.push(resolveSubjectDisplayName('fighter', subject.opponentFighterId));
+  }
+  if (subject.stageId !== null) {
+    names.push(resolveSubjectDisplayName('stage', subject.stageId));
+  }
+  if (subject.opponentTag !== null) {
+    names.push(subject.opponentTag);
+  }
+  return names;
+}
+
+/** A claim value as integers and resolved names ONLY — no unit, no word, no connective. */
+function renderClaimValue(value: ClaimAtom['value']): string {
+  switch (value.kind) {
+    case 'record':
+      return `${value.wins}-${value.losses}-${value.games}`;
+    case 'rate':
+      return `${value.numerator}/${value.denominator}`;
+    case 'count':
+      return String(value.count);
+    case 'entity': {
+      const numericId = Number(value.entityId);
+      if (
+        (value.entityKind === 'fighter' || value.entityKind === 'stage') &&
+        Number.isInteger(numericId)
+      ) {
+        return resolveSubjectDisplayName(value.entityKind, numericId);
+      }
+      return value.entityId;
+    }
+    case 'abstained':
+      return String(value.gamesNeeded);
+  }
+}
+
+/**
+ * Review C2-H2(a): a deterministic, ENGINE-AUTHORED practice-plan headline,
+ * used by `projectPracticePlanSelection` only when the model's `overview`
+ * connective was stripped by the validator (an R4/R5 fault, plan 39-04) or is
+ * empty after NFC normalisation and trimming. `storedPracticePlanSchema`'s
+ * `summary` is `.min(1)`, so without this fallback a single stripped
+ * `overview` would make the store step reject a PASSING plan.
+ *
+ * SELECTION — a two-step preference order (review C3-L1), in this order:
+ * 1. among the claims carrying at least ONE non-null `ClaimSubject` axis
+ *    (`myFighterId`, `opponentFighterId`, `stageId`, `opponentTag`), the
+ *    LOWEST claim id;
+ * 2. only when NO claim carries any axis, the lowest claim id overall.
+ * Do not "simplify" this back to the lowest id overall: plan 39-03 ranks
+ * evidenced before abstained and higher countable games first, and
+ * `recent_form` — computed over the user's most recent fifty matches — is
+ * frequently the highest-countable-game claim in a set AND one of the two
+ * legitimately axis-free families (`recent_form`, `cohort_disclosure`). When
+ * it wins rank one, the naive rule yields a nameless bare value (a raw
+ * win-loss triple) as the plan's headline, which `.min(1)` and the
+ * invention-free check below both still accept, so nothing would catch it.
+ *
+ * RENDERING: `<resolved subject names>: <value>` and NOTHING else — fighter
+ * and stage names through `resolveSubjectDisplayName` (the same resolver the
+ * prose lint licenses names from and the model payload's `displayName`
+ * uses), the opponent tag verbatim as the claim's own subject value, and the
+ * value as `wins-losses-games` for a record, `numerator/denominator` for a
+ * rate, the bare integer for a count, the resolved name for an entity, and
+ * the games-needed integer for an abstained value. There is no verb, no
+ * adjective, no connective and no evaluative or confidence word: every token
+ * is either a licensed entity name or an integer the claim itself carries, so
+ * the fallback states no factual specific the claim does not already carry
+ * (D-04) and no confidence language (D-03). That is why it is a fallback and
+ * not an invention.
+ *
+ * THE AXIS-FREE CASE is defined, not accidental: when step 2 is taken the
+ * VALUE ALONE is rendered. It is non-empty (every value variant renders at
+ * least one integer or one resolved name) and it stays invention-free —
+ * adding a predicate word or a connective to make it read better would add a
+ * token the claim does not license. It is reachable only when EVERY
+ * surviving claim is axis-free, and only as a fallback for a stripped or
+ * empty model connective, never the normal path.
+ *
+ * TOTALITY: the projection is only called on a `passed` outcome, which
+ * carries at least `MIN_VIABLE_CLAIMS[surface]` surviving claims, so a claim
+ * always exists and the string is never empty. An empty input returns `''`,
+ * which the caller's store-step `safeParse` turns into a refund, never a
+ * throw.
+ */
+export function engineAuthoredSummary(claims: readonly ClaimAtom[]): string {
+  const byId = [...claims].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const chosen = byId.find((claim) => hasSubjectAxis(claim.subject)) ?? byId[0];
+  if (!chosen) {
+    return '';
+  }
+  const names = subjectNames(chosen.subject);
+  const value = renderClaimValue(chosen.value);
+  return names.length > 0 ? `${names.join(', ')}: ${value}` : value;
 }
 
 // ---------------------------------------------------------------------------

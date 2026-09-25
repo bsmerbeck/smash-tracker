@@ -23,6 +23,7 @@ import {
   type ReportFailureReason,
   type ReportJob,
   type ReportSurface,
+  type ClaimSet,
   type EvidenceSnapshot,
   type ScoutBinding,
   type ScoutReportData,
@@ -67,8 +68,8 @@ import { normalizeRtdbWriteShape, snapshotIdFor } from '../reports/snapshotId.js
 import {
   assembleSynthesisPayload,
   generatePracticePlan,
-  SynthesisValidationError,
-  validatePracticePlanCitations,
+  projectPracticePlanSelection,
+  type ProjectedPracticePlan,
   type SynthesisAnthropicClient,
   type SynthesisPayload,
 } from '../reports/synthesis.js';
@@ -287,6 +288,80 @@ function buildValidatedScoutReport(params: {
     log.error(
       { err },
       'Scout report validation/projection threw — routed to the validation failure branch',
+    );
+    return { ok: false };
+  }
+}
+
+type ValidatedPracticePlanBuild =
+  { ok: true; record: ProjectedPracticePlan; outcome: ValidationOutcome } | { ok: false };
+
+/**
+ * Phase 39 (plan 39-08, D-02/D-06/D-07, reviews C1-B1/C2-H2): the synthesis
+ * twin of `buildValidatedScoutReport` above — the ONE shared validator over
+ * the model's selection (the `post_event_synthesis` surface's minimum), then,
+ * on `passed`, `projectPracticePlanSelection` over the SURVIVING claims only.
+ * TOTAL by construction: a `failed` outcome, a throw anywhere in validation
+ * or projection, and a record `storedPracticePlanSchema` rejects (`safeParse`,
+ * never a bare `.parse` — the shipped `.parse` sat OUTSIDE the try that wraps
+ * `ref.set`, so a ZodError escaped with no refund, the job left `running`
+ * and the credit held until the stale-job sweep) all return `{ ok: false }`,
+ * which the caller routes into its ONE `failCurrentJob(day, 'validation')`.
+ * Never touches the database and never refunds.
+ */
+function buildValidatedPracticePlan(params: {
+  selection: ClaimSelection;
+  snapshot: EvidenceSnapshot;
+  claimSet: ClaimSet;
+  snapshotId: string;
+  entryKey: string;
+  log: ReportRequestContext['log'];
+}): ValidatedPracticePlanBuild {
+  const { selection, snapshot, claimSet, snapshotId, entryKey, log } = params;
+  try {
+    const outcome = validateReportOutput({
+      snapshot,
+      issuedClaims: claimSet.claims,
+      output: selection,
+      surface: 'post_event_synthesis',
+    });
+    if (outcome.status === 'failed') {
+      return { ok: false };
+    }
+    const surviving = new Set(outcome.survivingClaimIds);
+    const survivingClaims = claimSet.claims.filter((claim) => surviving.has(claim.id));
+    const record = projectPracticePlanSelection({
+      entryKey,
+      createdAt: Date.now(),
+      selection: {
+        ...selection,
+        action1: survivingActionOrNull(selection.action1, surviving),
+        action2: survivingActionOrNull(selection.action2, surviving),
+        action3: survivingActionOrNull(selection.action3, surviving),
+      },
+      claims: survivingClaims,
+      strippedSectionIds: outcome.strippedSectionIds,
+      droppedClaimCount: outcome.droppedClaimCount,
+      validation: {
+        status: 'passed',
+        policyVersion: outcome.policyVersion,
+        snapshotId,
+        claimSchemaVersion: outcome.claimSchemaVersion,
+      },
+    });
+    const checked = storedPracticePlanSchema.safeParse(record);
+    if (!checked.success) {
+      log.error(
+        { issues: checked.error.issues.map((issue) => ({ path: issue.path, code: issue.code })) },
+        'Stored practice plan failed its schema — routed to the validation failure branch',
+      );
+      return { ok: false };
+    }
+    return { ok: true, record, outcome };
+  } catch (err) {
+    log.error(
+      { err },
+      'Practice plan validation/projection threw — routed to the validation failure branch',
     );
     return { ok: false };
   }
@@ -971,9 +1046,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
    * not a fork of the job machine": the queued->running claim transaction
    * shape, `failJob` (verbatim), and the terminal-transition +
    * `report_started`/`report_completed`/`report_failed` event shapes are
-   * ALL reused; only the model call, the post-generation citation-validation
-   * hook (28-06's `validatePracticePlanCitations`, owner invariants 1-2),
-   * and the storage tree (`practicePlans/{uid}` instead of
+   * ALL reused; only the model call, the post-generation validation hook
+   * (Phase 39, plan 39-08: the ONE shared `validateReportOutput`, which
+   * replaced 28-06's citation set-membership check), and the storage tree (`practicePlans/{uid}` instead of
    * `scoutReports/{uid}`) are distinct, because a practice plan has no
    * scouted player and a different output schema.
    *
@@ -990,7 +1065,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     jobAttempt: number;
     entryKey: string;
     payload: SynthesisPayload;
-    allowedPairs: ReadonlySet<string>;
+    /** Phase 39 (D-05): the immutable snapshot over the synthesis rows — written below the claim, before the model call. */
+    snapshot: EvidenceSnapshot;
+    /** Phase 39 (D-01/D-02): the issued `vod_annotation` claim set the validator checks the selection against. */
+    claimSet: ClaimSet;
   }): Promise<SynthesisGenerationOutcome> {
     const {
       request,
@@ -1001,7 +1079,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobAttempt,
       entryKey,
       payload,
-      allowedPairs,
+      snapshot,
+      claimSet,
     } = params;
     const reason: PrepReportReason = 'post_event_synthesis';
     const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
@@ -1075,6 +1154,52 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }),
     );
 
+    // Phase 39 (D-05/D-21/RPT-07, review C4-H1): the snapshot write and the
+    // D-21 count check sit STRICTLY BELOW this function's claim transaction
+    // and its `!claim.committed` 409 return above, and above the model call.
+    // That claim is the only thing serialising two near-simultaneous
+    // executions of the SAME jobId, and `refundCredit` is NOT
+    // balance-idempotent (`billing/credits.ts`: an unconditional increment
+    // transaction plus a ledger append; only its `credit_refunded` EVENT is
+    // deduped on the credit ref, so the event count cannot see a second
+    // refund — the balance and the ledger can). Above the claim, two
+    // executions would each take the D-21 branch and return one spend twice;
+    // here the loser gets the existing 409 like every sibling failure
+    // branch's loser. (On this surface the route also mints a fresh
+    // `randomUUID()` job id per submission behind the
+    // `prepSynthesisJobIndex/{uid}/{entryKey}` pointer transaction, so a
+    // second execution of one synthesis jobId is stopped even earlier.)
+    let snapshotId: string;
+    try {
+      snapshotId = await writeEvidenceSnapshot(request.uid, snapshot);
+    } catch (err) {
+      // An unpersistable snapshot is an internal fault, not a validation
+      // outcome: the catch-all sibling shape (one failCurrentJob, rethrow).
+      await failCurrentJob(jobDay);
+      throw err;
+    }
+
+    // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
+    // The issued claim count is known before the model is called, so an
+    // event whose annotations issue fewer than the surface minimum makes NO
+    // model call — the job takes the SAME `failCurrentJob` wrapper every
+    // sibling branch here uses (the one `failJob`, its unchanged refund and
+    // this path's zero-spend `refunded` terminal) with
+    // `failureReason: 'validation'`, and nothing is stored. The snapshot
+    // above IS still written: it is the evidence for why the job failed, and
+    // it is content-addressed, so the write is idempotent.
+    if (claimSet.claims.length < MIN_VIABLE_CLAIMS['post_event_synthesis']) {
+      await failCurrentJob(jobDay, 'validation');
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message: 'There is not enough annotated evidence yet to build a verified practice plan',
+        },
+      };
+    }
+
     let generated;
     try {
       generated = await generatePracticePlan(
@@ -1119,43 +1244,38 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       throw err;
     }
 
-    // Owner invariants 1-2 (28-06): the hook sits BETWEEN the model call
-    // and the storage write (RESEARCH Pitfall 5) — a total citation drop
-    // must never ship an empty "Ready" plan. `SynthesisValidationError`
-    // routes through the SAME `failJob` path as a `ReportGenerationError`
-    // (refund + `refunded` terminal come free because `reason` is present
-    // and `spent` is true) — no second refund call site.
-    let validated;
-    try {
-      validated = validatePracticePlanCitations(generated, allowedPairs);
-    } catch (err) {
-      if (err instanceof SynthesisValidationError) {
-        // Phase 39 (D-07): the total citation drop IS this surface's
-        // validation failure, so it carries `failureReason: 'validation'`
-        // on both terminal writes (plan 39-08 re-points the whole synthesis
-        // seam at the shared validator; the cause stays the same).
-        await failCurrentJob(jobDay, 'validation');
-        return { ok: false, failure: { status: 502, error: 'Bad Gateway', message: err.message } };
-      }
-      await failCurrentJob(jobDay);
-      throw err;
-    }
-
-    // RTDB empty-array strip (2026-08-03 P1 lesson, INV-7): the STORED
-    // record is written through `storedPracticePlanSchema` — every array
-    // field there defaults to `[]` on READ, so writing the generation
-    // schema's required-array shape straight through is safe either way.
-    // `droppedClaimCount` is the ONE genuinely-optional field here —
-    // conditional-spread, house convention (`routes/reports.ts:494-504`
-    // precedent), so a zero-drop plan stores with the key absent rather
-    // than `droppedClaimCount: 0`.
-    const record = storedPracticePlanSchema.parse({
+    // Phase 39 (plan 39-08, D-02/D-06/D-07/RPT-07, review C2-H2): the
+    // validator seam, between the model's return and the store. The ONE
+    // shared validator replaced 28-06's citation set-membership check here
+    // (its rule is now the validator's R1 evidence-id membership over the
+    // `vod_annotation` rows). After the model returns, EVERY outcome ends in
+    // exactly one of {a stored valid plan + `report_completed`} or {one
+    // `failCurrentJob(jobDay, 'validation')`} — never an uncaught throw.
+    // PRESERVED byte-for-byte on this path, do not "tidy": (1) the spend that
+    // precedes the queued write, (2) the always-transaction running claim,
+    // (3) the retry window keyed on the job-KIND `reason`, (4) the `refunded`
+    // terminal that fires for `post_event_synthesis` even without a spend.
+    const built = buildValidatedPracticePlan({
+      selection: generated,
+      snapshot,
+      claimSet,
+      snapshotId,
       entryKey,
-      createdAt: Date.now(),
-      summary: validated.plan.summary,
-      focusAreas: validated.plan.focusAreas,
-      ...(validated.droppedClaimCount ? { droppedClaimCount: validated.droppedClaimCount } : {}),
+      log: request.log,
     });
+    if (!built.ok) {
+      await failCurrentJob(jobDay, 'validation');
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message:
+            'The generated practice plan could not be verified against your annotated moments — try again',
+        },
+      };
+    }
+    const { record, outcome } = built;
 
     const ref = app.firebase.database.ref(`practicePlans/${request.uid}`).push();
     try {
@@ -1203,6 +1323,37 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: { reason },
       }),
     );
+    // Phase 39 (AI-SPEC §7, review C3-M1/D-20): the same occurrence signals,
+    // in the same occurrence-only shape, the scout path emits for a DELIVERED
+    // report that lost claims or section prose — no count in the payload.
+    if (outcome.droppedClaimCount > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_claims_dropped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_claims_dropped`,
+          consentState: 'unknown',
+          payload: { reason },
+        }),
+      );
+    }
+    if (outcome.strippedSectionIds.length > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_prose_stripped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_prose_stripped`,
+          consentState: 'unknown',
+          payload: { reason },
+        }),
+      );
+    }
 
     return { ok: true, jobId, status: 'succeeded', updatedAt: succeededAt, resultRef: planId };
   }
@@ -1885,7 +2036,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           jobAttempt: 0,
           entryKey,
           payload: assembled.payload,
-          allowedPairs: assembled.allowedPairs,
+          snapshot: assembled.snapshot,
+          claimSet: assembled.claimSet,
         });
 
         if (!generation.ok) {

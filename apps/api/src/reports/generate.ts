@@ -11,6 +11,7 @@ import {
   buildMatchupEvidence,
   buildStageEvidence,
   CLAIM_SCHEMA_VERSION,
+  type ClaimAtom,
   type ClaimSet,
   type ClaimSubject,
   type CohortComposition,
@@ -334,42 +335,52 @@ export interface ModelPayload {
   actionCandidates: ModelFacingActionCandidate[];
 }
 
+/**
+ * One issued claim as the model sees it — the ONE model-facing projection,
+ * shared by the scout payload below and the post-event synthesis payload
+ * (`./synthesis.ts`, plan 39-08), so a claim is presented identically on
+ * every surface (RPT-05).
+ */
+export function toModelFacingClaim(claim: ClaimAtom): ModelFacingClaim {
+  return {
+    id: claim.id,
+    predicate: claim.predicate,
+    subject: claim.subject,
+    displayName: {
+      ...(claim.subject.myFighterId !== null
+        ? { myFighter: resolveSubjectDisplayName('fighter', claim.subject.myFighterId) }
+        : {}),
+      ...(claim.subject.opponentFighterId !== null
+        ? {
+            opponentFighter: resolveSubjectDisplayName('fighter', claim.subject.opponentFighterId),
+          }
+        : {}),
+      ...(claim.subject.stageId !== null
+        ? { stage: resolveSubjectDisplayName('stage', claim.subject.stageId) }
+        : {}),
+    },
+    value: claim.value,
+    kind: claim.claimKind,
+    tier: claim.tier,
+    sample: {
+      countableGames: claim.sample.eligibleDenominator,
+      totalGames: claim.sample.rawSampleSize,
+    },
+  };
+}
+
+/** One ranked action candidate as the model sees it — shared by both surfaces, like `toModelFacingClaim`. */
+export function toModelFacingActionCandidate(
+  candidate: ActionCandidate,
+): ModelFacingActionCandidate {
+  return { id: candidate.id, kind: candidate.kind, claimIds: candidate.claimIds };
+}
+
 /** Projects the assembled payload onto the model-facing user message — see `ModelPayload`. */
 export function buildModelPayload(payload: ReportPayload): ModelPayload {
   return {
-    claims: payload.claimSet.claims.map((claim) => ({
-      id: claim.id,
-      predicate: claim.predicate,
-      subject: claim.subject,
-      displayName: {
-        ...(claim.subject.myFighterId !== null
-          ? { myFighter: resolveSubjectDisplayName('fighter', claim.subject.myFighterId) }
-          : {}),
-        ...(claim.subject.opponentFighterId !== null
-          ? {
-              opponentFighter: resolveSubjectDisplayName(
-                'fighter',
-                claim.subject.opponentFighterId,
-              ),
-            }
-          : {}),
-        ...(claim.subject.stageId !== null
-          ? { stage: resolveSubjectDisplayName('stage', claim.subject.stageId) }
-          : {}),
-      },
-      value: claim.value,
-      kind: claim.claimKind,
-      tier: claim.tier,
-      sample: {
-        countableGames: claim.sample.eligibleDenominator,
-        totalGames: claim.sample.rawSampleSize,
-      },
-    })),
-    actionCandidates: payload.actionCandidates.map((candidate) => ({
-      id: candidate.id,
-      kind: candidate.kind,
-      claimIds: candidate.claimIds,
-    })),
+    claims: payload.claimSet.claims.map(toModelFacingClaim),
+    actionCandidates: payload.actionCandidates.map(toModelFacingActionCandidate),
   };
 }
 

@@ -1,24 +1,58 @@
 import type { Database } from 'firebase-admin/database';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
+  buildActionCandidates,
+  buildClaimSet,
   CITATION_LABEL_MAX_LENGTH,
+  CLAIM_SCHEMA_VERSION,
+  confidenceTierFor,
+  describeCohort,
+  EVIDENCE_ID_PREFIX,
+  EVIDENCE_POLICY_VERSION,
   extractCitationTokens,
-  generatedPracticePlanSchema,
+  isRtdbSafeKeySegment,
   makeCanonicalizer,
   matchRecordSchema,
+  rankActionCandidates,
+  RECENCY_TREATMENT,
   REVIEW_CHECKLIST_ITEM_IDS,
   selectReviewResultsContext,
   serializeCitationToken,
+  SpriteList,
+  StageList,
   tournamentEntrySchema,
+  vodEvidenceId,
+  type ActionCandidate,
+  type ClaimAtom,
+  type ClaimSet,
+  type ClaimSubject,
+  type EvidenceRow,
+  type EvidenceSnapshot,
   type GeneratedPracticePlan,
   type Match,
+  type SampleMeta,
+  type StoredPracticePlan,
+  type VodRef,
 } from '@smash-tracker/shared';
 // The one symbol this module imports from prep/ — a deliberately ONE-WAY
 // dependency (28-CONTEXT.md / RESEARCH Pitfall 9, mirroring 27-06's
 // `routes/reports.ts` precedent). Nothing in `apps/api/src/prep/` imports
 // back from `reports/` — see `prep/importGraph.test.ts`.
 import { readPrepBrief } from '../prep/prep.js';
-import { ReportGenerationError } from './generate.js';
+import { canonicalDigest } from '../research/registry/canonical.js';
+import {
+  claimSelectionSchema,
+  engineAuthoredSummary,
+  projectClaimRecordFields,
+  type ClaimSelection,
+} from './claimSelection.js';
+import {
+  ReportGenerationError,
+  toModelFacingActionCandidate,
+  toModelFacingClaim,
+  type ModelFacingActionCandidate,
+  type ModelFacingClaim,
+} from './generate.js';
 
 // ---------------------------------------------------------------------------
 // Payload assembly
@@ -48,6 +82,13 @@ export interface SynthesisEvidenceItem {
   note: string;
   tags: string[];
   cite: string;
+  /**
+   * Phase 39 (plan 39-08, D-02): the id of the `vod_annotation` claim this
+   * moment was issued as — what the model SELECTS to reference it. `null`
+   * only when the claim builder's vocabulary truncation cut this moment's
+   * claim (more issued candidates than `CLAIM_ID_VOCABULARY_SIZE`).
+   */
+  claimId: string | null;
 }
 
 export interface SynthesisPayload {
@@ -63,6 +104,10 @@ export interface SynthesisPayload {
   };
   results: { wins: number; losses: number };
   evidence: SynthesisEvidenceItem[];
+  /** Phase 39 (D-01/D-02): the engine-issued claims the model selects from — the same model-facing projection the scout payload uses. */
+  claims: ModelFacingClaim[];
+  /** Phase 39 (RPT-09/D-12): the ranked action candidates the model may place in its three action slots. */
+  actionCandidates: ModelFacingActionCandidate[];
 }
 
 /**
@@ -91,6 +136,17 @@ export type AssembleSynthesisResult =
       /** Exactly `new Set(evidence.map((item) => \`${item.matchId}:${item.seconds}\`))` — the set-membership universe `validatePracticePlanCitations` resolves against (owner invariant 1). */
       allowedPairs: Set<string>;
       evidenceCount: number;
+      /**
+       * Phase 39 (D-02, RPT-05): the `vod_annotation` evidence ROWS, keyed by
+       * `vodEvidenceId(matchId, seconds)` — see `buildVodAnnotationRows`.
+       */
+      rows: Readonly<Record<string, EvidenceRow>>;
+      /** Phase 39 (D-05): the immutable snapshot over `rows`, content-addressed and persisted by the route before the model call. */
+      snapshot: EvidenceSnapshot;
+      /** Phase 39 (D-01/RPT-05): `buildClaimSet({ rows, surface: 'post_event_synthesis' })` — the SAME builder every surface uses. */
+      claimSet: ClaimSet;
+      /** Phase 39 (RPT-09/D-12): the ranked action candidates over `claimSet`. */
+      actionCandidates: readonly ActionCandidate[];
     };
 
 /**
@@ -176,6 +232,18 @@ export async function assembleSynthesisPayload(
   );
   const eventMatches = [...synced, ...manual];
 
+  // Phase 39 (D-05/D-11): ONE refresh timestamp for every row this payload
+  // assembles, mirroring `assembleReportPayload`.
+  const refreshedAt = Date.now();
+  const rows = buildVodAnnotationRows({ eventMatches, refreshedAt });
+  const claimSet = buildClaimSet({ rows, surface: 'post_event_synthesis' });
+  const claimIdByEvidenceId = new Map<string, string>();
+  for (const claim of claimSet.claims) {
+    for (const evidenceId of claim.evidenceIds) {
+      claimIdByEvidenceId.set(evidenceId, claim.id);
+    }
+  }
+
   const evidence: SynthesisEvidenceItem[] = [];
   for (const match of eventMatches) {
     const timestamps = match.vodTimestamps ?? [];
@@ -197,12 +265,44 @@ export async function assembleSynthesisPayload(
         note: timestamp.note,
         tags: timestamp.tags ?? [],
         cite,
+        claimId: (() => {
+          const evidenceId = vodEvidenceIdOrNull(match.id, timestamp.seconds);
+          return evidenceId === null ? null : (claimIdByEvidenceId.get(evidenceId) ?? null);
+        })(),
       });
     }
   }
 
   const allowedTokens = new Set(evidence.map((item) => item.cite));
   const allowedPairs = new Set(evidence.map((item) => `${item.matchId}:${item.seconds}`));
+
+  // The match-id digest: count plus the canonical hash of the EVENT match
+  // ids the rows were built from, sorted so the digest is independent of
+  // read order — the same construction `assembleReportPayload` uses, reusing
+  // the ONE canonicalizer (C1-B2).
+  const eventMatchIds = eventMatches.map((match) => match.id).sort();
+  const snapshot: EvidenceSnapshot = {
+    policyVersion: EVIDENCE_POLICY_VERSION,
+    claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    refreshedAt,
+    cohort: describeCohort(eventMatches),
+    rows,
+    matchIdDigest: { count: eventMatchIds.length, hash: canonicalDigest(eventMatchIds) },
+  };
+  // RPT-09/D-12: a LOST event match carrying at least one annotation is a
+  // reviewable VOD — the synthesis analogue of the scout path's lost
+  // head-to-head matches with timestamps.
+  const vodRefs: VodRef[] = eventMatches
+    .filter((match) => !match.win && (match.vodTimestamps?.length ?? 0) > 0)
+    .map((match) => ({
+      matchId: match.id,
+      opponentTag: match.opponent ? match.opponent : null,
+      opponentFighterId: match.opponent_id,
+      lost: true,
+    }));
+  const actionCandidates = rankActionCandidates(
+    buildActionCandidates({ claims: claimSet.claims, vodRefs }),
+  );
 
   const wins = eventMatches.filter((match) => match.win).length;
   const losses = eventMatches.length - wins;
@@ -225,9 +325,119 @@ export async function assembleSynthesisPayload(
     },
     results: { wins, losses },
     evidence,
+    claims: claimSet.claims.map(toModelFacingClaim),
+    actionCandidates: actionCandidates.map(toModelFacingActionCandidate),
   };
 
-  return { found: true, payload, allowedTokens, allowedPairs, evidenceCount: evidence.length };
+  return {
+    found: true,
+    payload,
+    allowedTokens,
+    allowedPairs,
+    evidenceCount: evidence.length,
+    rows,
+    snapshot,
+    claimSet,
+    actionCandidates,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// vod_annotation rows (Phase 39, plan 39-08, D-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * `vodEvidenceId`, or `null` for a match id that cannot form an
+ * `EVIDENCE_ID_PATTERN`-safe key (`vodEvidenceId` THROWS on one). Every id
+ * this app writes under `matches/{uid}` is key-safe today (RTDB push keys,
+ * `sgg-<set>-g<n>`, `pgg-<match>-g<n>`), so this never fires on real data —
+ * it exists so a hypothetical unsafe legacy key costs that one moment its
+ * claim instead of failing the whole assembly.
+ */
+function vodEvidenceIdOrNull(matchId: string, seconds: number): string | null {
+  const candidate = `${EVIDENCE_ID_PREFIX.vod_annotation}-${matchId}-${seconds}`;
+  return isRtdbSafeKeySegment(candidate) ? vodEvidenceId(matchId, seconds) : null;
+}
+
+const KNOWN_FIGHTER_IDS: ReadonlySet<number> = new Set(SpriteList.map((fighter) => fighter.id));
+const KNOWN_STAGE_IDS: ReadonlySet<number> = new Set(StageList.map((stage) => stage.id));
+
+/**
+ * D-02/RPT-05: the post-event synthesis surface's evidence ROWS — one
+ * `vod_annotation` row per annotated `(matchId, seconds)` moment of the
+ * event, fed to the SAME `buildClaimSet` every other surface uses.
+ *
+ * KEY: `vodEvidenceId(matchId, seconds)` — the EXPORTED bijection from
+ * `packages/shared/src/evidence/snapshot.ts` (review C1-M8). This id IS the
+ * shipped `allowedPairs` membership key `${matchId}:${seconds}` re-expressed
+ * in an RTDB-key-safe form (`EVIDENCE_ID_PATTERN` rejects `:`), and
+ * `parseVodEvidenceId` is its inverse — the set-equality proof in
+ * `synthesis.test.ts` goes through that pair, never a raw string compare.
+ *
+ * SUBJECT: the moment's match context — my fighter, their fighter, the
+ * stage and the (alias-resolved) opponent tag, each only when KNOWN (an
+ * unknown character or the no-selection stage is never a claimable entity,
+ * validator rule R7). The moment's identity stays in its evidence id; the
+ * subject says what the moment is ABOUT, which (a) licenses the prose lint
+ * to let a section name the matchup it cites, (b) keeps two moments from two
+ * different matchups two claims when both abstain (an abstained value is the
+ * same for every row sharing a sample, and the builder collapses identical
+ * `(predicate, subject, value)` triples), and (c) gives
+ * `engineAuthoredSummary` a subject-bearing claim to name.
+ *
+ * VALUE: `{ kind: 'count', count: seconds }` — the moment's recorded offset,
+ * recomputable from the row (rule R2) and distinct per moment.
+ *
+ * SAMPLE: ONE event-level sample shared by every row (the
+ * `opponent_character_usage` precedent in `generate.ts`): the countable
+ * games are the event's ANNOTATED games, out of all of the event's games.
+ * The tier therefore describes how much reviewed footage the plan rests on,
+ * and a plan resting on fewer than `ABSTENTION_FLOOR_GAMES` annotated games
+ * abstains exactly as every other family does below the floor.
+ */
+function buildVodAnnotationRows(input: {
+  eventMatches: readonly Match[];
+  refreshedAt: number;
+}): Record<string, EvidenceRow> {
+  const { eventMatches, refreshedAt } = input;
+  const annotatedGames = eventMatches.filter((match) => (match.vodTimestamps?.length ?? 0) > 0);
+  if (annotatedGames.length === 0) {
+    return {};
+  }
+  const times = annotatedGames.map((match) => match.time);
+  const sample: SampleMeta = {
+    rawSampleSize: eventMatches.length,
+    eligibleDenominator: annotatedGames.length,
+    knownFieldCoverage: annotatedGames.length / eventMatches.length,
+    dateRange: { firstMs: Math.min(...times), lastMs: Math.max(...times) },
+    refreshedAt,
+    evidencePolicyVersion: EVIDENCE_POLICY_VERSION,
+    recencyTreatment: RECENCY_TREATMENT,
+    confidenceTier: confidenceTierFor(annotatedGames.length),
+  };
+  const rows: Record<string, EvidenceRow> = {};
+  for (const match of annotatedGames) {
+    const stageId = match.map?.id ?? 0;
+    const subject: ClaimSubject = {
+      myFighterId: KNOWN_FIGHTER_IDS.has(match.fighter_id) ? match.fighter_id : null,
+      opponentFighterId: KNOWN_FIGHTER_IDS.has(match.opponent_id) ? match.opponent_id : null,
+      stageId: stageId !== 0 && KNOWN_STAGE_IDS.has(stageId) ? stageId : null,
+      opponentTag: match.opponent ? match.opponent : null,
+    };
+    for (const timestamp of match.vodTimestamps ?? []) {
+      const evidenceId = vodEvidenceIdOrNull(match.id, timestamp.seconds);
+      if (evidenceId === null) {
+        continue;
+      }
+      rows[evidenceId] = {
+        predicate: 'vod_annotation',
+        subject,
+        value: { kind: 'count', count: timestamp.seconds },
+        sample,
+      };
+    }
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,11 +512,13 @@ export function validatePracticePlanCitations(
 
 /**
  * Minimal structural interface for the Anthropic client — mirrors
- * `generate.ts`'s `AnthropicLikeClient` seam exactly, but typed for the
- * practice-plan output schema (the `output_config.format` type is tied to
- * the specific schema passed to `zodOutputFormat`, so it can't be reused
- * verbatim across the two different generation schemas). Lets tests pass a
- * plain stub instead of constructing a real `Anthropic` instance.
+ * `generate.ts`'s `AnthropicLikeClient` seam. Lets tests pass a plain stub
+ * instead of constructing a real `Anthropic` instance.
+ *
+ * Phase 39 (plan 39-08, review C1-M4): the `output_config.format` and
+ * `parsed_output` positions name the claim-SELECTION schema — a mechanical,
+ * in-scope consequence of swapping the schema `generatePracticePlan` passes
+ * to `zodOutputFormat`. The request OPTIONS and the call SHAPE are unchanged.
  */
 export interface SynthesisAnthropicClient {
   messages: {
@@ -317,11 +529,11 @@ export interface SynthesisAnthropicClient {
       system: string;
       messages: Array<{ role: 'user'; content: string }>;
       output_config: {
-        format: ReturnType<typeof zodOutputFormat<typeof generatedPracticePlanSchema>>;
+        format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
       };
     }) => Promise<{
       stop_reason: string | null;
-      parsed_output: GeneratedPracticePlan | null;
+      parsed_output: ClaimSelection | null;
     }>;
   };
 }
@@ -329,36 +541,38 @@ export interface SynthesisAnthropicClient {
 const SYNTHESIS_MODEL = 'claude-opus-4-8';
 const SYNTHESIS_MAX_TOKENS = 16000;
 
-const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a post-event practice plan for "you" (the user), grounded ONLY in the user's own annotated VOD moments from the event just played.
+const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a post-event practice plan for the user, grounded only in the moments they annotated in their own VODs from the event they just played.
 
-Hard rules — follow these exactly:
-- Ground every claim in the provided JSON payload ONLY. Never invent matches, opponents, timestamps, or events that are not present in the data.
-- The payload's "evidence" array is the ONLY citable universe. Every item already carries a pre-built "cite" field — a token of the exact form {{cite:matchId=...;seconds=...;label=...}}. When a focusArea makes a claim grounded in one of these moments, you MUST copy that item's "cite" value into the focusArea's "evidence" field VERBATIM — character for character, never edited, never re-typed, never constructed by hand. Copying the wrong item's token, or typing a token yourself, will cause the claim to be silently dropped by server-side validation.
-- Every focusArea MUST include at least one copied cite token in its "evidence" text; a focusArea with no citable grounding will be removed before the plan is shown to the user, so do not write claims you cannot ground in a specific evidence item.
-- Tags on an evidence item (e.g. "punish", "recovery") may be referenced in your prose, but the citation is always the moment's token — never invent a separate citation for a tag.
-- The payload's "results" field is a simple win/loss summary; "briefContext" gives orientation (checklist progress, curated likely opponents) — neither is itself citable evidence.
-- Output must conform to the provided JSON schema exactly.`;
+The user message is JSON. "claims" are findings the app has already computed: each annotated VOD moment is one claim, with an id, what it is about (with the display names of its characters and stage), and its recorded value. A claim whose value is "abstained" is a gap in the evidence, not a finding. "evidence" lists the same moments with the user's own note and tags, each naming the id of its claim. "actionCandidates" are practice actions the app has already ranked; each lists the claim ids that justify it. "entry", "results" and "briefContext" are orientation only.
+
+Your job is to choose which moments matter most and explain how they connect into a practice plan.
+- Fill the three sections (overview, gameplan, watchFor). For each, list the ids of the claims it rests on, most important first, and write one or two short sentences of connective prose explaining how those moments fit together and what the user should practise.
+- Fill up to three action slots, in priority order, with actions from actionCandidates, each naming the claim it rests on. Leave a slot null when no candidate fits.
+- Use only claim ids and action ids that appear in the input.
+- Do not compute, count, rank or estimate anything. Do not introduce any number, character, stage, player or event that is not in a claim you listed in that same section, and refer to characters and stages only by the display names those claims give. The app shows each claim's own values and the user's notes beside it, so the prose does not need to repeat them.`;
 
 /**
- * Calls Claude to generate a `GeneratedPracticePlan` from the assembled
- * synthesis payload. Mirrors `generateScoutReport`'s shape (same model,
- * same max_tokens, same `client.messages.parse` + `zodOutputFormat` call,
- * same refusal/truncation/unparseable mapping) but reuses generate.ts's
- * `ReportGenerationError` directly rather than re-declaring an identical
- * error class — the route's existing catch handles both call sites
- * identically.
+ * Calls Claude to SELECT claims from the assembled synthesis payload (Phase
+ * 39, plan 39-08, D-01/D-02): the output is a `ClaimSelection` over the
+ * fixed claim-id vocabulary — the same schema the scout path sends — never
+ * a free-prose plan. Same model, same max_tokens, same
+ * `client.messages.parse` + `zodOutputFormat` call and the same
+ * refusal/truncation/unparseable mapping as `generateScoutReport`; the guard
+ * ORDER below (refusal, then truncation, then a null parse) is load-bearing
+ * and unchanged. Reuses generate.ts's `ReportGenerationError` so the
+ * route's existing catch handles both call sites identically.
  */
 export async function generatePracticePlan(
   client: SynthesisAnthropicClient,
   payload: SynthesisPayload,
-): Promise<GeneratedPracticePlan> {
+): Promise<ClaimSelection> {
   const response = await client.messages.parse({
     model: SYNTHESIS_MODEL,
     max_tokens: SYNTHESIS_MAX_TOKENS,
     thinking: { type: 'adaptive' },
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    output_config: { format: zodOutputFormat(generatedPracticePlanSchema) },
+    output_config: { format: zodOutputFormat(claimSelectionSchema) },
   });
 
   if (response.stop_reason === 'refusal') {
@@ -372,4 +586,82 @@ export async function generatePracticePlan(
   }
 
   return response.parsed_output;
+}
+
+// ---------------------------------------------------------------------------
+// projectPracticePlanSelection (plan 39-08, review C1-B1 practice-plan half)
+// ---------------------------------------------------------------------------
+
+export interface ProjectPracticePlanSelectionInput {
+  entryKey: string;
+  createdAt: number;
+  selection: ClaimSelection;
+  /** The claims that SURVIVED validation — never the issued set (plan 39-07's scout-side rule). */
+  claims: readonly ClaimAtom[];
+  /** Sections whose prose the validator stripped (D-20) — stored with empty prose, never re-derived. */
+  strippedSectionIds?: readonly string[];
+  /** The validation outcome's dropped count — stored only when positive. */
+  droppedClaimCount?: number;
+  /** The `passed` validation block, carrying the content-addressed snapshot id. */
+  validation?: NonNullable<StoredPracticePlan['validation']>;
+}
+
+/** A projected practice plan: every stored field EXCEPT `focusAreas`, which is omitted on purpose (see below). */
+export type ProjectedPracticePlan = Omit<StoredPracticePlan, 'focusAreas'>;
+
+/**
+ * The C1-B1 practice-plan projection — the synthesis twin of
+ * `projectScoutSelection` (`./claimSelection.ts`), sharing its invention-free
+ * discipline and its additive-field implementation
+ * (`projectClaimRecordFields`). It projects a claim selection onto a record
+ * the UNCHANGED `storedPracticePlanSchema` accepts. Pure and TOTAL — never
+ * throws, never calls a model. The mapping:
+ *
+ * | stored field           | source                                                        |
+ * |------------------------|---------------------------------------------------------------|
+ * | `entryKey`/`createdAt` | the route                                                     |
+ * | `summary`              | `sections.overview.connective` when `overview` is NOT stripped |
+ * |                        | and non-empty after NFC + trim; else `engineAuthoredSummary`   |
+ * |                        | over the surviving claims (review C2-H2(a)) — never `''`       |
+ * | `focusAreas`           | OMITTED                                                        |
+ * | `droppedClaimCount`    | the validation outcome, conditional spread                    |
+ * | `strippedSectionCount` | `strippedSectionIds.length`, ABSENT when zero (D-20)           |
+ * | `claimSchemaVersion`, `claims`, `sections`, `actions` | `projectClaimRecordFields`     |
+ * | `validation`           | the route's `passed` block, conditional spread                 |
+ *
+ * `focusAreas` is omitted DELIBERATELY: it is `.default([])` on the stored
+ * schema, its `title` is `.min(1)`, and there is no honest source for a
+ * focus-area title in a claim selection — synthesizing one would be exactly
+ * the invention this projection exists to prevent. A record carrying
+ * `claims` renders through the claim-anchored path (plan 39-09) from
+ * `sections` + `claims`; a legacy record carrying `focusAreas` keeps
+ * rendering through today's path. Plan 39-09 handles both.
+ *
+ * Why `summary` falls back rather than failing: D-07 makes the surviving
+ * CLAIM count the failure axis, and this projection is only reached on a
+ * `passed` outcome — so at least `MIN_VIABLE_CLAIMS['post_event_synthesis']`
+ * claims survive and the engine-authored fallback always has a claim to
+ * describe. Routing a stripped `overview` to a refund instead would
+ * reintroduce the prose-to-refund path review C2-H3 removed.
+ */
+export function projectPracticePlanSelection(
+  input: ProjectPracticePlanSelectionInput,
+): ProjectedPracticePlan {
+  const { entryKey, createdAt, selection, claims, validation, droppedClaimCount } = input;
+  const stripped = new Set(input.strippedSectionIds ?? []);
+  const overview = selection.sections.overview.connective;
+  const usableOverview =
+    !stripped.has('overview') && overview.normalize('NFC').trim().length > 0 ? overview : null;
+  return {
+    entryKey,
+    createdAt,
+    summary: usableOverview ?? engineAuthoredSummary(claims),
+    ...projectClaimRecordFields({
+      selection,
+      claims,
+      strippedSectionIds: input.strippedSectionIds,
+    }),
+    ...(validation ? { validation } : {}),
+    ...(droppedClaimCount ? { droppedClaimCount } : {}),
+  };
 }
