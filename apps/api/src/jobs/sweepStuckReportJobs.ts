@@ -125,6 +125,10 @@ export async function runSweepStuckReportJobs(
           // proofing, not a live path: the sweep only catches stale `running`
           // jobs, before a validator could have written a cause.
           ...(job.failureReason ? { failureReason: job.failureReason } : {}),
+          // Post-plan fix (39-10): the spend fact the route recorded. `typeof`,
+          // NOT truthiness — `false` ("no credit was taken") must survive.
+          // Record only: the unconditional refund below is unchanged.
+          ...(typeof job.wasCharged === 'boolean' ? { wasCharged: job.wasCharged } : {}),
         }),
       );
 

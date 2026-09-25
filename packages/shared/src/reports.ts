@@ -604,6 +604,20 @@ export const reportJobSchema = z.object({
   // the WHY of a failed/refunded job, `.nullish()` because it is a stored
   // field written by conditional spread (plan 39-07).
   failureReason: reportFailureReasonSchema.nullish(),
+  /**
+   * Post-plan fix (39-10, owner decision 2026-09-25): whether THIS job took a
+   * credit — the exact `spent` fact the route's money path acts on (true only
+   * after a successful `spendCredit`/`spendCredits` debit, or for a pre-paid
+   * bundle child), written at spend time and carried on every later
+   * whole-node `.set()`. It lets the web word a failure truthfully ("refunded"
+   * vs "no credit was used") without consulting the viewer's CURRENT
+   * free-access status, which can change after the job ran. A RECORD of the
+   * money path, never an input to it: nothing reads it to decide a spend or a
+   * refund. `.nullish()` — older jobs (and any writer that predates this
+   * field) have no value, and readers must treat absence as unknown, never
+   * as false.
+   */
+  wasCharged: z.boolean().nullish(),
 });
 export type ReportJob = z.infer<typeof reportJobSchema>;
 
@@ -628,6 +642,12 @@ export const prepReportJobStatusEntrySchema = z.object({
    * allowlists the single value it captions and renders nothing for any other.
    */
   failureReason: z.string().min(1).optional(),
+  /**
+   * Post-plan fix (39-10): `reportJobSchema.wasCharged`, projected so the paid
+   * card can word a failure truthfully. Present only when the stored job
+   * carries a boolean; absent means UNKNOWN (an older job), never "not charged".
+   */
+  wasCharged: z.boolean().optional(),
 });
 export type PrepReportJobStatusEntry = z.infer<typeof prepReportJobStatusEntrySchema>;
 
@@ -734,6 +754,8 @@ export const synthesisJobStatusResponseSchema = z.object({
       resultRef: z.string().optional(),
       /** Phase 39 (plan 39-10, D-21): as `prepReportJobStatusEntrySchema.failureReason` — an open string, present only when the stored job carries one. */
       failureReason: z.string().min(1).optional(),
+      /** Post-plan fix (39-10): as `prepReportJobStatusEntrySchema.wasCharged` — absent means unknown. */
+      wasCharged: z.boolean().optional(),
     })
     .nullable(),
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -554,6 +555,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         creditRef,
         ...(reason ? { reason } : {}),
         ...(failureReason ? { failureReason } : {}),
+        // Post-plan fix (39-10): the spend fact rides BOTH terminal writes
+        // (C1-H1 — the second `.set()` below replaces the node). A boolean,
+        // never null, so it is always a safe RTDB value.
+        wasCharged: spent,
       }),
     );
     const resolvedDay = day ?? dayShardKey(now);
@@ -594,6 +599,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           creditRef,
           reason,
           ...(failureReason ? { failureReason } : {}),
+          wasCharged: spent,
         }),
       );
     }
@@ -626,6 +632,32 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           payload: reason ? { reason } : {},
         }),
       );
+    }
+  }
+
+  /**
+   * Post-plan fix (39-10, owner decision 2026-09-25): records `wasCharged` —
+   * the `spent` fact the money path just settled — on a job whose `queued`
+   * row was written BEFORE the spend resolved (prep single, legacy scout).
+   * Sites whose queued write follows the spend (bundle children, synthesis)
+   * carry the field on that write instead, and every later whole-node
+   * `.set()` (running claim, succeeded, both `failJob` terminals) carries it
+   * too, so no failed/refunded record the web can read ever lacks it.
+   *
+   * Deliberately BEST-EFFORT: this write sits after a committed spend and
+   * before any `failJob` coverage, so a throw here must never become a 500
+   * that strands a spent credit on a `queued` job the sweep never visits.
+   * Nothing downstream depends on it — the running write re-states it.
+   */
+  async function recordSpendFact(
+    jobRef: ReturnType<typeof app.firebase.database.ref>,
+    spent: boolean,
+    log: FastifyBaseLogger,
+  ): Promise<void> {
+    try {
+      await jobRef.update({ wasCharged: spent });
+    } catch (err) {
+      log.warn({ err }, 'could not record the spend fact on a queued report job');
     }
   }
 
@@ -715,6 +747,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       attempt: jobAttempt,
       creditRef,
       ...(reason ? { reason } : {}),
+      // Post-plan fix (39-10): every whole-node write carries the spend fact.
+      wasCharged: spent,
     });
 
     if (reason) {
@@ -998,6 +1032,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         creditRef,
         resultRef: id,
         ...(reason ? { reason } : {}),
+        wasCharged: spent,
       }),
     );
     await app.firebase.database.ref().update({
@@ -1134,6 +1169,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       attempt: jobAttempt,
       creditRef,
       reason,
+      // Post-plan fix (39-10): every whole-node write carries the spend fact.
+      wasCharged: spent,
     });
     const claim = await jobRef.transaction((current) => {
       const existing = current as { status?: string; updatedAt?: number } | null;
@@ -1325,6 +1362,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         creditRef,
         resultRef: planId,
         reason,
+        wasCharged: spent,
       }),
     );
     await app.firebase.database.ref().update({
@@ -1784,6 +1822,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             attempt: 0,
             creditRef: childJobId,
             reason: 'prep_bundle',
+            // Post-plan fix (39-10): spend time for a bundle child IS the
+            // bundle debit above — `'debited'` is the only non-free outcome
+            // that reaches this line, so the slot was charged exactly when
+            // the uid is not free-access.
+            wasCharged: !bundleFreeAccess,
           });
           bundleUpdates[`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`] = {
             jobId: childJobId,
@@ -2044,6 +2087,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             attempt: 0,
             creditRef: synthJobId,
             reason: 'post_event_synthesis',
+            // Post-plan fix (39-10): the spend has already resolved, so the
+            // queued record is written WITH its spend fact.
+            wasCharged: synthSpent,
           }),
         );
 
@@ -2270,6 +2316,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           }
         }
 
+        // Post-plan fix (39-10): the queued row above was written before the
+        // spend resolved, so record the spend fact on it now.
+        await recordSpendFact(jobRef, spent, request.log);
+
         // Phase 27 (RPT-01, 27-RESEARCH.md Pitfall 2): a convenience
         // pointer, not money-critical state — deliberately a plain `.set()`
         // rather than a transaction. It exists because job ids are
@@ -2389,6 +2439,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             });
           }
         }
+
+        // Post-plan fix (39-10): as the prep branch above — the queued row
+        // predates the spend, so the spend fact is recorded on it here.
+        await recordSpendFact(jobRef, spent, request.log);
 
         if (combined) {
           resolveScout = async () => {
@@ -2674,6 +2728,12 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           // Phase 39 (plan 39-10, D-21): the terminal cause the paid card
           // captions. Conditional spread — absent on every job without one.
           ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
+          // Post-plan fix (39-10): the spend fact, so the card's refund
+          // wording reads the record. `typeof` (not truthiness): `false` is
+          // a value; absent/null stays absent (unknown).
+          ...(typeof parsed.data.wasCharged === 'boolean'
+            ? { wasCharged: parsed.data.wasCharged }
+            : {}),
         });
       }
 
@@ -2755,6 +2815,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
           // Phase 39 (plan 39-10, D-21): as `GET /reports/jobs` above.
           ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
+          // Post-plan fix (39-10): as `GET /reports/jobs` above.
+          ...(typeof parsed.data.wasCharged === 'boolean'
+            ? { wasCharged: parsed.data.wasCharged }
+            : {}),
         },
       };
     },
