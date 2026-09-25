@@ -44,6 +44,16 @@ import {
   evaluateCardHeightCeilings,
   evaluateFormStripFit,
 } from './guardLayoutCore.mjs';
+import {
+  CAREER_TIMELINE_ALIGN_TOLERANCE_PX,
+  CAREER_TIMELINE_LINE_RESIDUAL_TOLERANCE_PX,
+  CAREER_TIMELINE_LINE_POINT_BOUND,
+  CAREER_TIMELINE_STRIP_CELL_BOUND,
+  CAREER_TIMELINE_NARROW_STRIP_CELL_BOUND,
+  CAREER_TIMELINE_NARROW_PLOT_PX,
+  CAREER_TIMELINE_FORM_STRIP_TICK_BOUND,
+  evaluateCareerTimeline,
+} from './guardLayoutCore.mjs';
 
 test('a card exactly at the 24px tolerance passes', () => {
   const violations = evaluateStretch([
@@ -551,7 +561,7 @@ test('picker-alignment: a label 60px right of its control fails picker-label-off
   assert.equal(violations.filter((v) => v.type === 'picker-label-offset').length, 1);
 });
 
-test('picker-alignment: a stacked vs box sharing control 0\'s row fails picker-vs-misplaced', () => {
+test("picker-alignment: a stacked vs box sharing control 0's row fails picker-vs-misplaced", () => {
   const picker = makeStackedPicker({
     vs: { left: 128, right: 138, top: 60, bottom: 72 },
   });
@@ -660,7 +670,13 @@ test('row-cohesion: scrollWidth 88 over clientWidth 87 (1px boundary) passes', (
 
 test('row-tag-legibility: scrollWidth 75 / clientWidth 50 / row content 294 fails tag-truncated', () => {
   const violations = evaluateRowTagLegibility([
-    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 75, clientWidth: 50, rowContentWidth: 294 },
+    {
+      selectorPath: '#tag',
+      text: 'synthopp15',
+      scrollWidth: 75,
+      clientWidth: 50,
+      rowContentWidth: 294,
+    },
   ]);
   assert.equal(violations.length, 1);
   assert.equal(violations[0].type, 'tag-truncated');
@@ -668,14 +684,26 @@ test('row-tag-legibility: scrollWidth 75 / clientWidth 50 / row content 294 fail
 
 test('row-tag-legibility: the same truncation with clientWidth 270 (share 0.92) passes — a tag owning its line may truncate', () => {
   const violations = evaluateRowTagLegibility([
-    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 280, clientWidth: 270, rowContentWidth: 294 },
+    {
+      selectorPath: '#tag',
+      text: 'synthopp15',
+      scrollWidth: 280,
+      clientWidth: 270,
+      rowContentWidth: 294,
+    },
   ]);
   assert.equal(violations.length, 0);
 });
 
 test('row-tag-legibility: scrollWidth equal to clientWidth + 1 passes', () => {
   const violations = evaluateRowTagLegibility([
-    { selectorPath: '#tag', text: 'synthopp15', scrollWidth: 51, clientWidth: 50, rowContentWidth: 294 },
+    {
+      selectorPath: '#tag',
+      text: 'synthopp15',
+      scrollWidth: 51,
+      clientWidth: 50,
+      rowContentWidth: 294,
+    },
   ]);
   assert.equal(violations.length, 0);
 });
@@ -782,7 +810,14 @@ test('the plan 39.1-33 family constants are exactly the documented values', () =
 test('card-height-ceiling: a 1204px card against a 1 viewport-height ceiling at 844 innerHeight fails, carrying height and limitPx', () => {
   const violations = evaluateCardHeightCeilings({
     innerHeight: 844,
-    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 1204, maxViewportHeights: 1 }],
+    cards: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        selectorPath: '#card',
+        height: 1204,
+        maxViewportHeights: 1,
+      },
+    ],
   });
   assert.equal(violations.length, 1);
   assert.equal(violations[0].type, 'card-height-ceiling');
@@ -793,7 +828,14 @@ test('card-height-ceiling: a 1204px card against a 1 viewport-height ceiling at 
 test('card-height-ceiling: a 664px card passes', () => {
   const violations = evaluateCardHeightCeilings({
     innerHeight: 844,
-    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 664, maxViewportHeights: 1 }],
+    cards: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        selectorPath: '#card',
+        height: 664,
+        maxViewportHeights: 1,
+      },
+    ],
   });
   assert.equal(violations.length, 0);
 });
@@ -801,7 +843,14 @@ test('card-height-ceiling: a 664px card passes', () => {
 test('card-height-ceiling: exactly 844px (the limit) passes', () => {
   const violations = evaluateCardHeightCeilings({
     innerHeight: 844,
-    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 844, maxViewportHeights: 1 }],
+    cards: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        selectorPath: '#card',
+        height: 844,
+        maxViewportHeights: 1,
+      },
+    ],
   });
   assert.equal(violations.length, 0);
 });
@@ -809,7 +858,14 @@ test('card-height-ceiling: exactly 844px (the limit) passes', () => {
 test('card-height-ceiling: 845px (0.01 over the limit) fails', () => {
   const violations = evaluateCardHeightCeilings({
     innerHeight: 844,
-    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: '#card', height: 845, maxViewportHeights: 1 }],
+    cards: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        selectorPath: '#card',
+        height: 845,
+        maxViewportHeights: 1,
+      },
+    ],
   });
   assert.equal(violations.length, 1);
 });
@@ -828,7 +884,14 @@ test('card-height-ceiling: two over-ceiling cards -> two violations', () => {
 test('card-height-ceiling: a card with height null fails non-vacuously with card-height-ceiling-unmeasured naming its marker', () => {
   const violations = evaluateCardHeightCeilings({
     innerHeight: 844,
-    cards: [{ marker: '[data-slot="matchup-chart-body"]', selectorPath: null, height: null, maxViewportHeights: 1 }],
+    cards: [
+      {
+        marker: '[data-slot="matchup-chart-body"]',
+        selectorPath: null,
+        height: null,
+        maxViewportHeights: 1,
+      },
+    ],
   });
   assert.equal(violations.length, 1);
   assert.equal(violations[0].type, 'card-height-ceiling-unmeasured');
@@ -903,4 +966,377 @@ test('evaluateFamilyPresence: an empty form-strip-fit list fails non-vacuously',
 test('evaluateFamilyPresence: a one-strip form-strip-fit list passes', () => {
   const violations = evaluateFamilyPresence('form-strip-fit', [{ selectorPath: '#a' }]);
   assert.equal(violations.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-34: the career-timeline family (UI-SPEC §11, §12.1, §13.1). Every
+// rule has a failing fixture AND a passing boundary case; multi-offender
+// inputs return ALL offenders.
+// ---------------------------------------------------------------------------
+
+/** x(t) = 100 + 10t over a plot 100..300 — three anchors on that exact line. */
+const LINE_ANCHORS = [
+  { t: 0, cx: 100 },
+  { t: 10, cx: 200 },
+  { t: 20, cx: 300 },
+];
+
+function makeTimeline(overrides = {}) {
+  return {
+    selectorPath: '#timeline',
+    state: 'full',
+    plotLeft: 100,
+    plotRight: 300,
+    plotWidth: 800,
+    stripGrain: 'month',
+    anchors: LINE_ANCHORS,
+    lineVertexCount: 3,
+    rateCells: [{ startMs: 5, endMs: 15, left: 150.5, right: 249.5 }],
+    gamesCells: [{ startMs: 5, endMs: 15, left: 150.5, right: 249.5 }],
+    formStripTicks: 0,
+    ...overrides,
+  };
+}
+
+function cellsOf(count, grainMs = 1) {
+  return Array.from({ length: count }, (_, i) => ({
+    startMs: i * grainMs,
+    endMs: (i + 1) * grainMs,
+    left: 100 + i * grainMs * 10 + 0.5,
+    right: 100 + (i + 1) * grainMs * 10 - 0.5,
+  }));
+}
+
+function typesOf(violations) {
+  return violations.map((v) => v.type);
+}
+
+test('career-timeline: the seven oracle constants mirror the shared/kit bounds', () => {
+  assert.equal(CAREER_TIMELINE_ALIGN_TOLERANCE_PX, 1.5);
+  assert.equal(CAREER_TIMELINE_LINE_RESIDUAL_TOLERANCE_PX, 1);
+  assert.equal(CAREER_TIMELINE_LINE_POINT_BOUND, 60);
+  assert.equal(CAREER_TIMELINE_STRIP_CELL_BOUND, 108);
+  assert.equal(CAREER_TIMELINE_NARROW_STRIP_CELL_BOUND, 36);
+  assert.equal(CAREER_TIMELINE_NARROW_PLOT_PX, 520);
+  assert.equal(CAREER_TIMELINE_FORM_STRIP_TICK_BOUND, 60);
+});
+
+test('career-timeline: no timeline root -> exactly one career-timeline-unmeasured', () => {
+  const violations = evaluateCareerTimeline({ timelines: [], canvasCount: 0 });
+  assert.deepEqual(typesOf(violations), ['career-timeline-unmeasured']);
+});
+
+test('career-timeline: two canvases -> one career-timeline-legacy-canvas carrying count 2', () => {
+  const violations = evaluateCareerTimeline({ timelines: [makeTimeline()], canvasCount: 2 });
+  const canvas = violations.filter((v) => v.type === 'career-timeline-legacy-canvas');
+  assert.equal(canvas.length, 1);
+  assert.equal(canvas[0].count, 2);
+});
+
+test('career-timeline: zero canvases -> no career-timeline-legacy-canvas', () => {
+  const violations = evaluateCareerTimeline({ timelines: [makeTimeline()], canvasCount: 0 });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-legacy-canvas').length, 0);
+});
+
+test('career-timeline: an aligned, paired, bounded timeline passes clean', () => {
+  assert.deepEqual(evaluateCareerTimeline({ timelines: [makeTimeline()], canvasCount: 0 }), []);
+});
+
+test('career-timeline: a rate cell 3px off the line mapping -> one career-timeline-axis-misaligned { track rate, edge left }', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ rateCells: [{ startMs: 5, endMs: 15, left: 153, right: 249.5 }] })],
+    canvasCount: 0,
+  });
+  const misaligned = violations.filter((v) => v.type === 'career-timeline-axis-misaligned');
+  assert.equal(misaligned.length, 1);
+  assert.equal(misaligned[0].track, 'rate');
+  assert.equal(misaligned[0].edge, 'left');
+  assert.ok(Math.abs(misaligned[0].deltaPx - 3) < 1e-9);
+});
+
+test('career-timeline: a delta of exactly 1.5px passes (boundary)', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ rateCells: [{ startMs: 5, endMs: 15, left: 151.5, right: 248.5 }] }),
+    ],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-axis-misaligned').length, 0);
+});
+
+test('career-timeline: the paired games cell shifted 2px -> career-timeline-axis-misaligned { track games }', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ gamesCells: [{ startMs: 5, endMs: 15, left: 152.5, right: 251.5 }] }),
+    ],
+    canvasCount: 0,
+  });
+  // Left edge 152.5 vs 150 (2.5px) fails; right edge 251.5 vs 250 sits on the 1.5px boundary.
+  const misaligned = violations.filter((v) => v.type === 'career-timeline-axis-misaligned');
+  assert.equal(misaligned.length, 1);
+  assert.equal(misaligned[0].track, 'games');
+  assert.equal(misaligned[0].edge, 'left');
+});
+
+test('career-timeline: a cell starting before the domain is expected at the plot left edge (clipped) and passes', () => {
+  const clipped = { startMs: -5, endMs: 5, left: 100.5, right: 149.5 };
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ rateCells: [clipped], gamesCells: [clipped] })],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-axis-misaligned').length, 0);
+});
+
+test('career-timeline: an anchor 1.0px off the least-squares line passes', () => {
+  // Residuals of a 4-anchor line with the third anchor lifted by `d`: the fit
+  // absorbs part of the lift, so the lift is scaled until the WORST residual is exactly 1.0.
+  const anchors = [
+    { t: 0, cx: 100 },
+    { t: 10, cx: 200 },
+    { t: 20, cx: 300 + 4 / 3 },
+    { t: 30, cx: 400 },
+  ];
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ anchors, plotRight: 400, rateCells: [], gamesCells: [], stripGrain: null }),
+    ],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-line-nonlinear').length, 0);
+});
+
+test('career-timeline: an anchor 2.0px off the least-squares line -> career-timeline-line-nonlinear', () => {
+  const anchors = [
+    { t: 0, cx: 100 },
+    { t: 10, cx: 200 },
+    { t: 20, cx: 300 + 8 / 3 },
+    { t: 30, cx: 400 },
+  ];
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ anchors, plotRight: 400, rateCells: [], gamesCells: [], stripGrain: null }),
+    ],
+    canvasCount: 0,
+  });
+  assert.ok(violations.some((v) => v.type === 'career-timeline-line-nonlinear'));
+});
+
+function lineOf(count) {
+  return Array.from({ length: count }, (_, i) => ({ t: i, cx: 100 + i * 10 }));
+}
+
+test('career-timeline: 60 anchors with 60 path vertices pass the line bound', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ anchors: lineOf(60), lineVertexCount: 60, plotRight: 700 })],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-line-points').length, 0);
+});
+
+test('career-timeline: 61 anchors -> career-timeline-line-points', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ anchors: lineOf(61), lineVertexCount: 60, plotRight: 710 })],
+    canvasCount: 0,
+  });
+  const points = violations.filter((v) => v.type === 'career-timeline-line-points');
+  assert.equal(points.length, 1);
+  assert.equal(points[0].measure, 'anchors');
+});
+
+test('career-timeline: 60 anchors but 61 path vertices -> career-timeline-line-points', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ anchors: lineOf(60), lineVertexCount: 61, plotRight: 700 })],
+    canvasCount: 0,
+  });
+  const points = violations.filter((v) => v.type === 'career-timeline-line-points');
+  assert.equal(points.length, 1);
+  assert.equal(points[0].measure, 'vertices');
+});
+
+test('career-timeline: 108 cells per strip pass; 109 -> career-timeline-strip-cells for rate AND games', () => {
+  const at108 = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ rateCells: cellsOf(108), gamesCells: cellsOf(108), plotRight: 1180 }),
+    ],
+    canvasCount: 0,
+  });
+  assert.equal(at108.filter((v) => v.type === 'career-timeline-strip-cells').length, 0);
+  const at109 = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({ rateCells: cellsOf(109), gamesCells: cellsOf(109), plotRight: 1190 }),
+    ],
+    canvasCount: 0,
+  });
+  const cells = at109.filter((v) => v.type === 'career-timeline-strip-cells');
+  assert.deepEqual(
+    cells.map((v) => v.track),
+    ['rate', 'games'],
+  );
+});
+
+test('career-timeline: a 248px plot at month grain -> career-timeline-narrow-grain', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ plotWidth: 248, stripGrain: 'month' })],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-narrow-grain').length, 1);
+});
+
+test('career-timeline: a 248px plot at quarter grain with 36 cells passes; 37 cells -> career-timeline-narrow-grain', () => {
+  const at36 = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({
+        plotWidth: 248,
+        stripGrain: 'quarter',
+        rateCells: cellsOf(36),
+        gamesCells: cellsOf(36),
+        plotRight: 460,
+      }),
+    ],
+    canvasCount: 0,
+  });
+  assert.equal(at36.filter((v) => v.type === 'career-timeline-narrow-grain').length, 0);
+  const at37 = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({
+        plotWidth: 248,
+        stripGrain: 'quarter',
+        rateCells: cellsOf(37),
+        gamesCells: cellsOf(37),
+        plotRight: 470,
+      }),
+    ],
+    canvasCount: 0,
+  });
+  assert.ok(at37.some((v) => v.type === 'career-timeline-narrow-grain'));
+});
+
+test('career-timeline: a 520px plot at month grain passes (boundary)', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ plotWidth: 520, stripGrain: 'month' })],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-narrow-grain').length, 0);
+});
+
+test('career-timeline: differing rate/games cell counts -> career-timeline-strip-pairing', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ rateCells: cellsOf(2, 5), gamesCells: cellsOf(1, 5) })],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-strip-pairing').length, 1);
+});
+
+test('career-timeline: a rate cell with no games cell at the same startMs -> career-timeline-strip-pairing', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({
+        rateCells: [{ startMs: 5, endMs: 15, left: 150.5, right: 249.5 }],
+        gamesCells: [{ startMs: 6, endMs: 15, left: 160.5, right: 249.5 }],
+      }),
+    ],
+    canvasCount: 0,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-strip-pairing').length, 1);
+});
+
+test('career-timeline: a full timeline with fewer than 2 anchors -> career-timeline-line-unmeasured', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [makeTimeline({ anchors: [{ t: 0, cx: 100 }] })],
+    canvasCount: 0,
+  });
+  assert.ok(violations.some((v) => v.type === 'career-timeline-line-unmeasured'));
+});
+
+test('career-timeline: a locked timeline with 0 anchors and no expectation passes', () => {
+  const violations = evaluateCareerTimeline({
+    timelines: [
+      makeTimeline({
+        state: 'locked',
+        anchors: [],
+        lineVertexCount: 0,
+        rateCells: [],
+        gamesCells: [],
+        stripGrain: null,
+      }),
+    ],
+    canvasCount: 0,
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('career-timeline: expectation { strips: true } on a thin timeline or one with 0 cells -> career-timeline-strips-missing', () => {
+  const thin = evaluateCareerTimeline(
+    { timelines: [makeTimeline({ state: 'thin' })], canvasCount: 0 },
+    { strips: true },
+  );
+  assert.ok(thin.some((v) => v.type === 'career-timeline-strips-missing'));
+  const empty = evaluateCareerTimeline(
+    {
+      timelines: [makeTimeline({ rateCells: [], gamesCells: [], stripGrain: null })],
+      canvasCount: 0,
+    },
+    { strips: true },
+  );
+  assert.ok(empty.some((v) => v.type === 'career-timeline-strips-missing'));
+  const ok = evaluateCareerTimeline(
+    { timelines: [makeTimeline()], canvasCount: 0 },
+    { strips: true },
+  );
+  assert.equal(ok.filter((v) => v.type === 'career-timeline-strips-missing').length, 0);
+});
+
+test('career-timeline: 61 form-strip ticks -> career-timeline-form-strip-ticks; 60 pass', () => {
+  const at61 = evaluateCareerTimeline({
+    timelines: [makeTimeline({ formStripTicks: 61 })],
+    canvasCount: 0,
+  });
+  assert.ok(at61.some((v) => v.type === 'career-timeline-form-strip-ticks'));
+  const at60 = evaluateCareerTimeline({
+    timelines: [makeTimeline({ formStripTicks: 60 })],
+    canvasCount: 0,
+  });
+  assert.equal(at60.filter((v) => v.type === 'career-timeline-form-strip-ticks').length, 0);
+});
+
+test('career-timeline: expectation { formStrip: true } on a thin timeline with 0 ticks -> career-timeline-form-strip-missing', () => {
+  const thinTimeline = makeTimeline({
+    state: 'thin',
+    rateCells: [],
+    gamesCells: [],
+    stripGrain: null,
+  });
+  const missing = evaluateCareerTimeline(
+    { timelines: [thinTimeline], canvasCount: 0 },
+    { formStrip: true },
+  );
+  assert.ok(missing.some((v) => v.type === 'career-timeline-form-strip-missing'));
+  const present = evaluateCareerTimeline(
+    { timelines: [{ ...thinTimeline, formStripTicks: 12 }], canvasCount: 0 },
+    { formStrip: true },
+  );
+  assert.equal(present.filter((v) => v.type === 'career-timeline-form-strip-missing').length, 0);
+});
+
+test('career-timeline: expectation { state: thin } on a full timeline -> career-timeline-state-mismatch', () => {
+  const violations = evaluateCareerTimeline(
+    { timelines: [makeTimeline()], canvasCount: 0 },
+    { state: 'thin' },
+  );
+  assert.ok(violations.some((v) => v.type === 'career-timeline-state-mismatch'));
+  const ok = evaluateCareerTimeline(
+    { timelines: [makeTimeline()], canvasCount: 0 },
+    { state: 'full' },
+  );
+  assert.equal(ok.filter((v) => v.type === 'career-timeline-state-mismatch').length, 0);
+});
+
+test('career-timeline: a multi-offender input returns ALL offenders (two timelines, both misaligned, plus the canvas)', () => {
+  const bad = makeTimeline({ rateCells: [{ startMs: 5, endMs: 15, left: 153, right: 249.5 }] });
+  const violations = evaluateCareerTimeline({
+    timelines: [bad, { ...bad, selectorPath: '#second' }],
+    canvasCount: 1,
+  });
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-axis-misaligned').length, 2);
+  assert.equal(violations.filter((v) => v.type === 'career-timeline-legacy-canvas').length, 1);
 });

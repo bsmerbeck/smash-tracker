@@ -46,6 +46,8 @@ import {
   evaluateNestedScrollers,
   evaluateCardHeightCeilings,
   evaluateFormStripFit,
+  evaluateCareerTimeline,
+  careerTimelineEdgeDeltas,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -119,7 +121,25 @@ export const LAYOUT_ORACLE_ROUTES = [
     ],
   },
   { id: 'match-data', loadedMarker: '[data-slot="match-data-rail"]' },
-  { id: 'trends', loadedMarker: '[data-slot="trends-hero-body"]' },
+  {
+    id: 'trends',
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    // Plan 39.1-34: the career-timeline family on the realistic (one-month,
+    // thin) account — alignment, mark bounds and the no-canvas rule.
+    checks: ['career-timeline'],
+  },
+  {
+    // Plan 39.1-34: the ONE sparg0-shaped dataset (8,400 games over ~7.7
+    // years, `guardLayoutHarness.mjs`'s `career` scale, selected per page via
+    // the `x-guard-layout-scale` request header), mounted inside the
+    // MainLayout-geometry app shell so the plot is measured at production
+    // content widths — month strips at 2560/1440, quarter strips at 390.
+    id: 'trends-career',
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    scale: 'career',
+    checks: ['career-timeline'],
+    timelineExpect: { strips: true, state: 'full' },
+  },
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
   {
     id: 'opponent-hub',
@@ -132,6 +152,13 @@ export const LAYOUT_ORACLE_ROUTES = [
 
 const HARD_TIMEOUT_MS = Number(process.env.GUARD_LAYOUT_HARD_TIMEOUT_MS) || 5 * 60 * 1000;
 const ROUTE_LOAD_TIMEOUT_MS = 15_000;
+/**
+ * Plan 39.1-34: how long a career-timeline route waits for the timeline's
+ * plot area after the page-loaded marker. On timeout it proceeds anyway —
+ * `evaluateCareerTimeline` then reports what it finds (on production's
+ * chart.js Trends: `career-timeline-unmeasured`), never a silent pass.
+ */
+const CAREER_TIMELINE_WAIT_MS = 5_000;
 
 /**
  * `onTimeout` (plan 39.1-30 first_fix) is fired the instant the hard timeout
@@ -173,6 +200,7 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
   const wantNestedScroll = checks.includes('nested-scroll');
   const wantCardHeightCeiling = checks.includes('card-height-ceiling');
   const wantFormStripFit = checks.includes('form-strip-fit');
+  const wantCareerTimeline = checks.includes('career-timeline');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -279,7 +307,12 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
           for (const child of el.children) stack.push(child);
         }
       }
-      overflowCards.push({ selectorPath: describeElement(cardEl), innerLeft, innerRight, offenders });
+      overflowCards.push({
+        selectorPath: describeElement(cardEl),
+        innerLeft,
+        innerRight,
+        offenders,
+      });
     }
   }
 
@@ -324,7 +357,13 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
         if (!container) return out;
         for (const g of container.querySelectorAll('.recharts-cartesian-axis-tick-label')) {
           const r = g.getBoundingClientRect();
-          out.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, text: g.textContent ?? '' });
+          out.push({
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+            text: g.textContent ?? '',
+          });
         }
         return out;
       }
@@ -336,13 +375,25 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
         surfaceEl.querySelectorAll('[data-slot="trend-period-value-label"]'),
       ).map((el) => {
         const r = el.getBoundingClientRect();
-        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, text: el.textContent ?? '' };
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          text: el.textContent ?? '',
+        };
       });
 
       const dots = Array.from(surfaceEl.querySelectorAll('[data-slot="trend-period-dot"]')).map(
         (el) => {
           const r = el.getBoundingClientRect();
-          return { selectorPath: describeElement(el), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+          return {
+            selectorPath: describeElement(el),
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+          };
         },
       );
 
@@ -396,7 +447,13 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
       const rowGapPx = parseFloat(window.getComputedStyle(gridEl).rowGap) || 0;
       const items = cardBearingChildren.map((child) => {
         const r = child.getBoundingClientRect();
-        return { selectorPath: describeElement(child), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        return {
+          selectorPath: describeElement(child),
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+        };
       });
       grids.push({ selectorPath: describeElement(gridEl), rowGapPx, items });
     }
@@ -410,12 +467,12 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
   const pickers = [];
   if (wantPickerAlignment) {
     for (const pickerEl of document.querySelectorAll('[data-slot="matchup-pairing-picker"]')) {
-      const controls = Array.from(
-        pickerEl.querySelectorAll('[data-slot="select-trigger"]'),
-      ).map((el) => {
-        const r = el.getBoundingClientRect();
-        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-      });
+      const controls = Array.from(pickerEl.querySelectorAll('[data-slot="select-trigger"]')).map(
+        (el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+        },
+      );
       const labels = Array.from(
         pickerEl.querySelectorAll('[data-slot="matchup-pairing-label"]'),
       ).map((el) => {
@@ -549,7 +606,61 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
     }
   }
 
+  // Plan 39.1-34: the career-timeline family — layout reads only (rects and
+  // data-* attributes, never getComputedStyle). One measurement per timeline
+  // root; the rating line's anchors are the per-point `career-timeline-point`
+  // markers the kit emits at the line's own x scale.
+  const timelines = [];
+  let canvasCount = 0;
+  if (wantCareerTimeline) {
+    canvasCount = document.querySelectorAll('canvas').length;
+    const cellsOf = (rootEl, slot) =>
+      Array.from(rootEl.querySelectorAll(`[data-slot="${slot}"]`)).map((cellEl) => {
+        const r = cellEl.getBoundingClientRect();
+        return {
+          startMs: Number(cellEl.getAttribute('data-start-ms')),
+          endMs: Number(cellEl.getAttribute('data-end-ms')),
+          left: r.left,
+          right: r.right,
+        };
+      });
+    for (const rootEl of document.querySelectorAll('[data-slot="career-timeline"]')) {
+      const plotEl = rootEl.querySelector('[data-slot="career-timeline-plot-area"]');
+      const plotRect = plotEl ? plotEl.getBoundingClientRect() : null;
+      const anchors = Array.from(
+        rootEl.querySelectorAll('[data-slot="career-timeline-point"]'),
+      ).map((pointEl) => {
+        const r = pointEl.getBoundingClientRect();
+        return { t: Number(pointEl.getAttribute('data-t')), cx: r.left + r.width / 2 };
+      });
+      let lineVertexCount = 0;
+      for (const lineEl of rootEl.querySelectorAll('.career-timeline-line')) {
+        const paths = lineEl.tagName.toLowerCase() === 'path' ? [lineEl] : [];
+        paths.push(...lineEl.querySelectorAll('path'));
+        for (const pathEl of paths) {
+          lineVertexCount += ((pathEl.getAttribute('d') ?? '').match(/[ML]/g) ?? []).length;
+        }
+      }
+      const stripsEl = rootEl.querySelector('[data-slot="career-timeline-strips"]');
+      timelines.push({
+        selectorPath: describeElement(rootEl),
+        state: rootEl.getAttribute('data-state'),
+        plotLeft: plotRect ? plotRect.left : 0,
+        plotRight: plotRect ? plotRect.right : 0,
+        plotWidth: plotRect ? plotRect.width : 0,
+        stripGrain: stripsEl ? stripsEl.getAttribute('data-grain') : null,
+        anchors,
+        lineVertexCount,
+        rateCells: cellsOf(rootEl, 'career-timeline-rate-cell'),
+        gamesCells: cellsOf(rootEl, 'career-timeline-games-cell'),
+        formStripTicks: rootEl.querySelectorAll('[data-slot="form-strip-tick"]').length,
+      });
+    }
+  }
+
   return {
+    timelines,
+    canvasCount,
     cards,
     truncationElements,
     overflowCards,
@@ -574,6 +685,12 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: viewport.width, height: viewport.height });
+    // Plan 39.1-34: a route declaring `scale` selects one of the harness's
+    // in-memory fixtures for its `/api/matches` reads; every other route
+    // sends no such header (the server's initial scale, unchanged).
+    if (route.scale) {
+      await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
+    }
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}`, {
       waitUntil: 'networkidle0',
     });
@@ -600,15 +717,25 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     const ceilingMarkers = checks.includes('card-height-ceiling')
       ? (route.cardHeightCeilings ?? [])
       : [];
+    if (checks.includes('career-timeline')) {
+      await page
+        .waitForSelector('[data-slot="career-timeline-plot-area"]', {
+          timeout: CAREER_TIMELINE_WAIT_MS,
+        })
+        .catch(() => {});
+    }
     const measurements = await page.evaluate(collectPageMeasurements, checks, ceilingMarkers);
 
     const violations = [
       ...evaluateStretch(measurements.cards),
-      ...evaluateScrollBudget({
-        scrollHeight: measurements.scrollHeight,
-        innerHeight: measurements.innerHeight,
-        viewportName: viewport.name,
-      }, { ...DEFAULT_SCROLL_BUDGETS, ...(route.scrollBudgets ?? {}) }),
+      ...evaluateScrollBudget(
+        {
+          scrollHeight: measurements.scrollHeight,
+          innerHeight: measurements.innerHeight,
+          viewportName: viewport.name,
+        },
+        { ...DEFAULT_SCROLL_BUDGETS, ...(route.scrollBudgets ?? {}) },
+      ),
       ...evaluateHorizontalOverflow({
         scrollWidth: measurements.scrollWidth,
         innerWidth: measurements.innerWidth,
@@ -668,11 +795,23 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
           cards: measurements.cardHeightCards,
         }),
       );
-      violations.push(...evaluateFamilyPresence('card-height-ceiling', measurements.cardHeightCards));
+      violations.push(
+        ...evaluateFamilyPresence('card-height-ceiling', measurements.cardHeightCards),
+      );
     }
     if (checks.includes('form-strip-fit')) {
       violations.push(...evaluateFormStripFit(measurements.formStrips));
       violations.push(...evaluateFamilyPresence('form-strip-fit', measurements.formStrips));
+    }
+    // Plan 39.1-34: the career-timeline family (its own presence check is
+    // inside the evaluator: an empty list is `career-timeline-unmeasured`).
+    if (checks.includes('career-timeline')) {
+      violations.push(
+        ...evaluateCareerTimeline(
+          { timelines: measurements.timelines, canvasCount: measurements.canvasCount },
+          route.timelineExpect ?? {},
+        ),
+      );
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
@@ -692,6 +831,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       scrollRatio,
       cardHeightCards: measurements.cardHeightCards,
       innerHeight: measurements.innerHeight,
+      timelines: checks.includes('career-timeline') ? measurements.timelines : [],
     };
   } finally {
     await page.close();
@@ -932,6 +1072,19 @@ async function main() {
               const limitPx = card.maxViewportHeights * result.innerHeight;
               console.log(
                 `CARD_HEIGHT route=${route.id} viewport=${viewport.name} marker=${card.marker} height=${card.height.toFixed(1)} limitPx=${limitPx.toFixed(1)}`,
+              );
+            }
+            // Plan 39.1-34: one TIMELINE line per measured career timeline
+            // (first root), printed right after the MEASUREMENT line whether
+            // or not it passed — the recordable mark counts and alignment.
+            const timeline = (result.timelines ?? [])[0];
+            if (timeline) {
+              const maxAlignDeltaPx = careerTimelineEdgeDeltas(timeline).reduce(
+                (max, delta) => Math.max(max, delta.deltaPx),
+                0,
+              );
+              console.log(
+                `TIMELINE route=${route.id} viewport=${viewport.name} state=${timeline.state} plotWidth=${timeline.plotWidth.toFixed(1)} grain=${timeline.stripGrain ?? 'none'} points=${timeline.anchors.length} vertices=${timeline.lineVertexCount} rateCells=${timeline.rateCells.length} gamesCells=${timeline.gamesCells.length} maxAlignDeltaPx=${maxAlignDeltaPx.toFixed(1)}`,
               );
             }
             for (const violation of result.violations) {

@@ -46,7 +46,18 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
         }
         res.setHeader('Content-Type', 'application/json');
         const url = req.url ?? '';
-        const dataset = currentScale ? scales[currentScale] : undefined;
+        // Plan 39.1-34 (T-39.1-34-01): a request may name one of the
+        // IN-MEMORY fixture scales via `x-guard-layout-scale` (guardLayout's
+        // `trends-career` route sends `career`). The header only ever
+        // selects an existing key of `scales` on this loopback-only dev
+        // server; an unknown or absent value falls back to the server's
+        // initial scale — unchanged behaviour for every other route.
+        const requestedScale = req.headers['x-guard-layout-scale'];
+        const scaleName =
+          typeof requestedScale === 'string' && Object.hasOwn(scales, requestedScale)
+            ? requestedScale
+            : currentScale;
+        const dataset = scaleName ? scales[scaleName] : undefined;
 
         if (url === '/matches' || url.startsWith('/matches?')) {
           res.statusCode = 200;

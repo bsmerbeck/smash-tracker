@@ -75,6 +75,38 @@ function buildRealisticScale() {
   };
 }
 
+/**
+ * Plan 39.1-34: the ONE sparg0-shaped dataset — the career timeline's
+ * oracle route (`trends-career`) selects it per page through the
+ * `x-guard-layout-scale: career` request header. 8,400 games, sessions of
+ * 6-28 games spaced by a fixed 135h gap, 73% wins: first game
+ * 2018-12-18T18:00:00Z, last game 2026-08-22T07:51:00Z (read from a run of
+ * this exact call, never guessed) — 495 sessions, 93 months with games, so
+ * the engine picks the quarter rating grain (~31 closes) and month strips.
+ */
+const CAREER_SESSION_GAP_MS = 135 * 60 * 60 * 1000;
+
+function buildCareerScale() {
+  const matches = generateSyntheticMatches({
+    seed: 39_134_001,
+    count: 8_400,
+    startMs: Date.UTC(2018, 11, 18, 18),
+    sessionSizeRange: [6, 28],
+    sessionGapMs: CAREER_SESSION_GAP_MS,
+    winRate: 0.73,
+    mainFighterIds: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  });
+  return {
+    matches,
+    fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
 /** `twoGameWorkspace()` — the SAME sparse fixture `sparseWorkspaces.ts` names for exactly this switchability. Its own rows already carry unique ids. */
 function buildSparseScale() {
   const matches = twoGameWorkspace();
@@ -89,7 +121,11 @@ function buildSparseScale() {
 
 export async function startGuardLayoutHarnessServer() {
   const scale = process.env.GUARD_LAYOUT_SCALE === 'sparse' ? 'sparse' : 'realistic';
-  const scales = { realistic: buildRealisticScale(), sparse: buildSparseScale() };
+  const scales = {
+    realistic: buildRealisticScale(),
+    sparse: buildSparseScale(),
+    career: buildCareerScale(),
+  };
   const server = await createViteServer({
     root: WEB_ROOT,
     configFile: VITE_CONFIG_PATH,
@@ -113,9 +149,7 @@ export async function startGuardLayoutHarnessServer() {
       'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(
         'guard-layout-harness-fake-project',
       ),
-      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(
-        '1:0:web:0000000000000000000001',
-      ),
+      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify('1:0:web:0000000000000000000001'),
       // Empty string (never left `undefined`, which falls back to a
       // non-harness origin): keeps every `/api/**` request relative, so it
       // lands on THIS SAME Vite dev server origin — the one origin the

@@ -608,3 +608,242 @@ export function evaluateFormStripFit(strips) {
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-34: the career-timeline family (UI-SPEC §11 mark bounds, §12.1
+// the shared time axis, §13.1 real-Chrome oracle). This plain-Node module
+// cannot import the TypeScript sources, so every constant below MIRRORS a
+// named shared/kit constant — each doc comment names the one it mirrors.
+// Every evaluator returns a LIST of ALL offenders, never a boolean.
+// ---------------------------------------------------------------------------
+
+/**
+ * UI-SPEC §12.1 "two strips on the SAME time axis": a strip cell edge may sit
+ * at most this many px from the rating line's own time-to-pixel mapping. The
+ * kit draws each cell 0.5px inset on both sides, which this tolerance
+ * absorbs with 1px to spare.
+ */
+export const CAREER_TIMELINE_ALIGN_TOLERANCE_PX = 1.5;
+
+/**
+ * The rating line's anchors must lie on ONE linear time axis: an anchor more
+ * than this many px off the least-squares line of cx on t means the line and
+ * the strips are not reading one scale.
+ */
+export const CAREER_TIMELINE_LINE_RESIDUAL_TOLERANCE_PX = 1;
+
+/** UI-SPEC §11 line points — mirrors `MARK_BOUND_LINE_POINTS` (packages/shared/src/insight/markBounds.ts). */
+export const CAREER_TIMELINE_LINE_POINT_BOUND = 60;
+
+/** UI-SPEC §11 heat cells — mirrors `MARK_BOUND_HEAT_CELLS` (packages/shared/src/insight/markBounds.ts). */
+export const CAREER_TIMELINE_STRIP_CELL_BOUND = 108;
+
+/** UI-SPEC §12.1 narrow re-grain (108 / 3) — mirrors `CAREER_TIMELINE_NARROW_STRIP_CELLS` (packages/shared/src/insight/careerTimeline.ts). */
+export const CAREER_TIMELINE_NARROW_STRIP_CELL_BOUND = 36;
+
+/** UI-SPEC §11 "below a 520px plot" — mirrors `CHART_NARROW_PLOT_PX` (apps/web/src/components/charts/tokens.ts). */
+export const CAREER_TIMELINE_NARROW_PLOT_PX = 520;
+
+/** UI-SPEC §11 strip ticks (the thin account's per-game strip) — mirrors `MARK_BOUND_STRIP_TICKS`. */
+export const CAREER_TIMELINE_FORM_STRIP_TICK_BOUND = 60;
+
+/**
+ * The least-squares line of anchor cx on t (UI-SPEC §12.1's one numeric time
+ * axis), or `null` below two anchors / a zero time span. Returns
+ * `{ x: (t) => px, maxResidualPx }`.
+ */
+export function fitCareerTimelineAxis(anchors) {
+  if (anchors.length < 2) return null;
+  const n = anchors.length;
+  const meanT = anchors.reduce((sum, a) => sum + a.t, 0) / n;
+  const meanX = anchors.reduce((sum, a) => sum + a.cx, 0) / n;
+  let sTT = 0;
+  let sTX = 0;
+  for (const a of anchors) {
+    sTT += (a.t - meanT) ** 2;
+    sTX += (a.t - meanT) * (a.cx - meanX);
+  }
+  if (sTT === 0) return null;
+  const slope = sTX / sTT;
+  const intercept = meanX - slope * meanT;
+  const x = (t) => intercept + slope * t;
+  const residuals = anchors.map((a) => Math.abs(a.cx - x(a.t)));
+  return { x, residuals, maxResidualPx: Math.max(...residuals) };
+}
+
+/**
+ * Every strip cell's edge delta against the fitted axis — the SAME rule
+ * `evaluateCareerTimeline`'s alignment check applies: a cell's expected left
+ * is `max(plotLeft, x(startMs))` and its expected right
+ * `min(plotRight, x(endMs))` (a cell straddling the domain is clipped to the
+ * plot). Returns `[{ track, edge, deltaPx, startMs }]`, empty below two
+ * anchors. Exported so the runner's TIMELINE line prints the same number the
+ * evaluator judges.
+ */
+export function careerTimelineEdgeDeltas(timeline) {
+  const fit = fitCareerTimelineAxis(timeline.anchors);
+  if (!fit) return [];
+  const deltas = [];
+  for (const [track, cells] of [
+    ['rate', timeline.rateCells],
+    ['games', timeline.gamesCells],
+  ]) {
+    for (const cell of cells) {
+      const expectedLeft = Math.max(timeline.plotLeft, fit.x(cell.startMs));
+      const expectedRight = Math.min(timeline.plotRight, fit.x(cell.endMs));
+      deltas.push({
+        track,
+        edge: 'left',
+        deltaPx: Math.abs(cell.left - expectedLeft),
+        startMs: cell.startMs,
+      });
+      deltas.push({
+        track,
+        edge: 'right',
+        deltaPx: Math.abs(cell.right - expectedRight),
+        startMs: cell.startMs,
+      });
+    }
+  }
+  return deltas;
+}
+
+/**
+ * UI-SPEC §11 / §12.1 / §13.1: the career-timeline family. `timelines` is one
+ * measurement per `[data-slot="career-timeline"]` root —
+ * `{ selectorPath, state, plotLeft, plotRight, plotWidth, stripGrain,
+ * anchors: [{ t, cx }], lineVertexCount, rateCells, gamesCells:
+ * [{ startMs, endMs, left, right }], formStripTicks }` — and `canvasCount` is
+ * the page's `canvas` element count (the retired chart.js pair drew two).
+ * `expectation` is the route's own `timelineExpect`
+ * (`{ strips?, formStrip?, state? }`). An empty `timelines` list is
+ * `career-timeline-unmeasured` (never a silent pass).
+ */
+export function evaluateCareerTimeline({ timelines, canvasCount }, expectation = {}) {
+  const violations = [...evaluateFamilyPresence('career-timeline', timelines)];
+  if (canvasCount > 0) {
+    violations.push({ type: 'career-timeline-legacy-canvas', count: canvasCount });
+  }
+  for (const timeline of timelines) {
+    const { selectorPath, state, plotWidth, stripGrain, anchors, rateCells, gamesCells } = timeline;
+
+    if (state === 'full' && anchors.length < 2) {
+      violations.push({
+        type: 'career-timeline-line-unmeasured',
+        selectorPath,
+        anchors: anchors.length,
+      });
+    }
+    if (anchors.length > CAREER_TIMELINE_LINE_POINT_BOUND) {
+      violations.push({
+        type: 'career-timeline-line-points',
+        selectorPath,
+        measure: 'anchors',
+        count: anchors.length,
+      });
+    }
+    if (timeline.lineVertexCount > CAREER_TIMELINE_LINE_POINT_BOUND) {
+      violations.push({
+        type: 'career-timeline-line-points',
+        selectorPath,
+        measure: 'vertices',
+        count: timeline.lineVertexCount,
+      });
+    }
+    for (const [track, cells] of [
+      ['rate', rateCells],
+      ['games', gamesCells],
+    ]) {
+      if (cells.length > CAREER_TIMELINE_STRIP_CELL_BOUND) {
+        violations.push({
+          type: 'career-timeline-strip-cells',
+          selectorPath,
+          track,
+          count: cells.length,
+        });
+      }
+    }
+
+    const hasStrips = rateCells.length > 0 || gamesCells.length > 0;
+    if (hasStrips && plotWidth < CAREER_TIMELINE_NARROW_PLOT_PX) {
+      if (stripGrain === 'month') {
+        violations.push({
+          type: 'career-timeline-narrow-grain',
+          selectorPath,
+          plotWidth,
+          stripGrain,
+        });
+      }
+      for (const [track, cells] of [
+        ['rate', rateCells],
+        ['games', gamesCells],
+      ]) {
+        if (cells.length > CAREER_TIMELINE_NARROW_STRIP_CELL_BOUND) {
+          violations.push({
+            type: 'career-timeline-narrow-grain',
+            selectorPath,
+            plotWidth,
+            track,
+            count: cells.length,
+          });
+        }
+      }
+    }
+
+    if (hasStrips) {
+      const gamesStarts = new Set(gamesCells.map((cell) => cell.startMs));
+      const unpaired = rateCells.filter((cell) => !gamesStarts.has(cell.startMs));
+      if (rateCells.length !== gamesCells.length || unpaired.length > 0) {
+        violations.push({
+          type: 'career-timeline-strip-pairing',
+          selectorPath,
+          rateCells: rateCells.length,
+          gamesCells: gamesCells.length,
+          unpaired: unpaired.map((cell) => cell.startMs),
+        });
+      }
+    }
+
+    const fit = fitCareerTimelineAxis(anchors);
+    if (fit) {
+      anchors.forEach((anchor, i) => {
+        if (fit.residuals[i] > CAREER_TIMELINE_LINE_RESIDUAL_TOLERANCE_PX) {
+          violations.push({
+            type: 'career-timeline-line-nonlinear',
+            selectorPath,
+            t: anchor.t,
+            residualPx: fit.residuals[i],
+          });
+        }
+      });
+      for (const delta of careerTimelineEdgeDeltas(timeline)) {
+        if (delta.deltaPx > CAREER_TIMELINE_ALIGN_TOLERANCE_PX) {
+          violations.push({ type: 'career-timeline-axis-misaligned', selectorPath, ...delta });
+        }
+      }
+    }
+
+    if (timeline.formStripTicks > CAREER_TIMELINE_FORM_STRIP_TICK_BOUND) {
+      violations.push({
+        type: 'career-timeline-form-strip-ticks',
+        selectorPath,
+        count: timeline.formStripTicks,
+      });
+    }
+    if (expectation.strips === true && (state === 'thin' || rateCells.length === 0)) {
+      violations.push({ type: 'career-timeline-strips-missing', selectorPath, state });
+    }
+    if (expectation.formStrip === true && state === 'thin' && timeline.formStripTicks === 0) {
+      violations.push({ type: 'career-timeline-form-strip-missing', selectorPath });
+    }
+    if (expectation.state !== undefined && expectation.state !== state) {
+      violations.push({
+        type: 'career-timeline-state-mismatch',
+        selectorPath,
+        expected: expectation.state,
+        state,
+      });
+    }
+  }
+  return violations;
+}

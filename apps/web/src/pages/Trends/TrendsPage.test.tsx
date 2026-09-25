@@ -119,14 +119,28 @@ describe('TrendsPage', () => {
 
     renderTrends();
 
-    expect(await screen.findByText('Monthly Performance')).toBeInTheDocument();
-    expect(screen.getByText('Rating Curve')).toBeInTheDocument();
+    expect(await screen.findByText('Career timeline')).toBeInTheDocument();
     expect(screen.getByText('Sessions & Tilt')).toBeInTheDocument();
     expect(screen.getByText('Recent Events')).toBeInTheDocument();
     expect(screen.getByText('Setting Comparison')).toBeInTheDocument();
     expect(screen.getByText('Match-Type Mix')).toBeInTheDocument();
     // The six-column Tournaments table no longer renders on Trends (DD-10/UI-SPEC §8.2).
     expect(screen.queryByRole('table', { name: /tournament/i })).not.toBeInTheDocument();
+  });
+
+  it('plan 39.1-34: renders the career timeline and neither legacy title (the chart.js pair is retired)', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      makeMatch({ id: 'm2', win: false, time: Date.UTC(2021, 1, 1), matchType: 'offline-tourney' }),
+    ]);
+
+    const { container } = renderTrends();
+
+    expect(await screen.findByText('Career timeline')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="career-timeline"]')).not.toBeNull();
+    expect(screen.queryByText('Rating Curve')).not.toBeInTheDocument();
+    expect(screen.queryByText('Monthly Performance')).not.toBeInTheDocument();
+    expect(container.querySelector('canvas')).toBeNull();
   });
 
   it('shows the resync hint in the tournaments section when there are no tournament entries yet', async () => {
@@ -153,7 +167,7 @@ describe('TrendsPage', () => {
 
     expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
     // Page itself still renders (not the page-level "no matches at all" hero).
-    expect(screen.getByText('Monthly Performance')).toBeInTheDocument();
+    expect(screen.getByText('Career timeline')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go to Dashboard' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -170,7 +184,7 @@ describe('TrendsPage', () => {
     ]);
 
     const { container } = renderTrends();
-    await screen.findByText('Monthly Performance');
+    await screen.findByText('Career timeline');
 
     const cardRoots = container.querySelectorAll('[data-slot="card"]');
     expect(cardRoots.length).toBeGreaterThan(0);
@@ -187,7 +201,7 @@ describe('TrendsPage', () => {
 
       renderTrends();
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       expect(document.getElementById('games')).not.toBeInTheDocument();
     });
 
@@ -210,7 +224,7 @@ describe('TrendsPage', () => {
 
       renderTrends();
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       await waitFor(() =>
         expect(
           document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
@@ -243,7 +257,7 @@ describe('TrendsPage', () => {
 
       renderTrends('/trends?claim=ratingMove:account:doesNotExist');
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
       const gamesCard = document.getElementById('games') as HTMLElement;
       expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
@@ -256,7 +270,7 @@ describe('TrendsPage', () => {
 
     renderTrends('/trends?stage=1&claim=ratingMove:account:last30#games');
 
-    await screen.findByText('Monthly Performance');
+    await screen.findByText('Career timeline');
     await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
     await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
 
@@ -492,7 +506,7 @@ describe('TrendsPage', () => {
       ]);
 
       const { container } = renderTrends();
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
 
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
       expect(container.querySelector('[data-slot="trends-hero-body"]')).not.toBeNull();
@@ -508,7 +522,7 @@ describe('TrendsPage', () => {
       ]);
 
       const { container, queryClient } = renderTrends();
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
 
       let resolveSecondFetch: (value: unknown) => void = () => {};
       listMatches.mockImplementation(
@@ -524,7 +538,7 @@ describe('TrendsPage', () => {
         const grid = container.querySelector('[data-slot="page-grid"]');
         expect(grid?.className).toMatch(/opacity-60/);
       });
-      expect(screen.getByText('Monthly Performance')).toBeInTheDocument();
+      expect(screen.getByText('Career timeline')).toBeInTheDocument();
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
 
       resolveSecondFetch([

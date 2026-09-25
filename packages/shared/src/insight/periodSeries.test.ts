@@ -21,6 +21,7 @@ import {
 } from './markBounds.js';
 import {
   buildPeriodSeries,
+  calendarBucketBounds,
   periodPointKeyByMatchId,
   periodPointMatchIdsForKey,
   regrainFor,
@@ -537,5 +538,81 @@ describe('buildPeriodSeries — FIXT-02 sparse workspaces (Task 3)', () => {
   it('reports a below-PERIOD_TREND_MIN_PERIODS series detectably from PeriodSeries alone, never by counting DOM nodes', () => {
     const series = buildPeriodSeries({ matches: twoGameWorkspace() });
     expect(series.points.length).toBeLessThan(PERIOD_TREND_MIN_PERIODS);
+  });
+});
+
+describe('calendarBucketBounds (plan 39.1-34) — the ONE UTC calendar bucket rule', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('month: the UTC month start and the next month start (exclusive), keyed exactly as buildPeriodSeries keys that month', () => {
+    const ms = Date.UTC(2024, 6, 17, 13, 45);
+    const bounds = calendarBucketBounds('month', ms);
+    expect(bounds.startMs).toBe(Date.UTC(2024, 6, 1));
+    expect(bounds.endMs).toBe(Date.UTC(2024, 7, 1));
+    expect(bounds.key).toBe('month:2024-07');
+    expect(bounds.label).toBe('2024-07');
+    // Ten games three days apart in each of Jul/Aug/Sep 2024: every finer grain emits more
+    // than 3 points, so target 3 forces the month grain.
+    const matches = [6, 7, 8].flatMap((month) =>
+      Array.from({ length: 10 }, (_, i) =>
+        makeMatch(`m${month}-${i}`, Date.UTC(2024, month, 1 + i * 3, 12)),
+      ),
+    );
+    const series = buildPeriodSeries({ matches, target: 3 });
+    expect(series.grain).toBe('month');
+    expect(series.points.map((p) => p.key)).toContain(bounds.key);
+  });
+
+  it('month: the last instant of a month stays in that month; the first instant of the next does not', () => {
+    const last = Date.UTC(2024, 1, 29, 23, 59, 59, 999);
+    expect(calendarBucketBounds('month', last).key).toBe('month:2024-02');
+    expect(calendarBucketBounds('month', last + 1).key).toBe('month:2024-03');
+  });
+
+  it('quarter: Q3 starts Jul 1 and ends (exclusive) Oct 1, keyed as buildPeriodSeries keys it', () => {
+    const ms = Date.UTC(2024, 7, 31, 23);
+    const bounds = calendarBucketBounds('quarter', ms);
+    expect(bounds.startMs).toBe(Date.UTC(2024, 6, 1));
+    expect(bounds.endMs).toBe(Date.UTC(2024, 9, 1));
+    expect(bounds.key).toBe('quarter:2024-Q3');
+    const matches = Array.from({ length: 30 }, (_, i) =>
+      makeMatch(`q${i}`, Date.UTC(2024, 6 + (i % 3), 1 + i)),
+    );
+    expect(buildPeriodSeries({ matches, target: 1 }).points.map((p) => p.key)).toContain(
+      bounds.key,
+    );
+  });
+
+  it('year: Jan 1 to the next Jan 1 (exclusive)', () => {
+    const bounds = calendarBucketBounds('year', Date.UTC(2021, 11, 31, 22));
+    expect(bounds.startMs).toBe(Date.UTC(2021, 0, 1));
+    expect(bounds.endMs).toBe(Date.UTC(2022, 0, 1));
+    expect(bounds.key).toBe('year:2021');
+    expect(bounds.label).toBe('2021');
+  });
+
+  it('ISO week: starts Monday 00:00 UTC, spans 7 days, keyed exactly as buildPeriodSeries keys that week (incl. an ISO-year boundary)', () => {
+    // Thu 2021-01-07 -> ISO week 2021-W01 starts Mon 2021-01-04.
+    const bounds = calendarBucketBounds('week', Date.UTC(2021, 0, 7, 12));
+    expect(bounds.startMs).toBe(Date.UTC(2021, 0, 4));
+    expect(bounds.endMs).toBe(Date.UTC(2021, 0, 4) + 7 * DAY);
+    expect(bounds.key).toBe('week:2021-W01');
+    expect(new Date(bounds.startMs).getUTCDay()).toBe(1);
+    // Sun 2021-01-03 belongs to 2020-W53, which started Mon 2020-12-28.
+    const boundary = calendarBucketBounds('week', Date.UTC(2021, 0, 3, 23, 59));
+    expect(boundary.key).toBe('week:2020-W53');
+    expect(boundary.startMs).toBe(Date.UTC(2020, 11, 28));
+    // 61 games three days apart: game/set/eventSession each emit 61 points, weeks ~26 — so
+    // target 30 forces the week grain.
+    const matches = Array.from({ length: 61 }, (_, i) =>
+      makeMatch(`w${i}`, Date.UTC(2021, 0, 4) + i * 3 * DAY),
+    );
+    const series = buildPeriodSeries({ matches, target: 30 });
+    expect(series.grain).toBe('week');
+    for (const match of matches) {
+      expect(series.points.map((p) => p.key)).toContain(
+        calendarBucketBounds('week', match.time).key,
+      );
+    }
   });
 });
