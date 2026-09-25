@@ -27,6 +27,7 @@ import {
   type EvidenceSnapshot,
   type ScoutBinding,
   type ScoutReportData,
+  type ScoutReportRecord,
   type StoredScoutReport,
   type ValidationOutcome,
 } from '@smash-tracker/shared';
@@ -176,8 +177,13 @@ interface GeneratedReportRecord {
   report: StoredScoutReport;
 }
 
+/**
+ * `record` is the PARSED stored record (schema defaults applied, e.g. an
+ * omitted empty `claimIds` read back as `[]`) — the only form a 200 may send,
+ * because the response serializer ENCODES and never applies a default.
+ */
 type GenerationOutcome =
-  { ok: true; record: GeneratedReportRecord } | { ok: false; failure: ReportFailureReply };
+  { ok: true; record: ScoutReportRecord } | { ok: false; failure: ReportFailureReply };
 
 /**
  * Phase 39 (RPT-05/D-07): the claim-set surface a `runReportGeneration` job
@@ -198,11 +204,21 @@ function reportSurfaceFor(reason: PrepReportReason | undefined): ReportSurface {
   }
 }
 
-/** The stored scout-report record minus its push key — the shape the store step writes and the 200 response serializes. */
+/** The stored scout-report record minus its push key — the schema the store step checks and whose PARSED output the 200 response sends. */
 const storedScoutReportRecordSchema = scoutReportRecordSchema.omit({ id: true });
 
+/**
+ * `record` is the WRITE form (an empty `claimIds` omitted, since RTDB would
+ * drop it); `parsed` is the same record through the stored schema — the
+ * read-back form, and the only form the 200 response may send.
+ */
 type ValidatedScoutReportBuild =
-  | { ok: true; record: Omit<GeneratedReportRecord, 'id'>; outcome: ValidationOutcome }
+  | {
+      ok: true;
+      record: Omit<GeneratedReportRecord, 'id'>;
+      parsed: Omit<ScoutReportRecord, 'id'>;
+      outcome: ValidationOutcome;
+    }
   | { ok: false };
 
 /** Keeps an action slot only when the claim it rests on SURVIVED validation (rule R8) — a dropped action is counted, never stored. */
@@ -283,7 +299,7 @@ function buildValidatedScoutReport(params: {
       );
       return { ok: false };
     }
-    return { ok: true, record, outcome };
+    return { ok: true, record, parsed: checked.data, outcome };
   } catch (err) {
     log.error(
       { err },
@@ -940,7 +956,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         },
       };
     }
-    const { record, outcome } = built;
+    const { record, parsed, outcome } = built;
 
     const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
     try {
@@ -1037,7 +1053,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       );
     }
 
-    return { ok: true, record: { id, ...record } };
+    // Post-plan fix (39-08): answer with the PARSED record, never the raw
+    // write form. The serializer encodes without applying `.default([])`, so
+    // a raw record with an omitted empty `claimIds` 500'd here — after the
+    // job was `succeeded`, the report stored and the credit spent.
+    return { ok: true, record: { id, ...parsed } };
   }
 
   /**
