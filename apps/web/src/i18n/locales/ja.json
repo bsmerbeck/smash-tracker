@@ -1599,7 +1599,11 @@
       "badge": "旧形式",
       "tooltip": "このアプリのレポート検証機能ができる前に作成されました — 内容は試合データと自動照合されていません。",
       "explain": "このアプリのレポート検証機能ができる前に作成されました — 内容は試合データと自動照合されていません。"
-    }
+    },
+    "droppedClaims_one": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
+    "droppedClaims_other": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
+    "withheldProse_one": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
+    "withheldProse_other": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。"
   },
   "groups": {
     "title": "グループ",
@@ -2970,7 +2974,11 @@
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
       "viewReport": "レポートを見る",
-      "hideReport": "レポートを隠す"
+      "hideReport": "レポートを隠す",
+      "failedReason": {
+        "validation": "検証済みのレポートを作成するための試合データがまだ足りません。",
+        "validationRefunded": "クレジットは返却されました。"
+      }
     },
     "insufficientCredits": {
       "body": "クレジットがなくなりました。",
@@ -3072,7 +3080,11 @@
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
       "viewPlan": "プランを見る",
-      "hidePlan": "プランを隠す"
+      "hidePlan": "プランを隠す",
+      "failedReason": {
+        "validation": "検証済みの練習プランを作成するための試合データがまだ足りません。",
+        "validationRefunded": "クレジットは返却されました。"
+      }
     },
     "insufficientCredits": {
       "body": "クレジットがなくなりました。",

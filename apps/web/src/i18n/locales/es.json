@@ -1599,7 +1599,11 @@
       "badge": "Legado",
       "tooltip": "Generado antes de que existiera el validador de informes de esta app: su contenido no se comprobó automáticamente con tus datos de partidas.",
       "explain": "Generado antes de que existiera el validador de informes de esta app: su contenido no se comprobó automáticamente con tus datos de partidas."
-    }
+    },
+    "droppedClaims_one": "{{count}} afirmación no se pudo verificar y se quitó de este informe.",
+    "droppedClaims_other": "{{count}} afirmaciones no se pudieron verificar y se quitaron de este informe.",
+    "withheldProse_one": "Se omitió el comentario de {{count}} sección porque no se pudo verificar con tus datos de partidas.",
+    "withheldProse_other": "Se omitieron los comentarios de {{count}} secciones porque no se pudieron verificar con tus datos de partidas."
   },
   "groups": {
     "title": "Grupos",
@@ -2970,7 +2974,11 @@
       "failedPendingRefund": "Fallido — reembolsando tu crédito…",
       "refunded": "Fallido — se reembolsó tu crédito.",
       "viewReport": "Ver informe",
-      "hideReport": "Ocultar informe"
+      "hideReport": "Ocultar informe",
+      "failedReason": {
+        "validation": "Todavía no hay suficiente evidencia de partidas para crear un informe verificado.",
+        "validationRefunded": "Se te devolvió el crédito."
+      }
     },
     "insufficientCredits": {
       "body": "Te has quedado sin créditos.",
@@ -3072,7 +3080,11 @@
       "failedPendingRefund": "Fallido — reembolsando tu crédito…",
       "refunded": "Fallido — se reembolsó tu crédito.",
       "viewPlan": "Ver plan",
-      "hidePlan": "Ocultar plan"
+      "hidePlan": "Ocultar plan",
+      "failedReason": {
+        "validation": "Todavía no hay suficiente evidencia de partidas para crear un plan de práctica verificado.",
+        "validationRefunded": "Se te devolvió el crédito."
+      }
     },
     "insufficientCredits": {
       "body": "Te has quedado sin créditos.",

@@ -1599,7 +1599,11 @@
       "badge": "Altbestand",
       "tooltip": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen.",
       "explain": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen."
-    }
+    },
+    "droppedClaims_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Bericht entfernt.",
+    "droppedClaims_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Bericht entfernt.",
+    "withheldProse_one": "Der Kommentar zu {{count}} Abschnitt wurde zurückgehalten, weil er sich nicht mit deinen Matchdaten abgleichen ließ.",
+    "withheldProse_other": "Die Kommentare zu {{count}} Abschnitten wurden zurückgehalten, weil sie sich nicht mit deinen Matchdaten abgleichen ließen."
   },
   "groups": {
     "title": "Gruppen",
@@ -2970,7 +2974,11 @@
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
       "viewReport": "Bericht ansehen",
-      "hideReport": "Bericht ausblenden"
+      "hideReport": "Bericht ausblenden",
+      "failedReason": {
+        "validation": "Es gibt noch nicht genug Matchdaten für einen geprüften Bericht.",
+        "validationRefunded": "Dein Credit wurde erstattet."
+      }
     },
     "insufficientCredits": {
       "body": "Du hast keine Credits mehr.",
@@ -3072,7 +3080,11 @@
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
       "viewPlan": "Plan ansehen",
-      "hidePlan": "Plan ausblenden"
+      "hidePlan": "Plan ausblenden",
+      "failedReason": {
+        "validation": "Es gibt noch nicht genug Matchdaten für einen geprüften Trainingsplan.",
+        "validationRefunded": "Dein Credit wurde erstattet."
+      }
     },
     "insufficientCredits": {
       "body": "Du hast keine Credits mehr.",

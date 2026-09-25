@@ -1599,7 +1599,11 @@
       "badge": "Hérité",
       "tooltip": "Généré avant l'arrivée du validateur de rapports de cette app — son contenu n'a pas été vérifié automatiquement par rapport à vos données de matchs.",
       "explain": "Généré avant l'arrivée du validateur de rapports de cette app — son contenu n'a pas été vérifié automatiquement par rapport à vos données de matchs."
-    }
+    },
+    "droppedClaims_one": "{{count}} affirmation n'a pas pu être vérifiée et a été retirée de ce rapport.",
+    "droppedClaims_other": "{{count}} affirmations n'ont pas pu être vérifiées et ont été retirées de ce rapport.",
+    "withheldProse_one": "Le commentaire de {{count}} section a été retenu, car il n'a pas pu être vérifié par rapport à vos données de matchs.",
+    "withheldProse_other": "Les commentaires de {{count}} sections ont été retenus, car ils n'ont pas pu être vérifiés par rapport à vos données de matchs."
   },
   "groups": {
     "title": "Groupes",
@@ -2970,7 +2974,11 @@
       "failedPendingRefund": "Échec — remboursement de votre crédit…",
       "refunded": "Échec — votre crédit a été remboursé.",
       "viewReport": "Voir le rapport",
-      "hideReport": "Masquer le rapport"
+      "hideReport": "Masquer le rapport",
+      "failedReason": {
+        "validation": "Il n'y a pas encore assez de données de matchs pour établir un rapport vérifié.",
+        "validationRefunded": "Votre crédit a été restitué."
+      }
     },
     "insufficientCredits": {
       "body": "Vous n'avez plus de crédits.",
@@ -3072,7 +3080,11 @@
       "failedPendingRefund": "Échec — remboursement de votre crédit…",
       "refunded": "Échec — votre crédit a été remboursé.",
       "viewPlan": "Voir le plan",
-      "hidePlan": "Masquer le plan"
+      "hidePlan": "Masquer le plan",
+      "failedReason": {
+        "validation": "Il n'y a pas encore assez de données de matchs pour établir un plan d'entraînement vérifié.",
+        "validationRefunded": "Votre crédit a été restitué."
+      }
     },
     "insufficientCredits": {
       "body": "Vous n'avez plus de crédits.",
