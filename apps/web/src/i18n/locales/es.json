@@ -1594,6 +1594,11 @@
       "matchupAdvisorPick": "Pick sugerido",
       "vodAnnotation": "Momentos del VOD",
       "cohortDisclosure": "Mezcla de sesiones"
+    },
+    "legacy": {
+      "badge": "Legado",
+      "tooltip": "Generado antes de que existiera el validador de informes de esta app: su contenido no se comprobó automáticamente con tus datos de partidas.",
+      "explain": "Generado antes de que existiera el validador de informes de esta app: su contenido no se comprobó automáticamente con tus datos de partidas."
     }
   },
   "groups": {

@@ -1594,6 +1594,11 @@
       "matchupAdvisorPick": "Suggested pick",
       "vodAnnotation": "VOD moments",
       "cohortDisclosure": "Session mix"
+    },
+    "legacy": {
+      "badge": "Legacy",
+      "tooltip": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data.",
+      "explain": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data."
     }
   },
   "groups": {

@@ -7,6 +7,7 @@ import type { ScoutReportRecord } from '@smash-tracker/shared';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { ClaimAtomLine } from '@/components/claims/ClaimAtomLine';
+import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
 import {
   isClaimsEraReport,
   resolveClaimSection,
@@ -139,6 +140,10 @@ function PrintClaimSection({
  * onto each claim's tier phrase), so its line — screen and print — renders
  * only when non-empty; the stage reasoning, which plan 39-06's projection
  * fills with the game-plan connective, is not restated on a claims-era record.
+ *
+ * Phase 39 (plan 39-10, RPT-10): a record that is not validated (no
+ * `claimSchemaVersion` / passed `validation` — see `isValidatedRecord`)
+ * carries the legacy provenance line under the "Generated" caption.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
   const { t } = useTranslation();
@@ -173,6 +178,11 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           <p className="text-xs text-muted-foreground">
             {t('scout.aiReport.generated', { rel: formatRelativeDate(record.createdAt, t) })}
           </p>
+          <LegacyReportBadge
+            variant="card"
+            claimSchemaVersion={report.claimSchemaVersion}
+            validation={report.validation}
+          />
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-wrap items-center gap-2">

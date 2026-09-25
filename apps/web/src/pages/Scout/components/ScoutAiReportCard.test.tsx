@@ -360,3 +360,36 @@ describe('PrepPaidReportsCard inherits the claim rendering through its reuse of 
     expect(document.querySelectorAll('[data-claim-id]').length).toBeGreaterThan(0);
   });
 });
+
+describe('ScoutAiReportCard — legacy provenance line (plan 39-10, RPT-10)', () => {
+  const EXPLAIN =
+    "Generated before this app's report validator existed — its content wasn't machine-checked against your match data.";
+
+  it('a legacy record (no claimSchemaVersion) shows the card-variant badge and its sentence under the Generated caption', () => {
+    const { container } = render(<ScoutAiReportCard record={RECORD} />);
+    const badge = container.querySelector('[data-legacy-report-badge="card"]');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveTextContent('Legacy');
+    expect(screen.getByText(EXPLAIN)).toBeInTheDocument();
+    // Directly under the "Generated" caption: the caption's next sibling holds the badge.
+    const generated = screen.getByText(/^Generated (?!before)/);
+    expect(generated.nextElementSibling?.contains(badge)).toBe(true);
+  });
+
+  it('a validated claims-era record shows neither the badge nor its sentence', () => {
+    const { container } = render(<ScoutAiReportCard record={CLAIMS_ERA_RECORD} />);
+    expect(container.querySelector('[data-legacy-report-badge]')).toBeNull();
+    expect(screen.queryByText('Legacy')).not.toBeInTheDocument();
+    expect(screen.queryByText(EXPLAIN)).not.toBeInTheDocument();
+  });
+
+  it('a half-written record (version present, validation block missing) is labelled legacy, never shown as validated', () => {
+    const halfWritten: ScoutReportRecord = {
+      ...CLAIMS_ERA_RECORD,
+      report: { ...CLAIMS_ERA_RECORD.report, validation: undefined },
+    };
+    render(<ScoutAiReportCard record={halfWritten} />);
+    expect(screen.getByText('Legacy')).toBeInTheDocument();
+    expect(screen.getByText(EXPLAIN)).toBeInTheDocument();
+  });
+});

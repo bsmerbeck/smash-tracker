@@ -1594,6 +1594,11 @@
       "matchupAdvisorPick": "Empfohlener Pick",
       "vodAnnotation": "VOD-Momente",
       "cohortDisclosure": "Session-Mix"
+    },
+    "legacy": {
+      "badge": "Altbestand",
+      "tooltip": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen.",
+      "explain": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen."
     }
   },
   "groups": {
