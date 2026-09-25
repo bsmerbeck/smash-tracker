@@ -769,12 +769,13 @@ describe('FighterAnalysisPage', () => {
       expect(status).toHaveTextContent('Loading fighter analysis...');
       expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
-      // The skeleton's grid spans (8, 4, 12, 12) mirror the loaded page's own
-      // hero(8)/rail(4)/vs-lists(12)/existing-cards(12) spans.
+      // The skeleton's grid spans (8, 4, 8, 12) mirror the loaded page's own
+      // hero(8)/rail(4)/vs-lists(8, plan 39.1-38: inside the hero column)/
+      // existing-cards(12) spans.
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+      expect(spans.sort()).toEqual(['12', '8', '4', '8'].sort());
     });
 
     it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
@@ -789,7 +790,7 @@ describe('FighterAnalysisPage', () => {
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '8'].sort());
+      expect(spans.sort()).toEqual(['12', '8', '4', '8'].sort());
     });
 
     it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
@@ -821,6 +822,89 @@ describe('FighterAnalysisPage', () => {
         const grid = container.querySelector('[data-slot="page-grid"]');
         expect(grid?.className).not.toMatch(/opacity-60/);
       });
+    });
+  });
+
+  // Plan 39.1-38 (design-audit items 6 and 4; UI-SPEC §8.1, §10.4; sketch
+  // 001-C `.filters` / `.duo`).
+  describe('plan 39.1-38: one unboxed filter row, and the vs lists inside the hero column', () => {
+    async function renderLoaded() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+      const result = renderFighterAnalysis();
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      return result;
+    }
+
+    it('the first child of the page shell is the page-filter-row holding the h1 and the HorizonSwitch; no card contains the h1', async () => {
+      const { container } = await renderLoaded();
+      const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+      expect(shell, 'page shell').not.toBeNull();
+      const row = shell.firstElementChild as HTMLElement;
+      expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+      const h1 = screen.getByRole('heading', { level: 1, name: 'Fighter Analysis' });
+      expect(row.contains(h1)).toBe(true);
+      expect(row.querySelector('[data-slot="horizon-switch"]')).not.toBeNull();
+      expect(h1.closest('[data-slot="card"]')).toBeNull();
+      expect(
+        container.querySelector('[data-slot="horizon-switch"]')?.closest('[data-slot="card"]'),
+      ).toBeNull();
+    });
+
+    it('the vs lists sit in an 8-col cell after the rail in DOM order, placed at lg in columns 1-8 of row 2; the rail spans rows 1-2', async () => {
+      const { container } = await renderLoaded();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      expect(grid.className.split(/\s+/)).toContain('lg:grid-rows-[auto_1fr]');
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const heroCell = cells.find((c) => c.querySelector('[data-slot="fighter-hero-body"]'))!;
+      const railCell = cells.find((c) => c.querySelector('[data-slot="insight-rail"]'))!;
+      const listsCell = cells.find((c) => c.querySelector('[data-slot="fighter-vs-lists"]'));
+      expect(listsCell, 'fighter-vs-lists cell').toBeDefined();
+      // DD-07: DOM order hero -> rail -> lists (the phone reading order).
+      expect(cells.indexOf(heroCell)).toBeLessThan(cells.indexOf(railCell));
+      expect(cells.indexOf(railCell)).toBeLessThan(cells.indexOf(listsCell!));
+
+      expect(heroCell.getAttribute('data-span')).toBe('8');
+      expect(heroCell.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-1']),
+      );
+      expect(railCell.getAttribute('data-span')).toBe('4');
+      expect(railCell.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-1', 'lg:row-span-2']),
+      );
+      expect(listsCell!.getAttribute('data-span')).toBe('8');
+      expect(listsCell!.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']),
+      );
+      // Placement never uses a CSS `order` utility (UI-SPEC §14.5).
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+    });
+
+    it('the vs-lists grid is one column and goes two-up on the named page container at 860px', async () => {
+      const { container } = await renderLoaded();
+      const lists = container.querySelector('[data-slot="fighter-vs-lists"]') as HTMLElement;
+      const classes = lists.className.split(/\s+/);
+      expect(classes).toEqual(
+        expect.arrayContaining(['grid-cols-1', '@min-[860px]/page:grid-cols-2']),
+      );
+      expect(classes).not.toContain('@container');
+      expect(lists.children).toHaveLength(2);
+    });
+
+    it('the loading skeleton uses the same placement classes as the loaded page', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderFighterAnalysis();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      expect(grid.className.split(/\s+/)).toContain('lg:grid-rows-[auto_1fr]');
+      const cells = Array.from(grid.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['8', '4', '8', '12']);
+      expect(cells[1].className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-1', 'lg:row-span-2']),
+      );
+      expect(cells[2].className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']),
+      );
     });
   });
 });

@@ -485,7 +485,10 @@ export function FighterAnalysisPage() {
 
           {/* UI-SPEC §8.1: the 2-up "vs characters" / "vs players" list pair, stacking below 860px (container). */}
           <GridCell span={12}>
-            <div className="@container grid grid-cols-1 gap-4 @[860px]:grid-cols-2">
+            <div
+              data-slot="fighter-vs-lists"
+              className="@container grid grid-cols-1 gap-4 @[860px]:grid-cols-2"
+            >
               <VsCharactersList fighterId={fighter.id} fighterMatches={fighterMatches} />
               <VsPlayersList
                 fighterId={fighter.id}

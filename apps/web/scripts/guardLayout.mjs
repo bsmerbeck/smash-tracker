@@ -49,6 +49,10 @@ import {
   evaluateFormStripFit,
   evaluateCareerTimeline,
   careerTimelineEdgeDeltas,
+  evaluateFilterRow,
+  evaluateStatRowColumns,
+  evaluatePlacement,
+  evaluateInsightOrder,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -85,7 +89,28 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-33: form-strip-fit — no extra viewport, no scroll budget.
     // Plan 39.1-37: axis-ticks (incl. reference-label-collision) on the hero's
     // period trend.
-    checks: ['form-strip-fit', 'axis-ticks'],
+    // Plan 39.1-38: filter-row (one unboxed row owning the h1 and the
+    // HorizonSwitch) and placement (sketch 001-C: the vs lists 2-up inside
+    // the hero's 8-col column, directly under the hero).
+    checks: ['form-strip-fit', 'axis-ticks', 'filter-row', 'placement'],
+    filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
+    placement: [
+      {
+        kind: 'within-column',
+        subject: '[data-slot="fighter-vs-lists"]',
+        // The hero column = the closest GridCell ([data-span]) of the hero body.
+        anchor: { closest: '[data-span]', of: '[data-slot="fighter-hero-body"]' },
+        gapPx: 16,
+      },
+      { kind: 'side-by-side', parent: '[data-slot="fighter-vs-lists"]', minPageWidthPx: 860 },
+    ],
+    // Plan 39.1-38: phone-only (DD-07 reading order hero -> rail -> lists; the
+    // plain two-column StatRow collapse).
+    narrowChecks: ['stat-row-columns', 'insight-order'],
+    orderPairs: [
+      { first: '[data-slot="fighter-hero-body"]', then: '[data-slot="insight-rail"]' },
+      { first: '[data-slot="insight-rail"]', then: '[data-slot="fighter-vs-lists"]' },
+    ],
   },
   {
     id: 'matchups',
@@ -211,7 +236,7 @@ function withHardTimeout(promise, ms, label, onTimeout) {
  * categories below are only collected — at real DOM/CSS-computation cost —
  * for a route that actually asked for them.
  */
-function collectPageMeasurements(checks, ceilingMarkers = []) {
+function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {}) {
   const wantContentOverflow = checks.includes('content-overflow');
   const wantHeaderSqueeze = checks.includes('header-squeeze');
   const wantAxisTicks = checks.includes('axis-ticks');
@@ -224,6 +249,11 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
   const wantFormStripFit = checks.includes('form-strip-fit');
   const wantCareerTimeline = checks.includes('career-timeline');
   const wantPlotAspect = checks.includes('plot-aspect');
+  // Plan 39.1-38: the page-frame families.
+  const wantFilterRow = checks.includes('filter-row');
+  const wantStatRowColumns = checks.includes('stat-row-columns');
+  const wantPlacement = checks.includes('placement');
+  const wantInsightOrder = checks.includes('insight-order');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -718,7 +748,119 @@ function collectPageMeasurements(checks, ceilingMarkers = []) {
     }
   }
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-38: the page-frame families — rects only, plus ONE
+  // getComputedStyle per filter-row node (its border widths).
+  // -------------------------------------------------------------------
+  const plainRect = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  };
+
+  const filterRows = [];
+  const filterRowOwnedInCards = [];
+  const filterRowOwners = (familyConfig.filterRow && familyConfig.filterRow.owns) || [];
+  if (wantFilterRow) {
+    for (const rowEl of document.querySelectorAll('[data-slot="page-filter-row"]')) {
+      const style = window.getComputedStyle(rowEl);
+      filterRows.push({
+        selectorPath: describeElement(rowEl),
+        borderWidths: [
+          parseFloat(style.borderTopWidth) || 0,
+          parseFloat(style.borderRightWidth) || 0,
+          parseFloat(style.borderBottomWidth) || 0,
+          parseFloat(style.borderLeftWidth) || 0,
+        ],
+        inCard: Boolean(rowEl.closest('[data-slot="card"]')),
+        height: rowEl.getBoundingClientRect().height,
+        ownedInside: filterRowOwners.filter((selector) => rowEl.querySelector(selector)),
+      });
+    }
+    for (const selector of filterRowOwners) {
+      for (const ownedEl of document.querySelectorAll(selector)) {
+        if (ownedEl.closest('[data-slot="card"]')) {
+          filterRowOwnedInCards.push({ selector, selectorPath: describeElement(ownedEl) });
+        }
+      }
+    }
+  }
+
+  const statRows = [];
+  if (wantStatRowColumns) {
+    for (const rowEl of document.querySelectorAll('[data-slot="stat-row"]')) {
+      statRows.push({
+        selectorPath: describeElement(rowEl),
+        fixedColumns: rowEl.hasAttribute('data-fixed-columns'),
+        leadSpan: rowEl.hasAttribute('data-lead-span'),
+        rowWidth: rowEl.getBoundingClientRect().width,
+        children: Array.from(rowEl.children).map((child) => {
+          const r = child.getBoundingClientRect();
+          return { left: r.left, width: r.width };
+        }),
+      });
+    }
+  }
+
+  const placementItems = [];
+  if (wantPlacement) {
+    const pageEl =
+      document.querySelector('[data-slot="page-shell"]') ||
+      document.querySelector('[data-slot="page-grid"]');
+    for (const decl of familyConfig.placement || []) {
+      if (decl.kind === 'within-column') {
+        const ofEl = document.querySelector(decl.anchor.of);
+        const anchorEl = ofEl ? ofEl.closest(decl.anchor.closest) : null;
+        placementItems.push({
+          kind: decl.kind,
+          subjectSelector: decl.subject,
+          subject: plainRect(document.querySelector(decl.subject)),
+          anchor: plainRect(anchorEl),
+          gapPx: decl.gapPx,
+        });
+      } else if (decl.kind === 'side-by-side') {
+        const parentEl = document.querySelector(decl.parent);
+        placementItems.push({
+          kind: decl.kind,
+          parentSelector: decl.parent,
+          children: parentEl ? Array.from(parentEl.children).map(plainRect) : [],
+          pageWidth: pageEl ? pageEl.getBoundingClientRect().width : null,
+          minPageWidthPx: decl.minPageWidthPx,
+        });
+      } else if (decl.kind === 'above') {
+        placementItems.push({
+          kind: decl.kind,
+          firstSelector: decl.first,
+          thenSelector: decl.then,
+          first: plainRect(document.querySelector(decl.first)),
+          then: plainRect(document.querySelector(decl.then)),
+        });
+      }
+    }
+  }
+
+  const orderPairs = [];
+  if (wantInsightOrder) {
+    const topOf = (selector) => {
+      const el = document.querySelector(selector);
+      return el ? el.getBoundingClientRect().top : null;
+    };
+    for (const pair of familyConfig.orderPairs || []) {
+      orderPairs.push({
+        first: pair.first,
+        then: pair.then,
+        firstTop: topOf(pair.first),
+        thenTop: topOf(pair.then),
+      });
+    }
+  }
+
   return {
+    filterRows,
+    filterRowOwnedInCards,
+    statRows,
+    placementItems,
+    orderPairs,
     timelines,
     canvasCount,
     cards,
@@ -785,7 +927,18 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         })
         .catch(() => {});
     }
-    const measurements = await page.evaluate(collectPageMeasurements, checks, ceilingMarkers);
+    // Plan 39.1-38: the page-frame families' per-route declarations.
+    const familyConfig = {
+      filterRow: route.filterRow ?? null,
+      placement: route.placement ?? [],
+      orderPairs: route.orderPairs ?? [],
+    };
+    const measurements = await page.evaluate(
+      collectPageMeasurements,
+      checks,
+      ceilingMarkers,
+      familyConfig,
+    );
 
     const violations = [
       ...evaluateStretch(measurements.cards),
@@ -882,6 +1035,31 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
           route.timelineExpect ?? {},
         ),
       );
+    }
+
+    // Plan 39.1-38: the page-frame families (each evaluator carries its own
+    // non-vacuity `-unmeasured` path).
+    if (checks.includes('filter-row')) {
+      violations.push(
+        ...evaluateFilterRow({
+          viewportWidth: viewport.width,
+          maxHeightPx: route.filterRow?.maxHeightPx,
+          owners: route.filterRow?.owns ?? [],
+          rows: measurements.filterRows,
+          ownedInCards: measurements.filterRowOwnedInCards,
+        }),
+      );
+    }
+    if (checks.includes('stat-row-columns')) {
+      violations.push(...evaluateStatRowColumns(measurements.statRows));
+    }
+    if (checks.includes('placement')) {
+      violations.push(
+        ...evaluatePlacement({ viewportWidth: viewport.width, items: measurements.placementItems }),
+      );
+    }
+    if (checks.includes('insight-order')) {
+      violations.push(...evaluateInsightOrder(measurements.orderPairs));
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own

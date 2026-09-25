@@ -933,3 +933,257 @@ export function evaluateCareerTimeline({ timelines, canvasCount }, expectation =
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-38: the page-frame oracle families — filter-row, stat-row-columns,
+// placement, insight-order. Same discipline as every family above: each
+// evaluator returns EVERY offender, and an opted-in route that measured
+// nothing reports `<family>-unmeasured` (never a silent pass).
+// ---------------------------------------------------------------------------
+
+/** UI-SPEC §10.4: the one filter row's height ceiling applies from this viewport width up. */
+export const FILTER_ROW_MIN_VIEWPORT_WIDTH_PX = 1024;
+/** Stat-row column clustering: child lefts within this many px are one column. */
+export const STAT_ROW_COLUMN_TOLERANCE_PX = 2;
+/** UI-SPEC §8.1 placement tolerance (column edges and the hero-to-lists gap). */
+export const PLACEMENT_TOLERANCE_PX = 2;
+/** UI-SPEC §6.1: placement is a desktop-composition rule, evaluated from `lg` (1024) up. */
+export const PLACEMENT_MIN_VIEWPORT_WIDTH_PX = 1024;
+
+function ownerViolationType(selector) {
+  if (/^h1\b/.test(selector)) return 'title-in-card';
+  if (selector.includes('horizon-switch')) return 'switch-in-card';
+  return 'owner-in-card';
+}
+
+/**
+ * UI-SPEC §6.1 / §10.4 (sketch 001-C / 002-C `.filters`): ONE unboxed filter
+ * row — no border, not inside a card, no card holding the page h1 or the
+ * HorizonSwitch, at most `maxHeightPx` tall at 1024+, and every declared owner
+ * (`owners`) rendered inside it. Input:
+ * `{ viewportWidth, maxHeightPx?, owners?, rows: [{ selectorPath, borderWidths:
+ * number[4], inCard, height, ownedInside?: string[] }], ownedInCards:
+ * [{ selector, selectorPath }] }`.
+ */
+export function evaluateFilterRow({
+  viewportWidth,
+  maxHeightPx,
+  owners = [],
+  rows,
+  ownedInCards = [],
+}) {
+  const violations = [];
+  if (rows.length === 0) {
+    violations.push({ type: 'filter-row-unmeasured' });
+  }
+  if (rows.length > 1) {
+    violations.push({ type: 'filter-row-duplicate', count: rows.length });
+  }
+  for (const row of rows) {
+    const { selectorPath } = row;
+    if (row.borderWidths.some((w) => w > 0)) {
+      violations.push({
+        type: 'filter-row-bordered',
+        selectorPath,
+        borderWidths: row.borderWidths,
+      });
+    }
+    if (row.inCard) {
+      violations.push({ type: 'filter-row-in-card', selectorPath });
+    }
+    if (
+      typeof maxHeightPx === 'number' &&
+      viewportWidth >= FILTER_ROW_MIN_VIEWPORT_WIDTH_PX &&
+      row.height > maxHeightPx
+    ) {
+      violations.push({ type: 'filter-row-tall', selectorPath, height: row.height, maxHeightPx });
+    }
+  }
+  if (rows.length > 0) {
+    const inside = new Set(rows.flatMap((row) => row.ownedInside ?? []));
+    for (const owner of owners) {
+      if (!inside.has(owner)) {
+        violations.push({ type: 'filter-row-missing-owner', owner });
+      }
+    }
+  }
+  for (const owned of ownedInCards) {
+    violations.push({
+      type: ownerViolationType(owned.selector),
+      selector: owned.selector,
+      selectorPath: owned.selectorPath,
+    });
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §6.6 / §7.3 (sketches 001-C / 003-A `.statrow`, 002-C `.statrow.kpi`):
+ * on a phone every StatRow without fixed columns is a PLAIN two-column grid —
+ * at most two distinct column lefts, and no first figure spanning the full
+ * row unless the row opted into the sketch 002-C lead span (`data-lead-span`).
+ * Each row: `{ selectorPath, fixedColumns, leadSpan, rowWidth, children:
+ * [{ left, width }] }`. Zero-width (hidden) children are ignored.
+ */
+export function evaluateStatRowColumns(rows, tolerancePx = STAT_ROW_COLUMN_TOLERANCE_PX) {
+  if (rows.length === 0) return [{ type: 'stat-row-columns-unmeasured' }];
+  const violations = [];
+  for (const row of rows) {
+    if (row.fixedColumns) continue;
+    const children = row.children.filter((child) => child.width > 0);
+    if (children.length < 2) continue;
+    const columnLefts = [];
+    for (const child of children) {
+      if (!columnLefts.some((left) => Math.abs(left - child.left) <= tolerancePx)) {
+        columnLefts.push(child.left);
+      }
+    }
+    if (columnLefts.length > 2) {
+      violations.push({
+        type: 'stat-row-columns',
+        selectorPath: row.selectorPath,
+        columns: columnLefts.length,
+      });
+    }
+    if (!row.leadSpan && children[0].width >= row.rowWidth - tolerancePx) {
+      violations.push({
+        type: 'stat-row-lead-span',
+        selectorPath: row.selectorPath,
+        leadWidth: children[0].width,
+        rowWidth: row.rowWidth,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §8.1 (sketch 001-C `.col-8` stack / `.duo`): desktop placement
+ * declarations, evaluated at 1024+ only. Kinds:
+ * - `within-column`: `{ subjectSelector, subject, anchor, gapPx }` — the
+ *   subject's left/right within 2px of the anchor column's, and its top
+ *   `gapPx` (±2) under the anchor's bottom.
+ * - `side-by-side`: `{ parentSelector, children, pageWidth, minPageWidthPx }` —
+ *   when the page is at least `minPageWidthPx` wide, every child's top within
+ *   2px of the first's.
+ * - `above`: `{ firstSelector, thenSelector, first, then }` — `first` starts
+ *   above `then` (a desktop composition kept by grid placement, plan 39.1-38
+ *   Task 3).
+ * A missing rect (or fewer than two side-by-side children) is
+ * `placement-unmeasured`; an empty declaration list is exactly one.
+ */
+export function evaluatePlacement({ viewportWidth, items }, tolerancePx = PLACEMENT_TOLERANCE_PX) {
+  if (viewportWidth < PLACEMENT_MIN_VIEWPORT_WIDTH_PX) return [];
+  if (items.length === 0) return [{ type: 'placement-unmeasured' }];
+  const violations = [];
+  for (const item of items) {
+    if (item.kind === 'within-column') {
+      const { subject, anchor, subjectSelector } = item;
+      if (!subject || !anchor) {
+        violations.push({
+          type: 'placement-unmeasured',
+          kind: item.kind,
+          selector: subjectSelector,
+        });
+        continue;
+      }
+      if (
+        Math.abs(subject.left - anchor.left) > tolerancePx ||
+        Math.abs(subject.right - anchor.right) > tolerancePx
+      ) {
+        violations.push({
+          type: 'placement-column',
+          selectorPath: subjectSelector,
+          subject: { left: subject.left, right: subject.right },
+          anchor: { left: anchor.left, right: anchor.right },
+        });
+      }
+      const gap = subject.top - anchor.bottom;
+      if (Math.abs(gap - item.gapPx) > tolerancePx) {
+        violations.push({
+          type: 'placement-gap',
+          selectorPath: subjectSelector,
+          gap,
+          expected: item.gapPx,
+        });
+      }
+    } else if (item.kind === 'side-by-side') {
+      const { children, parentSelector } = item;
+      if (!children || children.length < 2 || typeof item.pageWidth !== 'number') {
+        violations.push({
+          type: 'placement-unmeasured',
+          kind: item.kind,
+          selector: parentSelector,
+        });
+        continue;
+      }
+      if (item.pageWidth < item.minPageWidthPx) continue;
+      const firstTop = children[0].top;
+      if (children.some((child) => Math.abs(child.top - firstTop) > tolerancePx)) {
+        violations.push({
+          type: 'placement-not-side-by-side',
+          selectorPath: parentSelector,
+          tops: children.map((child) => child.top),
+          pageWidth: item.pageWidth,
+        });
+      }
+    } else if (item.kind === 'above') {
+      const { first, then, firstSelector, thenSelector } = item;
+      if (!first || !then) {
+        violations.push({
+          type: 'placement-unmeasured',
+          kind: item.kind,
+          selector: first ? thenSelector : firstSelector,
+        });
+        continue;
+      }
+      if (first.top >= then.top) {
+        violations.push({
+          type: 'placement-not-above',
+          selectorPath: firstSelector,
+          first: firstSelector,
+          then: thenSelector,
+          firstTop: first.top,
+          thenTop: then.top,
+        });
+      }
+    } else {
+      violations.push({ type: 'placement-unmeasured', kind: item.kind });
+    }
+  }
+  return violations;
+}
+
+/**
+ * UI-SPEC §8.2 / §8.4 "insight before chart" (phone reading order): each
+ * declared pair `{ first, then, firstTop, thenTop }` must render `first` no
+ * lower than `then`. A declared selector that matched nothing (`null` top) is
+ * `insight-order-unmeasured` naming it; an empty pair list is exactly one.
+ */
+export function evaluateInsightOrder(pairs) {
+  if (pairs.length === 0) return [{ type: 'insight-order-unmeasured' }];
+  const violations = [];
+  for (const pair of pairs) {
+    const missing =
+      pair.firstTop === null || pair.firstTop === undefined
+        ? pair.first
+        : pair.thenTop === null || pair.thenTop === undefined
+          ? pair.then
+          : null;
+    if (missing) {
+      violations.push({ type: 'insight-order-unmeasured', missing, selectorPath: missing });
+      continue;
+    }
+    if (pair.firstTop > pair.thenTop) {
+      violations.push({
+        type: 'insight-order',
+        selectorPath: pair.first,
+        first: pair.first,
+        then: pair.then,
+        firstTop: pair.firstTop,
+        thenTop: pair.thenTop,
+      });
+    }
+  }
+  return violations;
+}

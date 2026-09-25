@@ -159,3 +159,70 @@ describe('StatFigure', () => {
     expect(screen.getByText('18')).toBeInTheDocument();
   });
 });
+
+/**
+ * Plan 39.1-38 (design-audit item 9 / P6; UI-SPEC §6.6, §7.3; sketches 001-C /
+ * 003-A `.statrow`, 002-C `.statrow.kpi .lead`). Root cause (real Chrome,
+ * recorded in 39.1-38-SUMMARY): the row was its OWN `@container`, and an
+ * element never queries itself — its `@max-[860px]:grid-cols-2` resolved
+ * against ancestors (none are containers) and never applied, while the
+ * first-child span resolved against the row and did. The collapse now keys on
+ * PageShell's NAMED `page` container. A StatRow outside any PageShell keeps
+ * its N columns because a named container query (`@container page (...)`)
+ * cannot match without an ancestor named `page` — the base N-column template
+ * is the only rule that applies there.
+ */
+describe('StatRow — the page-container collapse contract (plan 39.1-38)', () => {
+  const four = [
+    <StatFigure key="a" label="Win rate" value="52%" lead />,
+    <StatFigure key="b" label="Games" value="40" />,
+    <StatFigure key="c" label="Record" value="21-19" />,
+    <StatFigure key="d" label="90 days" value="48%" />,
+  ];
+
+  it('collapses to a PLAIN two-column grid on the named page container, with no first-child span', () => {
+    const { container } = render(<StatRow leadWidth figures={four} />);
+    const grid = container.firstElementChild as HTMLElement;
+    const classes = grid.className.split(/\s+/);
+    expect(classes).toContain('@max-[860px]/page:grid-cols-2');
+    expect(grid.className).not.toMatch(/col-span-2/);
+    expect(classes).not.toContain('@max-[860px]:grid-cols-2');
+    expect(grid).not.toHaveAttribute('data-lead-span');
+  });
+
+  it('keeps its N-column base template for a StatRow outside any PageShell (the collapse is only a named-container variant)', () => {
+    const { container } = render(<StatRow figures={four} />);
+    const grid = container.firstElementChild as HTMLElement;
+    const classes = grid.className.split(/\s+/);
+    expect(classes).toContain('grid-cols-4');
+    // Every two-column rule is a `/page` container variant, never a bare class.
+    expect(classes.filter((c) => c.endsWith('grid-cols-2'))).toEqual([
+      '@max-[860px]/page:grid-cols-2',
+    ]);
+  });
+
+  it('fixedColumns still omits the collapse', () => {
+    const { container } = render(
+      <StatRow
+        fixedColumns
+        figures={[
+          <StatFigure key="a" label="W" value="1" />,
+          <StatFigure key="b" label="L" value="2" />,
+          <StatFigure key="c" label="N" value="3" />,
+        ]}
+      />,
+    );
+    const grid = container.firstElementChild as HTMLElement;
+    expect(grid.className).not.toMatch(/\/page:grid-cols-2/);
+    expect(grid).toHaveAttribute('data-fixed-columns', '');
+  });
+
+  it('leadSpanOnPhone (sketch 002-C KPI row only) spans the lead across both columns under the collapse and renders data-lead-span', () => {
+    const { container } = render(<StatRow leadWidth leadSpanOnPhone figures={four} />);
+    const grid = container.firstElementChild as HTMLElement;
+    const classes = grid.className.split(/\s+/);
+    expect(classes).toContain('@max-[860px]/page:grid-cols-2');
+    expect(classes).toContain('@max-[860px]/page:[&>*:first-child]:col-span-2');
+    expect(grid).toHaveAttribute('data-lead-span', '');
+  });
+});

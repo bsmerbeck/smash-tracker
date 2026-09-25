@@ -1510,3 +1510,399 @@ test('plot-aspect: no surface at all on an opted route is plot-aspect-unmeasured
   assert.equal(violations.length, 1);
   assert.equal(violations[0].type, 'plot-aspect-unmeasured');
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-38: the page-frame oracle families — filter-row, stat-row-columns,
+// placement, insight-order. Read through the namespace so a RED run fails on
+// an assertion instead of a module-link error.
+// ---------------------------------------------------------------------------
+
+const ns38 = guardLayoutCoreNs;
+function fn38(name) {
+  const f = ns38[name];
+  assert.equal(typeof f, 'function', `${name} is exported`);
+  return f;
+}
+const cleanRow = (overrides = {}) => ({
+  selectorPath: '#row',
+  borderWidths: [0, 0, 0, 0],
+  inCard: false,
+  height: 56,
+  ...overrides,
+});
+
+test('filter-row: a clean unboxed row at 1440 passes', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    maxHeightPx: 72,
+    rows: [cleanRow({ ownedInside: ['h1', '[data-slot="horizon-switch"]'] })],
+    owners: ['h1', '[data-slot="horizon-switch"]'],
+    ownedInCards: [],
+  });
+  assert.deepEqual(v, []);
+});
+
+test('filter-row: any non-zero border width is filter-row-bordered', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [cleanRow({ borderWidths: [0, 0, 1, 0] })],
+    ownedInCards: [],
+  });
+  assert.deepEqual(typesOf(v), ['filter-row-bordered']);
+});
+
+test('filter-row: a row inside a card is filter-row-in-card', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [cleanRow({ inCard: true })],
+    ownedInCards: [],
+  });
+  assert.deepEqual(typesOf(v), ['filter-row-in-card']);
+});
+
+test('filter-row: a card holding the page h1 and one holding the horizon switch are title-in-card + switch-in-card', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [cleanRow()],
+    ownedInCards: [
+      { selector: 'h1', selectorPath: 'h1' },
+      { selector: '[data-slot="horizon-switch"]', selectorPath: 'div' },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['title-in-card', 'switch-in-card']);
+});
+
+test('filter-row: 72px at 1024 passes, 73px fails filter-row-tall, 73px at 1023 is not evaluated', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const at = (viewportWidth, height) =>
+    evaluateFilterRow({
+      viewportWidth,
+      maxHeightPx: 72,
+      rows: [cleanRow({ height })],
+      ownedInCards: [],
+    });
+  assert.deepEqual(at(1024, 72), []);
+  assert.deepEqual(typesOf(at(1024, 73)), ['filter-row-tall']);
+  assert.deepEqual(at(1023, 73), []);
+});
+
+test('filter-row: no maxHeightPx declared means no height limit', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [cleanRow({ height: 140 })],
+    ownedInCards: [],
+  });
+  assert.deepEqual(v, []);
+});
+
+test('filter-row: two rows are filter-row-duplicate, and every offender on both rows is returned', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [
+      cleanRow({ inCard: true }),
+      cleanRow({ selectorPath: '#b', borderWidths: [1, 1, 1, 1] }),
+    ],
+    ownedInCards: [],
+  });
+  assert.deepEqual(
+    typesOf(v).sort(),
+    ['filter-row-bordered', 'filter-row-duplicate', 'filter-row-in-card'].sort(),
+  );
+});
+
+test('filter-row: a declared owner rendered outside the row is filter-row-missing-owner', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [cleanRow({ ownedInside: ['[data-slot="horizon-switch"]'] })],
+    owners: ['h1', '[data-slot="horizon-switch"]'],
+    ownedInCards: [],
+  });
+  assert.deepEqual(typesOf(v), ['filter-row-missing-owner']);
+  assert.equal(v[0].owner, 'h1');
+});
+
+test('filter-row: no row at all is exactly one filter-row-unmeasured (plus the in-card owners it did find)', () => {
+  const evaluateFilterRow = fn38('evaluateFilterRow');
+  assert.deepEqual(
+    typesOf(evaluateFilterRow({ viewportWidth: 1440, rows: [], ownedInCards: [] })),
+    ['filter-row-unmeasured'],
+  );
+  const v = evaluateFilterRow({
+    viewportWidth: 1440,
+    rows: [],
+    owners: ['h1', '[data-slot="horizon-switch"]'],
+    ownedInCards: [
+      { selector: 'h1', selectorPath: 'h1' },
+      { selector: '[data-slot="horizon-switch"]', selectorPath: 'div' },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['filter-row-unmeasured', 'title-in-card', 'switch-in-card']);
+});
+
+const statRow = (lefts, overrides = {}) => ({
+  selectorPath: '#stat',
+  fixedColumns: false,
+  leadSpan: false,
+  rowWidth: 340,
+  children: lefts.map((left) => ({ left, width: 158 })),
+  ...overrides,
+});
+
+test('stat-row-columns: children at lefts 0 / 180 / 360 at 390 are one stat-row-columns violation (3 columns)', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  const v = evaluateStatRowColumns([statRow([0, 180, 360])]);
+  assert.deepEqual(typesOf(v), ['stat-row-columns']);
+  assert.equal(v[0].columns, 3);
+});
+
+test('stat-row-columns: a plain 2 x 2 grid (0 / 180 / 0 / 180) passes', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  assert.deepEqual(evaluateStatRowColumns([statRow([0, 180, 0, 180])]), []);
+});
+
+test('stat-row-columns: lefts within 2px are one column (0 / 181.5 / 1 / 180 passes)', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  assert.deepEqual(evaluateStatRowColumns([statRow([0, 181.5, 1, 180])]), []);
+});
+
+test('stat-row-columns: a data-fixed-columns row is skipped', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  assert.deepEqual(evaluateStatRowColumns([statRow([0, 110, 220], { fixedColumns: true })]), []);
+});
+
+test('stat-row-columns: a first child spanning the full row is stat-row-lead-span unless the row carries data-lead-span', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  const spanning = (leadSpan) =>
+    statRow([0, 0, 180, 0, 180], { leadSpan }).children.map((c, i) =>
+      i === 0 ? { ...c, width: 340 } : c,
+    );
+  const row = (leadSpan) => ({ ...statRow([], { leadSpan }), children: spanning(leadSpan) });
+  assert.deepEqual(typesOf(evaluateStatRowColumns([row(false)])), ['stat-row-lead-span']);
+  assert.deepEqual(evaluateStatRowColumns([row(true)]), []);
+});
+
+test('stat-row-columns: multi-offender input returns every offender; zero-width (hidden) children are ignored', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  const hidden = statRow([0, 180]);
+  hidden.children.push({ left: 400, width: 0 });
+  const v = evaluateStatRowColumns([
+    statRow([0, 90, 180, 270], { selectorPath: '#a' }),
+    statRow([0, 110, 220], { selectorPath: '#b' }),
+    hidden,
+  ]);
+  assert.deepEqual(
+    v.map((x) => x.selectorPath),
+    ['#a', '#b'],
+  );
+});
+
+test('stat-row-columns: no stat row at all is exactly one stat-row-columns-unmeasured', () => {
+  const evaluateStatRowColumns = fn38('evaluateStatRowColumns');
+  assert.deepEqual(typesOf(evaluateStatRowColumns([])), ['stat-row-columns-unmeasured']);
+});
+
+const rect = (left, right, top, bottom) => ({ left, right, top, bottom });
+
+test('placement: a subject within 2px of its anchor column with a grid-gap top passes', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 1440,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: rect(26, 958, 616, 900),
+        anchor: rect(25, 960, 100, 600),
+        gapPx: 16,
+      },
+    ],
+  });
+  assert.deepEqual(v, []);
+});
+
+test('placement: 3px out of the anchor column is placement-column', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 1440,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: rect(25, 963, 616, 900),
+        anchor: rect(25, 960, 100, 600),
+        gapPx: 16,
+      },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['placement-column']);
+});
+
+test('placement: a full-width subject under an 8-col anchor with a larger gap is placement-column + placement-gap', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 1440,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: rect(25, 1415, 1200, 1500),
+        anchor: rect(25, 960, 100, 600),
+        gapPx: 16,
+      },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['placement-column', 'placement-gap']);
+});
+
+test('placement: gap 18 passes (16 plus 2), gap 18.5 fails placement-gap', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const at = (top) =>
+    evaluatePlacement({
+      viewportWidth: 1440,
+      items: [
+        {
+          kind: 'within-column',
+          subjectSelector: '#lists',
+          subject: rect(25, 960, top, top + 200),
+          anchor: rect(25, 960, 100, 600),
+          gapPx: 16,
+        },
+      ],
+    });
+  assert.deepEqual(at(618), []);
+  assert.deepEqual(typesOf(at(618.5)), ['placement-gap']);
+});
+
+test('placement: two list cards with tops 2px apart pass, 3px apart fail placement-not-side-by-side (page at least 860)', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const at = (secondTop, pageWidth) =>
+    evaluatePlacement({
+      viewportWidth: 1440,
+      items: [
+        {
+          kind: 'side-by-side',
+          parentSelector: '#lists',
+          children: [rect(0, 400, 600, 800), rect(416, 816, secondTop, 900)],
+          pageWidth,
+          minPageWidthPx: 860,
+        },
+      ],
+    });
+  assert.deepEqual(at(602, 1390), []);
+  assert.deepEqual(typesOf(at(603, 1390)), ['placement-not-side-by-side']);
+  assert.deepEqual(at(1000, 859), []);
+});
+
+test('placement: under 1024 wide nothing is evaluated', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 390,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: rect(0, 390, 2000, 2400),
+        anchor: rect(0, 390, 0, 600),
+        gapPx: 16,
+      },
+    ],
+  });
+  assert.deepEqual(v, []);
+});
+
+test('placement: multi-offender input returns every offender', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  const v = evaluatePlacement({
+    viewportWidth: 2560,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: rect(25, 1415, 1200, 1500),
+        anchor: rect(25, 960, 100, 600),
+        gapPx: 16,
+      },
+      {
+        kind: 'side-by-side',
+        parentSelector: '#lists',
+        children: [rect(0, 400, 600, 800), rect(0, 400, 820, 900)],
+        pageWidth: 1440,
+        minPageWidthPx: 860,
+      },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['placement-column', 'placement-gap', 'placement-not-side-by-side']);
+});
+
+test('placement: a missing subject or anchor, or fewer than two side-by-side children, is placement-unmeasured; empty input is exactly one', () => {
+  const evaluatePlacement = fn38('evaluatePlacement');
+  assert.deepEqual(typesOf(evaluatePlacement({ viewportWidth: 1440, items: [] })), [
+    'placement-unmeasured',
+  ]);
+  const v = evaluatePlacement({
+    viewportWidth: 1440,
+    items: [
+      {
+        kind: 'within-column',
+        subjectSelector: '#lists',
+        subject: null,
+        anchor: rect(0, 1, 0, 1),
+        gapPx: 16,
+      },
+      {
+        kind: 'side-by-side',
+        parentSelector: '#lists',
+        children: [rect(0, 1, 0, 1)],
+        pageWidth: 1440,
+        minPageWidthPx: 860,
+      },
+    ],
+  });
+  assert.deepEqual(typesOf(v), ['placement-unmeasured', 'placement-unmeasured']);
+});
+
+test('insight-order: first.top greater than then.top is one insight-order violation', () => {
+  const evaluateInsightOrder = fn38('evaluateInsightOrder');
+  const v = evaluateInsightOrder([
+    { first: '#reads', then: '#chart', firstTop: 900, thenTop: 400 },
+  ]);
+  assert.deepEqual(typesOf(v), ['insight-order']);
+  assert.equal(v[0].first, '#reads');
+});
+
+test('insight-order: equal or smaller tops pass', () => {
+  const evaluateInsightOrder = fn38('evaluateInsightOrder');
+  assert.deepEqual(
+    evaluateInsightOrder([
+      { first: '#a', then: '#b', firstTop: 400, thenTop: 400 },
+      { first: '#b', then: '#c', firstTop: 400, thenTop: 900 },
+    ]),
+    [],
+  );
+});
+
+test('insight-order: multi-offender input returns every offender', () => {
+  const evaluateInsightOrder = fn38('evaluateInsightOrder');
+  const v = evaluateInsightOrder([
+    { first: '#a', then: '#b', firstTop: 900, thenTop: 400 },
+    { first: '#c', then: '#d', firstTop: 901, thenTop: 900 },
+  ]);
+  assert.deepEqual(typesOf(v), ['insight-order', 'insight-order']);
+});
+
+test('insight-order: a declared selector matching nothing is insight-order-unmeasured naming it; empty input is exactly one', () => {
+  const evaluateInsightOrder = fn38('evaluateInsightOrder');
+  const v = evaluateInsightOrder([
+    { first: '#reads', then: '#chart', firstTop: null, thenTop: 10 },
+  ]);
+  assert.deepEqual(typesOf(v), ['insight-order-unmeasured']);
+  assert.equal(v[0].missing, '#reads');
+  assert.deepEqual(typesOf(evaluateInsightOrder([])), ['insight-order-unmeasured']);
+});
