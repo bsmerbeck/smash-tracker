@@ -3,7 +3,7 @@ import { computeRatingHistory, splitIntoSessions, type RatingPeriodResult } from
 import { resolveWindow, toRateValue } from './horizon.js';
 import { MARK_BOUND_HEAT_CELLS, MARK_BOUND_LINE_POINTS } from './markBounds.js';
 import { calendarBucketBounds, type CalendarGrain } from './periodSeries.js';
-import { SUGGESTION_MIN_GAMES, TREND_MIN_RECENT_GAMES } from './policy.js';
+import { HORIZON_COLLAPSE_RATIO, SUGGESTION_MIN_GAMES, TREND_MIN_RECENT_GAMES } from './policy.js';
 import type { HorizonKey, InsightWindow, RateValue } from './types.js';
 
 /**
@@ -134,7 +134,15 @@ export interface BuildCareerTimelineOptions {
   matches: Match[];
   horizon: HorizonKey;
   nowMs: number;
+  /** The rating line's point bound — defaults to `MARK_BOUND_LINE_POINTS` (UI-SPEC §11). Tests pass a smaller one to walk the ladder on small fixtures. */
+  lineTarget?: number;
 }
+
+/** A single-instant account's domain is widened by this much each side so its one x position has a span to sit in. */
+const SINGLE_INSTANT_DOMAIN_PAD_MS = 12 * 60 * 60 * 1000;
+
+/** At or below this many rating points the line names no low (sketch 002: `pts.length > 4`). */
+const LOW_LABEL_MIN_POINTS = 4;
 
 /**
  * Sketch 002's `stepFor`: the rate cell's diverging step. A cell under
@@ -219,11 +227,11 @@ function calendarPoints(
     else record.losses += 1;
     recordByKey.set(key, record);
   }
-  const points: CareerRatingPoint[] = [];
+  const unsorted: CareerRatingPoint[] = [];
   for (const close of lastCloseByKey.values()) {
     const bounds = calendarBucketBounds(grain, close.lastMs);
     const record = recordByKey.get(bounds.key) ?? { wins: 0, losses: 0 };
-    points.push({
+    unsorted.push({
       key: bounds.key,
       label: bounds.label,
       startMs: bounds.startMs,
@@ -237,7 +245,21 @@ function calendarPoints(
       gapBefore: false,
     });
   }
-  return points.sort((a, b) => a.startMs - b.startMs);
+  const points = unsorted.sort((a, b) => a.startMs - b.startMs);
+  // UI-SPEC §12.1 "a calendar period with no games breaks the line": walk the
+  // buckets strictly between two consecutive points; any bucket with no game
+  // at all breaks the line before the later point. (A bucket WITH games but no
+  // session closing inside it — a month bridged by a straddling session — is
+  // not a gap.)
+  return points.map((point, i) => {
+    if (i === 0) return point;
+    let bucket = calendarBucketBounds(grain, points[i - 1]!.endMs);
+    while (bucket.startMs < point.startMs) {
+      if (!recordByKey.has(bucket.key)) return { ...point, gapBefore: true };
+      bucket = calendarBucketBounds(grain, bucket.endMs);
+    }
+    return point;
+  });
 }
 
 function pointsForGrain(
@@ -248,7 +270,7 @@ function pointsForGrain(
   return grain === 'session' ? sessionPoints(closes) : calendarPoints(grain, closes, matches);
 }
 
-function buildRatingSeries(matches: Match[]): CareerRatingSeries {
+function buildRatingSeries(matches: Match[], lineTarget: number): CareerRatingSeries {
   const history = computeRatingHistory(matches);
   // `computeRatingHistory` maps sessions 1:1 onto rating periods through the
   // same `splitIntoSessions` rule (3h gap), so the two zip by index.
@@ -260,20 +282,35 @@ function buildRatingSeries(matches: Match[]): CareerRatingSeries {
     period: history.periods[i]!,
   }));
 
+  // VIZ-01: the finest grain whose close count fits the bound. The last grain
+  // that did NOT fit is kept for the caption ("a monthly line would draw N
+  // points") — `null` when the finest grain (session) already fits.
   let grain: CareerRatingGrain = RATING_LADDER[0]!;
   let points: CareerRatingPoint[] = [];
+  let finerGrainPointCount: number | null = null;
   for (const candidate of RATING_LADDER) {
+    const candidatePoints = pointsForGrain(candidate, closes, matches);
+    if (candidate !== RATING_LADDER[0]) finerGrainPointCount = points.length;
     grain = candidate;
-    points = pointsForGrain(candidate, closes, matches);
-    if (points.length <= MARK_BOUND_LINE_POINTS) break;
+    points = candidatePoints;
+    if (points.length <= lineTarget) break;
   }
 
-  let peakIndex: number | null = null;
-  let lowIndex: number | null = null;
+  // Sketch 002's direct-label rule: last, peak and low — the peak / low keep
+  // the EARLIER point on a tie, and a label that would repeat the last point
+  // (or the peak) is dropped; no low on a line of 4 or fewer points.
+  let peak: number | null = null;
+  let low: number | null = null;
   points.forEach((point, i) => {
-    if (peakIndex === null || point.rating > points[peakIndex]!.rating) peakIndex = i;
-    if (lowIndex === null || point.rating < points[lowIndex]!.rating) lowIndex = i;
+    if (peak === null || point.rating > points[peak]!.rating) peak = i;
+    if (low === null || point.rating < points[low]!.rating) low = i;
   });
+  const lastIndex = points.length > 0 ? points.length - 1 : null;
+  const peakIndex = peak !== null && peak !== lastIndex ? peak : null;
+  const lowIndex =
+    low !== null && low !== lastIndex && low !== peak && points.length > LOW_LABEL_MIN_POINTS
+      ? low
+      : null;
 
   return {
     grain,
@@ -281,16 +318,32 @@ function buildRatingSeries(matches: Match[]): CareerRatingSeries {
     current: history.current ? { rating: history.current.rating, rd: history.current.rd } : null,
     peakIndex,
     lowIndex,
-    lastIndex: points.length > 0 ? points.length - 1 : null,
+    lastIndex,
     sessionCount: sessions.length,
-    finerGrainPointCount: null,
+    finerGrainPointCount,
   };
+}
+
+/**
+ * The rating close in force at a strip cell: the LAST rating point starting at
+ * or before the cell's last instant — `null` for a cell before the first
+ * point (the line has not started yet).
+ */
+function ratingInForce(points: CareerRatingPoint[], cellEndMs: number): CareerRatingAtClose | null {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i]!;
+    if (point.startMs <= cellEndMs - 1) {
+      return { key: point.key, label: point.label, rating: point.rating, rd: point.rd };
+    }
+  }
+  return null;
 }
 
 function stripCellsForGrain(
   grain: CareerStripGrain,
   matches: Match[],
   baselineRate: number,
+  ratingPoints: CareerRatingPoint[],
 ): CareerStripSet {
   const byKey = new Map<
     string,
@@ -323,46 +376,64 @@ function stripCellsForGrain(
       rateStep: step,
       rateStepReason: reason,
       gamesStep: careerGamesStep({ total, maxTotal }),
-      ratingAtClose: null,
+      ratingAtClose: ratingInForce(ratingPoints, cell.endMs),
     };
   });
   return { grain, cells, maxTotal };
 }
 
-function stripSetFromLadder(
-  ladder: readonly CareerStripGrain[],
-  bound: number,
-  matches: Match[],
-  baselineRate: number,
-): CareerStripSet {
-  let set = stripCellsForGrain(ladder[0]!, matches, baselineRate);
-  for (const grain of ladder) {
-    set = stripCellsForGrain(grain, matches, baselineRate);
+function stripSetFromLadder(input: {
+  ladder: readonly CareerStripGrain[];
+  bound: number;
+  matches: Match[];
+  baselineRate: number;
+  ratingPoints: CareerRatingPoint[];
+}): CareerStripSet {
+  const { ladder, bound, matches, baselineRate, ratingPoints } = input;
+  let set = stripCellsForGrain(ladder[0]!, matches, baselineRate, ratingPoints);
+  for (const grain of ladder.slice(1)) {
     if (set.cells.length <= bound) break;
+    set = stripCellsForGrain(grain, matches, baselineRate, ratingPoints);
   }
   return set;
 }
 
+/** First game to last game; a single instant is widened by 12h each side. `null` without games. */
+function domainOf(matches: Match[]): { startMs: number; endMs: number } | null {
+  if (matches.length === 0) return null;
+  let startMs = matches[0]!.time;
+  let endMs = matches[0]!.time;
+  for (const match of matches) {
+    if (match.time < startMs) startMs = match.time;
+    if (match.time > endMs) endMs = match.time;
+  }
+  return startMs === endMs
+    ? {
+        startMs: startMs - SINGLE_INSTANT_DOMAIN_PAD_MS,
+        endMs: endMs + SINGLE_INSTANT_DOMAIN_PAD_MS,
+      }
+    : { startMs, endMs };
+}
+
 /**
- * VIZ-01 / UI-SPEC §12.1: bins an account's games into the career timeline
- * — the chart never bins. Pure over `matches` (never mutated); memoise at the
- * call site by the matches array reference.
+ * VIZ-01 / UI-SPEC §12.1: bins an account's games into the career timeline.
+ * The chart never bins — every point, cell, step, gap, label index and the
+ * recent-window band are final here. The recent window reuses
+ * `resolveWindow` (the D-06 horizons' one source of truth) and is `null`
+ * when the horizon holds no game or covers `HORIZON_COLLAPSE_RATIO` of the
+ * account (the horizons collapse into one figure, D-06 — no band). Pure over
+ * `matches` (never mutated); memoise at the call site by the matches array
+ * reference.
  */
 export function buildCareerTimeline(options: BuildCareerTimelineOptions): CareerTimeline {
-  const { matches, horizon, nowMs } = options;
+  const { matches, horizon, nowMs, lineTarget = MARK_BOUND_LINE_POINTS } = options;
   const baseline = toRateValue(matches);
   const gamesNeeded = Math.max(0, CAREER_TIMELINE_MIN_GAMES - matches.length);
 
   if (matches.length < CAREER_TIMELINE_MIN_GAMES) {
     return {
       state: 'locked',
-      domain:
-        matches.length > 0
-          ? {
-              startMs: Math.min(...matches.map((m) => m.time)),
-              endMs: Math.max(...matches.map((m) => m.time)),
-            }
-          : null,
+      domain: domainOf(matches),
       baseline,
       rating: {
         grain: 'session',
@@ -380,45 +451,44 @@ export function buildCareerTimeline(options: BuildCareerTimelineOptions): Career
     };
   }
 
-  let startMs = matches[0]!.time;
-  let endMs = matches[0]!.time;
   const months = new Set<string>();
   for (const match of matches) {
-    if (match.time < startMs) startMs = match.time;
-    if (match.time > endMs) endMs = match.time;
     months.add(calendarBucketBounds('month', match.time).key);
   }
   const state: CareerTimelineState =
     months.size < CAREER_TIMELINE_MIN_STRIP_MONTHS ? 'thin' : 'full';
 
-  const rating = buildRatingSeries(matches);
+  const rating = buildRatingSeries(matches, lineTarget);
   const strips =
     state === 'full'
       ? {
-          wide: stripSetFromLadder(
-            WIDE_STRIP_LADDER,
-            MARK_BOUND_HEAT_CELLS,
+          wide: stripSetFromLadder({
+            ladder: WIDE_STRIP_LADDER,
+            bound: MARK_BOUND_HEAT_CELLS,
             matches,
-            baseline.rate,
-          ),
-          narrow: stripSetFromLadder(
-            NARROW_STRIP_LADDER,
-            CAREER_TIMELINE_NARROW_STRIP_CELLS,
+            baselineRate: baseline.rate,
+            ratingPoints: rating.points,
+          }),
+          narrow: stripSetFromLadder({
+            ladder: NARROW_STRIP_LADDER,
+            bound: CAREER_TIMELINE_NARROW_STRIP_CELLS,
             matches,
-            baseline.rate,
-          ),
+            baselineRate: baseline.rate,
+            ratingPoints: rating.points,
+          }),
         }
       : null;
 
   const { window } = resolveWindow({ matches, horizon, scoped: false, nowMs });
+  const collapsed = window.games / matches.length >= HORIZON_COLLAPSE_RATIO;
 
   return {
     state,
-    domain: { startMs, endMs },
+    domain: domainOf(matches),
     baseline,
     rating,
     strips,
-    recentWindow: window.games > 0 ? window : null,
+    recentWindow: window.games > 0 && !collapsed ? window : null,
     gamesNeeded,
   };
 }

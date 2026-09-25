@@ -220,10 +220,13 @@ describe('buildCareerTimeline (Task 2) — the ladder at every account shape', (
     expect(timeline.rating.finerGrainPointCount).toBeGreaterThan(60);
   });
 
-  it('the 8,400-game fixture with lineTarget 8 -> year grain; points never exceed the target', () => {
-    const timeline = timelineOf(SPARG0_SHAPED, 8);
+  it('the 8,400-game fixture with lineTarget 9 -> year grain; points never exceed the target', () => {
+    // The fixture spans nine calendar years (Dec 2018 - Aug 2026): quarters (32) exceed 9,
+    // years (9) fit — the coarsest rung of the ladder.
+    const timeline = timelineOf(SPARG0_SHAPED, 9);
     expect(timeline.rating.grain).toBe('year');
-    expect(timeline.rating.points.length).toBeLessThanOrEqual(8);
+    expect(timeline.rating.points).toHaveLength(9);
+    expect(timeline.rating.finerGrainPointCount).toBe(buildSparg0Shaped().rating.points.length);
   });
 
   it('finerGrainPointCount is the month count on the quarter-grained pro fixture', () => {
