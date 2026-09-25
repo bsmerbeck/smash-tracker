@@ -16,6 +16,11 @@ import {
 } from '@/hooks/usePostEventSynthesis';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import {
+  failedJobBadgeCopy,
+  resolveReportJobCharge,
+  type FailedJobBadgeCopy,
+} from '@/lib/reportJobCharge';
 import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
 import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
 import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
@@ -48,6 +53,18 @@ function planSection(
   }
   return { kind: 'empty' };
 }
+
+/**
+ * Post-plan fix (39-10): the failure badge's four wordings, each ONE complete
+ * string. Refund wording is reachable only from a job that was charged
+ * (`@/lib/reportJobCharge`).
+ */
+const FAILED_BADGE_KEYS: Record<FailedJobBadgeCopy, string> = {
+  pendingRefund: 'postEventPaid.jobStatus.failedPendingRefund',
+  refunded: 'postEventPaid.jobStatus.refunded',
+  noCharge: 'postEventPaid.jobStatus.failedNoCharge',
+  chargeUnknown: 'postEventPaid.jobStatus.failedChargeUnknown',
+};
 
 /**
  * `PostEventSynthesisCard` is the ONE intentionally monetized surface on
@@ -123,18 +140,26 @@ export function PostEventSynthesisCard({
   // value — `failureReason === 'validation'`; an absent reason or any other
   // (including one this client does not know yet) renders nothing new.
   const showValidationCause = job?.failureReason === 'validation';
-  // The RETURN clause ("your credit was returned") must be true FOR THIS
-  // VIEWER. `status === 'refunded'` alone is not enough here: `failJob` also
-  // writes the refunded terminal for a ZERO-SPEND post_event_synthesis failure
-  // (Phase 28 CR-02 — so the entry stays resubmittable) with no refundCredit
-  // call, and the job record persists no spend fact. Every spend site sets
-  // `spent = !freeAccess`, so the clause additionally requires the viewer's
-  // credits read to have LOADED and to say `freeAccess === false`: a
-  // free-access viewer was never debited, and an unknown billing state says
-  // less rather than something false. Residual: a uid whose allowlist status
-  // changed between the job and this view — recorded in the 39-10 SUMMARY.
+  // Post-plan fix (39-10, owner decision 2026-09-25): whether this job took a
+  // credit. `status === 'refunded'` alone cannot say: `failJob` also writes the
+  // refunded terminal for a ZERO-SPEND post_event_synthesis failure (Phase 28
+  // CR-02 — so the entry stays resubmittable) with no refundCredit call. The
+  // job's persisted `wasCharged` decides when present (it survives a later
+  // change to the viewer's free-access status); an older job falls back to a
+  // LOADED credits read (every spend site sets `spent = !freeAccess`); neither
+  // known is 'unknown', which says less rather than something false. The
+  // failure badge and the RETURN clause ("your credit was returned") both
+  // read this one fact.
+  const charge = resolveReportJobCharge({
+    wasCharged: job?.wasCharged,
+    freeAccess: creditsData?.freeAccess,
+  });
+  const failedBadgeKey =
+    job?.status === 'failed' || job?.status === 'refunded'
+      ? FAILED_BADGE_KEYS[failedJobBadgeCopy(job.status, charge)]
+      : null;
   const showCreditReturned =
-    showValidationCause && job?.status === 'refunded' && creditsData?.freeAccess === false;
+    showValidationCause && job?.status === 'refunded' && charge === 'charged';
   const validationCaption = showValidationCause ? (
     <p className="flex flex-wrap gap-x-1 text-xs text-muted-foreground" data-validation-caption="">
       <span>{t('postEventPaid.jobStatus.failedReason.validation')}</span>
@@ -199,9 +224,9 @@ export function PostEventSynthesisCard({
 
         {hasAnnotations && hasNoActiveJob && (
           <div className="flex flex-col gap-2">
-            {job?.status === 'refunded' && (
+            {job?.status === 'refunded' && failedBadgeKey && (
               <Badge variant="outline" className="w-fit">
-                {t('postEventPaid.jobStatus.refunded')}
+                {t(failedBadgeKey)}
               </Badge>
             )}
             {job?.status === 'refunded' && validationCaption}
@@ -253,7 +278,7 @@ export function PostEventSynthesisCard({
 
         {job?.status === 'failed' && (
           <div className="flex flex-col items-start gap-2 rounded-md border p-3">
-            <Badge variant="destructive">{t('postEventPaid.jobStatus.failedPendingRefund')}</Badge>
+            {failedBadgeKey && <Badge variant="destructive">{t(failedBadgeKey)}</Badge>}
             {validationCaption}
           </div>
         )}

@@ -1,4 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import en from '@/i18n/locales/en.json';
+import es from '@/i18n/locales/es.json';
+import fr from '@/i18n/locales/fr.json';
+import de from '@/i18n/locales/de.json';
+import pt from '@/i18n/locales/pt.json';
+import ja from '@/i18n/locales/ja.json';
 import { failedJobBadgeCopy, resolveReportJobCharge } from './reportJobCharge';
 
 /**
@@ -51,4 +57,44 @@ describe('failedJobBadgeCopy', () => {
       }
     }
   });
+});
+
+/**
+ * The two non-refund badges ship in all six locales on BOTH paid cards, each
+ * a complete sentence/word of its own, and neither carries refund vocabulary
+ * in its language (the words the v2.5 refund badges use).
+ */
+describe('non-refund failure badges — six locales (post-plan fix 39-10)', () => {
+  const LOCALES = { en, es, fr, de, pt, ja } as const;
+  const REFUND_WORD: Record<keyof typeof LOCALES, RegExp> = {
+    en: /refund/i,
+    es: /reembols/i,
+    fr: /rembours/i,
+    de: /erstatt/i,
+    pt: /reembols/i,
+    ja: /返金|返却/,
+  };
+
+  it.each(Object.keys(LOCALES) as Array<keyof typeof LOCALES>)(
+    '%s: failedNoCharge / failedChargeUnknown are present, non-empty, distinct, and refund-free on both cards',
+    (code) => {
+      const bundle = LOCALES[code] as unknown as Record<
+        string,
+        { jobStatus: Record<string, string> }
+      >;
+      for (const ns of ['prepPaid', 'postEventPaid']) {
+        const status = bundle[ns]!.jobStatus;
+        const noCharge = status.failedNoCharge;
+        const unknown = status.failedChargeUnknown;
+        expect(typeof noCharge === 'string' && noCharge.length > 0).toBe(true);
+        expect(typeof unknown === 'string' && unknown.length > 0).toBe(true);
+        expect(noCharge).not.toBe(unknown);
+        expect(noCharge).not.toMatch(REFUND_WORD[code]);
+        expect(unknown).not.toMatch(REFUND_WORD[code]);
+        // The refund badges this replaces DO carry the word — the regex is live.
+        expect(status.refunded).toMatch(REFUND_WORD[code]);
+        expect(noCharge).not.toContain('{{');
+      }
+    },
+  );
 });

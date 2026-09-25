@@ -2973,6 +2973,8 @@
       "succeeded": "Pronto",
       "failedPendingRefund": "Falhou — reembolsando seu crédito…",
       "refunded": "Falhou — seu crédito foi reembolsado.",
+      "failedNoCharge": "Falhou — nenhum crédito foi usado.",
+      "failedChargeUnknown": "Falhou",
       "viewReport": "Ver relatório",
       "hideReport": "Ocultar relatório",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "Pronto",
       "failedPendingRefund": "Falhou — reembolsando seu crédito…",
       "refunded": "Falhou — seu crédito foi reembolsado.",
+      "failedNoCharge": "Falhou — nenhum crédito foi usado.",
+      "failedChargeUnknown": "Falhou",
       "viewPlan": "Ver plano",
       "hidePlan": "Ocultar plano",
       "failedReason": {

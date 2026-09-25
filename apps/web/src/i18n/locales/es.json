@@ -2973,6 +2973,8 @@
       "succeeded": "Listo",
       "failedPendingRefund": "Fallido — reembolsando tu crédito…",
       "refunded": "Fallido — se reembolsó tu crédito.",
+      "failedNoCharge": "Fallido — no se usó ningún crédito.",
+      "failedChargeUnknown": "Fallido",
       "viewReport": "Ver informe",
       "hideReport": "Ocultar informe",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "Listo",
       "failedPendingRefund": "Fallido — reembolsando tu crédito…",
       "refunded": "Fallido — se reembolsó tu crédito.",
+      "failedNoCharge": "Fallido — no se usó ningún crédito.",
+      "failedChargeUnknown": "Fallido",
       "viewPlan": "Ver plan",
       "hidePlan": "Ocultar plan",
       "failedReason": {

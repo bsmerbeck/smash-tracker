@@ -2973,6 +2973,8 @@
       "succeeded": "Ready",
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
+      "failedNoCharge": "Failed — no credit was used.",
+      "failedChargeUnknown": "Failed",
       "viewReport": "View report",
       "hideReport": "Hide report",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "Ready",
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
+      "failedNoCharge": "Failed — no credit was used.",
+      "failedChargeUnknown": "Failed",
       "viewPlan": "View plan",
       "hidePlan": "Hide plan",
       "failedReason": {

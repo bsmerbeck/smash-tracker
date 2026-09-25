@@ -24,6 +24,11 @@ import {
   useStartPrepBundle,
 } from '@/hooks/usePrepPaidReports';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import {
+  failedJobBadgeCopy,
+  resolveReportJobCharge,
+  type FailedJobBadgeCopy,
+} from '@/lib/reportJobCharge';
 import { ScoutAiReportCard } from '@/pages/Scout/components/ScoutAiReportCard';
 import { OpponentBindingConfirm } from './OpponentBindingConfirm';
 import { usePrepPaidCheckoutReturn } from './usePrepPaidCheckoutReturn';
@@ -49,6 +54,18 @@ export interface PrepPaidReportsCardProps {
   /** Confirmed scout bindings keyed by canonical opponent name, from the resolved prep brief. */
   scoutBindings: ScoutBindingMap;
 }
+
+/**
+ * Post-plan fix (39-10): the failure badge's four wordings, each ONE complete
+ * string. Refund wording is reachable only from a job that was charged
+ * (`@/lib/reportJobCharge`).
+ */
+const FAILED_BADGE_KEYS: Record<FailedJobBadgeCopy, string> = {
+  pendingRefund: 'prepPaid.jobStatus.failedPendingRefund',
+  refunded: 'prepPaid.jobStatus.refunded',
+  noCharge: 'prepPaid.jobStatus.failedNoCharge',
+  chargeUnknown: 'prepPaid.jobStatus.failedChargeUnknown',
+};
 
 /** The purchase this card most recently attempted — drives where the insufficient-credits/submit-failed hint renders. */
 type PurchaseTarget = { kind: 'single'; name: string } | { kind: 'bundle' };
@@ -266,26 +283,36 @@ export function PrepPaidReportsCard({
                 kind: 'single',
                 name,
               });
+              // Post-plan fix (39-10, owner decision 2026-09-25): whether this
+              // job took a credit. The job's persisted `wasCharged` decides
+              // when present (it survives a later change to the viewer's
+              // free-access status); an older job falls back to the loaded
+              // credits read; neither known is 'unknown'. Both the failure
+              // badge and the caption's return clause read this ONE fact, so
+              // refund wording never appears on a job that was never charged.
+              const charge = resolveReportJobCharge({
+                wasCharged: job?.wasCharged,
+                freeAccess: creditsData?.freeAccess,
+              });
+              const failedBadgeKey =
+                job?.status === 'failed' || job?.status === 'refunded'
+                  ? FAILED_BADGE_KEYS[failedJobBadgeCopy(job.status, charge)]
+                  : null;
               // Plan 39-10 (D-21, review C4-M2): the validation caption sits
               // under whichever status badge this row shows, and is TWO
               // clauses on TWO conditions. The CAUSE keys on an allowlist of
               // ONE value (`failureReason === 'validation'`) — any other or
               // unknown reason renders nothing new. The RETURN clause keys on
-              // the terminal status, never on the reason: a zero-spend
-              // (free-access) prep failure rests at `failed` with no refund,
-              // because `failJob` gates its refunded write on
-              // `reason && (spent || reason === 'post_event_synthesis')`. It
-              // also requires the loaded credits read to say
-              // `freeAccess === false` (every spend site sets
-              // `spent = !freeAccess`), so an unknown billing state says less,
-              // never something false.
+              // the terminal status, never on the reason (a zero-spend prep
+              // failure rests at `failed`: `failJob` gates its refunded write
+              // on `reason && (spent || reason === 'post_event_synthesis')`),
+              // AND on the job having been charged — an unknown charge says
+              // less, never something false.
               const statusBadgeShown =
                 job?.status === 'failed' || (reportReady && job?.status === 'refunded');
               const showValidationCause = statusBadgeShown && job?.failureReason === 'validation';
               const showCreditReturned =
-                showValidationCause &&
-                job?.status === 'refunded' &&
-                creditsData?.freeAccess === false;
+                showValidationCause && job?.status === 'refunded' && charge === 'charged';
 
               return (
                 <div key={name} className="flex flex-col gap-2 rounded-md border p-3">
@@ -316,8 +343,8 @@ export function PrepPaidReportsCard({
                           </Button>
                         </>
                       )}
-                      {reportReady && job?.status === 'refunded' && (
-                        <Badge variant="outline">{t('prepPaid.jobStatus.refunded')}</Badge>
+                      {reportReady && job?.status === 'refunded' && failedBadgeKey && (
+                        <Badge variant="outline">{t(failedBadgeKey)}</Badge>
                       )}
                       {job?.status === 'queued' && (
                         <Badge variant="outline">{t('prepPaid.jobStatus.queued')}</Badge>
@@ -343,10 +370,8 @@ export function PrepPaidReportsCard({
                           </Button>
                         </>
                       )}
-                      {job?.status === 'failed' && (
-                        <Badge variant="destructive">
-                          {t('prepPaid.jobStatus.failedPendingRefund')}
-                        </Badge>
+                      {job?.status === 'failed' && failedBadgeKey && (
+                        <Badge variant="destructive">{t(failedBadgeKey)}</Badge>
                       )}
                     </div>
                   </div>

@@ -2973,6 +2973,8 @@
       "succeeded": "Prêt",
       "failedPendingRefund": "Échec — remboursement de votre crédit…",
       "refunded": "Échec — votre crédit a été remboursé.",
+      "failedNoCharge": "Échec — aucun crédit n'a été utilisé.",
+      "failedChargeUnknown": "Échec",
       "viewReport": "Voir le rapport",
       "hideReport": "Masquer le rapport",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "Prêt",
       "failedPendingRefund": "Échec — remboursement de votre crédit…",
       "refunded": "Échec — votre crédit a été remboursé.",
+      "failedNoCharge": "Échec — aucun crédit n'a été utilisé.",
+      "failedChargeUnknown": "Échec",
       "viewPlan": "Voir le plan",
       "hidePlan": "Masquer le plan",
       "failedReason": {

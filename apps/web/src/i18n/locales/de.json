@@ -2973,6 +2973,8 @@
       "succeeded": "Fertig",
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "failedNoCharge": "Fehlgeschlagen — es wurde kein Credit verbraucht.",
+      "failedChargeUnknown": "Fehlgeschlagen",
       "viewReport": "Bericht ansehen",
       "hideReport": "Bericht ausblenden",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "Fertig",
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "failedNoCharge": "Fehlgeschlagen — es wurde kein Credit verbraucht.",
+      "failedChargeUnknown": "Fehlgeschlagen",
       "viewPlan": "Plan ansehen",
       "hidePlan": "Plan ausblenden",
       "failedReason": {

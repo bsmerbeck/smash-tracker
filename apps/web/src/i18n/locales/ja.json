@@ -2973,6 +2973,8 @@
       "succeeded": "準備完了",
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
+      "failedNoCharge": "失敗 — クレジットは使用されていません。",
+      "failedChargeUnknown": "失敗",
       "viewReport": "レポートを見る",
       "hideReport": "レポートを隠す",
       "failedReason": {
@@ -3079,6 +3081,8 @@
       "succeeded": "準備完了",
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
+      "failedNoCharge": "失敗 — クレジットは使用されていません。",
+      "failedChargeUnknown": "失敗",
       "viewPlan": "プランを見る",
       "hidePlan": "プランを隠す",
       "failedReason": {
