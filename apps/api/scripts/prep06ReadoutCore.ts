@@ -20,10 +20,18 @@
  *   `checked` counts correlation-id-grouped units (39-RESEARCH.md Common
  *   Pitfalls §3).
  *
- * A window is NEVER blended into one percentage across the two methods — see
- * `computeReadout`'s `methodMix`.
+ * A window is NEVER blended into one percentage across the two methods —
+ * `computeReadout` reports `methodMix` and leaves every `DayMetric` labelled
+ * by its own method; nothing here sums an exact day and an approximate day
+ * into one aggregate percentage.
  */
 import type { FunnelReadoutDay, FunnelReadoutResult } from '../src/jobs/funnelReadout.js';
+import { RECONCILE_EXCEPTION_KINDS } from '../src/jobs/reconcile.js';
+
+// C1-M7: derived from the IMPORTED tuple by position, never retyped as a
+// fresh string literal — a second hand-copied `'duplicate_event'` here is
+// exactly the drift class the export exists to prevent.
+const [, , DUPLICATE_EVENT_KIND] = RECONCILE_EXCEPTION_KINDS;
 
 export type ReconcileMethod = 'exact' | 'approximate';
 
@@ -37,36 +45,41 @@ export interface DayMetric {
   note: string;
 }
 
-/**
- * The approximate arm lands in Task 2 of this plan (see the plan's Task 2
- * `<action>` — it imports `RECONCILE_EXCEPTION_KINDS` from `reconcile.ts`
- * rather than hand-copying the kind strings, per C1-M7). Task 1 implements
- * the exact arm only and leaves the approximate arm throwing this NAMED
- * error rather than shipping a placeholder that would silently return a
- * zero percentage — a silent zero is indistinguishable from a genuinely
- * clean day and would be strictly worse than a loud failure here.
- */
-export class ApproximateArmNotImplementedError extends Error {
-  constructor() {
-    super(
-      'computeDayMetric: the approximate arm is not implemented yet — Task 2 of ' +
-        'phase 39 plan 02 replaces this error with the real computation.',
-    );
-    this.name = 'ApproximateArmNotImplementedError';
-  }
+export interface ReadoutWindow {
+  firstDay: string;
+  lastDay: string;
+  dayCount: number;
+}
+
+export interface ReadoutMethodMix {
+  exact: number;
+  approximate: number;
+}
+
+export interface Readout {
+  days: DayMetric[];
+  window: ReadoutWindow;
+  methodMix: ReadoutMethodMix;
+  footnotes: string[];
 }
 
 /**
- * Computes one day's metric. The EXACT arm (implemented here): when
- * `day.reconcileSummary` is present, `checked` is the denominator, the
- * numerator is `checked - missing - phantom - duplicate`, and `checked ===
- * 0` returns null percentages with an explanatory note rather than dividing
- * by zero.
+ * Computes one day's metric.
+ *
+ * EXACT arm: when `day.reconcileSummary` is present, `checked` is the
+ * denominator, the numerator is `checked - missing - phantom - duplicate`,
+ * and `checked === 0` returns null percentages with an explanatory note
+ * rather than dividing by zero.
+ *
+ * APPROXIMATE arm: when no summary is present, the denominator is
+ * `day.eventCounts` restricted to `reconciledEventNames`, and the numerator
+ * subtracts `day.exceptionCounts` over the IMPORTED `RECONCILE_EXCEPTION_KINDS`
+ * (never hand-copied — C1-M7). A zero denominator returns null percentages
+ * with an explanatory note, exactly like the exact arm's zero-`checked`
+ * guard.
  */
 export function computeDayMetric(
   day: FunnelReadoutDay,
-  // Accepted for the approximate arm Task 2 adds; unused by the exact arm.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   reconciledEventNames: ReadonlySet<string>,
 ): DayMetric {
   const { reconcileSummary } = day;
@@ -95,5 +108,102 @@ export function computeDayMetric(
     };
   }
 
-  throw new ApproximateArmNotImplementedError();
+  let denominator = 0;
+  for (const [eventName, count] of Object.entries(day.eventCounts)) {
+    if (reconciledEventNames.has(eventName)) {
+      denominator += count;
+    }
+  }
+
+  const APPROX_NOTE_SUFFIX =
+    "eventCounts counts raw ledger rows while the exact method's checked counts " +
+    'correlation-id-grouped units.';
+
+  if (denominator === 0) {
+    return {
+      day: day.day,
+      reconcilePercent: null,
+      duplicatePercent: null,
+      method: 'approximate',
+      numerator: 0,
+      denominator: 0,
+      note:
+        'approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, ' +
+        `which is 0 for this day, so no percentage is computed. ${APPROX_NOTE_SUFFIX}`,
+    };
+  }
+
+  let exceptionCount = 0;
+  for (const kind of RECONCILE_EXCEPTION_KINDS) {
+    exceptionCount += day.exceptionCounts[kind] ?? 0;
+  }
+  const duplicateCount = day.exceptionCounts[DUPLICATE_EVENT_KIND] ?? 0;
+  const numerator = denominator - exceptionCount;
+
+  return {
+    day: day.day,
+    reconcilePercent: (numerator / denominator) * 100,
+    duplicatePercent: (duplicateCount / denominator) * 100,
+    method: 'approximate',
+    numerator,
+    denominator,
+    note:
+      `approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES (${denominator}). ` +
+      APPROX_NOTE_SUFFIX,
+  };
+}
+
+/** Verbatim, in order — see `computeReadout`'s doc comment. */
+const FLIP_RULE_FOOTNOTE =
+  "Reference, not an enforced threshold: v2.5's flip rule reads >=98% reconcile and <0.5% " +
+  'duplicates as the bar the owner compares these numbers against at the 39-14 checkpoint before ' +
+  'deciding PREP_PAID_REPORTS_ENABLED — this script does not compute a pass/fail verdict.';
+
+const APPROXIMATE_METHOD_FOOTNOTE =
+  'Approximate method: eventCounts (raw ledger rows for RECONCILED_EVENT_NAMES) as the ' +
+  "denominator, minus exceptionCounts over RECONCILE_EXCEPTION_KINDS as the numerator's " +
+  'subtraction — an approximation because eventCounts counts raw ledger rows while the exact ' +
+  "method's checked counts correlation-id-grouped units.";
+
+/**
+ * Aggregates a `FunnelReadoutResult` into per-day metrics plus a window
+ * summary. NEVER computes a single blended percentage across exact and
+ * approximate days — `methodMix` reports the split, and each `DayMetric`
+ * carries its own `method`.
+ *
+ * `footnotes` always contains, verbatim and in this order: the v2.5 flip-rule
+ * reference (stated as a reference, never enforced here), the approximate
+ * method's definition, and — only when `methodMix.approximate > 0` — a
+ * sentence naming which days were approximate and why a day can have no
+ * summary.
+ */
+export function computeReadout(
+  result: FunnelReadoutResult,
+  reconciledEventNames: ReadonlySet<string>,
+): Readout {
+  const days = result.days.map((day) => computeDayMetric(day, reconciledEventNames));
+
+  const methodMix: ReadoutMethodMix = { exact: 0, approximate: 0 };
+  for (const metric of days) {
+    methodMix[metric.method] += 1;
+  }
+
+  const sortedDayKeys = [...result.days].map((entry) => entry.day).sort();
+  const window: ReadoutWindow = {
+    firstDay: sortedDayKeys[0] ?? '',
+    lastDay: sortedDayKeys[sortedDayKeys.length - 1] ?? '',
+    dayCount: result.days.length,
+  };
+
+  const footnotes: string[] = [FLIP_RULE_FOOTNOTE, APPROXIMATE_METHOD_FOOTNOTE];
+  if (methodMix.approximate > 0) {
+    footnotes.push(
+      `${methodMix.approximate} of ${result.days.length} day(s) in this window are ` +
+        'approximate — a day has no persisted summary because it is from before this ' +
+        "plan's reconcileSummaries writer took effect (the owner's next deploy), or the " +
+        'shard predates that deploy.',
+    );
+  }
+
+  return { days, window, methodMix, footnotes };
 }
