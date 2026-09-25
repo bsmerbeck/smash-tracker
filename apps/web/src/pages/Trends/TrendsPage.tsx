@@ -30,6 +30,7 @@ import {
   sortMatchesNewestFirst,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
+import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
 import { TrendsHero } from './components/TrendsHero';
 import {
   TrendsReadsRail,
@@ -234,6 +235,23 @@ export function TrendsPage() {
     });
   }
 
+  // Plan 39.1-35 (UI-SPEC §10.1 FormStrip set → `event=<key>`): a thin
+  // account's per-game strip set drills like every other FormStrip host's —
+  // the terminus below resolves the key through the SAME
+  // `formStripEventKeyForMatch` FighterAnalysisPage passes, so the list is
+  // exactly that set's games.
+  function handleTimelineSetDrill(setKey: string): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ eventKey: setKey })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
   // same insight at a new horizon; one that cannot resolve is shown as not
   // applied by the terminus. Mirrors `FighterAnalysisPage.tsx`.
@@ -326,6 +344,7 @@ export function TrendsPage() {
             matches={matches}
             horizon={horizon}
             onSelectPeriod={handleTimelineDrill}
+            onSelectSet={handleTimelineSetDrill}
           />
         </GridCell>
 
@@ -368,6 +387,7 @@ export function TrendsPage() {
                 <FilteredMatchList
                   matches={sortedMatches}
                   axes={terminusAxes}
+                  eventKeyForMatch={formStripEventKeyForMatch}
                   resolveClaim={resolveClaimForTerminus}
                   claimSummary={claimSummary}
                   onClearFilters={handleClearFilters}

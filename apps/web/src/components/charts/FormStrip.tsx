@@ -87,6 +87,14 @@ export interface FormStripLabels {
   empty: ReactNode;
   /** Rendered when games exist in scope but none fall in the recent window. */
   windowEmpty?: string;
+  /**
+   * Plan 39.1-35 (sketch 002-C's thin career timeline): an optional overline
+   * above the row, a formatter of the games actually DRAWN and the total —
+   * rendered only when it returns text, so a host can name "every game"
+   * only when every game is drawn (the `limit` trim and the width fit may
+   * draw fewer; the shown-of-total line then says what is drawn).
+   */
+  overline?: (counts: { shown: number; total: number }) => string | undefined;
 }
 
 export interface FormStripProps {
@@ -470,6 +478,7 @@ export function FormStrip({
       ? fitEventsToWidth(trimmedEvents, effectiveWidthPx, tickWidthPx)
       : trimmedEvents;
   const shownGames = countGames(shownEvents);
+  const overline = labels.overline?.({ shown: shownGames, total: totalGames });
   const oldestShownEvent = shownEvents[0];
   const newestShownEvent = shownEvents[shownEvents.length - 1];
 
@@ -479,6 +488,14 @@ export function FormStrip({
     // max-content size as if it had unlimited width and refuses to shrink
     // inside an ancestor flex/grid column.
     <div ref={rootRef} className="flex min-w-0 flex-col gap-2" data-slot="form-strip-root">
+      {overline && (
+        <p
+          data-slot="form-strip-overline"
+          className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+        >
+          {overline}
+        </p>
+      )}
       {/*
         Plan 39.1-33 (R1): `flex-nowrap` + `overflow-hidden` — the row no
         longer wraps onto multiple labelled lines (the 39.1-31/32 regression

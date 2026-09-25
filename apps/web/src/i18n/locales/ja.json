@@ -3544,6 +3544,33 @@
       "period": {
         "quarter": "{{year}}年 第{{quarter}}四半期",
         "week": "{{year}}年 第{{week}}週"
+      },
+      "locked_one": "キャリア推移 — あと{{count}}戦でこのグラフが表示されます",
+      "locked_other": "キャリア推移 — あと{{count}}戦でこのグラフが表示されます",
+      "lockedCount": "{{need}}戦中{{have}}戦",
+      "thin": {
+        "overline_one": "全{{count}}戦 · セッション別 — 月別ストリップの代わりに1戦ごとに表示",
+        "overline_other": "全{{count}}戦 · セッション別 — 月別ストリップの代わりに1戦ごとに表示"
+      },
+      "table": {
+        "ratingCaption": "各期間終了時のレーティング",
+        "monthCaption": "月別の勝率と試合数",
+        "monthCell": "{{rate}} · {{games}}",
+        "yearTotal": "{{wins}}–{{losses}} · {{rate}}",
+        "headers": {
+          "period": "期間",
+          "rating": "レーティング",
+          "rd": "±RD",
+          "record": "勝–敗",
+          "rate": "勝率",
+          "games": "試合数",
+          "year": "年",
+          "total": "年間合計"
+        }
+      },
+      "event": {
+        "aria": "{{event}} — 大会後のレーティング {{rating}}、{{wins}}–{{losses}}",
+        "ratingAfter": "大会後のレーティング · {{rating}}"
       }
     }
   }

@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  CAREER_TIMELINE_MIN_GAMES,
   SUGGESTION_MIN_GAMES,
   TREND_MIN_RECENT_GAMES,
   buildCareerTimeline,
+  calendarBucketBounds,
   type CareerRatingGrain,
   type CareerRatingPoint,
   type HorizonKey,
@@ -14,12 +16,15 @@ import { ChartCard } from '@/components/charts/ChartCard';
 import {
   CareerTimeline,
   type CareerTimelineLabels,
+  type CareerTimelineMonthRecord,
   type CareerTimelineReadout,
   type CareerTimelineReadoutTarget,
   type CareerTimelineSelection,
 } from '@/components/charts/CareerTimeline';
+import { FormStrip } from '@/components/charts/FormStrip';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
 import { formatPercent } from '@/lib/formatPercent';
+import { buildFormStripEvents } from '@/lib/formStripEvents';
 
 export interface CareerTimelineCardProps {
   /** The page's filtered, own-account matches (38 D-04) — never a coach subject. */
@@ -34,6 +39,8 @@ export interface CareerTimelineCardProps {
   chartWidth?: number;
   /** A period / month was clicked, Entered or tapped twice — the page writes it as the `from` / `to` drill (UI-SPEC §10.3). */
   onSelectPeriod?: (selection: CareerTimelineSelection) => void;
+  /** A thin account's form-strip set was clicked — the page writes it as the `event` drill axis. */
+  onSelectSet?: (setKey: string) => void;
 }
 
 /** The grain one rung finer than each calendar grain — the one the caption says would not fit. */
@@ -51,6 +58,36 @@ const FINER_GRAIN: Record<Exclude<CareerRatingGrain, 'session'>, CareerRatingGra
  */
 const CAPTION_ITEM_CLASSES =
   "[&:not(:last-child)]:after:mx-1.5 [&:not(:last-child)]:after:content-['·']";
+
+/** UI-SPEC §7.10: the thin account's per-game strip draws at most this many games. */
+const THIN_STRIP_LIMIT = 60;
+
+/**
+ * The table twin's year x month records, binned by the engine's ONE UTC
+ * calendar rule (`calendarBucketBounds`) — the kit chart never bins.
+ */
+function monthRecordsOf(matches: Match[]): CareerTimelineMonthRecord[] {
+  const byStart = new Map<number, CareerTimelineMonthRecord>();
+  for (const match of matches) {
+    const { startMs } = calendarBucketBounds('month', match.time);
+    let record = byStart.get(startMs);
+    if (!record) {
+      const start = new Date(startMs);
+      record = {
+        year: start.getUTCFullYear(),
+        month: start.getUTCMonth(),
+        wins: 0,
+        losses: 0,
+        total: 0,
+      };
+      byStart.set(startMs, record);
+    }
+    if (match.win) record.wins += 1;
+    else record.losses += 1;
+    record.total += 1;
+  }
+  return [...byStart.values()];
+}
 
 /** Below this many points away from the all-time rate a period reads "level" (plan 39.1-35 planner decision 1). */
 const LEVEL_DELTA_POINTS = 0.5;
@@ -153,6 +190,17 @@ function buildReadout(input: {
     return { title: periodTitle({ key: point.key, startMs: point.startMs, t, locale }), lines };
   }
 
+  if (target.kind === 'event') {
+    const { marker } = target;
+    return {
+      title: marker.label,
+      lines: [
+        t('analytics.timeline.event.ratingAfter', { rating: marker.ratingAfter }),
+        record(marker.wins, marker.losses, marker.wins + marker.losses),
+      ],
+    };
+  }
+
   const { cell } = target;
   const lines: string[] = [];
   const inForce = cell.ratingAtClose;
@@ -196,6 +244,7 @@ export function CareerTimelineCard({
   horizon,
   chartWidth,
   onSelectPeriod,
+  onSelectSet,
 }: CareerTimelineCardProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -223,7 +272,11 @@ export function CareerTimelineCard({
         rating: current?.rating ?? 0,
         rd: current?.rd ?? 0,
       }),
-      locked: t('shared.evidence.abstained', { count: timeline.gamesNeeded }),
+      locked: t('analytics.timeline.locked', { count: timeline.gamesNeeded }),
+      lockedCount: t('analytics.timeline.lockedCount', {
+        have: Math.max(0, CAREER_TIMELINE_MIN_GAMES - timeline.gamesNeeded),
+        need: CAREER_TIMELINE_MIN_GAMES,
+      }),
       value: (value: number) => t('analytics.timeline.label.value', { rating: value }),
       rd: (rd: number) => t('analytics.timeline.label.rd', { rd }),
       peakClose: (value: number) => t('analytics.timeline.label.peakClose', { rating: value }),
@@ -233,6 +286,49 @@ export function CareerTimelineCard({
       band: t(`insights.horizon.${horizon}`),
       readout: (target: CareerTimelineReadoutTarget) =>
         buildReadout({ target, t, locale, baselineRate, pointsByKey }),
+      eventAria: (marker) =>
+        t('analytics.timeline.event.aria', {
+          event: marker.label,
+          rating: marker.ratingAfter,
+          wins: marker.wins,
+          losses: marker.losses,
+        }),
+      table: {
+        toggle: t('analytics.trend.tableToggle'),
+        ratingCaption: t('analytics.timeline.table.ratingCaption'),
+        monthCaption: t('analytics.timeline.table.monthCaption'),
+        headers: {
+          period: t('analytics.timeline.table.headers.period'),
+          rating: t('analytics.timeline.table.headers.rating'),
+          rd: t('analytics.timeline.table.headers.rd'),
+          record: t('analytics.timeline.table.headers.record'),
+          rate: t('analytics.timeline.table.headers.rate'),
+          games: t('analytics.timeline.table.headers.games'),
+          year: t('analytics.timeline.table.headers.year'),
+          total: t('analytics.timeline.table.headers.total'),
+        },
+        months: Array.from({ length: 12 }, (_, month) =>
+          new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }).format(
+            Date.UTC(2000, month, 1),
+          ),
+        ),
+        period: (point: CareerRatingPoint) =>
+          periodTitle({ key: point.key, startMs: point.startMs, t, locale }),
+        rd: (rd: number) => t('analytics.timeline.label.rd', { rd }),
+        record: (wins: number, losses: number) => `${wins}–${losses}`,
+        rate: (rate: number) => formatPercent(rate, locale),
+        monthCell: ({ rate, total }: { rate: number; total: number }) =>
+          t('analytics.timeline.table.monthCell', {
+            rate: formatPercent(rate, locale),
+            games: total,
+          }),
+        yearTotal: ({ wins, losses, rate }: { wins: number; losses: number; rate: number }) =>
+          t('analytics.timeline.table.yearTotal', {
+            wins,
+            losses,
+            rate: formatPercent(rate, locale),
+          }),
+      },
     }),
     [
       t,
@@ -245,6 +341,45 @@ export function CareerTimelineCard({
       pointsByKey,
     ],
   );
+
+  const monthRecords = useMemo(() => monthRecordsOf(matches), [matches]);
+  // D-07 / sketch 002-C: a thin account's per-game grain replaces the month
+  // strips — the SAME builder every other FormStrip host uses, with the
+  // timeline's own recent window (one source of truth for "recent").
+  const recentWindow = timeline.recentWindow;
+  const thinEvents = useMemo(
+    () =>
+      timeline.state === 'thin'
+        ? buildFormStripEvents(
+            matches,
+            {
+              fromMs: recentWindow?.fromMs ?? null,
+              toMs: recentWindow?.toMs ?? null,
+            },
+            t,
+            locale,
+          )
+        : [],
+    [timeline.state, matches, recentWindow, t, locale],
+  );
+  const thinStrip =
+    timeline.state === 'thin' ? (
+      <FormStrip
+        events={thinEvents}
+        limit={THIN_STRIP_LIMIT}
+        labels={{
+          summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
+          legend: t('analytics.strip.legend'),
+          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+          empty: <span>{t('analytics.strip.empty')}</span>,
+          // Planner decision 7: "All N games" only when every game is drawn —
+          // otherwise the strip's own shown-of-total line says what is.
+          overline: ({ shown, total }) =>
+            shown === total ? t('analytics.timeline.thin.overline', { count: total }) : undefined,
+        }}
+        onSelectSet={onSelectSet}
+      />
+    ) : undefined;
 
   const unlocked = timeline.state !== 'locked' && rating.points.length > 0;
   const captionItems: { key: string; text: string }[] = [];
@@ -312,11 +447,19 @@ export function CareerTimelineCard({
         ) : undefined
       }
     >
+      {/*
+        Major-event diamonds: NO eventMarkers are passed — the owner's
+        2026-09-25 decision (UI-SPEC §12.1: which events qualify is Phase
+        39.2's tier data, and no name-matched list ships). The kit's layer is
+        built and tested; Phase 39.2's host passes markers with no kit change.
+      */}
       <CareerTimeline
         timeline={timeline}
         labels={labels}
         width={chartWidth}
         onSelectPeriod={onSelectPeriod}
+        thinStrip={thinStrip}
+        monthRecords={monthRecords}
       />
     </ChartCard>
   );

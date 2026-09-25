@@ -3544,6 +3544,33 @@
       "period": {
         "quarter": "{{year}} Q{{quarter}}",
         "week": "{{year}} W{{week}}"
+      },
+      "locked_one": "Career timeline — {{count}} more game unlocks this chart",
+      "locked_other": "Career timeline — {{count}} more games unlock this chart",
+      "lockedCount": "{{have}} of {{need}} games",
+      "thin": {
+        "overline_one": "All {{count}} game · by session — per-game grain replaces the month strips",
+        "overline_other": "All {{count}} games · by session — per-game grain replaces the month strips"
+      },
+      "table": {
+        "ratingCaption": "Rating at the close of each period",
+        "monthCaption": "Win rate and games by month",
+        "monthCell": "{{rate}} · {{games}}",
+        "yearTotal": "{{wins}}–{{losses}} · {{rate}}",
+        "headers": {
+          "period": "Period",
+          "rating": "Rating",
+          "rd": "±RD",
+          "record": "W–L",
+          "rate": "Rate",
+          "games": "Games",
+          "year": "Year",
+          "total": "Year total"
+        }
+      },
+      "event": {
+        "aria": "{{event}} — rating after the event {{rating}}, {{wins}}–{{losses}}",
+        "ratingAfter": "Rating after the event · {{rating}}"
       }
     }
   }

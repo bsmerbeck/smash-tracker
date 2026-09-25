@@ -3544,6 +3544,33 @@
       "period": {
         "quarter": "T{{quarter}} {{year}}",
         "week": "Sem. {{week}} {{year}}"
+      },
+      "locked_one": "Cronología de carrera — {{count}} partida más desbloquea este gráfico",
+      "locked_other": "Cronología de carrera — {{count}} partidas más desbloquean este gráfico",
+      "lockedCount": "{{have}} de {{need}} partidas",
+      "thin": {
+        "overline_one": "{{count}} partida en total · por sesión — el detalle por partida sustituye a las franjas mensuales",
+        "overline_other": "Las {{count}} partidas · por sesión — el detalle por partida sustituye a las franjas mensuales"
+      },
+      "table": {
+        "ratingCaption": "Puntuación al cierre de cada periodo",
+        "monthCaption": "Tasa de victorias y partidas por mes",
+        "monthCell": "{{rate}} · {{games}}",
+        "yearTotal": "{{wins}}–{{losses}} · {{rate}}",
+        "headers": {
+          "period": "Periodo",
+          "rating": "Puntuación",
+          "rd": "±RD",
+          "record": "V–D",
+          "rate": "Tasa",
+          "games": "Partidas",
+          "year": "Año",
+          "total": "Total del año"
+        }
+      },
+      "event": {
+        "aria": "{{event}} — puntuación tras el evento {{rating}}, {{wins}}–{{losses}}",
+        "ratingAfter": "Puntuación tras el evento · {{rating}}"
       }
     }
   }

@@ -3544,6 +3544,33 @@
       "period": {
         "quarter": "Q{{quarter}} {{year}}",
         "week": "KW {{week}} {{year}}"
+      },
+      "locked_one": "Karriereverlauf — noch {{count}} Match schaltet dieses Diagramm frei",
+      "locked_other": "Karriereverlauf — noch {{count}} Matches schalten dieses Diagramm frei",
+      "lockedCount": "{{have}} von {{need}} Matches",
+      "thin": {
+        "overline_one": "{{count}} Match insgesamt · nach Sitzung — die Einzelmatch-Ansicht ersetzt die Monatsstreifen",
+        "overline_other": "Alle {{count}} Matches · nach Sitzung — die Einzelmatch-Ansicht ersetzt die Monatsstreifen"
+      },
+      "table": {
+        "ratingCaption": "Wertung zum Abschluss jedes Zeitraums",
+        "monthCaption": "Siegquote und Matches pro Monat",
+        "monthCell": "{{rate}} · {{games}}",
+        "yearTotal": "{{wins}}–{{losses}} · {{rate}}",
+        "headers": {
+          "period": "Zeitraum",
+          "rating": "Wertung",
+          "rd": "±RD",
+          "record": "S–N",
+          "rate": "Quote",
+          "games": "Matches",
+          "year": "Jahr",
+          "total": "Jahressumme"
+        }
+      },
+      "event": {
+        "aria": "{{event}} — Wertung nach dem Event {{rating}}, {{wins}}–{{losses}}",
+        "ratingAfter": "Wertung nach dem Event · {{rating}}"
       }
     }
   }

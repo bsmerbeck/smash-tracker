@@ -4,6 +4,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactElement,
+  ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -19,12 +20,15 @@ import {
   useXAxisScale,
   useYAxisScale,
 } from 'recharts';
+import { CAREER_TIMELINE_MIN_GAMES } from '@smash-tracker/shared';
 import type {
   CareerRatingPoint,
   CareerStripCell,
   CareerStripSet,
   CareerTimeline as CareerTimelineData,
 } from '@smash-tracker/shared';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { CHART_AXIS_FONT_SIZE, CHART_DOT_RADIUS, CHART_LINE_WIDTH, CHART_TOKENS } from './tokens';
 import {
   CAREER_TIMELINE_CELL_INSET_PX,
@@ -45,9 +49,64 @@ import {
 } from './careerTimelineLayout';
 import { TIME_AXIS_LABEL_OFFSET_PX, selectTimeAxisTicks } from './timeAxisTicks';
 
-/** What the one readout describes: a rating close (plot band) or a strip cell (strip band). */
+/**
+ * A major event on the plot baseline (UI-SPEC §12.1). Which events qualify is
+ * Phase 39.2's tier data — until a host supplies markers, none render.
+ */
+export interface CareerTimelineEventMarker {
+  key: string;
+  label: string;
+  /** When the event ended — its x on the time axis. */
+  atMs: number;
+  wins: number;
+  losses: number;
+  /** The rating after the event. */
+  ratingAfter: number;
+}
+
+/** One calendar month's record (UTC), for the table twin's year x month table. */
+export interface CareerTimelineMonthRecord {
+  year: number;
+  /** 0..11. */
+  month: number;
+  wins: number;
+  losses: number;
+  total: number;
+}
+
+/** What the one readout describes: a rating close (plot band), a strip cell (strip band) or an event diamond. */
 export type CareerTimelineReadoutTarget =
-  { kind: 'point'; point: CareerRatingPoint } | { kind: 'cell'; cell: CareerStripCell };
+  | { kind: 'point'; point: CareerRatingPoint }
+  | { kind: 'cell'; cell: CareerStripCell }
+  | { kind: 'event'; marker: CareerTimelineEventMarker };
+
+/** The table twin's strings (UI-SPEC §14.4) — every value formatted by the host. */
+export interface CareerTimelineTableLabels {
+  /** The "View as table" toggle. */
+  toggle: string;
+  ratingCaption: string;
+  monthCaption: string;
+  headers: {
+    period: string;
+    rating: string;
+    rd: string;
+    record: string;
+    rate: string;
+    games: string;
+    year: string;
+    total: string;
+  };
+  /** Twelve short month names, January first. */
+  months: readonly string[];
+  period: (point: CareerRatingPoint) => string;
+  rd: (rd: number) => string;
+  record: (wins: number, losses: number) => string;
+  rate: (rate: number) => string;
+  /** A month cell: "<rate> · <n>". */
+  monthCell: (cell: { rate: number; total: number }) => string;
+  /** A year's total: "<W>–<L> · <rate>". */
+  yearTotal: (row: { wins: number; losses: number; total: number; rate: number }) => string;
+}
 
 /** The readout's content — a title and its lines, every string composed by the host. */
 export interface CareerTimelineReadout {
@@ -71,6 +130,12 @@ export interface CareerTimelineLabels {
   aria: string;
   /** The locked state's sentence (below `CAREER_TIMELINE_MIN_GAMES`) — the host's abstention copy. */
   locked?: string;
+  /** The locked meter's `role="img"` label ("3 of 5 games"). */
+  lockedCount?: string;
+  /** An event diamond's accessible name. */
+  eventAria?: (marker: CareerTimelineEventMarker) => string;
+  /** The table twin's strings — omitted: no twin. */
+  table?: CareerTimelineTableLabels;
   /** The last close's value ("1734"). */
   value: (rating: number) => string;
   /** The last close's RD sublabel ("±72"). */
@@ -103,6 +168,20 @@ export interface CareerTimelineProps {
    * inclusive window as the `from` / `to` drill axes. Omitted: nothing drills.
    */
   onSelectPeriod?: (selection: CareerTimelineSelection) => void;
+  /**
+   * D-07 / sketch 002-C: the thin account's per-game strip (the host's
+   * `FormStrip`), rendered under the plot in place of the month strips —
+   * only while the timeline is `thin`.
+   */
+  thinStrip?: ReactNode;
+  /** The table twin's year x month records (the host bins them by the engine's UTC calendar rule). */
+  monthRecords?: readonly CareerTimelineMonthRecord[];
+  /**
+   * UI-SPEC §12.1 major-event diamonds. The Trends host passes none until
+   * Phase 39.2 supplies tier data (owner decision 2026-09-25).
+   */
+  eventMarkers?: readonly CareerTimelineEventMarker[];
+  onSelectEventMarker?: (key: string) => void;
 }
 
 /** The container width assumed before `ResponsiveContainer`'s first measurement lands. */
@@ -150,8 +229,27 @@ const PLOT_FOCUS_CLASSES =
 const READOUT_CLASSES =
   'pointer-events-none absolute z-10 w-max max-w-[min(280px,100%)] rounded-md border border-border bg-card p-2 text-xs tabular-nums';
 
-/** The readout's target — a rating close or a strip cell of the strip set currently drawn. */
-type ActiveTarget = { kind: 'point'; index: number } | { kind: 'cell'; index: number };
+/** Sketch 002-C: the event diamond's half-diagonal (an 11px diamond), its surface stroke and its 24px hit box (UI-SPEC §14.6). */
+const DIAMOND_HALF_PX = 5.5;
+const DIAMOND_STROKE_PX = 1.5;
+const DIAMOND_HIT_PX = 24;
+/** The table twin's cells (sketch 002 `table.twin`), with its phone stacked-row rule below 640px. */
+const TWIN_TABLE_CLASSES = 'w-full border-collapse text-xs leading-4 tabular-nums';
+const TWIN_HEAD_CELL_CLASSES =
+  'border-b border-border px-1.5 py-1.5 text-right text-[0.6875rem] font-semibold tracking-wider whitespace-nowrap text-muted-foreground uppercase first:text-left';
+const TWIN_CELL_CLASSES =
+  'border-b border-border px-1.5 py-1.5 text-right whitespace-nowrap first:text-left';
+const TWIN_STACKED_ROW_CLASSES =
+  'max-sm:flex max-sm:flex-wrap max-sm:gap-x-2.5 max-sm:gap-y-0.5 max-sm:border-b max-sm:border-border max-sm:py-2';
+const TWIN_STACKED_CELL_CLASSES = 'max-sm:border-0 max-sm:p-0';
+const TWIN_STACKED_MONTH_CLASSES =
+  'max-sm:before:mr-1 max-sm:before:text-muted-foreground max-sm:before:content-[attr(data-m)]';
+
+/** The readout's target — a rating close, a strip cell of the strip set currently drawn, or an event marker. */
+type ActiveTarget =
+  | { kind: 'point'; index: number }
+  | { kind: 'cell'; index: number }
+  | { kind: 'event'; index: number };
 
 /**
  * Who showed the readout: a fine pointer hovering, the keyboard stepping (the
@@ -748,6 +846,204 @@ function TopLayer({ timeline, labels, geometry }: LayerProps) {
 }
 
 /**
+ * D-07 / UI-SPEC §12.1 (the TrendLine locked-inset precedent): below
+ * `CAREER_TIMELINE_MIN_GAMES` the timeline is a designed L2 inset — the
+ * host's sentence and a meter of the games so far — never an empty frame.
+ */
+function LockedInset({
+  timeline,
+  labels,
+}: {
+  timeline: CareerTimelineData;
+  labels: CareerTimelineLabels;
+}): ReactElement {
+  const have = Math.max(0, CAREER_TIMELINE_MIN_GAMES - timeline.gamesNeeded);
+  const fillPercent = Math.min(100, Math.round((have / CAREER_TIMELINE_MIN_GAMES) * 100));
+  return (
+    <div
+      data-slot="career-timeline-locked"
+      className="flex flex-col gap-1.5 rounded-md bg-muted/40 p-3"
+    >
+      {labels.locked && <p className="text-sm leading-5">{labels.locked}</p>}
+      <div
+        role="img"
+        aria-label={labels.lockedCount}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${fillPercent}%`, backgroundColor: CHART_TOKENS.steady }}
+        />
+      </div>
+      {labels.lockedCount && (
+        <p className="text-xs leading-4 text-muted-foreground tabular-nums">{labels.lockedCount}</p>
+      )}
+    </div>
+  );
+}
+
+interface YearRow {
+  year: number;
+  months: (CareerTimelineMonthRecord | null)[];
+  wins: number;
+  losses: number;
+  total: number;
+}
+
+/** Years newest first (sketch 002 `years()`), every year between the first and the last — a year with no games reads "—" throughout. */
+function yearRows(records: readonly CareerTimelineMonthRecord[]): YearRow[] {
+  if (records.length === 0) return [];
+  const years = records.map((r) => r.year);
+  const newest = Math.max(...years);
+  const oldest = Math.min(...years);
+  const rows: YearRow[] = [];
+  for (let year = newest; year >= oldest; year -= 1) {
+    const months: (CareerTimelineMonthRecord | null)[] = Array.from({ length: 12 }, () => null);
+    let wins = 0;
+    let losses = 0;
+    for (const record of records) {
+      if (record.year !== year) continue;
+      months[record.month] = record;
+      wins += record.wins;
+      losses += record.losses;
+    }
+    rows.push({ year, months, wins, losses, total: wins + losses });
+  }
+  return rows;
+}
+
+/**
+ * UI-SPEC §14.4 table twin (sketch 002 `HeatTable`): "View as table" opens a
+ * rating-close table (period · rating · ±RD · W–L · rate · games) and a
+ * year x month table (rate · n per month, a year total), with scoped headers;
+ * below 640px the month table stacks each year as one wrapped row whose
+ * cells carry their month name (sketch 002's phone twin rule). Every value a
+ * tooltip shows is reachable here without hover.
+ */
+function TableTwin({
+  points,
+  monthRecords,
+  table,
+}: {
+  points: readonly CareerRatingPoint[];
+  monthRecords: readonly CareerTimelineMonthRecord[];
+  table: CareerTimelineTableLabels;
+}): ReactElement {
+  const [open, setOpen] = useState(false);
+  const rows = yearRows(monthRecords);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="px-0"
+        data-slot="career-timeline-table-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {table.toggle}
+      </Button>
+      <CollapsibleContent>
+        <div data-slot="career-timeline-table" className="flex flex-col gap-4">
+          <table className={TWIN_TABLE_CLASSES}>
+            <caption className="sr-only">{table.ratingCaption}</caption>
+            <thead>
+              <tr>
+                {[
+                  table.headers.period,
+                  table.headers.rating,
+                  table.headers.rd,
+                  table.headers.record,
+                  table.headers.rate,
+                  table.headers.games,
+                ].map((header) => (
+                  <th key={header} scope="col" className={TWIN_HEAD_CELL_CLASSES}>
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {points.map((point) => (
+                <tr key={point.key}>
+                  <th scope="row" className={`${TWIN_CELL_CLASSES} font-normal`}>
+                    {table.period(point)}
+                  </th>
+                  <td className={TWIN_CELL_CLASSES}>{point.rating}</td>
+                  <td className={TWIN_CELL_CLASSES}>{table.rd(point.rd)}</td>
+                  <td className={TWIN_CELL_CLASSES}>{table.record(point.wins, point.losses)}</td>
+                  <td className={TWIN_CELL_CLASSES}>
+                    {table.rate(point.total > 0 ? point.wins / point.total : 0)}
+                  </td>
+                  <td className={TWIN_CELL_CLASSES}>{point.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > 0 && (
+            <table className={TWIN_TABLE_CLASSES}>
+              <caption className="sr-only">{table.monthCaption}</caption>
+              <thead className="max-sm:hidden">
+                <tr>
+                  <th scope="col" className={TWIN_HEAD_CELL_CLASSES}>
+                    {table.headers.year}
+                  </th>
+                  {table.months.map((month) => (
+                    <th key={month} scope="col" className={TWIN_HEAD_CELL_CLASSES}>
+                      {month}
+                    </th>
+                  ))}
+                  <th scope="col" className={TWIN_HEAD_CELL_CLASSES}>
+                    {table.headers.total}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.year} className={TWIN_STACKED_ROW_CLASSES}>
+                    <th
+                      scope="row"
+                      className={`${TWIN_CELL_CLASSES} ${TWIN_STACKED_CELL_CLASSES} font-semibold max-sm:basis-full`}
+                    >
+                      {row.year}
+                    </th>
+                    {row.months.map((record, month) => (
+                      <td
+                        key={month}
+                        data-m={table.months[month]}
+                        className={`${TWIN_CELL_CLASSES} ${TWIN_STACKED_CELL_CLASSES} ${TWIN_STACKED_MONTH_CLASSES}${record ? '' : ' text-muted-foreground'}`}
+                      >
+                        {record
+                          ? table.monthCell({
+                              rate: record.total > 0 ? record.wins / record.total : 0,
+                              total: record.total,
+                            })
+                          : '—'}
+                      </td>
+                    ))}
+                    <td className={`${TWIN_CELL_CLASSES} ${TWIN_STACKED_CELL_CLASSES}`}>
+                      {row.total > 0
+                        ? table.yearTotal({
+                            wins: row.wins,
+                            losses: row.losses,
+                            total: row.total,
+                            rate: row.wins / row.total,
+                          })
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
  * The Trends career timeline (plan 39.1-34, owner decision 2026-09-25, D-13,
  * UI-SPEC §12.1 — the binding visual is sketch 002-C's `drawRating`): a
  * close-of-period rating line with its RD as a 10% band over ONE numeric time
@@ -763,6 +1059,10 @@ export function CareerTimeline({
   labels,
   width,
   onSelectPeriod,
+  thinStrip,
+  monthRecords,
+  eventMarkers,
+  onSelectEventMarker,
 }: CareerTimelineProps): ReactElement {
   const { i18n } = useTranslation();
   const [measuredWidth, setMeasuredWidth] = useState(RESPONSIVE_FALLBACK_WIDTH);
@@ -791,7 +1091,7 @@ export function CareerTimeline({
   if (timeline.state === 'locked' || points.length === 0 || timeline.domain === null) {
     return (
       <div data-slot="career-timeline" data-state={timeline.state}>
-        {labels.locked && <p className="text-sm text-muted-foreground">{labels.locked}</p>}
+        <LockedInset timeline={timeline} labels={labels} />
       </div>
     );
   }
@@ -832,13 +1132,17 @@ export function CareerTimeline({
       const point = points[target.index];
       return point ? { kind: 'point', point } : null;
     }
+    if (target.kind === 'event') {
+      const marker = eventMarkers?.[target.index];
+      return marker ? { kind: 'event', marker } : null;
+    }
     const cell = strips?.cells[target.index];
     return cell ? { kind: 'cell', cell } : null;
   }
 
   function selectionOf(target: ActiveTarget): CareerTimelineSelection | null {
     const resolved = readoutTargetOf(target);
-    if (!resolved) return null;
+    if (!resolved || resolved.kind === 'event') return null;
     const span = resolved.kind === 'point' ? resolved.point : resolved.cell;
     // The engine's periods are `[startMs, endMs)`; the drill axes are inclusive.
     return { fromMs: span.startMs, toMs: span.endMs - 1 };
@@ -910,6 +1214,8 @@ export function CareerTimeline({
       (Math.max(plotLeft, xOf(readoutTarget.cell.startMs)) +
         Math.min(plotRight, xOf(readoutTarget.cell.endMs))) /
       2;
+  } else if (readoutTarget?.kind === 'event') {
+    readoutAnchorX = xOf(readoutTarget.marker.atMs);
   }
   const readoutLeft = clampReadoutLeft({
     anchorX: readoutAnchorX,
@@ -936,6 +1242,9 @@ export function CareerTimeline({
   const chart = (
     <ComposedChart
       {...(typeof width === 'number' ? { width, height: geometry.height } : {})}
+      // UI-SPEC §10.1: the plot wrapper is the ONE tab stop — Recharts'
+      // default accessibility layer would add a second (tabIndex=0 surface).
+      accessibilityLayer={false}
       data={buildRows(points)}
       margin={{
         top: geometry.marginTop,
@@ -1030,6 +1339,73 @@ export function CareerTimeline({
           </ResponsiveContainer>
         )}
       </div>
+      {eventMarkers && eventMarkers.length > 0 && (
+        // UI-SPEC §12.1 major-event diamonds, drawn OUTSIDE the plot's
+        // role="img" (a focusable control inside an image is hidden from
+        // assistive tech) and after it in tab order, on the plot baseline at
+        // the chart's own time mapping.
+        <svg
+          data-slot="career-timeline-events"
+          className="pointer-events-none absolute top-0 left-0 overflow-visible"
+          width={containerWidth}
+          height={geometry.height}
+        >
+          {eventMarkers.map((marker, index) => {
+            const x = xOf(marker.atMs);
+            const y = geometry.plotBottom;
+            const target: ActiveTarget = { kind: 'event', index };
+            return (
+              <g
+                key={marker.key}
+                data-slot="career-timeline-event"
+                tabIndex={0}
+                role="button"
+                aria-label={labels.eventAria ? labels.eventAria(marker) : marker.label}
+                className={`pointer-events-auto cursor-pointer ${PLOT_FOCUS_CLASSES}`}
+                onFocus={() => setActive({ target, source: 'keyboard' })}
+                onBlur={() => setActive(null)}
+                onPointerEnter={(event) => {
+                  if (event.pointerType !== 'touch') setActive({ target, source: 'pointer' });
+                }}
+                onPointerLeave={(event) => {
+                  if (event.pointerType !== 'touch') {
+                    setActive((prev) => (prev?.source === 'pointer' ? null : prev));
+                  }
+                }}
+                onClick={() => onSelectEventMarker?.(marker.key)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelectEventMarker?.(marker.key);
+                  }
+                }}
+              >
+                <rect
+                  x={x - DIAMOND_HIT_PX / 2}
+                  y={y - DIAMOND_HIT_PX / 2}
+                  width={DIAMOND_HIT_PX}
+                  height={DIAMOND_HIT_PX}
+                  fill="transparent"
+                />
+                <path
+                  d={`M${x} ${y - DIAMOND_HALF_PX} ${x + DIAMOND_HALF_PX} ${y} ${x} ${y + DIAMOND_HALF_PX} ${x - DIAMOND_HALF_PX} ${y}Z`}
+                  fill={CHART_TOKENS.deemphasis}
+                  stroke={CHART_TOKENS.surface}
+                  strokeWidth={DIAMOND_STROKE_PX}
+                />
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      {timeline.state === 'thin' && thinStrip && (
+        <div data-slot="career-timeline-thin-strip" className="mt-3 flex min-w-0 flex-col">
+          {thinStrip}
+        </div>
+      )}
+      {labels.table && (
+        <TableTwin points={points} monthRecords={monthRecords ?? []} table={labels.table} />
+      )}
       {readout && (
         <div
           ref={readoutRef}

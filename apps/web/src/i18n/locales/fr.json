@@ -3544,6 +3544,33 @@
       "period": {
         "quarter": "T{{quarter}} {{year}}",
         "week": "S{{week}} {{year}}"
+      },
+      "locked_one": "Chronologie de carrière — encore {{count}} match pour débloquer ce graphique",
+      "locked_other": "Chronologie de carrière — encore {{count}} matchs pour débloquer ce graphique",
+      "lockedCount": "{{have}} sur {{need}} matchs",
+      "thin": {
+        "overline_one": "{{count}} match au total · par session — le détail par match remplace les bandes mensuelles",
+        "overline_other": "Les {{count}} matchs · par session — le détail par match remplace les bandes mensuelles"
+      },
+      "table": {
+        "ratingCaption": "Classement à la clôture de chaque période",
+        "monthCaption": "Taux de victoire et matchs par mois",
+        "monthCell": "{{rate}} · {{games}}",
+        "yearTotal": "{{wins}}–{{losses}} · {{rate}}",
+        "headers": {
+          "period": "Période",
+          "rating": "Classement",
+          "rd": "±RD",
+          "record": "V–D",
+          "rate": "Taux",
+          "games": "Matchs",
+          "year": "Année",
+          "total": "Total de l'année"
+        }
+      },
+      "event": {
+        "aria": "{{event}} — classement après l'événement {{rating}}, {{wins}}–{{losses}}",
+        "ratingAfter": "Classement après l'événement · {{rating}}"
       }
     }
   }
