@@ -26,3 +26,4 @@ export * from './stageBreakdown.js';
 export * from './claims.js';
 export * from './snapshot.js';
 export * from './legacyCitationRule.js';
+export * from './confidencePhrases.js';
