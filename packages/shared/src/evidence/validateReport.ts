@@ -1,0 +1,685 @@
+/**
+ * RPT-07 / D-06 / D-07 (phase 39 plan 04): the pure validator. Every claim a
+ * report selects is RECOMPUTED against the immutable `EvidenceSnapshot` — a
+ * citation existing is never sufficient on its own (see
+ * `records/RPT-08-rubric.md`). Connective prose is linted for factual
+ * specifics its own section's claims do not license. The outcome is
+ * drop-then-fail: invalid claims are dropped first (rules R1-R3, R6-R7), a
+ * prose fault (R4/R5) strips ONLY that section's prose and never touches
+ * claim survival (the C1-H4/C2-H3 money-path fix — see the FAILURE SEMANTICS
+ * comment on `lintSectionProse` below), and the output's `status` is decided
+ * by the surviving CLAIM count against `MIN_VIABLE_CLAIMS[surface]` alone.
+ *
+ * PURE: this module imports ONLY `./claims.js`, `./snapshot.js`,
+ * `./policy.js`, `./types.js`, `./confidencePhrases.js`, `./predicate.js`,
+ * `../fighterData.js` and `../stageData.js` — no `node:` import, no
+ * `firebase`, no `fetch`, no `Database`, no module-level mutable state (see
+ * `purity.test.ts`). Under NO circumstance does this module call a model,
+ * retry, or mutate its input (D-07).
+ */
+import type { ActionId, ClaimAtom, ClaimId, ClaimValue, ReportSurface } from './claims.js';
+import { MIN_VIABLE_CLAIMS } from './claims.js';
+import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
+import { effectiveFloor } from './policy.js';
+import {
+  FORBIDDEN_CONFIDENCE_WORDS,
+  LICENSED_CONFIDENCE_WORDS,
+  confidenceWordsFor,
+} from './confidencePhrases.js';
+import { SpriteList } from '../fighterData.js';
+import { StageList } from '../stageData.js';
+
+// ---------------------------------------------------------------------------
+// The rubric rule ids (re-derived here, never imported from
+// `adversarialFixtures.ts` — that module is test-only corpus, outside this
+// module's closed import list. Kept byte-identical to plan 39-01's
+// `RUBRIC_RULE_IDS` / `records/RPT-08-rubric.md`; `rpt08Oracle.test.ts`
+// cross-checks the rubric record against that corpus-side list, and this
+// plan's own tests cross-check this union type's members against the same
+// eight ids so the two cannot silently drift apart.
+// ---------------------------------------------------------------------------
+
+/** The eight rubric rule ids (`records/RPT-08-rubric.md`) a claim or an action slot can be dropped under. */
+export type RUBRIC_RULE_ID = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8';
+
+/** One dropped claim (or dropped action slot, keyed the same way) — `detail` is a short machine-readable reason, never user-facing prose and never the model's own text. */
+export interface DroppedClaim {
+  claimId: string;
+  rule: RUBRIC_RULE_ID;
+  detail: string;
+}
+
+/** One of the three fixed D-12 action slots, as the model's selection references it. `claimId` is independently nullable — a chosen action referencing no claim at all is itself an R8 offense (dropped), the same as one referencing a claim that did not survive. */
+export interface ReportSelectionAction {
+  actionId: ActionId;
+  claimId: ClaimId | null;
+}
+
+/** One named section of the report: which issued claims it references, and the connective prose written around them. */
+export interface ReportSelectionSection {
+  claimIds: readonly ClaimId[];
+  connective: string;
+}
+
+/**
+ * The shape the model's report selection takes — sections keyed by name (an
+ * OBJECT, never a positional array: an array of nullable members is the RTDB
+ * null-stripping trap the moment this shape is persisted), plus the three
+ * fixed, independently-nullable action slots.
+ */
+export interface ReportSelectionOutput {
+  sections: Readonly<Record<string, ReportSelectionSection>>;
+  action1: ReportSelectionAction | null;
+  action2: ReportSelectionAction | null;
+  action3: ReportSelectionAction | null;
+}
+
+export interface ValidateReportInput {
+  snapshot: EvidenceSnapshot;
+  issuedClaims: readonly ClaimAtom[];
+  output: ReportSelectionOutput;
+  surface: ReportSurface;
+}
+
+export interface ValidationOutcome {
+  status: 'passed' | 'failed';
+  survivingClaimIds: readonly string[];
+  droppedClaims: readonly DroppedClaim[];
+  droppedClaimCount: number;
+  strippedSectionIds: readonly string[];
+  policyVersion: number;
+  claimSchemaVersion: number;
+}
+
+// ---------------------------------------------------------------------------
+// resolveSubjectDisplayName (review C2-M6) — the ONE resolver. Plan 39-06's
+// model-facing `displayName` and `projectScoutSelection`'s stage names must
+// route through this same function, so the names the model is given, the
+// names this lint licenses, and the names a record stores can never disagree.
+// ---------------------------------------------------------------------------
+
+const FIGHTER_NAME_BY_ID: ReadonlyMap<number, string> = new Map(
+  SpriteList.map((fighter) => [fighter.id, fighter.name]),
+);
+const STAGE_NAME_BY_ID: ReadonlyMap<number, string> = new Map(
+  StageList.map((stage) => [stage.id, stage.name]),
+);
+
+/** Resolves a fighter or stage id to its canonical display name — the SAME lookup the prose lint's licensed-entity set and plan 39-06's model payload both use. Falls back to a synthetic, never-canonical string for an id absent from the table (never thrown — a defensive fallback, not expected in correctly-built input). */
+export function resolveSubjectDisplayName(axis: 'fighter' | 'stage', id: number): string {
+  const table = axis === 'fighter' ? FIGHTER_NAME_BY_ID : STAGE_NAME_BY_ID;
+  return table.get(id) ?? `${axis}-${id}`;
+}
+
+// ---------------------------------------------------------------------------
+// AMBIGUOUS_ENTITY_NAMES (review C2-M7) — MECHANICAL, computed at module
+// load from `SpriteList` ∪ `StageList`, never hand-curated. The "and is also
+// an ordinary English word" clause is deliberately absent (C2-M7): it made
+// the list a hand-curated set the instruction merely claimed was derived.
+// Every SINGLE-token canonical name requires an adjacency signal; a
+// multi-token name is unambiguous and convicts on a bare match.
+// `UNKNOWN_STAGE`/`NO_SELECTION_STAGE` are excluded automatically — they are
+// standalone sentinel exports, never members of `StageList` (see
+// `packages/shared/src/stageData.ts`'s own module doc comment).
+// ---------------------------------------------------------------------------
+
+function isSingleToken(name: string): boolean {
+  return !name.includes(' ');
+}
+
+const ALL_CANONICAL_NAMES: readonly string[] = Object.freeze([
+  ...SpriteList.map((fighter) => fighter.name),
+  ...StageList.map((stage) => stage.name),
+]);
+
+/** Every single-token canonical fighter/stage name — the set that requires an in-sentence adjacency signal before it convicts (C2-M7). */
+export const AMBIGUOUS_ENTITY_NAMES: readonly string[] = Object.freeze(
+  Array.from(new Set(ALL_CANONICAL_NAMES.filter(isSingleToken))).sort(),
+);
+
+/** Every canonical fighter/stage name, single- and multi-token alike — the full recognized-entity table R4's lint scans prose against. */
+const CANONICAL_ENTITY_NAMES: readonly string[] = Object.freeze(
+  Array.from(new Set(ALL_CANONICAL_NAMES)).sort((a, b) => b.length - a.length),
+);
+
+const AMBIGUOUS_ENTITY_SET: ReadonlySet<string> = new Set(AMBIGUOUS_ENTITY_NAMES);
+
+/** Matchup markers (review C1-H4) — a small, closed, exported set. A member convicts an AMBIGUOUS entity mention only when it sits immediately adjacent to that mention (see `hasAdjacentMarker`); it never fires on ordinary same-sentence co-occurrence (e.g. "gamble on a random spell" must not license "Hero"). */
+export const MATCHUP_MARKERS: readonly string[] = Object.freeze([
+  'vs',
+  'vs.',
+  'v.',
+  'against',
+  'on',
+]);
+
+/**
+ * The four NON-FACTUAL NUMERIC shapes (review C2-H3) — the admission
+ * criterion for any future addition is the same one plan 39-03 uses for
+ * `FORBIDDEN_CONFIDENCE_WORDS`: the `ordinary_prose` corpus stays green AND
+ * the `prose_entity`/digit-battery positive fixtures stay convicted. A
+ * pattern that also lets a real figure through is not admissible.
+ *
+ * Shape 1 (ordinal/list index) is stated broadly enough to cover BOTH the
+ * plan's own examples (`1.`, `2)`) and the ordinal-SUFFIX spelling
+ * (`3rd`, `1st`) the `ordinary_prose` corpus's own "strike-order pick 3rd"
+ * sentence requires — both are the same "this digit names a position, not a
+ * quantity" concept, and admitting the suffix form is the only way the
+ * negative corpus's own committed sentence passes clean.
+ */
+export const NON_FACTUAL_NUMERIC_PATTERNS: readonly RegExp[] = Object.freeze([
+  /\d+(?=[.)]|(?:st|nd|rd|th)\b)/gi,
+  /\b(?:game|set|match)[\s-]?(\d+)\b/gi,
+  /\btop[\s-]?(\d+)\b/gi,
+  /\bbest[\s-]?of[\s-]?(\d+)\b|\bbo(\d+)\b/gi,
+]);
+
+/** Folds every Unicode decimal digit character to its ASCII form via a per-character NFKC normalize — leaves every non-digit character untouched, so entity-name matching is never affected. */
+function foldDigitsToAscii(text: string): string {
+  let result = '';
+  for (const ch of text) {
+    result += /\p{Nd}/u.test(ch) ? ch.normalize('NFKC') : ch;
+  }
+  return result;
+}
+
+/** The absolute [start, end) span of the DIGITS ONLY inside every `NON_FACTUAL_NUMERIC_PATTERNS` match in `text` — used to exempt a digit run from R4's digit rule. */
+function findNonFactualDigitSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const pattern of NON_FACTUAL_NUMERIC_PATTERNS) {
+    const re = new RegExp(
+      pattern.source,
+      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+    );
+    for (const match of text.matchAll(re)) {
+      const digits = (match[1] ?? match[2] ?? match[0]).match(/\d+$/)?.[0];
+      if (!digits) continue;
+      const start = match.index! + match[0].length - digits.length;
+      spans.push([start, start + digits.length]);
+    }
+  }
+  return spans;
+}
+
+/** True when `run` — an ASCII decimal digit run, its own [start, end) span in the same folded text — matches one of `findNonFactualDigitSpans(text)` exactly. */
+function isNonFactualDigitRun(
+  spans: ReadonlyArray<[number, number]>,
+  start: number,
+  end: number,
+): boolean {
+  return spans.some(([s, e]) => s === start && e === end);
+}
+
+/** Splits `text` into sentences on the same boundary rpt08Oracle.test.ts uses (a `.`/`!`/`?` followed by whitespace), returning each sentence's own [start, end) offsets so a match can be located to its containing sentence. */
+function splitSentences(text: string): Array<{ text: string; start: number; end: number }> {
+  const sentences: Array<{ text: string; start: number; end: number }> = [];
+  let cursor = 0;
+  const boundary = /(?<=[.!?])\s+/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(text)) !== null) {
+    const end = match.index;
+    sentences.push({ text: text.slice(cursor, end), start: cursor, end });
+    cursor = match.index + match[0].length;
+  }
+  sentences.push({ text: text.slice(cursor), start: cursor, end: text.length });
+  return sentences;
+}
+
+/** The sentence (from `splitSentences`) containing offset `at`. Falls back to the last sentence — `at` is always inside the source text by construction. */
+function sentenceContaining(
+  sentences: ReadonlyArray<{ text: string; start: number; end: number }>,
+  at: number,
+): { text: string; start: number; end: number } {
+  return sentences.find((s) => at >= s.start && at <= s.end) ?? sentences[sentences.length - 1]!;
+}
+
+const TIGHT_ADJACENCY_WINDOW = 15;
+
+/** True when a match of `pattern` exists in `text` within `TIGHT_ADJACENCY_WINDOW` characters immediately before or after `[start, end)` — the narrow proximity window `MATCHUP_MARKERS` and the "another matched entity" signal use, so unrelated same-sentence co-occurrence (e.g. "Hero mains ... gamble on a random spell") cannot convict. */
+function hasTightAdjacentMatch(text: string, start: number, end: number, pattern: RegExp): boolean {
+  const windowStart = Math.max(0, start - TIGHT_ADJACENCY_WINDOW);
+  const windowEnd = Math.min(text.length, end + TIGHT_ADJACENCY_WINDOW);
+  const before = text.slice(windowStart, start);
+  const after = text.slice(end, windowEnd);
+  const re = new RegExp(
+    pattern.source,
+    pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+  );
+  return (
+    re.test(before) ||
+    (() => {
+      re.lastIndex = 0;
+      return re.test(after);
+    })()
+  );
+}
+
+function markerPattern(): RegExp {
+  const escaped = MATCHUP_MARKERS.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`\\b(?:${escaped.join('|')})\\b`, 'gi');
+}
+
+// ---------------------------------------------------------------------------
+// R2 recompute — rebuilds a claim's value from the row(s) it actually cites
+// (review C2-B2: never derive the row key independently from the subject —
+// use the row the claim's own `evidenceIds` fetch). Comparison law: `record`
+// and `count` compare by exact integer equality; `rate` compares numerator
+// and denominator as integers, never a derived float, so rounding can never
+// create or hide a mismatch; `entity` compares by id, never display name.
+// ---------------------------------------------------------------------------
+
+function valuesEqual(a: ClaimValue, b: ClaimValue): boolean {
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  switch (a.kind) {
+    case 'record':
+      return (
+        b.kind === 'record' && a.wins === b.wins && a.losses === b.losses && a.games === b.games
+      );
+    case 'rate':
+      return b.kind === 'rate' && a.numerator === b.numerator && a.denominator === b.denominator;
+    case 'count':
+      return b.kind === 'count' && a.count === b.count;
+    case 'entity':
+      return b.kind === 'entity' && a.entityKind === b.entityKind && a.entityId === b.entityId;
+    case 'abstained':
+      return b.kind === 'abstained';
+  }
+}
+
+const SUBJECT_AXES = ['myFighterId', 'opponentFighterId', 'stageId', 'opponentTag'] as const;
+
+interface ClaimVerdict {
+  rule: RUBRIC_RULE_ID;
+  detail: string;
+}
+
+/**
+ * Rules R1, R2, R3, R6 and the recompute half of R7 for ONE claim. Returns
+ * `null` when the claim survives every one of these rules; the prose-scoped
+ * rules (R4, R5, and R7's lexical half) are evaluated separately, per
+ * section, by `lintSectionProse` below.
+ */
+function validateClaim(
+  claimId: string,
+  issuedById: ReadonlyMap<string, ClaimAtom>,
+  snapshot: EvidenceSnapshot,
+): ClaimVerdict | null {
+  const claim = issuedById.get(claimId);
+  if (!claim) {
+    return { rule: 'R1', detail: 'claim id not issued for this job' };
+  }
+  if (claim.evidenceIds.length === 0) {
+    return { rule: 'R1', detail: 'claim carries no evidence ids' };
+  }
+
+  const rows: EvidenceRow[] = [];
+  for (const evidenceId of claim.evidenceIds) {
+    const row = snapshot.rows[evidenceId];
+    if (!row) {
+      return { rule: 'R1', detail: `evidence id "${evidenceId}" is not a key of the snapshot` };
+    }
+    rows.push(row);
+  }
+
+  // R3: every non-null axis of the claim's subject must appear in at least
+  // one of the rows it cites — never derived from the subject alone.
+  for (const axis of SUBJECT_AXES) {
+    const axisValue = claim.subject[axis];
+    if (axisValue === null) {
+      continue;
+    }
+    const found = rows.some((row) => row.subject[axis] === axisValue);
+    if (!found) {
+      return {
+        rule: 'R3',
+        detail: `subject axis "${axis}" is not present in any row this claim cites`,
+      };
+    }
+  }
+
+  // R6: an evidenced (non-abstained) claim needs at least the floor's worth
+  // of countable games — re-derived from the claim's own sample, never
+  // trusted from whatever produced `issuedClaims`.
+  if (claim.value.kind !== 'abstained' && claim.sample.eligibleDenominator < effectiveFloor()) {
+    return {
+      rule: 'R6',
+      detail: `only ${claim.sample.eligibleDenominator} countable games, below the abstention floor`,
+    };
+  }
+
+  // R2: recompute from the FIRST cited row (review C2-B2 — the row the
+  // claim actually fetched, never a row derived independently from the
+  // subject). An abstained value has nothing to recompute against.
+  if (claim.value.kind !== 'abstained') {
+    const rebuilt = rows[0]!.value;
+    if (!valuesEqual(claim.value, rebuilt)) {
+      return {
+        rule: 'R2',
+        detail: 'asserted value does not match the value recomputed from the cited row(s)',
+      };
+    }
+  }
+
+  // R7 (recompute half): a rate's denominator must equal the row's own
+  // eligible (known-field) denominator, never a raw count that could
+  // silently fold the unknown bucket in.
+  if (claim.value.kind === 'rate' && claim.value.denominator !== claim.sample.eligibleDenominator) {
+    return {
+      rule: 'R7',
+      detail: 'rate denominator does not equal the eligible (known-field) denominator',
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// The D-04 prose lint (R4, R5) and R7's lexical half.
+//
+// FAILURE SEMANTICS — the C1-H4 + C2-H3 money-path fix. A section failing R4
+// or R5 does NOT drop that section's claims and does NOT fail the output —
+// it strips that section's PROSE only: the section id joins
+// `strippedSectionIds`, every claim it referenced stays in
+// `survivingClaimIds` (still counting toward `MIN_VIABLE_CLAIMS`), and the
+// prose itself is never edited, patched, truncated or regenerated here —
+// this module reports; the API decides what to persist (plans 39-06/39-08).
+// There is NO prose-driven `failed` condition at any length, not even total
+// prose loss across every section — cycle 1 added one, cycle 2 (C2-H3)
+// showed it reachable by a single systematic model habit the app's own
+// shipped `SYSTEM_PROMPT` teaches ("Game 1: X", "top-5 characters"), which
+// would refund a paying user on the live purchasable scout path for one
+// stylistic word choice. `status` is decided by the surviving CLAIM count
+// and by nothing else (D-07): `strippedSectionIds` never participates in
+// that decision, at any length.
+//
+// R7's UNKNOWN-BUCKET NAMING is the one exception carried into this
+// function: naming the unknown bucket as a real, pickable entity is a
+// FACTUAL fault about the claim itself, not a stylistic prose fault, so it
+// drops the section's licensed claims (see `validateReportOutput` below)
+// rather than merely stripping the prose.
+// ---------------------------------------------------------------------------
+
+/** `Unknown Stage` / `Unknown Character` as a NAMED, capitalized entity reference — R7's lexical half. Case-SENSITIVE: ordinary lowercase "unknown" (as in "unknown matchups are rare") is never a violation, matching the C1-H4 sentinel-exclusion discipline. */
+const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)\b/i;
+
+interface ProseLintResult {
+  /** True when R4 or R5 fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
+  offense: boolean;
+  /** True when R7's lexical half fired — the unknown bucket was named as if real. This drops the section's licensed CLAIMS (see `validateReportOutput`), not merely the prose. */
+  unknownBucketNamed: boolean;
+}
+
+/**
+ * Lints ONE section's connective prose against the claims THAT section
+ * licenses (and, for opponent tags, the full `allIssuedClaims` so a tag
+ * legitimately known elsewhere in the job can still be recognized-but-
+ * unlicensed rather than simply invisible). Never mutates `connective`.
+ */
+function lintSectionProse(
+  connective: string,
+  licensedClaims: readonly ClaimAtom[],
+  allIssuedClaims: readonly ClaimAtom[],
+): ProseLintResult {
+  if (connective.trim().length === 0) {
+    return { offense: false, unknownBucketNamed: false };
+  }
+
+  if (UNKNOWN_BUCKET_NAMED_PATTERN.test(connective)) {
+    return { offense: false, unknownBucketNamed: true };
+  }
+
+  const nfc = connective.normalize('NFC');
+  const folded = foldDigitsToAscii(nfc);
+  const sentences = splitSentences(folded);
+
+  let offense = false;
+
+  // --- R4: the digit rule ---
+  const licensedIntegers = new Set<number>();
+  for (const claim of licensedClaims) {
+    const v = claim.value;
+    if (v.kind === 'record') {
+      licensedIntegers.add(v.wins);
+      licensedIntegers.add(v.losses);
+      licensedIntegers.add(v.games);
+    } else if (v.kind === 'rate') {
+      licensedIntegers.add(v.numerator);
+      licensedIntegers.add(v.denominator);
+      if (v.denominator > 0) {
+        licensedIntegers.add(Math.round((v.numerator / v.denominator) * 100));
+      }
+    } else if (v.kind === 'count') {
+      licensedIntegers.add(v.count);
+    }
+  }
+  const nonFactualSpans = findNonFactualDigitSpans(folded);
+  for (const match of folded.matchAll(/\d+/g)) {
+    const start = match.index!;
+    const end = start + match[0].length;
+    const value = Number(match[0]);
+    if (licensedIntegers.has(value)) {
+      continue;
+    }
+    if (isNonFactualDigitRun(nonFactualSpans, start, end)) {
+      continue;
+    }
+    offense = true;
+  }
+
+  // --- R4: entity matching (fighter/stage names) ---
+  const licensedEntityNames = new Set<string>();
+  for (const claim of licensedClaims) {
+    if (claim.subject.myFighterId !== null) {
+      licensedEntityNames.add(
+        resolveSubjectDisplayName('fighter', claim.subject.myFighterId).normalize('NFC'),
+      );
+    }
+    if (claim.subject.opponentFighterId !== null) {
+      licensedEntityNames.add(
+        resolveSubjectDisplayName('fighter', claim.subject.opponentFighterId).normalize('NFC'),
+      );
+    }
+    if (claim.subject.stageId !== null) {
+      licensedEntityNames.add(
+        resolveSubjectDisplayName('stage', claim.subject.stageId).normalize('NFC'),
+      );
+    }
+  }
+
+  const percentPattern = /%/g;
+  const anotherEntityPatternSource = CANONICAL_ENTITY_NAMES.map((name) =>
+    name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  ).join('|');
+
+  for (const name of CANONICAL_ENTITY_NAMES) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRe = new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`, 'g');
+    for (const match of folded.matchAll(nameRe)) {
+      const start = match.index!;
+      const end = start + match[0].length;
+      const isLicensed = licensedEntityNames.has(name);
+      if (isLicensed) {
+        continue;
+      }
+      if (AMBIGUOUS_ENTITY_SET.has(name)) {
+        const sentence = sentenceContaining(sentences, start);
+        const hasDigitSignal = /\d/.test(sentence.text);
+        const hasPercentSignal = percentPattern.test(sentence.text);
+        percentPattern.lastIndex = 0;
+        const hasMarkerSignal = hasTightAdjacentMatch(folded, start, end, markerPattern());
+        const hasAnotherEntitySignal =
+          anotherEntityPatternSource.length > 0 &&
+          hasTightAdjacentMatch(
+            folded,
+            start,
+            end,
+            new RegExp(`(?:${anotherEntityPatternSource})`, 'g'),
+          );
+        if (!hasDigitSignal && !hasPercentSignal && !hasMarkerSignal && !hasAnotherEntitySignal) {
+          continue;
+        }
+      }
+      offense = true;
+    }
+  }
+
+  // --- R4: opponent tags (verbatim, case-sensitive) ---
+  const licensedTags = new Set<string>();
+  for (const claim of licensedClaims) {
+    if (claim.subject.opponentTag !== null) {
+      licensedTags.add(claim.subject.opponentTag.normalize('NFC'));
+    }
+  }
+  const allKnownTags = new Set<string>();
+  for (const claim of allIssuedClaims) {
+    if (claim.subject.opponentTag !== null) {
+      allKnownTags.add(claim.subject.opponentTag.normalize('NFC'));
+    }
+  }
+  for (const tag of allKnownTags) {
+    if (licensedTags.has(tag)) {
+      continue;
+    }
+    if (folded.includes(tag)) {
+      offense = true;
+    }
+  }
+
+  // --- R5: confidence words ---
+  const licensedConfidenceWords = new Set<string>();
+  for (const claim of licensedClaims) {
+    for (const word of confidenceWordsFor(claim.tier)) {
+      licensedConfidenceWords.add(word);
+    }
+  }
+  const allTierWords = new Set(Object.values(LICENSED_CONFIDENCE_WORDS).flat());
+  const confidenceScanUniverse = new Set([...FORBIDDEN_CONFIDENCE_WORDS, ...allTierWords]);
+  const tokens = folded.toLowerCase().match(/[a-z']+/g) ?? [];
+  for (const token of tokens) {
+    if (!confidenceScanUniverse.has(token)) {
+      continue;
+    }
+    if ((FORBIDDEN_CONFIDENCE_WORDS as readonly string[]).includes(token)) {
+      offense = true;
+      continue;
+    }
+    if (!licensedConfidenceWords.has(token)) {
+      offense = true;
+    }
+  }
+
+  return { offense, unknownBucketNamed: false };
+}
+
+// ---------------------------------------------------------------------------
+// validateReportOutput — the orchestration.
+// ---------------------------------------------------------------------------
+
+/**
+ * D-06/RPT-07/D-07: the ONE pure validator every report surface's output
+ * runs through. Deterministic — the traversal order is the output's own
+ * (each section in its own key-insertion order, each section's `claimIds`
+ * in their own array order); validating the same input twice returns a
+ * deeply-equal outcome. Never calls a model, never retries, never mutates
+ * `input`.
+ */
+export function validateReportOutput(input: ValidateReportInput): ValidationOutcome {
+  const { snapshot, issuedClaims, output, surface } = input;
+  const issuedById = new Map(issuedClaims.map((claim) => [claim.id, claim]));
+
+  const droppedClaims: DroppedClaim[] = [];
+  const droppedIds = new Set<string>();
+  const survivingIds: string[] = [];
+  const seen = new Set<string>();
+
+  function dropClaim(claimId: string, rule: RUBRIC_RULE_ID, detail: string): void {
+    if (droppedIds.has(claimId)) {
+      return;
+    }
+    droppedIds.add(claimId);
+    droppedClaims.push({ claimId, rule, detail });
+  }
+
+  // Pass 1: per-claim rules (R1, R2, R3, R6, R7-recompute), output's own
+  // selection order — each section in its own key order, each section's
+  // claimIds in their own array order.
+  for (const section of Object.values(output.sections)) {
+    for (const claimId of section.claimIds) {
+      if (seen.has(claimId)) {
+        continue;
+      }
+      seen.add(claimId);
+      const verdict = validateClaim(claimId, issuedById, snapshot);
+      if (verdict === null) {
+        survivingIds.push(claimId);
+      } else {
+        dropClaim(claimId, verdict.rule, verdict.detail);
+      }
+    }
+  }
+
+  // Pass 2: section-scoped prose lint (R4, R5, R7-lexical), same order.
+  const strippedSectionIds: string[] = [];
+  for (const [sectionId, section] of Object.entries(output.sections)) {
+    const licensedClaims = section.claimIds
+      .map((claimId) => issuedById.get(claimId))
+      .filter((claim): claim is ClaimAtom => claim !== undefined && !droppedIds.has(claim.id));
+    const result = lintSectionProse(section.connective, licensedClaims, issuedClaims);
+    if (result.unknownBucketNamed) {
+      // R7 (lexical): naming the unknown bucket as real is a factual fault
+      // about the claim(s) this section rests on — drop them, not merely
+      // the prose (the one exception to the R4/R5 penalty-decoupling rule).
+      for (const claimId of section.claimIds) {
+        dropClaim(
+          claimId,
+          'R7',
+          'prose names the unknown stage/character bucket as a real, pickable entity',
+        );
+      }
+      continue;
+    }
+    if (result.offense) {
+      strippedSectionIds.push(sectionId);
+    }
+  }
+
+  const finalSurvivingIds = survivingIds.filter((claimId) => !droppedIds.has(claimId));
+
+  // Pass 3: R8 — a non-null action slot must reference a SURVIVING claim.
+  const actions: Array<[string, ReportSelectionAction | null]> = [
+    ['action1', output.action1],
+    ['action2', output.action2],
+    ['action3', output.action3],
+  ];
+  for (const [slotName, action] of actions) {
+    if (action === null) {
+      continue;
+    }
+    if (action.claimId === null) {
+      dropClaim(action.actionId, 'R8', `${slotName} references no claim at all`);
+      continue;
+    }
+    if (!finalSurvivingIds.includes(action.claimId)) {
+      dropClaim(
+        action.actionId,
+        'R8',
+        `${slotName} references a claim id that did not survive validation`,
+      );
+    }
+  }
+
+  const status: 'passed' | 'failed' =
+    finalSurvivingIds.length >= MIN_VIABLE_CLAIMS[surface] ? 'passed' : 'failed';
+
+  return {
+    status,
+    survivingClaimIds: Object.freeze(finalSurvivingIds),
+    droppedClaims: Object.freeze(droppedClaims),
+    droppedClaimCount: droppedClaims.length,
+    strippedSectionIds: Object.freeze(strippedSectionIds),
+    policyVersion: snapshot.policyVersion,
+    claimSchemaVersion: snapshot.claimSchemaVersion,
+  };
+}

@@ -27,3 +27,4 @@ export * from './claims.js';
 export * from './snapshot.js';
 export * from './legacyCitationRule.js';
 export * from './confidencePhrases.js';
+export * from './validateReport.js';
