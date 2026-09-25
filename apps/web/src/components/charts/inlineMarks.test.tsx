@@ -36,6 +36,24 @@ describe('RecordBar', () => {
 });
 
 describe('ShareBar', () => {
+  it('plan 39.1-36 (sketch 001-C .share-row): a row wraps on a narrow card and the label keeps a 120px basis, so the chip drops to its own line instead of squeezing the label to nothing', () => {
+    const { container } = render(
+      <ShareBar
+        segments={[segment('a', 10, 'Online tournament'), segment('b', 10)]}
+        total={20}
+        headerLabel="By match type"
+        shareSuffix={(pct) => `${pct}%`}
+        emptyNode={<p>empty</p>}
+        ariaSummary="Share of games by match type"
+      />,
+    );
+    const row = container.querySelector('[data-slot="share-bar-row"] > *') as HTMLElement;
+    expect(row.className).toMatch(/\bflex-wrap\b/);
+    const label = screen.getByText('Online tournament');
+    expect(label.className).toMatch(/basis-\[120px\]/);
+    expect(label.className).toMatch(/\btruncate\b/);
+  });
+
   it('renders one segment and one row per category up to 4', () => {
     const { container } = render(
       <ShareBar

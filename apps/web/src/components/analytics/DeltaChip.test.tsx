@@ -110,6 +110,45 @@ describe('DeltaChip', () => {
   });
 
   describe('plan 39.1-36 measurement hooks (honest-none-chip)', () => {
+    it('a narrow cell wraps the horizon label under the value inside the chip instead of spilling into the next column (flex-wrap root, no fixed height)', () => {
+      render(
+        <DeltaChip
+          state="down"
+          valueLabel="\u221284"
+          horizonLabel="last 30"
+          ariaLabel="rating chip"
+        />,
+      );
+      const root = screen.getByLabelText('rating chip');
+      expect(root.className).toMatch(/\bflex-wrap\b/);
+      expect(root.className).not.toMatch(/(^|\s)h-5(\s|$)/);
+      expect(root.className).toMatch(/\bmin-h-5\b/);
+    });
+
+    it('steady / thin / none values read in muted ink, up / down in foreground ink (UI-SPEC §7.5, sketch 001-C .chip--steady)', () => {
+      const cases: [DeltaChipState, string][] = [
+        ['steady', 'text-muted-foreground'],
+        ['thin', 'text-muted-foreground'],
+        ['none', 'text-muted-foreground'],
+        ['up', 'text-foreground'],
+        ['down', 'text-foreground'],
+      ];
+      for (const [state, ink] of cases) {
+        const { unmount } = render(
+          <DeltaChip
+            state={state}
+            valueLabel={`value-${state}`}
+            horizonOwnedByParent
+            ariaLabel={`ink ${state}`}
+          />,
+        );
+        expect(screen.getByText(`value-${state}`).className, state).toMatch(
+          new RegExp(`(^|\\s)${ink}(\\s|$)`),
+        );
+        unmount();
+      }
+    });
+
     it('the root carries data-slot="delta-chip", data-state and, when given, data-recent-games', () => {
       render(
         <DeltaChip
