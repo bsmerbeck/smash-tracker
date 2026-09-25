@@ -124,7 +124,54 @@ describe('runFunnelReadout', () => {
     expect(typeof result.generatedAt).toBe('number');
   });
 
-  it('never reads a tree-root path for eventLedger/outboxPending/reconciliationExceptions', async () => {
+  it('returns reconcileSummary for a day that has a persisted summary, with totals unchanged (D-19, C1-H2)', async () => {
+    const database = new FakeDatabase();
+    const today = dayKeyFor(0);
+    database.seed(`reconcileSummaries/${today}`, {
+      checked: 10,
+      missing: 1,
+      phantom: 0,
+      duplicate: 0,
+      generatedAt: NOW,
+    });
+    database.seed(`eventLedger/${today}/key1`, { eventName: 'signup_completed' });
+
+    const result = await runFunnelReadout(database as never, { now: NOW, days: 1 });
+
+    expect(result.days[0]?.reconcileSummary).toEqual({
+      checked: 10,
+      missing: 1,
+      phantom: 0,
+      duplicate: 0,
+      generatedAt: NOW,
+    });
+    expect(result.totals).toEqual({
+      eventCounts: { signup_completed: 1 },
+      exceptionCounts: {},
+      pendingProjection: 0,
+    });
+  });
+
+  it('omits reconcileSummary entirely for a day with no persisted summary (D-19 graceful degradation)', async () => {
+    const database = new FakeDatabase();
+
+    const result = await runFunnelReadout(database as never, { now: NOW, days: 1 });
+
+    expect(result.days[0]).not.toHaveProperty('reconcileSummary');
+    expect(result.totals).toEqual({ eventCounts: {}, exceptionCounts: {}, pendingProjection: 0 });
+  });
+
+  it('skips a malformed reconcileSummaries node rather than surfacing a partial object (D-19 safe-parse-and-skip)', async () => {
+    const database = new FakeDatabase();
+    const today = dayKeyFor(0);
+    database.seed(`reconcileSummaries/${today}`, { checked: 'not-a-number' });
+
+    const result = await runFunnelReadout(database as never, { now: NOW, days: 1 });
+
+    expect(result.days[0]).not.toHaveProperty('reconcileSummary');
+  });
+
+  it('never reads a tree-root path for eventLedger/outboxPending/reconciliationExceptions/reconcileSummaries (C1-H2, extended not loosened)', async () => {
     const database = new FakeDatabase();
     const seenPaths: string[] = [];
     const originalRef = database.ref.bind(database);
@@ -140,8 +187,11 @@ describe('runFunnelReadout', () => {
     expect(seenPaths).not.toContain('eventLedger');
     expect(seenPaths).not.toContain('outboxPending');
     expect(seenPaths).not.toContain('reconciliationExceptions');
+    expect(seenPaths).not.toContain('reconcileSummaries');
     for (const path of seenPaths) {
-      expect(path).toMatch(/^(eventLedger|reconciliationExceptions|outboxPending)\/\d{8}$/);
+      expect(path).toMatch(
+        /^(eventLedger|reconciliationExceptions|outboxPending|reconcileSummaries)\/\d{8}$/,
+      );
     }
   });
 });

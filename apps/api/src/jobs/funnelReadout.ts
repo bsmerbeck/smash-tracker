@@ -27,11 +27,29 @@ import { dayShardKey } from '../events/ledger.js';
  * requested window is clamped to [1, 14] days.
  */
 
+/** D-19 (39-CONTEXT.md): the counts-only shape `reconcile.ts`'s `runReconcile` persists at `reconcileSummaries/{day}`. */
+export interface ReconcileSummary {
+  checked: number;
+  missing: number;
+  phantom: number;
+  duplicate: number;
+  generatedAt: number;
+}
+
 export interface FunnelReadoutDay {
   day: string;
   eventCounts: Record<string, number>;
   exceptionCounts: Record<string, number>;
   pendingProjection: number;
+  /**
+   * D-19: present ONLY when `reconcile.ts` has persisted a summary for this
+   * day (an API revision carrying the writer has run for that day). Absent
+   * on every other day — that absence IS the graceful degradation, with no
+   * extra branching downstream. Never added to `totals`: summing
+   * partially-present days would manufacture a denominator that is neither
+   * approximate nor exact.
+   */
+  reconcileSummary?: ReconcileSummary;
 }
 
 export interface FunnelReadoutResult {
@@ -68,6 +86,30 @@ function mergeCounts(totals: Record<string, number>, perDay: Record<string, numb
   }
 }
 
+/**
+ * D-19: safe-parse-and-skip the `reconcileSummaries/{day}` read, exactly as
+ * the surrounding reads already skip a malformed stored row — a malformed
+ * node yields `undefined` (no `reconcileSummary` field at all) rather than a
+ * throw or a partially-populated object.
+ */
+function parseReconcileSummary(raw: unknown): ReconcileSummary | undefined {
+  if (raw === null || typeof raw !== 'object') {
+    return undefined;
+  }
+  const value = raw as Record<string, unknown>;
+  const { checked, missing, phantom, duplicate, generatedAt } = value;
+  if (
+    typeof checked === 'number' &&
+    typeof missing === 'number' &&
+    typeof phantom === 'number' &&
+    typeof duplicate === 'number' &&
+    typeof generatedAt === 'number'
+  ) {
+    return { checked, missing, phantom, duplicate, generatedAt };
+  }
+  return undefined;
+}
+
 export async function runFunnelReadout(
   database: Database,
   opts: FunnelReadoutOptions = {},
@@ -93,12 +135,14 @@ export async function runFunnelReadout(
 
   for (const day of dayKeys) {
     // Bounded per-day reads only — never a tree-root `.get()` on
-    // eventLedger/reconciliationExceptions/outboxPending.
-    const [ledgerSnapshot, exceptionsSnapshot, outboxSnapshot] = await Promise.all([
-      database.ref(`eventLedger/${day}`).get(),
-      database.ref(`reconciliationExceptions/${day}`).get(),
-      database.ref(`outboxPending/${day}`).get(),
-    ]);
+    // eventLedger/reconciliationExceptions/outboxPending/reconcileSummaries.
+    const [ledgerSnapshot, exceptionsSnapshot, outboxSnapshot, reconcileSummarySnapshot] =
+      await Promise.all([
+        database.ref(`eventLedger/${day}`).get(),
+        database.ref(`reconciliationExceptions/${day}`).get(),
+        database.ref(`outboxPending/${day}`).get(),
+        database.ref(`reconcileSummaries/${day}`).get(),
+      ]);
 
     const eventCounts: Record<string, number> = {};
     const ledgerRows = Object.values((ledgerSnapshot.val() ?? {}) as Record<string, unknown>);
@@ -130,7 +174,12 @@ export async function runFunnelReadout(
       (outboxSnapshot.val() ?? {}) as Record<string, unknown>,
     ).length;
 
-    days.push({ day, eventCounts, exceptionCounts, pendingProjection });
+    const reconcileSummary = parseReconcileSummary(reconcileSummarySnapshot.val());
+    const dayEntry: FunnelReadoutDay = { day, eventCounts, exceptionCounts, pendingProjection };
+    if (reconcileSummary) {
+      dayEntry.reconcileSummary = reconcileSummary;
+    }
+    days.push(dayEntry);
 
     mergeCounts(totals.eventCounts, eventCounts);
     mergeCounts(totals.exceptionCounts, exceptionCounts);
