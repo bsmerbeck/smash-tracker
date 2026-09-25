@@ -64,6 +64,8 @@ describe('ClaimAtomLine', () => {
     const figure = line.querySelector('[data-claim-figure]');
     expect(figure).toHaveTextContent('34–21 · 62%');
     expect(figure).toHaveClass('font-medium', 'tabular-nums', 'text-foreground');
+    // The print block prints on white: the figure must not keep the dark theme's light ink.
+    expect(figure).toHaveClass('print:text-black');
   });
 
   it('shows the CLAIM value on the evidence line when the prose states a different number (D-01, T-39-09-01)', () => {

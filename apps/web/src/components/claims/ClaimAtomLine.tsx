@@ -25,6 +25,11 @@ import type { StoredClaimMap, StoredClaimSection } from './claimSection';
  * is ever read out of the prose — a claim whose prose says a different number
  * still shows the claim's number here.
  *
+ * The figure carries `print:text-black`: the print block (`.print-packet-root`)
+ * prints on white with inherited black ink, and the dark theme's light
+ * `text-foreground` would otherwise print the one load-bearing value
+ * near-invisible.
+ *
  * Presentational only: no uid, no query, no subject-type branch. Mounted by
  * free surfaces (plan 39-11) as well as paid ones, so it never carries the
  * paid brand treatment. Prose renders as React text (escaped), never markup.
@@ -154,7 +159,10 @@ export function ClaimAtomLine({ claim, prose }: ClaimAtomLineProps) {
           </span>
         ) : (
           <>
-            <span className="font-medium tabular-nums text-foreground" data-claim-figure="">
+            <span
+              className="font-medium tabular-nums text-foreground print:text-black"
+              data-claim-figure=""
+            >
               {figure}
             </span>
             {sample.confidenceTier != null && (
