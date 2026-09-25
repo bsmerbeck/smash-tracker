@@ -5,11 +5,18 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import {
   ACTION_ID_VOCABULARY,
+  DRILL_TEMPLATE_TABLE,
   type ActionCandidate,
   type ActionTarget,
   type ClaimAtom,
   type ClaimId,
 } from '@smash-tracker/shared';
+import en from '@/i18n/locales/en.json';
+import es from '@/i18n/locales/es.json';
+import fr from '@/i18n/locales/fr.json';
+import de from '@/i18n/locales/de.json';
+import pt from '@/i18n/locales/pt.json';
+import ja from '@/i18n/locales/ja.json';
 import { RecommendedActionsCard } from './RecommendedActionsCard';
 
 /**
@@ -266,4 +273,56 @@ describe('RecommendedActionsCard source (D-11 structural half)', () => {
     expect(source).toMatch(/useSubjectPath/);
     expect(source).toMatch(/personalPathForActionTarget/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39-11 Task 3 (T-39-11-05): the copy is bound to the engine's own
+// template table. Iterating `DRILL_TEMPLATE_TABLE` (never a hand-written key
+// list) means a future fifth drill template with no copy fails here.
+// ---------------------------------------------------------------------------
+describe('recommended-action copy is bound to the engine table', () => {
+  const BUNDLES: Record<string, Record<string, unknown>> = { en, es, fr, de, pt, ja };
+  /** The locked monetization vocabulary (`prepStructuralIntegrity.test.ts`); nothing else scans `reports.actions.*`. */
+  const MONETIZATION_VOCABULARY =
+    /upgrade|unlock|paywall|pricing|price|checkout|stripe|coming soon|\$\d/i;
+
+  function lookup(bundle: Record<string, unknown>, key: string): unknown {
+    return key
+      .split('.')
+      .reduce<unknown>(
+        (node, segment) =>
+          node && typeof node === 'object' ? (node as Record<string, unknown>)[segment] : undefined,
+        bundle,
+      );
+  }
+
+  const tableKeys = DRILL_TEMPLATE_TABLE.flatMap((row) => [row.titleKey, row.doorKey]);
+  const cardKeys = [
+    'reports.actions.title',
+    'reports.actions.empty',
+    'reports.actions.matchupPractice.title',
+    'reports.actions.vodReview.title',
+  ];
+
+  it('iterates a non-empty table (a vacuous table would make every case below pass)', () => {
+    expect(DRILL_TEMPLATE_TABLE.length).toBeGreaterThanOrEqual(4);
+  });
+
+  for (const [locale, bundle] of Object.entries(BUNDLES)) {
+    it(`every drill template's title and door key resolves to a non-empty ${locale} string`, () => {
+      for (const key of tableKeys) {
+        const value = lookup(bundle, key);
+        expect(typeof value, `${locale}:${key}`).toBe('string');
+        expect((value as string).trim().length, `${locale}:${key}`).toBeGreaterThan(0);
+      }
+    });
+
+    it(`the ${locale} reports.actions copy is present and free of monetization vocabulary`, () => {
+      for (const key of [...cardKeys, ...tableKeys]) {
+        const value = lookup(bundle, key);
+        expect(typeof value, `${locale}:${key}`).toBe('string');
+        expect(value as string, `${locale}:${key}`).not.toMatch(MONETIZATION_VOCABULARY);
+      }
+    });
+  }
 });
