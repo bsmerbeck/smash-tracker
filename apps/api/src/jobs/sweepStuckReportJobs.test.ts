@@ -289,3 +289,112 @@ describe('runSweepStuckReportJobs — failureReason preservation (Phase 39, plan
     expect(reportFailedPayloads(database)).toEqual([{ reason: 'prep_bundle' }]);
   });
 });
+
+// Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): the sweep refunds
+// ONLY a job the route actually charged. `wasCharged` is recorded at spend
+// time by `routes/reports.ts`; `false` means no credit was taken, so a refund
+// would mint one. `true` and an absent field (pre-39-10 records) keep the
+// refund. Refunds are proven via BALANCE and `refund` LEDGER entries — never
+// via the deduped `credit_refunded` event.
+describe('runSweepStuckReportJobs — refund only a charged job (39-10)', () => {
+  function refundLedgerEntriesFor(
+    database: FakeDatabase,
+    uid: string,
+    jobId: string,
+  ): Array<Record<string, unknown>> {
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = (dump.creditLedger ?? {}) as Record<string, Record<string, unknown>>;
+    return Object.values(ledger[uid] ?? {})
+      .map((entry) => entry as Record<string, unknown>)
+      .filter((entry) => entry.type === 'refund' && entry.ref === jobId);
+  }
+
+  it('wasCharged: false — swept but NOT refunded: balance unchanged, no refund ledger entry, job failed with wasCharged false, index cleared, one report_failed:sweep', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 3);
+    seedRunningJob(database, 'uid-1', 'job-free', runningJob({ wasCharged: false }));
+
+    const result = await runSweepStuckReportJobs(database as never, {
+      now: FIXED_NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(result).toEqual({ swept: 1, refunded: 0 });
+    expect((await database.ref('credits/uid-1/balance').get()).val()).toBe(3);
+    expect(refundLedgerEntriesFor(database, 'uid-1', 'job-free')).toHaveLength(0);
+
+    const job = (await database.ref('reportJobs/uid-1/job-free').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job).toMatchObject({ status: 'failed', wasCharged: false });
+
+    const runningIndex = await database.ref('reportJobsByStatus/running/uid-1/job-free').get();
+    expect(runningIndex.exists()).toBe(false);
+
+    const reportFailedEvents = eventsNamed(database, 'report_failed');
+    expect(reportFailedEvents).toHaveLength(1);
+    expect(reportFailedEvents[0]).toMatchObject({ causationId: 'job-free:report_failed:sweep' });
+  });
+
+  it('wasCharged: true — refunded: balance +1 and exactly one refund ledger entry with ref=jobId', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 3);
+    seedRunningJob(database, 'uid-1', 'job-paid', runningJob({ wasCharged: true }));
+
+    const result = await runSweepStuckReportJobs(database as never, {
+      now: FIXED_NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(result).toEqual({ swept: 1, refunded: 1 });
+    expect((await database.ref('credits/uid-1/balance').get()).val()).toBe(4);
+    const entries = refundLedgerEntriesFor(database, 'uid-1', 'job-paid');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: 'refund', amount: 1, ref: 'job-paid' });
+
+    const job = (await database.ref('reportJobs/uid-1/job-paid').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job).toMatchObject({ status: 'failed', wasCharged: true });
+  });
+
+  it('wasCharged absent (legacy pre-39-10 record) — keeps the refund: balance +1 and exactly one refund ledger entry', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 3);
+    seedRunningJob(database, 'uid-1', 'job-legacy', runningJob());
+
+    const result = await runSweepStuckReportJobs(database as never, {
+      now: FIXED_NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(result).toEqual({ swept: 1, refunded: 1 });
+    expect((await database.ref('credits/uid-1/balance').get()).val()).toBe(4);
+    expect(refundLedgerEntriesFor(database, 'uid-1', 'job-legacy')).toHaveLength(1);
+
+    const job = (await database.ref('reportJobs/uid-1/job-legacy').get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(job).not.toHaveProperty('wasCharged');
+  });
+
+  it('a mixed batch counts every swept job but only the actual refunds', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 0);
+    seedRunningJob(database, 'uid-1', 'job-free', runningJob({ wasCharged: false }));
+    seedRunningJob(database, 'uid-1', 'job-paid', runningJob({ wasCharged: true }));
+    seedRunningJob(database, 'uid-1', 'job-legacy', runningJob());
+
+    const result = await runSweepStuckReportJobs(database as never, {
+      now: FIXED_NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(result).toEqual({ swept: 3, refunded: 2 });
+    expect((await database.ref('credits/uid-1/balance').get()).val()).toBe(2);
+    expect(refundLedgerEntriesFor(database, 'uid-1', 'job-free')).toHaveLength(0);
+  });
+});
