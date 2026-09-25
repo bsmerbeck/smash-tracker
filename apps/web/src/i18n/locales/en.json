@@ -1577,7 +1577,24 @@
     "groupedBy": "Grouped by player, most recently scouted first.",
     "olderReport": "Older report",
     "hideOlder": "Hide older reports",
-    "showOlder": "Show older reports"
+    "showOlder": "Show older reports",
+    "claimKind": {
+      "fact": "Fact",
+      "inference": "Inference",
+      "recommendation": "Recommendation"
+    },
+    "claimPredicate": {
+      "stageRecord": "Stage record",
+      "stagePickRate": "Stage pick rate",
+      "characterMatchupRecord": "Matchup record",
+      "myCharacterRecord": "Character record",
+      "headToHeadRecord": "Head-to-head record",
+      "recentForm": "Recent form",
+      "opponentCharacterUsage": "Their character usage",
+      "matchupAdvisorPick": "Suggested pick",
+      "vodAnnotation": "VOD moments",
+      "cohortDisclosure": "Session mix"
+    }
   },
   "groups": {
     "title": "Groups",
