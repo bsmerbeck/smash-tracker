@@ -118,3 +118,37 @@ export function careerGamesFill(step: number): string {
   const clamped = Math.min(GAMES_STEP_MIX_PERCENT.length, Math.max(1, step));
   return mix(CHART_TOKENS.series1, GAMES_STEP_MIX_PERCENT[clamped - 1]!);
 }
+
+/** UI-SPEC §12.1: gridlines every 100 rating points ... */
+const Y_STEP_DEFAULT = 100;
+/** ... or every 200 when the fitted span exceeds 600 points, or on a narrow plot. */
+const Y_STEP_WIDE_SPAN = 200;
+const Y_WIDE_SPAN_THRESHOLD = 600;
+
+export interface CareerTimelineYDomain {
+  lo: number;
+  hi: number;
+  step: number;
+  /** Hairline / label positions, `lo` to `hi` by `step` (sketch 002-C's `for (v = lo; v <= hi; v += step)`). */
+  ticks: number[];
+}
+
+/**
+ * UI-SPEC §12.1 / sketch 002-C: the y-domain fitted to the data plus its RD
+ * band, rounded out to whole hundreds — never the old fixed 1,400-2,100 grid.
+ */
+export function careerTimelineYDomain(
+  points: ReadonlyArray<{ rating: number; rd: number }>,
+  options: { narrow: boolean },
+): CareerTimelineYDomain {
+  const lo =
+    Math.floor(Math.min(...points.map((p) => p.rating - p.rd)) / Y_STEP_DEFAULT) * Y_STEP_DEFAULT;
+  const rawHi =
+    Math.ceil(Math.max(...points.map((p) => p.rating + p.rd)) / Y_STEP_DEFAULT) * Y_STEP_DEFAULT;
+  const hi = rawHi > lo ? rawHi : lo + Y_STEP_DEFAULT;
+  const step =
+    hi - lo > Y_WIDE_SPAN_THRESHOLD || options.narrow ? Y_STEP_WIDE_SPAN : Y_STEP_DEFAULT;
+  const ticks: number[] = [];
+  for (let v = lo; v <= hi; v += step) ticks.push(v);
+  return { lo, hi, step, ticks };
+}

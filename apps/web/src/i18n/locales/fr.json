@@ -1071,24 +1071,8 @@
       "locked_other": "{{count}} matchs de plus débloquent cette lecture."
     },
     "monthly": {
-      "title": "Performance mensuelle",
-      "winRateLabel": "Taux de victoire",
-      "caption": "Les barres estompées marquent les mois à moins de {{count}} matchs — petit échantillon, à interpréter avec prudence.",
-      "tooltipRate": "Taux de victoire : {{value}}%",
-      "tooltipGames": "Matchs joués : {{count}}",
-      "month": "Mois",
       "wl": "V-D",
       "games": "Matchs"
-    },
-    "ratingCurve": {
-      "title": "Courbe de classement",
-      "current": "classement actuel",
-      "ratingLabel": "Classement",
-      "caption": "Glicko-2, par session · non officiel. Les lignes pointillées montrent la bande d'incertitude ±RD.",
-      "locked": "La courbe se débloque à {{count}} matchs",
-      "progress": "{{played}}/{{threshold}} matchs pour l'instant",
-      "tooltipGames_one": "{{count}} match dans cette session",
-      "tooltipGames_other": "{{count}} matchs dans cette session"
     },
     "sessions": {
       "title": "Sessions et tilt",
@@ -3499,7 +3483,50 @@
         "games": "matchs"
       },
       "aria_one": "Chronologie de carrière — classement {{rating}} ±{{rd}} sur {{count}} période",
-      "aria_other": "Chronologie de carrière — classement {{rating}} ±{{rd}} sur {{count}} périodes"
+      "aria_other": "Chronologie de carrière — classement {{rating}} ±{{rd}} sur {{count}} périodes",
+      "meta": {
+        "session": "clôture de session · bande = ±RD",
+        "week": "clôture de semaine · bande = ±RD",
+        "month": "clôture de mois · bande = ±RD",
+        "quarter": "clôture de trimestre · bande = ±RD",
+        "year": "clôture d'année · bande = ±RD"
+      },
+      "label": {
+        "value": "{{rating}}",
+        "rd": "±{{rd}}",
+        "peak": "{{rating}} · pic",
+        "low": "{{rating}} · creux",
+        "peakClose": "{{rating}} · clôture record",
+        "lowClose": "{{rating}} · clôture la plus basse"
+      },
+      "caption": {
+        "closes": {
+          "session_one": "{{count}} clôture par session",
+          "session_other": "{{count}} clôtures par session",
+          "week_one": "{{count}} clôture hebdomadaire",
+          "week_other": "{{count}} clôtures hebdomadaires",
+          "month_one": "{{count}} clôture mensuelle",
+          "month_other": "{{count}} clôtures mensuelles",
+          "quarter_one": "{{count}} clôture trimestrielle",
+          "quarter_other": "{{count}} clôtures trimestrielles",
+          "year_one": "{{count}} clôture annuelle",
+          "year_other": "{{count}} clôtures annuelles"
+        },
+        "sessions_one": "{{count}} session classée",
+        "sessions_other": "{{count}} sessions classées",
+        "ladder": {
+          "session_one": "une courbe par session tracerait {{count}} point",
+          "session_other": "une courbe par session tracerait {{count}} points",
+          "week_one": "une courbe hebdomadaire tracerait {{count}} point",
+          "week_other": "une courbe hebdomadaire tracerait {{count}} points",
+          "month_one": "une courbe mensuelle tracerait {{count}} point",
+          "month_other": "une courbe mensuelle tracerait {{count}} points",
+          "quarter_one": "une courbe trimestrielle tracerait {{count}} point",
+          "quarter_other": "une courbe trimestrielle tracerait {{count}} points"
+        },
+        "strips": "taux = taux de victoire comparé au taux global de {{baseline}} — bleu au-dessus, ambre en dessous, sans couleur sous {{floor}} matchs",
+        "model": "Glicko-2, non officiel."
+      }
     }
   }
 }

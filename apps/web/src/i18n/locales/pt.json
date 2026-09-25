@@ -1071,24 +1071,8 @@
       "locked_other": "Mais {{count}} partidas desbloqueiam esta leitura."
     },
     "monthly": {
-      "title": "Desempenho mensal",
-      "winRateLabel": "Taxa de vitórias",
-      "caption": "As barras esmaecidas marcam meses com menos de {{count}} partidas — amostra pequena, interprete com cautela.",
-      "tooltipRate": "Taxa de vitórias: {{value}}%",
-      "tooltipGames": "Partidas jogadas: {{count}}",
-      "month": "Mês",
       "wl": "V-D",
       "games": "Partidas"
-    },
-    "ratingCurve": {
-      "title": "Curva de pontuação",
-      "current": "pontuação atual",
-      "ratingLabel": "Pontuação",
-      "caption": "Glicko-2, por sessão · não oficial. As linhas tracejadas mostram a faixa de incerteza ±RD.",
-      "locked": "A curva desbloqueia com {{count}} partidas",
-      "progress": "{{played}}/{{threshold}} partidas até agora",
-      "tooltipGames_one": "{{count}} partida nesta sessão",
-      "tooltipGames_other": "{{count}} partidas nesta sessão"
     },
     "sessions": {
       "title": "Sessões e tilt",
@@ -3499,7 +3483,50 @@
         "games": "partidas"
       },
       "aria_one": "Linha do tempo da carreira — pontuação {{rating}} ±{{rd}} em {{count}} período",
-      "aria_other": "Linha do tempo da carreira — pontuação {{rating}} ±{{rd}} em {{count}} períodos"
+      "aria_other": "Linha do tempo da carreira — pontuação {{rating}} ±{{rd}} em {{count}} períodos",
+      "meta": {
+        "session": "fechamento da sessão · faixa = ±RD",
+        "week": "fechamento da semana · faixa = ±RD",
+        "month": "fechamento do mês · faixa = ±RD",
+        "quarter": "fechamento do trimestre · faixa = ±RD",
+        "year": "fechamento do ano · faixa = ±RD"
+      },
+      "label": {
+        "value": "{{rating}}",
+        "rd": "±{{rd}}",
+        "peak": "{{rating}} · pico",
+        "low": "{{rating}} · mínimo",
+        "peakClose": "{{rating}} · fechamento máximo",
+        "lowClose": "{{rating}} · fechamento mínimo"
+      },
+      "caption": {
+        "closes": {
+          "session_one": "{{count}} fechamento por sessão",
+          "session_other": "{{count}} fechamentos por sessão",
+          "week_one": "{{count}} fechamento semanal",
+          "week_other": "{{count}} fechamentos semanais",
+          "month_one": "{{count}} fechamento mensal",
+          "month_other": "{{count}} fechamentos mensais",
+          "quarter_one": "{{count}} fechamento trimestral",
+          "quarter_other": "{{count}} fechamentos trimestrais",
+          "year_one": "{{count}} fechamento anual",
+          "year_other": "{{count}} fechamentos anuais"
+        },
+        "sessions_one": "{{count}} sessão pontuada",
+        "sessions_other": "{{count}} sessões pontuadas",
+        "ladder": {
+          "session_one": "uma linha por sessão desenharia {{count}} ponto",
+          "session_other": "uma linha por sessão desenharia {{count}} pontos",
+          "week_one": "uma linha semanal desenharia {{count}} ponto",
+          "week_other": "uma linha semanal desenharia {{count}} pontos",
+          "month_one": "uma linha mensal desenharia {{count}} ponto",
+          "month_other": "uma linha mensal desenharia {{count}} pontos",
+          "quarter_one": "uma linha trimestral desenharia {{count}} ponto",
+          "quarter_other": "uma linha trimestral desenharia {{count}} pontos"
+        },
+        "strips": "taxa = taxa de vitórias em relação à taxa histórica de {{baseline}} — azul acima, âmbar abaixo, sem cor com menos de {{floor}} partidas",
+        "model": "Glicko-2, não oficial."
+      }
     }
   }
 }

@@ -16,9 +16,8 @@ import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip
 import { Record } from '@/components/analytics/Record';
 import { getSessions } from '@/lib/stats';
 import { computeRatingHistory } from '@/lib/glicko';
-import { formatMonthLabel } from './MonthlyPerformance';
 import { buildSessionsHeadline } from './SessionsAndTilt';
-import { BEST_MONTH_MIN_GAMES, buildTrendsHero } from '../lib/trendsHero';
+import { BEST_MONTH_MIN_GAMES, buildTrendsHero, formatMonthLabel } from '../lib/trendsHero';
 
 /**
  * `ratingMove` invoked at the whole-account scope (TRND-02/DD-12) — the same

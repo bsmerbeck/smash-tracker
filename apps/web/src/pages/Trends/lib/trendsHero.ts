@@ -7,8 +7,21 @@ import {
   type MonthlyRecord,
 } from '@/lib/stats';
 
-/** Minimum games in a month before it's eligible to be called out as the "best month" — mirrors `MonthlyPerformance`'s small-sample threshold intent, kept as its own constant since the hero row's bar is slightly stricter. */
+/** Minimum games in a month before it's eligible to be called out as the "best month" — the hero row's own small-sample bar (the retired Monthly Performance chart's threshold intent, plan 39.1-34). */
 export const BEST_MONTH_MIN_GAMES = 5;
+
+/**
+ * Formats a `YYYY-MM` month key as a short month/year label in the given
+ * locale (e.g. "Jan 2021"), falling back to the raw key for malformed input.
+ * Moved unchanged from the retired `MonthlyPerformance.tsx` (plan 39.1-34) —
+ * the hero row's best-month caption is its only caller.
+ */
+export function formatMonthLabel(month: string, locale: string): string {
+  const [year, monthNum] = month.split('-').map(Number);
+  if (!year || !monthNum) return month;
+  const date = new Date(Date.UTC(year, monthNum - 1, 1));
+  return date.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
 
 /** Window size for the "current form" win rate in the hero row. */
 export const CURRENT_FORM_WINDOW = 20;

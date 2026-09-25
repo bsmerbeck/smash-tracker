@@ -71,6 +71,10 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * deletion (the anti-rot assertion below fails the instant a listed path
  * stops existing). Ten entries matched D-20/37-RESEARCH.md on the post-37-01
  * tree (37-01 migrated the eleventh, `MatchupChart.tsx`, onto the kit).
+ * Five entries as of plan 39.1-34: `RatingCurve.tsx` and
+ * `MonthlyPerformance.tsx` were retired by plan 39.1-34 (owner decision
+ * 2026-09-25 — the Trends career timeline, UI-SPEC §12.1, replaces both),
+ * removed here and from `eslint.config.js`'s ignores in the same commit.
  */
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
@@ -78,8 +82,6 @@ const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
   'apps/web/src/pages/Gsp/components/GspCurve.tsx',
   'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
-  'apps/web/src/pages/Trends/components/MonthlyPerformance.tsx',
-  'apps/web/src/pages/Trends/components/RatingCurve.tsx',
 ];
 
 const SVG_CHART_IMPORT = /from\s+['"]recharts['"]/;

@@ -1071,24 +1071,8 @@
       "locked_other": "{{count}} weitere Matches schalten diese Auswertung frei."
     },
     "monthly": {
-      "title": "Monatliche Leistung",
-      "winRateLabel": "Winrate",
-      "caption": "Blasse Balken markieren Monate mit weniger als {{count}} Matches — kleine Stichprobe, mit Vorsicht lesen.",
-      "tooltipRate": "Winrate: {{value}} %",
-      "tooltipGames": "Gespielte Matches: {{count}}",
-      "month": "Monat",
       "wl": "S-N",
       "games": "Matches"
-    },
-    "ratingCurve": {
-      "title": "Wertungskurve",
-      "current": "aktuelle Wertung",
-      "ratingLabel": "Wertung",
-      "caption": "Glicko-2, sitzungsbasiert · inoffiziell. Gestrichelte Linien zeigen das ±RD-Unsicherheitsband.",
-      "locked": "Die Kurve wird ab {{count}} Matches freigeschaltet",
-      "progress": "Bisher {{played}}/{{threshold}} Matches",
-      "tooltipGames_one": "{{count}} Match in dieser Sitzung",
-      "tooltipGames_other": "{{count}} Matches in dieser Sitzung"
     },
     "sessions": {
       "title": "Sitzungen & Tilt",
@@ -3499,7 +3483,50 @@
         "games": "Matches"
       },
       "aria_one": "Karriereverlauf — Wertung {{rating}} ±{{rd}} über {{count}} Zeitraum",
-      "aria_other": "Karriereverlauf — Wertung {{rating}} ±{{rd}} über {{count}} Zeiträume"
+      "aria_other": "Karriereverlauf — Wertung {{rating}} ±{{rd}} über {{count}} Zeiträume",
+      "meta": {
+        "session": "Stand zum Sitzungsende · Band = ±RD",
+        "week": "Stand zum Wochenschluss · Band = ±RD",
+        "month": "Stand zum Monatsende · Band = ±RD",
+        "quarter": "Stand zum Quartalsende · Band = ±RD",
+        "year": "Stand zum Jahresende · Band = ±RD"
+      },
+      "label": {
+        "value": "{{rating}}",
+        "rd": "±{{rd}}",
+        "peak": "{{rating}} · Hoch",
+        "low": "{{rating}} · Tief",
+        "peakClose": "{{rating}} · Höchststand",
+        "lowClose": "{{rating}} · Tiefststand"
+      },
+      "caption": {
+        "closes": {
+          "session_one": "{{count}} Sitzungsstand",
+          "session_other": "{{count}} Sitzungsstände",
+          "week_one": "{{count}} Wochenstand",
+          "week_other": "{{count}} Wochenstände",
+          "month_one": "{{count}} Monatsstand",
+          "month_other": "{{count}} Monatsstände",
+          "quarter_one": "{{count}} Quartalsstand",
+          "quarter_other": "{{count}} Quartalsstände",
+          "year_one": "{{count}} Jahresstand",
+          "year_other": "{{count}} Jahresstände"
+        },
+        "sessions_one": "{{count}} gewertete Sitzung",
+        "sessions_other": "{{count}} gewertete Sitzungen",
+        "ladder": {
+          "session_one": "eine Sitzungslinie hätte {{count}} Punkt",
+          "session_other": "eine Sitzungslinie hätte {{count}} Punkte",
+          "week_one": "eine Wochenlinie hätte {{count}} Punkt",
+          "week_other": "eine Wochenlinie hätte {{count}} Punkte",
+          "month_one": "eine Monatslinie hätte {{count}} Punkt",
+          "month_other": "eine Monatslinie hätte {{count}} Punkte",
+          "quarter_one": "eine Quartalslinie hätte {{count}} Punkt",
+          "quarter_other": "eine Quartalslinie hätte {{count}} Punkte"
+        },
+        "strips": "Quote = Siegquote gegenüber der Gesamtquote von {{baseline}} — blau darüber, bernsteinfarben darunter, keine Farbe unter {{floor}} Matches",
+        "model": "Glicko-2, inoffiziell."
+      }
     }
   }
 }

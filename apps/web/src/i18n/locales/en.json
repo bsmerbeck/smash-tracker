@@ -1071,24 +1071,8 @@
       "locked_other": "{{count}} more games unlock this read."
     },
     "monthly": {
-      "title": "Monthly Performance",
-      "winRateLabel": "Win Rate",
-      "caption": "Faded bars mark months with fewer than {{count}} games — small sample, read with caution.",
-      "tooltipRate": "Win rate: {{value}}%",
-      "tooltipGames": "Games played: {{count}}",
-      "month": "Month",
       "wl": "W-L",
       "games": "Games"
-    },
-    "ratingCurve": {
-      "title": "Rating Curve",
-      "current": "current rating",
-      "ratingLabel": "Rating",
-      "caption": "Glicko-2, session-based · unofficial. Dashed lines show the +/-RD uncertainty band.",
-      "locked": "Rating curve unlocks at {{count}} games",
-      "progress": "{{played}}/{{threshold}} games so far",
-      "tooltipGames_one": "{{count}} game this session",
-      "tooltipGames_other": "{{count}} games this session"
     },
     "sessions": {
       "title": "Sessions & Tilt",
@@ -3499,7 +3483,50 @@
         "games": "games"
       },
       "aria_one": "Career timeline — rating {{rating}} ±{{rd}} across {{count}} period",
-      "aria_other": "Career timeline — rating {{rating}} ±{{rd}} across {{count}} periods"
+      "aria_other": "Career timeline — rating {{rating}} ±{{rd}} across {{count}} periods",
+      "meta": {
+        "session": "close of session · band = ±RD",
+        "week": "close of week · band = ±RD",
+        "month": "close of month · band = ±RD",
+        "quarter": "close of quarter · band = ±RD",
+        "year": "close of year · band = ±RD"
+      },
+      "label": {
+        "value": "{{rating}}",
+        "rd": "±{{rd}}",
+        "peak": "{{rating}} · peak",
+        "low": "{{rating}} · low",
+        "peakClose": "{{rating}} · peak close",
+        "lowClose": "{{rating}} · low close"
+      },
+      "caption": {
+        "closes": {
+          "session_one": "{{count}} per-session close",
+          "session_other": "{{count}} per-session closes",
+          "week_one": "{{count}} weekly close",
+          "week_other": "{{count}} weekly closes",
+          "month_one": "{{count}} monthly close",
+          "month_other": "{{count}} monthly closes",
+          "quarter_one": "{{count}} quarterly close",
+          "quarter_other": "{{count}} quarterly closes",
+          "year_one": "{{count}} yearly close",
+          "year_other": "{{count}} yearly closes"
+        },
+        "sessions_one": "{{count}} rated session",
+        "sessions_other": "{{count}} rated sessions",
+        "ladder": {
+          "session_one": "a per-session line would draw {{count}} point",
+          "session_other": "a per-session line would draw {{count}} points",
+          "week_one": "a weekly line would draw {{count}} point",
+          "week_other": "a weekly line would draw {{count}} points",
+          "month_one": "a monthly line would draw {{count}} point",
+          "month_other": "a monthly line would draw {{count}} points",
+          "quarter_one": "a quarterly line would draw {{count}} point",
+          "quarter_other": "a quarterly line would draw {{count}} points"
+        },
+        "strips": "rate = win rate vs the {{baseline}} all-time rate — blue above, amber below, no colour under {{floor}} games",
+        "model": "Glicko-2, unofficial."
+      }
     }
   }
 }

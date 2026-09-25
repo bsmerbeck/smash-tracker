@@ -1071,24 +1071,8 @@
       "locked_other": "あと{{count}}戦でこの読みが解放されます。"
     },
     "monthly": {
-      "title": "月別パフォーマンス",
-      "winRateLabel": "勝率",
-      "caption": "薄いバーは{{count}}戦未満の月です — サンプルが少ないため参考程度に。",
-      "tooltipRate": "勝率: {{value}}%",
-      "tooltipGames": "対戦数: {{count}}",
-      "month": "月",
       "wl": "勝-敗",
       "games": "対戦数"
-    },
-    "ratingCurve": {
-      "title": "レーティング推移",
-      "current": "現在のレーティング",
-      "ratingLabel": "レーティング",
-      "caption": "Glicko-2・セッション制・非公式。点線は±RDの不確実性の帯を示します。",
-      "locked": "推移は{{count}}戦で解放されます",
-      "progress": "現在{{played}}/{{threshold}}戦",
-      "tooltipGames_one": "このセッションで{{count}}戦",
-      "tooltipGames_other": "このセッションで{{count}}戦"
     },
     "sessions": {
       "title": "セッションとティルト",
@@ -3499,7 +3483,50 @@
         "games": "対戦数"
       },
       "aria_one": "キャリア推移 — レーティング {{rating}} ±{{rd}}（{{count}}期間）",
-      "aria_other": "キャリア推移 — レーティング {{rating}} ±{{rd}}（{{count}}期間）"
+      "aria_other": "キャリア推移 — レーティング {{rating}} ±{{rd}}（{{count}}期間）",
+      "meta": {
+        "session": "セッション終値 · 帯 = ±RD",
+        "week": "週終値 · 帯 = ±RD",
+        "month": "月終値 · 帯 = ±RD",
+        "quarter": "四半期終値 · 帯 = ±RD",
+        "year": "年終値 · 帯 = ±RD"
+      },
+      "label": {
+        "value": "{{rating}}",
+        "rd": "±{{rd}}",
+        "peak": "{{rating}} · 最高",
+        "low": "{{rating}} · 最低",
+        "peakClose": "{{rating}} · 最高終値",
+        "lowClose": "{{rating}} · 最低終値"
+      },
+      "caption": {
+        "closes": {
+          "session_one": "セッション終値{{count}}件",
+          "session_other": "セッション終値{{count}}件",
+          "week_one": "週終値{{count}}件",
+          "week_other": "週終値{{count}}件",
+          "month_one": "月終値{{count}}件",
+          "month_other": "月終値{{count}}件",
+          "quarter_one": "四半期終値{{count}}件",
+          "quarter_other": "四半期終値{{count}}件",
+          "year_one": "年終値{{count}}件",
+          "year_other": "年終値{{count}}件"
+        },
+        "sessions_one": "レーティング対象セッション{{count}}件",
+        "sessions_other": "レーティング対象セッション{{count}}件",
+        "ladder": {
+          "session_one": "セッション単位の線なら{{count}}点",
+          "session_other": "セッション単位の線なら{{count}}点",
+          "week_one": "週単位の線なら{{count}}点",
+          "week_other": "週単位の線なら{{count}}点",
+          "month_one": "月単位の線なら{{count}}点",
+          "month_other": "月単位の線なら{{count}}点",
+          "quarter_one": "四半期単位の線なら{{count}}点",
+          "quarter_other": "四半期単位の線なら{{count}}点"
+        },
+        "strips": "勝率 = 通算勝率{{baseline}}との差 — 上回れば青、下回れば琥珀色、{{floor}}戦未満は無色",
+        "model": "Glicko-2・非公式。"
+      }
     }
   }
 }
