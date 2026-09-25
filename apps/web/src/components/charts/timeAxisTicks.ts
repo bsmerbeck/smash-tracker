@@ -17,8 +17,13 @@ export const TIME_AXIS_LABEL_OFFSET_PX = 4;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** At or above this span the axis ticks years (sketch 002-C's quarter-grain account). */
 const YEAR_MODE_MIN_SPAN_MS = 730 * MS_PER_DAY;
-/** At or above this span (and below the year span) the axis ticks month starts. */
-const MONTH_MODE_MIN_SPAN_MS = 60 * MS_PER_DAY;
+/**
+ * At or above this span (and below the year span) the axis ticks month
+ * starts — sketch 002-C draws month rules for every account that is not on
+ * the quarter grain (its casual account spans ~2.5 months), never a rule per
+ * day (plan 39.1-35 fidelity fix: a 59-day account drew 58 daily rules).
+ */
+const MONTH_MODE_MIN_SPAN_MS = 28 * MS_PER_DAY;
 
 /** Label strides tried in order — the smallest that clears the gap wins. */
 const YEAR_LABEL_STRIDES = [1, 2, 5, 10] as const;
@@ -32,7 +37,7 @@ export interface TimeAxisLabel {
 }
 
 export interface TimeAxisTicks {
-  /** Every gridline position, in ms — a label may be thinned away, a gridline never is. */
+  /** Every gridline position, in ms — a year / month label may be thinned away, its gridline never is; day mode rules only its kept labels. */
   gridlines: number[];
   labels: TimeAxisLabel[];
 }
@@ -113,8 +118,9 @@ function thinLabels(
 
 /**
  * Picks the timeline's time-axis ticks for a `[startMs, endMs]` domain drawn
- * across `plotWidthPx`: years from a two-year span, month starts from 60
- * days (short month; January carries its year), local midnights below.
+ * across `plotWidthPx`: years from a two-year span, month starts from 28
+ * days (short month; January carries its year), local midnights below (a
+ * rule only under each kept label).
  */
 export function selectTimeAxisTicks(input: {
   startMs: number;
@@ -130,6 +136,7 @@ export function selectTimeAxisTicks(input: {
   let gridlines: number[];
   let candidates: TimeAxisLabel[];
   let strides: readonly number[];
+  let rulesFollowLabels = false;
   if (span >= YEAR_MODE_MIN_SPAN_MS) {
     gridlines = yearGridlines(startMs, endMs);
     const year = cachedFormatter('year', locale, { year: 'numeric', timeZone: 'UTC' });
@@ -154,6 +161,10 @@ export function selectTimeAxisTicks(input: {
     const day = cachedFormatter('day', locale, { month: 'short', day: 'numeric' });
     candidates = gridlines.map((ms) => ({ ms, text: day.format(ms), anchor: 'start' }));
     strides = DAY_LABEL_STRIDES;
+    // A day rule is a reading aid, not a calendar boundary worth a line of
+    // its own: day mode draws a rule only where a label survives thinning.
+    rulesFollowLabels = true;
   }
-  return { gridlines, labels: thinLabels(candidates, strides, xOf) };
+  const labels = thinLabels(candidates, strides, xOf);
+  return { gridlines: rulesFollowLabels ? labels.map((label) => label.ms) : gridlines, labels };
 }

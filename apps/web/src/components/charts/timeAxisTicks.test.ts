@@ -82,6 +82,28 @@ describe('selectTimeAxisTicks (plan 39.1-34)', () => {
     expect(ticks.labels.map((l) => l.text)).toEqual(['Dec', 'Jan 2026', 'Feb', 'Mar']);
   });
 
+  it('plan 39.1-35 fidelity: a 59-day thin account (sketch 002-C casual) ticks month starts, never a gridline per day', () => {
+    const ticks = selectTimeAxisTicks({
+      startMs: Date.UTC(2026, 6, 3, 19),
+      endMs: Date.UTC(2026, 7, 31, 20),
+      plotWidthPx: 996,
+      locale: 'en',
+    });
+    expect(ticks.gridlines).toEqual([Date.UTC(2026, 7, 1)]);
+    expect(ticks.labels.map((l) => l.text)).toEqual(['Aug']);
+  });
+
+  it('plan 39.1-35 fidelity: in day mode every gridline carries a label — a 20-day span at 300px draws no unlabelled daily rules', () => {
+    const ticks = selectTimeAxisTicks({
+      startMs: Date.UTC(2026, 2, 2, 12),
+      endMs: Date.UTC(2026, 2, 22, 12),
+      plotWidthPx: 300,
+      locale: 'en',
+    });
+    expect(ticks.labels.length).toBeGreaterThan(1);
+    expect(ticks.gridlines).toEqual(ticks.labels.map((l) => l.ms));
+  });
+
   it('a 4-day span uses day ticks at midnight, labelled with a short date', () => {
     const ticks = selectTimeAxisTicks({
       startMs: Date.UTC(2026, 2, 3, 12),
