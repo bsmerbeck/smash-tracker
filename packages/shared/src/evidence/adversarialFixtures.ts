@@ -407,7 +407,7 @@ const proseEntityUnlicensedSameSection: AdversarialFixture = {
       licensedClaimIds: [],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 const proseEntityLicensedDifferentSection: AdversarialFixture = {
@@ -423,8 +423,12 @@ const proseEntityLicensedDifferentSection: AdversarialFixture = {
   },
   sections: [
     {
-      // Section 1 mentions the stage record with NO licence of its own.
-      prose: 'On this stage your record has historically favored you.',
+      // Section 1 states the stage record's own figures with NO licence of
+      // its own. (Review SH-WR-07: this prose used to carry no digit, entity
+      // or tag at all, so nothing lexically detectable was unlicensed and the
+      // fixture was accepted under its 'dropped' label; it now names the
+      // record's figures so the section-scoping contract is actually tested.)
+      prose: 'On this stage your record is 6-4, historically in your favor.',
       licensedClaimIds: [],
     },
     {
@@ -435,7 +439,7 @@ const proseEntityLicensedDifferentSection: AdversarialFixture = {
       licensedClaimIds: ['c01'],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 const proseEntityStageNameMismatch: AdversarialFixture = {
@@ -613,6 +617,7 @@ function makeConfidenceWordFixture(input: {
   id: string;
   games: number;
   prose: string;
+  validatorVerdict: AdversarialFixture['expected']['validatorVerdict'];
 }): AdversarialFixture {
   const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
   const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
@@ -633,7 +638,7 @@ function makeConfidenceWordFixture(input: {
     issuedClaimIds: ['c01'],
     output: { claims: [makeClaim('c01', [rowId], value)] },
     sections: [{ prose: input.prose, licensedClaimIds: ['c01'] }],
-    expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
+    expected: { legacyAccepts: true, validatorVerdict: input.validatorVerdict },
   };
 }
 
@@ -641,18 +646,30 @@ const confidenceWordStrengthOnLowTier = makeConfidenceWordFixture({
   id: 'confidence-word-strength-on-low-tier',
   games: CONFIDENCE_TIER_BOUNDS.low, // low tier — a "dominant"/"guaranteed" strength word here overstates the evidence.
   prose: 'This is a guaranteed, dominant win on this stage.',
+  validatorVerdict: 'stripped',
 });
 
 const confidenceWordHedgeOnHighTier = makeConfidenceWordFixture({
   id: 'confidence-word-hedge-on-high-tier',
   games: CONFIDENCE_TIER_BOUNDS.high, // high tier — a hedge word ("maybe") understates well-evidenced data.
   prose: 'This might possibly be a favorable stage, who knows.',
+  // Review SH-WR-07: R5 does NOT implement a hedge-word rule — hedge words
+  // ("might", "could", "likely") are ordinary recommendation English (see
+  // `FORBIDDEN_CONFIDENCE_WORDS`' EXCLUDED note) — so this prose is accepted,
+  // and the rubric's R5 statement no longer claims otherwise. Kept as the
+  // honest record of that limit.
+  validatorVerdict: 'accepted',
 });
 
 const confidenceWordUnlicensedWord = makeConfidenceWordFixture({
   id: 'confidence-word-unlicensed-word',
   games: CONFIDENCE_TIER_BOUNDS.medium,
   prose: 'This is a vibes-based lock, trust the process.',
+  // Review SH-WR-07: the lint judges a CLOSED vocabulary (the forbidden
+  // strength words and the tier words); a strength word outside it ("lock")
+  // is not recognised, so this prose is accepted. Kept as the honest record
+  // of that limit.
+  validatorVerdict: 'accepted',
 });
 
 // ---------------------------------------------------------------------------
@@ -881,7 +898,12 @@ function makeTierBoundaryFixture(games: number): AdversarialFixture {
     ),
     issuedClaimIds: ['c01'],
     output: { claims: [makeClaim('c01', [rowId], value)] },
-    expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+    // Review SH-WR-07: below the abstention floor an evidenced assertion is
+    // dropped under R6; at or above it the claim is accepted.
+    expected: {
+      legacyAccepts: true,
+      validatorVerdict: games < ABSTENTION_FLOOR_GAMES ? 'dropped' : 'accepted',
+    },
   };
 }
 

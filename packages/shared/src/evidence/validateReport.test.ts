@@ -466,16 +466,11 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
   });
 
   it('prose_entity: an entity licensed only in a DIFFERENT section still fails R4 in the section that mentions it', () => {
-    // `prose-entity-licensed-different-section` (adversarialFixtures.ts,
-    // plan 39-01) models the STRUCTURAL contract — a licence in one section
-    // never reaches another — but its own prose text ("On this stage your
-    // record has historically favored you.") carries no digit, canonical
-    // entity name, or opponent tag under this plan's cycle-2/3 narrowed R4
-    // rule (the fixture predates that narrowing; recorded as an out-of-scope
-    // pre-existing corpus gap in this plan's SUMMARY, same class as 39-03's
-    // own recorded MIN_VIABLE_CLAIMS grep-gate deviation). This hand-built
-    // case exercises the SAME contract with a digit that IS lexically
-    // detectable, proving section-scoping is real.
+    // `prose-entity-licensed-different-section` (adversarialFixtures.ts)
+    // models the same STRUCTURAL contract — a licence in one section never
+    // reaches another — and, since review SH-WR-07, its prose carries the
+    // record's figures so the per-fixture verdict check proves it too. This
+    // hand-built case keeps the contract pinned independently of the corpus.
     const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
     const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
     const row: EvidenceRow = {
