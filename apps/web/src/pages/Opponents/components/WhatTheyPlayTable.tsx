@@ -12,6 +12,7 @@ import type { RankedMatchup } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
 
 /**
  * "What they play" — the opponent's characters against you, your record per
@@ -30,12 +31,18 @@ import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 export function WhatTheyPlayTable({
   byTheirFighter,
   rowHref,
+  layout: layoutOverride,
 }: {
   byTheirFighter: RankedMatchup[];
   /** Host-supplied destination builder — absent entirely at the third-party host (Scout). */
   rowHref?: (row: RankedMatchup) => string;
+  /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
+  layout?: RowLayout;
 }) {
   const { t } = useTranslation();
+  // Plan 39.1-49 (UI-SPEC §6.6): exactly one root mounts per render; the
+  // hook is provider-free, so the Scout host's bare render stays valid.
+  const layout = useRowLayout(layoutOverride);
   return (
     <Card>
       <CardHeader>
@@ -45,6 +52,61 @@ export function WhatTheyPlayTable({
       <CardContent>
         {byTheirFighter.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('opponents.whatTheyPlay.empty')}</p>
+        ) : layout === 'stack' ? (
+          // Plan 39.1-49 (UI-SPEC §6.6 / §6.5 rules 1-2): one stacked row per
+          // character — line 1 the sprite and name in the one truncating slot
+          // (full name as its title) plus the chevron, line 2 record, rate
+          // and games as whole tokens. Same overlay link when rowHref
+          // resolves; the root keeps the hub's clip-target data-slot.
+          <ul data-slot="what-they-play" className="flex flex-col divide-y">
+            {byTheirFighter.map((row) => {
+              const sprite = getFighterById(row.opponentFighterId);
+              const label = sprite
+                ? localizedFighterName(row.opponentFighterId, t)
+                : t('common.unknown');
+              const destination = sprite ? rowHref?.(row) : undefined;
+              return (
+                <li
+                  key={row.opponentFighterId}
+                  data-slot="what-they-play-row"
+                  className="relative flex min-w-0 flex-col gap-1 rounded-md px-2 py-2 hover:bg-accent"
+                >
+                  {destination != null && (
+                    <DrillableRow
+                      as="overlay"
+                      to={destination}
+                      ariaLabel={t('shared.drillableRow.aria', {
+                        subject: label,
+                        context: t('opponents.whatTheyPlay.title'),
+                      })}
+                    />
+                  )}
+                  <div className="flex min-w-0 items-center gap-2">
+                    {sprite && (
+                      <img src={sprite.url} alt="" className="size-6 shrink-0 object-contain" />
+                    )}
+                    <span title={label} className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {label}
+                    </span>
+                    {destination != null && <DrillableRowChevron />}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted-foreground tabular-nums">
+                    <span className="whitespace-nowrap">
+                      <span className="sr-only">{t('matchups.stageTable.record')} </span>
+                      {row.wins}-{row.losses}
+                    </span>
+                    <span className="whitespace-nowrap">
+                      <span className="sr-only">{t('matchups.stageTable.winRate')} </span>
+                      {row.ratio}%
+                    </span>
+                    <span className="whitespace-nowrap">
+                      {row.totalMatches} {t('trends.monthly.games')}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <Table data-slot="what-they-play">
             <TableHeader>

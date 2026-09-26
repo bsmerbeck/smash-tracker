@@ -463,7 +463,10 @@ describe('MatchTable — stacked rows below 640px (plan 39.1-49)', () => {
     const table = renderTableLayout(layoutFixture(), 'table');
     await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
     const before = tableRowFacts(table.container).map((r) => r.cells[3]);
-    await user.click(within(table.container.querySelector('thead')!).getByText('Date'));
+    const dateHeader = Array.from(table.container.querySelectorAll('thead th')).find((th) =>
+      stackText(th).startsWith('Date'),
+    )!;
+    await user.click(dateHeader);
     const tableAfter = tableRowFacts(table.container).map((r) => r.cells[3]);
     expect(tableAfter).toEqual([...before].reverse());
     table.unmount();
