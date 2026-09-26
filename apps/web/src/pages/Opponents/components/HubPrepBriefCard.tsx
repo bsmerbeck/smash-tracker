@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
-import { usePrepBrief, usePrepBriefs } from '@/hooks/usePrepBrief';
+import { MAX_PREP_BRIEF_READS, usePrepBrief, usePrepBriefs } from '@/hooks/usePrepBrief';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import {
   findMostRecentPastEntry,
@@ -18,13 +18,6 @@ import {
   type RoutableTournamentEntry,
 } from '@/lib/prepEntryPoints';
 import { resolveTournamentEntry, type TournamentBlock } from '@/pages/Opponents/tournamentHistory';
-
-/**
- * Upper bound on how many upcoming entries' briefs the card reads to find
- * the nearest one listing this opponent. Upcoming registry entries are few
- * in practice; the cap bounds the request fan-out of a single hub visit.
- */
-const MAX_UPCOMING_BRIEF_READS = 5;
 
 interface HubPrepBriefCardProps {
   /** The hub's RESOLVED opponent identity (the alias-chain hop already applied), never the raw path tag. */
@@ -91,9 +84,11 @@ function OwnAccountHubPrepBriefCard({
   const [now] = useState(() => Date.now());
 
   // Upcoming: one definition of "upcoming" (`listUpcomingEntries`, shared
-  // with the dashboard slot), nearest first with the entryKey tiebreak.
+  // with the dashboard slot), nearest first with the entryKey tiebreak. Only
+  // the nearest `MAX_PREP_BRIEF_READS` are read — the cap `usePrepBriefs`
+  // enforces itself (code review IN-03) — which bounds a hub visit's fan-out.
   const upcomingCandidates = useMemo(
-    () => (entries ? listUpcomingEntries(entries, now).slice(0, MAX_UPCOMING_BRIEF_READS) : []),
+    () => (entries ? listUpcomingEntries(entries, now).slice(0, MAX_PREP_BRIEF_READS) : []),
     [entries, now],
   );
   const upcomingKeys = useMemo(

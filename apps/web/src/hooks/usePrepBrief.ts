@@ -35,6 +35,13 @@ export function usePrepBrief(entryKey: string | undefined) {
 }
 
 /**
+ * Code review IN-03: the most briefs `usePrepBriefs` reads in one call. The
+ * hook enforces it itself (the first `MAX_PREP_BRIEF_READS` keys, in order),
+ * so no caller can issue an unbounded request fan-out.
+ */
+export const MAX_PREP_BRIEF_READS = 5;
+
+/**
  * Plan 39-12 (PREP-05): the same GET /api/prep/:entryKey read as
  * `usePrepBrief`, for several entries at once — the opponent hub's
  * prep-brief card needs each upcoming entry's `likelyOpponents` map to find
@@ -42,11 +49,14 @@ export function usePrepBrief(entryKey: string | undefined) {
  * `['prep', entryKey]` key and the same `enabled` guard as `usePrepBrief`,
  * so a read here and a read on the prep page share one cache entry. No new
  * route and no new query key; an empty `entryKeys` issues no request.
+ *
+ * Reads only the first `MAX_PREP_BRIEF_READS` keys; the result array has one
+ * entry per key READ, index-aligned with `entryKeys`.
  */
 export function usePrepBriefs(entryKeys: readonly string[]) {
   const { user } = useAuth();
   return useQueries({
-    queries: entryKeys.map((entryKey) => ({
+    queries: entryKeys.slice(0, MAX_PREP_BRIEF_READS).map((entryKey) => ({
       queryKey: prepBriefQueryKey(entryKey),
       queryFn: () => api.prep.get(entryKey),
       enabled: Boolean(user),
