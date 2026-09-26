@@ -44,9 +44,16 @@ import { StageList } from '../stageData.js';
 /** The eight rubric rule ids (`records/RPT-08-rubric.md`) a claim or an action slot can be dropped under. */
 export type RUBRIC_RULE_ID = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8';
 
-/** One dropped claim (or dropped action slot, keyed the same way) — `detail` is a short machine-readable reason, never user-facing prose and never the model's own text. */
+/** One dropped claim — `detail` is a short machine-readable reason, never user-facing prose and never the model's own text. */
 export interface DroppedClaim {
   claimId: string;
+  rule: RUBRIC_RULE_ID;
+  detail: string;
+}
+
+/** One dropped action slot (rule R8), kept apart from `DroppedClaim` (review SH-WR-05): an action slot is not a claim, so it never counts toward `droppedClaimCount`. */
+export interface DroppedAction {
+  actionId: string;
   rule: RUBRIC_RULE_ID;
   detail: string;
 }
@@ -87,7 +94,10 @@ export interface ValidationOutcome {
   status: 'passed' | 'failed';
   survivingClaimIds: readonly string[];
   droppedClaims: readonly DroppedClaim[];
+  /** Claims only — the stored "N claims couldn't be verified" count and the `report_claims_dropped` signal (review SH-WR-05 / API-IN-03). */
   droppedClaimCount: number;
+  /** R8 action-slot drops, reported apart from claims. */
+  droppedActions: readonly DroppedAction[];
   strippedSectionIds: readonly string[];
   policyVersion: number;
   claimSchemaVersion: number;
@@ -693,6 +703,8 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
   const finalSurvivingIds = survivingIds.filter((claimId) => !droppedIds.has(claimId));
 
   // Pass 3: R8 — a non-null action slot must reference a SURVIVING claim.
+  // Its drops are ACTION drops, kept out of `droppedClaims` (SH-WR-05).
+  const droppedActions: DroppedAction[] = [];
   const actions: Array<[string, ReportSelectionAction | null]> = [
     ['action1', output.action1],
     ['action2', output.action2],
@@ -703,15 +715,19 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
       continue;
     }
     if (action.claimId === null) {
-      dropClaim(action.actionId, 'R8', `${slotName} references no claim at all`);
+      droppedActions.push({
+        actionId: action.actionId,
+        rule: 'R8',
+        detail: `${slotName} references no claim at all`,
+      });
       continue;
     }
     if (!finalSurvivingIds.includes(action.claimId)) {
-      dropClaim(
-        action.actionId,
-        'R8',
-        `${slotName} references a claim id that did not survive validation`,
-      );
+      droppedActions.push({
+        actionId: action.actionId,
+        rule: 'R8',
+        detail: `${slotName} references a claim id that did not survive validation`,
+      });
     }
   }
 
@@ -728,6 +744,7 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
     survivingClaimIds: Object.freeze(finalSurvivingIds),
     droppedClaims: Object.freeze(droppedClaims),
     droppedClaimCount: droppedClaims.length,
+    droppedActions: Object.freeze(droppedActions),
     strippedSectionIds: Object.freeze(strippedSectionIds),
     policyVersion: snapshot.policyVersion,
     claimSchemaVersion: snapshot.claimSchemaVersion,
