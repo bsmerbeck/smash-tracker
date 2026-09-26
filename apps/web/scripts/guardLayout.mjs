@@ -64,6 +64,7 @@ import {
   tableClipSweepRoutes,
   tableClipSweepScanned,
   fitTargetsForViewport,
+  fitViewportsOutsideRoute,
   runRoutePrepare,
   TABLE_CLIP_SCAN_SELECTOR,
   DEFAULT_SCROLL_BUDGETS,
@@ -327,6 +328,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       { type: 'wait', selector: '[data-slot="scout-full-analysis"]' },
       { type: 'click', selector: '[data-slot="scout-full-analysis"] > button' },
       { type: 'wait', selector: '[data-slot="scout-full-analysis"][data-state="open"]' },
+    ],
+    // Plan 39.1-49 (orchestrator 2026-09-26, the Scout findings this plan
+    // owns): mark-count (UI-SPEC §11 — the Recent Form trend at most 60
+    // points) and brand-red-text (§4.3 — the event links), plus a text-fit
+    // target on Recent Events at 1440 (its desktop half card clipped three
+    // columns) and 390. The 1440 target gets its own shell=app load.
+    checks: ['mark-count', 'brand-red-text'],
+    fitTargets: [
+      { selector: '[data-slot="scout-recent-events"]', viewports: ['390x844', '1440x900'] },
     ],
     clipTargets: [
       '[data-slot="opponent-table"]',
@@ -2061,6 +2071,16 @@ async function main() {
               exitCode = 1;
             }
             await runShellPasses(route, viewport);
+          }
+          // Plan 39.1-49: a fit viewport the route loop never measured (Scout
+          // at 1440) still gets its shell=app text-fit load.
+          for (const name of fitViewportsOutsideRoute(
+            route,
+            routeViewports.map((viewport) => viewport.name),
+          )) {
+            if (hardTimedOut) break;
+            const viewport = LAYOUT_ORACLE_VIEWPORTS.find((v) => v.name === name);
+            if (viewport) await runShellPasses(route, viewport);
           }
         }
       })().catch((error) => {

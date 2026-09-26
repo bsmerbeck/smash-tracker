@@ -2620,3 +2620,15 @@ test('text-fit: routes — fitTargetsForViewport returns only the targets declar
   );
   assert.deepEqual(fitTargetsForViewport({ id: 'trends' }, '390x844'), []);
 });
+
+test('text-fit: routes — fitViewportsOutsideRoute names the declared fit viewports the route loop never measures (scout 1440), in viewport order', () => {
+  const fitViewportsOutsideRoute = fn38('fitViewportsOutsideRoute');
+  const scout = {
+    id: 'scout',
+    viewports: ['390x844'],
+    fitTargets: [{ selector: '#events', viewports: ['390x844', '1440x900'] }],
+  };
+  assert.deepEqual(fitViewportsOutsideRoute(scout, ['390x844']), ['1440x900']);
+  assert.deepEqual(fitViewportsOutsideRoute(scout, ['2560x1440', '1440x900', '390x844']), []);
+  assert.deepEqual(fitViewportsOutsideRoute({ id: 'trends' }, ['390x844']), []);
+});

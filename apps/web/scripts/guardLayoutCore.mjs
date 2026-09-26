@@ -1599,3 +1599,18 @@ export function evaluateTextFit(
   }
   return violations;
 }
+
+/**
+ * Plan 39.1-49 (orchestrator 2026-09-26, Scout desktop): the viewports a
+ * route's fitTargets declare that its own measurement loop does not visit
+ * (Scout is measured at 390x844 only, yet its Recent Events text-fit target
+ * is also declared at 1440x900). The runner gives each such viewport its own
+ * shell=app text-fit load, so a declared target is never silently skipped.
+ * Returns viewport names in LAYOUT_ORACLE_VIEWPORTS order.
+ */
+export function fitViewportsOutsideRoute(route, measuredViewportNames) {
+  const declared = new Set((route?.fitTargets ?? []).flatMap((target) => target.viewports ?? []));
+  return LAYOUT_ORACLE_VIEWPORTS.map((viewport) => viewport.name).filter(
+    (name) => declared.has(name) && !measuredViewportNames.includes(name),
+  );
+}

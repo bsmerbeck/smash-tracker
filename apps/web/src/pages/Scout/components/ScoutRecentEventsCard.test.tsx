@@ -124,3 +124,31 @@ describe('ScoutRecentEventsCard — stacked rows below 640px (plan 39.1-49)', ()
     });
   });
 });
+
+/**
+ * Plan 39.1-49 (orchestrator 2026-09-26; UI-SPEC §4.3 "brand red is never
+ * text"): the event link takes the kit's inline link tone (39.1-39's
+ * `INLINE_LINK_TONE`) in both layouts — never `text-primary`.
+ */
+describe('ScoutRecentEventsCard — event link tone (plan 39.1-49)', () => {
+  const linked: ScoutRecentEvent[] = [
+    {
+      eventName: 'Ultimate Singles',
+      lastSetAt: 1_700_000_000_000,
+      slug: 'tournament/the-big-house-9/event/ultimate-singles',
+      source: 'startgg',
+    },
+  ];
+
+  it('link tone: the event link carries INLINE_LINK_TONE and no text-primary, in the table and the stack', () => {
+    for (const layout of ['table', 'stack'] as const) {
+      const view = render(<ScoutRecentEventsCard events={linked} layout={layout} />);
+      const classes = screen.getByRole('link').className.split(/\s+/);
+      expect(classes).not.toContain('text-primary');
+      expect(classes).toEqual(
+        expect.arrayContaining(['text-foreground', 'underline-offset-4', 'hover:underline']),
+      );
+      view.unmount();
+    }
+  });
+});
