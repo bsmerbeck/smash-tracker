@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { LIST_CAP } from '@/components/analytics/BoundedList';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
 
 /**
  * One row's prepared data — the shape a HOST builds, never something this
@@ -56,12 +57,18 @@ export interface OpponentTableRow {
 export function OpponentTable({
   rows,
   hubHref,
+  layout: layoutOverride,
 }: {
   rows: OpponentTableRow[];
   /** Host-supplied destination builder. Absent entirely at the third-party host (Scout); may still return `undefined` for an individual unaddressable row at the own-subject host. */
   hubHref?: (row: OpponentTableRow) => string | undefined;
+  /** Plan 39.1-49: forces one layout (tests / hosts); otherwise read once from the viewport (below 640px: stacked rows). */
+  layout?: RowLayout;
 }) {
   const { t } = useTranslation();
+  // Plan 39.1-49 (UI-SPEC §6.6): exactly one root mounts — the table, or
+  // below 640px the stacked two-line rows. Provider-free (Scout host).
+  const layout = useRowLayout(layoutOverride);
   // T-39.1-14: this surface's nested vertical scroller is replaced by the
   // bounded-list cap ladder (UI-SPEC §6.4) — capped at `LIST_CAP` (8), with a
   // "Show all"/"Show fewer" toggle instead of an `overflow-y-auto` box. Table
@@ -87,48 +94,104 @@ export function OpponentTable({
           <p className="text-sm text-muted-foreground">{t('fighterAnalysis.opponents.empty')}</p>
         ) : (
           <>
-            <Table id={tableId} data-slot="opponent-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('matchups.opponent')}</TableHead>
-                  <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
-                  <TableHead>{t('fighterAnalysis.opponents.matches')}</TableHead>
-                  <TableHead>{t('common.wins')}</TableHead>
-                  <TableHead>{t('common.losses')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            {layout === 'stack' ? (
+              // Plan 39.1-49 (UI-SPEC §6.6 / §6.5 rules 1-2): one stacked row
+              // per opponent — line 1 the label in the one flexible
+              // truncating slot (full label as its title) plus the chevron,
+              // line 2 the record, rate and matches as whole tokens. Same
+              // overlay link per addressable row as the table.
+              <ul id={tableId} data-slot="opponent-table" className="flex flex-col divide-y">
                 {visibleRows.map((row) => {
                   const destination = hubHref?.(row);
                   return (
-                    <TableRow key={row.key} className="relative hover:bg-accent">
-                      <TableCell className="relative capitalize">
-                        {destination != null && (
-                          <DrillableRow
-                            to={destination}
-                            as="overlay"
-                            ariaLabel={t('shared.drillableRow.aria', {
-                              subject: row.displayLabel,
-                              context: t('fighterAnalysis.opponents.title'),
-                            })}
-                          />
-                        )}
-                        {row.displayLabel}
-                      </TableCell>
-                      <TableCell>{row.winRate}%</TableCell>
-                      <TableCell>{row.total}</TableCell>
-                      <TableCell>{row.wins}</TableCell>
-                      <TableCell>
-                        <span className="flex items-center justify-between gap-2">
-                          {row.losses}
-                          {destination != null && <DrillableRowChevron />}
+                    <li
+                      key={row.key}
+                      data-slot="opponent-table-row"
+                      className="relative flex min-w-0 flex-col gap-1 rounded-md px-2 py-2 hover:bg-accent"
+                    >
+                      {destination != null && (
+                        <DrillableRow
+                          to={destination}
+                          as="overlay"
+                          ariaLabel={t('shared.drillableRow.aria', {
+                            subject: row.displayLabel,
+                            context: t('fighterAnalysis.opponents.title'),
+                          })}
+                        />
+                      )}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          title={row.displayLabel}
+                          className="min-w-0 flex-1 truncate text-sm font-medium capitalize"
+                        >
+                          {row.displayLabel}
                         </span>
-                      </TableCell>
-                    </TableRow>
+                        {destination != null && <DrillableRowChevron />}
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted-foreground tabular-nums">
+                        <span className="whitespace-nowrap">
+                          <span className="sr-only">{t('common.wins')} </span>
+                          {row.wins}
+                          <span aria-hidden="true">–</span>
+                          <span className="sr-only"> {t('common.losses')} </span>
+                          {row.losses}
+                        </span>
+                        <span className="whitespace-nowrap">
+                          <span className="sr-only">{t('matchups.stageTable.winRate')} </span>
+                          {row.winRate}%
+                        </span>
+                        <span className="whitespace-nowrap">
+                          {row.total} {t('fighterAnalysis.opponents.matches')}
+                        </span>
+                      </div>
+                    </li>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </ul>
+            ) : (
+              <Table id={tableId} data-slot="opponent-table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('matchups.opponent')}</TableHead>
+                    <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                    <TableHead>{t('fighterAnalysis.opponents.matches')}</TableHead>
+                    <TableHead>{t('common.wins')}</TableHead>
+                    <TableHead>{t('common.losses')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleRows.map((row) => {
+                    const destination = hubHref?.(row);
+                    return (
+                      <TableRow key={row.key} className="relative hover:bg-accent">
+                        <TableCell className="relative capitalize">
+                          {destination != null && (
+                            <DrillableRow
+                              to={destination}
+                              as="overlay"
+                              ariaLabel={t('shared.drillableRow.aria', {
+                                subject: row.displayLabel,
+                                context: t('fighterAnalysis.opponents.title'),
+                              })}
+                            />
+                          )}
+                          {row.displayLabel}
+                        </TableCell>
+                        <TableCell>{row.winRate}%</TableCell>
+                        <TableCell>{row.total}</TableCell>
+                        <TableCell>{row.wins}</TableCell>
+                        <TableCell>
+                          <span className="flex items-center justify-between gap-2">
+                            {row.losses}
+                            {destination != null && <DrillableRowChevron />}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
             {hasMore && (
               <Button
                 type="button"
