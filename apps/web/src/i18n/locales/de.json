@@ -263,6 +263,7 @@
     "loading": "Dein Dashboard wird geladen...",
     "hero": {
       "overallRecord": "Gesamtbilanz",
+      "fighterRecord": "Bilanz mit {{fighter}}",
       "winRate": "{{rate}} % Winrate",
       "form": "Form",
       "streakWin": "{{count}}S",
@@ -304,9 +305,11 @@
     },
     "previous": {
       "title": "Letzte Matches",
-      "limit": "Limit",
-      "limitAria": "Match-Limit",
-      "empty": "Noch keine Matches erfasst."
+      "empty": "Noch keine Matches erfasst.",
+      "windowEmpty": {
+        "lastEvent": "Keine Matches beim letzten Event.",
+        "last90": "Keine Matches in den letzten 90 Tagen."
+      }
     },
     "stages": {
       "title": "Meistgespielte Stages",
@@ -3405,6 +3408,7 @@
       "showFewer": "Weniger anzeigen",
       "showMore50": "50 weitere anzeigen",
       "allSessions": "Alle {{count}} Sessions →",
+      "allGames": "Alle {{count}} Matches →",
       "allTournaments": "Alle {{count}} Turniere →",
       "allOpponents": "Alle {{count}} Gegner →",
       "sortMostGames": "Meiste Matches",

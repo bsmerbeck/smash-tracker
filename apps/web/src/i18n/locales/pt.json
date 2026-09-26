@@ -263,6 +263,7 @@
     "loading": "Carregando seu painel...",
     "hero": {
       "overallRecord": "Histórico geral",
+      "fighterRecord": "Histórico de {{fighter}}",
       "winRate": "{{rate}}% de vitórias",
       "form": "Forma",
       "streakWin": "{{count}}V",
@@ -304,9 +305,11 @@
     },
     "previous": {
       "title": "Partidas anteriores",
-      "limit": "Limite",
-      "limitAria": "Limite de partidas",
-      "empty": "Nenhuma partida registrada ainda."
+      "empty": "Nenhuma partida registrada ainda.",
+      "windowEmpty": {
+        "lastEvent": "Nenhuma partida no último evento.",
+        "last90": "Nenhuma partida nos últimos 90 dias."
+      }
     },
     "stages": {
       "title": "Stages mais jogados",
@@ -3405,6 +3408,7 @@
       "showFewer": "Mostrar menos",
       "showMore50": "Mostrar mais 50",
       "allSessions": "Todas as {{count}} sessões →",
+      "allGames": "Todas as {{count}} partidas →",
       "allTournaments": "Todos os {{count}} torneios →",
       "allOpponents": "Todos os {{count}} adversários →",
       "sortMostGames": "Mais partidas",

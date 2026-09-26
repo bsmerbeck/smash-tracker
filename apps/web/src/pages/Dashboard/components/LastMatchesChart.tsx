@@ -20,7 +20,7 @@ import {
   type Match,
 } from '@smash-tracker/shared';
 import { getRunningWinRateSeries, type RunningWinRatePoint } from '@/lib/stats';
-import { darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
+import { chartColors, darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { useDashboardContext } from '../DashboardContext';
@@ -88,6 +88,14 @@ export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horiz
         <CardTitle>{t('dashboard.formCurve.title')}</CardTitle>
         {showChart && (
           <p data-slot="form-curve-caption" className="text-xs text-muted-foreground">
+            {/* Plan 39.1-50 (owner: no text legends; sketches 001-C / 002-C):
+                the series is named by this caption's series-ink swatch. */}
+            <span
+              aria-hidden="true"
+              data-slot="form-curve-swatch"
+              className="mr-1.5 inline-block h-0.5 w-3 align-middle"
+              style={{ backgroundColor: chartColors.series }}
+            />
             {t(`dashboard.formCurve.caption.${horizon}`)}
           </p>
         )}
@@ -115,11 +123,39 @@ export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horiz
 /** Builds chart options with tooltip callbacks closed over `series` so they can look up the underlying Match for the hovered point (date + opponent), mirroring legacy MatchChart's tooltip title/footer. */
 function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): ChartOptions<'line'> {
   const theme = darkChartOptions();
+  // Plan 39.1-50 (owner: no rotated index ticks): only the two ends are
+  // labelled, each with its plotted game's date — and only the right end
+  // when both fall on the same calendar day.
+  const endDate = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' });
+  const first = series[0];
+  const last = series[series.length - 1];
+  const sameDay =
+    first != null &&
+    last != null &&
+    new Date(first.match.time).toDateString() === new Date(last.match.time).toDateString();
+  const endTick = (index: number): string => {
+    const lastIndex = series.length - 1;
+    if (index === lastIndex && last) return endDate.format(new Date(last.match.time));
+    if (index === 0 && first && !sameDay) return endDate.format(new Date(first.match.time));
+    return '';
+  };
+  const themeX = theme.scales?.x;
   return {
     responsive: theme.responsive,
     maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
-      x: theme.scales?.x,
+      x: {
+        ...themeX,
+        grid: { display: false },
+        ticks: {
+          ...themeX?.ticks,
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
+          align: 'inner',
+          callback: (_value, index) => endTick(index),
+        },
+      },
       y: {
         ...theme.scales?.y,
         position: 'right',
@@ -127,10 +163,7 @@ function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): Char
       },
     },
     plugins: {
-      legend: {
-        display: true,
-        labels: theme.plugins?.legend?.labels,
-      },
+      legend: { display: false },
       tooltip: {
         ...theme.plugins?.tooltip,
         mode: 'nearest',

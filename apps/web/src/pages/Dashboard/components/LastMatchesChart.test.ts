@@ -45,6 +45,11 @@ vi.mock('react-chartjs-2', async () => {
   };
 });
 
+/** Read through a function so TS does not narrow `captured.options` after a reset. */
+function readOptions(): ChartOptionsShape | null {
+  return captured.options;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.UTC(2026, 8, 25, 12);
 
@@ -256,13 +261,13 @@ describe('LastMatchesChart Form Curve legend and x axis (plan 39.1-50)', () => {
   it('draws no chart.js legend box', () => {
     captured.options = null;
     renderChart(spread, 'last30');
-    expect(captured.options?.plugins?.legend?.display).toBe(false);
+    expect(readOptions()?.plugins?.legend?.display).toBe(false);
   });
 
   it('keeps the x ticks horizontal, never auto-skipped, aligned inner, with no x grid', () => {
     captured.options = null;
     renderChart(spread, 'last30');
-    const x = captured.options?.scales?.x;
+    const x = readOptions()?.scales?.x;
     expect(x?.ticks?.maxRotation).toBe(0);
     expect(x?.ticks?.minRotation).toBe(0);
     expect(x?.ticks?.autoSkip).toBe(false);
@@ -273,7 +278,7 @@ describe('LastMatchesChart Form Curve legend and x axis (plan 39.1-50)', () => {
   it('labels only the two ends, each with its plotted game date', () => {
     captured.options = null;
     renderChart(spread, 'last30');
-    const callback = captured.options?.scales?.x?.ticks?.callback;
+    const callback = readOptions()?.scales?.x?.ticks?.callback;
     expect(typeof callback).toBe('function');
     const ticks = spread.map((_, i) => ({ value: i }));
     const labels = spread.map((_, i) => callback!(i, i, ticks));
@@ -289,7 +294,7 @@ describe('LastMatchesChart Form Curve legend and x axis (plan 39.1-50)', () => {
     );
     captured.options = null;
     renderChart(sameDay, 'last30');
-    const callback = captured.options?.scales?.x?.ticks?.callback;
+    const callback = readOptions()?.scales?.x?.ticks?.callback;
     const ticks = sameDay.map((_, i) => ({ value: i }));
     expect(callback!(0, 0, ticks)).toBe('');
     expect(callback!(3, 3, ticks)).toBe(shortDate(sameDay[3]!.time));

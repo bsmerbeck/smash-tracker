@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { classify, confidenceTierFor, resolveWindow, toRateValue } from '@smash-tracker/shared';
@@ -85,6 +85,34 @@ export function HeroStats({
 
 function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
   const { t } = useTranslation();
+  return (
+    <HorizonRecordCard
+      matches={matches}
+      horizon={horizon}
+      label={t('dashboard.hero.overallRecord')}
+    />
+  );
+}
+
+/**
+ * Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the Overall Record tile's body,
+ * extracted unchanged so the Dashboard's per-fighter record tile renders the
+ * SAME horizon figure path (`resolveWindow` / `toRateValue` / `classify` /
+ * `deltaChipView`) under its own overline. `children` is a layout-neutral
+ * slot inside the card (the fighter tile's hook).
+ */
+export function HorizonRecordCard({
+  matches,
+  horizon,
+  label,
+  children,
+}: {
+  matches: Match[];
+  horizon: HorizonKey;
+  label: string;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `FighterHero.tsx`'s own convention.
@@ -117,9 +145,10 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
   return (
     <Card>
       <CardContent>
+        {children}
         {hasMatches ? (
           <StatFigure
-            label={t('dashboard.hero.overallRecord')}
+            label={label}
             value={`${Math.round(baseline.rate * 100)}%`}
             lead
             support={
@@ -138,7 +167,7 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
                 <DeltaChip
                   {...chipView}
                   ariaLabel={t('analytics.dumbbell.rowAria', {
-                    label: t('dashboard.hero.overallRecord'),
+                    label,
                     recentRecord: `${recentRate.wins}–${recentRate.losses}`,
                     baselineRecord: `${baseline.wins}–${baseline.losses}`,
                   })}
@@ -147,7 +176,10 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
             }
           />
         ) : (
-          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
+          // Plan 39.1-50: the empty tile still names itself (the kit's
+          // StatFigure empty state — overline, em dash, caption), so the
+          // Overall and the fighter tiles never read as one untitled line.
+          <StatFigure label={label} lead state="empty" emptyCaption={t('common.noMatchData')} />
         )}
       </CardContent>
     </Card>

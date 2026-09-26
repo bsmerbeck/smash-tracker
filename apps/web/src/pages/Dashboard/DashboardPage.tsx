@@ -204,14 +204,12 @@ export function DashboardPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('dashboard.loading')}</span>
           <PageGrid>
-            {[0, 1, 2, 3, 4].map((i) => (
+            {/* Plan 39.1-50: six hero tiles (the fighter record is the sixth). */}
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <GridCell span={3} key={i}>
                 <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
               </GridCell>
             ))}
-            <GridCell span={12}>
-              <CardSkeleton variant="stat-row" rows={4} statusLabel={t('dashboard.loading')} />
-            </GridCell>
             <GridCell span={6}>
               <CardSkeleton variant="chart" statusLabel={t('dashboard.loading')} />
             </GridCell>
@@ -295,19 +293,21 @@ export function DashboardPage() {
               timeFilteredMatches={timeFilteredMatches}
               horizon={horizon}
             />
+            {/* Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the selected fighter's
+                record is the hero row's sixth 3-span tile, on the page horizon. */}
+            <GridCell span={3}>
+              <WinLossTracker matches={matches} horizon={horizon} />
+            </GridCell>
             {filterActive && allMatches.length > 0 && matches.length === 0 && (
               <GridCell span={12}>
                 <FilteredEmptyNotice />
               </GridCell>
             )}
-            <GridCell span={12}>
-              <WinLossTracker matches={matches} />
-            </GridCell>
             <GridCell span={6}>
               <LastMatchesChart matches={matches} horizon={horizon} />
             </GridCell>
             <GridCell span={6}>
-              <PreviousMatches matches={matches} />
+              <PreviousMatches matches={matches} horizon={horizon} />
             </GridCell>
             <GridCell span={12}>
               <StageTiles matches={matches} />

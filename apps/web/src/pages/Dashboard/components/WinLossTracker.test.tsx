@@ -47,6 +47,13 @@ function renderTracker(
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** The tile's lead figure (`figure-lg`: the StatFigure `lead` size). */
+function leadValue(): string | undefined {
+  return (
+    Array.from(document.querySelectorAll('[class*="text-[1.75rem]"]'))[0]?.textContent ?? undefined
+  );
+}
+
 /**
  * Falco: the newest 30 games are losses (one a day), 10 older wins sit inside
  * 90 days, and 60 wins from ~200 days ago keep both windows under the
@@ -93,7 +100,7 @@ describe('WinLossTracker', () => {
     expect(tile).not.toBeNull();
     expect(tile!.closest('[data-slot="card"]')).not.toBeNull();
     expect(screen.getByText('Falco record')).toBeInTheDocument();
-    expect(screen.getByText('67%')).toBeInTheDocument();
+    expect(leadValue()).toBe('67%');
     const record =
       tile!.querySelector('[data-slot="record"]') ??
       container.querySelector('[data-slot="record"]');
@@ -121,7 +128,7 @@ describe('WinLossTracker', () => {
     expect(chip()).not.toBeNull();
     expect(chip()!.textContent).toMatch(/last 30$/);
     // Only Falco's 100 games count: 70–30 all time.
-    expect(screen.getByText('70%')).toBeInTheDocument();
+    expect(leadValue()).toBe('70%');
     rerenderHorizon('last90');
     expect(chip()).not.toBeNull();
     expect(chip()!.textContent).toMatch(/last 90 days$/);

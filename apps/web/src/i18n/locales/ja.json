@@ -263,6 +263,7 @@
     "loading": "ダッシュボードを読み込み中...",
     "hero": {
       "overallRecord": "通算戦績",
+      "fighterRecord": "{{fighter}}の戦績",
       "winRate": "勝率{{rate}}%",
       "form": "調子",
       "streakWin": "{{count}}連勝",
@@ -304,9 +305,11 @@
     },
     "previous": {
       "title": "最近の対戦",
-      "limit": "表示数",
-      "limitAria": "表示する対戦数",
-      "empty": "まだ対戦が記録されていません。"
+      "empty": "まだ対戦が記録されていません。",
+      "windowEmpty": {
+        "lastEvent": "直近のイベントの試合はありません。",
+        "last90": "直近90日間の試合はありません。"
+      }
     },
     "stages": {
       "title": "よく遊ぶステージ",
@@ -3405,6 +3408,7 @@
       "showFewer": "表示を減らす",
       "showMore50": "さらに50件表示",
       "allSessions": "{{count}}セッションすべて →",
+      "allGames": "{{count}}試合すべて →",
       "allTournaments": "{{count}}大会すべて →",
       "allOpponents": "{{count}}人の対戦相手すべて →",
       "sortMostGames": "試合数が多い順",

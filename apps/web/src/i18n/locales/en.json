@@ -263,6 +263,7 @@
     "loading": "Loading your dashboard...",
     "hero": {
       "overallRecord": "Overall Record",
+      "fighterRecord": "{{fighter}} record",
       "winRate": "{{rate}}% win rate",
       "form": "Form",
       "streakWin": "{{count}}W",
@@ -304,9 +305,11 @@
     },
     "previous": {
       "title": "Previous Matches",
-      "limit": "Limit",
-      "limitAria": "Match limit",
-      "empty": "No matches recorded yet."
+      "empty": "No matches recorded yet.",
+      "windowEmpty": {
+        "lastEvent": "No games at the last event.",
+        "last90": "No games in the last 90 days."
+      }
     },
     "stages": {
       "title": "Most-Played Stages",
@@ -3405,6 +3408,7 @@
       "showFewer": "Show fewer",
       "showMore50": "Show 50 more",
       "allSessions": "All {{count}} sessions →",
+      "allGames": "All {{count}} games →",
       "allTournaments": "All {{count}} tournaments →",
       "allOpponents": "All {{count}} opponents →",
       "sortMostGames": "Most games",
