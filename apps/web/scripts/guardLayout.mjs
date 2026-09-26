@@ -328,7 +328,12 @@ export const LAYOUT_ORACLE_ROUTES = [
       { type: 'click', selector: '[data-slot="scout-full-analysis"] > button' },
       { type: 'wait', selector: '[data-slot="scout-full-analysis"][data-state="open"]' },
     ],
-    clipTargets: ['[data-slot="opponent-table"]', '[data-slot="what-they-play"]'],
+    clipTargets: [
+      '[data-slot="opponent-table"]',
+      '[data-slot="what-they-play"]',
+      // Plan 39.1-49 Task 3: the converted recent-events table.
+      '[data-slot="scout-recent-events"]',
+    ],
   },
   {
     // Plan 39.1-49 (OOS-9): the GSP page on the harness's seeded `gsp` scale

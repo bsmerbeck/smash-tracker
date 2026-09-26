@@ -218,3 +218,49 @@ describe('MatrixHeat — the grid hugs the card content edge (plan 39.1-39)', ()
     expect(container.querySelector('[data-slot="matrix-heat-stack"]')).not.toBeNull();
   });
 });
+
+/**
+ * Plan 39.1-49 (OOS-5): at 390px on the opponent hub the stack's third
+ * pairing tab was cut at the card edge by the tab list's sideways scroller.
+ * The tab list now wraps whole tabs; the desktop grid is unchanged.
+ */
+describe('MatrixHeat stack tab list wraps whole tabs (plan 39.1-49, OOS-5)', () => {
+  const many: MatrixHeatAxis[] = [
+    { key: 'r1', label: 'Fox vs Falco' },
+    { key: 'r2', label: 'Fox vs Marth' },
+    { key: 'r3', label: 'Captain Falcon vs Falco' },
+  ];
+  const manyCells = many.flatMap((row) =>
+    cols
+      .filter((col) => !col.isUnknown)
+      .map((col) => makeCell({ rowKey: row.key, colKey: col.key })),
+  );
+
+  it('wrapping tab list: flex-wrap, no overflow-x-auto, every tab label whole with its aria-label; the third tab shows its panel', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <MatrixHeat rows={many} cols={cols} cells={manyCells} emptyMessage="none" layout="stack" />,
+    );
+    const list = screen.getByRole('tablist');
+    const classes = list.className.split(/\s+/);
+    expect(classes).toContain('flex-wrap');
+    expect(classes).not.toContain('overflow-x-auto');
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(many.map((row) => row.label));
+    for (const tab of tabs) {
+      expect(tab.getAttribute('aria-label')).toBeTruthy();
+    }
+    await user.click(tabs[2]!);
+    const panel = container.querySelector('[data-state="active"][role="tabpanel"]');
+    expect(panel?.getAttribute('aria-labelledby')).toBe(tabs[2]!.id);
+  });
+
+  it('the grid layout is unchanged: matrix-heat-grid keeps its overflow-x-auto', () => {
+    const { container } = render(
+      <MatrixHeat rows={many} cols={cols} cells={manyCells} emptyMessage="none" layout="grid" />,
+    );
+    const grid = container.querySelector('[data-slot="matrix-heat-grid"]');
+    expect(grid).not.toBeNull();
+    expect(grid!.className.split(/\s+/)).toContain('overflow-x-auto');
+  });
+});

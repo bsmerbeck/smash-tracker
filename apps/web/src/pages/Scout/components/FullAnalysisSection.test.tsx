@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ScoutGame } from '@smash-tracker/shared';
@@ -87,5 +87,45 @@ describe('FullAnalysisSection', () => {
 
     expect(screen.getByText('Stage Mastery — Overall')).toBeInTheDocument();
     expect(screen.getByText('Stage Mastery — Mario')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Plan 39.1-49 (T-39.1-49-02): on a phone the Full analysis tables render
+ * their stacked roots, and the third-party-data host still renders ZERO
+ * anchors — the stacked rows add no link into the viewer's own routes.
+ */
+describe('FullAnalysisSection — phone layout (plan 39.1-49)', () => {
+  it('with (max-width: 639px) matching, OpponentTable and WhatTheyPlayTable render their stack roots and the section renders zero anchors', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === '(max-width: 639px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      })),
+    });
+    try {
+      const user = userEvent.setup();
+      const games = [
+        makeGame({ time: 1, win: true }),
+        makeGame({ time: 2, win: false, opponentTag: 'Kola' }),
+        makeGame({ time: 3, win: true }),
+        makeGame({ time: 4, win: true, fighterId: 2 }),
+      ];
+      const { container } = render(<FullAnalysisSection games={games} gamerTag="Pandem1c" />);
+      await user.click(screen.getByRole('button', { name: /full analysis/i }));
+      expect(container.querySelector('ul[data-slot="opponent-table"]')).not.toBeNull();
+      expect(container.querySelector('ul[data-slot="what-they-play"]')).not.toBeNull();
+      expect(container.querySelector('table[data-slot="opponent-table"]')).toBeNull();
+      expect(container.querySelectorAll('a')).toHaveLength(0);
+    } finally {
+      // @ts-expect-error — jsdom has no matchMedia; restore that default.
+      delete window.matchMedia;
+    }
   });
 });

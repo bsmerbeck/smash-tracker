@@ -66,7 +66,7 @@ export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }
         {events.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('scout.events.empty')}</p>
         ) : (
-          <Table>
+          <Table data-slot="scout-recent-events">
             <TableHeader>
               <TableRow>
                 <TableHead>{t('trends.tournaments.event')}</TableHead>
