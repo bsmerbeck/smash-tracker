@@ -300,6 +300,7 @@ describe('recommended-action copy is bound to the engine table', () => {
   const cardKeys = [
     'reports.actions.title',
     'reports.actions.empty',
+    'reports.actions.emptyNoOpponents',
     'reports.actions.matchupPractice.title',
     'reports.actions.vodReview.title',
   ];

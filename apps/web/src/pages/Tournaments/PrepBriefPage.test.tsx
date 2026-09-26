@@ -900,6 +900,8 @@ describe('PrepBriefPage — admin-imported entry (prep-bypass closure)', () => {
 describe('recommended actions (plan 39-11)', () => {
   const EMPTY_SENTENCE =
     'Not enough data yet to recommend a specific action — log a few more games.';
+  const NO_OPPONENTS_SENTENCE =
+    'No likely opponents are listed for this event yet, so there are no actions to recommend.';
 
   /** Mario vs "rival": 1–5 against Donkey Kong on Battlefield, 1–3 against Link on Big Battlefield; two lost games carry VOD notes. */
   function rivalHistory(): Match[] {
@@ -1011,6 +1013,25 @@ describe('recommended actions (plan 39-11)', () => {
     await screen.findByText('Prep checklist');
     expect(await screen.findByText(EMPTY_SENTENCE)).toBeInTheDocument();
     expect(actionRows()).toHaveLength(0);
+  });
+
+  it('code review WEB-04: with a full history but NO likely opponents, the prep branch names the real cause, never "log a few more games"', async () => {
+    mockBriefStatus({ activated: true });
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    expect(await screen.findByText(NO_OPPONENTS_SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(EMPTY_SENTENCE)).not.toBeInTheDocument();
+    expect(actionRows()).toHaveLength(0);
+  });
+
+  it('code review WEB-04: the review branch with no likely opponents shows the same accurate empty state', async () => {
+    mockBriefStatus({ activated: true, reviewAt: Date.now() - 60_000 });
+    renderPage();
+
+    await screen.findByText('Post-event review');
+    expect(await screen.findByText(NO_OPPONENTS_SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByText(EMPTY_SENTENCE)).not.toBeInTheDocument();
   });
 
   it('reads the caller’s fighters through the existing useFighters hook (C2-M8)', async () => {
