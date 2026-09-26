@@ -114,6 +114,14 @@ import { isDemoAccountSubject } from '../research/demoAccount.js';
  */
 const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
 
+/**
+ * Code review R3-WR-02: the clock-skew allowance between this process and
+ * the one running the stuck-job sweep. An execution whose running claim is
+ * older than `REPORT_JOB_STALE_MS` minus this may already have been failed
+ * AND refunded by the sweep, so it never refunds its own spend again.
+ */
+const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
+
 export interface ReportsRoutesOptions {
   config: ReportsConfig | null;
   startggConfig: StartggConfig | null;
@@ -404,6 +412,18 @@ function buildValidatedPracticePlan(params: {
 type SynthesisGenerationOutcome =
   | { ok: true; jobId: string; status: 'succeeded'; updatedAt: number; resultRef: string }
   | { ok: false; failure: ReportFailureReply };
+
+/**
+ * Code review R3-WR-02 (iteration 3): one request execution's settlement
+ * latch. Its failure paths can chain — a resolver fails the job, then
+ * rethrows into the post-spend guard — and since the guard can refund this
+ * execution's own spend even when the job record is no longer its own, the
+ * second attempt must be a no-op. `failOwnedJob` sets it on its first call
+ * and returns immediately on any later one.
+ */
+interface ExecutionSettlement {
+  settled: boolean;
+}
 
 /** The minimal request surface `failJob`/`runReportGeneration` need — deliberately narrow so it's obvious neither depends on Fastify's full request type. */
 interface ReportRequestContext {
@@ -755,13 +775,71 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     attempt: number;
     day: string | null;
     failureReason?: ReportFailureReason;
+    /** R3-WR-02: see `refundLostExecutionSpend`. */
+    perExecutionSpend: boolean;
+    /** R3-WR-02: when this execution wrote its `running` claim, or null when it never did. */
+    claimedAt: number | null;
+    /** R3-WR-02: this execution's latch — the first call settles, any later call is a no-op. */
+    settlement: ExecutionSettlement;
   }): Promise<boolean> {
-    const { jobRef, executionId, from, ...failParams } = params;
+    const { jobRef, executionId, from, perExecutionSpend, claimedAt, settlement, ...failParams } =
+      params;
+    if (settlement.settled) {
+      return false;
+    }
+    settlement.settled = true;
     if (!(await settleOwnedJob({ jobRef, executionId, from }))) {
+      await refundLostExecutionSpend({
+        uid: failParams.uid,
+        creditRef: failParams.creditRef,
+        spent: failParams.spent,
+        perExecutionSpend,
+        claimedAt,
+      });
       return false;
     }
     await failJob(failParams);
     return true;
+  }
+
+  /**
+   * Code review R3-WR-02 (iteration 3): the refund of THIS execution's own
+   * spend when it has lost the job to another execution. The ownership gate
+   * (`settleOwnedJob`) decides who may write the JOB RECORD; it must not
+   * decide whose money comes back. A prep single or a legacy job spends one
+   * credit PER EXECUTION (`spendCredit`, the job id as its ref), so a crafted
+   * duplicate of the same client-sent job id spends twice, and the execution
+   * that lost the job used to keep the user's second credit. It is refunded
+   * here, exactly once, and the job record is never touched. A pre-paid
+   * bundle child's one credit belongs to the JOB (`perExecutionSpend` false),
+   * so only the owner's `failJob` returns it.
+   *
+   * The one other refunder of a per-execution spend is the stuck-job sweep,
+   * which fails and refunds a `running` row older than the staleness window
+   * — this execution's own row if it was still the owner then. When this
+   * execution's running claim is that old (less a clock-skew margin), the
+   * sweep may already have returned its credit, so nothing is refunded here:
+   * the one failure mode left is a user out one credit after a generation
+   * that ran past the window, never a minted credit.
+   */
+  async function refundLostExecutionSpend(params: {
+    uid: string;
+    creditRef: string;
+    spent: boolean;
+    perExecutionSpend: boolean;
+    claimedAt: number | null;
+  }): Promise<void> {
+    const { uid, creditRef, spent, perExecutionSpend, claimedAt } = params;
+    if (!perExecutionSpend || !spent) {
+      return;
+    }
+    if (
+      claimedAt !== null &&
+      Date.now() - claimedAt >= REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS
+    ) {
+      return;
+    }
+    await refundCredit(app.firebase.database, uid, creditRef);
   }
 
   /**
@@ -835,6 +913,14 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     reason?: PrepReportReason;
     /** R2-CR-01: this request execution's own token, written on the job's queued row by the caller. */
     executionId: string;
+    /**
+     * R3-WR-02: true when `spent` is this execution's OWN `spendCredit` (a
+     * prep single, a legacy job); false for a pre-paid bundle child, whose
+     * credit belongs to the job. See `refundLostExecutionSpend`.
+     */
+    perExecutionSpend: boolean;
+    /** R3-WR-02: this execution's settlement latch, shared with its resolver. */
+    settlement: ExecutionSettlement;
     resolveScout: () => Promise<ScoutResolutionOutcome>;
     payloadOptions?: { binding?: ScoutBinding; curatedCanonicalName?: string };
   }): Promise<GenerationOutcome> {
@@ -847,6 +933,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobAttempt,
       reason,
       executionId,
+      perExecutionSpend,
+      settlement,
       resolveScout,
       payloadOptions,
     } = params;
@@ -867,7 +955,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // execution's own, and the refund happens only when that transaction
     // committed. A resolver that already failed the job, a concurrent
     // execution of the same job id that re-queued it, claimed it `running`
-    // or delivered it `succeeded` — all of them make this a no-op.
+    // or delivered it `succeeded` — all of them make this a no-op for the
+    // job record. Review R3-WR-02: a credit THIS execution spent itself (a
+    // prep single, a legacy job) is still refunded once in that case
+    // (`refundLostExecutionSpend`); a bundle child's job-owned credit is not.
     let scout: ScoutReportData;
     let payload: ReportPayload;
     try {
@@ -897,6 +988,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           createdAt: jobCreatedAt,
           attempt: jobAttempt,
           day: null,
+          perExecutionSpend,
+          claimedAt: null,
+          settlement,
         },
         err,
       );
@@ -962,6 +1056,18 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           claimed?.status !== 'running' ||
           claimed.executionId !== executionId
         ) {
+          // R3-WR-02: another execution holds the job, so this one writes no
+          // job record — but a credit it spent itself is still its own.
+          if (!settlement.settled) {
+            settlement.settled = true;
+            await refundLostExecutionSpend({
+              uid: request.uid,
+              creditRef,
+              spent,
+              perExecutionSpend,
+              claimedAt: null,
+            });
+          }
           return {
             ok: false,
             failure: {
@@ -989,6 +1095,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           attempt: jobAttempt,
           from: ['queued', 'running'],
           day: null,
+          perExecutionSpend,
+          claimedAt: runningAt,
+          settlement,
         },
         err,
       );
@@ -1013,6 +1122,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           attempt: jobAttempt,
           from: ['running'],
           day: jobDay,
+          perExecutionSpend,
+          claimedAt: runningAt,
+          settlement,
         },
         err,
       );
@@ -1061,6 +1173,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       createdAt: jobCreatedAt,
       attempt: jobAttempt,
       day: jobDay,
+      perExecutionSpend,
+      claimedAt: runningAt,
+      settlement,
     };
     const surface = reportSurfaceFor(reason);
     const issuedClaims = payload.claimSet.claims;
@@ -1624,13 +1739,19 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobAttempt: number;
       reason: PrepReportReason;
       executionId: string;
+      /** R3-WR-02: false for a pre-paid bundle child, whose credit belongs to the job. */
+      perExecutionSpend: boolean;
+      /** R3-WR-02: the execution's settlement latch, shared with `runReportGeneration`. */
+      settlement: ExecutionSettlement;
     },
   ): () => Promise<ScoutResolutionOutcome> {
     // Code review R2-CR-01: a prep job (a pre-paid bundle child above all)
     // can have two concurrent executions, so the resolver's own failure
     // branches settle through the same atomic, ownership-checked transaction
     // as the post-spend guard — never a bare `failJob` over a job the other
-    // execution re-queued, claimed or delivered.
+    // execution re-queued, claimed or delivered. Review R3-WR-02: losing the
+    // job record does not forfeit a prep single's own spend, which is still
+    // refunded once (`refundLostExecutionSpend`).
     const failCurrentJob = async (): Promise<void> => {
       await failOwnedJob({
         uid: ctx.uid,
@@ -1644,6 +1765,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         createdAt: ctx.jobCreatedAt,
         attempt: ctx.jobAttempt,
         day: null,
+        perExecutionSpend: ctx.perExecutionSpend,
+        claimedAt: null,
+        settlement: ctx.settlement,
       });
     };
 
@@ -2438,6 +2562,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       // the queued and running rows it owns. Failure paths settle the job
       // only while it still carries this token (`settleOwnedJob`).
       const executionId = randomUUID();
+      // Code review R3-WR-02: this execution settles (fails the job, or
+      // refunds its own lost spend) at most once, across all its paths.
+      const settlement: ExecutionSettlement = { settled: false };
 
       let spent = false;
       let resolveScout: () => Promise<ScoutResolutionOutcome>;
@@ -2607,6 +2734,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           jobAttempt,
           reason: effectiveReason as PrepReportReason,
           executionId,
+          perExecutionSpend: !preSpent,
+          settlement,
         });
         payloadOptions = { binding, curatedCanonicalName: opponentName };
       } else {
@@ -2709,6 +2838,15 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // predates the spend, so the spend fact is recorded on it here.
         await recordSpendFact(jobRef, spent, request.log);
 
+        // Code review R3-WR-02 / R3-IN-04: the legacy resolver keeps its
+        // bare `failJob` (each legacy execution refunds its own spend), and
+        // sets this execution's settlement latch first, so the post-spend
+        // guard never refunds the same spend again after a fail-then-rethrow.
+        const failLegacyJob = async (params: Parameters<typeof failJob>[0]): Promise<void> => {
+          settlement.settled = true;
+          await failJob(params);
+        };
+
         if (combined) {
           resolveScout = async () => {
             const result = await resolveCombinedScout(
@@ -2723,7 +2861,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               },
             );
             if (!result.ok) {
-              await failJob({
+              await failLegacyJob({
                 uid: request.uid,
                 jobId,
                 creditRef: jobId,
@@ -2759,7 +2897,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               options.parryggClients,
             );
             if (!scout) {
-              await failJob({
+              await failLegacyJob({
                 uid: request.uid,
                 jobId,
                 creditRef: jobId,
@@ -2789,7 +2927,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                 scoutCache,
               );
               if (!scout) {
-                await failJob({
+                await failLegacyJob({
                   uid: request.uid,
                   jobId,
                   creditRef: jobId,
@@ -2810,7 +2948,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               return { ok: true, scout };
             } catch (err) {
               if (err instanceof StartggApiError && err.status === 429) {
-                await failJob({
+                await failLegacyJob({
                   uid: request.uid,
                   jobId,
                   creditRef: jobId,
@@ -2828,7 +2966,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                   },
                 };
               }
-              await failJob({
+              await failLegacyJob({
                 uid: request.uid,
                 jobId,
                 creditRef: jobId,
@@ -2855,6 +2993,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // request's own `prep_report`, when this is a pre-paid child.
         reason: effectiveReason,
         executionId,
+        // R3-WR-02: every execution spends its own credit except a pre-paid
+        // bundle child, whose one credit was spent by the bundle for the job.
+        perExecutionSpend: !preSpent,
+        settlement,
         resolveScout,
         payloadOptions,
       });
