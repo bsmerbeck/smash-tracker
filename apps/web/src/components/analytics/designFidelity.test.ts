@@ -271,3 +271,100 @@ describe('design fidelity — page list controls use the muted link tone (plan 3
     },
   );
 });
+
+/**
+ * Plan 39.1-39 Task 3 (UI-SPEC §4.3: brand red is never text on an analytics
+ * surface): no `text-primary` class literal in non-test files under the
+ * seven analytics page directories, components/analytics, components/charts,
+ * FilteredMatchList.tsx, DrillableRow.tsx and EvidenceCues.tsx — except a
+ * named, reasoned, shrink-only allowlist — and every non-test file in that
+ * scope containing `variant="link"` references one of the two link tones.
+ */
+const TEXT_PRIMARY_SCOPE_DIRS: readonly string[] = [
+  'apps/web/src/pages/Dashboard/',
+  'apps/web/src/pages/FighterAnalysis/',
+  'apps/web/src/pages/Matchups/',
+  'apps/web/src/pages/MatchData/',
+  'apps/web/src/pages/Trends/',
+  'apps/web/src/pages/Opponents/',
+  'apps/web/src/pages/Stages/',
+  'apps/web/src/components/analytics/',
+  'apps/web/src/components/charts/',
+];
+const TEXT_PRIMARY_SCOPE_FILES: readonly string[] = [
+  'apps/web/src/components/FilteredMatchList.tsx',
+  'apps/web/src/components/DrillableRow.tsx',
+  'apps/web/src/components/EvidenceCues.tsx',
+];
+const TEXT_PRIMARY_SCANNED = NON_TEST_FILES.filter(
+  (file) =>
+    TEXT_PRIMARY_SCOPE_DIRS.some((dir) => file.startsWith(dir)) ||
+    TEXT_PRIMARY_SCOPE_FILES.includes(file),
+);
+const TEXT_PRIMARY_PATTERN = /(?<![\w-])text-primary(?![\w-])/;
+/**
+ * Shrink-only. `MatchTable.tsx`: the icon-only VOD trigger
+ * (`border-primary text-primary` on a `size="icon-sm"` Button holding only a
+ * Video icon) — it carries no text for the browser oracle, and restyling the
+ * legacy match table is audit 4.4, not in this batch.
+ */
+const TEXT_PRIMARY_ALLOWLIST: readonly string[] = [
+  'apps/web/src/pages/MatchData/components/MatchTable.tsx',
+];
+/** Shrink-only; seeded empty (every link-variant file in scope takes a tone). */
+const LINK_TONE_ALLOWLIST: readonly string[] = [];
+const LINK_TONE_PATTERN = /\b(MUTED_LINK_TONE|INLINE_LINK_TONE)\b/;
+
+describe('design fidelity — no brand-red text classes, one link tone (plan 39.1-39 Task 3)', () => {
+  it('the pattern detects a text-primary class literal and ignores look-alikes (non-vacuity)', () => {
+    expect(TEXT_PRIMARY_PATTERN.test('className="text-sm text-primary hover:underline"')).toBe(
+      true,
+    );
+    expect(TEXT_PRIMARY_PATTERN.test("cn('text-primary', x)")).toBe(true);
+    expect(TEXT_PRIMARY_PATTERN.test('text-primary-foreground')).toBe(false);
+    expect(TEXT_PRIMARY_PATTERN.test('hover:text-primary/80')).toBe(true);
+  });
+
+  it('the scanned set is non-empty and covers the kit and every analytics page directory', () => {
+    expect(TEXT_PRIMARY_SCANNED.length).toBeGreaterThan(100);
+    for (const dir of TEXT_PRIMARY_SCOPE_DIRS) {
+      expect(
+        TEXT_PRIMARY_SCANNED.some((file) => file.startsWith(dir)),
+        dir,
+      ).toBe(true);
+    }
+    for (const file of TEXT_PRIMARY_SCOPE_FILES) {
+      expect(TEXT_PRIMARY_SCANNED).toContain(file);
+    }
+  });
+
+  it('no scanned file carries a text-primary class literal, except the allowlist', () => {
+    const offenders = TEXT_PRIMARY_SCANNED.filter(
+      (file) =>
+        !TEXT_PRIMARY_ALLOWLIST.includes(file) && TEXT_PRIMARY_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('the text-primary allowlist cannot rot: each entry exists and still carries it', () => {
+    for (const file of TEXT_PRIMARY_ALLOWLIST) {
+      expect(fs.existsSync(path.join(REPO_ROOT, file)), file).toBe(true);
+      expect(TEXT_PRIMARY_PATTERN.test(readRepoFile(file)), file).toBe(true);
+    }
+    expect([...TEXT_PRIMARY_ALLOWLIST]).toEqual([
+      'apps/web/src/pages/MatchData/components/MatchTable.tsx',
+    ]);
+  });
+
+  it('every scanned file with a variant="link" references MUTED_LINK_TONE or INLINE_LINK_TONE', () => {
+    const withLinkVariant = TEXT_PRIMARY_SCANNED.filter((file) =>
+      /variant="link"/.test(readRepoFile(file)),
+    );
+    expect(withLinkVariant.length).toBeGreaterThan(5);
+    const offenders = withLinkVariant.filter(
+      (file) => !LINK_TONE_ALLOWLIST.includes(file) && !LINK_TONE_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+    expect([...LINK_TONE_ALLOWLIST]).toEqual([]);
+  });
+});

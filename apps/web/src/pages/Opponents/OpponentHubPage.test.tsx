@@ -440,6 +440,21 @@ describe('OpponentHubPage', () => {
   });
 
   describe('un-pooling and merge affordances', () => {
+    // Plan 39.1-39 (UI-SPEC §4.3): the header's merge affordance is a
+    // muted link button (MUTED_LINK_TONE), never brand-red text.
+    it('plan 39.1-39: "Merge into..." is a muted link button, never brand red', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+      const classes = screen.getByRole('button', { name: 'Merge into...' }).className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+    });
+
     it('renders a "Merge into..." affordance on the header', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),

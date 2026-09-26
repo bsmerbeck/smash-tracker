@@ -264,8 +264,14 @@ describe('StageDetailPage', () => {
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
     renderStageAt('/coach/test-client/stages/1');
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'rival' })).toBeInTheDocument());
-    const link = screen.getByRole('link', { name: 'rival' });
+    // Plan 39.1-39: the row is a DrillableRow overlay — its accessible name
+    // follows shared.drillableRow.aria ("{{subject}} — {{context}}, opens details").
+    await waitFor(() =>
+      expect(
+        screen.getByRole('link', { name: 'rival — By Opponent, opens details' }),
+      ).toBeInTheDocument(),
+    );
+    const link = screen.getByRole('link', { name: 'rival — By Opponent, opens details' });
     expect(link).toHaveAttribute('href', '/coach/test-client/opponents/rival?stage=1');
   });
 
@@ -826,5 +832,116 @@ describe('StageDetailPage — By Character as stacked rows below 640px (plan 39.
     const table = document.querySelector('[data-slot="stage-by-character"]') as HTMLElement;
     expect(table.tagName).toBe('TABLE');
     expect(within(table).getAllByRole('row')).toHaveLength(3);
+  });
+});
+
+// Plan 39.1-39 (audit 8.1, UI-SPEC §10.1 row language, §4.3): the By opponent
+// and By character rows are Phase 38 DrillableRows — the whole row is the
+// link (an overlay with the shared accessible name), the tag / fighter names
+// are plain foreground text, an always-visible chevron closes the row, and
+// no row text is brand red. Destinations are unchanged.
+describe('StageDetailPage — rows are DrillableRows, never brand-red links (plan 39.1-39)', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  function stubViewport(narrow: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches: narrow && query === '(max-width: 639px)',
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+  }
+
+  beforeEach(() => {
+    resetAuthMock();
+    setMockUser(makeMockUser());
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'c1', time: 1, win: true, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c2', time: 2, win: false, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c3', time: 3, win: true, fighter_id: mario.id, opponent_id: fox.id }),
+      makeMatch({ id: 'c4', time: 4, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+    ]);
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  function expectNoBrandRed(root: HTMLElement) {
+    expect(root.querySelector('.text-primary')).toBeNull();
+  }
+
+  it('by opponent: each row is relative, carries one overlay link with the shared name and the hub destination, plain-text tag, and a chevron', async () => {
+    stubViewport(false);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
+    const table = document.getElementById('stage-by-opponent-table')!;
+    const row = table.querySelector('tbody tr') as HTMLElement;
+    expect(row.className.split(/\s+/)).toContain('relative');
+    const links = within(row).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName('rival — By Opponent, opens details');
+    expect(links[0]).toHaveAttribute('href', '/opponents/rival?stage=1');
+    expect(links[0]!.textContent).toBe('');
+    const tagCell = row.querySelector('td') as HTMLElement;
+    expect(tagCell.textContent).toContain('rival');
+    expect(row.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+    expectNoBrandRed(table);
+  });
+
+  it('by character (table): one overlay link per row to the same Matchups destination, plain fighter names, a chevron in the last cell', async () => {
+    stubViewport(false);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    const table = document.querySelector('table[data-slot="stage-by-character"]') as HTMLElement;
+    const rows = Array.from(table.querySelectorAll('tbody tr')) as HTMLElement[];
+    const foxRow = rows.find((r) => r.textContent?.includes(fox.name))!;
+    expect(foxRow.className.split(/\s+/)).toContain('relative');
+    const links = within(foxRow).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName(
+      `${mario.name} vs ${fox.name} — By Character, opens details`,
+    );
+    const href = links[0]!.getAttribute('href')!;
+    expect(href).toContain('/matchups?');
+    expect(href).toContain(`fighter=${mario.id}`);
+    expect(href).toContain(`vs=${fox.id}`);
+    expect(href).toContain('stage=1');
+    const cells = foxRow.querySelectorAll('td');
+    expect(cells[cells.length - 1]!.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+    expectNoBrandRed(table);
+  });
+
+  it('by character (stacked, below 640px): each li is a relative DrillableRow with one overlay link and a chevron', async () => {
+    stubViewport(true);
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Character')).toBeInTheDocument());
+    const list = document.querySelector('ul[data-slot="stage-by-character"]') as HTMLElement;
+    const foxRow = Array.from(list.querySelectorAll(':scope > li')).find((li) =>
+      li.textContent?.includes(fox.name),
+    ) as HTMLElement;
+    expect(foxRow.className.split(/\s+/)).toContain('relative');
+    const links = within(foxRow).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName(
+      `${mario.name} vs ${fox.name} — By Character, opens details`,
+    );
+    expect(foxRow.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+    expectNoBrandRed(list);
   });
 });

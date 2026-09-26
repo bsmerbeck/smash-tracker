@@ -237,6 +237,47 @@ describe('RecentEncounters (39.1-18 Task 2, UIX-08/D-10)', () => {
     expect(body).not.toContain('unknown');
   });
 
+  // Plan 39.1-39 (UI-SPEC §4.3): inline content links read in the
+  // foreground tone with an underline on hover (INLINE_LINK_TONE), never
+  // brand red — the event header and a game's VOD link.
+  it('plan 39.1-39: the event header link carries the inline link tone', () => {
+    renderEncounters(twoEventFixture(), {
+      tournamentLinkForMatch: (m) => ({
+        href: `/tournaments/${m.eventName}`,
+        label: m.eventName ?? '',
+      }),
+    });
+    const header = document.querySelectorAll(
+      '[data-slot="encounter-event-header"]',
+    )[0] as HTMLElement;
+    const classes = header.className.split(/\s+/);
+    expect(classes).toContain('text-foreground');
+    expect(classes).toContain('underline-offset-4');
+    expect(classes).toContain('hover:underline');
+    expect(classes).not.toContain('text-primary');
+  });
+
+  it('plan 39.1-39: an expanded VOD game link carries the inline link tone, never brand red', async () => {
+    const user = userEvent.setup();
+    renderEncounters(
+      [
+        makeMatch({
+          id: 'v1',
+          time: 1000,
+          win: true,
+          externalId: 'sgg:7:g1',
+          eventName: 'Video Event',
+          vodUrl: 'https://x.test/v',
+        }),
+      ],
+      { tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }) },
+    );
+    await user.click(document.querySelector('[data-slot="encounter-set-row"] button')!);
+    const classes = screen.getByRole('link', { name: /Win/ }).className.split(/\s+/);
+    expect(classes).toContain('text-foreground');
+    expect(classes).not.toContain('text-primary');
+  });
+
   it('with no encounters, the existing empty copy renders and zero headers, controls and set rows render', () => {
     renderEncounters([]);
     expect(screen.getByText('No encounters recorded yet.')).toBeInTheDocument();
