@@ -1013,6 +1013,80 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Code review iteration 2 (R2-WR-03, R2-IN-01): head-to-head prose. One
+// section licensing one `head_to_head_record` claim against `tag`.
+// ---------------------------------------------------------------------------
+
+function validateHeadToHead(
+  tag: string,
+  record: { wins: number; losses: number },
+  prose: string,
+): { stripped: string[]; dropped: number } {
+  const games = record.wins + record.losses;
+  const subject: ClaimSubject = { ...NULL_SUBJECT, opponentTag: tag };
+  const predicate = 'head_to_head_record' as const;
+  const rowId = evidenceIdFor({ predicate, subject, opponentOrder: [tag] });
+  const value = { kind: 'record' as const, wins: record.wins, losses: record.losses, games };
+  const claim: ClaimAtom = {
+    id: 'c01' as ClaimId,
+    predicate,
+    subject,
+    value,
+    claimKind: 'fact',
+    evidenceIds: [rowId],
+    tier: confidenceTierFor(games),
+    policyVersion: EVIDENCE_POLICY_VERSION,
+    sample: makeSample(games),
+  };
+  const outcome = validateReportOutput({
+    snapshot: makeSnapshot({ [rowId]: { predicate, subject, value, sample: makeSample(games) } }),
+    issuedClaims: [claim],
+    output: {
+      sections: { main: { claimIds: [claim.id], connective: prose } },
+      action1: null,
+      action2: null,
+      action3: null,
+    },
+    surface: 'scout',
+  });
+  return { stripped: outcome.strippedSectionIds, dropped: outcome.droppedClaimCount };
+}
+
+describe('R2-WR-03: digits inside a licensed opponent tag are part of the name, not figures', () => {
+  it('"You are 3-2 against Sparg0." passes when 3-2 is licensed — the tag is sentence-final', () => {
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 3-2 against Sparg0.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('the tag mid-sentence passes too, and a digit-bearing tag of any shape is consumed whole', () => {
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Against Sparg0 you are 3-2 so far.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    expect(
+      validateHeadToHead(
+        'Zer0Frame 2',
+        { wins: 6, losses: 4 },
+        'You are 6-4 against Zer0Frame 2 this season.',
+      ),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('controls: an unlicensed figure beside the tag still strips, and so does a wrong record', () => {
+    expect(
+      validateHeadToHead(
+        'Sparg0',
+        { wins: 3, losses: 2 },
+        'You are 3-2 against Sparg0 over 7 sets.',
+      ),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 4-1 against Sparg0.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Task 3: drop-or-fail, remaining rules, migration gate.
 // ---------------------------------------------------------------------------
 

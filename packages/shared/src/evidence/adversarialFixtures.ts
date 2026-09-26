@@ -565,6 +565,54 @@ const proseEncodingNfdOpponentTag: AdversarialFixture = {
   expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
 };
 
+// Code review R2-WR-03 (iteration 2): digits INSIDE a licensed opponent tag
+// are part of the name, not figures — the tag consumes its span exactly as a
+// canonical name does. A sentence-final digit-bearing tag used to be read as
+// an unlicensed figure and withhold the section's prose. (A made-up tag:
+// the corpus never carries a real account's.)
+const PROSE_ENTITY_DIGIT_TAG = 'Zer0Frame';
+const PROSE_ENTITY_DIGIT_TAG_SUBJECT: ClaimSubject = {
+  ...NULL_SUBJECT,
+  opponentTag: PROSE_ENTITY_DIGIT_TAG,
+};
+const PROSE_ENTITY_DIGIT_TAG_ROW_ID = evidenceIdFor({
+  predicate: 'head_to_head_record',
+  subject: PROSE_ENTITY_DIGIT_TAG_SUBJECT,
+  opponentOrder: [PROSE_ENTITY_DIGIT_TAG],
+});
+
+const proseEntityDigitBearingTag: AdversarialFixture = {
+  id: 'prose-entity-digit-bearing-tag',
+  family: 'prose_entity',
+  rubricRuleIds: ['R4'],
+  snapshot: makeSnapshot(
+    {
+      [PROSE_ENTITY_DIGIT_TAG_ROW_ID]: makeRow(
+        'head_to_head_record',
+        PROSE_ENTITY_DIGIT_TAG_SUBJECT,
+        { kind: 'record', wins: 3, losses: 2, games: 5 },
+        5,
+      ),
+    },
+    { matchIdDigest: { count: 5, hash: 'fixture-prose-entity-digit-tag-hash' } },
+  ),
+  issuedClaimIds: ['c01'],
+  output: {
+    claims: [
+      makeClaim('c01', [PROSE_ENTITY_DIGIT_TAG_ROW_ID], {
+        kind: 'record',
+        wins: 3,
+        losses: 2,
+        games: 5,
+      }),
+    ],
+  },
+  sections: [
+    { prose: `You are 3-2 against ${PROSE_ENTITY_DIGIT_TAG}.`, licensedClaimIds: ['c01'] },
+  ],
+  expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+};
+
 const PROSE_ENCODING_JA_SUBJECT: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
 const PROSE_ENCODING_JA_ROW_ID = evidenceIdFor({
   predicate: 'stage_record',
@@ -1201,4 +1249,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   confidenceWordTierAfterNoun,
   confidenceWordTierInParenthetical,
   confidenceWordTierEndOfSentence,
+  proseEntityDigitBearingTag,
 ];
