@@ -92,11 +92,11 @@ function makeMatch(id: string, time: number, extra: Record<string, unknown> = {}
   };
 }
 
-function renderHub() {
+function renderHub(path = '/opponents/rival') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/opponents/rival']}>
+      <MemoryRouter initialEntries={[path]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <TooltipProvider>
@@ -185,5 +185,47 @@ describe('Opponent hub prep-brief card ignores the global analytics filter (code
       'href',
       '/tournaments/summit/prep',
     );
+  });
+
+  // Code review R3-IN-05 (iteration 3): the card is built from ALL matches,
+  // so the empty state used to mount it for any path tag at all — a typo'd
+  // URL, a tag whose games were all deleted, and the literal unknown bucket
+  // — with copy that names the raw URL tag. It now needs a real identity
+  // with at least one game.
+  it('R3-IN-05: an opponent with no games at all renders the empty state and NO prep-brief card', async () => {
+    renderHub('/opponents/nobody');
+    expect(await screen.findByText('No games recorded against nobody yet.')).toBeInTheDocument();
+    await act(async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+    expect(screen.queryByTestId('hub-prep-brief-card')).toBeNull();
+  });
+
+  it('R3-IN-05: the unknown bucket never renders a prep-brief card, even when it has games', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch('s1', SUMMIT_AT, { source: 'startgg', eventName: 'Summit' }),
+      makeMatch('u1', SUMMIT_AT + 20 * 60 * 1000, {
+        source: 'startgg',
+        eventName: 'Summit',
+        opponent: '',
+      }),
+    ]);
+    renderHub('/opponents/unknown');
+    await vi.waitFor(() => expect(listMatches).toHaveBeenCalled());
+    await act(async () => {
+      for (let i = 0; i < 10; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+    // The hub has rendered (its title is the bucket's tag).
+    expect(document.querySelector('h1')?.textContent).toBe('unknown');
+    expect(screen.queryByTestId('hub-prep-brief-card')).toBeNull();
+  });
+
+  it('R3-IN-05 control: an opponent WITH games still gets the card', async () => {
+    renderHub('/opponents/rival');
+    expect(await cardState()).toBe('debrief');
   });
 });
