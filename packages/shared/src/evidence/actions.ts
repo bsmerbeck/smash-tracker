@@ -121,7 +121,7 @@ function buildTitleParams(subject: ClaimSubject): Readonly<Record<string, string
   return Object.freeze(params);
 }
 
-/** True when `value` is an evidenced losing `record` at or above `minGames` countable games — the shared gate `matchup_practice` and the `stage_habit`/`matchup_punish` drill templates all apply. */
+/** True when `value` is an evidenced losing `record` at or above `minGames` countable games — the shared gate `matchup_practice` and the `stage_habit` drill template apply. */
 function isLosingRecordAtOrAboveFloor(value: ClaimValue, minGames: number): boolean {
   return (
     value.kind === 'record' && value.losses > value.wins && value.wins + value.losses >= minGames
@@ -191,8 +191,7 @@ function makeVodReviewCandidate(claim: ClaimAtom, matchedRefs: readonly VodRef[]
 // and every drill candidate cites the claim that licensed it.
 // ---------------------------------------------------------------------------
 
-export type DrillTemplateId =
-  'stage_habit' | 'matchup_punish' | 'character_familiarity' | 'vod_pattern';
+export type DrillTemplateId = 'stage_habit' | 'character_familiarity' | 'vod_pattern';
 
 /** Context a drill condition may need beyond its own claim — today only `vod_pattern` (a cross-claim "shares a match id" check) reads it. */
 export interface DrillConditionContext {
@@ -219,7 +218,16 @@ export function stageHabitCondition(claim: ClaimAtom): boolean {
   );
 }
 
-/** `matchup_punish`: a losing `character_matchup_record` at or above `PRACTICE_MATCHUP_MIN_GAMES` against a known opponent fighter. The SAME claim shape `matchup_practice` licenses — see the non-duplication rule in `rankActionCandidates`, which is what keeps this from being `matchup_practice` wearing a different icon. */
+/**
+ * The retired `matchup_punish` shape: a losing `character_matchup_record` at or above
+ * `PRACTICE_MATCHUP_MIN_GAMES` against a known opponent fighter.
+ *
+ * Review SH-WR-06: this is a strict SUBSET of the `matchup_practice` condition, so the D-18
+ * non-duplication rule in `rankActionCandidates` removed every drill it produced — the row could
+ * never reach a user. It is no longer a `DRILL_TEMPLATE_TABLE` row (the table's own coverage test
+ * now asserts on RANKED output). The predicate stays exported only so the package's export
+ * surface does not change; nothing in the engine calls it.
+ */
 export function matchupPunishCondition(claim: ClaimAtom): boolean {
   return (
     claim.predicate === 'character_matchup_record' &&
@@ -269,7 +277,7 @@ export function vodPatternCondition(claim: ClaimAtom, context: DrillConditionCon
 }
 
 /**
- * The closed D-18 table — exactly these four rows, total over the four predicates it names. Adding a row here without a firing fixture fails `actions.test.ts`'s coverage battery.
+ * The closed D-18 table — exactly these three rows, total over the three predicates it names. Adding a row here that never survives RANKING (a firing fixture whose drill the D-18 non-duplication rule then removes) fails `actions.test.ts`'s coverage battery — the review SH-WR-06 lesson: `matchup_punish` fired on the same claim shape `matchup_practice` licenses, so it was always suppressed and was retired. No row keys on `character_matchup_record`.
  *
  * `@__PURE__` is load-bearing (freezing a fresh literal has no observable effect): without it Rolldown keeps this module in the web app's EAGER shared chunk.
  */
@@ -281,14 +289,6 @@ export const DRILL_TEMPLATE_TABLE: readonly DrillTemplateRow[] = /* @__PURE__ */
     titleKey: 'reports.actions.drill.stageHabit',
     doorKey: 'reports.actions.door.openStage',
     targetKind: 'stage',
-  },
-  {
-    id: 'matchup_punish',
-    predicate: 'character_matchup_record',
-    condition: matchupPunishCondition,
-    titleKey: 'reports.actions.drill.matchupPunish',
-    doorKey: 'reports.actions.door.practiceMatchup',
-    targetKind: 'matchup',
   },
   {
     id: 'character_familiarity',

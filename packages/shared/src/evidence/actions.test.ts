@@ -113,10 +113,9 @@ describe('buildActionCandidates: matchup_practice', () => {
 
     const candidates = buildActionCandidates({ claims, vodRefs: [] });
 
-    // The same claim also satisfies the matchup_punish drill condition (same
-    // shape) — buildActionCandidates emits both RAW candidates; the D-18
-    // non-duplication suppression that keeps only the matchup_practice one
-    // is rankActionCandidates's job (see "D-18 non-duplication" below).
+    // No drill template keys on this claim shape (review SH-WR-06 retired
+    // `matchup_punish`, which only ever re-emitted this candidate and was
+    // always suppressed) — see "D-18 non-duplication" below.
     const matchupPractice = candidates.filter((c) => c.kind === 'matchup_practice');
     expect(matchupPractice).toHaveLength(1);
     expect(matchupPractice[0]!.claimIds).toEqual([claim.id]);
@@ -487,11 +486,14 @@ describe('D-18 non-duplication: a drill can never be a matchup_practice re-emiss
     const claimId = claims[0]!.id;
 
     const raw = buildActionCandidates({ claims, vodRefs: [] });
-    // Both a matchup_practice candidate and a matchup_punish drill candidate
-    // exist in the RAW (pre-suppression) output — the suppression is
-    // rankActionCandidates's job.
+    // Review SH-WR-06: no drill row keys on the claim shape matchup_practice
+    // licenses, so the claim yields the matchup_practice candidate and no
+    // drill at all — not even a raw one for the suppression to remove.
     expect(raw.some((c) => c.kind === 'matchup_practice')).toBe(true);
-    expect(raw.some((c) => c.kind === 'drill')).toBe(true);
+    expect(raw.some((c) => c.kind === 'drill' && c.claimIds.includes(claimId))).toBe(false);
+    expect(DRILL_TEMPLATE_TABLE.some((row) => row.predicate === 'character_matchup_record')).toBe(
+      false,
+    );
 
     const ranked = rankActionCandidates(raw);
     const rankedDrills = ranked.filter((c) => c.kind === 'drill' && c.claimIds.includes(claimId));

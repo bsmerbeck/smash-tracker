@@ -305,7 +305,9 @@ describe('recommended-action copy is bound to the engine table', () => {
   ];
 
   it('iterates a non-empty table (a vacuous table would make every case below pass)', () => {
-    expect(DRILL_TEMPLATE_TABLE.length).toBeGreaterThanOrEqual(4);
+    // Three rows since code review SH-WR-06 retired the never-shipping
+    // `matchup_punish` row (packages/shared/src/evidence/actions.ts).
+    expect(DRILL_TEMPLATE_TABLE.length).toBeGreaterThanOrEqual(3);
   });
 
   for (const [locale, bundle] of Object.entries(BUNDLES)) {
