@@ -588,7 +588,11 @@ describe('PostEventSynthesisCard — dropped-claims and withheld-prose footer (p
   };
   const WITHHELD_TWO =
     "Commentary for 2 sections was withheld because it couldn't be verified against your match data.";
-  const DROPPED_ONE = "1 claim couldn't be verified and was removed from this report.";
+  // Code review IN-04: a plan's dropped note says "plan", never "report", and
+  // a LEGACY plan's count (28-06's field) counts dropped focus-area sections,
+  // not claims — so each era gets its own sentence.
+  const DROPPED_ONE = "1 claim couldn't be verified and was removed from this plan.";
+  const LEGACY_DROPPED_ONE = "1 section couldn't be verified and was removed from this plan.";
 
   it('a claims-era plan renders each note exactly once in the expanded plan view, after the last section', async () => {
     const user = userEvent.setup();
@@ -625,8 +629,39 @@ describe('PostEventSynthesisCard — dropped-claims and withheld-prose footer (p
     const { container } = renderCard({ annotatedEvidenceCount: 3 });
     await user.click(screen.getByRole('button', { name: 'View plan' }));
 
-    expect(screen.getAllByText(DROPPED_ONE)).toHaveLength(1);
+    expect(screen.getAllByText(LEGACY_DROPPED_ONE)).toHaveLength(1);
+    expect(screen.queryByText(DROPPED_ONE)).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain('this report');
     expect(container.querySelector('[data-withheld-prose-note]')).toBeNull();
+  });
+
+  it('code review IN-04: a LEGACY plan is labelled legacy in the expanded view, once (D-08)', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = {
+      data: {
+        plan: makePlan({
+          focusAreas: [{ title: 'Ledge', evidence: 'Watch the ledge.', drills: [] }],
+        }),
+      },
+    };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+    expect(container.querySelector('[data-legacy-report-badge]')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(container.querySelectorAll('[data-legacy-report-badge="card"]')).toHaveLength(1);
+  });
+
+  it('code review IN-04: a validated claims-era plan carries no legacy label', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = succeeded;
+    practicePlanResult = { data: { plan: CLAIMS_ERA_PLAN } };
+    const { container } = renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+
+    expect(container.querySelector('[data-legacy-report-badge]')).toBeNull();
   });
 });
 

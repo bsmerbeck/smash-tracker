@@ -45,6 +45,28 @@ describe('DroppedClaimsNote', () => {
     expect(container.textContent).not.toContain('NaN');
   });
 
+  // Code review IN-04: a practice plan's note says "plan", and a LEGACY plan's
+  // stored count (28-06) counts dropped focus-area sections, not claims.
+  it.each([
+    {
+      variant: 'plan' as const,
+      one: "1 claim couldn't be verified and was removed from this plan.",
+      two: "2 claims couldn't be verified and were removed from this plan.",
+    },
+    {
+      variant: 'legacyPlan' as const,
+      one: "1 section couldn't be verified and was removed from this plan.",
+      two: "2 sections couldn't be verified and were removed from this plan.",
+    },
+  ])('variant $variant -> its own singular and plural sentences', ({ variant, one, two }) => {
+    const { container, rerender } = render(<DroppedClaimsNote count={1} variant={variant} />);
+    expect(container.textContent).toBe(one);
+    rerender(<DroppedClaimsNote count={2} variant={variant} />);
+    expect(container.textContent).toBe(two);
+    rerender(<DroppedClaimsNote count={Number.NaN} variant={variant} />);
+    expect(container.textContent).toBe('');
+  });
+
   it('uses the muted footer treatment — no colour, no icon', () => {
     const { container } = render(<DroppedClaimsNote count={3} />);
     const note = container.querySelector('[data-dropped-claims-note]');
