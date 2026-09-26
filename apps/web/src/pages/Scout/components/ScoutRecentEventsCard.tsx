@@ -10,6 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { ScoutRecentEvent } from '@smash-tracker/shared';
+import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
 
 /**
  * Builds the public event URL for an event with a `slug`, or `null` when the
@@ -53,9 +54,55 @@ function ordinal(n: number): string {
   }
 }
 
+/** The event cell — one rendering definition for the table and the stacked row (plan 39.1-49). */
+function EventCell({ event }: { event: ScoutRecentEvent }) {
+  const url = eventUrl(event);
+  return (
+    <div className="flex flex-col">
+      {url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+        >
+          {event.eventName}
+          <ExternalLink className="size-3" />
+        </a>
+      ) : (
+        <span className="font-medium">{event.eventName}</span>
+      )}
+      {event.tournamentName && (
+        <span className="text-xs text-muted-foreground">{event.tournamentName}</span>
+      )}
+    </div>
+  );
+}
+
+/** The placement cell — shared by both layouts. */
+function PlacementCell({ event }: { event: ScoutRecentEvent }) {
+  return event.placement ? (
+    <span className="inline-flex items-center gap-1">
+      {event.placement === 1 && <Trophy className="size-3.5 text-amber-500" />}
+      {ordinal(event.placement)}
+    </span>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  );
+}
+
 /** The scouted player's most recent events (placement/entrants), most recent first. */
-export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }) {
+export function ScoutRecentEventsCard({
+  events,
+  layout: layoutOverride,
+}: {
+  events: ScoutRecentEvent[];
+  /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
+  layout?: RowLayout;
+}) {
   const { t, i18n } = useTranslation();
+  // Plan 39.1-49 (UI-SPEC §6.6): exactly one root mounts per render.
+  const layout = useRowLayout(layoutOverride);
   return (
     <Card>
       <CardHeader>
@@ -65,6 +112,37 @@ export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }
       <CardContent>
         {events.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('scout.events.empty')}</p>
+        ) : layout === 'stack' ? (
+          // Plan 39.1-49 (UI-SPEC §6.6 / §6.5 rules 1-2): one stacked row per
+          // event — line 1 the event (its external link unchanged) and
+          // tournament, wrapping whole; line 2 placement, entrants and date
+          // as whole tokens with their column labels.
+          <ul data-slot="scout-recent-events" className="flex flex-col divide-y">
+            {events.map((event) => (
+              <li
+                key={`${event.eventName}-${event.lastSetAt}`}
+                data-slot="scout-recent-event"
+                className="flex min-w-0 flex-col gap-1 py-2 text-sm"
+              >
+                <div className="min-w-0 break-words">
+                  <EventCell event={event} />
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground tabular-nums">
+                  <span className="whitespace-nowrap">
+                    <span className="sr-only">{t('scout.events.placement')} </span>
+                    <PlacementCell event={event} />
+                  </span>
+                  <span className="whitespace-nowrap">
+                    {event.numEntrants ?? '—'} {t('scout.events.entrants')}
+                  </span>
+                  <span className="whitespace-nowrap">
+                    <span className="sr-only">{t('trends.sessions.date')} </span>
+                    {new Date(event.lastSetAt).toLocaleDateString(i18n.language)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
           <Table data-slot="scout-recent-events">
             <TableHeader>
@@ -77,40 +155,13 @@ export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }
             </TableHeader>
             <TableBody>
               {events.map((event) => {
-                const url = eventUrl(event);
                 return (
                   <TableRow key={`${event.eventName}-${event.lastSetAt}`}>
                     <TableCell>
-                      <div className="flex flex-col">
-                        {url ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                          >
-                            {event.eventName}
-                            <ExternalLink className="size-3" />
-                          </a>
-                        ) : (
-                          <span className="font-medium">{event.eventName}</span>
-                        )}
-                        {event.tournamentName && (
-                          <span className="text-xs text-muted-foreground">
-                            {event.tournamentName}
-                          </span>
-                        )}
-                      </div>
+                      <EventCell event={event} />
                     </TableCell>
                     <TableCell>
-                      {event.placement ? (
-                        <span className="inline-flex items-center gap-1">
-                          {event.placement === 1 && <Trophy className="size-3.5 text-amber-500" />}
-                          {ordinal(event.placement)}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <PlacementCell event={event} />
                     </TableCell>
                     <TableCell className="text-right">{event.numEntrants ?? '—'}</TableCell>
                     <TableCell className="text-right text-muted-foreground">
