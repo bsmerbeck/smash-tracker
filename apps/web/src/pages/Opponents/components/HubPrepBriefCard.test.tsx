@@ -242,6 +242,46 @@ describe('HubPrepBriefCard (PREP-05, D-11/D-13)', () => {
       expect(screen.queryByTestId('hub-prep-brief-card')).not.toBeInTheDocument();
     });
 
+    it('code review IN-01: listed only on the 6th upcoming entry (past the read cap), the card never says "add an upcoming event"', async () => {
+      const entries = [1, 2, 3, 4, 5, 6].map((day) =>
+        makeEntry({ entryKey: `up${day}`, firstSetAt: NOW + day * DAY_MS }),
+      );
+      renderCard({
+        entries,
+        statuses: {
+          up1: briefListing('someone-else'),
+          up2: briefListing('someone-else'),
+          up3: briefListing('someone-else'),
+          up4: briefListing('someone-else'),
+          up5: briefListing('someone-else'),
+          up6: briefListing('rival'),
+        },
+      });
+
+      expect(await cardState()).toBe('laterEvents');
+      const card = screen.getByTestId('hub-prep-brief-card');
+      expect(card).not.toHaveTextContent(/Add an upcoming event/);
+      expect(card).toHaveTextContent(
+        "Rival isn't a likely opponent at your nearest upcoming events. Check your tournaments for later ones.",
+      );
+      expect(doorHref()).toBe('/tournaments');
+      expect(getPrep).not.toHaveBeenCalledWith('up6');
+    });
+
+    it('control: with exactly five upcoming entries, none listing this opponent, add-event is still the truthful state', async () => {
+      const entries = [1, 2, 3, 4, 5].map((day) =>
+        makeEntry({ entryKey: `up${day}`, firstSetAt: NOW + day * DAY_MS }),
+      );
+      renderCard({
+        entries,
+        statuses: Object.fromEntries(
+          entries.map((entry) => [entry.entryKey, briefListing('someone-else')]),
+        ),
+      });
+
+      expect(await cardState()).toBe('addEvent');
+    });
+
     it('never offers a future-dated admin-imported entry as upcoming, and never reads its brief', async () => {
       const imported = makeImported({ entryKey: 'imp-future', firstSetAt: NOW + DAY_MS });
       renderCard({ entries: [imported], statuses: { 'imp-future': briefListing('rival') } });
