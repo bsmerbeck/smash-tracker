@@ -792,6 +792,49 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     expect(dropRule(validateReportOutput(bridge(namedFixture)), 'c01')).toBe('R7');
   });
 
+  it('R7 (lexical) also STRIPS the section: in an output that still passes, prose naming the unknown bucket is never delivered (plan 39-13, VAL-03)', () => {
+    // Three evidenced claims in one clean section keep the scout output at
+    // MIN_VIABLE_CLAIMS; a fourth section's prose names the unknown bucket.
+    // Its claim is dropped (R7), and its prose must not ship either — the
+    // API persists every section's connective that is not in
+    // strippedSectionIds.
+    const fixture = findFixture('all-null-subject');
+    const clean = ['c01', 'c02', 'c03'] as ClaimId[];
+    const issuedClaims = fixture.output.claims
+      .map((claim) => toClaimAtom(claim, fixture.snapshot))
+      .concat(
+        Object.entries(fixture.snapshot.rows)
+          .filter(([evidenceId]) => evidenceId !== fixture.output.claims[0]!.evidenceIds[0])
+          .map(([evidenceId, row], index) =>
+            toClaimAtom(
+              { claimId: clean[index]!, evidenceIds: [evidenceId], assertedValue: row.value },
+              fixture.snapshot,
+            ),
+          ),
+      )
+      .map((claim, index) => ({ ...claim, id: (['c04', ...clean] as ClaimId[])[index]! }));
+    const outcome = validateReportOutput({
+      snapshot: fixture.snapshot,
+      issuedClaims,
+      output: {
+        sections: {
+          overview: { claimIds: clean, connective: '' },
+          watchFor: {
+            claimIds: ['c04'],
+            connective: 'They are 16-9 on Unknown Stage, a strong pick.',
+          },
+        },
+        action1: null,
+        action2: null,
+        action3: null,
+      },
+      surface: 'scout',
+    });
+    expect(outcome.status).toBe('passed');
+    expect(dropRule(outcome, 'c04')).toBe('R7');
+    expect(outcome.strippedSectionIds).toEqual(['watchFor']);
+  });
+
   it('R8: an action slot referencing a dropped (never-issued) claim becomes null and is reported', () => {
     const fixture = findFixture('action-unlinked');
     const outcome = validateReportOutput(bridge(fixture));

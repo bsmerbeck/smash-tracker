@@ -398,7 +398,7 @@ function validateClaim(
 // function: naming the unknown bucket as a real, pickable entity is a
 // FACTUAL fault about the claim itself, not a stylistic prose fault, so it
 // drops the section's licensed claims (see `validateReportOutput` below)
-// rather than merely stripping the prose.
+// as well as stripping the prose.
 // ---------------------------------------------------------------------------
 
 /** `Unknown Stage` / `Unknown Character` as a NAMED, capitalized entity reference — R7's lexical half. Case-SENSITIVE: ordinary lowercase "unknown" (as in "unknown matchups are rare") is never a violation, matching the C1-H4 sentinel-exclusion discipline. */
@@ -407,7 +407,7 @@ const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)\b/i;
 interface ProseLintResult {
   /** True when R4 or R5 fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
   offense: boolean;
-  /** True when R7's lexical half fired — the unknown bucket was named as if real. This drops the section's licensed CLAIMS (see `validateReportOutput`), not merely the prose. */
+  /** True when R7's lexical half fired — the unknown bucket was named as if real. This drops the section's licensed CLAIMS (see `validateReportOutput`) as well as stripping the prose. */
   unknownBucketNamed: boolean;
 }
 
@@ -638,6 +638,11 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
           'prose names the unknown stage/character bucket as a real, pickable entity',
         );
       }
+      // ...AND the prose itself is withheld: dropping the claims does not stop
+      // the API persisting this section's connective, so without this the
+      // unknown-bucket naming would ship in any output that still clears
+      // MIN_VIABLE_CLAIMS through its other sections (plan 39-13, VAL-03).
+      strippedSectionIds.push(sectionId);
       continue;
     }
     if (result.offense) {
