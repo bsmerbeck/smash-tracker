@@ -8,7 +8,7 @@
  * - `MUTED_LINK_TONE`: pass as `className` on a shadcn `Button variant="link"`
  *   (list and disclosure controls — Show all / Show fewer / Show 50 more /
  *   View as table / Restore — and non-door insight links). tailwind-merge
- *   resolves it over the variant's `text-primary`; `components/ui/button.tsx`
+ *   resolves it over the variant's brand-red text colour; `components/ui/button.tsx`
  *   is never edited (Coaching and VOD share it).
  * - `INLINE_LINK_TONE`: plain anchors inside content (tournament names,
  *   event headers) — foreground text, underline on hover.

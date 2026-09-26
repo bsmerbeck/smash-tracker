@@ -16,7 +16,7 @@ import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { LIST_CAP, LIST_INLINE_MAX } from '@/components/analytics/BoundedList';
 import { groupEncounters, type EncounterGroup, type EncounterSet } from './encounterGrouping';
-import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { INLINE_LINK_TONE, MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Phase 39.1 Plan 18 (UIX-08/D-10, UI-SPEC §8.6): owner note 10 ("could
@@ -110,7 +110,7 @@ function GroupHeader({
     return (
       <Link
         to={link.href}
-        className="flex items-center justify-between gap-2 px-1 text-sm font-medium hover:underline"
+        className={`flex items-center justify-between gap-2 px-1 text-sm font-medium ${INLINE_LINK_TONE}`}
         data-slot="encounter-event-header"
       >
         {content}
@@ -214,10 +214,7 @@ function ExpandedGames({
         return (
           <p key={match.id}>
             {matchHasAttachedVideo(match) ? (
-              <Link
-                to={subjectPath(`/vod?match=${match.id}`)}
-                className="text-primary hover:underline"
-              >
+              <Link to={subjectPath(`/vod?match=${match.id}`)} className={INLINE_LINK_TONE}>
                 {label}
               </Link>
             ) : (

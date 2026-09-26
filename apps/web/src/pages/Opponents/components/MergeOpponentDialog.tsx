@@ -20,6 +20,7 @@ import {
 import type { OpponentSource } from '@/hooks/useFilteredMatches';
 import { useUpsertOpponentAlias } from '@/hooks/useOpponentAliases';
 import { rankMergeSuggestions } from '../mergeSuggestions';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 export interface MergeOpponentDialogProps {
   open: boolean;
@@ -159,7 +160,7 @@ export function MergeOpponentDialog({
             <Button
               type="button"
               variant="link"
-              className="mt-1 h-auto p-0 text-sm"
+              className={`mt-1 h-auto p-0 text-sm ${MUTED_LINK_TONE}`}
               onClick={() => setConfirmedDespiteWarning(true)}
             >
               {t('opponents.merge.anyway', { opponent, target })}

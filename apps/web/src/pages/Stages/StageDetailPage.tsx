@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import {
@@ -43,6 +43,7 @@ import {
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 
 /**
  * Phase 38-06 (DRL-01/D-06/D-13): the per-stage detail route every stage row
@@ -471,16 +472,22 @@ export function StageDetailPage() {
                     </TableHeader>
                     <TableBody>
                       {visibleByOpponent.map((row) => (
-                        <TableRow key={row.identity}>
+                        // Plan 39.1-39 (audit 8.1, UI-SPEC §10.1): a Phase 38
+                        // DrillableRow — the whole row is the link (overlay),
+                        // the tag is plain foreground text, a chevron closes it.
+                        <TableRow key={row.identity} className="relative hover:bg-accent">
                           <TableCell className="text-sm">
-                            <Link
+                            <DrillableRow
+                              as="overlay"
                               to={subjectPath(
                                 `${buildOpponentHubPath(row.displayTag)}?${buildDrillDownSearch({ stageId: resolvedStageId }).toString()}`,
                               )}
-                              className="text-primary hover:underline"
-                            >
-                              {row.displayTag}
-                            </Link>
+                              ariaLabel={t('shared.drillableRow.aria', {
+                                subject: row.displayTag,
+                                context: t('stages.detail.byOpponent'),
+                              })}
+                            />
+                            {row.displayTag}
                           </TableCell>
                           <TableCell className="text-sm">
                             {row.wins}-{row.losses}
@@ -496,6 +503,7 @@ export function StageDetailPage() {
                               <span className="text-xs text-muted-foreground">
                                 <SampleCueGlyph sample={row.sample} />
                               </span>
+                              <DrillableRowChevron className="ml-auto" />
                             </span>
                           </TableCell>
                         </TableRow>
@@ -558,13 +566,21 @@ export function StageDetailPage() {
                         const pairingText = `${myName} ${t('matchups.vs')} ${theirName}`;
                         const games = row.wins + row.losses;
                         return (
-                          <li key={row.key} className="flex min-w-0 flex-col gap-1 py-2">
-                            <Link
+                          <li
+                            key={row.key}
+                            className="relative flex min-w-0 flex-col gap-1 py-2 hover:bg-accent"
+                          >
+                            <DrillableRow
+                              as="overlay"
                               to={subjectPath(
                                 `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
                               )}
-                              className="flex min-w-0 items-center gap-1 text-sm text-primary hover:underline"
-                            >
+                              ariaLabel={t('shared.drillableRow.aria', {
+                                subject: pairingText,
+                                context: t('stages.detail.byCharacter'),
+                              })}
+                            />
+                            <span className="flex min-w-0 items-center gap-1 text-sm">
                               {mySprite?.url && (
                                 <img
                                   src={mySprite.url}
@@ -586,7 +602,8 @@ export function StageDetailPage() {
                               >
                                 {pairingText}
                               </span>
-                            </Link>
+                              <DrillableRowChevron />
+                            </span>
                             <div
                               data-slot="stage-by-character-record"
                               className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground tabular-nums"
@@ -627,15 +644,28 @@ export function StageDetailPage() {
                         {visibleByCharacter.map((row) => {
                           const mySprite = getFighterById(row.myFighterId);
                           const theirSprite = getFighterById(row.theirFighterId);
+                          const myName = mySprite
+                            ? localizedFighterName(row.myFighterId, t)
+                            : t('common.unknown');
+                          const theirName = theirSprite
+                            ? localizedFighterName(row.theirFighterId, t)
+                            : t('common.unknown');
+                          // Plan 39.1-39: the row's two per-cell links (same
+                          // URL) collapse into the ONE DrillableRow overlay.
                           return (
-                            <TableRow key={row.key}>
+                            <TableRow key={row.key} className="relative hover:bg-accent">
                               <TableCell className="text-sm">
-                                <Link
+                                <DrillableRow
+                                  as="overlay"
                                   to={subjectPath(
                                     `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
                                   )}
-                                  className="flex items-center gap-1 text-primary hover:underline"
-                                >
+                                  ariaLabel={t('shared.drillableRow.aria', {
+                                    subject: `${myName} ${t('matchups.vs')} ${theirName}`,
+                                    context: t('stages.detail.byCharacter'),
+                                  })}
+                                />
+                                <span className="flex items-center gap-1">
                                   {mySprite?.url && (
                                     <img
                                       src={mySprite.url}
@@ -643,18 +673,11 @@ export function StageDetailPage() {
                                       className="size-5 object-contain"
                                     />
                                   )}
-                                  {mySprite
-                                    ? localizedFighterName(row.myFighterId, t)
-                                    : t('common.unknown')}
-                                </Link>
+                                  {myName}
+                                </span>
                               </TableCell>
                               <TableCell className="text-sm">
-                                <Link
-                                  to={subjectPath(
-                                    `/matchups?${buildDrillDownSearch({ fighterId: row.myFighterId, vsFighterId: row.theirFighterId, stageId: resolvedStageId }).toString()}`,
-                                  )}
-                                  className="flex items-center gap-1 text-primary hover:underline"
-                                >
+                                <span className="flex items-center gap-1">
                                   {theirSprite?.url && (
                                     <img
                                       src={theirSprite.url}
@@ -662,18 +685,19 @@ export function StageDetailPage() {
                                       className="size-5 object-contain"
                                     />
                                   )}
-                                  {theirSprite
-                                    ? localizedFighterName(row.theirFighterId, t)
-                                    : t('common.unknown')}
-                                </Link>
+                                  {theirName}
+                                </span>
                               </TableCell>
                               <TableCell className="text-sm">
                                 {row.wins}-{row.losses}
                               </TableCell>
                               <TableCell className="text-sm">
-                                <span className="flex items-center gap-2">
-                                  {winRatePercent(row.wins, row.losses)}%
-                                  <SampleCue sample={row.sample} />
+                                <span className="flex items-center justify-between gap-2">
+                                  <span className="flex items-center gap-2">
+                                    {winRatePercent(row.wins, row.losses)}%
+                                    <SampleCue sample={row.sample} />
+                                  </span>
+                                  <DrillableRowChevron />
                                 </span>
                               </TableCell>
                             </TableRow>

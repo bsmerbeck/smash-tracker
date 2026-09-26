@@ -95,6 +95,7 @@ import {
   resolveTournamentEntry,
 } from './tournamentHistory';
 import { buildEvidencePacket } from './evidencePacket';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Phase 38-05 (D-01/D-02): the opponent hub — a child route of the SAME
@@ -817,13 +818,15 @@ export function OpponentHubPage() {
         <h1 className="text-2xl font-semibold tracking-tight">{displayTag}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {profile && (
-            <button
+            <Button
               type="button"
-              className="text-sm text-primary hover:underline"
+              variant="link"
+              size="sm"
+              className={MUTED_LINK_TONE}
               onClick={() => setMergeCandidate(profile.opponent)}
             >
               {t('opponents.list.mergeInto')}
-            </button>
+            </Button>
           )}
           {evidencePacket && <ExportH2HButton packet={evidencePacket} />}
         </div>

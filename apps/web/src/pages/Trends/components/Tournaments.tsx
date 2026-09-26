@@ -21,6 +21,7 @@ import { entryDisplayDateRange, isAdminImportedEntry } from '@/lib/historicalTou
 import { buildStartggUrl } from '@/pages/Tournaments/lib/startggLinks';
 import type { AnalyticsRangeFilter } from '@/context/AnalyticsFilterContext';
 import { cn } from '@/lib/utils';
+import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 
 export interface TournamentEntryRow {
   entry: TournamentEntry;
@@ -180,7 +181,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
         ) : allEntries.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('trends.tournaments.resyncPrefix')}{' '}
-            <Link to="/settings/integrations" className="font-medium text-primary underline">
+            <Link to="/settings/integrations" className={`font-medium ${INLINE_LINK_TONE}`}>
               {t('nav.integrations')}
             </Link>{' '}
             {t('trends.tournaments.resyncSuffix')}
