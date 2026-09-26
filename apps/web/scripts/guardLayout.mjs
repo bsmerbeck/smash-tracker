@@ -236,6 +236,11 @@ export const LAYOUT_ORACLE_ROUTES = [
       'rail-cards',
     ],
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
+    // The reads rail's cards are InsightCards (data-slot="insight-card"), so
+    // grid-balance counts them too — otherwise the centre cell of row 3 is
+    // invisible to the family (no pair, and a false dead-gap across it at
+    // 390).
+    gridBalance: { cardSelector: '[data-slot="card"], [data-slot="insight-card"]' },
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       {
@@ -714,8 +719,13 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     for (const gridEl of gridClassCandidates) {
       const display = window.getComputedStyle(gridEl).display;
       if (display !== 'grid' && display !== 'inline-grid') continue;
+      // Plan 39.1-40: a route may widen what counts as a card (Trends: its
+      // reads rail's InsightCards carry data-slot="insight-card"); every
+      // other route keeps the plain card selector.
+      const gridCardSelector =
+        (familyConfig.gridBalance && familyConfig.gridBalance.cardSelector) || '[data-slot="card"]';
       const cardBearingChildren = Array.from(gridEl.children).filter(
-        (child) => child.matches('[data-slot="card"]') || child.querySelector('[data-slot="card"]'),
+        (child) => child.matches(gridCardSelector) || child.querySelector(gridCardSelector),
       );
       if (cardBearingChildren.length < 2) continue;
       const rowGapPx = parseFloat(window.getComputedStyle(gridEl).rowGap) || 0;
@@ -1623,6 +1633,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       orderPairs: route.orderPairs ?? [],
       clipTargets: route.clipTargets ?? [],
       railCards: route.railCards ?? null,
+      gridBalance: route.gridBalance ?? null,
     };
     const measurements = await page.evaluate(
       collectPageMeasurements,
