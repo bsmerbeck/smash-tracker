@@ -108,7 +108,9 @@ export function PreviousMatches({ matches, horizon }: { matches: Match[]; horizo
             <Button
               variant="outline"
               size="icon-sm"
-              className="shrink-0"
+              // A 32 px button in a 20 px text line: the negative block
+              // margin keeps manual and synced rows the same height.
+              className="-my-1.5 shrink-0"
               aria-label={t('shared.matchDelete.aria')}
               onClick={() => setPendingDelete(match)}
             >

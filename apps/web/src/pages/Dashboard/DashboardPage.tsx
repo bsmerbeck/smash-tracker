@@ -303,7 +303,11 @@ export function DashboardPage() {
                 <FilteredEmptyNotice />
               </GridCell>
             )}
-            <GridCell span={6}>
+            {/* Plan 39.1-50: the Form Curve starts its own row at lg — the
+                second hero row already holds Rating and the fighter tile, and a
+                6-span card packed beside them would orphan Previous Matches
+                (UI-SPEC §6.1 "no orphan half"). */}
+            <GridCell span={6} className="lg:col-start-1">
               <LastMatchesChart matches={matches} horizon={horizon} />
             </GridCell>
             <GridCell span={6}>
