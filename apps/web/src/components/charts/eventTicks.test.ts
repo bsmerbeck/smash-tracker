@@ -125,3 +125,43 @@ describe('selectEventLabelKeys (plan 39.1-37)', () => {
     expect(result[result.length - 1]).toBe(input[22]);
   });
 });
+
+/**
+ * Plan 39.1-39 (design-fidelity loop, guard:layout value-label-overlap on
+ * stage-detail-recent at 390x844: '7–8' overprinting '293–214'): binned event
+ * trends carry wide W-L labels (hundreds of games per bin), so the spacing
+ * rule is width-aware when the host passes each label's width — a kept label
+ * clears its predecessor's width, and the last label's end-anchored width.
+ * Without widths the rule is unchanged.
+ */
+describe('selectEventLabelKeys — width-aware spacing (plan 39.1-39)', () => {
+  type Select = (
+    keys: readonly string[],
+    width: number,
+    labelWidthPx?: (key: string) => number,
+  ) => string[];
+
+  it('with 60px labels on a 340px band, consecutive kept labels are at least one label width + 4px apart', async () => {
+    const { select } = await loadLabelKeys();
+    const input = keys(33);
+    const kept = (select as Select)(input, 340, () => 60);
+    const step = 340 / (input.length - 1);
+    const x = (key: string) => input.indexOf(key) * step;
+    for (let i = 1; i < kept.length - 1; i += 1) {
+      expect(x(kept[i]!) - x(kept[i - 1]!)).toBeGreaterThanOrEqual(64);
+    }
+    const last = kept[kept.length - 1]!;
+    if (kept.length > 2) {
+      expect(x(last) - x(kept[kept.length - 2]!)).toBeGreaterThanOrEqual(124);
+    }
+    expect(kept[0]).toBe(input[0]);
+    expect(last).toBe(input[input.length - 1]);
+  });
+
+  it('without label widths the selection is unchanged', async () => {
+    const { select } = await loadLabelKeys();
+    const input = keys(33);
+    expect((select as Select)(input, 340)).toEqual(select(input, 340));
+    expect((select as Select)(input, 1390, () => 0)).toEqual(select(input, 1390));
+  });
+});
