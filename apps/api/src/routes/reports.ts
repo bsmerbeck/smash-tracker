@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  countViableClaims,
   entryKeyInputSchema,
   errorResponseSchema,
   evidenceSnapshotRecordSchema,
@@ -838,8 +839,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     }
 
     // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
-    // The issued claim count is known before the model is called, so a
-    // workspace already below the surface minimum makes NO model call — the
+    // The EVIDENCED claim count is known before the model is called (D-23,
+    // 2026-09-26: `countViableClaims` — abstentions never count, the same
+    // helper the validator's status uses), so a workspace already below the
+    // surface minimum — including one issuing only abstentions — makes NO
+    // model call — the
     // job goes through the one existing `failJob` (its unchanged refund)
     // with `failureReason: 'validation'`, and nothing is stored. The
     // snapshot above IS still written on this path, deliberately: it is the
@@ -849,7 +853,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // assembler. This replaces the charged cold-read report the path used to
     // deliver — that is the decision, not a gap to backfill with a degraded
     // report.
-    if (issuedClaims.length < MIN_VIABLE_CLAIMS[surface]) {
+    if (countViableClaims(issuedClaims) < MIN_VIABLE_CLAIMS[surface]) {
       await failJob({
         uid: request.uid,
         jobId,
@@ -1237,15 +1241,16 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     }
 
     // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
-    // The issued claim count is known before the model is called, so an
-    // event whose annotations issue fewer than the surface minimum makes NO
+    // The EVIDENCED claim count (D-23: `countViableClaims`, abstentions never
+    // count) is known before the model is called, so an event whose
+    // annotations issue fewer evidenced claims than the surface minimum makes NO
     // model call — the job takes the SAME `failCurrentJob` wrapper every
     // sibling branch here uses (the one `failJob`, its unchanged refund and
     // this path's zero-spend `refunded` terminal) with
     // `failureReason: 'validation'`, and nothing is stored. The snapshot
     // above IS still written: it is the evidence for why the job failed, and
     // it is content-addressed, so the write is idempotent.
-    if (claimSet.claims.length < MIN_VIABLE_CLAIMS['post_event_synthesis']) {
+    if (countViableClaims(claimSet.claims) < MIN_VIABLE_CLAIMS['post_event_synthesis']) {
       await failCurrentJob(jobDay, 'validation');
       return {
         ok: false,

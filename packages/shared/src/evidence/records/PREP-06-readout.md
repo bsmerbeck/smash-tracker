@@ -84,8 +84,9 @@ Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` c
    DISCLOSED on the report card (the `reports.withheldProse` caption) and by an equivalent line in
    the `.md` export, and it is OBSERVABLE: the count is persisted on the stored report as `strippedSectionCount` and emitted
    as the `report_prose_stripped` event.
-3. **D-21 — thin evidence buys a refund, not a report.** When the claims issued for a job are already
-   below the surface's `MIN_VIABLE_CLAIMS` at job claim, the job fails fast: the model is not called,
+3. **D-21 — thin evidence buys a refund, not a report.** When the EVIDENCED claims issued for a job
+   (abstentions never count — owner decision D-23) are already below the surface's
+   `MIN_VIABLE_CLAIMS` at job claim, the job fails fast: the model is not called,
    nothing is delivered, the job fails through `failJob` with `failureReason` `validation`, the
    credit is returned exactly once, the `report_failed_validation` event is emitted, and the UI says
    there is not enough match evidence yet. This is a DELIBERATE CHANGE from today's shipped
@@ -96,7 +97,7 @@ Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` c
    stored `droppedClaimCount`); the `report_claims_dropped` event records it. Prose that names the
    unknown stage or character bucket withholds that section's prose only, disclosed like any other
    withheld commentary, and never drops a claim (owner decision D-22); a claim whose own stage or
-   fighter id is the unknown bucket is dropped. Only when fewer than `MIN_VIABLE_CLAIMS` claims survive does the job fail with
+   fighter id is the unknown bucket is dropped. Only when fewer than `MIN_VIABLE_CLAIMS` evidenced claims survive does the job fail with
    `failureReason` `validation` and refund through `failJob`.
 
 ## BOUNDARY

@@ -45,13 +45,15 @@ Per-claim, the validator's verdict is **`accepted`** or **`dropped`** — a clai
 above is dropped, never silently rewritten to agree with the recomputed value (an unsupported
 claim is dropped and disclosed, never repaired in place).
 
-Per-output, the verdict is **`passed`** when at least `MIN_VIABLE_CLAIMS[surface]` claims survive,
+Per-output, the verdict is **`passed`** when at least `MIN_VIABLE_CLAIMS[surface]` EVIDENCED claims survive
+(abstentions are delivered but never count — owner decision D-23, one shared `countViableClaims` in the
+validator and the API's pre-call fail-fast),
 **`failed`** otherwise — citing the exported constant (`claims.ts`) by name so the number stays
 auditable rather than duplicated in prose:
 
 | Surface                | `MIN_VIABLE_CLAIMS` | Rationale                                                                                       |
 | ---------------------- | ------------------- | ----------------------------------------------------------------------------------------------- |
-| `scout`                | 3                   | Below three surviving claims a scouting output is not a report.                                 |
+| `scout`                | 3                   | Below three evidenced surviving claims a scouting output is not a report.                       |
 | `prep_report`          | 3                   | Same floor as `scout` — the same claim pipeline, the same minimum bar for a shippable output.   |
 | `prep_bundle_child`    | 3                   | Each bundle child is itself a full report against one opponent — the same floor applies.        |
 | `post_event_synthesis` | 2                   | Rests on annotation (`vod_annotation`) claims, which are legitimately fewer per event reviewed. |

@@ -8,8 +8,9 @@
  * prose fault (R4/R5, and R7's lexical half — D-22) strips ONLY that
  * section's prose and never touches claim survival (the C1-H4/C2-H3
  * money-path fix — see the FAILURE SEMANTICS comment on `lintSectionProse`
- * below), and the output's `status` is decided by the surviving CLAIM count
- * against `MIN_VIABLE_CLAIMS[surface]` alone.
+ * below), and the output's `status` is decided by the surviving EVIDENCED
+ * claim count (`countViableClaims`, D-23) against `MIN_VIABLE_CLAIMS[surface]`
+ * alone.
  *
  * PURE: this module imports ONLY `./claims.js`, `./snapshot.js`,
  * `./policy.js`, `./types.js`, `./confidencePhrases.js`, `./predicate.js`,
@@ -19,7 +20,7 @@
  * retry, or mutate its input (D-07).
  */
 import type { ActionId, ClaimAtom, ClaimId, ClaimValue, ReportSurface } from './claims.js';
-import { MIN_VIABLE_CLAIMS } from './claims.js';
+import { MIN_VIABLE_CLAIMS, countViableClaims } from './claims.js';
 import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
 import { effectiveFloor } from './policy.js';
 import {
@@ -434,7 +435,7 @@ function validateClaim(
 // showed it reachable by a single systematic model habit the app's own
 // shipped `SYSTEM_PROMPT` teaches ("Game 1: X", "top-5 characters"), which
 // would refund a paying user on the live purchasable scout path for one
-// stylistic word choice. `status` is decided by the surviving CLAIM count
+// stylistic word choice. `status` is decided by the surviving EVIDENCED claim count
 // and by nothing else (D-07): `strippedSectionIds` never participates in
 // that decision, at any length.
 //
@@ -641,7 +642,7 @@ function lintSectionProse(
  */
 export function validateReportOutput(input: ValidateReportInput): ValidationOutcome {
   const { snapshot, issuedClaims, output, surface } = input;
-  const issuedById = new Map(issuedClaims.map((claim) => [claim.id, claim]));
+  const issuedById = new Map<string, ClaimAtom>(issuedClaims.map((claim) => [claim.id, claim]));
 
   const droppedClaims: DroppedClaim[] = [];
   const droppedIds = new Set<string>();
@@ -714,8 +715,13 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
     }
   }
 
+  // D-23 (review SH-CR-03): only EVIDENCED survivors count toward the
+  // minimum — the same `countViableClaims` the API's pre-call fail-fast uses.
+  const survivingClaims = finalSurvivingIds
+    .map((claimId) => issuedById.get(claimId))
+    .filter((claim): claim is ClaimAtom => claim !== undefined);
   const status: 'passed' | 'failed' =
-    finalSurvivingIds.length >= MIN_VIABLE_CLAIMS[surface] ? 'passed' : 'failed';
+    countViableClaims(survivingClaims) >= MIN_VIABLE_CLAIMS[surface] ? 'passed' : 'failed';
 
   return {
     status,

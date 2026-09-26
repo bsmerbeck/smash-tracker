@@ -142,12 +142,15 @@ export interface ClaimAtom {
 export type ReportSurface = 'scout' | 'prep_report' | 'prep_bundle_child' | 'post_event_synthesis';
 
 /**
- * D-07: the minimum surviving-claim count below which an output fails
- * validation (routed to the existing `failJob`, `failureReason: 'validation'`).
- * Below three surviving claims a scouting output is not a report; the
- * synthesis surface rests on annotation claims that are legitimately fewer.
- * Cited by name (not by value) from `records/RPT-08-rubric.md` — a
- * committed test in `rpt08Oracle.test.ts` asserts the two stay in lockstep.
+ * D-07: the minimum EVIDENCED surviving-claim count below which an output
+ * fails validation (routed to the existing `failJob`, `failureReason:
+ * 'validation'`). Below three evidenced claims a scouting output is not a
+ * report; the synthesis surface rests on annotation claims that are
+ * legitimately fewer. Owner decision D-23 (2026-09-26): only EVIDENCED
+ * (non-abstained) claims count — always through `countViableClaims` below,
+ * in the validator AND the API's pre-call fail-fast. Cited by name (not by
+ * value) from `records/RPT-08-rubric.md` — a committed test in
+ * `rpt08Oracle.test.ts` asserts the two stay in lockstep.
  */
 export const MIN_VIABLE_CLAIMS: Readonly<Record<ReportSurface, number>> = {
   scout: 3,
@@ -155,6 +158,20 @@ export const MIN_VIABLE_CLAIMS: Readonly<Record<ReportSurface, number>> = {
   prep_bundle_child: 3,
   post_event_synthesis: 2,
 };
+
+/**
+ * Owner decision D-23 (review SH-CR-03): THE one count every
+ * `MIN_VIABLE_CLAIMS` comparison uses — the claims that carry evidence, never
+ * an abstention. An abstained claim ("not enough data yet") is still
+ * delivered alongside a report that clears the minimum, but it can never
+ * help a report clear it: an output of nothing but abstentions is not a
+ * report, so it refunds (D-21) instead of being charged. Used by
+ * `validateReportOutput`'s status and by the API's pre-call fail-fast on
+ * every surface, so the two can never disagree.
+ */
+export function countViableClaims(claims: readonly Pick<ClaimAtom, 'value'>[]): number {
+  return claims.filter((claim) => claim.value.kind !== 'abstained').length;
+}
 
 /**
  * Every id this phase can emit — claim id, evidence id, or a piece of one —
