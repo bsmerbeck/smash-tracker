@@ -4188,7 +4188,7 @@ const P39_PARRY_BINDING = {
 const SNAPSHOT_ID_SHAPE = /^[0-9a-f]{64}$/;
 /** A connective carrying an unlicensed number — plan 39-04's R4 strips the section's prose, never its claims. */
 const UNLICENSED_NUMBER_CONNECTIVE = 'Keep the opening 97 games steady.';
-/** A connective naming the unknown bucket as real — R7 (lexical) DROPS the section's claims, not merely its prose. */
+/** A connective naming the unknown bucket as real — R7 (lexical) withholds that section's PROSE only and never drops a claim (owner decision D-22). */
 const UNKNOWN_BUCKET_CONNECTIVE = 'Ban the Unknown Stage early.';
 
 interface ModelFacingClaimView {
@@ -4394,7 +4394,7 @@ describe('evidence snapshot + validator seam on the LEGACY scout path (plan 39-0
     expect(refundLedgerRefs(database)).toEqual([]);
   });
 
-  it('C1-B1: a stage claim the validator DROPPED contributes no stage name to the stored stageStrategy (control: kept, it does)', async () => {
+  it("C1-B1 / D-22: stageStrategy is projected from SURVIVING stage claims — an unknown-bucket prose hit in the stage claim's section withholds that prose but no longer drops the claim, so its stage name is still projected", async () => {
     const stageNameOf = (claims: ModelFacingClaimView[]) => {
       const stageClaim = claims.find(
         (claim) =>
@@ -4422,25 +4422,36 @@ describe('evidence snapshot + validator seam on the LEGACY scout path (plan 39-0
     const stageName = stageClaim!.displayName.stage!;
     expect([...kept.stageStrategy.bans, ...kept.stageStrategy.picks]).toContain(stageName);
 
-    // Dropped: the stage claim sits alone in a section whose prose names the
-    // unknown bucket (R7 lexical) — the claim is DROPPED, the other three
-    // still clear the minimum, and the report is stored without it.
-    const dropped = legacyBillableApp((params) => {
+    // Owner decision D-22 (2026-09-26, updated from the pre-D-22 "dropped"
+    // expectation): the stage claim sits alone in a section whose prose
+    // names the unknown bucket. Before D-22 that R7 lexical hit DROPPED the
+    // claim; now it withholds the section's PROSE only — the claim is
+    // engine-authored and judged on its own ids — so the claim is stored,
+    // its stage name is still projected, nothing counts as dropped, and the
+    // withheld prose is disclosed through strippedSectionCount. No model
+    // selection over engine-issued claims can drop a stage claim any more
+    // (only an unissued id is dropped, R1), so C1-B1's "dropped claim adds
+    // no stage name" half is the projection's own surviving-claims input.
+    const withheld = legacyBillableApp((params) => {
       const claim = stageNameOf(modelFacingClaims(params));
       return selectionOf(
         { overview: ['c01', 'c03'], gameplan: ['c02'], watchFor: [claim.id] },
         { watchFor: UNKNOWN_BUCKET_CONNECTIVE },
       );
     });
-    expect((await postLegacy(dropped.app, 'p39-stage-dropped')).statusCode).toBe(200);
-    const storedDropped = storedScoutReports(dropped.database)[0]!.report as Record<
+    expect((await postLegacy(withheld.app, 'p39-stage-withheld')).statusCode).toBe(200);
+    const storedWithheld = storedScoutReports(withheld.database)[0]!.report as Record<
       string,
       unknown
     >;
-    const parsed = storedScoutReportSchema.parse(storedDropped);
-    expect([...parsed.stageStrategy.bans, ...parsed.stageStrategy.picks]).not.toContain(stageName);
-    expect(Object.keys(parsed.claims ?? {})).not.toContain(stageClaim!.id);
-    expect(parsed.droppedClaimCount).toBe(1);
+    const parsed = storedScoutReportSchema.parse(storedWithheld);
+    expect([...parsed.stageStrategy.bans, ...parsed.stageStrategy.picks]).toContain(stageName);
+    expect(Object.keys(parsed.claims ?? {})).toContain(stageClaim!.id);
+    expect(storedWithheld).not.toHaveProperty('droppedClaimCount');
+    expect(parsed.strippedSectionCount).toBe(1);
+    expect(parsed.sections?.watchFor?.connective).toBe('');
+    // Delivered AND charged (D-20/D-22): withheld prose never refunds.
+    expect(refundLedgerRefs(withheld.database)).toEqual([]);
   });
 
   it('C3-M1/D-20: one stripped section stores strippedSectionCount 1 and emits exactly one report_prose_stripped whose payload carries no count', async () => {

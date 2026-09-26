@@ -656,8 +656,15 @@ const confidenceWordUnlicensedWord = makeConfidenceWordFixture({
 });
 
 // ---------------------------------------------------------------------------
-// unknown_bucket / R7 — an unknown stage/character counted inside a
-// denominator, and the unknown bucket named as if it were a real stage.
+// unknown_bucket / R7 — prose naming the unknown bucket as if it were a real
+// stage. Under owner decision D-22 a lexical hit WITHHOLDS THE SECTION'S
+// PROSE ONLY and never drops a claim, so every fixture here is labelled
+// `stripped` ("prose stripped, claim survives"). R7's claim-level conviction
+// lives on the claim's own ids (a stage/fighter id 0 or off-roster claim is
+// rejected — `validateReport.test.ts`'s structural R7 battery), and the
+// denominator half (unknown games never folded into a known rate) is proven
+// where denominators are computed: the API row builder's tests
+// (`apps/api/src/reports/generate.test.ts`).
 // ---------------------------------------------------------------------------
 
 // Both fixtures below derive their unknown-bucket size from the EXISTING
@@ -676,9 +683,11 @@ const unknownBucketInDenominator: AdversarialFixture = {
   snapshot: (() => {
     const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23 };
     const rowId = evidenceIdFor({ predicate: 'stage_pick_rate', subject, opponentOrder: [] });
-    // The unknown-stage bucket is counted INSIDE the denominator below —
-    // R7 forbids this; the eligible-only denominator is what the engine
-    // itself reports (see `SampleMeta.eligibleDenominator`'s doc comment).
+    // The unknown-stage bucket is counted INSIDE the denominator below. The
+    // snapshot row is trusted input to the validator (its own
+    // `eligibleDenominator` agrees), so nothing claim-level can see the
+    // poisoning — this fixture convicts only through its prose, which names
+    // the unknown bucket (D-22: prose withheld, claim survives).
     return makeSnapshot(
       {
         [rowId]: makeRow(
@@ -726,7 +735,7 @@ const unknownBucketInDenominator: AdversarialFixture = {
       licensedClaimIds: ['c01'],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 const UNKNOWN_BUCKET_NAMED_LOSSES = 2;
@@ -786,12 +795,13 @@ const unknownBucketNamedAsRealStage: AdversarialFixture = {
   sections: [
     {
       // "Unknown Stage" is the engine's own explicit bucket label, named
-      // here as if it were a real, pickable stage — R7's second failure mode.
+      // here as if it were a real, pickable stage — the prose is withheld,
+      // the claim (judged on its own ids) survives — D-22.
       prose: `They are ${UNKNOWN_BUCKET_NAMED_WINS}-${UNKNOWN_BUCKET_NAMED_LOSSES} on Unknown Stage, a strong pick for them.`,
       licensedClaimIds: ['c01'],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 // SH-WR-08: the PLURAL naming ("Unknown Stages") — the validator's lexical

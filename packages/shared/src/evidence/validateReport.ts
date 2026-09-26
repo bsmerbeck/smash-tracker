@@ -5,10 +5,11 @@
  * `records/RPT-08-rubric.md`). Connective prose is linted for factual
  * specifics its own section's claims do not license. The outcome is
  * drop-then-fail: invalid claims are dropped first (rules R1-R3, R6-R7), a
- * prose fault (R4/R5) strips ONLY that section's prose and never touches
- * claim survival (the C1-H4/C2-H3 money-path fix — see the FAILURE SEMANTICS
- * comment on `lintSectionProse` below), and the output's `status` is decided
- * by the surviving CLAIM count against `MIN_VIABLE_CLAIMS[surface]` alone.
+ * prose fault (R4/R5, and R7's lexical half — D-22) strips ONLY that
+ * section's prose and never touches claim survival (the C1-H4/C2-H3
+ * money-path fix — see the FAILURE SEMANTICS comment on `lintSectionProse`
+ * below), and the output's `status` is decided by the surviving CLAIM count
+ * against `MIN_VIABLE_CLAIMS[surface]` alone.
  *
  * PURE: this module imports ONLY `./claims.js`, `./snapshot.js`,
  * `./policy.js`, `./types.js`, `./confidencePhrases.js`, `./predicate.js`,
@@ -104,6 +105,11 @@ const FIGHTER_NAME_BY_ID: ReadonlyMap<number, string> = new Map(
 const STAGE_NAME_BY_ID: ReadonlyMap<number, string> = new Map(
   StageList.map((stage) => [stage.id, stage.name]),
 );
+
+/** True when `id` is a real roster fighter / StageList stage — never the unknown bucket (id 0, which both `UNKNOWN_STAGE` and `NO_SELECTION_STAGE` use and no roster table contains) nor any other off-table id. */
+function isRosterId(axis: 'fighter' | 'stage', id: number): boolean {
+  return (axis === 'fighter' ? FIGHTER_NAME_BY_ID : STAGE_NAME_BY_ID).has(id);
+}
 
 /** Resolves a fighter or stage id to its canonical display name — the SAME lookup the prose lint's licensed-entity set and plan 39-06's model payload both use. Falls back to a synthetic, never-canonical string for an id absent from the table (never thrown — a defensive fallback, not expected in correctly-built input). */
 export function resolveSubjectDisplayName(axis: 'fighter' | 'stage', id: number): string {
@@ -348,6 +354,35 @@ function validateClaim(
     }
   }
 
+  // R7 (structural, D-22 / review SH-WR-02): the claim's OWN ids decide the
+  // unknown bucket. A fighter/stage axis — or an entity value naming a
+  // fighter/stage — that is id 0 (the unknown bucket) or otherwise off the
+  // roster is rejected, abstained or not: the unknown bucket is never a
+  // real, pickable entity, so no claim ABOUT it is deliverable. This is
+  // where R7's claim-level conviction lives now; prose naming the bucket
+  // only withholds that section's prose (see `lintSectionProse`).
+  const offRosterAxis =
+    (claim.subject.myFighterId !== null && !isRosterId('fighter', claim.subject.myFighterId)) ||
+    (claim.subject.opponentFighterId !== null &&
+      !isRosterId('fighter', claim.subject.opponentFighterId)) ||
+    (claim.subject.stageId !== null && !isRosterId('stage', claim.subject.stageId));
+  if (offRosterAxis) {
+    return {
+      rule: 'R7',
+      detail: 'subject names the unknown bucket or an off-roster fighter/stage id',
+    };
+  }
+  if (
+    claim.value.kind === 'entity' &&
+    (claim.value.entityKind === 'fighter' || claim.value.entityKind === 'stage') &&
+    !isRosterId(claim.value.entityKind, Number(claim.value.entityId))
+  ) {
+    return {
+      rule: 'R7',
+      detail: 'entity value names the unknown bucket or an off-roster fighter/stage id',
+    };
+  }
+
   // R6: an evidenced (non-abstained) claim needs at least the floor's worth
   // of countable games — re-derived from the claim's own sample, never
   // trusted from whatever produced `issuedClaims`.
@@ -403,21 +438,31 @@ function validateClaim(
 // and by nothing else (D-07): `strippedSectionIds` never participates in
 // that decision, at any length.
 //
-// R7's UNKNOWN-BUCKET NAMING is the one exception carried into this
-// function: naming the unknown bucket as a real, pickable entity is a
-// FACTUAL fault about the claim itself, not a stylistic prose fault, so it
-// drops the section's licensed claims (see `validateReportOutput` below)
-// as well as stripping the prose.
+// R7's UNKNOWN-BUCKET NAMING (owner decision D-22, 2026-09-26) is a prose
+// fault like R4/R5: it withholds the section's PROSE only — disclosed as
+// "commentary withheld" — and never drops a claim. The claims are
+// engine-authored and judged on their OWN ids (`validateClaim`'s structural
+// R7 check), so a claim-drop here protected nothing and only exposed a paid
+// job to a validation refund for one ordinary sentence. It also removes the
+// section-order hole where a later section's drop left an earlier section's
+// already-linted prose resting on a claim that was no longer stored.
 // ---------------------------------------------------------------------------
 
-/** `Unknown Stage` / `Unknown Character` as a NAMED, capitalized entity reference — R7's lexical half. Case-SENSITIVE: ordinary lowercase "unknown" (as in "unknown matchups are rare") is never a violation, matching the C1-H4 sentinel-exclusion discipline. */
-const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)\b/i;
+/**
+ * R7's lexical half — case-INSENSITIVE on purpose, plurals included: any
+ * wording that names the unknown stage/character bucket ("Unknown Stage",
+ * "an unknown character", "unknown stages") withholds the section's PROSE
+ * (never its claims — D-22). Over-stripping prose is cheap; shipping the
+ * bucket as a real entity is not. Kept a DELIBERATE, byte-identical
+ * duplicate of the VAL-03 judge's own pattern (`val03Acceptance.test.ts`
+ * asserts source and flags are equal) — the judge keeps its own copy so it
+ * never reads the validator's decisions.
+ */
+export const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)s?\b/iu;
 
 interface ProseLintResult {
-  /** True when R4 or R5 fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
+  /** True when R4, R5 or R7's lexical half fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
   offense: boolean;
-  /** True when R7's lexical half fired — the unknown bucket was named as if real. This drops the section's licensed CLAIMS (see `validateReportOutput`) as well as stripping the prose. */
-  unknownBucketNamed: boolean;
 }
 
 /**
@@ -432,11 +477,11 @@ function lintSectionProse(
   allIssuedClaims: readonly ClaimAtom[],
 ): ProseLintResult {
   if (connective.trim().length === 0) {
-    return { offense: false, unknownBucketNamed: false };
+    return { offense: false };
   }
 
-  if (UNKNOWN_BUCKET_NAMED_PATTERN.test(connective)) {
-    return { offense: false, unknownBucketNamed: true };
+  if (UNKNOWN_BUCKET_NAMED_PATTERN.test(connective.normalize('NFC'))) {
+    return { offense: true };
   }
 
   const nfc = connective.normalize('NFC');
@@ -579,7 +624,7 @@ function lintSectionProse(
     }
   }
 
-  return { offense, unknownBucketNamed: false };
+  return { offense };
 }
 
 // ---------------------------------------------------------------------------
@@ -629,31 +674,16 @@ export function validateReportOutput(input: ValidateReportInput): ValidationOutc
     }
   }
 
-  // Pass 2: section-scoped prose lint (R4, R5, R7-lexical), same order.
+  // Pass 2: section-scoped prose lint (R4, R5, R7-lexical), same order. It
+  // strips PROSE only and never drops a claim (D-22), so every section is
+  // linted against the final surviving claim set — no later section can
+  // change what an earlier section was licensed by (review API-WR-04).
   const strippedSectionIds: string[] = [];
   for (const [sectionId, section] of Object.entries(output.sections)) {
     const licensedClaims = section.claimIds
       .map((claimId) => issuedById.get(claimId))
       .filter((claim): claim is ClaimAtom => claim !== undefined && !droppedIds.has(claim.id));
     const result = lintSectionProse(section.connective, licensedClaims, issuedClaims);
-    if (result.unknownBucketNamed) {
-      // R7 (lexical): naming the unknown bucket as real is a factual fault
-      // about the claim(s) this section rests on — drop them, not merely
-      // the prose (the one exception to the R4/R5 penalty-decoupling rule).
-      for (const claimId of section.claimIds) {
-        dropClaim(
-          claimId,
-          'R7',
-          'prose names the unknown stage/character bucket as a real, pickable entity',
-        );
-      }
-      // ...AND the prose itself is withheld: dropping the claims does not stop
-      // the API persisting this section's connective, so without this the
-      // unknown-bucket naming would ship in any output that still clears
-      // MIN_VIABLE_CLAIMS through its other sections (plan 39-13, VAL-03).
-      strippedSectionIds.push(sectionId);
-      continue;
-    }
     if (result.offense) {
       strippedSectionIds.push(sectionId);
     }

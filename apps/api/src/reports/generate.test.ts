@@ -926,6 +926,52 @@ describe('assembleReportPayload: evidence rows, snapshot, claim set and ranked a
     expect(payload.claimSet.claims.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
   });
 
+  it('SH-IN-05 (re-homed denominator proof): unknown-stage games never enter a known stage row — the pick-rate denominator is the KNOWN-stage count, and the raw sample still discloses them', async () => {
+    // This is where denominators are actually computed (the shared claim
+    // builder passes a row's value through unchanged), so the proof that the
+    // unknown bucket is never folded into a known entity's rate lives here.
+    const database = new FakeDatabase();
+    const battlefield = { id: 1, name: 'Battlefield' };
+    const finalDestination = { id: 3, name: 'Final Destination' };
+    const vsFox = (time: number, win: boolean, map?: { id: number; name: string }) => ({
+      fighter_id: 1,
+      opponent_id: 8,
+      time,
+      win,
+      opponent: 'someone',
+      ...(map ? { map } : {}),
+    });
+    database.seed(`matches/${UID}`, {
+      b1: vsFox(1, true, battlefield),
+      b2: vsFox(2, true, battlefield),
+      b3: vsFox(3, false, battlefield),
+      f1: vsFox(4, false, finalDestination),
+      f2: vsFox(5, false, finalDestination),
+      u1: vsFox(6, true), // no map -> unknown stage
+      u2: vsFox(7, true), // no map -> unknown stage
+    });
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const knownStageGames = 5;
+    const allGamesVsFox = 7;
+    const rate = payload.rows['spr-g8-s1'];
+    expect(rate?.value).toEqual({ kind: 'rate', numerator: 3, denominator: knownStageGames });
+    expect(rate?.sample.eligibleDenominator).toBe(knownStageGames);
+    expect(rate?.sample.rawSampleSize).toBe(allGamesVsFox);
+    // The known stage's record counts only its own games; no row is ever
+    // keyed on (or carries) the unknown stage.
+    expect(payload.rows['sr-g8-s1']?.value).toEqual({
+      kind: 'record',
+      wins: 2,
+      losses: 1,
+      games: 3,
+    });
+    expect(Object.values(payload.rows).some((row) => row.subject.stageId === 0)).toBe(false);
+  });
+
   it('the snapshot id is identical across two assemblies of the same input, even at different wall-clock times', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const first = await assembleViable();

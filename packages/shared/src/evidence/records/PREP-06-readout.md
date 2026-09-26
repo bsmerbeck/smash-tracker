@@ -94,8 +94,9 @@ Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` c
 4. **D-07 — dropped claims are delivered with a note.** Claims the validator could not support are
    dropped, and the delivered report says how many (the `reports.droppedClaims` caption, from the
    stored `droppedClaimCount`); the `report_claims_dropped` event records it. Prose that names the
-   unknown stage or character bucket as real drops that section's claims and withholds its prose as
-   well. Only when fewer than `MIN_VIABLE_CLAIMS` claims survive does the job fail with
+   unknown stage or character bucket withholds that section's prose only, disclosed like any other
+   withheld commentary, and never drops a claim (owner decision D-22); a claim whose own stage or
+   fighter id is the unknown bucket is dropped. Only when fewer than `MIN_VIABLE_CLAIMS` claims survive does the job fail with
    `failureReason` `validation` and refund through `failJob`.
 
 ## BOUNDARY
