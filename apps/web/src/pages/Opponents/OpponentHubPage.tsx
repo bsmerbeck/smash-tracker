@@ -314,7 +314,7 @@ export function OpponentHubPage() {
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { matches, isLoading, isFetching, filterActive } = useFilteredMatches();
+  const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
@@ -331,7 +331,9 @@ export function OpponentHubPage() {
   // D-02: one identity resolver, one hop — the SAME technique the list page
   // uses (build the resolver once over the filtered matches and the alias
   // map, resolve the target, keep matches whose resolved identity matches).
-  // No second identity comparison is written anywhere on this page.
+  // No second identity comparison is written anywhere on this page (the
+  // prep-brief card's resolver below is the same technique over all matches,
+  // code review WEB-02).
   const resolve = useMemo(
     () => resolveOpponentIdentities(matches, aliasMap ?? {}),
     [matches, aliasMap],
@@ -358,6 +360,28 @@ export function OpponentHubPage() {
   }, [matches, aliasMap, targetIdentity, refreshedAt]);
 
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
+
+  // Code review WEB-02: the prep-brief card's inputs are built from ALL
+  // matches, never the filtered set. The card's door is a navigation
+  // affordance, not an analytics figure, so the Dashboard's source/range
+  // filter must not remove a shared event (its debrief door) or the games
+  // that carry a provider-id link (its likely-opponent identity match) —
+  // the same reason `PrepBriefPage` avoids `useFilteredMatches()`.
+  const prepResolve = useMemo(
+    () => resolveOpponentIdentities(allMatches, aliasMap ?? {}),
+    [allMatches, aliasMap],
+  );
+  const prepIdentity = useMemo(
+    () => (pathTag ? prepResolve({ opponent: pathTag }) : null),
+    [prepResolve, pathTag],
+  );
+  const prepTournamentBlocks = useMemo(
+    () =>
+      prepIdentity
+        ? groupTournamentBlocks(allMatches.filter((m) => prepResolve(m) === prepIdentity))
+        : [],
+    [allMatches, prepResolve, prepIdentity],
+  );
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
   /**
@@ -1033,12 +1057,12 @@ export function OpponentHubPage() {
           </ChartCard>
 
           {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. */}
-          {targetIdentity && (
+          {prepIdentity && (
             <HubPrepBriefCard
-              opponentIdentity={targetIdentity}
+              opponentIdentity={prepIdentity}
               opponentTag={displayTag}
-              resolveOpponent={resolve}
-              tournamentBlocks={tournamentBlocks}
+              resolveOpponent={prepResolve}
+              tournamentBlocks={prepTournamentBlocks}
             />
           )}
 
