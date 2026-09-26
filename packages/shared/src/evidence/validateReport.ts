@@ -616,6 +616,40 @@ function lintSectionProse(
     }
   }
 
+  // --- R4: opponent tags consume their spans (review R2-WR-03) ---
+  //
+  // A known opponent tag is a NAME, like a canonical fighter or stage name:
+  // every token-bounded occurrence (longest tag first) consumes its span, so
+  // the digits inside it ("Sparg0", "Zer0Frame 2") are never read as figures
+  // by the digit rule below. Whether the tag itself is licensed is judged by
+  // the tag check further down; consuming never licenses anything.
+  const licensedTags = new Set<string>();
+  for (const claim of licensedClaims) {
+    if (claim.subject.opponentTag !== null) {
+      licensedTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
+    }
+  }
+  const allKnownTags = new Set<string>();
+  for (const claim of allIssuedClaims) {
+    if (claim.subject.opponentTag !== null) {
+      allKnownTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
+    }
+  }
+  for (const tag of [...allKnownTags].sort((a, b) => b.length - a.length)) {
+    if (tag.length === 0) {
+      continue;
+    }
+    const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tagRe = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'gu');
+    for (const match of folded.matchAll(tagRe)) {
+      const start = match.index!;
+      const end = start + match[0].length;
+      if (!overlapsConsumed(start, end)) {
+        consumedNameSpans.push([start, end]);
+      }
+    }
+  }
+
   // --- R4: the digit rule ---
   const licensedIntegers = new Set<number>();
   for (const claim of licensedClaims) {
@@ -684,18 +718,6 @@ function lintSectionProse(
   //
   // Review SH-WR-01: a tag known elsewhere in the job convicts only as a
   // whole token — "Tea" never convicts "Team".
-  const licensedTags = new Set<string>();
-  for (const claim of licensedClaims) {
-    if (claim.subject.opponentTag !== null) {
-      licensedTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
-    }
-  }
-  const allKnownTags = new Set<string>();
-  for (const claim of allIssuedClaims) {
-    if (claim.subject.opponentTag !== null) {
-      allKnownTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
-    }
-  }
   for (const tag of allKnownTags) {
     if (licensedTags.has(tag) || tag.length === 0) {
       continue;

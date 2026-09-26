@@ -1021,7 +1021,7 @@ function validateHeadToHead(
   tag: string,
   record: { wins: number; losses: number },
   prose: string,
-): { stripped: string[]; dropped: number } {
+): { stripped: readonly string[]; dropped: number } {
   const games = record.wins + record.losses;
   const subject: ClaimSubject = { ...NULL_SUBJECT, opponentTag: tag };
   const predicate = 'head_to_head_record' as const;
