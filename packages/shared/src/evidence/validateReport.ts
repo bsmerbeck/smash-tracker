@@ -513,32 +513,17 @@ function isTierWord(word: string): boolean {
   return Object.prototype.hasOwnProperty.call(LICENSED_CONFIDENCE_WORDS, word);
 }
 
-/** "against you", "versus you", "vs you" — the object half of an opponent-as-subject head-to-head sentence (review R2-IN-01). */
-const AGAINST_YOU_PATTERN = /\b(?:against|versus|vs)\s+you\b/i;
-
 /**
- * Review R2-IN-01: the licensed opponent tag that is the SUBJECT of a
- * head-to-head `sentence`, or `null`. Narrow on purpose: the sentence must
- * open with the tag as a whole token (after leading whitespace, punctuation
- * or markdown) and must say "against you"/"versus you"/"vs you". Tags are
- * tried longest first, verbatim (case-sensitive, like the tag check).
+ * Review R3-CR-01 (iteration 3): an OPPONENT-PERSPECTIVE marker — "you" as
+ * the object of a head-to-head preposition or result verb ("against you",
+ * "vs. you", "beat you", "leads you"). A section whose prose carries one
+ * anywhere withholds every W-L pair in it: the lint cannot tell whose record
+ * a pair states once the opponent can be the subject, so it never licenses
+ * one there, true or false. A CLOSED list — an opponent-subject phrasing
+ * outside it is the recorded limit in `records/VAL-03-acceptance-map.md`.
  */
-function opponentSubjectTag(sentence: string, tags: Iterable<string>): string | null {
-  if (!AGAINST_YOU_PATTERN.test(sentence)) {
-    return null;
-  }
-  const opening = sentence.replace(/^[\s\p{P}\p{S}]+/u, '');
-  for (const tag of [...tags].sort((a, b) => b.length - a.length)) {
-    if (
-      tag.length > 0 &&
-      opening.startsWith(tag) &&
-      !/^[\p{L}\p{N}_]/u.test(opening.slice(tag.length))
-    ) {
-      return tag;
-    }
-  }
-  return null;
-}
+const OPPONENT_PERSPECTIVE_PATTERN =
+  /\b(?:against|versus|vs\.?|over|beat|beats|beaten|lead|leads|led|trail|trails|trailed|edge|edges|edged|sweep|sweeps|swept|top|tops|topped|best|bests|bested|own|owns|owned|dominate|dominates|dominated|outplay|outplays|outplayed)\s+you\b/iu;
 
 interface ProseLintResult {
   /** True when R4, R5 or R7's lexical half fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
@@ -703,29 +688,24 @@ function lintSectionProse(
   // limit (a single figure attributed to the wrong entity in the same
   // section) is recorded in `records/VAL-03-acceptance-map.md`.
   //
-  // Review R2-IN-01: the ONE perspective exception. A sentence whose subject
-  // is the opponent ("MkLeo is 2-3 against you", "MkLeo's record against you
-  // is 2-3") states the record from THEIR side, so there the pair must be
-  // the REVERSED (losses-wins) pair of a licensed record claim about THAT
-  // opponent — and the unreversed pair, a false statement from their side,
-  // no longer passes. "Opponent as subject" is decided narrowly: the
-  // sentence opens with the licensed tag (after any leading punctuation) and
-  // says "against you"/"versus you"/"vs you". Every other sentence keeps the
-  // exact ordered pair. The winner-first loss idiom ("you lost it 3-2") is
-  // still withheld — a recorded limit in the VAL-03 map.
+  // Review R3-CR-01 (iteration 3): there is NO perspective exception. The
+  // R2-IN-01 rule licensed the REVERSED pair in a sentence that opened with
+  // the opponent's tag and said "against you", and it shipped an inverted
+  // record whenever a later clause restated the pair from the player's side
+  // ("MkLeo is tough against you, and you are 2-3"). Instead, a section
+  // whose prose carries an opponent-perspective marker anywhere
+  // (`OPPONENT_PERSPECTIVE_PATTERN`) withholds every pair in it — judged over
+  // the whole section, never per sentence, so a sentence split cannot move a
+  // pair away from its marker. That over-strips a true player-side record in
+  // such a section; D-22 makes a withheld prose section cheap, and a shipped
+  // inverted record is not. Both limits are recorded in the VAL-03 map.
   const licensedRecordPairs = new Set<string>();
-  const reversedPairsByTag = new Map<string, Set<string>>();
   for (const claim of licensedClaims) {
     if (claim.value.kind === 'record') {
       licensedRecordPairs.add(`${claim.value.wins}-${claim.value.losses}`);
-      if (claim.subject.opponentTag !== null) {
-        const tag = foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC'));
-        const reversed = reversedPairsByTag.get(tag) ?? new Set<string>();
-        reversed.add(`${claim.value.losses}-${claim.value.wins}`);
-        reversedPairsByTag.set(tag, reversed);
-      }
     }
   }
+  const opponentPerspective = OPPONENT_PERSPECTIVE_PATTERN.test(folded);
   const recordShapeDigitSpans: Array<[number, number]> = [];
   for (const match of folded.matchAll(RECORD_SHAPE_PATTERN)) {
     const [winsStart, winsEnd] = match.indices![1]!;
@@ -735,12 +715,7 @@ function lintSectionProse(
     }
     recordShapeDigitSpans.push([winsStart, winsEnd], [lossesStart, lossesEnd]);
     const pair = `${Number(match[1])}-${Number(match[2])}`;
-    const subjectTag = opponentSubjectTag(
-      sentenceContaining(sentences, winsStart).text,
-      reversedPairsByTag.keys(),
-    );
-    const allowed = subjectTag !== null ? reversedPairsByTag.get(subjectTag)! : licensedRecordPairs;
-    if (!allowed.has(pair)) {
+    if (opponentPerspective || !licensedRecordPairs.has(pair)) {
       offense = true;
     }
   }

@@ -70,14 +70,17 @@ single licensed figure can still be attributed to the wrong entity within the sa
 licence is per section, not per sentence), a placement ordinal ("placed 2nd") is exempt from the
 digit rule like any ordinal, and a one- or two-digit run that opens a line and is followed by `.` or
 `)` and more text is read as a list position and exempt even when it is a figure (in `Fox on
-Battlefield: 3-2.\n83. That is the percent.` the `83` ships — code review R2-IN-02). A record stated
-from the opponent's side is accepted only in a narrow shape (code review R2-IN-01): the sentence
-opens with the licensed opponent tag and says "against you"/"versus you"/"vs you", and the pair is
-the reversed licensed pair ("MkLeo is 2-3 against you" for a licensed 3-2); any other
-opponent-perspective phrasing, and the winner-first loss idiom ("you lost that stretch 3-2" for a
-licensed 2-3), is withheld — over-stripping prose, never shipping an unlicensed record. "Zero
-unsupported factual claims" is a statement about CLAIMS and about prose naming an unlicensed
-specific; it does not cover every prose-level misattribution of a licensed number.
+Battlefield: 3-2.\n83. That is the percent.` the `83` ships — code review R2-IN-02). A W-L pair is
+judged from the player's side only (code review R3-CR-01, which reverts R2-IN-01's reversed-pair
+exception): when a section's prose carries an opponent-perspective marker anywhere ("against you",
+"vs. you", "beat you", "leads you" and the other result verbs in `OPPONENT_PERSPECTIVE_PATTERN`),
+every W-L pair in that section is withheld, true or false ("MkLeo is 2-3 against you" and "MkLeo has
+struggled against you, and you lead 3-2" are both over-stripped for a licensed 3-2). The
+winner-first loss idiom ("you lost that stretch 3-2" for a licensed 2-3) is withheld too. The marker
+list is closed, so an opponent-subject phrasing outside it that restates the licensed pair ("MkLeo
+has the upper hand, 3-2") still ships; that is the remaining limit. "Zero unsupported factual
+claims" is a statement about CLAIMS and about prose naming an unlicensed specific; it does not cover
+every prose-level misattribution of a licensed number.
 
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are
 recorded in the owner's terms; this map is where their proofs are named. Neither stands in for the
