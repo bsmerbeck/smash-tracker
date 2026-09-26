@@ -428,7 +428,7 @@ describe('D-18 drill template table: non-vacuity', () => {
     expect(candidates.some((c) => c.titleKey === 'reports.actions.drill.vodPattern')).toBe(false);
   });
 
-  it('COVERAGE: every row of DRILL_TEMPLATE_TABLE fires in at least one fixture in this file', () => {
+  it('COVERAGE (review SH-WR-06): every row of DRILL_TEMPLATE_TABLE survives RANKING in at least one fixture — a row the duplicate suppression always removes never reaches a user', () => {
     const games = 8;
     const claims = claimsFrom({
       'sr-f8-s1': row(
@@ -463,13 +463,11 @@ describe('D-18 drill template table: non-vacuity', () => {
       ),
     });
 
-    const candidates = buildActionCandidates({ claims, vodRefs: [] });
-    const firedTitleKeys = new Set(
-      candidates.filter((c) => c.kind === 'drill').map((c) => c.titleKey),
-    );
+    const ranked = rankActionCandidates(buildActionCandidates({ claims, vodRefs: [] }));
+    const firedTitleKeys = new Set(ranked.filter((c) => c.kind === 'drill').map((c) => c.titleKey));
 
     for (const templateRow of DRILL_TEMPLATE_TABLE) {
-      expect(firedTitleKeys.has(templateRow.titleKey)).toBe(true);
+      expect(firedTitleKeys.has(templateRow.titleKey), templateRow.id).toBe(true);
     }
   });
 });
