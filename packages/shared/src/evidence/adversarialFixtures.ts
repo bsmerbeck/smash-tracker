@@ -798,6 +798,53 @@ const confidenceWordTierEndOfSentence = makeConfidenceWordFixture({
   validatorVerdict: 'stripped',
 });
 
+// Code review R3-CR-02 (iteration 3): R5 must not depend on sentence
+// splitting. The answer to a confidence QUESTION is a confidence statement,
+// and a split on "? " or "! " moved the tier word out of the sentence that
+// mentions confidence. On a low-tier claim every variant below overstates
+// the evidence, so each section's prose is withheld.
+const confidenceWordTierAfterQuestion = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-question',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Our confidence in this read? High.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierAfterBareQuestion = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-bare-question',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Confidence? High.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierAfterExclamation = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-exclamation',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Our confidence in this read! High.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierAfterSemicolon = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-semicolon',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Our confidence in this read; high.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierAfterNewline = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-newline',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Our confidence in this read\nHigh.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierAfterDash = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-dash',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Our confidence in this read — high.',
+  validatorVerdict: 'stripped',
+});
+
 // ---------------------------------------------------------------------------
 // unknown_bucket / R7 — prose naming the unknown bucket as if it were a real
 // stage. Under owner decision D-22 a lexical hit WITHHOLDS THE SECTION'S
@@ -1309,4 +1356,10 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   proseEntityPerspectiveOpponentSubjectUnreversed,
   proseEntityPerspectiveOpponentSubjectReversed,
   proseEntityPerspectiveSplitQuestion,
+  confidenceWordTierAfterQuestion,
+  confidenceWordTierAfterBareQuestion,
+  confidenceWordTierAfterExclamation,
+  confidenceWordTierAfterSemicolon,
+  confidenceWordTierAfterNewline,
+  confidenceWordTierAfterDash,
 ];

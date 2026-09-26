@@ -955,15 +955,38 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ]);
     });
 
-    it('R2-CR-02 controls: the licensed tier word near "confidence" passes, and tier words in sentences without it stay ordinary Smash vocabulary', () => {
+    it('R2-CR-02 controls: the licensed tier word near "confidence" passes, and tier words in a section that never mentions confidence stay ordinary Smash vocabulary', () => {
       expect(lintWith([{ stageId: 1 }], 'Confidence is medium here.')).toEqual([]);
       expect(lintWith([{ stageId: 1 }], 'Our confidence in this read is medium.')).toEqual([]);
+      expect(lintWith([{ stageId: 1 }], 'Keep your shield high. Their recovery is low.')).toEqual(
+        [],
+      );
+    });
+
+    it('R3-CR-02: R5 does not depend on sentence splitting — a tier word anywhere in a section that mentions confidence is judged', () => {
+      // The licence is medium (10 games); "high" is unlicensed in every one.
+      for (const prose of [
+        'Take them to Battlefield. Our confidence in this read? High.',
+        'Take them to Battlefield. Our confidence in this read! High.',
+        'Take them to Battlefield. Our confidence in this read; high.',
+        'Take them to Battlefield. Our confidence in this read\nHigh.',
+        'Take them to Battlefield. Our confidence in this read — high.',
+        'Confidence? High.',
+        'How confident should you be here? Very. High, even.',
+        'High. That is how confident you can be.',
+      ]) {
+        expect(lintWith([{ stageId: 1 }], prose), prose).toEqual(['main']);
+      }
+    });
+
+    it('R3-CR-02 / R3-IN-01 (accepted over-strip, recorded in the rubric): a Smash-sense tier word in a section that mentions confidence is withheld too', () => {
       expect(
         lintWith(
           [{ stageId: 1 }],
           'Keep your shield high. Confidence is medium here. Their recovery is low.',
         ),
-      ).toEqual([]);
+      ).toEqual(['main']);
+      expect(lintWith([{ stageId: 1 }], 'Confidently punish his high recovery.')).toEqual(['main']);
     });
 
     it('an opponent tag known elsewhere in the job matches on token boundaries only', () => {
