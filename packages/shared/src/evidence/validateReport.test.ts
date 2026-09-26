@@ -1109,6 +1109,34 @@ describe('R2-WR-03: digits inside a licensed opponent tag are part of the name, 
   });
 });
 
+describe('R3-IN-02: only a tag that contains a letter consumes its span in the digit rule', () => {
+  it('a digit-only tag does not exempt an unlicensed figure that happens to equal it', () => {
+    expect(
+      validateHeadToHead(
+        '7',
+        { wins: 3, losses: 2 },
+        'You are 3-2 against 7, and 7 of those games went last stock.',
+      ),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+
+  it('control: a different unlicensed figure beside a digit-only tag strips too', () => {
+    expect(
+      validateHeadToHead(
+        '7',
+        { wins: 3, losses: 2 },
+        'You are 3-2 against 7, and 8 of those games went last stock.',
+      ),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+
+  it('control: a letter-bearing digit tag is still consumed whole', () => {
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 3-2 against Sparg0.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+});
+
 describe("R3-CR-01: a W-L pair is the exact ordered licensed pair from the player's side, and an opponent-perspective section withholds every pair", () => {
   it('opponent-perspective phrasings are withheld again, whichever order the pair is in', () => {
     // A licensed 3-2 (the player won 3). "MkLeo is 3-2 against you" is false
