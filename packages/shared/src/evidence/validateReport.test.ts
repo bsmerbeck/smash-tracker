@@ -853,6 +853,111 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     });
   });
 
+  describe('SH-WR-01: licensed prose about overlapping names, digits inside names, Smash idiom and short tags is not stripped', () => {
+    /**
+     * One section licensing a `stage_record` claim per given subject (each
+     * 6-4 over 10 games, medium tier), plus an OTHER-section claim carrying
+     * `otherTag` so that tag is known to the job but unlicensed here.
+     */
+    function lintWith(
+      subjects: ReadonlyArray<Partial<ClaimSubject>>,
+      prose: string,
+      options: { otherTag?: string; games?: number } = {},
+    ) {
+      const games = options.games ?? 10;
+      const rows: Record<string, EvidenceRow> = {};
+      const claims: ClaimAtom[] = [];
+      const all = [
+        ...subjects.map((subject) => ({ ...NULL_SUBJECT, ...subject })),
+        ...(options.otherTag ? [{ ...NULL_SUBJECT, opponentTag: options.otherTag }] : []),
+      ];
+      all.forEach((subject, index) => {
+        const predicate = subject.opponentTag !== null ? 'head_to_head_record' : 'stage_record';
+        const rowId = evidenceIdFor({
+          predicate,
+          subject,
+          opponentOrder: options.otherTag ? [options.otherTag] : [],
+        });
+        const value = { kind: 'record' as const, wins: 6, losses: 4, games };
+        rows[rowId] = { predicate, subject, value, sample: makeSample(games) };
+        claims.push({
+          id: `c0${index + 1}` as ClaimId,
+          predicate,
+          subject,
+          value,
+          claimKind: 'fact',
+          evidenceIds: [rowId],
+          tier: confidenceTierFor(games),
+          policyVersion: EVIDENCE_POLICY_VERSION,
+          sample: makeSample(games),
+        });
+      });
+      const licensed = claims.slice(0, subjects.length).map((claim) => claim.id);
+      const other = claims.slice(subjects.length).map((claim) => claim.id);
+      return validateReportOutput({
+        snapshot: makeSnapshot(rows),
+        issuedClaims: claims,
+        output: {
+          sections: {
+            main: { claimIds: licensed, connective: prose },
+            ...(other.length > 0 ? { other: { claimIds: other, connective: '' } } : {}),
+          },
+          action1: null,
+          action2: null,
+          action3: null,
+        },
+        surface: 'scout',
+      }).strippedSectionIds;
+    }
+
+    it('a licensed longer name is consumed before its shorter contained names are scanned', () => {
+      expect(
+        lintWith([{ stageId: 113 }], 'Take them to Small Battlefield against this opponent.'),
+      ).toEqual([]);
+      expect(lintWith([{ opponentFighterId: 46 }], 'Play patiently against Toon Link.')).toEqual(
+        [],
+      );
+      expect(
+        lintWith([{ myFighterId: 25 }], 'Young Link against their zoning is your best answer.'),
+      ).toEqual([]);
+    });
+
+    it('digits inside a licensed canonical name need no licence of their own', () => {
+      expect(
+        lintWith([{ stageId: 59 }], 'Pokémon Stadium 2 is your best counterpick here.'),
+      ).toEqual([]);
+      expect(lintWith([{ stageId: 19 }], 'Figure-8 Circuit on this opponent is fine.')).toEqual([]);
+    });
+
+    it('"low"/"high" as ordinary Smash vocabulary is not a confidence word — only next to "confidence" is it one', () => {
+      expect(
+        lintWith([{ stageId: 1 }], 'Watch for their high recovery and low percent combos.'),
+      ).toEqual([]);
+    });
+
+    it('an opponent tag known elsewhere in the job matches on token boundaries only', () => {
+      expect(
+        lintWith([{ stageId: 1 }], 'Team up your ledge options with steady pressure.', {
+          otherTag: 'Tea',
+        }),
+      ).toEqual([]);
+    });
+
+    it('controls: an unlicensed contained or containing name, an unlicensed tag token and a mismatched confidence word still strip', () => {
+      expect(
+        lintWith([{ stageId: 113 }], 'Take them to Battlefield against this opponent.'),
+      ).toEqual(['main']);
+      expect(
+        lintWith([{ stageId: 58 }], 'Pokémon Stadium 2 is your best counterpick here.'),
+      ).toEqual(['main']);
+      expect(
+        lintWith([{ stageId: 1 }], 'Watch Tea closely in neutral.', { otherTag: 'Tea' }),
+      ).toEqual(['main']);
+      // A medium-tier licence does not license "high confidence".
+      expect(lintWith([{ stageId: 1 }], 'This is a high confidence read.')).toEqual(['main']);
+    });
+  });
+
   it('C2-M7: AMBIGUOUS_ENTITY_NAMES equals the single-token subset of SpriteList ∪ StageList, computed mechanically', () => {
     const expected = new Set(
       [...SpriteList.map((f) => f.name), ...StageList.map((s) => s.name)].filter(
