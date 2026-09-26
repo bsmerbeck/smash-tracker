@@ -67,15 +67,17 @@ bad-shaped can be delivered", never as "the model never tries".
 Known limits of the PROSE licence (R4), stated rather than hidden (code review SH-WR-04 / SH-CR-01):
 a W-L record written in prose must be the exact ordered pair of one licensed record claim, but a
 single licensed figure can still be attributed to the wrong entity within the same section (the
-licence is per section, not per sentence), and a placement ordinal ("placed 2nd") is exempt from
-the digit rule like any ordinal. A record stated from the opponent's side is accepted only in a
-narrow shape (code review R2-IN-01): the sentence opens with the licensed opponent tag and says
-"against you"/"versus you"/"vs you", and the pair is the reversed licensed pair ("MkLeo is 2-3
-against you" for a licensed 3-2); any other opponent-perspective phrasing, and the winner-first
-loss idiom ("you lost that stretch 3-2" for a licensed 2-3), is withheld — over-stripping prose,
-never shipping an unlicensed record. "Zero unsupported factual claims" is a statement about CLAIMS
-and about prose naming an unlicensed specific; it does not cover every prose-level misattribution
-of a licensed number.
+licence is per section, not per sentence), a placement ordinal ("placed 2nd") is exempt from the
+digit rule like any ordinal, and a one- or two-digit run that opens a line and is followed by `.` or
+`)` and more text is read as a list position and exempt even when it is a figure (in `Fox on
+Battlefield: 3-2.\n83. That is the percent.` the `83` ships — code review R2-IN-02). A record stated
+from the opponent's side is accepted only in a narrow shape (code review R2-IN-01): the sentence
+opens with the licensed opponent tag and says "against you"/"versus you"/"vs you", and the pair is
+the reversed licensed pair ("MkLeo is 2-3 against you" for a licensed 3-2); any other
+opponent-perspective phrasing, and the winner-first loss idiom ("you lost that stretch 3-2" for a
+licensed 2-3), is withheld — over-stripping prose, never shipping an unlicensed record. "Zero
+unsupported factual claims" is a statement about CLAIMS and about prose naming an unlicensed
+specific; it does not cover every prose-level misattribution of a licensed number.
 
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are
 recorded in the owner's terms; this map is where their proofs are named. Neither stands in for the
