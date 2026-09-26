@@ -282,6 +282,40 @@ function collectMetrics(floorGames) {
   };
 }
 
+/** Routes whose event trend's hover tooltip is recorded (plan 39.1-39, UI-SPEC §10.2). */
+const EVENT_TOOLTIP_ROUTES = new Set(['stage-detail', 'opponent-hub']);
+
+/**
+ * Plan 39.1-39: hovers the middle point of the page's event trend (AFTER the
+ * screenshot, so the PNG never shows a tooltip) and records what the one
+ * shared tooltip prints — the INDEX's 'event tooltip label' rows quote it.
+ */
+async function readEventTooltip(page) {
+  const target = await page.evaluate(() => {
+    const dots = [...document.querySelectorAll('[data-slot="card"] .recharts-line-dots')];
+    const group = dots[0];
+    if (!group || group.children.length === 0) return null;
+    const dot = group.children[Math.floor(group.children.length / 2)];
+    const rect = dot.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      points: group.children.length,
+    };
+  });
+  if (!target) return null;
+  await page.mouse.move(target.x, target.y);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const text = await page.evaluate(
+    () =>
+      document
+        .querySelector('.recharts-tooltip-wrapper')
+        ?.textContent?.trim()
+        .replace(/\s+/g, ' ') ?? '',
+  );
+  return { points: target.points, text };
+}
+
 /** Resolves once scrollHeight and every svg's width hold still across three 250ms samples (bounded). */
 async function waitForStableLayout(page) {
   const sample = () =>
@@ -350,7 +384,8 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
     if (fs.statSync(file).size < MIN_PNG_BYTES) {
       throw new Error(`${name} is under ${MIN_PNG_BYTES} bytes`);
     }
-    return { route: route.id, width, scale, shell, png: name, errors, ...metrics };
+    const eventTooltip = EVENT_TOOLTIP_ROUTES.has(route.id) ? await readEventTooltip(page) : null;
+    return { route: route.id, width, scale, shell, png: name, errors, ...metrics, eventTooltip };
   } finally {
     await page.close().catch(() => {});
   }
@@ -400,7 +435,7 @@ async function main() {
         });
         records.push(record);
         console.log(
-          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'} gspCanvases=${record.gspCanvases}`,
+          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'} gspCanvases=${record.gspCanvases}${record.eventTooltip ? ` trendPoints=${record.eventTooltip.points} tooltip="${record.eventTooltip.text}"` : ''}`,
         );
       }
     }
