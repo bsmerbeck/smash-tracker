@@ -483,7 +483,10 @@ describe('PostEventSynthesisCard — claims-era practice plan (plan 39-09)', () 
  * status changed between the job and this view.
  */
 describe('PostEventSynthesisCard — validation-failure caption (plan 39-10, D-21)', () => {
-  const CAUSE = "There isn't enough match evidence yet to build a verified practice plan.";
+  // Code review WEB-03: one neutral cause sentence — `'validation'` covers
+  // thin evidence, an unverifiable output and a projection/schema failure.
+  const CAUSE =
+    "A verified practice plan couldn't be built from your match data, so none was delivered.";
   const RETURN = 'Your credit was returned.';
 
   function caption(): HTMLElement | null {

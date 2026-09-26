@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import '@/i18n';
+import en from '@/i18n/locales/en.json';
+import es from '@/i18n/locales/es.json';
+import fr from '@/i18n/locales/fr.json';
+import de from '@/i18n/locales/de.json';
+import pt from '@/i18n/locales/pt.json';
+import ja from '@/i18n/locales/ja.json';
 import { StrictMode } from 'react';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -485,7 +491,11 @@ describe('PrepPaidReportsCard — demo account gating', () => {
  * `status: 'failed'` with no refund at all.
  */
 describe('PrepPaidReportsCard — validation-failure caption (plan 39-10, D-21)', () => {
-  const CAUSE = "There isn't enough match evidence yet to build a verified report.";
+  // Code review WEB-03: the API writes `failureReason: 'validation'` for thin
+  // evidence (D-21/D-23), an output that fails verification, AND a projection
+  // throw / stored-schema reject, with no field telling them apart — so the
+  // cause sentence is one neutral, accurate line, never "not enough evidence".
+  const CAUSE = "A verified report couldn't be built from your match data, so none was delivered.";
   const RETURN = 'Your credit was returned.';
   const RIVAL = {
     likelyOpponents: { Rival: true } as PrepPresenceMap,
@@ -741,4 +751,36 @@ describe('PrepPaidReportsCard — honest failure badge (post-plan fix 39-10)', (
     expect(badge.textContent).toBe(NO_CHARGE);
     expect(badge.childElementCount).toBe(0);
   });
+});
+
+/**
+ * Code review WEB-03: `failureReason: 'validation'` does not identify one
+ * cause (see the caption block above), so neither paid card's cause sentence
+ * may claim the one cause it cannot know — missing match evidence — in any
+ * locale. Each pattern is that locale's "not enough" wording as shipped
+ * before the fix, so the check fails on the old copy.
+ */
+describe('validation-failure cause copy is cause-neutral in every locale (code review WEB-03)', () => {
+  const INSUFFICIENT_EVIDENCE: Record<string, RegExp> = {
+    en: /\benough\b|log (?:a few )?more/i,
+    es: /suficiente/i,
+    fr: /\bassez\b/i,
+    de: /\bgenug\b/i,
+    pt: /suficiente/i,
+    ja: /足りません|不足/,
+  };
+  const BUNDLES = { en, es, fr, de, pt, ja } as const;
+
+  for (const [locale, bundle] of Object.entries(BUNDLES)) {
+    it(`${locale}: neither paid card's validation cause claims there isn't enough match evidence`, () => {
+      const pattern = INSUFFICIENT_EVIDENCE[locale]!;
+      for (const cause of [
+        bundle.prepPaid.jobStatus.failedReason.validation,
+        bundle.postEventPaid.jobStatus.failedReason.validation,
+      ]) {
+        expect(cause.trim().length, locale).toBeGreaterThan(0);
+        expect(cause, locale).not.toMatch(pattern);
+      }
+    });
+  }
 });
