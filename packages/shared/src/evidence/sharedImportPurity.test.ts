@@ -33,8 +33,9 @@ function listSourceFiles(): string[] {
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'));
 }
 
-/** Matches a `node:` specifier inside a static import, a re-export, or a dynamic `import(...)` — wherever it appears in the file, not only at line-start. */
-const NODE_SPECIFIER_PATTERN = /(?:from\s*|import\s*\(\s*)['"]node:[a-zA-Z0-9/_-]+['"]/;
+/** Matches a `node:` specifier inside a static import, a re-export, a dynamic `import(...)`, a side-effect-only `import 'node:…'` or a `require('node:…')` — wherever it appears in the file, not only at line-start (review SH-IN-01). */
+const NODE_SPECIFIER_PATTERN =
+  /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]node:[a-zA-Z0-9/_-]+['"]/;
 
 describe('evidence/ directory import purity (T-39-01-07 / review C1-B2)', () => {
   it('self-check: the scanned file list is non-empty (a silently-empty glob must not vacuously pass)', () => {
