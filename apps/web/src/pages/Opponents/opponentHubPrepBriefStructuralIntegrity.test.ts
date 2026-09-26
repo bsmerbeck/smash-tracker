@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -46,11 +46,15 @@ const scannedFiles = [
 ];
 
 describe('opponent hub prep-brief structural integrity (no paid affordance, D-11)', () => {
-  it('scans a non-empty file list that names the hub page and the card (a rename would otherwise silently empty it)', () => {
-    expect(scannedFiles.length).toBeGreaterThan(0);
-    expect(scannedFiles.some((file) => file.endsWith('OpponentHubPage.tsx'))).toBe(true);
-    expect(scannedFiles.some((file) => file.endsWith('HubPrepBriefCard.tsx'))).toBe(true);
-  });
+  // Code review IN-06: this replaces an assertion over the literal array above,
+  // which could not fail. A renamed or moved file is what would silently drop
+  // it from the scan, so the test asserts each listed path exists on disk.
+  it.each(scannedFiles)(
+    '%s exists on disk (a rename or move would drop it from the scan)',
+    (file) => {
+      expect(existsSync(file)).toBe(true);
+    },
+  );
 
   it('control: the kit-identifier mask hides only those three identifiers, never the vocabulary itself', () => {
     const probe = 'FormStripEvent formStripEvents buildOpponentFormStripEvents';
