@@ -204,6 +204,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-49 (OOS-3, OOS-10): the text-fit family's declared targets —
     // the Stage Breakdown and Roster Usage lists and the match table's
     // toolbar, at the phone width and at 1440.
+    // Plan 39.1-49 Task 2: the converted match table declared into the sweep.
+    clipTargets: ['[data-slot="match-table"]'],
     fitTargets: [
       { selector: '[data-slot="stage-breakdown"]', viewports: ['390x844', '1440x900'] },
       { selector: '[data-slot="roster-usage"]', viewports: ['390x844', '1440x900'] },

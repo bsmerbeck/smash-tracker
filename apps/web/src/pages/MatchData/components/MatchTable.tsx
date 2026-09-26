@@ -595,7 +595,7 @@ export function MatchTable({
       </div>
 
       <div className="overflow-x-auto rounded-md border">
-        <Table>
+        <Table data-slot="match-table">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

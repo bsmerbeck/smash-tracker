@@ -352,3 +352,187 @@ describe('MatchTable — per-pass row bound (UI-SPEC §6.4, T-39.1-16-03)', () =
     expect(nextPage).toBeEnabled();
   });
 });
+
+/**
+ * Plan 39.1-49 (UI-SPEC §6.6 "< 640 tables become stacked rows"): below 640px
+ * the match table renders one stacked row per match from the row's own
+ * visible cells — the same page, order, actions and sorting as the table —
+ * and its toolbar's column-filter selects show their whole label (OOS-10).
+ */
+function renderTableLayout(matches: Match[], layout: 'table' | 'stack') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MatchTable matches={matches} fighterSprites={[mario, luigi]} layout={layout} />
+        </AuthProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+const stackText = (el: Element | null | undefined) =>
+  (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+function layoutFixture(): Match[] {
+  return [
+    makeMatch({ id: 'a', time: 1_700_000_000_000, opponent: 'alpha', notes: 'first note' }),
+    makeMatch({
+      id: 'b',
+      time: 1_700_100_000_000,
+      opponent: 'bravo',
+      win: false,
+      vodUrl: 'https://www.youtube.com/watch?v=abc',
+    } as Partial<Match>),
+    makeMatch({ id: 'c', time: 1_700_200_000_000, opponent: 'charlie', source: 'startgg' }),
+  ];
+}
+
+function tableRowFacts(container: HTMLElement) {
+  const table = container.querySelector('table[data-slot="match-table"]');
+  expect(table).not.toBeNull();
+  return Array.from(table!.querySelectorAll('tbody tr')).map((tr) => ({
+    controls: Array.from(tr.querySelectorAll('button, a')).map(
+      (el) => el.getAttribute('aria-label') ?? stackText(el),
+    ),
+    cells: Array.from(tr.querySelectorAll('td'))
+      .map((td) => stackText(td))
+      .filter(Boolean),
+  }));
+}
+
+function stackRowFacts(container: HTMLElement) {
+  const list = container.querySelector('ul[data-slot="match-table"]');
+  expect(list).not.toBeNull();
+  return Array.from(list!.querySelectorAll(':scope > li')).map((li) => ({
+    controls: Array.from(li.querySelectorAll('button, a')).map(
+      (el) => el.getAttribute('aria-label') ?? stackText(el),
+    ),
+    text: stackText(li),
+  }));
+}
+
+describe('MatchTable — stacked rows below 640px (plan 39.1-49)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    setMockUser(makeMockUser());
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
+  });
+
+  it('stack versus table parity: the same page of rows in the same order, the same action controls, every visible cell value, one root', async () => {
+    const table = renderTableLayout(layoutFixture(), 'table');
+    await settleEnrichmentAttribution();
+    const tableRows = tableRowFacts(table.container);
+    expect(table.container.querySelector('ul[data-slot="match-table"]')).toBeNull();
+    table.unmount();
+
+    const stack = renderTableLayout(layoutFixture(), 'stack');
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    expect(stack.container.querySelector('table')).toBeNull();
+    const stackRows = stackRowFacts(stack.container);
+    expect(stackRows).toHaveLength(tableRows.length);
+    stackRows.forEach((row, index) => {
+      expect(row.controls).toEqual(tableRows[index]!.controls);
+      for (const cell of tableRows[index]!.cells) {
+        expect(row.text).toContain(cell);
+      }
+    });
+    // The synced row keeps its badge; the VOD row keeps its menu trigger.
+    expect(stackRows.some((row) => row.text.includes('Synced'))).toBe(true);
+    expect(stackRows.some((row) => row.controls.includes('Watch VOD'))).toBe(true);
+  });
+
+  it('a column hidden through the Columns menu is absent from both layouts', async () => {
+    window.localStorage.setItem(
+      'smash-tracker.matchTableColumns',
+      JSON.stringify({ notes: false }),
+    );
+    for (const layout of ['table', 'stack'] as const) {
+      const view = renderTableLayout(layoutFixture(), layout);
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(view.container.textContent).not.toContain('first note');
+      view.unmount();
+    }
+  });
+
+  it('stacked sorting: a row of sortable header buttons; clicking Date reverses the order exactly as the table header does', async () => {
+    const user = userEvent.setup();
+    const table = renderTableLayout(layoutFixture(), 'table');
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    const before = tableRowFacts(table.container).map((r) => r.cells[3]);
+    await user.click(within(table.container.querySelector('thead')!).getByText('Date'));
+    const tableAfter = tableRowFacts(table.container).map((r) => r.cells[3]);
+    expect(tableAfter).toEqual([...before].reverse());
+    table.unmount();
+
+    const stack = renderTableLayout(layoutFixture(), 'stack');
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    const sortRow = stack.container.querySelector('[data-slot="match-table-sort"]');
+    expect(sortRow).not.toBeNull();
+    const dateButton = within(sortRow as HTMLElement).getByRole('button', { name: /Date/ });
+    expect(stackText(dateButton)).toContain('\u{1F53D}');
+    const order = () =>
+      stackRowFacts(stack.container).map((r) =>
+        ['alpha', 'bravo', 'charlie'].find((tag) => r.text.includes(tag)),
+      );
+    expect(order()).toEqual(['charlie', 'bravo', 'alpha']);
+    await user.click(dateButton);
+    expect(order()).toEqual(['alpha', 'bravo', 'charlie']);
+    expect(stackText(dateButton)).toContain('\u{1F53C}');
+  });
+
+  it('the empty state renders once in the stack layout', async () => {
+    const user = userEvent.setup();
+    const stack = renderTableLayout(layoutFixture(), 'stack');
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    await user.type(screen.getByRole('textbox'), 'zzz-no-such-match');
+    expect(screen.getAllByText('No matches found.')).toHaveLength(1);
+    expect(stack.container.querySelector('ul[data-slot="match-table"]')).not.toBeNull();
+  });
+
+  it('toolbar: below 640px the search input and each filter select span the row; the toolbar row classes are unchanged', async () => {
+    const view = renderTableLayout(layoutFixture(), 'table');
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    const toolbar = view.container.querySelector('[data-slot="match-table-toolbar"]')!;
+    expect(toolbar.className).toBe('flex flex-wrap items-center gap-2');
+    const input = within(toolbar as HTMLElement).getByRole('textbox');
+    expect(input.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(['max-sm:max-w-none', 'sm:max-w-xs']),
+    );
+    const triggers = within(toolbar as HTMLElement).getAllByRole('combobox');
+    expect(triggers).toHaveLength(5);
+    for (const trigger of triggers) {
+      expect(trigger.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['max-sm:w-full', 'max-sm:max-w-none']),
+      );
+    }
+  });
+
+  it('OOS-10 ColumnFilterSelect: content-sized trigger (w-auto, min-w-[150px], a max-w cap, no w-[150px]); a selected value is its title, All has none', async () => {
+    const user = userEvent.setup();
+    renderTableLayout(
+      [makeMatch({ id: 'a', opponent: 'alpha' }), makeMatch({ id: 'b', opponent_id: mario.id })],
+      'table',
+    );
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    const trigger = screen.getByRole('combobox', { name: 'Opponent Fighter' });
+    const classes = trigger.className.split(/\s+/);
+    expect(classes).not.toContain('w-[150px]');
+    expect(classes).toEqual(expect.arrayContaining(['w-auto', 'min-w-[150px]', 'max-w-[16rem]']));
+    expect(trigger).not.toHaveAttribute('title');
+    expect(stackText(trigger)).toBe('All Opponent Fighter');
+    await user.click(trigger);
+    const optionName = screen
+      .getAllByRole('option')
+      .map((o) => stackText(o))
+      .find((name) => name !== 'All Opponent Fighter')!;
+    await user.click(screen.getByRole('option', { name: optionName }));
+    expect(screen.getByRole('combobox', { name: 'Opponent Fighter' })).toHaveAttribute(
+      'title',
+      optionName,
+    );
+  });
+});
