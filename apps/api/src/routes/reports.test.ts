@@ -6935,3 +6935,229 @@ describe('code review R2-IN-03: a pre-39-10 bundle child falls back to the durab
     expect(await balanceOf(database)).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-WR-01): the STRADDLE of the running claim. A
+// crafted duplicate execution B reads a bundle child BEFORE execution A
+// claims it, and writes its own `queued` row only AFTER A's claim. Under the
+// old plain `.set`, B's row erased A's `running` row, B's claim committed
+// too, and every post-claim failure was a bare `failJob`, so the one slot
+// credit was refunded twice (both fail) or refunded after A had DELIVERED.
+// Money: balance + `refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+interface R3Gate<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}
+
+function r3Gate<T>(): R3Gate<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * A billable prep app whose provider lookup AND model call both block on
+ * gates the test releases. A lookup gate resolves `'found'` (the lookup
+ * continues normally) or `'missing'` (the provider answers not-found); a
+ * model gate resolves with the selection the model returns.
+ */
+function r3StraddleApp(fixture: 'viable' | 'thin') {
+  const lookupGates: Array<R3Gate<'found' | 'missing'>> = [];
+  const clients = parryClients({
+    getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    ...(fixture === 'thin' ? { matches: 'empty' as const } : {}),
+  });
+  const users = clients.users as unknown as { getUser: (...args: unknown[]) => Promise<unknown> };
+  const lookup = users.getUser;
+  users.getUser = vi.fn(async (...args: unknown[]) => {
+    const gate = r3Gate<'found' | 'missing'>();
+    lookupGates.push(gate);
+    if ((await gate.promise) === 'missing') {
+      return { getUser: () => undefined };
+    }
+    return lookup(...args);
+  });
+  const modelGates: Array<R3Gate<unknown>> = [];
+  const modelSpy = vi.fn(async () => {
+    const gate = r3Gate<unknown>();
+    modelGates.push(gate);
+    return { stop_reason: 'end_turn' as const, parsed_output: await gate.promise };
+  });
+  const options = {
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: clients,
+  };
+  const built = fixture === 'viable' ? buildTestApp(options) : buildBareTestApp(options);
+  return { ...built, lookupGates, modelGates, modelSpy };
+}
+
+/**
+ * Holds execution B's queued write on `jobPath` until released: the SECOND
+ * write that is either a `queued` whole-node `.set()` or a `.transaction()`
+ * on that node (execution A's queued write is the first; A's running claim
+ * comes only after the test releases A's lookup, which it does after B is
+ * held).
+ */
+function holdSecondQueuedWrite(database: FakeDatabase, jobPath: string) {
+  const held = r3Gate<void>();
+  let writes = 0;
+  let reached = false;
+  const hold = async () => {
+    writes += 1;
+    if (writes === 2) {
+      reached = true;
+      await held.promise;
+    }
+  };
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    if (path !== jobPath) {
+      return ref;
+    }
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        if ((value as { status?: string } | null)?.status === 'queued') {
+          await hold();
+        }
+        return ref.set(value);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        await hold();
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { release: () => held.resolve(), reached: () => reached };
+}
+
+/**
+ * Runs the straddle up to the point where B's held queued write is released
+ * after A's claim: A is waiting on the model (viable) or finished (thin).
+ * Returns B's in-flight response and a `settle` that drives B to its end —
+ * B either stops at its own queued write or reaches its lookup and model.
+ */
+async function r3Straddle(
+  harness: ReturnType<typeof r3StraddleApp>,
+  child: { jobId: string; opponentName: string },
+) {
+  const { app, database, lookupGates, modelGates } = harness;
+  const hold = holdSecondQueuedWrite(database, `reportJobs/${TEST_UID}/${child.jobId}`);
+  const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+  await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+  const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+  await vi.waitFor(() => expect(hold.reached()).toBe(true));
+  let bDone = false;
+  void executionB.then(() => {
+    bDone = true;
+  });
+  lookupGates[0]!.resolve('found');
+  return {
+    executionA,
+    executionB,
+    /**
+     * Releases B's queued write after A's claim and drives B until it answers
+     * or — when `untilModel` — waits on its own model call.
+     */
+    releaseB: async (untilModel: boolean) => {
+      hold.release();
+      await vi.waitFor(() => expect(bDone || lookupGates.length === 2).toBe(true));
+      if (!bDone && lookupGates.length === 2) {
+        lookupGates[1]!.resolve('found');
+        if (untilModel) {
+          await vi.waitFor(() => expect(bDone || modelGates.length === 2).toBe(true));
+        }
+      }
+    },
+  };
+}
+
+describe('code review R3-WR-01: a straddled bundle child is refunded at most once and never after delivery', () => {
+  it('R3-A: B reads before A claims and re-queues after it; A DELIVERS, B fails validation — no refund, the job stays succeeded', async () => {
+    const harness = r3StraddleApp('viable');
+    const { app, database, modelGates } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-straddle'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const run = await r3Straddle(harness, child);
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'running' });
+    await run.releaseB(true);
+
+    modelGates[0]!.resolve(VALID_REPORT);
+    const responseA = await run.executionA;
+    modelGates[1]?.resolve(BELOW_MINIMUM_SELECTION);
+    const responseB = await run.executionB;
+
+    expect(responseA.statusCode).toBe(200);
+    expect(responseB.statusCode).not.toBe(200);
+    expect(storedScoutReports(database)).toHaveLength(1);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    const job = await jobRecord(database, child.jobId);
+    expect(job).toMatchObject({ status: 'succeeded', reason: 'prep_bundle', wasCharged: true });
+    expect(typeof job.resultRef).toBe('string');
+  });
+
+  it('R3-B: the same straddle, and BOTH executions fail validation — exactly one refund', async () => {
+    const harness = r3StraddleApp('viable');
+    const { app, database, modelGates } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-straddle-2'))[0]!;
+
+    const run = await r3Straddle(harness, child);
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    await run.releaseB(true);
+
+    modelGates[0]!.resolve(BELOW_MINIMUM_SELECTION);
+    modelGates[1]?.resolve(BELOW_MINIMUM_SELECTION);
+    const [responseA, responseB] = await Promise.all([run.executionA, run.executionB]);
+
+    expect(responseA.statusCode).toBe(502);
+    expect(responseB.statusCode).not.toBe(200);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+
+  it('R3-F: a THIN-evidence child, straddled — the D-21 fail-fast refunds the slot exactly once, with no model call', async () => {
+    const harness = r3StraddleApp('thin');
+    const { app, database, modelSpy } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-thin'))[0]!;
+
+    const run = await r3Straddle(harness, child);
+    const responseA = await run.executionA;
+    expect(responseA.statusCode).toBe(502);
+    await run.releaseB(false);
+    const responseB = await run.executionB;
+
+    expect(responseB.statusCode).not.toBe(200);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+});
