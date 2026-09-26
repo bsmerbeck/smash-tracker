@@ -154,21 +154,28 @@ export const MATCHUP_MARKERS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * The four NON-FACTUAL NUMERIC shapes (review C2-H3) — the admission
+ * The five NON-FACTUAL NUMERIC shapes (review C2-H3) — the admission
  * criterion for any future addition is the same one plan 39-03 uses for
  * `FORBIDDEN_CONFIDENCE_WORDS`: the `ordinary_prose` corpus stays green AND
  * the `prose_entity`/digit-battery positive fixtures stay convicted. A
  * pattern that also lets a real figure through is not admissible.
  *
- * Shape 1 (ordinal/list index) is stated broadly enough to cover BOTH the
- * plan's own examples (`1.`, `2)`) and the ordinal-SUFFIX spelling
- * (`3rd`, `1st`) the `ordinary_prose` corpus's own "strike-order pick 3rd"
- * sentence requires — both are the same "this digit names a position, not a
- * quantity" concept, and admitting the suffix form is the only way the
- * negative corpus's own committed sentence passes clean.
+ * Every shape captures the exempt digit run in its FIRST capture group that
+ * participated (`findNonFactualDigitSpans` reads the group's own indices).
+ *
+ * Shape 1 (list position) is deliberately narrow (review SH-CR-01): only a
+ * one- or two-digit run at the START of the text or of a line, followed by
+ * `.` or `)` and then whitespace and more text. The previous "any digit run
+ * before `.` or `)`" form exempted every sentence-final figure ("…is 83.")
+ * and the whole-number half of every decimal ("71.4%"), so unlicensed
+ * figures shipped. Shape 2 keeps the ordinal SUFFIX spelling (`3rd`, `1st`)
+ * as its own standalone token — the `ordinary_prose` corpus's "strike-order
+ * pick 3rd" sentence needs it. Known limit, recorded rather than hidden: a
+ * placement ordinal ("placed 2nd") is exempt under the same shape.
  */
 export const NON_FACTUAL_NUMERIC_PATTERNS: readonly RegExp[] = Object.freeze([
-  /\d+(?=[.)]|(?:st|nd|rd|th)\b)/gi,
+  /(?:^|\n)[ \t]*(\d{1,2})[.)](?=[ \t]+\S)/g,
+  /\b(\d+)(?:st|nd|rd|th)\b/gi,
   /\b(?:game|set|match)[\s-]?(\d+)\b/gi,
   /\btop[\s-]?(\d+)\b/gi,
   /\bbest[\s-]?of[\s-]?(\d+)\b|\bbo(\d+)\b/gi,
@@ -183,19 +190,21 @@ function foldDigitsToAscii(text: string): string {
   return result;
 }
 
-/** The absolute [start, end) span of the DIGITS ONLY inside every `NON_FACTUAL_NUMERIC_PATTERNS` match in `text` — used to exempt a digit run from R4's digit rule. */
+/** The absolute [start, end) span of the DIGITS ONLY inside every `NON_FACTUAL_NUMERIC_PATTERNS` match in `text` — the span of the first capture group that participated, read from the match's own indices (`d` flag), so a shape whose digits are not at the END of the match (a list position followed by `.`) is located exactly. Used to exempt a digit run from R4's digit rule. */
 function findNonFactualDigitSpans(text: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   for (const pattern of NON_FACTUAL_NUMERIC_PATTERNS) {
-    const re = new RegExp(
-      pattern.source,
-      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
-    );
+    const flags = new Set([...pattern.flags, 'g', 'd']);
+    const re = new RegExp(pattern.source, [...flags].join(''));
     for (const match of text.matchAll(re)) {
-      const digits = (match[1] ?? match[2] ?? match[0]).match(/\d+$/)?.[0];
-      if (!digits) continue;
-      const start = match.index! + match[0].length - digits.length;
-      spans.push([start, start + digits.length]);
+      const groups = match.indices ?? [];
+      for (let group = 1; group < groups.length; group += 1) {
+        const span = groups[group];
+        if (span !== undefined) {
+          spans.push([span[0], span[1]]);
+          break;
+        }
+      }
     }
   }
   return spans;

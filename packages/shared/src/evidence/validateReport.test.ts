@@ -684,7 +684,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     }
 
     it('each NON_FACTUAL_NUMERIC_PATTERNS shape passes clean', () => {
-      expect(NON_FACTUAL_NUMERIC_PATTERNS.length).toBe(4);
+      expect(NON_FACTUAL_NUMERIC_PATTERNS.length).toBe(5);
       expect(digitScan('Game 1: X; if they swap to Y, counter with Z.').strippedSectionIds).toEqual(
         [],
       );
