@@ -6333,3 +6333,91 @@ describe('code review API-CR-01: a bundle child trusts the spend fact recorded a
     expect(await balanceOf(database)).toBe(8);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review API-WR-01: a throw between the spend and the `running` claim
+// (scout resolution, payload assembly — the window Phase 39 filled with the
+// row builder, the claim builder, the action ranker and the canonical
+// digest) must fail the job and refund through the existing `failJob`,
+// EXACTLY ONCE, instead of stranding a spent credit on a `queued` job the
+// stuck-job sweep (running index only) never visits.
+// ---------------------------------------------------------------------------
+
+describe('code review API-WR-01: a throw after the spend and before running refunds exactly once', () => {
+  it('legacy scout: payload assembly throws on a corrupt own-history row — the job fails, one refund, balance restored, and the error still surfaces', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    database.seed(`matches/${TEST_UID}/corrupt-row`, { fighter_id: 'not-a-number' });
+
+    const response = await postLegacy(app, 'wr01-legacy-assembly');
+
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr01-legacy-assembly')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wr01-legacy-assembly']);
+    expect(refundLedgerRefs(database)).toEqual(['wr01-legacy-assembly']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report (parry.gg binding): the provider lookup THROWS inside the resolver — the job refunds once and rests at refunded', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+    (clients.matches as unknown as { getMatches: () => Promise<never> }).getMatches = vi.fn(
+      async () => {
+        throw new Error('parry.gg transport exploded');
+      },
+    );
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(modelSpy),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: clients,
+    });
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'wr01-prep-parry');
+
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr01-prep-parry')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual(['wr01-prep-parry']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('exactly once: a resolver that ALREADY failed the job before rethrowing (start.gg non-429 error) is not refunded a second time', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'wr01-startgg-once');
+
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'wr01-startgg-once')).toMatchObject({ status: 'failed' });
+    expect(refundLedgerRefs(database)).toEqual(['wr01-startgg-once']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
