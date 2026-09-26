@@ -172,6 +172,28 @@ describe('ScoutPage', () => {
     expect(screen.getByText('Ultimate Singles')).toBeInTheDocument();
   });
 
+  // Plan 39.1-49 (orchestrator 2026-09-26, Scout desktop): the desktop pair
+  // (Character Usage + Stage Performance) hugs its own content — no card
+  // stretched to its taller neighbour (UI-SPEC section 13.1) — and Recent
+  // Events is not squeezed into a half-width pair.
+  it('scout desktop grid: the paired cards align to the start (no stretch) and Recent Events is full width', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    renderPage();
+    await user.type(
+      screen.getByLabelText(/start\.gg profile URL, slug, or player id/),
+      'https://start.gg/user/07dc2239',
+    );
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    const characters = await screen.findByText('Character Usage');
+    const pair = characters.closest('[data-slot="card"]')!.parentElement!;
+    expect(pair.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(['lg:grid-cols-2', 'lg:items-start']),
+    );
+    const events = screen.getByText('Recent Events').closest('[data-slot="card"]')!.parentElement!;
+    expect(events.className.split(/\s+/)).not.toContain('lg:grid-cols-2');
+  });
+
   it('shows a friendly message on a 404', async () => {
     const user = userEvent.setup();
     scoutLookup.mockRejectedValue(new ApiError(404, 'No start.gg player found for that query'));
