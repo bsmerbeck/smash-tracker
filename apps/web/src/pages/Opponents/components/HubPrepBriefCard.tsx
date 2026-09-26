@@ -65,6 +65,10 @@ export function HubPrepBriefCard(props: HubPrepBriefCardProps) {
  *   ties broken by `entryKey` ascending.
  * - upcoming: the nearest upcoming entry whose brief lists this opponent as
  *   likely, nearest by start date, ties broken by `entryKey` ascending.
+ * - later-events (code review IN-01): none of the nearest
+ *   `MAX_PREP_BRIEF_READS` upcoming entries lists this opponent but more
+ *   upcoming entries exist beyond the read cap, so the copy says only what is
+ *   known and the door goes to the tournaments page.
  * - add-event: neither, so the door goes to the tournaments page.
  */
 function OwnAccountHubPrepBriefCard({
@@ -87,9 +91,13 @@ function OwnAccountHubPrepBriefCard({
   // with the dashboard slot), nearest first with the entryKey tiebreak. Only
   // the nearest `MAX_PREP_BRIEF_READS` are read — the cap `usePrepBriefs`
   // enforces itself (code review IN-03) — which bounds a hub visit's fan-out.
-  const upcomingCandidates = useMemo(
-    () => (entries ? listUpcomingEntries(entries, now).slice(0, MAX_PREP_BRIEF_READS) : []),
+  const allUpcoming = useMemo(
+    () => (entries ? listUpcomingEntries(entries, now) : []),
     [entries, now],
+  );
+  const upcomingCandidates = useMemo(
+    () => allUpcoming.slice(0, MAX_PREP_BRIEF_READS),
+    [allUpcoming],
   );
   const upcomingKeys = useMemo(
     () => upcomingCandidates.map((entry) => entry.entryKey),
@@ -174,6 +182,22 @@ function OwnAccountHubPrepBriefCard({
     );
   }
 
+  // Code review IN-01: upcoming entries past the read cap were never read, so
+  // "none of the nearest listed this opponent" is all that is known — the
+  // opponent may be listed on a later one. Say exactly that, never "add an
+  // upcoming event" to a user who already has events beyond the cap.
+  if (allUpcoming.length > upcomingCandidates.length) {
+    return (
+      <HubPrepBriefShell
+        title={t('opponents.hub.prepBrief.title')}
+        state="laterEvents"
+        body={t('opponents.hub.prepBrief.laterEvents', { opponentTag })}
+        doorLabel={t('opponents.hub.prepBrief.addEventCta')}
+        doorTo="/tournaments"
+      />
+    );
+  }
+
   return (
     <HubPrepBriefShell
       title={t('opponents.hub.prepBrief.title')}
@@ -228,7 +252,7 @@ function HubPrepBriefShell({
   doorTo,
 }: {
   title: string;
-  state: 'debrief' | 'upcoming' | 'addEvent';
+  state: 'debrief' | 'upcoming' | 'laterEvents' | 'addEvent';
   body: string;
   doorLabel: string;
   doorTo: string;

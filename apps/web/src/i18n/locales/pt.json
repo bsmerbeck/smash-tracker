@@ -1429,6 +1429,7 @@
         "upcomingCta": "Abrir briefing de preparação",
         "addEvent": "Adicione um próximo evento para começar a acompanhar {{opponentTag}} como provável adversário.",
         "addEventCta": "Ir para torneios",
+        "laterEvents": "{{opponentTag}} não é um provável adversário nos seus próximos eventos. Confira seus torneios para ver os seguintes.",
         "debrief": "Revise {{eventName}} — {{date}}.",
         "debriefCta": "Revisar este evento"
       }

@@ -1429,6 +1429,7 @@
         "upcomingCta": "準備ブリーフィングを開く",
         "addEvent": "今後のイベントを追加すると、{{opponentTag}}を対戦候補として追跡できます。",
         "addEventCta": "大会へ移動",
+        "laterEvents": "直近の今後のイベントでは{{opponentTag}}は対戦候補に入っていません。それ以降のイベントは大会ページで確認してください。",
         "debrief": "{{eventName}}を振り返る — {{date}}",
         "debriefCta": "このイベントを振り返る"
       }

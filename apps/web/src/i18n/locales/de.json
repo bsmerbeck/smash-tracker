@@ -1429,6 +1429,7 @@
         "upcomingCta": "Vorbereitungs-Briefing öffnen",
         "addEvent": "Füge ein bevorstehendes Event hinzu, um {{opponentTag}} als wahrscheinlichen Gegner zu verfolgen.",
         "addEventCta": "Zu den Turnieren",
+        "laterEvents": "{{opponentTag}} ist bei deinen nächsten bevorstehenden Events kein wahrscheinlicher Gegner. Sieh in deinen Turnieren nach späteren Events.",
         "debrief": "{{eventName}} auswerten — {{date}}.",
         "debriefCta": "Dieses Event auswerten"
       }

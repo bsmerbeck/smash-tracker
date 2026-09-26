@@ -1429,6 +1429,7 @@
         "upcomingCta": "Open prep brief",
         "addEvent": "Add an upcoming event to start tracking {{opponentTag}} as a likely opponent.",
         "addEventCta": "Go to tournaments",
+        "laterEvents": "{{opponentTag}} isn't a likely opponent at your nearest upcoming events. Check your tournaments for later ones.",
         "debrief": "Review {{eventName}} — {{date}}.",
         "debriefCta": "Review this event"
       }

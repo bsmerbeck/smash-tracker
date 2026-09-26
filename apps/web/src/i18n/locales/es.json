@@ -1429,6 +1429,7 @@
         "upcomingCta": "Abrir resumen de preparación",
         "addEvent": "Añade un próximo evento para empezar a seguir a {{opponentTag}} como posible rival.",
         "addEventCta": "Ir a torneos",
+        "laterEvents": "{{opponentTag}} no figura como posible rival en tus próximos eventos más cercanos. Revisa tus torneos para ver los posteriores.",
         "debrief": "Revisa {{eventName}} — {{date}}.",
         "debriefCta": "Revisar este evento"
       }

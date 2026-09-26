@@ -1429,6 +1429,7 @@
         "upcomingCta": "Ouvrir le résumé de préparation",
         "addEvent": "Ajoutez un événement à venir pour suivre {{opponentTag}} comme adversaire probable.",
         "addEventCta": "Aller aux tournois",
+        "laterEvents": "{{opponentTag}} n'est pas un adversaire probable lors de vos prochains événements. Consultez vos tournois pour les suivants.",
         "debrief": "Revenir sur {{eventName}} — {{date}}.",
         "debriefCta": "Revenir sur cet événement"
       }
