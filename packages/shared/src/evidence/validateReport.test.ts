@@ -714,6 +714,27 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
         'main',
       ]);
     });
+
+    it('SH-CR-01: a sentence-final figure, the whole part of a decimal, and a trailing record digit are NOT list positions — each unlicensed one fails', () => {
+      // Licensed: 6, 4, 10 only. `83`, `71` and `0` are unlicensed factual
+      // figures that merely sit before a `.` — never a list index.
+      expect(digitScan('Their win rate here is 83.').strippedSectionIds).toEqual(['main']);
+      expect(digitScan('They win 71.4% of their games on Battlefield.').strippedSectionIds).toEqual(
+        ['main'],
+      );
+      expect(digitScan('Your record is 6-4 here and 10-0.').strippedSectionIds).toEqual(['main']);
+      expect(digitScan('Their record (6-4) hides a 83) streak.').strippedSectionIds).toEqual([
+        'main',
+      ]);
+    });
+
+    it('SH-CR-01: a real list position (start of text or line, then whitespace) and a standalone ordinal stay exempt', () => {
+      expect(
+        digitScan('1. Punish their landing.\n2. Stay patient at ledge.').strippedSectionIds,
+      ).toEqual([]);
+      expect(digitScan('3) Reset to neutral when in doubt.').strippedSectionIds).toEqual([]);
+      expect(digitScan('They take their pick 3rd in the order.').strippedSectionIds).toEqual([]);
+    });
   });
 
   it('C2-M7: AMBIGUOUS_ENTITY_NAMES equals the single-token subset of SpriteList ∪ StageList, computed mechanically', () => {
