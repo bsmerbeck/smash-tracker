@@ -309,6 +309,9 @@ function matchSource(match: Match): HubSourceChip {
 
 const STAGE_IDS = new Set(stagesById.keys());
 
+/** The identity `resolveOpponentIdentities` gives a game with an absent or empty opponent tag — the unnamed bucket, never a real opponent. */
+const UNKNOWN_OPPONENT_IDENTITY = 'unknown';
+
 export function OpponentHubPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -375,12 +378,21 @@ export function OpponentHubPage() {
     () => (pathTag ? prepResolve({ opponent: pathTag }) : null),
     [prepResolve, pathTag],
   );
-  const prepTournamentBlocks = useMemo(
+  // Code review R3-IN-05: the card needs a REAL identity with at least one
+  // game. The identity is `canonicalize(pathTag)`, never null for a present
+  // path tag, so without this a typo'd URL, a tag whose games were all
+  // deleted and the unknown bucket all mounted the card in the empty state,
+  // naming the raw URL tag.
+  const prepIdentityMatches = useMemo(
     () =>
-      prepIdentity
-        ? groupTournamentBlocks(allMatches.filter((m) => prepResolve(m) === prepIdentity))
+      prepIdentity && prepIdentity !== UNKNOWN_OPPONENT_IDENTITY
+        ? allMatches.filter((m) => prepResolve(m) === prepIdentity)
         : [],
     [allMatches, prepResolve, prepIdentity],
+  );
+  const prepTournamentBlocks = useMemo(
+    () => groupTournamentBlocks(prepIdentityMatches),
+    [prepIdentityMatches],
   );
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
@@ -824,15 +836,17 @@ export function OpponentHubPage() {
   // card used to live only inside the non-null branch, so its debrief door
   // vanished exactly then. The element is built here, outside that branch:
   // the hub body mounts it at its UI-SPEC D.2 slot, and the empty state
-  // mounts it right below the empty-state panel. Exactly one renders.
-  const prepBriefCard = prepIdentity ? (
-    <HubPrepBriefCard
-      opponentIdentity={prepIdentity}
-      opponentTag={displayTag}
-      resolveOpponent={prepResolve}
-      tournamentBlocks={prepTournamentBlocks}
-    />
-  ) : null;
+  // mounts it right below the empty-state panel. Exactly one renders — and
+  // only for a real identity with at least one game (code review R3-IN-05).
+  const prepBriefCard =
+    prepIdentity && prepIdentityMatches.length > 0 ? (
+      <HubPrepBriefCard
+        opponentIdentity={prepIdentity}
+        opponentTag={displayTag}
+        resolveOpponent={prepResolve}
+        tournamentBlocks={prepTournamentBlocks}
+      />
+    ) : null;
 
   // Plan 39.1-26 (gap closure, Task 2): the terminus's active-filter summary
   // when the active claim is this page's OWN trend insight — the SAME
