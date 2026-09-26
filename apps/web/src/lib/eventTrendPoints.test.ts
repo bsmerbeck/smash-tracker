@@ -128,3 +128,28 @@ describe('buildEventTrendPoints (plan 39.1-39)', () => {
     expect(keysFor(makeMatch({ id: 'nope', time: 1, win: true }))).toEqual([]);
   });
 });
+
+// Plan 39.1-39 design-fidelity loop (capture:design recent stage-detail hover
+// read "9–4 this event" on a month bin): a bin's score line names a period,
+// never "this event".
+describe('ChartTooltip on a bin point (plan 39.1-39)', () => {
+  it("a bin point's score reads 'in this period', never 'this event'", async () => {
+    const { buildEventTrendPoints } = await load();
+    const daily = Array.from({ length: 150 }, (_, i) =>
+      makeMatch({ id: `d${i}`, time: Date.UTC(2026, 0, 5, 18) + i * DAY_MS, win: i % 2 === 0 }),
+    );
+    const shared = (await import('@smash-tracker/shared')) as Record<string, unknown>;
+    const bin = shared.binEventSeries as (s: unknown[]) => unknown[];
+    const [first] = buildEventTrendPoints({
+      series: bin(buildStageEventSeries({ matches: daily, stageId: 1, refreshedAt: 1 })),
+      opponentTag: '',
+      t: i18n.t,
+      locale: 'en',
+    });
+    const { container } = render(
+      createElement(ChartTooltip, { active: true, payload: [{ payload: first }] }),
+    );
+    expect(container.textContent).toContain(`${first!.wins}–${first!.losses} in this period`);
+    expect(container.textContent).not.toContain('this event');
+  });
+});
