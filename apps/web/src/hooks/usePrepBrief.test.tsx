@@ -6,6 +6,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import {
   usePrepBrief,
+  usePrepBriefs,
   useActivatePrepBrief,
   useReopenPrepBrief,
   useTogglePrepChecklistItem,
@@ -106,6 +107,41 @@ describe('usePrepBrief', () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(prepGet).toHaveBeenCalledWith('entry-1');
+    });
+  });
+
+  describe('usePrepBriefs (fan-out cap, code review IN-03)', () => {
+    it('reads at most five briefs itself, whatever the caller passes — the first five, in order', async () => {
+      setMockUser(makeMockUser());
+      prepGet.mockResolvedValue({ activated: false });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const keys = ['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7'];
+      const { result } = renderHook(() => usePrepBriefs(keys), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(result.current.every((query) => query.isSuccess)).toBe(true));
+      expect(result.current).toHaveLength(5);
+      expect(prepGet.mock.calls.map(([entryKey]) => entryKey)).toEqual([
+        'e1',
+        'e2',
+        'e3',
+        'e4',
+        'e5',
+      ]);
+    });
+
+    it('control: fewer keys than the cap are all read', async () => {
+      setMockUser(makeMockUser());
+      prepGet.mockResolvedValue({ activated: false });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const { result } = renderHook(() => usePrepBriefs(['e1', 'e2']), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(result.current.every((query) => query.isSuccess)).toBe(true));
+      expect(result.current).toHaveLength(2);
+      expect(prepGet).toHaveBeenCalledTimes(2);
     });
   });
 
