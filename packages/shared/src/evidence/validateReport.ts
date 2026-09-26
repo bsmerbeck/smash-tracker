@@ -23,11 +23,7 @@ import type { ActionId, ClaimAtom, ClaimId, ClaimValue, ReportSurface } from './
 import { MIN_VIABLE_CLAIMS, countViableClaims } from './claims.js';
 import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
 import { effectiveFloor } from './policy.js';
-import {
-  FORBIDDEN_CONFIDENCE_WORDS,
-  LICENSED_CONFIDENCE_WORDS,
-  confidenceWordsFor,
-} from './confidencePhrases.js';
+import { FORBIDDEN_CONFIDENCE_WORDS, confidenceWordsFor } from './confidencePhrases.js';
 import { SpriteList } from '../fighterData.js';
 import { StageList } from '../stageData.js';
 
@@ -495,6 +491,12 @@ function validateClaim(
  */
 export const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)s?\b/iu;
 
+/** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
+const CONFIDENCE_NOUN = 'confidence';
+
+/** A tier word used AS a confidence word: immediately beside "confidence" (review SH-WR-01). */
+const TIER_WORD_BESIDE_CONFIDENCE_PATTERN = /\b(low|medium|high)[\s-]+confidence\b/g;
+
 interface ProseLintResult {
   /** True when R4, R5 or R7's lexical half fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
   offense: boolean;
@@ -525,39 +527,15 @@ function lintSectionProse(
 
   let offense = false;
 
-  // --- R4: the digit rule ---
-  const licensedIntegers = new Set<number>();
-  for (const claim of licensedClaims) {
-    const v = claim.value;
-    if (v.kind === 'record') {
-      licensedIntegers.add(v.wins);
-      licensedIntegers.add(v.losses);
-      licensedIntegers.add(v.games);
-    } else if (v.kind === 'rate') {
-      licensedIntegers.add(v.numerator);
-      licensedIntegers.add(v.denominator);
-      if (v.denominator > 0) {
-        licensedIntegers.add(Math.round((v.numerator / v.denominator) * 100));
-      }
-    } else if (v.kind === 'count') {
-      licensedIntegers.add(v.count);
-    }
-  }
-  const nonFactualSpans = findNonFactualDigitSpans(folded);
-  for (const match of folded.matchAll(/\d+/g)) {
-    const start = match.index!;
-    const end = start + match[0].length;
-    const value = Number(match[0]);
-    if (licensedIntegers.has(value)) {
-      continue;
-    }
-    if (isNonFactualDigitRun(nonFactualSpans, start, end)) {
-      continue;
-    }
-    offense = true;
-  }
-
   // --- R4: entity matching (fighter/stage names) ---
+  //
+  // Review SH-WR-01: names are scanned LONGEST FIRST and every match
+  // CONSUMES its span, so a shorter canonical name contained in a longer one
+  // ("Battlefield" in "Small Battlefield", "Link" in "Toon Link", "Pokémon
+  // Stadium" in "Pokémon Stadium 2") is never matched a second time on its
+  // own. The consumed spans also exempt the digits INSIDE a matched name
+  // ("Pokémon Stadium 2", "Figure-8 Circuit") from the digit rule below — a
+  // digit that is part of a canonical name is not a figure.
   const licensedEntityNames = new Set<string>();
   for (const claim of licensedClaims) {
     if (claim.subject.myFighterId !== null) {
@@ -582,12 +560,20 @@ function lintSectionProse(
     name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
   ).join('|');
 
+  const consumedNameSpans: Array<[number, number]> = [];
+  const overlapsConsumed = (start: number, end: number): boolean =>
+    consumedNameSpans.some(([s, e]) => start < e && end > s);
+
   for (const name of CANONICAL_ENTITY_NAMES) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRe = new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`, 'g');
     for (const match of folded.matchAll(nameRe)) {
       const start = match.index!;
       const end = start + match[0].length;
+      if (overlapsConsumed(start, end)) {
+        continue;
+      }
+      consumedNameSpans.push([start, end]);
       const isLicensed = licensedEntityNames.has(name);
       if (isLicensed) {
         continue;
@@ -614,47 +600,93 @@ function lintSectionProse(
     }
   }
 
-  // --- R4: opponent tags (verbatim, case-sensitive) ---
+  // --- R4: the digit rule ---
+  const licensedIntegers = new Set<number>();
+  for (const claim of licensedClaims) {
+    const v = claim.value;
+    if (v.kind === 'record') {
+      licensedIntegers.add(v.wins);
+      licensedIntegers.add(v.losses);
+      licensedIntegers.add(v.games);
+    } else if (v.kind === 'rate') {
+      licensedIntegers.add(v.numerator);
+      licensedIntegers.add(v.denominator);
+      if (v.denominator > 0) {
+        licensedIntegers.add(Math.round((v.numerator / v.denominator) * 100));
+      }
+    } else if (v.kind === 'count') {
+      licensedIntegers.add(v.count);
+    }
+  }
+  const nonFactualSpans = findNonFactualDigitSpans(folded);
+  for (const match of folded.matchAll(/\d+/g)) {
+    const start = match.index!;
+    const end = start + match[0].length;
+    if (overlapsConsumed(start, end)) {
+      continue;
+    }
+    const value = Number(match[0]);
+    if (licensedIntegers.has(value)) {
+      continue;
+    }
+    if (isNonFactualDigitRun(nonFactualSpans, start, end)) {
+      continue;
+    }
+    offense = true;
+  }
+
+  // --- R4: opponent tags (verbatim, case-sensitive, on token boundaries) ---
+  //
+  // Review SH-WR-01: a tag known elsewhere in the job convicts only as a
+  // whole token — "Tea" never convicts "Team".
   const licensedTags = new Set<string>();
   for (const claim of licensedClaims) {
     if (claim.subject.opponentTag !== null) {
-      licensedTags.add(claim.subject.opponentTag.normalize('NFC'));
+      licensedTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
     }
   }
   const allKnownTags = new Set<string>();
   for (const claim of allIssuedClaims) {
     if (claim.subject.opponentTag !== null) {
-      allKnownTags.add(claim.subject.opponentTag.normalize('NFC'));
+      allKnownTags.add(foldDigitsToAscii(claim.subject.opponentTag.normalize('NFC')));
     }
   }
   for (const tag of allKnownTags) {
-    if (licensedTags.has(tag)) {
+    if (licensedTags.has(tag) || tag.length === 0) {
       continue;
     }
-    if (folded.includes(tag)) {
+    const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'u').test(folded)) {
       offense = true;
     }
   }
 
   // --- R5: confidence words ---
+  //
+  // Review SH-WR-01: the tier words (`low`/`medium`/`high`) are ordinary
+  // Smash vocabulary ("high recovery", "low percent"), so a tier word is a
+  // CONFIDENCE word only when it sits next to "confidence"
+  // ("high confidence", "low-confidence"). The noun "confidence" itself and
+  // the forbidden strength words are still judged wherever they appear.
   const licensedConfidenceWords = new Set<string>();
   for (const claim of licensedClaims) {
     for (const word of confidenceWordsFor(claim.tier)) {
       licensedConfidenceWords.add(word);
     }
   }
-  const allTierWords = new Set(Object.values(LICENSED_CONFIDENCE_WORDS).flat());
-  const confidenceScanUniverse = new Set([...FORBIDDEN_CONFIDENCE_WORDS, ...allTierWords]);
-  const tokens = folded.toLowerCase().match(/[a-z']+/g) ?? [];
+  const lower = folded.toLowerCase();
+  const tokens = lower.match(/[a-z']+/g) ?? [];
   for (const token of tokens) {
-    if (!confidenceScanUniverse.has(token)) {
-      continue;
-    }
     if ((FORBIDDEN_CONFIDENCE_WORDS as readonly string[]).includes(token)) {
       offense = true;
       continue;
     }
-    if (!licensedConfidenceWords.has(token)) {
+    if (token === CONFIDENCE_NOUN && !licensedConfidenceWords.has(token)) {
+      offense = true;
+    }
+  }
+  for (const match of lower.matchAll(TIER_WORD_BESIDE_CONFIDENCE_PATTERN)) {
+    if (!licensedConfidenceWords.has(match[1]!)) {
       offense = true;
     }
   }

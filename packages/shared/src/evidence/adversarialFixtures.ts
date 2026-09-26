@@ -1088,6 +1088,8 @@ const ORDINARY_PROSE_TEXT = [
   'A calm gamer never panics off one bad game-1 pick; adjust and move on to the next stock.',
   'They almost always take their strike-order pick 3rd in a five-stage list, so plan your counterpick around it.',
   'Never assume their top-5 pick order tells you their true preference in a strike-order list — it might just be habit.',
+  // Review SH-WR-01: tier words as ordinary Smash vocabulary, never a confidence claim.
+  'Watch for their high recovery and low percent combos, and keep your shield high.',
 ].join(' ');
 
 const ordinaryProse: AdversarialFixture = {
