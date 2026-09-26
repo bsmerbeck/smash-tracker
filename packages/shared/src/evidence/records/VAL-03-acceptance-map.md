@@ -68,9 +68,14 @@ Known limits of the PROSE licence (R4), stated rather than hidden (code review S
 a W-L record written in prose must be the exact ordered pair of one licensed record claim, but a
 single licensed figure can still be attributed to the wrong entity within the same section (the
 licence is per section, not per sentence), and a placement ordinal ("placed 2nd") is exempt from
-the digit rule like any ordinal. "Zero unsupported factual claims" is a statement about CLAIMS and
-about prose naming an unlicensed specific; it does not cover every prose-level misattribution of a
-licensed number.
+the digit rule like any ordinal. A record stated from the opponent's side is accepted only in a
+narrow shape (code review R2-IN-01): the sentence opens with the licensed opponent tag and says
+"against you"/"versus you"/"vs you", and the pair is the reversed licensed pair ("MkLeo is 2-3
+against you" for a licensed 3-2); any other opponent-perspective phrasing, and the winner-first
+loss idiom ("you lost that stretch 3-2" for a licensed 2-3), is withheld — over-stripping prose,
+never shipping an unlicensed record. "Zero unsupported factual claims" is a statement about CLAIMS
+and about prose naming an unlicensed specific; it does not cover every prose-level misattribution
+of a licensed number.
 
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are
 recorded in the owner's terms; this map is where their proofs are named. Neither stands in for the
