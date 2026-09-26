@@ -54,8 +54,8 @@ export interface GuardHarnessRouteEntry {
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
-   * `trends-casual` and (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
-   * capture-only `gsp`.
+   * `trends-casual`, (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
+   * capture-only `gsp`, and (plan 39.1-51) the three `*-games` drill routes.
    */
   shell?: 'app';
 }
@@ -205,6 +205,34 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/stages/1',
     element: <StageDetailPage />,
     loadedMarker: '[data-slot="stage-detail-body"]',
+    shell: 'app',
+  },
+  // Plan 39.1-51 (OOS-8): the three hosts that mount the results list
+  // (`FilteredMatchList`) only under a drill axis, drilled with `?from=1`
+  // (every game), in the MainLayout-geometry shell — so guard:layout's
+  // last-row-visible family measures them and capture:design shoots them.
+  {
+    id: 'fighter-analysis-games',
+    path: '/fighter-analysis',
+    initialEntry: '/fighter-analysis?from=1',
+    element: <FighterAnalysisPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    shell: 'app',
+  },
+  {
+    id: 'match-data-games',
+    path: '/match-data',
+    initialEntry: '/match-data?from=1',
+    element: <MatchDataPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    shell: 'app',
+  },
+  {
+    id: 'trends-games',
+    path: '/trends',
+    initialEntry: '/trends?from=1',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
     shell: 'app',
   },
   {

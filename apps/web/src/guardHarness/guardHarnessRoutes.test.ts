@@ -14,9 +14,34 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly sixteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route and (plan 39.1-49) the scout route', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(16);
+  // REWRITTEN by plan 39.1-51 (was sixteen): the three `*-games` drill routes
+  // (OOS-8) make the drill-only results-list hosts measurable — the count rises
+  // by exactly three.
+  it('has exactly nineteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route, (plan 39.1-49) the scout route and (plan 39.1-51) the fighter-analysis-games, match-data-games and trends-games drill routes', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(19);
   });
+
+  // Plan 39.1-51 (OOS-8): the drill-only results-list hosts, drilled with
+  // `?from=1` (every game) at the base route's path, in the app shell.
+  it.each([
+    ['fighter-analysis-games', '/fighter-analysis'],
+    ['match-data-games', '/match-data'],
+    ['trends-games', '/trends'],
+  ])(
+    'plan 39.1-51: %s mounts its base page at %s?from=1 in the app shell with the results-list loaded marker',
+    (id, basePath) => {
+      const route = findGuardHarnessRoute(id);
+      const base = GUARD_HARNESS_ROUTES.find((r) => r.path === basePath && r.id !== id);
+      expect(route?.path).toBe(basePath);
+      expect(route?.initialEntry).toBe(`${basePath}?from=1`);
+      expect(route?.shell).toBe('app');
+      expect(route?.loadedMarker).toBe('[data-slot="filtered-match-list"] [data-total-rows]');
+      expect(base).toBeDefined();
+      expect((route?.element as { type?: unknown } | undefined)?.type).toBe(
+        (base?.element as { type?: unknown } | undefined)?.type,
+      );
+    },
+  );
 
   // Plan 39.1-49: the Scout page joins the harness so the all-route
   // table-clip sweep can measure its three multi-host tables.
@@ -98,15 +123,19 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(findGuardHarnessRoute(null)).toBeUndefined();
   });
 
-  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual, dashboard-app, stage-detail-recent and gsp entries opt into the MainLayout-geometry app shell', () => {
+  // REWRITTEN by plan 39.1-51: the three `*-games` drill routes join the shell.
+  it('plans 39.1-30/34/35/39/51: exactly the matchups, trends-career, trends-casual, dashboard-app, stage-detail-recent, gsp and three *-games entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
     expect(shelled.map((r) => r.id).sort()).toEqual([
       'dashboard-app',
+      'fighter-analysis-games',
       'gsp',
+      'match-data-games',
       'matchups',
       'stage-detail-recent',
       'trends-career',
       'trends-casual',
+      'trends-games',
     ]);
   });
 

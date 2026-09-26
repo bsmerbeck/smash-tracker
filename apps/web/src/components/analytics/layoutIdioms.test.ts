@@ -131,6 +131,9 @@ const VERTICAL_OVERFLOW_PATTERN = /\boverflow-y-(auto|scroll)\b/;
  * removal, since the anti-rot assertion below fails the instant the fix
  * lands without it.
  */
+/** Plan 39.1-51 (OOS-8): the results-list terminus, scanned by name (§6.4 amended 2026-09-26). */
+const TERMINUS_FILE = 'apps/web/src/components/FilteredMatchList.tsx';
+
 const NESTED_SCROLLER_KNOWN_OFFENDERS = [
   'apps/web/src/pages/Matchups/components/SetStateControl.tsx',
   'apps/web/src/pages/Dashboard/components/AddMatchForm.tsx',
@@ -258,6 +261,27 @@ describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
         return MAX_HEIGHT_PATTERN.test(source) && VERTICAL_OVERFLOW_PATTERN.test(source);
       });
       expect(offenders).toEqual([]);
+    });
+
+    // Plan 39.1-51 (OOS-8; UI-SPEC §6.4 amended 2026-09-26 — exemption 2
+    // deleted): the results-list terminus lives outside pages/ and
+    // components/analytics/, so the scan names it explicitly. It is never an
+    // allowlist entry — the terminus may not nest a scroller at any width.
+    it('the results-list terminus (components/FilteredMatchList.tsx) pairs no max-h-* with overflow-y-auto|scroll and is not allowlisted', () => {
+      expect(NESTED_SCROLLER_KNOWN_OFFENDERS).not.toContain(TERMINUS_FILE);
+      expect(fs.existsSync(path.join(REPO_ROOT, TERMINUS_FILE)), `missing: ${TERMINUS_FILE}`).toBe(
+        true,
+      );
+      const source = readRepoFile(TERMINUS_FILE);
+      expect({
+        maxHeight: source.match(MAX_HEIGHT_PATTERN)?.[0] ?? null,
+        verticalOverflow: source.match(VERTICAL_OVERFLOW_PATTERN)?.[0] ?? null,
+      }).not.toEqual(
+        expect.objectContaining({
+          maxHeight: expect.any(String),
+          verticalOverflow: expect.any(String),
+        }),
+      );
     });
 
     it('the nested-scroller allowlist cannot rot: every entry still pairs both utilities', () => {

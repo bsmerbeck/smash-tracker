@@ -569,7 +569,12 @@ export function FilteredMatchList({
   }
 
   return (
-    <div ref={containerRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
+    <div
+      ref={containerRef}
+      tabIndex={-1}
+      data-slot="filtered-match-list"
+      className="flex flex-col gap-3 outline-none"
+    >
       {activeAxes && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/50 p-3">
           <div className="flex flex-col gap-1">

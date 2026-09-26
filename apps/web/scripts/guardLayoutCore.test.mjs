@@ -2776,3 +2776,179 @@ test('insight-line-dash: no measured line is exactly one insight-line-dash-unmea
     { type: 'insight-line-dash-unmeasured' },
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-51 (OOS-8): the last-row-visible family and the §6.3 terminus
+// allowance. Read through the namespace so a RED run fails on an assertion.
+// ---------------------------------------------------------------------------
+
+function terminusList(overrides = {}) {
+  return {
+    selectorPath: 'div[data-slot="filtered-match-list"]',
+    layout: 'table',
+    mounted: 100,
+    total: 300,
+    contentPx: 3200,
+    lastRow: { top: 3160, bottom: 3200 },
+    clips: [],
+    ...overrides,
+  };
+}
+
+test('last-row-visible: a table last row 3 px below a clipping ancestor is one last-row-clipped naming the ancestor', () => {
+  const violations = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({
+      lastRow: { top: 463, bottom: 503 },
+      clips: [
+        {
+          selectorPath: 'div.clipper',
+          overflowY: 'hidden',
+          scrollHeight: 500,
+          clientHeight: 500,
+          visTop: 0,
+          visBottom: 500,
+        },
+      ],
+    }),
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'last-row-clipped');
+  assert.equal(violations[0].clipper, 'div.clipper');
+});
+
+test('last-row-visible: a last row 1 px past the visible bottom passes', () => {
+  const violations = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({
+      lastRow: { top: 461, bottom: 501 },
+      clips: [
+        {
+          selectorPath: 'div.clipper',
+          overflowY: 'hidden',
+          scrollHeight: 500,
+          clientHeight: 500,
+          visTop: 0,
+          visBottom: 500,
+        },
+      ],
+    }),
+  ]);
+  assert.deepEqual(violations, []);
+});
+
+test('last-row-visible: an overflow-y auto ancestor with scrollHeight 3200 over clientHeight 500 is one terminus-inner-scroller', () => {
+  const violations = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({
+      lastRow: { top: 440, bottom: 480 },
+      clips: [
+        {
+          selectorPath: 'div.scroller',
+          overflowY: 'auto',
+          scrollHeight: 3200,
+          clientHeight: 500,
+          visTop: 0,
+          visBottom: 500,
+        },
+      ],
+    }),
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'terminus-inner-scroller');
+  assert.equal(violations[0].scroller, 'div.scroller');
+});
+
+test('last-row-visible: a horizontal-only container (overflow-y auto, scrollHeight equal to clientHeight, the row inside) passes', () => {
+  const violations = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({
+      clips: [
+        {
+          selectorPath: 'div[data-slot="table-container"]',
+          overflowY: 'auto',
+          scrollHeight: 3200,
+          clientHeight: 3200,
+          visTop: 0,
+          visBottom: 3200,
+        },
+      ],
+    }),
+  ]);
+  assert.deepEqual(violations, []);
+});
+
+test('last-row-visible: a stack list with no clipping ancestor passes', () => {
+  const violations = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({
+      layout: 'stack',
+      mounted: 20,
+      contentPx: 1800,
+      lastRow: { top: 1718, bottom: 1800 },
+    }),
+  ]);
+  assert.deepEqual(violations, []);
+});
+
+test('last-row-visible: mounted 101 in table layout or 21 in stack layout is terminus-unbounded; 100 / 20 pass', () => {
+  const table101 = guardLayoutCoreNs.evaluateLastRowVisible([terminusList({ mounted: 101 })]);
+  assert.deepEqual(
+    table101.map((v) => v.type),
+    ['terminus-unbounded'],
+  );
+  const stack21 = guardLayoutCoreNs.evaluateLastRowVisible([
+    terminusList({ layout: 'stack', mounted: 21 }),
+  ]);
+  assert.deepEqual(
+    stack21.map((v) => v.type),
+    ['terminus-unbounded'],
+  );
+  assert.deepEqual(guardLayoutCoreNs.evaluateLastRowVisible([terminusList({ mounted: 100 })]), []);
+  assert.deepEqual(
+    guardLayoutCoreNs.evaluateLastRowVisible([terminusList({ layout: 'stack', mounted: 20 })]),
+    [],
+  );
+});
+
+test('last-row-visible: 0 mounted rows or no measurable last row is last-row-visible-unmeasured', () => {
+  assert.deepEqual(
+    guardLayoutCoreNs
+      .evaluateLastRowVisible([terminusList({ layout: 'empty', mounted: 0, lastRow: null })])
+      .map((v) => v.type),
+    ['last-row-visible-unmeasured'],
+  );
+  assert.deepEqual(
+    guardLayoutCoreNs
+      .evaluateLastRowVisible([terminusList({ mounted: 5, lastRow: null })])
+      .map((v) => v.type),
+    ['last-row-visible-unmeasured'],
+  );
+});
+
+test('last-row-visible: no list root at all is exactly one last-row-visible-unmeasured (evaluateFamilyPresence)', () => {
+  assert.deepEqual(guardLayoutCoreNs.evaluateFamilyPresence('last-row-visible', []), [
+    { type: 'last-row-visible-unmeasured' },
+  ]);
+  assert.deepEqual(guardLayoutCoreNs.evaluateLastRowVisible([]), []);
+});
+
+test('terminus-budget: terminusBudgetExcessPx counts only the part of each table flow above 500 px', () => {
+  assert.equal(guardLayoutCoreNs.TERMINUS_TABLE_ALLOWANCE_PX, 500);
+  assert.equal(guardLayoutCoreNs.TERMINUS_TABLE_ROW_CAP, 100);
+  assert.equal(guardLayoutCoreNs.TERMINUS_STACK_ROW_CAP, 20);
+  assert.equal(guardLayoutCoreNs.terminusBudgetExcessPx([3200]), 2700);
+  assert.equal(guardLayoutCoreNs.terminusBudgetExcessPx([480]), 0);
+  assert.equal(guardLayoutCoreNs.terminusBudgetExcessPx([500]), 0);
+  assert.equal(guardLayoutCoreNs.terminusBudgetExcessPx([3200, 900]), 3100);
+  assert.equal(guardLayoutCoreNs.terminusBudgetExcessPx([]), 0);
+});
+
+test('terminus-budget: a 5500 px page with one 3200 px table flow passes 1440x900 with the allowance (2800 / 900) and fails without it (6.11 over 5)', () => {
+  const page = { scrollHeight: 5500, innerHeight: 900, viewportName: '1440x900' };
+  const excess = guardLayoutCoreNs.terminusBudgetExcessPx([3200]);
+  assert.deepEqual(
+    guardLayoutCoreNs.evaluateScrollBudget({ ...page, scrollHeight: page.scrollHeight - excess }),
+    [],
+  );
+  const without = guardLayoutCoreNs.evaluateScrollBudget(page);
+  assert.equal(without.length, 1);
+  assert.equal(without[0].type, 'scroll-budget');
+  assert.equal(Math.round(without[0].ratio * 100) / 100, 6.11);
+  assert.equal(without[0].budget, 5);
+});

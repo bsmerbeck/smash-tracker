@@ -1724,3 +1724,92 @@ export function evaluateInsightLineDash(lines, tolerancePx = INSIGHT_LINE_DASH_T
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-51 (OOS-8, UI-SPEC §6.3 / §6.4 amended 2026-09-26, sketch 003 M14
+// "no inner scroller"): the results-list terminus flows in the page. The
+// `last-row-visible` family proves its last mounted row is whole and inside no
+// vertical scroller; the terminus allowance keeps every page's scroll budget
+// exactly as strict as it was while the list sat in its retired 500 px box.
+// ---------------------------------------------------------------------------
+
+/**
+ * UI-SPEC §6.3 terminus allowance (amended 2026-09-26): the page scroll budget
+ * counts at most this many px of a TABLE-layout terminus list — exactly the
+ * height its retired fixed-height scroll box always contributed. The stacked
+ * (phone) list counts in full.
+ */
+export const TERMINUS_TABLE_ALLOWANCE_PX = 500;
+
+/** Mirrors `FILTERED_MATCH_LIST_ROW_CAP`: the table layout mounts at most 100 rows per pass. */
+export const TERMINUS_TABLE_ROW_CAP = 100;
+
+/** Mirrors `FILTERED_MATCH_LIST_STACK_ROW_CAP`: the stacked layout mounts at most 20 rows per pass. */
+export const TERMINUS_STACK_ROW_CAP = 20;
+
+/** A last row may end this many px past a clipping box's visible edge (sub-pixel layout). */
+export const LAST_ROW_TOLERANCE_PX = 1;
+
+/**
+ * The px the scroll budget leaves out: for each table-layout terminus flow
+ * height, the part above `allowancePx`. Pure.
+ */
+export function terminusBudgetExcessPx(flowHeightsPx, allowancePx = TERMINUS_TABLE_ALLOWANCE_PX) {
+  return flowHeightsPx.reduce((sum, heightPx) => sum + Math.max(0, heightPx - allowancePx), 0);
+}
+
+/**
+ * `lists`: one entry per `[data-slot="filtered-match-list"]` root —
+ * `{ selectorPath, layout: 'table' | 'stack' | 'empty', mounted, total,
+ * contentPx, lastRow: { top, bottom } | null, clips: [{ selectorPath,
+ * overflowY, scrollHeight, clientHeight, visTop, visBottom }] }`, where `clips`
+ * are the last row's ancestors (up to body) whose overflow is not visible.
+ * Every offender is returned:
+ * - `last-row-visible-unmeasured`: no mounted row or no measurable last row;
+ * - `terminus-unbounded`: more rows mounted than the layout's pass allows;
+ * - `terminus-inner-scroller`: an ancestor that scrolls vertically (overflow-y
+ *   auto / scroll AND content taller than its box — geometry, never the class);
+ * - `last-row-clipped`: the last row ends past (or starts before) a clipping
+ *   ancestor's visible box.
+ */
+export function evaluateLastRowVisible(lists, { tolerancePx = LAST_ROW_TOLERANCE_PX } = {}) {
+  const violations = [];
+  for (const list of lists) {
+    const { selectorPath, layout, mounted, lastRow, clips = [] } = list;
+    if (!mounted || !lastRow) {
+      violations.push({ type: 'last-row-visible-unmeasured', selectorPath, layout, mounted });
+      continue;
+    }
+    const cap = layout === 'stack' ? TERMINUS_STACK_ROW_CAP : TERMINUS_TABLE_ROW_CAP;
+    if (mounted > cap) {
+      violations.push({ type: 'terminus-unbounded', selectorPath, layout, mounted, cap });
+    }
+    for (const clip of clips) {
+      const scrollsVertically =
+        (clip.overflowY === 'auto' || clip.overflowY === 'scroll') &&
+        clip.scrollHeight > clip.clientHeight + tolerancePx;
+      if (scrollsVertically) {
+        violations.push({
+          type: 'terminus-inner-scroller',
+          selectorPath,
+          scroller: clip.selectorPath,
+          overflowY: clip.overflowY,
+          scrollHeight: clip.scrollHeight,
+          clientHeight: clip.clientHeight,
+        });
+      }
+      const belowPx = lastRow.bottom - clip.visBottom;
+      const abovePx = clip.visTop - lastRow.top;
+      if (belowPx > tolerancePx || abovePx > tolerancePx) {
+        violations.push({
+          type: 'last-row-clipped',
+          selectorPath,
+          clipper: clip.selectorPath,
+          belowPx: Math.round(belowPx * 10) / 10,
+          abovePx: Math.round(abovePx * 10) / 10,
+        });
+      }
+    }
+  }
+  return violations;
+}

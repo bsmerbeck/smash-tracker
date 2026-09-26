@@ -62,6 +62,8 @@ import {
   evaluateTextFit,
   evaluateRailCards,
   evaluateInsightLineDash,
+  evaluateLastRowVisible,
+  terminusBudgetExcessPx,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
   tableClipSweepRoutes,
@@ -182,6 +184,9 @@ export const LAYOUT_ORACLE_ROUTES = [
       'form-strip-fit',
       // Plan 39.1-39: no brand-red text (UI-SPEC §4.3).
       'brand-red-text',
+      // Plan 39.1-51 (OOS-8): the results list's last row is whole, inside no
+      // vertical scroller.
+      'last-row-visible',
     ],
     extraViewports: ['1024x768', '1280x800'],
     // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
@@ -347,6 +352,8 @@ export const LAYOUT_ORACLE_ROUTES = [
       'brand-red-text',
       'mark-count',
       'matrix-hug',
+      // Plan 39.1-51 (OOS-8).
+      'last-row-visible',
     ],
     filterRow: {},
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6): What they play never hides a column
@@ -359,7 +366,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="stage-detail-body"]',
     // Plan 39.1-37: axis-ticks and plot-aspect on the Over Time event trend.
     // Plan 39.1-39: mark-count (UI-SPEC §11, the Over Time trend at most 60 points).
-    checks: ['axis-ticks', 'plot-aspect', 'brand-red-text', 'mark-count'],
+    // Plan 39.1-51 (OOS-8): last-row-visible on the results list.
+    checks: ['axis-ticks', 'plot-aspect', 'brand-red-text', 'mark-count', 'last-row-visible'],
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6; deferred from 39.1-37): the By
     // Character list never hides its Win Rate column behind a horizontal
     // scroll on a phone.
@@ -374,7 +382,26 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'stage-detail-recent',
     loadedMarker: '[data-slot="stage-detail-body"]',
     scale: 'recent',
-    checks: ['mark-count', 'axis-ticks'],
+    // Plan 39.1-51 (OOS-8): last-row-visible on the results list.
+    checks: ['mark-count', 'axis-ticks', 'last-row-visible'],
+  },
+  // Plan 39.1-51 (OOS-8): the three hosts that mount the results list only
+  // under a drill axis, drilled with `?from=1` (every game) in the
+  // MainLayout-geometry shell — the list is measurable and capturable.
+  {
+    id: 'fighter-analysis-games',
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    checks: ['last-row-visible'],
+  },
+  {
+    id: 'match-data-games',
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    checks: ['last-row-visible'],
+  },
+  {
+    id: 'trends-games',
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    checks: ['last-row-visible'],
   },
   {
     // Plan 39.1-49: the Scout page, driven through its search form (a real
@@ -488,6 +515,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantRailCards = checks.includes('rail-cards');
   // Plan 39.1-50 (OOS-40-A): a steady insight line's dash vs its first glyph.
   const wantInsightLineDash = checks.includes('insight-line-dash');
+  // Plan 39.1-51 (OOS-8): the results list's last row.
+  const wantLastRowVisible = checks.includes('last-row-visible');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1312,7 +1341,67 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-51 (OOS-8, UI-SPEC §6.3 terminus allowance): every route, every
+  // viewport — the laid-out height of each table-layout results list's flow
+  // (the root's direct child holding the table), which the scroll budget
+  // counts only up to 500 px. With `last-row-visible` requested, one record
+  // per list root: layout reads first, then getComputedStyle on the last
+  // row's ancestor walk only.
+  // -------------------------------------------------------------------
+  const terminusFlowsPx = [];
+  const terminusLists = [];
+  for (const root of document.querySelectorAll('[data-slot="filtered-match-list"]')) {
+    const tableSlot = root.querySelector('[data-slot="filtered-match-table"]');
+    const stackSlot = root.querySelector('[data-slot="filtered-match-stack"]');
+    if (tableSlot) {
+      let flow = tableSlot;
+      while (flow.parentElement && flow.parentElement !== root) flow = flow.parentElement;
+      if (flow.parentElement === root) terminusFlowsPx.push(flow.getBoundingClientRect().height);
+    }
+    if (!wantLastRowVisible) continue;
+    const layout = tableSlot ? 'table' : stackSlot ? 'stack' : 'empty';
+    const listEl = tableSlot ? tableSlot.querySelector('table') : stackSlot;
+    const rows = tableSlot
+      ? Array.from(tableSlot.querySelectorAll('tbody > tr'))
+      : stackSlot
+        ? Array.from(stackSlot.children).filter((child) => child.tagName === 'LI')
+        : [];
+    const totalEl = root.querySelector('[data-total-rows]');
+    const lastEl = rows[rows.length - 1] ?? null;
+    const lastRect = lastEl ? lastEl.getBoundingClientRect() : null;
+    const record = {
+      selectorPath: describeElement(root),
+      layout,
+      mounted: rows.length,
+      total: totalEl ? Number(totalEl.getAttribute('data-total-rows')) : 0,
+      contentPx: listEl ? listEl.getBoundingClientRect().height : 0,
+      lastRow:
+        lastRect && lastRect.height > 0 ? { top: lastRect.top, bottom: lastRect.bottom } : null,
+      clips: [],
+    };
+    for (let el = lastEl ? lastEl.parentElement : null; el && el !== document.body;) {
+      const style = window.getComputedStyle(el);
+      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+        const rect = el.getBoundingClientRect();
+        const visTop = rect.top + el.clientTop;
+        record.clips.push({
+          selectorPath: describeElement(el),
+          overflowY: style.overflowY,
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          visTop,
+          visBottom: visTop + el.clientHeight,
+        });
+      }
+      el = el.parentElement;
+    }
+    terminusLists.push(record);
+  }
+
   return {
+    terminusFlowsPx,
+    terminusLists,
     insightLineDashes,
     railCards,
     markLines,
@@ -1732,11 +1821,15 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       familyConfig,
     );
 
+    // Plan 39.1-51 (UI-SPEC §6.3 terminus allowance): a table-layout results
+    // list counts at most 500 px toward the page budget; MEASUREMENT keeps the
+    // raw ratio, TERMINUS_BUDGET prints both.
+    const excludedPx = terminusBudgetExcessPx(measurements.terminusFlowsPx);
     const violations = [
       ...evaluateStretch(measurements.cards),
       ...evaluateScrollBudget(
         {
-          scrollHeight: measurements.scrollHeight,
+          scrollHeight: measurements.scrollHeight - excludedPx,
           innerHeight: measurements.innerHeight,
           viewportName: viewport.name,
         },
@@ -1884,6 +1977,23 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         ...evaluateFamilyPresence('insight-line-dash', measurements.insightLineDashes),
       );
     }
+    // Plan 39.1-51 (OOS-8): one LAST_ROW record per list root.
+    const lastRows = [];
+    if (checks.includes('last-row-visible')) {
+      violations.push(...evaluateLastRowVisible(measurements.terminusLists));
+      violations.push(...evaluateFamilyPresence('last-row-visible', measurements.terminusLists));
+      for (const list of measurements.terminusLists) {
+        const own = evaluateLastRowVisible([list]);
+        lastRows.push({
+          layout: list.layout,
+          mounted: list.mounted,
+          total: list.total,
+          contentPx: list.contentPx,
+          lastRowVisible: list.lastRow !== null && !own.some((v) => v.type === 'last-row-clipped'),
+          innerScrollers: own.filter((v) => v.type === 'terminus-inner-scroller').length,
+        });
+      }
+    }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
     // output contract requires the measured maximum card stretch and the
@@ -1894,12 +2004,24 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       return Math.max(max, card.height - contentHeight);
     }, 0);
     const scrollRatio = measurements.scrollHeight / measurements.innerHeight;
+    const terminusBudget =
+      measurements.terminusFlowsPx.length > 0
+        ? {
+            tables: measurements.terminusFlowsPx.length,
+            flowPx: measurements.terminusFlowsPx.reduce((sum, px) => sum + px, 0),
+            excludedPx,
+            scrollRatio,
+            budgetRatio: (measurements.scrollHeight - excludedPx) / measurements.innerHeight,
+          }
+        : null;
 
     return {
       unmeasured: false,
       violations,
       maxStretchPx,
       scrollRatio,
+      terminusBudget,
+      lastRows,
       cardHeightCards: measurements.cardHeightCards,
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
@@ -2193,6 +2315,20 @@ async function main() {
             console.log(
               `MEASUREMENT route=${route.id} viewport=${viewport.name} maxStretchPx=${result.maxStretchPx.toFixed(1)} scrollRatio=${result.scrollRatio.toFixed(3)}`,
             );
+            // Plan 39.1-51 (OOS-8): the terminus allowance's context line
+            // (every route-viewport with a table-layout results list) and one
+            // LAST_ROW line per list root when the family was requested.
+            if (result.terminusBudget) {
+              const tb = result.terminusBudget;
+              console.log(
+                `TERMINUS_BUDGET route=${route.id} viewport=${viewport.name} tables=${tb.tables} flowPx=${tb.flowPx.toFixed(1)} excludedPx=${tb.excludedPx.toFixed(1)} scrollRatio=${tb.scrollRatio.toFixed(3)} budgetRatio=${tb.budgetRatio.toFixed(3)}`,
+              );
+            }
+            for (const row of result.lastRows ?? []) {
+              console.log(
+                `LAST_ROW route=${route.id} viewport=${viewport.name} layout=${row.layout} mounted=${row.mounted} total=${row.total} contentPx=${row.contentPx.toFixed(1)} lastRowVisible=${row.lastRowVisible} innerScrollers=${row.innerScrollers}`,
+              );
+            }
             // Plan 39.1-40: one RAILCARDS line per measured reads rail,
             // right after the MEASUREMENT line, whether or not it passed.
             for (const rail of result.railCards ?? []) {

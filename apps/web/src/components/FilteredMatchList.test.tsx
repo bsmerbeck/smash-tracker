@@ -544,11 +544,36 @@ describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () =
     }
   });
 
-  it('table layout: the wrapper around the table still carries the grandfathered 500px scroll box (exemption 2 unchanged)', () => {
+  /**
+   * REWRITTEN by plan 39.1-51 — was "table layout: the wrapper around the
+   * table still carries the grandfathered 500px scroll box (exemption 2
+   * unchanged)". Reason: UI-SPEC §6.4 amended 2026-09-26 (exemption 2
+   * deleted), sketch 003 M14 ("no inner scroller"), OOS-8 (the box's bottom
+   * edge cut the last visible row at 1440). The table now flows in the page,
+   * mirroring the stacked case's walk above.
+   */
+  it('table layout: no element between the root and the table carries a max-height or vertical-overflow utility (OOS-8, §6.4 amended)', () => {
     const { container } = renderList({ matches: [makeMatch()], layout: 'table' });
-    const table = container.querySelector('[data-slot="filtered-match-table"]');
-    expect(table?.closest('.max-h-\\[500px\\]')).not.toBeNull();
-    expect(table?.closest('.overflow-y-auto')).not.toBeNull();
+    const table = container.querySelector('[data-slot="filtered-match-table"]') as HTMLElement;
+    expect(table).not.toBeNull();
+    const root = container.querySelector('[data-slot="filtered-match-list"]');
+    expect(root).not.toBeNull();
+    let node: HTMLElement | null = table;
+    while (node && node !== root) {
+      expect(node.className).not.toMatch(/max-h-|overflow-y-auto|overflow-y-scroll/);
+      node = node.parentElement;
+    }
+    expect(node).toBe(root);
+  });
+
+  it('plan 39.1-51: the root carries data-slot="filtered-match-list" in both layouts (the guard:layout last-row-visible hook)', () => {
+    for (const layout of ['table', 'stack'] as const) {
+      const { container, unmount } = renderList({ matches: [makeMatch()], layout });
+      const roots = container.querySelectorAll('[data-slot="filtered-match-list"]');
+      expect(roots).toHaveLength(1);
+      expect(roots[0]?.querySelector('[data-total-rows]')).not.toBeNull();
+      unmount();
+    }
   });
 });
 
