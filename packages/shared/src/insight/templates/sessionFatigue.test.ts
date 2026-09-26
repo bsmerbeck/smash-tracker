@@ -91,3 +91,95 @@ describe('sessionFatigueTemplate', () => {
     expect(sessionFatigueTemplate.assertsDirection).toBe(true);
   });
 });
+
+/**
+ * Plan 39.1-40 (sketch 002-C, DD-12): the SessionFatigue card's three
+ * game-number buckets. Bucket 1 and bucket 3 are the verdict's own cohorts
+ * (display only — the middle bucket never changes a verdict or a counted
+ * set).
+ */
+describe('sessionFatigue session-buckets mark (39.1-40)', () => {
+  interface Bucket {
+    fromGame: number;
+    toGame: number | null;
+    wins: number;
+    losses: number;
+    total: number;
+  }
+
+  function bucketsOf(insight: NonNullable<ReturnType<typeof buildInsight>>): Bucket[] {
+    expect(insight.mark?.kind).toBe('sessionBuckets');
+    return (insight.mark!.data as { buckets: Bucket[] }).buckets;
+  }
+
+  function claimRecord(claim: { kind: string; value?: { wins: number; losses: number } }) {
+    expect(claim.kind).toBe('evidenced');
+    return { wins: claim.value!.wins, losses: claim.value!.losses };
+  }
+
+  it.each([
+    ['steady', (_s: number, g: number) => g % 2 === 0],
+    ['trend', (_s: number, g: number) => g < 10],
+  ] as const)(
+    'a %s read carries exactly three buckets (1-10, 11-20, 21+); bucket 1 = the baseline claim, bucket 3 = the recent claim',
+    (state, outcome) => {
+      const insight = buildInsight(buildSessionMatches(10, 21, outcome))!;
+      expect(insight.state).toBe(state);
+      const buckets = bucketsOf(insight);
+      expect(buckets.map((b) => [b.fromGame, b.toGame])).toEqual([
+        [1, 10],
+        [11, 20],
+        [21, null],
+      ]);
+      expect({ wins: buckets[0]!.wins, losses: buckets[0]!.losses }).toEqual(
+        claimRecord(insight.baseline),
+      );
+      expect({ wins: buckets[2]!.wins, losses: buckets[2]!.losses }).toEqual(
+        claimRecord(insight.recent),
+      );
+    },
+  );
+
+  it('bucket 2 is games 11-20 of every session that reaches game 11', () => {
+    // 10 long sessions (21 games: wins at games 1-10, losses after) plus two
+    // 15-game sessions (a win on every odd game number) — the short sessions
+    // add games 11-15 (wins at 11, 13, 15) to bucket 2 and nothing to bucket 3.
+    const long = buildSessionMatches(10, 21, (_s, g) => g < 10);
+    const lastTime = long[long.length - 1]!.time;
+    const short: Match[] = [];
+    let t = lastTime + BETWEEN_SESSION_GAP_MS;
+    for (let s = 0; s < 2; s += 1) {
+      for (let g = 0; g < 15; g += 1) {
+        short.push({
+          id: `short${s}g${g}`,
+          fighter_id: 8,
+          opponent_id: 23,
+          time: t,
+          win: g % 2 === 0,
+        });
+        t += WITHIN_SESSION_GAP_MS;
+      }
+      t += BETWEEN_SESSION_GAP_MS;
+    }
+    const insight = buildInsight([...long, ...short])!;
+    const buckets = bucketsOf(insight);
+    expect(buckets[1]).toEqual({ fromGame: 11, toGame: 20, wins: 6, losses: 104, total: 110 });
+    expect(buckets[2]!.total).toBe(10);
+  });
+
+  it('a hidden result carries no mark, and the mark changes neither state, copy nor countedMatchIds', () => {
+    const hidden = buildInsight(buildSessionMatches(9, 21, () => true))!;
+    expect(hidden.state).toBe('hidden');
+    expect(hidden.mark).toBeUndefined();
+
+    const trend = buildInsight(buildSessionMatches(10, 21, (_s, g) => g < 10))!;
+    expect(trend.state).toBe('trend');
+    expect(trend.copy.key).toBe('insights.sessionFatigue.trend');
+    expect(trend.copy.values.caveat).toBeTruthy();
+    // The late cohort: game 21 of each of the ten long sessions.
+    expect(trend.countedMatchIds).toHaveLength(10);
+    expect(new Set(trend.countedMatchIds)).toEqual(
+      new Set(Array.from({ length: 10 }, (_, s) => `s${s}g20`)),
+    );
+  });
+});
