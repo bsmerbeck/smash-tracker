@@ -75,13 +75,19 @@ export function TrendsReadMark({ insight, gamesHref }: TrendsReadMarkProps) {
           rows={[
             {
               key: 'nextGame',
-              label: t('insights.mark.nextGame'),
-              recentRecordNode: (
-                <span className="text-xs leading-4 text-muted-foreground tabular-nums">
+              // Sketch 002-C: a muted meta label, the rate-vs-baseline flush
+              // right in the row's trailing slot (the record slot stays empty).
+              label: (
+                <span className="text-xs leading-4 text-muted-foreground">
+                  {t('insights.mark.nextGame')}
+                </span>
+              ),
+              recentRecordNode: null,
+              deltaNode: (
+                <span className="text-xs leading-4 whitespace-nowrap text-muted-foreground tabular-nums">
                   {t('insights.mark.rateVsBaseline', { rate, baseline: baselineRate })}
                 </span>
               ),
-              deltaNode: null,
               baselineRate: baseline.value.rate * 100,
               recentRate: recent.value.rate * 100,
               recentTotal: recent.value.total,

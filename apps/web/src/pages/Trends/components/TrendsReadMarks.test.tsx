@@ -150,9 +150,10 @@ describe('TrendsReadMark (39.1-40)', () => {
   it("TiltCost (002-C): 'Next game' is a meta label and the rate-vs-baseline sits flush right in the row's trailing slot", () => {
     const insight = ownRead('tiltCost', tiltFixture());
     const { container } = renderMark(insight);
-    const label = [
-      ...container.querySelectorAll('[data-slot="comparison-bars-dumbbell"] span'),
-    ].find((el) => el.textContent === 'Next game')!;
+    // The innermost element carrying the label text (the kit wraps it in its truncating slot).
+    const label = [...container.querySelectorAll('[data-slot="comparison-bars-dumbbell"] span')]
+      .filter((el) => el.textContent === 'Next game')
+      .pop()!;
     expect(label.className).toMatch(/\btext-xs\b/);
     expect(label.className).toMatch(/\btext-muted-foreground\b/);
     const trailing = container.querySelector('[data-slot="dumbbell-delta"]');
