@@ -926,6 +926,37 @@ describe('assembleReportPayload: evidence rows, snapshot, claim set and ranked a
     expect(payload.claimSet.claims.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
   });
 
+  it("API-WR-02: the unmapped fighter-0 bucket is never a row or claim subject, even when it is the opponent's TOP character", async () => {
+    const unmappedFirst: ScoutReportData = {
+      ...THREE_CHARACTER_SCOUT,
+      characters: [
+        { fighterId: 0, games: 14, wins: 7 }, // unmapped bucket, most-played
+        ...THREE_CHARACTER_SCOUT.characters.filter((c) => c.fighterId !== 0),
+      ],
+    };
+    for (const scout of [THREE_CHARACTER_SCOUT, unmappedFirst]) {
+      const database = new FakeDatabase();
+      seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+      const payload = await assembleReportPayload(
+        UID,
+        scout,
+        database as unknown as Parameters<typeof assembleReportPayload>[2],
+      );
+      expect(Object.values(payload.rows).some((row) => row.subject.opponentFighterId === 0)).toBe(
+        false,
+      );
+      expect(payload.claimSet.claims.some((claim) => claim.subject.opponentFighterId === 0)).toBe(
+        false,
+      );
+      // Known top characters still get their advisor row.
+      expect(
+        Object.values(payload.rows).some(
+          (row) => row.predicate === 'matchup_advisor_pick' && row.subject.opponentFighterId === 8,
+        ),
+      ).toBe(true);
+    }
+  });
+
   it('SH-IN-05 (re-homed denominator proof): unknown-stage games never enter a known stage row — the pick-rate denominator is the KNOWN-stage count, and the raw sample still discloses them', async () => {
     // This is where denominators are actually computed (the shared claim
     // builder passes a row's value through unchanged), so the proof that the
