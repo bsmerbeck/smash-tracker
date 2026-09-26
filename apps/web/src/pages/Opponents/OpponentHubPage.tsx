@@ -86,6 +86,7 @@ import { MergedNamesCard } from './components/MergedNamesCard';
 import { TendenciesCard } from './components/TendenciesCard';
 import { ExportH2HButton } from './components/ExportH2HButton';
 import { PrintableEvidencePacket } from './components/PrintableEvidencePacket';
+import { HubPrepBriefCard } from './components/HubPrepBriefCard';
 import {
   groupTournamentBlocks,
   getEncounterContext,
@@ -1030,6 +1031,16 @@ export function OpponentHubPage() {
             />
             <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
           </ChartCard>
+
+          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. */}
+          {targetIdentity && (
+            <HubPrepBriefCard
+              opponentIdentity={targetIdentity}
+              opponentTag={displayTag}
+              resolveOpponent={resolve}
+              tournamentBlocks={tournamentBlocks}
+            />
+          )}
 
           {/*
             Absorbed scouting cards (D-12) — content unchanged, chart.js

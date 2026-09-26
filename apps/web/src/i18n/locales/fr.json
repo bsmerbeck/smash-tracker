@@ -1421,7 +1421,16 @@
         "vs": "Son personnage",
         "stage": "Stage"
       },
-      "empty": "Aucune partie enregistrée contre {{opponent}} pour l'instant."
+      "empty": "Aucune partie enregistrée contre {{opponent}} pour l'instant.",
+      "prepBrief": {
+        "title": "Résumé de préparation",
+        "upcoming": "Vous affronterez probablement {{opponentTag}} à {{eventName}} ({{date}}).",
+        "upcomingCta": "Ouvrir le résumé de préparation",
+        "addEvent": "Ajoutez un événement à venir pour suivre {{opponentTag}} comme adversaire probable.",
+        "addEventCta": "Aller aux tournois",
+        "debrief": "Revenir sur {{eventName}} — {{date}}.",
+        "debriefCta": "Revenir sur cet événement"
+      }
     }
   },
   "stages": {

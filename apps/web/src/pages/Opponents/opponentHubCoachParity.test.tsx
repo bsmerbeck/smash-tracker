@@ -134,7 +134,12 @@ function renderHubAt(initialEntry: string) {
  * subject-family correctness.
  */
 function normalisedText(container: HTMLElement): string {
-  return (container.textContent ?? '')
+  // Plan 39-12 (D-10): the own-account-only prep-brief card is the ONE
+  // deliberate difference between the families — excluded here, and proven
+  // present/absent by `opponentHubPrepBriefOwnAccount.test.tsx`.
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-testid="hub-prep-brief-card"]').forEach((node) => node.remove());
+  return (clone.textContent ?? '')
     .replace(/Generated [^D]*Date range:/, 'Generated <TIME> Date range:')
     .replace(/\s+/g, ' ')
     .trim();
@@ -143,6 +148,7 @@ function normalisedText(container: HTMLElement): string {
 /** Every `[data-slot="card-title"]` text — the section-heading set for the structural (headings-present) half of the parity assertion. */
 function headingSet(): string[] {
   return [...document.querySelectorAll('[data-slot="card-title"]')]
+    .filter((el) => !el.closest('[data-testid="hub-prep-brief-card"]'))
     .map((el) => el.textContent ?? '')
     .sort();
 }

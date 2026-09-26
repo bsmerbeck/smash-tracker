@@ -1,53 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useProfile } from '@/hooks/useProfile';
-import { isAdminImportedEntry } from '@/lib/historicalTournament';
+import { findNearestUpcomingEntry, formatEntryDate } from '@/lib/prepEntryPoints';
 import { PrepManualEntryDialog } from '@/pages/Tournaments/components/PrepManualEntryDialog';
-
-/** Matches `TournamentHeader.tsx`'s exact locale-aware date-formatting call shape. */
-function formatDate(time: number, locale: string): string {
-  return new Date(time).toLocaleDateString(locale, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-/**
- * "Nearest" upcoming entry (D-01): the smallest `firstSetAt` strictly
- * greater than `now`, restricted to entries a routable `entryKey` (the
- * registry always fills it on read, so this only guards defensively
- * against a malformed/legacy record).
- *
- * Phase 30.3 (Gate 6, prep-bypass closure): also excludes every
- * admin-imported historical row (`isAdminImportedEntry`), mirroring
- * `TournamentDetailPage.tsx`'s existing prep-CTA guard — an imported
- * snapshot is a PAST public-data record, so it must never surface here as
- * an "upcoming event" and link into `/tournaments/:entryKey/prep`, even if
- * its imported `firstSetAt` is (mistakenly, or adversarially) recorded in
- * the future. Checked BEFORE the date comparison so a future-dated
- * imported fixture is excluded on the origin alone, never on timing.
- */
-function findNearestUpcomingEntry(
-  entries: TournamentEntry[],
-  now: number,
-): (TournamentEntry & { entryKey: string }) | null {
-  let nearest: (TournamentEntry & { entryKey: string }) | null = null;
-  for (const entry of entries) {
-    if (!entry.entryKey || isAdminImportedEntry(entry) || entry.firstSetAt <= now) {
-      continue;
-    }
-    if (nearest === null || entry.firstSetAt < nearest.firstSetAt) {
-      nearest = entry as TournamentEntry & { entryKey: string };
-    }
-  }
-  return nearest;
-}
 
 /**
  * Phase 26 (PREP-01, D-01/D-04/D-16): the dashboard's ONE prep action slot,
@@ -104,7 +63,7 @@ export function DashboardPrepActionSlot() {
           <p className="text-sm font-medium">
             {t('prep.dashboard.upcoming.title', {
               eventName: nearestEntry.eventName,
-              date: formatDate(nearestEntry.firstSetAt, i18n.language),
+              date: formatEntryDate(nearestEntry.firstSetAt, i18n.language),
             })}
           </p>
           <Button asChild size="sm">

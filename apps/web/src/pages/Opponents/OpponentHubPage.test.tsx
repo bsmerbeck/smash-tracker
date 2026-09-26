@@ -643,6 +643,8 @@ describe('OpponentHubPage', () => {
           'rival',
           'Matchup Matrix',
           'H2H Trend',
+          // Plan 39-12 (PREP-05): the free prep-brief card, own-account only.
+          'Prep brief',
           'What They Play',
           'Stages',
           'Recent Encounters',

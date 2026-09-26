@@ -1421,7 +1421,16 @@
         "vs": "Their character",
         "stage": "Stage"
       },
-      "empty": "No games recorded against {{opponent}} yet."
+      "empty": "No games recorded against {{opponent}} yet.",
+      "prepBrief": {
+        "title": "Prep brief",
+        "upcoming": "You're likely to face {{opponentTag}} at {{eventName}} ({{date}}).",
+        "upcomingCta": "Open prep brief",
+        "addEvent": "Add an upcoming event to start tracking {{opponentTag}} as a likely opponent.",
+        "addEventCta": "Go to tournaments",
+        "debrief": "Review {{eventName}} — {{date}}.",
+        "debriefCta": "Review this event"
+      }
     }
   },
   "stages": {

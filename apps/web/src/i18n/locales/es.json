@@ -1421,7 +1421,16 @@
         "vs": "Su personaje",
         "stage": "Escenario"
       },
-      "empty": "Aún no hay partidas registradas contra {{opponent}}."
+      "empty": "Aún no hay partidas registradas contra {{opponent}}.",
+      "prepBrief": {
+        "title": "Resumen de preparación",
+        "upcoming": "Es probable que te enfrentes a {{opponentTag}} en {{eventName}} ({{date}}).",
+        "upcomingCta": "Abrir resumen de preparación",
+        "addEvent": "Añade un próximo evento para empezar a seguir a {{opponentTag}} como posible rival.",
+        "addEventCta": "Ir a torneos",
+        "debrief": "Revisa {{eventName}} — {{date}}.",
+        "debriefCta": "Revisar este evento"
+      }
     }
   },
   "stages": {

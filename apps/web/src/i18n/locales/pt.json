@@ -1421,7 +1421,16 @@
         "vs": "Personagem dele(a)",
         "stage": "Estágio"
       },
-      "empty": "Ainda não há partidas registradas contra {{opponent}}."
+      "empty": "Ainda não há partidas registradas contra {{opponent}}.",
+      "prepBrief": {
+        "title": "Briefing de preparação",
+        "upcoming": "Você provavelmente vai enfrentar {{opponentTag}} em {{eventName}} ({{date}}).",
+        "upcomingCta": "Abrir briefing de preparação",
+        "addEvent": "Adicione um próximo evento para começar a acompanhar {{opponentTag}} como provável adversário.",
+        "addEventCta": "Ir para torneios",
+        "debrief": "Revise {{eventName}} — {{date}}.",
+        "debriefCta": "Revisar este evento"
+      }
     }
   },
   "stages": {

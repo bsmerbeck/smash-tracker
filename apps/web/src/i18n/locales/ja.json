@@ -1421,7 +1421,16 @@
         "vs": "相手のキャラクター",
         "stage": "ステージ"
       },
-      "empty": "{{opponent}}との対戦記録はまだありません。"
+      "empty": "{{opponent}}との対戦記録はまだありません。",
+      "prepBrief": {
+        "title": "準備ブリーフィング",
+        "upcoming": "{{eventName}}（{{date}}）で{{opponentTag}}と対戦する可能性があります。",
+        "upcomingCta": "準備ブリーフィングを開く",
+        "addEvent": "今後のイベントを追加すると、{{opponentTag}}を対戦候補として追跡できます。",
+        "addEventCta": "大会へ移動",
+        "debrief": "{{eventName}}を振り返る — {{date}}",
+        "debriefCta": "このイベントを振り返る"
+      }
     }
   },
   "stages": {

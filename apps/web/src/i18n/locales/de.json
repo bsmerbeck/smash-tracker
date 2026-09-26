@@ -1421,7 +1421,16 @@
         "vs": "Gegnerischer Charakter",
         "stage": "Stage"
       },
-      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet."
+      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet.",
+      "prepBrief": {
+        "title": "Vorbereitungs-Briefing",
+        "upcoming": "Du triffst wahrscheinlich bei {{eventName}} ({{date}}) auf {{opponentTag}}.",
+        "upcomingCta": "Vorbereitungs-Briefing öffnen",
+        "addEvent": "Füge ein bevorstehendes Event hinzu, um {{opponentTag}} als wahrscheinlichen Gegner zu verfolgen.",
+        "addEventCta": "Zu den Turnieren",
+        "debrief": "{{eventName}} auswerten — {{date}}.",
+        "debriefCta": "Dieses Event auswerten"
+      }
     }
   },
   "stages": {
