@@ -118,6 +118,9 @@ export const MAX_EVENT_POINT_LABELS = 8;
 /** The minimum distance (px) between two labelled anchors' centres — a W-L label ("12–10") is about 35px wide at the axis font. */
 const MIN_EVENT_LABEL_SPACING_PX = 44;
 
+/** Plan 39.1-39: the clear gap (px) kept between two W-L labels when their widths are known. */
+const EVENT_LABEL_GAP_PX = 4;
+
 /**
  * WHICH anchors carry an on-chart W-L label: a subsequence of
  * `selectEventTicks(anchorKeys, width)` capped at `MAX_EVENT_POINT_LABELS` by
@@ -126,8 +129,18 @@ const MIN_EVENT_LABEL_SPACING_PX = 44;
  * plotted category band (px); a kept middle anchor closer than
  * `MIN_EVENT_LABEL_SPACING_PX` to its predecessor or to the last anchor is
  * dropped, so two labels never overprint.
+ *
+ * Plan 39.1-39: `labelWidthPx` (optional) makes the spacing width-aware —
+ * binned event trends carry wide labels ("293–214"), so a kept label must
+ * also clear its predecessor's own width (labels start just right of their
+ * dot) and, before the end-anchored last label, both widths. Without it the
+ * rule is unchanged.
  */
-export function selectEventLabelKeys(anchorKeys: readonly string[], width: number): string[] {
+export function selectEventLabelKeys(
+  anchorKeys: readonly string[],
+  width: number,
+  labelWidthPx?: (key: string) => number,
+): string[] {
   const ticks = selectEventTicks(anchorKeys, width);
   if (ticks.length <= 2) {
     return ticks;
@@ -150,9 +163,15 @@ export function selectEventLabelKeys(anchorKeys: readonly string[], width: numbe
   const first = capped[0]!;
   const last = capped[capped.length - 1]!;
   const kept = [first];
+  const widthOf = (key: string): number => labelWidthPx?.(key) ?? 0;
   for (const key of capped.slice(1, -1)) {
-    const clearsPrevious = xOf(key) - xOf(kept[kept.length - 1]!) >= MIN_EVENT_LABEL_SPACING_PX;
-    const clearsLast = xOf(last) - xOf(key) >= MIN_EVENT_LABEL_SPACING_PX;
+    const previous = kept[kept.length - 1]!;
+    const clearsPrevious =
+      xOf(key) - xOf(previous) >=
+      Math.max(MIN_EVENT_LABEL_SPACING_PX, widthOf(previous) + EVENT_LABEL_GAP_PX);
+    const clearsLast =
+      xOf(last) - xOf(key) >=
+      Math.max(MIN_EVENT_LABEL_SPACING_PX, widthOf(key) + widthOf(last) + EVENT_LABEL_GAP_PX);
     if (clearsPrevious && clearsLast) {
       kept.push(key);
     }

@@ -307,7 +307,20 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
     const yTicks = rateDomainTicks(domain, model.valueBottomPx - model.valueTopPx);
     // At most MAX_EVENT_POINT_LABELS anchors carry their W-L label; every
     // anchor's record stays in its tooltip.
-    const labelledKeys = new Set(selectEventLabelKeys(anchorKeys, model.plotWidthPx));
+    // Plan 39.1-39: width-aware — a binned trend's labels ("293–214") are
+    // wider than the fixed spacing assumes, so each label's estimated width
+    // (plus its inset off the dot) keeps them from overprinting.
+    const pointByKey = new Map(eventPoints.map((point) => [point.eventKey, point]));
+    const labelledKeys = new Set(
+      selectEventLabelKeys(anchorKeys, model.plotWidthPx, (key) => {
+        const point = pointByKey.get(key);
+        return point
+          ? estimateTickLabelWidthPx(
+              t('opponents.hub.trend.pointLabel', { wins: point.wins, losses: point.losses }),
+            ) + EVENT_POINT_LABEL_INSET_PX
+          : 0;
+      }),
+    );
 
     chart = (
       <LineChart
