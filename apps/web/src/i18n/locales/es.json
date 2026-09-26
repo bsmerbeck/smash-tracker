@@ -1284,7 +1284,8 @@
         "setFormatTopCut": "Formato de set en el top cut",
         "saved": "Reglas guardadas para este evento.",
         "saveFailed": "No se pudieron guardar las reglas de este evento."
-      }
+      },
+      "debriefCta": "Analizar este evento"
     }
   },
   "billing": {
@@ -2919,6 +2920,10 @@
       "addEvent": {
         "title": "Añade tu próximo evento para empezar a prepararte",
         "cta": "Añadir evento"
+      },
+      "review": {
+        "title": "Revisa {{eventName}} — {{date}}",
+        "cta": "Revisar este evento"
       }
     },
     "manualEntry": {

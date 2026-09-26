@@ -1284,7 +1284,8 @@
         "setFormatTopCut": "トップカットのセット形式",
         "saved": "この大会のルールを保存しました。",
         "saveFailed": "この大会のルールを保存できませんでした。"
-      }
+      },
+      "debriefCta": "このイベントを振り返る"
     }
   },
   "billing": {
@@ -2919,6 +2920,10 @@
       "addEvent": {
         "title": "今後のイベントを追加して準備を始めましょう",
         "cta": "イベントを追加"
+      },
+      "review": {
+        "title": "{{eventName}}を振り返る — {{date}}",
+        "cta": "このイベントを振り返る"
       }
     },
     "manualEntry": {

@@ -1284,7 +1284,8 @@
         "setFormatTopCut": "Set-Format im Top-Cut",
         "saved": "Regelwerk für dieses Event gespeichert.",
         "saveFailed": "Regelwerk für dieses Event konnte nicht gespeichert werden."
-      }
+      },
+      "debriefCta": "Event nachbesprechen"
     }
   },
   "billing": {
@@ -2919,6 +2920,10 @@
       "addEvent": {
         "title": "Füge dein bevorstehendes Event hinzu, um mit der Vorbereitung zu beginnen",
         "cta": "Event hinzufügen"
+      },
+      "review": {
+        "title": "{{eventName}} auswerten — {{date}}",
+        "cta": "Dieses Event auswerten"
       }
     },
     "manualEntry": {

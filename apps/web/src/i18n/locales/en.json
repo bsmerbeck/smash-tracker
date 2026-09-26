@@ -1284,7 +1284,8 @@
         "setFormatTopCut": "Top-cut set format",
         "saved": "Ruleset saved for this event.",
         "saveFailed": "Could not save the ruleset for this event."
-      }
+      },
+      "debriefCta": "Debrief this event"
     }
   },
   "billing": {
@@ -2919,6 +2920,10 @@
       "addEvent": {
         "title": "Add your upcoming event to start prepping",
         "cta": "Add event"
+      },
+      "review": {
+        "title": "Review {{eventName}} — {{date}}",
+        "cta": "Review this event"
       }
     },
     "manualEntry": {

@@ -16,6 +16,7 @@ import { useMatches } from '@/hooks/useMatches';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
+import { derivePrepSurfaceMode } from '@/lib/prepSurfaceMode';
 import { TournamentHeader } from './components/TournamentHeader';
 import { EventResults } from './components/EventResults';
 import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
@@ -25,6 +26,13 @@ import { AdvisorRetrospective } from './components/AdvisorRetrospective';
 import { RulesetOverrideSection } from './components/RulesetOverrideSection';
 import { GenerateRecapDialog } from './components/GenerateRecapDialog';
 import { buildRetrospective } from './lib/retrospective';
+
+/** The one CTA's label per state — the same button element, test id, size and position in every state (UI-SPEC E6). */
+const PREP_CTA_LABEL_KEYS = {
+  start: 'prep.cta.start',
+  reopen: 'prep.cta.open',
+  debrief: 'tournaments.detail.debriefCta',
+} as const;
 
 function NotFoundState() {
   const { t } = useTranslation();
@@ -278,15 +286,26 @@ export function TournamentDetailPage() {
   // brief exists" — mirrors DashboardPrepActionSlot.tsx's isPending ||
   // isError handling so this CTA never guesses "Start" over an already-
   // activated brief just because the read errored.
-  const prepCtaState: 'start' | 'reopen' | 'none' = isImported
+  //
+  // Plan 39-12 (PREP-05, D-13, review C1-H6): `debrief` is a REFINEMENT of
+  // `reopen` — both need an activated brief, and only the server's
+  // `reviewAt` tells them apart, through the destination page's own
+  // `derivePrepSurfaceMode`, so a debrief label always lands in review mode.
+  // Never an entry-date comparison (28-CONTEXT.md "⚠ ONE CORRECTION"). No
+  // fourteen-day cap here: the destination stays in review mode for good
+  // once converted, so a cap would offer `reopen` for a page that renders
+  // review. The two guards above still come first (C1-H7).
+  const prepCtaState: 'start' | 'reopen' | 'debrief' | 'none' = isImported
     ? 'none'
     : prepBriefQuery.isPending || prepBriefQuery.isError
       ? 'none'
-      : prepBriefQuery.data?.activated
-        ? 'reopen'
-        : entry.firstSetAt > now
-          ? 'start'
-          : 'none';
+      : derivePrepSurfaceMode(prepBriefQuery.data, now) === 'review'
+        ? 'debrief'
+        : prepBriefQuery.data?.activated
+          ? 'reopen'
+          : entry.firstSetAt > now
+            ? 'start'
+            : 'none';
 
   const showActionRow = canGenerateRecap || prepCtaState !== 'none';
 
@@ -302,7 +321,7 @@ export function TournamentDetailPage() {
             // here would break that separation.
             <Button asChild data-testid="tournament-prep-cta">
               <Link to={`/tournaments/${entry.entryKey}/prep`}>
-                {t(prepCtaState === 'reopen' ? 'prep.cta.open' : 'prep.cta.start')}
+                {t(PREP_CTA_LABEL_KEYS[prepCtaState])}
               </Link>
             </Button>
           )}

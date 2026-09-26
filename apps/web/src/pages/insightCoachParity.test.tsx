@@ -232,7 +232,19 @@ function defaultProfile() {
 
 /** Collapses whitespace so layout-only differences (line wraps) never register as a content divergence — the same helper `matchupsCoachParity.test.tsx`/`stageDetailCoachParity.test.tsx` use. */
 function normalisedText(container: HTMLElement): string {
-  return (container.textContent ?? '').replace(/\s+/g, ' ').trim();
+  return (withoutOwnAccountOnlyCards(container).textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Plan 39-12 (D-10): the opponent hub's prep-brief card is own-account only —
+ * the ONE deliberate difference between the families (proven present/absent
+ * by `opponentHubPrepBriefOwnAccount.test.tsx`), so it is removed before
+ * either parity comparison. Everything else still has to match exactly.
+ */
+function withoutOwnAccountOnlyCards(container: HTMLElement): HTMLElement {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-testid="hub-prep-brief-card"]').forEach((node) => node.remove());
+  return clone;
 }
 
 /** Strips a leading `/coach/:id` or `/workspace/:id` segment so an href built by `useSubjectPath` compares equal across the three route families. */
@@ -250,7 +262,7 @@ function stripSubjectPrefix(href: string): string {
  * identity markers, same destinations once the subject prefix is ignored.
  */
 function domSignature(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('*')).map((el) => {
+  return Array.from(withoutOwnAccountOnlyCards(container).querySelectorAll('*')).map((el) => {
     const role = el.getAttribute('role') ?? '';
     const dataSlot = el.getAttribute('data-slot') ?? '';
     const href = el.getAttribute('href');

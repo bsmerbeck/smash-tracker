@@ -2,7 +2,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import type { TournamentEntry } from '@smash-tracker/shared';
+import type { PrepBriefStatus, TournamentEntry } from '@smash-tracker/shared';
+import { FOURTEEN_DAYS_MS } from '@/lib/prepEntryPoints';
+import { derivePrepSurfaceMode } from '@/lib/prepSurfaceMode';
 import { DashboardPrepActionSlot } from './DashboardPrepActionSlot';
 
 const useTournamentEntries = vi.fn();
@@ -14,6 +16,27 @@ const useProfile = vi.fn();
 vi.mock('@/hooks/useProfile', () => ({
   useProfile: () => useProfile(),
 }));
+
+// Plan 39-12: the review state's server status. Keyed by entryKey; an
+// `undefined` key (no candidate) is the hook's disabled, request-free call.
+const usePrepBrief = vi.fn();
+vi.mock('@/hooks/usePrepBrief', () => ({
+  usePrepBrief: (entryKey: string | undefined) => usePrepBrief(entryKey),
+}));
+
+type BriefRead = PrepBriefStatus | 'pending' | 'error';
+function mockBriefs(byKey: Record<string, BriefRead>) {
+  usePrepBrief.mockImplementation((entryKey: string | undefined) => {
+    const read = entryKey === undefined ? 'pending' : byKey[entryKey];
+    if (read === undefined || read === 'pending') {
+      return { data: undefined, isPending: true, isError: false, isSuccess: false };
+    }
+    if (read === 'error') {
+      return { data: undefined, isPending: false, isError: true, isSuccess: false };
+    }
+    return { data: read, isPending: false, isError: false, isSuccess: true };
+  });
+}
 
 vi.mock('@/pages/Tournaments/components/PrepManualEntryDialog', () => ({
   PrepManualEntryDialog: ({ open }: { open: boolean }) =>
@@ -42,6 +65,7 @@ function renderSlot() {
 describe('DashboardPrepActionSlot', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBriefs({});
   });
 
   it('renders nothing while either query is pending — unknown is not "no upcoming event"', () => {
@@ -197,5 +221,180 @@ describe('DashboardPrepActionSlot', () => {
       'href',
       '/tournaments/genuine-future/prep',
     );
+  });
+  describe('the review state (plan 39-12, D-13, C1-H6/C1-H7/C1-M6)', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const NOW = Date.now();
+    const inWindow: PrepBriefStatus = { activated: true, reviewAt: NOW - DAY_MS };
+    const pastEntry = makeEntry({
+      entryKey: 'past',
+      eventName: 'Old Locals',
+      firstSetAt: NOW - 3 * DAY_MS,
+      lastSetAt: NOW - 3 * DAY_MS,
+    });
+
+    function withEntries(entries: TournamentEntry[], intent: string | null = null) {
+      useTournamentEntries.mockReturnValue({ data: entries, isPending: false, isError: false });
+      useProfile.mockReturnValue({
+        data: { onboardingIntent: intent },
+        isPending: false,
+        isError: false,
+      });
+    }
+
+    function slotState(): string | null {
+      const slots = screen.queryAllByTestId('dashboard-prep-action-slot');
+      expect(slots.length).toBeLessThanOrEqual(1);
+      return slots[0]?.getAttribute('data-state') ?? null;
+    }
+
+    it('offers the review door for the most recent past entry whose server status is inside the fourteen-day window', () => {
+      withEntries([pastEntry]);
+      mockBriefs({ past: inWindow });
+      renderSlot();
+
+      expect(slotState()).toBe('review');
+      expect(screen.getByTestId('dashboard-prep-action-slot')).toHaveTextContent(
+        'Review Old Locals',
+      );
+      expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
+        'href',
+        '/tournaments/past/prep',
+      );
+      expect(screen.getByTestId('dashboard-prep-action-slot').textContent).not.toMatch(
+        /Invalid Date|NaN/,
+      );
+    });
+
+    it('the same qualifying status resolves to review on the destination page (derivePrepSurfaceMode)', () => {
+      expect(derivePrepSurfaceMode(inWindow)).toBe('review');
+    });
+
+    it('C1-M6: a reviewable entry AND onboardingIntent "prepare" shows REVIEW, not add-event', () => {
+      withEntries([pastEntry], 'prepare');
+      mockBriefs({ past: inWindow });
+      renderSlot();
+
+      expect(slotState()).toBe('review');
+      expect(screen.queryByRole('button', { name: 'Add event' })).not.toBeInTheDocument();
+    });
+
+    it('upcoming wins over a reviewable entry, and the review status is not even read', () => {
+      const upcoming = makeEntry({
+        entryKey: 'next',
+        eventName: 'Next Regional',
+        firstSetAt: NOW + DAY_MS,
+      });
+      withEntries([pastEntry, upcoming], 'prepare');
+      mockBriefs({ past: inWindow });
+      renderSlot();
+
+      expect(slotState()).toBe('upcoming');
+      expect(usePrepBrief).not.toHaveBeenCalledWith('past');
+    });
+
+    it.each<[string, PrepBriefStatus]>([
+      ['not activated', { activated: false, reviewAt: NOW - DAY_MS }],
+      ['activated with reviewAt absent', { activated: true }],
+      ['reviewAt in the future', { activated: true, reviewAt: NOW + DAY_MS }],
+      [
+        'reviewAt older than fourteen days',
+        { activated: true, reviewAt: NOW - FOURTEEN_DAYS_MS - DAY_MS },
+      ],
+    ])(
+      'no review state when the server status is %s (falls to add-event / nothing)',
+      (_label, status) => {
+        withEntries([pastEntry], 'prepare');
+        mockBriefs({ past: status });
+        const { unmount } = renderSlot();
+        expect(usePrepBrief).toHaveBeenCalledWith('past');
+        expect(slotState()).toBe('addEvent');
+        unmount();
+
+        withEntries([pastEntry], null);
+        renderSlot();
+        expect(slotState()).toBeNull();
+      },
+    );
+
+    it('a manually-entered event whose firstSetAt is the start of today opens NO review — no server reviewAt exists for it', () => {
+      const startOfToday = new Date(NOW);
+      startOfToday.setHours(0, 0, 0, 0);
+      const manualToday = makeEntry({
+        entryKey: 'today',
+        eventName: 'Today Locals',
+        source: 'manual',
+        firstSetAt: startOfToday.getTime(),
+        lastSetAt: startOfToday.getTime(),
+      });
+      withEntries([manualToday]);
+      mockBriefs({ today: { activated: true } });
+      renderSlot();
+
+      expect(usePrepBrief).toHaveBeenCalledWith('today');
+      expect(slotState()).toBeNull();
+    });
+
+    it('a pending or errored brief read falls through to the next state rather than guessing', () => {
+      for (const read of ['pending', 'error'] as const) {
+        withEntries([pastEntry], 'prepare');
+        mockBriefs({ past: read });
+        const { unmount } = renderSlot();
+        expect(slotState()).toBe('addEvent');
+        unmount();
+      }
+    });
+
+    it('C1-H7: a past-dated ADMIN-IMPORTED entry never produces a review state, and its status is never read', () => {
+      const importedRecent = makeEntry({
+        entryKey: 'imported',
+        eventName: 'Imported Major',
+        firstSetAt: NOW - DAY_MS,
+        lastSetAt: NOW - DAY_MS,
+        origin: 'admin-imported',
+      } as Partial<TournamentEntry> & { entryKey: string; origin: string });
+      withEntries([importedRecent]);
+      mockBriefs({ imported: inWindow });
+      renderSlot();
+
+      expect(slotState()).toBeNull();
+      expect(usePrepBrief).not.toHaveBeenCalledWith('imported');
+    });
+
+    it('C1-H7: the origin check comes first — a MORE RECENT imported entry never displaces an older genuine one as the candidate', () => {
+      const importedRecent = makeEntry({
+        entryKey: 'imported',
+        eventName: 'Imported Major',
+        firstSetAt: NOW - DAY_MS,
+        lastSetAt: NOW - DAY_MS,
+        origin: 'admin-imported',
+      } as Partial<TournamentEntry> & { entryKey: string; origin: string });
+      withEntries([importedRecent, pastEntry]);
+      mockBriefs({ imported: inWindow, past: inWindow });
+      renderSlot();
+
+      expect(slotState()).toBe('review');
+      expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
+        'href',
+        '/tournaments/past/prep',
+      );
+      expect(usePrepBrief).not.toHaveBeenCalledWith('imported');
+    });
+
+    it('an entry with no usable end date leaves the slot in an existing state and renders no invalid date', () => {
+      const undated = makeEntry({
+        entryKey: 'undated',
+        eventName: 'Undated Weekly',
+        firstSetAt: 0,
+        lastSetAt: 0,
+      });
+      withEntries([undated], 'prepare');
+      mockBriefs({ undated: inWindow });
+      const { container } = renderSlot();
+
+      expect(slotState()).toBe('addEvent');
+      expect(container.textContent).not.toMatch(/Invalid Date|NaN/);
+      expect(usePrepBrief).not.toHaveBeenCalledWith('undated');
+    });
   });
 });

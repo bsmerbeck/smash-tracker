@@ -13,6 +13,7 @@ import { TournamentDetailPage } from './TournamentDetailPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { SpriteList } from '@/data/sprites';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
+import { derivePrepSurfaceMode } from '@/lib/prepSurfaceMode';
 
 vi.mock('@/hooks/usePrepBrief', () => ({
   usePrepBrief: vi.fn(),
@@ -84,11 +85,22 @@ vi.mock('@/lib/api', async () => {
 const mockUsePrepBrief = vi.mocked(usePrepBrief);
 
 /** Convenience wrapper matching `usePrepBrief`'s consumed shape (`isPending`/`isError`/`data.activated`). */
-function mockPrepBrief(state: { isPending: boolean; isError?: boolean; activated?: boolean }) {
+function mockPrepBrief(state: {
+  isPending: boolean;
+  isError?: boolean;
+  activated?: boolean;
+  reviewAt?: number;
+}) {
   mockUsePrepBrief.mockReturnValue({
     isPending: state.isPending,
     isError: Boolean(state.isError),
-    data: state.isPending || state.isError ? undefined : { activated: Boolean(state.activated) },
+    data:
+      state.isPending || state.isError
+        ? undefined
+        : {
+            activated: Boolean(state.activated),
+            ...(state.reviewAt !== undefined ? { reviewAt: state.reviewAt } : {}),
+          },
   } as unknown as ReturnType<typeof usePrepBrief>);
 }
 
@@ -467,6 +479,123 @@ describe('TournamentDetailPage', () => {
 
       expect(await screen.findByTestId('tournament-prep-cta')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
+    });
+
+    // Plan 39-12 (PREP-05, D-13, review C1-H6): `debrief` refines `reopen` —
+    // both need an activated brief; only the SERVER's reviewAt separates
+    // them, through the destination page's own derivePrepSurfaceMode.
+    describe('debrief state (plan 39-12)', () => {
+      const HOUR_MS = 60 * 60 * 1000;
+
+      it('shows Debrief this event for an ACTIVATED entry whose server reviewAt has passed, linking to the prep page', async () => {
+        const entry = makeEntry({ eventId: 42 });
+        listTournaments.mockResolvedValue([entry]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: true, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        const cta = await screen.findByTestId('tournament-prep-cta');
+        expect(cta).toHaveTextContent('Debrief this event');
+        expect(cta).toHaveAttribute('href', `/tournaments/${entry.entryKey}/prep`);
+      });
+
+      it('the debrief-qualifying status resolves to review on the destination (derivePrepSurfaceMode), so the CTA cannot land on prep', () => {
+        expect(derivePrepSurfaceMode({ activated: true, reviewAt: Date.now() - HOUR_MS })).toBe(
+          'review',
+        );
+        // The rejected pre-review condition (not activated, event passed) never resolves to review.
+        expect(derivePrepSurfaceMode({ activated: false, reviewAt: Date.now() - HOUR_MS })).toBe(
+          'prep',
+        );
+      });
+
+      it.each([
+        ['absent', undefined],
+        ['still in the future', Date.now() + 24 * HOUR_MS],
+      ])(
+        'shows Open prep brief (reopen) for an activated entry whose reviewAt is %s',
+        async (_label, reviewAt) => {
+          listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+          listMatches.mockResolvedValue([]);
+          mockPrepBrief({ isPending: false, activated: true, reviewAt });
+
+          renderPage('42');
+
+          expect(await screen.findByTestId('tournament-prep-cta')).toHaveTextContent(
+            'Open prep brief',
+          );
+        },
+      );
+
+      it('a NOT-activated past entry with a passed reviewAt shows no debrief CTA (it could never land in review)', async () => {
+        listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: false, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('an imported entry with a debrief-qualifying status still renders no CTA (the origin guard comes first)', async () => {
+        listTournaments.mockResolvedValue([
+          makeEntry({ eventId: 42, origin: 'admin-imported' } as Partial<TournamentEntry>),
+        ]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: true, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('a pending brief query still renders no CTA', async () => {
+        listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: true });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('start, reopen and debrief render the SAME button element — label only differs', async () => {
+        const shapes: { tag: string; className: string; href: string | null; text: string }[] = [];
+        const cases = [
+          { entry: { firstSetAt: Date.now() + 24 * HOUR_MS }, brief: { activated: false } },
+          { entry: {}, brief: { activated: true } },
+          { entry: {}, brief: { activated: true, reviewAt: Date.now() - HOUR_MS } },
+        ];
+        for (const { entry, brief } of cases) {
+          listTournaments.mockResolvedValue([makeEntry({ eventId: 42, ...entry })]);
+          listMatches.mockResolvedValue([]);
+          mockPrepBrief({ isPending: false, ...brief });
+          const view = renderPage('42');
+          const cta = await screen.findByTestId('tournament-prep-cta');
+          shapes.push({
+            tag: cta.tagName,
+            className: cta.className,
+            href: cta.getAttribute('href'),
+            text: cta.textContent ?? '',
+          });
+          view.unmount();
+        }
+
+        expect(shapes.map((shape) => shape.text)).toEqual([
+          'Start prep brief',
+          'Open prep brief',
+          'Debrief this event',
+        ]);
+        for (const shape of shapes.slice(1)) {
+          expect(shape.tag).toBe(shapes[0]!.tag);
+          expect(shape.className).toBe(shapes[0]!.className);
+          expect(shape.href).toBe(shapes[0]!.href);
+        }
+      });
     });
   });
 
