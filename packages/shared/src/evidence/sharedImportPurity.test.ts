@@ -41,6 +41,27 @@ describe('evidence/ directory import purity (T-39-01-07 / review C1-B2)', () => 
     expect(listSourceFiles().length).toBeGreaterThan(0);
   });
 
+  it('SH-IN-01: the pattern itself convicts every import form — static, re-export, dynamic, side-effect-only and require — and nothing else', () => {
+    for (const offender of [
+      "import { createHash } from 'node:crypto';",
+      "export { readFileSync } from 'node:fs';",
+      "const fs = await import('node:fs');",
+      "import 'node:crypto';",
+      'import "node:process";',
+      "const fs = require('node:fs');",
+      "const path = require ( 'node:path' );",
+    ]) {
+      expect(NODE_SPECIFIER_PATTERN.test(offender), offender).toBe(true);
+    }
+    for (const clean of [
+      "import { z } from 'zod';",
+      "import './claims.js';",
+      "const label = 'node:crypto is banned here';",
+    ]) {
+      expect(NODE_SPECIFIER_PATTERN.test(clean), clean).toBe(false);
+    }
+  });
+
   it('no non-test module under packages/shared/src/evidence/ imports a node: specifier', () => {
     const offenders: string[] = [];
     for (const file of listSourceFiles()) {
