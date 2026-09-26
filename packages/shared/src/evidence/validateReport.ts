@@ -636,7 +636,10 @@ function lintSectionProse(
   // every token-bounded occurrence (longest tag first) consumes its span, so
   // the digits inside it ("Sparg0", "Zer0Frame 2") are never read as figures
   // by the digit rule below. Whether the tag itself is licensed is judged by
-  // the tag check further down; consuming never licenses anything.
+  // the tag check further down; consuming never licenses anything. Review
+  // R3-IN-02 (iteration 3): only a tag that contains at least one LETTER is
+  // consumed. A digit-only tag ("7") is indistinguishable from a figure, so
+  // consuming it would exempt every equal figure in the section.
   const licensedTags = new Set<string>();
   for (const claim of licensedClaims) {
     if (claim.subject.opponentTag !== null) {
@@ -650,7 +653,7 @@ function lintSectionProse(
     }
   }
   for (const tag of [...allKnownTags].sort((a, b) => b.length - a.length)) {
-    if (tag.length === 0) {
+    if (!/\p{L}/u.test(tag)) {
       continue;
     }
     const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
