@@ -67,3 +67,79 @@ bad-shaped can be delivered", never as "the model never tries".
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are
 recorded in the owner's terms; this map is where their proofs are named. Neither stands in for the
 other.
+
+## Phase-close gate
+
+Phase 39 is not done until every command below exits zero, run from the repo root, in this order.
+Each one is read from a `package.json` script: the root `test`, `typecheck` and `lint` scripts
+(`package.json`), the web `guard:chart-bundle` script (`apps/web/package.json`), and each
+package's `test` script (`vitest run`) scoped to named files through `pnpm --filter <package> exec
+vitest run <files>`, the same form the phase's plans use. Nothing invokes `tsc` or a test runner
+outside those scripts. (The web `test` script cannot take a file argument, because it chains
+`test:guards`, so file-scoped web runs use the `exec` form.)
+
+1. `pnpm test`: the shared build, then every package's `test` script (shared, API, and web
+   including its `test:guards` node suite).
+2. `pnpm typecheck`: the shared build, then every package's `typecheck` script (`tsc -b --noEmit`
+   on web).
+3. `pnpm lint`: every package's `lint` script. The web warning budget is 54, with zero errors.
+4. `pnpm --filter @smash-tracker/api exec vitest run src/research/lockedContracts.test.ts`: the
+   locked-contract suite (the activation gate and bundle refund math blocks, executed and
+   baseline-counted).
+5. `pnpm --filter @smash-tracker/web exec vitest run src/pages/Tournaments/prep/prepStructuralIntegrity.test.ts src/pages/Opponents/opponentHubPrepBriefStructuralIntegrity.test.ts`:
+   the two structural scanners (the existing prep one and the hub one).
+6. `pnpm --filter @smash-tracker/web run guard:chart-bundle`: the web bundle guard. Its eager-byte
+   ceiling is `EAGER_BYTES_BASELINE` (1,126,712, never edited) plus `EAGER_BYTES_TOLERANCE`
+   (16 KiB), which is 1,143,096 bytes.
+7. `pnpm --filter @smash-tracker/shared exec vitest run src/evidence/val03Acceptance.test.ts src/evidence/val03CoverageMap.test.ts`:
+   this plan's stop-ship suite and this map's anti-drift test.
+
+## UAT checklist for the two non-CI dimensions
+
+A tester can follow these without reading any plan. Per the project's UAT protocol, Codex drives
+the browser first. Any item Codex cannot run because the API is network-blocked in its sandbox
+(`BLOCKED(network)`) ESCALATES TO THE OWNER, as does any failure Codex cannot diagnose. The Codex
+lane is currently down, so expect the owner to run these. Record `PASS`, `FAIL` or `BLOCKED` per
+item, with what was observed.
+
+1. **Coach view (row 16; IzAw coach pass).** Sign in as a coach with an active client subject.
+   1. Open the client's dashboard (`/coach/:clientId/dashboard`). Confirm there is no prep or
+      debrief slot at all: no "Prep brief", no "review your last event", no add-event door.
+   2. Open an opponent hub under the client (`/coach/:clientId/opponents/:opponentTag`). Confirm
+      there is no "Prep brief" card and no debrief card.
+   3. Confirm no link on either page leads to a `/tournaments/...` or `/tournaments/:entryKey/prep`
+      page, to `/reports`, or to any other subject's pages. Every link keeps the
+      `/coach/:clientId` prefix or is ordinary app chrome.
+   4. Open a tournament detail page (`/tournaments/:eventId`). It is an own-account route, so it
+      shows the coach's own entries only. Confirm its prep/debrief button, if any, links to the
+      coach's own `/tournaments/:entryKey/prep`, never to a client's.
+   5. On every client-scoped page, confirm no paid vocabulary is visible: no credits, price, buy,
+      purchase, unlock, upgrade, checkout or Stripe wording, and no paid report card.
+   6. Repeat steps 1 to 3 and 5 under a workspace subject (`/workspace/:tenantId/...`).
+2. **Prep to paid to debrief (row 16; own account, sparg0-shaped).** Sign in as yourself, with at
+   least one upcoming tournament entry and one opponent listed as likely on it.
+   1. On the dashboard, the prep slot names the nearest upcoming event. Open it. The prep brief
+      shows at most three recommended actions. Each action's door opens a real page (a matchup,
+      a VOD or a drill) with the right fighter, stage or VOD selected.
+   2. On that opponent's hub, the "Prep brief" card links to the same prep page.
+   3. Paid report: the activation gate ships OFF (`PREP_PAID_REPORTS_ENABLED`, production-gap
+      checklist item 11 in `docs/smash-tracker-handoff.md`), so no paid card appears unless the
+      gate is on in the environment under test. If it is on, open a generated claims-era report
+      (generating a new one makes a real, paid model call, so only do that with the owner's
+      approval). Confirm every figure on each evidence line matches the sentence it sits in. If
+      the report shows "some commentary was withheld because it could not be verified", confirm
+      the rest of the report still reads cleanly.
+   4. Open a report generated before phase 39. It still opens and carries the legacy/unvalidated
+      label.
+   5. After an event ends (or using an entry whose end date is within the last 14 days), confirm:
+      the dashboard shows "review your last event"; the tournament detail page shows the debrief
+      button; the hub card for an opponent you met there shows debrief. Each one opens the prep
+      page in review mode.
+3. **Live model abstention and usefulness (row 15; owner-run, off CI, never run by Claude).** This
+   is a small, owner-approved sample of real generations over thin, live-shaped payloads. It
+   answers one question: how often the real model writes padding that the prose lint then strips,
+   which the user experiences as a thinner report, not a wrong one. Record counts only (reports
+   generated, sections stripped, claims dropped, jobs failed on thin evidence) in the PREP-06
+   record. It cannot make a bad output ship, because the validator in front of the model already
+   prevents that, and it has no pass bar this phase. It is informational input to the D-14/D-15
+   checkpoint.
