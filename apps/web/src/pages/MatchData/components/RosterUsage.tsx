@@ -105,8 +105,13 @@ function RosterRow({
   );
 
   return (
+    // Plan 39.1-49 (OOS-3's same-class find; UI-SPEC §8.4): below a 480px
+    // row width line 2 (usage bar + record) wraps under line 1 (name, share,
+    // chevron), starting at the name's left edge (sprite 24px + gap 12px), so
+    // the name is never starved; at 480px and wider both wrappers are
+    // `display: contents` with the chevron ordered last — the row unchanged.
     <li
-      className="@container/roster-row relative flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+      className="@container/roster-row relative flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md p-2 hover:bg-accent"
       data-slot="roster-row"
     >
       <DrillableRow
@@ -115,23 +120,36 @@ function RosterRow({
         ariaLabel={t('shared.drillableRow.aria', { subject: name, context: recordText })}
       />
       {fighter?.url && <img src={fighter.url} alt="" className="size-6 shrink-0 object-contain" />}
-      <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
-        {name}
-      </span>
-      <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{sharePercent}%</span>
-      <span
-        className="w-16 shrink-0 overflow-hidden rounded-full bg-muted @max-[380px]/roster-row:hidden"
-        style={{ height: USAGE_BAR_HEIGHT_PX }}
-        data-slot="roster-usage-bar-track"
+      <div
+        className="flex min-w-0 flex-1 items-center gap-3 @min-[480px]/roster-row:contents"
+        data-slot="roster-row-line1"
+      >
+        <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
+          {name}
+        </span>
+        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{sharePercent}%</span>
+        <DrillableRowChevron className="@min-[480px]/roster-row:order-last" />
+      </div>
+      <div
+        className="flex basis-full items-center gap-3 pl-9 @min-[480px]/roster-row:contents"
+        data-slot="roster-row-line2"
       >
         <span
-          className="block h-full rounded-full"
-          data-slot="roster-usage-bar-fill"
-          style={{ width: `${Math.max(sharePercent, 2)}%`, backgroundColor: CHART_TOKENS.series1 }}
-        />
-      </span>
-      <Record wins={entry.wins} losses={entry.losses} cue="glyph" cueLabel={cueLabel} />
-      <DrillableRowChevron />
+          className="w-16 shrink-0 overflow-hidden rounded-full bg-muted @max-[380px]/roster-row:hidden"
+          style={{ height: USAGE_BAR_HEIGHT_PX }}
+          data-slot="roster-usage-bar-track"
+        >
+          <span
+            className="block h-full rounded-full"
+            data-slot="roster-usage-bar-fill"
+            style={{
+              width: `${Math.max(sharePercent, 2)}%`,
+              backgroundColor: CHART_TOKENS.series1,
+            }}
+          />
+        </span>
+        <Record wins={entry.wins} losses={entry.losses} cue="glyph" cueLabel={cueLabel} />
+      </div>
     </li>
   );
 }
