@@ -1614,3 +1614,42 @@ export function fitViewportsOutsideRoute(route, measuredViewportNames) {
     (name) => declared.has(name) && !measuredViewportNames.includes(name),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-40 (design-audit row 2.6, D-14, UI-SPEC §7.8 rules 1-4): the
+// rail-cards family — a reads rail must hold at least `minCards` real cards
+// (data-card-kind regular or unlocks-next) and never the engine's synthetic
+// "insights aren't available" fallback. Non-vacuity goes through
+// evaluateFamilyPresence('rail-cards', rails) at the call site.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every offending rail, never only the first: `rail-cards-below-min` when a
+ * rail renders fewer than `minCards` cards, `rail-fallback-card` when it
+ * renders the synthetic fallback card at all. Each rail is
+ * `{ selectorPath, cards, fallback, templates }` as guard:layout's collector
+ * reports it.
+ */
+export function evaluateRailCards(rails, { minCards } = {}) {
+  const violations = [];
+  for (const rail of rails) {
+    if (rail.cards < minCards) {
+      violations.push({
+        type: 'rail-cards-below-min',
+        selectorPath: rail.selectorPath,
+        cards: rail.cards,
+        minCards,
+        templates: rail.templates ?? [],
+      });
+    }
+    if (rail.fallback > 0) {
+      violations.push({
+        type: 'rail-fallback-card',
+        selectorPath: rail.selectorPath,
+        fallback: rail.fallback,
+        templates: rail.templates ?? [],
+      });
+    }
+  }
+  return violations;
+}

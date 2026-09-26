@@ -2632,3 +2632,44 @@ test('text-fit: routes — fitViewportsOutsideRoute names the declared fit viewp
   assert.deepEqual(fitViewportsOutsideRoute(scout, ['2560x1440', '1440x900', '390x844']), []);
   assert.deepEqual(fitViewportsOutsideRoute({ id: 'trends' }, ['390x844']), []);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-40: rail-cards family.
+// ---------------------------------------------------------------------------
+
+function railOf(cards, fallback = 0, selectorPath = 'div[data-slot="trends-reads-rail"]') {
+  return { selectorPath, cards, fallback, templates: [] };
+}
+
+test('rail-cards: one card against a minimum of 2 is exactly one rail-cards-below-min', () => {
+  const evaluateRailCards = fn38('evaluateRailCards');
+  const violations = evaluateRailCards([railOf(1)], { minCards: 2 });
+  assert.deepEqual(typesOf(violations), ['rail-cards-below-min']);
+  assert.equal(violations[0].cards, 1);
+  assert.equal(violations[0].minCards, 2);
+});
+
+test('rail-cards: two cards against a minimum of 2 passes (boundary)', () => {
+  const evaluateRailCards = fn38('evaluateRailCards');
+  assert.deepEqual(evaluateRailCards([railOf(2)], { minCards: 2 }), []);
+});
+
+test('rail-cards: three cards with one fallback card is exactly one rail-fallback-card', () => {
+  const evaluateRailCards = fn38('evaluateRailCards');
+  const violations = evaluateRailCards([railOf(3, 1)], { minCards: 2 });
+  assert.deepEqual(typesOf(violations), ['rail-fallback-card']);
+  assert.equal(violations[0].fallback, 1);
+});
+
+test('rail-cards: two offending rails are both reported, never only the first', () => {
+  const evaluateRailCards = fn38('evaluateRailCards');
+  const violations = evaluateRailCards([railOf(1, 0, '#a'), railOf(0, 1, '#b')], { minCards: 2 });
+  assert.deepEqual(
+    violations.map((v) => `${v.selectorPath}:${v.type}`),
+    ['#a:rail-cards-below-min', '#b:rail-cards-below-min', '#b:rail-fallback-card'],
+  );
+});
+
+test('rail-cards: an empty rail list is exactly one rail-cards-unmeasured', () => {
+  assert.deepEqual(typesOf(evaluateFamilyPresence('rail-cards', [])), ['rail-cards-unmeasured']);
+});

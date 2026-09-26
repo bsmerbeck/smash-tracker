@@ -13,7 +13,9 @@
  *     --out /abs/dir [--routes fighter-analysis,trends,dashboard] \
  *     [--widths 1440,390] [--scale realistic|recent|career|gsp] [--no-shell]
  *
- * Output: `<out>/<scale>/live-<route>-<width>.png` and `<out>/<scale>/metrics.json`
+ * Output: `<out>/<scale>/live-<route>-<width>.png`, `<out>/<scale>/rail-metrics.json`
+ * (plan 39.1-40: `{ route, width, readsRail, row3 }` per capture that renders the
+ * Trends reads rail) and `<out>/<scale>/metrics.json`
  * (an array of per-route-per-width records: scroll metrics, every DeltaChip's
  * text / data-state / data-recent-games, `steadyOnSubFloor` — the count of
  * chips claiming steady/up/down on fewer than 3 recent games, a regression
@@ -227,6 +229,74 @@ function collectMetrics(floorGames) {
   };
 }
 
+/**
+ * Plan 39.1-40 (design-audit row 2.6, D-14, UI-SPEC §6.1): runs inside the
+ * page — the Trends reads rail's card composition and the row-3 balance,
+ * or null when the page has no reads rail. Layout reads only.
+ * - readsRail: cards (data-card-kind regular / unlocks-next), fallback (the
+ *   engine's synthetic fallback card), templates (data-template-id in DOM
+ *   order), kinds (every card's data-card-kind) and marks (per evidence-mark
+ *   hook inside the rail).
+ * - row3: the height of the reads rail's direct page-grid cell (centre) and
+ *   of the grid's other direct children whose top sits within 2px of it
+ *   (left / right by x), with minRatio = min over pairs of smaller / larger;
+ *   null when no sibling shares the top (the phone single column).
+ */
+function collectRailMetrics() {
+  const rail = document.querySelector('[data-slot="trends-reads-rail"]');
+  if (!rail) return null;
+  const cardEls = [...rail.querySelectorAll('[data-slot="insight-rail-card"]')];
+  const kinds = cardEls.map((el) => el.getAttribute('data-card-kind'));
+  const readsRail = {
+    cards: kinds.filter((kind) => kind === 'regular' || kind === 'unlocks-next').length,
+    fallback:
+      rail.querySelectorAll('[data-rail-fallback="true"]').length +
+      rail.querySelectorAll('[data-slot="insight-rail-card"][data-card-kind="fallback"]').length,
+    templates: [...rail.querySelectorAll('[data-slot="trends-read-card"][data-template-id]')].map(
+      (el) => el.getAttribute('data-template-id'),
+    ),
+    kinds,
+    marks: {
+      dumbbell: rail.querySelectorAll('[data-slot="comparison-bars-dumbbell"]').length,
+      recordBar: rail.querySelectorAll('[data-slot="record-bar"]').length,
+      setStrip: rail.querySelectorAll('[data-slot="set-strip"]').length,
+      sessionBuckets: rail.querySelectorAll('[data-slot="trends-session-buckets"]').length,
+    },
+  };
+  let cell = rail;
+  while (cell.parentElement && cell.parentElement.getAttribute('data-slot') !== 'page-grid') {
+    cell = cell.parentElement;
+  }
+  const grid = cell.parentElement;
+  let row3 = null;
+  if (grid) {
+    const centreRect = cell.getBoundingClientRect();
+    const siblings = [...grid.children]
+      .filter((child) => child !== cell)
+      .map((child) => child.getBoundingClientRect())
+      .filter((r) => r.height > 0 && Math.abs(r.top - centreRect.top) <= 2);
+    if (siblings.length > 0) {
+      const left = siblings.filter((r) => r.left < centreRect.left).map((r) => r.height);
+      const right = siblings.filter((r) => r.left > centreRect.left).map((r) => r.height);
+      const heights = [centreRect.height, ...siblings.map((r) => r.height)];
+      let minRatio = 1;
+      for (let i = 0; i < heights.length; i += 1) {
+        for (let j = i + 1; j < heights.length; j += 1) {
+          const ratio = Math.min(heights[i], heights[j]) / Math.max(heights[i], heights[j]);
+          minRatio = Math.min(minRatio, ratio);
+        }
+      }
+      row3 = {
+        left: left.length > 0 ? Math.round(left[0]) : null,
+        centre: Math.round(centreRect.height),
+        right: right.length > 0 ? Math.round(right[0]) : null,
+        minRatio: Number(minRatio.toFixed(3)),
+      };
+    }
+  }
+  return { readsRail, row3 };
+}
+
 /** Routes whose event trend's hover tooltip is recorded (plan 39.1-39, UI-SPEC §10.2). */
 const EVENT_TOOLTIP_ROUTES = new Set(['stage-detail', 'opponent-hub']);
 
@@ -305,6 +375,8 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
     await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
     // Metrics are read at the real viewport, BEFORE the resize below.
     const metrics = await page.evaluate(collectMetrics, FLOOR_GAMES);
+    // Plan 39.1-40: the reads-rail composition + row-3 balance, same moment.
+    const railMetrics = await page.evaluate(collectRailMetrics);
     // A fullPage screenshot resizes the viewport mid-capture, and responsive
     // charts can re-measure to a transient width inside the shot (seen once
     // on the Trends career timeline). Pre-size the viewport to the page's
@@ -333,7 +405,17 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
       throw new Error(`${name} is under ${MIN_PNG_BYTES} bytes`);
     }
     const eventTooltip = EVENT_TOOLTIP_ROUTES.has(route.id) ? await readEventTooltip(page) : null;
-    return { route: route.id, width, scale, shell, png: name, errors, ...metrics, eventTooltip };
+    return {
+      route: route.id,
+      width,
+      scale,
+      shell,
+      png: name,
+      errors,
+      ...metrics,
+      eventTooltip,
+      railMetrics,
+    };
   } finally {
     await page.close().catch(() => {});
   }
@@ -391,7 +473,34 @@ async function main() {
     exitCode = 1;
   } finally {
     clearTimeout(timer);
-    fs.writeFileSync(path.join(scaleDir, 'metrics.json'), `${JSON.stringify(records, null, 2)}\n`);
+    // Plan 39.1-40: railMetrics goes to its own file, so plan 36's
+    // metrics.json schema is untouched.
+    const railRecords = records
+      .filter((record) => record.railMetrics)
+      .map((record) => ({
+        route: record.route,
+        width: record.width,
+        readsRail: record.railMetrics.readsRail,
+        row3: record.railMetrics.row3,
+      }));
+    fs.writeFileSync(
+      path.join(scaleDir, 'metrics.json'),
+      `${JSON.stringify(
+        records.map((record) => {
+          const rest = { ...record };
+          delete rest.railMetrics;
+          return rest;
+        }),
+        null,
+        2,
+      )}\n`,
+    );
+    if (railRecords.length > 0) {
+      fs.writeFileSync(
+        path.join(scaleDir, 'rail-metrics.json'),
+        `${JSON.stringify(railRecords, null, 2)}\n`,
+      );
+    }
     await browser.close().catch(() => {});
     await server.close().catch(() => {});
   }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assembleRail } from './rail.js';
+import { assembleRail, isRailFallbackInsight } from './rail.js';
+import {
+  TRENDS_READ_TEMPLATES,
+  assembleTrendsRail,
+  buildTrendsBackfillInsights,
+} from './trendsReads.js';
 import { ACCOUNT_SCOPE } from './types.js';
 import type { HorizonKey, Insight, InsightScope } from './types.js';
 import type { InsightTemplate } from './templates/registry.js';
@@ -11,39 +16,27 @@ import { rosterCoreTemplate } from './templates/rosterCore.js';
 import { rosterShiftTemplate } from './templates/rosterShift.js';
 import { secondaryPayoffTemplate } from './templates/secondaryPayoff.js';
 import { pocketCostTemplate } from './templates/pocketCost.js';
-import { ratingMoveTemplate } from './templates/ratingMove.js';
-import { tiltCostTemplate } from './templates/tiltCost.js';
-import { sessionFatigueTemplate } from './templates/sessionFatigue.js';
 import { generateSyntheticMatches, EIGHT_K_FIXTURE_OPTIONS } from '../testUtils/index.js';
 import type { Match } from '../match.js';
 
 /**
- * WR-A03 (39.1-REVIEW.md) regression: `bestMatchupTemplate`/`worstMatchupTemplate`
- * are now wired into all three `apps/web` rail hosts' real `RAIL_TEMPLATES` sets
- * (`FighterInsightRail.tsx`, `MatchDataRail.tsx`, `TrendsReadsRail.tsx`) — this
- * file mirrors those exact three arrays and runs them through `assembleRail`
- * against the shared 8,000-game synthetic fixture, the same one
+ * WR-A03 (39.1-REVIEW.md) regression, updated by plan 39.1-40 (D-14): every
+ * rail host's real template set, run through the engine's rail assembler
+ * against the shared 8,000-game synthetic fixture — the one
  * `39.1-REVIEW-FIX-part-A.md`'s WR-A03 investigation used to prove the bug.
  *
- * IMPORTANT (documented honestly, not asserted away): `bestMatchup`/
- * `worstMatchup` both guard `scope.kind !== 'character'` internally, so
- * wiring them into `MatchDataRail`/`TrendsReadsRail` — both ACCOUNT-scoped —
- * contributes ZERO candidates there; they only ever produce a card at
- * CHARACTER scope (`FighterInsightRail`'s scope). Verified empirically
- * against this exact fixture before writing these assertions:
- *  - FighterInsightRail's set (character scope): fallback never reached.
- *  - MatchDataRail's set (account scope): fallback never reached — but
- *    because `rosterCore`/`secondaryPayoff` already produce real cards on
- *    this fixture, NOT because of the newly-wired templates.
- *  - TrendsReadsRail's set (account scope) at the `last30` horizon: the
- *    fallback IS STILL REACHED on this exact fixture — `ratingMove`/
- *    `tiltCost`/`sessionFatigue` are all `hidden`/`locked-as-a-single`-free
- *    for this account's most recent 30 games, and the newly-wired
- *    character-only templates cannot back-fill an account-scoped rail. This
- *    is exactly why WR-A03's fix also had to make the fallback copy honest
- *    (Option 2) rather than relying on Option 1 (back-fill wiring) alone —
- *    for an account-scoped rail, Option 1 provably does not always prevent
- *    the branch from firing.
+ * - FighterInsightRail's set (character scope) and MatchDataRail's set
+ *   (account scope) are mirrored here by hand, as before. `bestMatchup` /
+ *   `worstMatchup` still guard `scope.kind !== 'character'`, so Match Data's
+ *   account-scoped entries stay inert (documented, unchanged by 39.1-40);
+ *   its rail avoids the fallback through `rosterCore` / `secondaryPayoff`.
+ * - The Trends reads rail is no longer a hand-mirrored array: it builds its
+ *   set from `trendsReads.ts` — `TRENDS_READ_TEMPLATES` (its own reads) plus
+ *   `buildTrendsBackfillInsights` (the account-scope Best / Toughest record
+ *   and LastEventRecap FACT back-fill) through `assembleTrendsRail`. Before
+ *   39.1-40 this account-scoped rail reached the synthetic fallback on this
+ *   fixture at `last30` (every own read steady, the character-only matchup
+ *   templates inert); with the account-scope back-fill it no longer does.
  */
 
 const EIGHT_K_FIXTURE = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
@@ -88,14 +81,6 @@ const MATCH_DATA_RAIL_TEMPLATES: InsightTemplate[] = [
   bestMatchupTemplate,
   worstMatchupTemplate,
 ];
-const TRENDS_READS_RAIL_TEMPLATES: InsightTemplate[] = [
-  ratingMoveTemplate,
-  tiltCostTemplate,
-  sessionFatigueTemplate,
-  bestMatchupTemplate,
-  worstMatchupTemplate,
-];
-
 function buildRailCards(
   templates: InsightTemplate[],
   matches: Match[],
@@ -144,19 +129,19 @@ describe('WR-A03: rail back-fill on a real 8k-game fixture', () => {
     }
   });
 
-  it('TrendsReadsRail — when the account-scoped set still reaches the fallback (last30, this fixture), the card carries the HONEST copy key, never a games-needed claim', () => {
-    const cards = buildRailCards(
-      TRENDS_READS_RAIL_TEMPLATES,
-      EIGHT_K_FIXTURE,
-      ACCOUNT_SCOPE,
-      'last30',
+  it('TrendsReadsRail — the account-scoped own reads + engine back-fill never reach the synthetic fallback (8k, last30), with at least 2 cards', () => {
+    const nowMs = Date.now();
+    const own = TRENDS_READ_TEMPLATES.flatMap((template) =>
+      template.build({ matches: EIGHT_K_FIXTURE, scope: ACCOUNT_SCOPE, horizon: 'last30', nowMs }),
     );
-    const fallback = cards.find((c) => c.id === FALLBACK_ID);
-    // Documented, not asserted away (see file doc comment): this fixture's
-    // last30 horizon genuinely exhausts ratingMove/tiltCost/sessionFatigue,
-    // and bestMatchup/worstMatchup cannot back-fill an account scope.
-    expect(fallback, 'expected this exact fixture/horizon to still hit the fallback').toBeDefined();
-    expect(fallback!.copy.key).toBe('insights.rail.unavailable');
-    expect(fallback!.copy.values).toEqual({});
+    const backfill = buildTrendsBackfillInsights({
+      matches: EIGHT_K_FIXTURE,
+      horizon: 'last30',
+      nowMs,
+    });
+    const { cards } = assembleTrendsRail({ insights: [...own, ...backfill] });
+    expect(cards.some((c) => c.id === FALLBACK_ID)).toBe(false);
+    expect(cards.some((c) => isRailFallbackInsight(c))).toBe(false);
+    expect(cards.length).toBeGreaterThanOrEqual(2);
   });
 });

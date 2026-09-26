@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
+import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -264,6 +265,84 @@ describe('TrendsReadsRail', () => {
       // The games door precedes the rating-model button in DOM/tab order.
       const relation = links[0]!.compareDocumentPosition(ratingModelButton);
       expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    });
+  });
+
+  /**
+   * Plan 39.1-40 (D-14, UI-SPEC §7.8 rules 1-4, §9.4): the guard:layout
+   * harness's realistic account (seed 39_120_024, 300 games, opponents Mario
+   * / Luigi) — its own reads leave free slots and hold no locked candidate, so
+   * the engine back-fills Best record and Toughest record FACT cards at
+   * account scope instead of an apology card.
+   */
+  describe('39.1-40: engine back-fill on a quiet account', () => {
+    function realisticFixture(): Match[] {
+      return generateSyntheticMatches({
+        seed: 39_120_024,
+        count: 300,
+        mainFighterIds: [8, 22],
+        opponentFighterIds: [1, 10],
+        stageIds: [1],
+      });
+    }
+
+    function readCard(templateId: string): HTMLElement {
+      const card = document.querySelector(
+        `[data-slot="trends-read-card"][data-template-id="${templateId}"]`,
+      );
+      expect(card, `no ${templateId} read card`).not.toBeNull();
+      return card as HTMLElement;
+    }
+
+    it('back-fills Best and Toughest record cards: at least 2 regular cards and no fallback card', async () => {
+      const { container } = renderRail(realisticFixture());
+      await waitForSettled();
+
+      const regular = container.querySelectorAll(`${RAIL_CARD_SELECTOR}[data-card-kind="regular"]`);
+      expect(regular.length).toBeGreaterThanOrEqual(2);
+      expect(
+        container.querySelectorAll(
+          '[data-slot="trends-read-card"][data-template-id="bestMatchup"]',
+        ),
+      ).toHaveLength(1);
+      expect(
+        container.querySelectorAll(
+          '[data-slot="trends-read-card"][data-template-id="worstMatchup"]',
+        ),
+      ).toHaveLength(1);
+      expect(container.querySelector('[data-rail-fallback="true"]')).toBeNull();
+    });
+
+    it("each back-fill card's evidence names its lifetime sample ('all time') and never a recent horizon", async () => {
+      renderRail(realisticFixture());
+      await waitForSettled();
+
+      for (const templateId of ['bestMatchup', 'worstMatchup']) {
+        const evidence =
+          readCard(templateId).querySelector('[data-slot="insight-card-evidence"]')?.textContent ??
+          '';
+        expect(evidence).toContain('all time');
+        expect(evidence).not.toContain('last 30');
+      }
+    });
+
+    it("the Best record card's first door is its counted-games door, claim=bestMatchup:account:last30 (URL-encoded)", async () => {
+      renderRail(realisticFixture());
+      await waitForSettled();
+
+      const links = within(readCard('bestMatchup')).getAllByRole('link');
+      const href = links[0]!.getAttribute('href') ?? '';
+      expect(href).toContain('claim=bestMatchup%3Aaccount%3Alast30');
+      const query = href.split('?')[1]?.split('#')[0] ?? '';
+      expect(new URLSearchParams(query).get('claim')).toBe('bestMatchup:account:last30');
+      expect(links[0]!.textContent ?? '').toMatch(/see the \d+ games?/i);
+    });
+
+    it('marks the synthetic fallback card with data-rail-fallback when there are no games at all', async () => {
+      const { container } = renderRail([]);
+      await waitForSettled();
+
+      expect(container.querySelectorAll('[data-rail-fallback="true"]')).toHaveLength(1);
     });
   });
 

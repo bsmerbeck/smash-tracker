@@ -60,6 +60,7 @@ import {
   evaluateMatrixHug,
   evaluateTableClipSweep,
   evaluateTextFit,
+  evaluateRailCards,
   tableClipModeForRoute,
   tableClipSweepRoutes,
   tableClipSweepScanned,
@@ -224,7 +225,17 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the reads rail renders directly after the stat row and before the
     // career timeline; at 1024+ the timeline keeps its desktop place above
     // the rails (grid placement, never `order`).
-    checks: ['career-timeline', 'filter-row', 'placement', 'brand-red-text'],
+    // Plan 39.1-40 (design-audit row 2.6, D-14): grid-balance on the row-3
+    // rails and the reads-rail card count.
+    checks: [
+      'career-timeline',
+      'filter-row',
+      'placement',
+      'brand-red-text',
+      'grid-balance',
+      'rail-cards',
+    ],
+    railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       {
@@ -248,7 +259,9 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'trends-career',
     loadedMarker: '[data-slot="trends-hero-body"]',
     scale: 'career',
-    checks: ['career-timeline'],
+    // Plan 39.1-40: the steady 8,400-game account back-fills (D-14).
+    checks: ['career-timeline', 'rail-cards'],
+    railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
     timelineExpect: { strips: true, state: 'full' },
   },
   {
@@ -259,7 +272,9 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'trends-casual',
     loadedMarker: '[data-slot="trends-hero-body"]',
     scale: 'casual',
-    checks: ['career-timeline'],
+    // Plan 39.1-40: a thin account keeps its lead card (UI-SPEC §8.2).
+    checks: ['career-timeline', 'rail-cards'],
+    railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 1 },
     timelineExpect: { state: 'thin', formStrip: true },
   },
   // Plan 39.1-39: brand-red-text (UI-SPEC §4.3).
@@ -421,6 +436,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantRecordFit = checks.includes('record-fit');
   const wantMarkCount = checks.includes('mark-count');
   const wantMatrixHug = checks.includes('matrix-hug');
+  // Plan 39.1-40: the reads-rail card count (layout reads only).
+  const wantRailCards = checks.includes('rail-cards');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1172,7 +1189,34 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-40 (D-14, UI-SPEC §7.8): per reads-rail root, the real cards
+  // (regular / unlocks-next), the synthetic fallback cards and the rendered
+  // template ids in DOM order. Attribute and count reads only.
+  const railCards = [];
+  if (wantRailCards && familyConfig.railCards && familyConfig.railCards.selector) {
+    for (const root of document.querySelectorAll(familyConfig.railCards.selector)) {
+      const cardEls = Array.from(root.querySelectorAll('[data-slot="insight-rail-card"]'));
+      const cardCount = cardEls.filter((el) => {
+        const kind = el.getAttribute('data-card-kind');
+        return kind === 'regular' || kind === 'unlocks-next';
+      }).length;
+      const fallback =
+        root.querySelectorAll('[data-rail-fallback="true"]').length +
+        root.querySelectorAll('[data-slot="insight-rail-card"][data-card-kind="fallback"]').length;
+      const templates = Array.from(
+        root.querySelectorAll('[data-slot="trends-read-card"][data-template-id]'),
+      ).map((el) => el.getAttribute('data-template-id'));
+      railCards.push({
+        selectorPath: describeElement(root),
+        cards: cardCount,
+        fallback,
+        templates,
+      });
+    }
+  }
+
   return {
+    railCards,
     markLines,
     matrixTables,
     brandRed,
@@ -1578,6 +1622,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       placement: route.placement ?? [],
       orderPairs: route.orderPairs ?? [],
       clipTargets: route.clipTargets ?? [],
+      railCards: route.railCards ?? null,
     };
     const measurements = await page.evaluate(
       collectPageMeasurements,
@@ -1725,6 +1770,13 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         ...evaluateMatrixHug({ viewportWidth: viewport.width, tables: measurements.matrixTables }),
       );
     }
+    // Plan 39.1-40: rail-cards (requested + presence check together).
+    if (checks.includes('rail-cards')) {
+      violations.push(
+        ...evaluateRailCards(measurements.railCards, { minCards: route.railCards?.minCards ?? 1 }),
+      );
+      violations.push(...evaluateFamilyPresence('rail-cards', measurements.railCards));
+    }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
     // output contract requires the measured maximum card stretch and the
@@ -1745,6 +1797,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
+      railCards: checks.includes('rail-cards') ? measurements.railCards : [],
     };
   } finally {
     await page.close();
@@ -2033,6 +2086,13 @@ async function main() {
             console.log(
               `MEASUREMENT route=${route.id} viewport=${viewport.name} maxStretchPx=${result.maxStretchPx.toFixed(1)} scrollRatio=${result.scrollRatio.toFixed(3)}`,
             );
+            // Plan 39.1-40: one RAILCARDS line per measured reads rail,
+            // right after the MEASUREMENT line, whether or not it passed.
+            for (const rail of result.railCards ?? []) {
+              console.log(
+                `RAILCARDS route=${route.id} viewport=${viewport.name} cards=${rail.cards} fallback=${rail.fallback} templates=${rail.templates.length > 0 ? rail.templates.join(',') : 'none'}`,
+              );
+            }
             // Plan 39.1-33: one CARD_HEIGHT line per measured ceiling marker,
             // printed right after the MEASUREMENT line, regardless of
             // pass/fail — mirrors the MEASUREMENT line's own always-print

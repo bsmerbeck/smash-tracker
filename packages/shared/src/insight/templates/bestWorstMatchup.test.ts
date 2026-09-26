@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bestMatchupTemplate, worstMatchupTemplate } from './bestWorstMatchup.js';
+import {
+  bestMatchupTemplate,
+  buildMatchupBackfillInsights,
+  worstMatchupTemplate,
+} from './bestWorstMatchup.js';
 import { getFighterById } from '../../fighterData.js';
+import { ACCOUNT_SCOPE } from '../types.js';
 import type { InsightScope } from '../types.js';
 import type { Match } from '../../match.js';
 
@@ -102,9 +107,16 @@ describe('bestMatchupTemplate / worstMatchupTemplate (Task 3: direction-free bac
   });
 
   it('worstMatchup picks the 38-41 record over a lucky 0-2, ranking by the losses-side Wilson lower bound', () => {
+    // Plan 39.1-40: a third, clearly better eligible matchup (30-2). Without it
+    // the 38-41 opponent is the ONLY eligible matchup, so it is also the best
+    // record, and the engine's same-opponent suppression (a Best and a
+    // Toughest card never name the same opponent) would build no toughest
+    // read. The intent is unchanged: a sub-floor 0-2 never outranks a proven
+    // 38-41.
     const matches = [
       ...buildMatchupBlock(4, 0, 2, 'unlucky'),
       ...buildMatchupBlock(5, 38, 41, 'toughmatchup'),
+      ...buildMatchupBlock(6, 30, 2, 'bestmatchup'),
     ];
     const insights = worstMatchupTemplate.build({
       matches,
@@ -114,5 +126,79 @@ describe('bestMatchupTemplate / worstMatchupTemplate (Task 3: direction-free bac
     });
     expect(insights).toHaveLength(1);
     expect(insights[0]!.copy.values.vs).toBe(getFighterById(5)!.name);
+  });
+});
+
+/**
+ * Plan 39.1-40 (D-14, INS-01): the scope-agnostic back-fill core. Account
+ * scope is the Trends rail's; the two templates keep their character guard.
+ */
+describe('buildMatchupBackfillInsights (39.1-40: account-scope core, same-opponent suppression)', () => {
+  function accountBlock(opponentFighterId: number, wins: number, losses: number, idPrefix: string) {
+    // Two fighters on the account — the account scope counts both.
+    return buildMatchupBlock(opponentFighterId, wins, losses, idPrefix).map((m, i) => ({
+      ...m,
+      fighter_id: i % 2 === 0 ? SUBJECT_FIGHTER_ID : 22,
+    }));
+  }
+
+  it('at ACCOUNT_SCOPE on a two-opponent fixture returns a best and a toughest fact naming different opponents, both deltaPoints null', () => {
+    const matches = [
+      ...accountBlock(2, 30, 10, 'acc-best'),
+      ...accountBlock(3, 12, 28, 'acc-worst'),
+    ];
+    const insights = buildMatchupBackfillInsights({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insights.map((i) => i.id)).toEqual([
+      'bestMatchup:account:last30',
+      'worstMatchup:account:last30',
+    ]);
+    const [best, worst] = insights;
+    expect(best!.state).toBe('fact');
+    expect(worst!.state).toBe('fact');
+    expect(best!.deltaPoints).toBeNull();
+    expect(worst!.deltaPoints).toBeNull();
+    expect(best!.copy.values.vs).toBe(getFighterById(2)!.name);
+    expect(worst!.copy.values.vs).toBe(getFighterById(3)!.name);
+    expect(best!.copy.values.vs).not.toBe(worst!.copy.values.vs);
+    expect(best!.countedMatchIds).toHaveLength(40);
+    expect(worst!.countedMatchIds).toHaveLength(40);
+  });
+
+  it('returns the best only when both rankings pick the same opponent character (never a Best and a Toughest card on one opponent)', () => {
+    // Opponent 3 is the only eligible matchup (opponent 2 is below the floor),
+    // so both the wins-side and the losses-side ranking pick it.
+    const matches = [...accountBlock(2, 1, 0, 'acc-floor'), ...accountBlock(3, 41, 6, 'acc-only')];
+    const insights = buildMatchupBackfillInsights({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insights.map((i) => i.templateId)).toEqual(['bestMatchup']);
+    expect(insights[0]!.copy.values.vs).toBe(getFighterById(3)!.name);
+  });
+
+  it('bestMatchupTemplate / worstMatchupTemplate at ACCOUNT_SCOPE still return [] (their character guard is kept)', () => {
+    const matches = [...accountBlock(2, 30, 10, 'g-best'), ...accountBlock(3, 12, 28, 'g-worst')];
+    for (const template of [bestMatchupTemplate, worstMatchupTemplate]) {
+      expect(
+        template.build({ matches, scope: ACCOUNT_SCOPE, horizon: 'last30', nowMs: NOW_MS }),
+      ).toEqual([]);
+    }
+  });
+
+  it('the character-scope templates suppress the toughest read when it would repeat the best', () => {
+    const matches = [
+      ...buildMatchupBlock(2, 1, 0, 'c-floor'),
+      ...buildMatchupBlock(3, 41, 6, 'c-only'),
+    ];
+    const input = { matches, scope: subjectScope(), horizon: 'last30' as const, nowMs: NOW_MS };
+    expect(bestMatchupTemplate.build(input)).toHaveLength(1);
+    expect(worstMatchupTemplate.build(input)).toEqual([]);
   });
 });
