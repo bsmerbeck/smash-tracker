@@ -936,7 +936,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       expect(lintWith([{ stageId: 19 }], 'Figure-8 Circuit on this opponent is fine.')).toEqual([]);
     });
 
-    it('"low"/"high" as ordinary Smash vocabulary is not a confidence word — only next to "confidence" is it one', () => {
+    it('"low"/"high" as ordinary Smash vocabulary is not a confidence word in a sentence that never mentions confidence', () => {
       expect(
         lintWith([{ stageId: 1 }], 'Watch for their high recovery and low percent combos.'),
       ).toEqual([]);

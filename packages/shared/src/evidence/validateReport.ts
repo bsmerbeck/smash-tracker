@@ -23,7 +23,11 @@ import type { ActionId, ClaimAtom, ClaimId, ClaimValue, ReportSurface } from './
 import { MIN_VIABLE_CLAIMS, countViableClaims } from './claims.js';
 import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
 import { effectiveFloor } from './policy.js';
-import { FORBIDDEN_CONFIDENCE_WORDS, confidenceWordsFor } from './confidencePhrases.js';
+import {
+  FORBIDDEN_CONFIDENCE_WORDS,
+  LICENSED_CONFIDENCE_WORDS,
+  confidenceWordsFor,
+} from './confidencePhrases.js';
 import { SpriteList } from '../fighterData.js';
 import { StageList } from '../stageData.js';
 
@@ -497,8 +501,17 @@ const RECORD_SHAPE_PATTERN = /(?<![\w.])(\d+)\s*[-–]\s*(\d+)(?![\w.]*\d)/dgu;
 /** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
 const CONFIDENCE_NOUN = 'confidence';
 
-/** A tier word used AS a confidence word: immediately beside "confidence" (review SH-WR-01). */
-const TIER_WORD_BESIDE_CONFIDENCE_PATTERN = /\b(low|medium|high)[\s-]+confidence\b/g;
+/**
+ * A sentence that talks about confidence (review R2-CR-02): the noun, or the
+ * adjective/adverb built on it. Every tier word inside such a sentence is
+ * judged as a confidence word, wherever it sits.
+ */
+const CONFIDENCE_MENTION_PATTERN = /\bconfiden(?:ce|t|tly)\b/;
+
+/** True when `word` is a confidence TIER word — a key of the licensed table (`low`/`medium`/`high`), read from the table rather than restated. */
+function isTierWord(word: string): boolean {
+  return Object.prototype.hasOwnProperty.call(LICENSED_CONFIDENCE_WORDS, word);
+}
 
 interface ProseLintResult {
   /** True when R4, R5 or R7's lexical half fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
@@ -696,10 +709,14 @@ function lintSectionProse(
   // --- R5: confidence words ---
   //
   // Review SH-WR-01: the tier words (`low`/`medium`/`high`) are ordinary
-  // Smash vocabulary ("high recovery", "low percent"), so a tier word is a
-  // CONFIDENCE word only when it sits next to "confidence"
-  // ("high confidence", "low-confidence"). The noun "confidence" itself and
-  // the forbidden strength words are still judged wherever they appear.
+  // Smash vocabulary ("high recovery", "low percent"), so a tier word in a
+  // sentence that never mentions confidence is not judged. Review R2-CR-02:
+  // inside a sentence that DOES mention confidence, every tier word is a
+  // confidence word wherever it sits — "Confidence is high here.",
+  // "(confidence: high)", "our confidence in this read is high" — not only
+  // when it is adjacent to the noun, which let an unlicensed tier ship. The
+  // noun "confidence" itself and the forbidden strength words are still
+  // judged wherever they appear.
   const licensedConfidenceWords = new Set<string>();
   for (const claim of licensedClaims) {
     for (const word of confidenceWordsFor(claim.tier)) {
@@ -717,9 +734,14 @@ function lintSectionProse(
       offense = true;
     }
   }
-  for (const match of lower.matchAll(TIER_WORD_BESIDE_CONFIDENCE_PATTERN)) {
-    if (!licensedConfidenceWords.has(match[1]!)) {
-      offense = true;
+  for (const sentence of splitSentences(lower)) {
+    if (!CONFIDENCE_MENTION_PATTERN.test(sentence.text)) {
+      continue;
+    }
+    for (const word of sentence.text.match(/[a-z]+/g) ?? []) {
+      if (isTierWord(word) && !licensedConfidenceWords.has(word)) {
+        offense = true;
+      }
     }
   }
 
