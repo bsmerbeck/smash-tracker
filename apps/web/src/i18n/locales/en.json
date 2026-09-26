@@ -1617,6 +1617,7 @@
     "actions": {
       "title": "Recommended actions",
       "empty": "Not enough data yet to recommend a specific action — log a few more games.",
+      "emptyNoOpponents": "No likely opponents are listed for this event yet, so there are no actions to recommend.",
       "matchupPractice": {
         "title": "Practice {{myFighter}} vs {{opponentFighter}}"
       },

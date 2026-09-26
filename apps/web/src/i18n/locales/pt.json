@@ -1617,6 +1617,7 @@
     "actions": {
       "title": "Ações recomendadas",
       "empty": "Ainda não há dados suficientes para recomendar uma ação específica — registre mais algumas partidas.",
+      "emptyNoOpponents": "Ainda não há prováveis adversários listados para este evento, então não há ações para recomendar.",
       "matchupPractice": {
         "title": "Treine {{myFighter}} contra {{opponentFighter}}"
       },

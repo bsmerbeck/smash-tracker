@@ -135,6 +135,11 @@ export function PrepBriefPage() {
       }),
     [allMatches, aliasMap, likelyOpponentTags, fighters, actionsRefreshedAt],
   );
+  // Code review WEB-04: with no likely opponents the engine has nothing to
+  // rank, whatever the history — the empty state says so instead of asking
+  // for more games.
+  const actionsEmptyKey =
+    likelyOpponentTags.length === 0 ? 'reports.actions.emptyNoOpponents' : 'reports.actions.empty';
 
   // WR-04: keyed by entryKey itself (not a bare boolean) so the guard is
   // entryKey-safe even if this exact component instance is ever kept
@@ -297,7 +302,11 @@ export function PrepBriefPage() {
             />
           )}
           <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
-          <RecommendedActionsCard actions={prepActions.actions} claims={prepActions.claims} />
+          <RecommendedActionsCard
+            actions={prepActions.actions}
+            claims={prepActions.claims}
+            emptyKey={actionsEmptyKey}
+          />
         </>
       )}
       {mode === 'review' && (
@@ -306,7 +315,11 @@ export function PrepBriefPage() {
           <ResultsContextCard synced={reviewResults.synced} manual={reviewResults.manual} />
           <ReviewChecklistCard entryKey={entryKey!} reviewChecklist={reviewChecklist} />
           <ReviewGroundingCard eventMatches={eventMatches} />
-          <RecommendedActionsCard actions={prepActions.actions} claims={prepActions.claims} />
+          <RecommendedActionsCard
+            actions={prepActions.actions}
+            claims={prepActions.claims}
+            emptyKey={actionsEmptyKey}
+          />
           {/*
            * RPT-04's exact strict-true rule, reused verbatim (owner
            * invariant 6 / REV-03): `showPaidReports` is the SAME

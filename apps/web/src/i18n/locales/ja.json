@@ -1617,6 +1617,7 @@
     "actions": {
       "title": "おすすめのアクション",
       "empty": "具体的なアクションを提案するにはまだデータが足りません。もう少し試合を記録してください。",
+      "emptyNoOpponents": "このイベントにはまだ対戦候補が登録されていないため、提案できるアクションはありません。",
       "matchupPractice": {
         "title": "{{myFighter}}で{{opponentFighter}}のキャラ対を練習"
       },

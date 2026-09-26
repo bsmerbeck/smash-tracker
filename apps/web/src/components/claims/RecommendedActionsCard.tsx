@@ -139,20 +139,36 @@ export function RecommendedActionRow({
   );
 }
 
+/**
+ * Code review WEB-04: the empty-state sentence names WHY the list is empty.
+ * `empty` (the default, and the only one the paid mounts use) is the thin-data
+ * sentence; `emptyNoOpponents` is the free prep brief's no-likely-opponents
+ * cause, where "log a few more games" would be the wrong reason.
+ */
+export type RecommendedActionsEmptyKey =
+  'reports.actions.empty' | 'reports.actions.emptyNoOpponents';
+
 export interface RecommendedActionListProps {
   /** Engine-ranked candidates, drawn in this order; anything past `MAX_RECOMMENDED_ACTIONS` is never drawn. */
   actions: readonly ActionCandidate[];
   /** The claims the candidates cite. */
   claims: readonly ClaimAtom[];
   renderDoor?: ActionDoorRenderer;
+  /** The empty-state sentence; defaults to `reports.actions.empty`. */
+  emptyKey?: RecommendedActionsEmptyKey;
 }
 
 /** The capped row list, or the one-sentence empty state when there is nothing to recommend. */
-export function RecommendedActionList({ actions, claims, renderDoor }: RecommendedActionListProps) {
+export function RecommendedActionList({
+  actions,
+  claims,
+  renderDoor,
+  emptyKey = 'reports.actions.empty',
+}: RecommendedActionListProps) {
   const { t } = useTranslation();
   const visible = actions.slice(0, MAX_RECOMMENDED_ACTIONS);
   if (visible.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t('reports.actions.empty')}</p>;
+    return <p className="text-sm text-muted-foreground">{t(emptyKey)}</p>;
   }
   const claimsById = new Map(claims.map((claim) => [claim.id as string, claim]));
   return (
@@ -173,10 +189,12 @@ export function RecommendedActionList({ actions, claims, renderDoor }: Recommend
 export interface RecommendedActionsCardProps {
   actions: readonly ActionCandidate[];
   claims: readonly ClaimAtom[];
+  /** The empty-state sentence; defaults to `reports.actions.empty`. */
+  emptyKey?: RecommendedActionsEmptyKey;
 }
 
 /** The FREE card (prep brief, both modes). */
-export function RecommendedActionsCard({ actions, claims }: RecommendedActionsCardProps) {
+export function RecommendedActionsCard({ actions, claims, emptyKey }: RecommendedActionsCardProps) {
   const { t } = useTranslation();
   return (
     <Card data-recommended-actions="free">
@@ -184,7 +202,7 @@ export function RecommendedActionsCard({ actions, claims }: RecommendedActionsCa
         <CardTitle>{t('reports.actions.title')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <RecommendedActionList actions={actions} claims={claims} />
+        <RecommendedActionList actions={actions} claims={claims} emptyKey={emptyKey} />
       </CardContent>
     </Card>
   );

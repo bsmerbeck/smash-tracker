@@ -1617,6 +1617,7 @@
     "actions": {
       "title": "Actions recommandées",
       "empty": "Pas encore assez de données pour recommander une action précise — enregistrez encore quelques parties.",
+      "emptyNoOpponents": "Aucun adversaire probable n'est encore indiqué pour cet événement ; il n'y a donc aucune action à recommander.",
       "matchupPractice": {
         "title": "Entraînez {{myFighter}} contre {{opponentFighter}}"
       },
