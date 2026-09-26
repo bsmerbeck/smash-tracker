@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { Link, MemoryRouter } from 'react-router';
 import { InsightLine } from './InsightLine';
 
 describe('InsightLine', () => {
@@ -35,6 +36,39 @@ describe('InsightLine', () => {
     expect(steadyContainer.querySelector('button')).toBeNull();
     expect(notableContainer.querySelector('button')).toBeNull();
   });
+
+  // Plan 39.1-50 (orchestrator addition OOS-40-A): the steady dash and its
+  // text are ONE flex item, top-aligned, so a wrapping door (or a text that
+  // wraps onto two lines) never strands the dash on a line of its own or
+  // centres it between the text's lines. guard:layout's insight-line-dash
+  // family proves the same in a real browser at 1440 and 390.
+  it.each([false, true])(
+    'steady (door=%s): the dash and its text share one top-aligned body group, the door its own item',
+    (withDoor) => {
+      const { container } = render(
+        <MemoryRouter>
+          <InsightLine
+            text="Setting — no notable online/offline gap (54% vs 59%)."
+            tone="steady"
+            door={withDoor ? <Link to="/x">See the 265 games</Link> : undefined}
+          />
+        </MemoryRouter>,
+      );
+      const line = container.querySelector('[data-slot="insight-line"]')!;
+      const svg = line.querySelector('svg')!;
+      const text = line.querySelector('[data-slot="insight-line-text"]')!;
+      const body = svg.parentElement!;
+      expect(body).toHaveAttribute('data-slot', 'insight-line-body');
+      expect(text.parentElement).toBe(body);
+      expect(body.parentElement).toBe(line);
+      expect(body.className).toMatch(/\bitems-start\b/);
+      expect(body.className).toMatch(/\bmin-w-0\b/);
+      const items = Array.from(line.children).map((el) => el.getAttribute('data-slot'));
+      expect(items).toEqual(
+        withDoor ? ['insight-line-body', 'insight-line-door'] : ['insight-line-body'],
+      );
+    },
+  );
 
   describe('T-39.1-27 (gap closure): an optional single door', () => {
     it('with a door node, renders exactly one link inside [data-slot="insight-line-door"], in both tones', () => {

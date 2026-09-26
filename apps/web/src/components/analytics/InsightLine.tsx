@@ -63,7 +63,7 @@ export function InsightLine({ text, chip, tone, door }: InsightLineProps) {
       <svg width="8" height="2" viewBox="0 0 8 2" aria-hidden="true" className="shrink-0">
         <rect width="8" height="2" fill="var(--steady)" />
       </svg>
-      <span>{text}</span>
+      <span data-slot="insight-line-text">{text}</span>
       {door && (
         <span data-slot="insight-line-door" className="shrink-0">
           <Button asChild size="sm" variant="link" className={MUTED_LINK_TONE}>

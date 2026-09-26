@@ -317,7 +317,7 @@ test('header-squeeze: config — a route without headerSqueeze gets the default 
   });
 });
 
-test("header-squeeze: config — a route that declares headerSqueeze gets its own header and parts", () => {
+test('header-squeeze: config — a route that declares headerSqueeze gets its own header and parts', () => {
   const declared = {
     header: '[data-slot="insight-rail-header"]',
     parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
@@ -2726,4 +2726,53 @@ test('rail-cards: two offending rails are both reported, never only the first', 
 
 test('rail-cards: an empty rail list is exactly one rail-cards-unmeasured', () => {
   assert.deepEqual(typesOf(evaluateFamilyPresence('rail-cards', [])), ['rail-cards-unmeasured']);
+});
+
+// --- insight-line-dash (plan 39.1-50, OOS-40-A) ---
+
+function dashLine({ dashTop, glyphTop, dashRight = 8, glyphLeft = 16 }) {
+  return {
+    selectorPath: '[data-slot="insight-line"]',
+    text: 'Setting — no notable online/offline gap',
+    dash: { left: dashRight - 8, right: dashRight, top: dashTop, bottom: dashTop + 2 },
+    firstGlyph: { left: glyphLeft, right: glyphLeft + 8, top: glyphTop, bottom: glyphTop + 17 },
+  };
+}
+
+test('insight-line-dash: a dash alone on the line above its text fails', () => {
+  // The flex-wrap door case: the dash's 20px line box, the text starts on the next line.
+  const violations = guardLayoutCoreNs.evaluateInsightLineDash?.([
+    dashLine({ dashTop: 9, glyphTop: 21.5, dashRight: 8, glyphLeft: 0 }),
+  ]);
+  assert.equal(violations?.length, 1);
+  assert.equal(violations[0].type, 'insight-line-dash-orphan');
+});
+
+test('insight-line-dash: a dash centred across a wrapped two-line text fails', () => {
+  // items-center over a 40px text block: the dash sits between the lines.
+  const violations = guardLayoutCoreNs.evaluateInsightLineDash?.([
+    dashLine({ dashTop: 19, glyphTop: 1.5 }),
+  ]);
+  assert.equal(violations?.length, 1);
+});
+
+test('insight-line-dash: a dash on the first text line, before the text, passes', () => {
+  const violations = guardLayoutCoreNs.evaluateInsightLineDash?.([
+    dashLine({ dashTop: 9, glyphTop: 1.5 }),
+  ]);
+  assert.deepEqual(violations, []);
+});
+
+test('insight-line-dash: a dash after its first glyph fails even on the same line', () => {
+  const violations = guardLayoutCoreNs.evaluateInsightLineDash?.([
+    dashLine({ dashTop: 9, glyphTop: 1.5, dashRight: 40, glyphLeft: 16 }),
+  ]);
+  assert.equal(violations?.length, 1);
+  assert.equal(violations[0].precedes, false);
+});
+
+test('insight-line-dash: no measured line is exactly one insight-line-dash-unmeasured', () => {
+  assert.deepEqual(evaluateFamilyPresence('insight-line-dash', []), [
+    { type: 'insight-line-dash-unmeasured' },
+  ]);
 });

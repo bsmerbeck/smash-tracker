@@ -1686,3 +1686,41 @@ export function evaluateRailCards(rails, { minCards } = {}) {
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-50 (orchestrator addition OOS-40-A): a steady insight line's dash
+// sits on the same line as its text.
+// ---------------------------------------------------------------------------
+
+/** How far (px) the dash's vertical centre may sit from the first text glyph's centre. */
+export const INSIGHT_LINE_DASH_TOLERANCE_PX = 4;
+
+/**
+ * UI-SPEC §7.8 (the non-card insight form): the steady line's 8×2 dash leads
+ * its text on the text's FIRST line. Each `line` is `{ selectorPath, dash:
+ * rect, firstGlyph: rect }` — `firstGlyph` is the box of the text's first
+ * character (a DOM Range), so a dash stranded on a line of its own above the
+ * text (the flex-wrap door case) or centred across a wrapped two-line text
+ * (the rail's steady line) both miss it. A dash must also precede the glyph
+ * horizontally. Returns every offender.
+ */
+export function evaluateInsightLineDash(lines, tolerancePx = INSIGHT_LINE_DASH_TOLERANCE_PX) {
+  const violations = [];
+  for (const line of lines) {
+    const { selectorPath, dash, firstGlyph } = line;
+    const dashCenter = (dash.top + dash.bottom) / 2;
+    const glyphCenter = (firstGlyph.top + firstGlyph.bottom) / 2;
+    const offsetPx = dashCenter - glyphCenter;
+    const precedes = dash.right <= firstGlyph.left + 1;
+    if (Math.abs(offsetPx) > tolerancePx || !precedes) {
+      violations.push({
+        type: 'insight-line-dash-orphan',
+        selectorPath,
+        offsetPx: Math.round(offsetPx * 10) / 10,
+        precedes,
+        text: line.text ?? '',
+      });
+    }
+  }
+  return violations;
+}

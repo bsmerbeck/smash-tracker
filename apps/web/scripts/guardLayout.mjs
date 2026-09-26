@@ -61,6 +61,7 @@ import {
   evaluateTableClipSweep,
   evaluateTextFit,
   evaluateRailCards,
+  evaluateInsightLineDash,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
   tableClipSweepRoutes,
@@ -255,6 +256,9 @@ export const LAYOUT_ORACLE_ROUTES = [
       'rail-cards',
       // Plan 39.1-50 (OOS-11): header-squeeze scoped to the rail header.
       'header-squeeze',
+      // Plan 39.1-50 (OOS-40-A): each steady insight line's dash sits on its
+      // text's first line (Setting Comparison, Match-Type Mix, the rail).
+      'insight-line-dash',
     ],
     headerSqueeze: {
       header: '[data-slot="insight-rail-header"]',
@@ -294,7 +298,9 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="trends-hero-body"]',
     scale: 'career',
     // Plan 39.1-40: the steady 8,400-game account back-fills (D-14).
-    checks: ['career-timeline', 'rail-cards'],
+    // Plan 39.1-50 (OOS-40-A): insight-line-dash at production card widths
+    // (this route renders inside the MainLayout-geometry shell).
+    checks: ['career-timeline', 'rail-cards', 'insight-line-dash'],
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
     timelineExpect: { strips: true, state: 'full' },
     // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
@@ -480,6 +486,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantMatrixHug = checks.includes('matrix-hug');
   // Plan 39.1-40: the reads-rail card count (layout reads only).
   const wantRailCards = checks.includes('rail-cards');
+  // Plan 39.1-50 (OOS-40-A): a steady insight line's dash vs its first glyph.
+  const wantInsightLineDash = checks.includes('insight-line-dash');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1272,7 +1280,40 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-50 (OOS-40-A, UI-SPEC §7.8): each visible steady insight line's
+  // dash box and the box of its text's first character (a DOM Range, so a
+  // wrapped text's FIRST line is what the dash is compared with).
+  const insightLineDashes = [];
+  if (wantInsightLineDash) {
+    for (const lineEl of document.querySelectorAll(
+      '[data-slot="insight-line"][data-tone="steady"]',
+    )) {
+      const dashEl = lineEl.querySelector('svg');
+      const textEl = lineEl.querySelector('[data-slot="insight-line-text"]');
+      if (!dashEl || !textEl) continue;
+      const lineRect = lineEl.getBoundingClientRect();
+      if (lineRect.width === 0 || lineRect.height === 0) continue;
+      const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node && !/\S/.test(node.textContent ?? '')) node = walker.nextNode();
+      if (!node) continue;
+      const offset = (node.textContent ?? '').search(/\S/);
+      const range = document.createRange();
+      range.setStart(node, offset);
+      range.setEnd(node, offset + 1);
+      const glyph = range.getBoundingClientRect();
+      const dash = dashEl.getBoundingClientRect();
+      insightLineDashes.push({
+        selectorPath: describeElement(lineEl),
+        text: (textEl.textContent ?? '').slice(0, 60),
+        dash: { left: dash.left, right: dash.right, top: dash.top, bottom: dash.bottom },
+        firstGlyph: { left: glyph.left, right: glyph.right, top: glyph.top, bottom: glyph.bottom },
+      });
+    }
+  }
+
   return {
+    insightLineDashes,
     railCards,
     markLines,
     matrixTables,
@@ -1836,6 +1877,12 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         ...evaluateRailCards(measurements.railCards, { minCards: route.railCards?.minCards ?? 1 }),
       );
       violations.push(...evaluateFamilyPresence('rail-cards', measurements.railCards));
+    }
+    if (checks.includes('insight-line-dash')) {
+      violations.push(...evaluateInsightLineDash(measurements.insightLineDashes));
+      violations.push(
+        ...evaluateFamilyPresence('insight-line-dash', measurements.insightLineDashes),
+      );
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own
