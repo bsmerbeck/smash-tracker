@@ -831,6 +831,18 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ]);
     });
 
+    it('SH-WR-04: a W-L record shape needs the EXACT ordered (wins, losses) pair of one licensed record claim — an inverted or re-paired record is stripped', () => {
+      // Licensed record: 6-4 (10 games).
+      expect(digitScan('You are 6-4 on Battlefield, keep it.').strippedSectionIds).toEqual([]);
+      expect(digitScan('You are 6 – 4 on Battlefield, keep it.').strippedSectionIds).toEqual([]);
+      expect(digitScan('You are 4-6 on Battlefield, so ban it.').strippedSectionIds).toEqual([
+        'main',
+      ]);
+      expect(digitScan('You are 6-10 on Battlefield overall.').strippedSectionIds).toEqual([
+        'main',
+      ]);
+    });
+
     it('SH-CR-01: a sentence-final figure, the whole part of a decimal, and a trailing record digit are NOT list positions — each unlicensed one fails', () => {
       // Licensed: 6, 4, 10 only. `83`, `71` and `0` are unlicensed factual
       // figures that merely sit before a `.` — never a list index.
