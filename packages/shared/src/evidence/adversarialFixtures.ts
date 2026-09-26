@@ -672,6 +672,31 @@ const confidenceWordUnlicensedWord = makeConfidenceWordFixture({
   validatorVerdict: 'accepted',
 });
 
+// Code review R2-CR-02 (iteration 2): a tier word placed AWAY from the noun
+// "confidence" still states a confidence tier when its sentence talks about
+// confidence. On a low-tier claim each of these overstates the evidence, so
+// each section's prose is withheld.
+const confidenceWordTierAfterNoun = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-after-noun',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1. Confidence is high here.',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierInParenthetical = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-in-parenthetical',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1 (confidence: high).',
+  validatorVerdict: 'stripped',
+});
+
+const confidenceWordTierEndOfSentence = makeConfidenceWordFixture({
+  id: 'confidence-word-tier-end-of-sentence',
+  games: CONFIDENCE_TIER_BOUNDS.low,
+  prose: 'This stage record is 2-1, and our confidence in this read is high.',
+  validatorVerdict: 'stripped',
+});
+
 // ---------------------------------------------------------------------------
 // unknown_bucket / R7 — prose naming the unknown bucket as if it were a real
 // stage. Under owner decision D-22 a lexical hit WITHHOLDS THE SECTION'S
@@ -1173,4 +1198,7 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   actionUnlinked,
   ordinaryProse,
   unknownBucketNamedPlural,
+  confidenceWordTierAfterNoun,
+  confidenceWordTierInParenthetical,
+  confidenceWordTierEndOfSentence,
 ];

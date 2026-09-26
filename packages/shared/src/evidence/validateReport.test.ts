@@ -942,6 +942,30 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ).toEqual([]);
     });
 
+    it('R2-CR-02: a tier word anywhere in a sentence that mentions confidence is judged — not only when it sits beside the noun', () => {
+      // The licence is medium (10 games); "high" is unlicensed wherever it sits.
+      expect(lintWith([{ stageId: 1 }], 'Confidence is high here.')).toEqual(['main']);
+      expect(lintWith([{ stageId: 1 }], 'Take them to Battlefield (confidence: high).')).toEqual([
+        'main',
+      ]);
+      expect(lintWith([{ stageId: 1 }], 'Our confidence in this read is high.')).toEqual(['main']);
+      expect(lintWith([{ stageId: 1 }], 'Confidence here is medium to high.')).toEqual(['main']);
+      expect(lintWith([{ stageId: 1 }], 'We are confident that this read is high.')).toEqual([
+        'main',
+      ]);
+    });
+
+    it('R2-CR-02 controls: the licensed tier word near "confidence" passes, and tier words in sentences without it stay ordinary Smash vocabulary', () => {
+      expect(lintWith([{ stageId: 1 }], 'Confidence is medium here.')).toEqual([]);
+      expect(lintWith([{ stageId: 1 }], 'Our confidence in this read is medium.')).toEqual([]);
+      expect(
+        lintWith(
+          [{ stageId: 1 }],
+          'Keep your shield high. Confidence is medium here. Their recovery is low.',
+        ),
+      ).toEqual([]);
+    });
+
     it('an opponent tag known elsewhere in the job matches on token boundaries only', () => {
       expect(
         lintWith([{ stageId: 1 }], 'Team up your ledge options with steady pressure.', {
