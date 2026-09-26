@@ -663,6 +663,53 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   }
 
   /**
+   * Code review API-WR-01: `failJob` for a throw that escaped the window
+   * between the spend and the `running` claim — but ONLY when the job has
+   * not already reached a terminal status. Several `resolveScout`
+   * implementations call `failJob` themselves before rethrowing, and
+   * `refundCredit` is not balance-idempotent, so a second `failJob` here
+   * would refund twice. The job node is re-read: `failed`/`refunded` means
+   * it is settled and nothing more happens. If the read itself fails, the
+   * refund is NOT attempted (a missed refund is visible and recoverable by
+   * the owner; a double refund mints a credit) and the failure is logged.
+   */
+  async function failJobUnlessSettled(params: {
+    request: ReportRequestContext;
+    jobRef: ReturnType<typeof app.firebase.database.ref>;
+    jobId: string;
+    creditRef: string;
+    spent: boolean;
+    reason?: PrepReportReason;
+    jobCreatedAt: number;
+    jobAttempt: number;
+  }): Promise<void> {
+    const { request, jobRef, jobId, creditRef, spent, reason, jobCreatedAt, jobAttempt } = params;
+    let status: unknown;
+    try {
+      status = ((await jobRef.get()).val() as { status?: unknown } | null)?.status;
+    } catch (readErr) {
+      request.log.error(
+        { err: readErr },
+        'could not re-read a report job after a pre-generation throw; refund not attempted',
+      );
+      return;
+    }
+    if (status === 'failed' || status === 'refunded') {
+      return;
+    }
+    await failJob({
+      uid: request.uid,
+      jobId,
+      creditRef,
+      spent,
+      reason,
+      createdAt: jobCreatedAt,
+      attempt: jobAttempt,
+      day: null,
+    });
+  }
+
+  /**
    * Phase 39 (D-05/RPT-07): persists a job's evidence snapshot ONCE at its
    * CONTENT-ADDRESSED path `evidenceSnapshots/{uid}/{snapshotId}` and returns
    * the id. The path is derived from the snapshot's content (`snapshotIdFor`)
@@ -721,18 +768,43 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
 
-    const scoutOutcome = await resolveScout();
-    if (!scoutOutcome.ok) {
-      return { ok: false, failure: scoutOutcome.failure };
+    // Code review API-WR-01: everything between the spend (made by the
+    // caller) and the `running` claim below — scout resolution and payload
+    // assembly (the row builder, the claim builder, the action ranker, the
+    // canonical digest, the stored-row schema parses) — is guarded. A throw
+    // here used to return a 500 with the job left `queued` and the credit
+    // spent; the stuck-job sweep reads only the `running` index, so nothing
+    // ever recovered it. Now the job fails and refunds through the ONE
+    // existing `failJob`, exactly once: some resolvers already call `failJob`
+    // before rethrowing, so the job is re-read first and a job that has
+    // already reached a terminal status is not failed (or refunded) again.
+    let scout: ScoutReportData;
+    let payload: ReportPayload;
+    try {
+      const scoutOutcome = await resolveScout();
+      if (!scoutOutcome.ok) {
+        return { ok: false, failure: scoutOutcome.failure };
+      }
+      scout = scoutOutcome.scout;
+      payload = await assembleReportPayload(
+        request.uid,
+        scout,
+        app.firebase.database,
+        payloadOptions,
+      );
+    } catch (err) {
+      await failJobUnlessSettled({
+        request,
+        jobRef,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        jobCreatedAt,
+        jobAttempt,
+      });
+      throw err;
     }
-    const scout = scoutOutcome.scout;
-
-    const payload = await assembleReportPayload(
-      request.uid,
-      scout,
-      app.firebase.database,
-      payloadOptions,
-    );
 
     // BILL-06/MEAS-03: transition to `running` immediately before the
     // Claude call — this is the durable "generation is genuinely in-flight"
@@ -2350,9 +2422,17 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // deliberately NOT added to a pruning job this phase — a recorded
         // discretionary follow-up, same spirit as the Phase 23
         // rate-limit-counter retention deferral (STATE.md).
-        await app.firebase.database
-          .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
-          .set({ jobId, updatedAt: Date.now() });
+        // Code review API-WR-01: this write sits after the spend and before
+        // any `failJob` coverage, so — like `recordSpendFact` — it is
+        // best-effort: a throw here must never become a 500 that strands a
+        // spent credit on a `queued` job.
+        try {
+          await app.firebase.database
+            .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
+            .set({ jobId, updatedAt: Date.now() });
+        } catch (err) {
+          request.log.warn({ err }, 'could not write the prep report job index pointer');
+        }
 
         resolveScout = buildPrepResolveScout(binding, {
           uid: request.uid,
