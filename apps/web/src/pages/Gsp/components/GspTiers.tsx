@@ -8,6 +8,7 @@ import {
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { CHART_TOKENS } from '@/components/charts/tokens';
 import { getRecentGspWinRate } from './GspHero';
 import { estimateMmrAt } from '../lib/gspMmrModel';
 import { useGspLive } from '@/hooks/useGspLive';
@@ -106,10 +107,15 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
             {position.next !== null && position.gspToNext !== null ? (
               <div className="flex flex-col gap-1">
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  {/* Plan 39.1-50 (OOS-13, DD-11 on GSP): the fill is the
+                      series ink — brand red is never a data mark. */}
                   <div
                     data-slot="gsp-tier-progress-fill"
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.round((position.progressToNext ?? 0) * 100)}%` }}
+                    className="h-full rounded-full"
+                    style={{
+                      backgroundColor: CHART_TOKENS.series1,
+                      width: `${Math.round((position.progressToNext ?? 0) * 100)}%`,
+                    }}
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -172,7 +178,9 @@ function TierRow({
   return (
     <li
       className={`flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 ${
-        isCurrent ? 'border-primary/50 bg-primary/5' : 'border-transparent'
+        // Plan 39.1-50 (UI-SPEC §4.3 rule 3): a selected data-adjacent
+        // state is neutral, never a brand-red tint.
+        isCurrent ? 'border-border bg-muted/40' : 'border-transparent'
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
