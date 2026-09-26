@@ -2263,6 +2263,16 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         const entryKey = request.body.entryKey!;
         const opponentName = request.body.opponentName!;
 
+        // Code review API-CR-01: a pre-paid child's spend fact is the one its
+        // bundle recorded at PURCHASE (`wasCharged` on the stored child, set
+        // from the bundle debit). Free-access status is a live input (the
+        // allowlist and the demo allowlist can both change between purchase
+        // and execution), so re-deriving it here could mint a refund for a
+        // credit never spent, or withhold one for a credit that was.
+        // Recomputed from `freeAccess` ONLY for a pre-39-10 child that carries
+        // no recorded fact.
+        const recordedSpend =
+          preSpent && typeof existingJob!.wasCharged === 'boolean' ? existingJob!.wasCharged : null;
         if (preSpent) {
           effectiveReason = 'prep_bundle';
         }
@@ -2282,6 +2292,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             attempt: jobAttempt,
             creditRef: jobId,
             reason: effectiveReason,
+            // API-CR-01: `.set()` replaces the node — a pre-paid child keeps
+            // its recorded spend fact across this rewrite (conditional
+            // spread: absent on a pre-39-10 child, never null).
+            ...(recordedSpend !== null ? { wasCharged: recordedSpend } : {}),
           }),
         );
 
@@ -2289,10 +2303,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           // Phase 27 (Task 2): the credit for this slot was already spent
           // atomically by the bundle submission (or never spent at all, for
           // an allowlisted uid's bundle) — never spend a second time here.
-          // `spent` is recomputed from `freeAccess` rather than trusted from
-          // the stored job, because an allowlisted uid's bundle attaches no
-          // credit to its children at all.
-          spent = !freeAccess;
+          // API-CR-01: trust the fact recorded at purchase; `!freeAccess` is
+          // only the fallback for a pre-39-10 child with no recorded fact.
+          spent = recordedSpend ?? !freeAccess;
         } else if (!freeAccess) {
           // V7-C: non-allowlisted uids spend one credit per generation
           // attempt, identical to the legacy branch below.
