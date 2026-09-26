@@ -152,6 +152,32 @@ describe('runFunnelReadout', () => {
     });
   });
 
+  it('API-WR-06: surfaces reconciledUnits and outboxPending when the persisted summary carries them', async () => {
+    const database = new FakeDatabase();
+    const today = dayKeyFor(0);
+    database.seed(`reconcileSummaries/${today}`, {
+      checked: 12,
+      missing: 1,
+      phantom: 0,
+      duplicate: 0,
+      reconciledUnits: 9,
+      outboxPending: 3,
+      generatedAt: NOW,
+    });
+
+    const result = await runFunnelReadout(database as never, { now: NOW, days: 1 });
+
+    expect(result.days[0]?.reconcileSummary).toEqual({
+      checked: 12,
+      missing: 1,
+      phantom: 0,
+      duplicate: 0,
+      reconciledUnits: 9,
+      outboxPending: 3,
+      generatedAt: NOW,
+    });
+  });
+
   it('omits reconcileSummary entirely for a day with no persisted summary (D-19 graceful degradation)', async () => {
     const database = new FakeDatabase();
 

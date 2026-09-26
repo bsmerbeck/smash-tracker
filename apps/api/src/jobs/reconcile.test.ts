@@ -266,8 +266,34 @@ describe('runReconcile', () => {
       missing: result.missing,
       phantom: result.phantom,
       duplicate: result.duplicate,
+      // Code review API-WR-06: the units actually reconciled, and the
+      // outbox-pending rows `checked` also counts, are persisted apart.
+      reconciledUnits: result.checked,
+      outboxPending: 0,
       generatedAt: expect.any(Number),
     });
+  });
+
+  it('API-WR-06: persists reconciledUnits = checked minus the outbox-pending rows no exception class evaluates', async () => {
+    const database = new FakeDatabase();
+    database.seed(`creditLedgerByDay/${DAY}/uid-1/key-1`, {
+      type: 'spend',
+      amount: -1,
+      createdAt: FIXED_NOW,
+      ref: 'job-1',
+    });
+    database.seed(`outboxPending/${DAY}/row-a`, { eventId: 'a' });
+    database.seed(`outboxPending/${DAY}/row-b`, { eventId: 'b' });
+
+    const result = await runReconcile(database as never, { day: DAY });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const summary = (dump.reconcileSummaries as Record<string, Record<string, unknown>>)[DAY]!;
+    expect(summary.outboxPending).toBe(2);
+    expect(summary.reconciledUnits).toBe(result.checked - 2);
+    expect(summary.checked).toBe(result.checked);
+    // The pinned ReconcileResult shape is untouched.
+    expect(Object.keys(result).sort()).toEqual(['checked', 'duplicate', 'missing', 'phantom']);
   });
 
   it('replaces rather than appends the summary on a second run for the same day (D-19)', async () => {
