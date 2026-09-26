@@ -3013,7 +3013,7 @@
       "viewReport": "View report",
       "hideReport": "Hide report",
       "failedReason": {
-        "validation": "There isn't enough match evidence yet to build a verified report.",
+        "validation": "A verified report couldn't be built from your match data, so none was delivered.",
         "validationRefunded": "Your credit was returned."
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "View plan",
       "hidePlan": "Hide plan",
       "failedReason": {
-        "validation": "There isn't enough match evidence yet to build a verified practice plan.",
+        "validation": "A verified practice plan couldn't be built from your match data, so none was delivered.",
         "validationRefunded": "Your credit was returned."
       }
     },

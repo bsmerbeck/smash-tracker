@@ -3013,7 +3013,7 @@
       "viewReport": "Ver relatório",
       "hideReport": "Ocultar relatório",
       "failedReason": {
-        "validation": "Ainda não há evidências de partidas suficientes para gerar um relatório verificado.",
+        "validation": "Não foi possível gerar um relatório verificado a partir dos seus dados de partidas, então nenhum foi entregue.",
         "validationRefunded": "Seu crédito foi devolvido."
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "Ver plano",
       "hidePlan": "Ocultar plano",
       "failedReason": {
-        "validation": "Ainda não há evidências de partidas suficientes para gerar um plano de treino verificado.",
+        "validation": "Não foi possível gerar um plano de treino verificado a partir dos seus dados de partidas, então nenhum foi entregue.",
         "validationRefunded": "Seu crédito foi devolvido."
       }
     },

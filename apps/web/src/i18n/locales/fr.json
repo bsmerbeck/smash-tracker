@@ -3013,7 +3013,7 @@
       "viewReport": "Voir le rapport",
       "hideReport": "Masquer le rapport",
       "failedReason": {
-        "validation": "Il n'y a pas encore assez de données de matchs pour établir un rapport vérifié.",
+        "validation": "Impossible d'établir un rapport vérifié à partir de vos données de matchs ; aucun rapport n'a donc été livré.",
         "validationRefunded": "Votre crédit a été restitué."
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "Voir le plan",
       "hidePlan": "Masquer le plan",
       "failedReason": {
-        "validation": "Il n'y a pas encore assez de données de matchs pour établir un plan d'entraînement vérifié.",
+        "validation": "Impossible d'établir un plan d'entraînement vérifié à partir de vos données de matchs ; aucun plan n'a donc été livré.",
         "validationRefunded": "Votre crédit a été restitué."
       }
     },

@@ -3013,7 +3013,7 @@
       "viewReport": "Ver informe",
       "hideReport": "Ocultar informe",
       "failedReason": {
-        "validation": "Todavía no hay suficiente evidencia de partidas para crear un informe verificado.",
+        "validation": "No se pudo crear un informe verificado a partir de tus datos de partidas, así que no se entregó.",
         "validationRefunded": "Se te devolvió el crédito."
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "Ver plan",
       "hidePlan": "Ocultar plan",
       "failedReason": {
-        "validation": "Todavía no hay suficiente evidencia de partidas para crear un plan de práctica verificado.",
+        "validation": "No se pudo crear un plan de práctica verificado a partir de tus datos de partidas, así que no se entregó.",
         "validationRefunded": "Se te devolvió el crédito."
       }
     },

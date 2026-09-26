@@ -139,7 +139,10 @@ export function PostEventSynthesisCard({
   // Plan 39-10 (D-21, review C4-M2): the validation caption is TWO clauses on
   // TWO conditions, never one sentence. The CAUSE keys on an allowlist of ONE
   // value — `failureReason === 'validation'`; an absent reason or any other
-  // (including one this client does not know yet) renders nothing new.
+  // (including one this client does not know yet) renders nothing new. Code
+  // review WEB-03: that one value covers thin evidence, an unverifiable output
+  // and a projection/schema failure alike, so the cause sentence is
+  // cause-neutral and never claims missing evidence.
   const showValidationCause = job?.failureReason === 'validation';
   // Post-plan fix (39-10, owner decision 2026-09-25): whether this job took a
   // credit. `status === 'refunded'` alone cannot say: `failJob` also writes the

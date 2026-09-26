@@ -302,7 +302,10 @@ export function PrepPaidReportsCard({
               // under whichever status badge this row shows, and is TWO
               // clauses on TWO conditions. The CAUSE keys on an allowlist of
               // ONE value (`failureReason === 'validation'`) — any other or
-              // unknown reason renders nothing new. The RETURN clause keys on
+              // unknown reason renders nothing new. Code review WEB-03: that one
+              // value covers thin evidence, an unverifiable output and a
+              // projection/schema failure alike, so the cause sentence is
+              // cause-neutral and never claims missing evidence. The RETURN clause keys on
               // the terminal status, never on the reason (a zero-spend prep
               // failure rests at `failed`: `failJob` gates its refunded write
               // on `reason && (spent || reason === 'post_event_synthesis')`),

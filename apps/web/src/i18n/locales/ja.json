@@ -3013,7 +3013,7 @@
       "viewReport": "レポートを見る",
       "hideReport": "レポートを隠す",
       "failedReason": {
-        "validation": "検証済みのレポートを作成するための試合データがまだ足りません。",
+        "validation": "試合データから検証済みのレポートを作成できなかったため、レポートはお届けしていません。",
         "validationRefunded": "クレジットは返却されました。"
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "プランを見る",
       "hidePlan": "プランを隠す",
       "failedReason": {
-        "validation": "検証済みの練習プランを作成するための試合データがまだ足りません。",
+        "validation": "試合データから検証済みの練習プランを作成できなかったため、プランはお届けしていません。",
         "validationRefunded": "クレジットは返却されました。"
       }
     },

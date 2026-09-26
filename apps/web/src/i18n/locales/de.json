@@ -3013,7 +3013,7 @@
       "viewReport": "Bericht ansehen",
       "hideReport": "Bericht ausblenden",
       "failedReason": {
-        "validation": "Es gibt noch nicht genug Matchdaten für einen geprüften Bericht.",
+        "validation": "Aus deinen Matchdaten ließ sich kein geprüfter Bericht erstellen, daher wurde keiner ausgeliefert.",
         "validationRefunded": "Dein Credit wurde erstattet."
       }
     },
@@ -3121,7 +3121,7 @@
       "viewPlan": "Plan ansehen",
       "hidePlan": "Plan ausblenden",
       "failedReason": {
-        "validation": "Es gibt noch nicht genug Matchdaten für einen geprüften Trainingsplan.",
+        "validation": "Aus deinen Matchdaten ließ sich kein geprüfter Trainingsplan erstellen, daher wurde keiner ausgeliefert.",
         "validationRefunded": "Dein Credit wurde erstattet."
       }
     },
