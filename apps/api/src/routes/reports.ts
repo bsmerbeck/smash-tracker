@@ -56,6 +56,7 @@ import {
   Anthropic,
   generateScoutReport,
   ReportGenerationError,
+  REPORT_MODEL,
   type AnthropicLikeClient,
   type ReportPayload,
 } from '../reports/generate.js';
@@ -292,7 +293,8 @@ function buildValidatedScoutReport(params: {
       },
       ...(outcome.droppedClaimCount > 0 ? { droppedClaimCount: outcome.droppedClaimCount } : {}),
     };
-    const record = { createdAt: Date.now(), model: 'claude-opus-4-8', player, report };
+    // Code review API-IN-02: the ONE model constant the generation call uses.
+    const record = { createdAt: Date.now(), model: REPORT_MODEL, player, report };
     const checked = storedScoutReportRecordSchema.safeParse(record);
     if (!checked.success) {
       log.error(

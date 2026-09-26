@@ -1080,7 +1080,7 @@ export interface AnthropicLikeClient {
   };
 }
 
-const REPORT_MODEL = 'claude-opus-4-8';
+export const REPORT_MODEL = 'claude-opus-4-8';
 const REPORT_MAX_TOKENS = 16000;
 
 const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a pre-bracket scouting brief for the user about one opponent.
