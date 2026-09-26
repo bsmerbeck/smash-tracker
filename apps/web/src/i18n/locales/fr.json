@@ -122,8 +122,8 @@
       "clear": "Effacer les filtres"
     },
     "filteredMatchList": {
-      "summary_one": "{{count}} match · {{filters}}",
-      "summary_other": "{{count}} matchs · {{filters}}",
+      "summary_one": "{{count, grouped}} match · {{filters}}",
+      "summary_other": "{{count, grouped}} matchs · {{filters}}",
       "clear": "Effacer les filtres",
       "empty": "Aucune partie ne correspond à ces filtres.",
       "claimNotApplied": "L'analyse liée n'est plus disponible, elle n'est donc pas appliquée. Affichage de toutes les parties correspondant aux autres filtres.",
@@ -135,8 +135,8 @@
       "columnEvent": "Événement",
       "showMore_one": "Afficher {{count}} de plus",
       "showMore_other": "Afficher {{count}} de plus",
-      "showingOf_one": "{{shown}} partie affichée sur {{count}}",
-      "showingOf_other": "{{shown}} parties affichées sur {{count}}",
+      "showingOf_one": "{{shown, grouped}} partie affichée sur {{count, grouped}}",
+      "showingOf_other": "{{shown, grouped}} parties affichées sur {{count, grouped}}",
       "eventSummary": {
         "set": "Set vs {{opponent}} à {{event}}",
         "setUnnamed": "Set vs {{opponent}}",

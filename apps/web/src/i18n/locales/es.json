@@ -122,8 +122,8 @@
       "clear": "Borrar filtros"
     },
     "filteredMatchList": {
-      "summary_one": "{{count}} partida · {{filters}}",
-      "summary_other": "{{count}} partidas · {{filters}}",
+      "summary_one": "{{count, grouped}} partida · {{filters}}",
+      "summary_other": "{{count, grouped}} partidas · {{filters}}",
       "clear": "Borrar filtros",
       "empty": "Ninguna partida coincide con estos filtros.",
       "claimNotApplied": "El análisis enlazado ya no está disponible, así que no se aplica. Se muestran todas las partidas que coinciden con los demás filtros.",
@@ -135,8 +135,8 @@
       "columnEvent": "Evento",
       "showMore_one": "Mostrar {{count}} más",
       "showMore_other": "Mostrar {{count}} más",
-      "showingOf_one": "Mostrando {{shown}} de {{count}} partida",
-      "showingOf_other": "Mostrando {{shown}} de {{count}} partidas",
+      "showingOf_one": "Mostrando {{shown, grouped}} de {{count, grouped}} partida",
+      "showingOf_other": "Mostrando {{shown, grouped}} de {{count, grouped}} partidas",
       "eventSummary": {
         "set": "Set vs {{opponent}} en {{event}}",
         "setUnnamed": "Set vs {{opponent}}",

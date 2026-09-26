@@ -122,8 +122,8 @@
       "clear": "フィルターを解除"
     },
     "filteredMatchList": {
-      "summary_one": "{{count}}試合 · {{filters}}",
-      "summary_other": "{{count}}試合 · {{filters}}",
+      "summary_one": "{{count, grouped}}試合 · {{filters}}",
+      "summary_other": "{{count, grouped}}試合 · {{filters}}",
       "clear": "フィルターを解除",
       "empty": "このフィルターに一致する対戦がありません。",
       "claimNotApplied": "リンク先の分析は利用できなくなったため、適用されていません。その他のフィルターに一致するすべての対戦を表示しています。",
@@ -135,8 +135,8 @@
       "columnEvent": "大会",
       "showMore_one": "さらに{{count}}件表示",
       "showMore_other": "さらに{{count}}件表示",
-      "showingOf_one": "{{count}}件中{{shown}}件を表示",
-      "showingOf_other": "{{count}}件中{{shown}}件を表示",
+      "showingOf_one": "{{count, grouped}}件中{{shown, grouped}}件を表示",
+      "showingOf_other": "{{count, grouped}}件中{{shown, grouped}}件を表示",
       "eventSummary": {
         "set": "{{event}}でのvs {{opponent}}のセット",
         "setUnnamed": "vs {{opponent}}のセット",

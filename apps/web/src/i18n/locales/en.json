@@ -128,8 +128,8 @@
       "clear": "Clear filters"
     },
     "filteredMatchList": {
-      "summary_one": "{{count}} game · {{filters}}",
-      "summary_other": "{{count}} games · {{filters}}",
+      "summary_one": "{{count, grouped}} game · {{filters}}",
+      "summary_other": "{{count, grouped}} games · {{filters}}",
       "clear": "Clear filters",
       "empty": "No games match these filters.",
       "claimNotApplied": "The linked insight is no longer available, so it isn't applied. Showing every game that matches the other filters.",
@@ -141,8 +141,8 @@
       "columnEvent": "Event",
       "showMore_one": "Show {{count}} more",
       "showMore_other": "Show {{count}} more",
-      "showingOf_one": "Showing {{shown}} of {{count}} game",
-      "showingOf_other": "Showing {{shown}} of {{count}} games",
+      "showingOf_one": "Showing {{shown, grouped}} of {{count, grouped}} game",
+      "showingOf_other": "Showing {{shown, grouped}} of {{count, grouped}} games",
       "eventSummary": {
         "set": "Set vs {{opponent}} at {{event}}",
         "setUnnamed": "Set vs {{opponent}}",

@@ -659,7 +659,8 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
 
     const progress = document.querySelector('[aria-live="polite"]');
     expect(progress).not.toBeNull();
-    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
+    // Plan 39.1-51: was `… 1000` — the progress line now groups counts of 1,000+.
+    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1,000`));
   });
 
   it('stacked layout: count, data-total-rows and paging control against <li> rows, at the layout-appropriate cap (plan 39.1-33: stack no longer shares the table cap — see the dedicated stack-paging describe below for its 20-row bound)', () => {

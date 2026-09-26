@@ -352,7 +352,11 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
       // Plan 39.1-28: the header (active-filter summary line) ALSO states the
       // full printed n — the same guarantee `data-total-rows` makes, proven a
       // second way, at the surface a real user actually reads.
-      expect(summaryLineText(container)).toContain(String(gamesDoor!.count));
+      // Plan 39.1-51: the summary groups counts of 1,000+ ('1,234 games'), so
+      // the printed n is compared in its grouped English form.
+      expect(summaryLineText(container)).toContain(
+        new Intl.NumberFormat('en').format(gamesDoor!.count),
+      );
     },
     SAME_N_DOOR_TIMEOUT_MS,
   );
