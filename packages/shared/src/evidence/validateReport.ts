@@ -491,6 +491,9 @@ function validateClaim(
  */
 export const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)s?\b/iu;
 
+/** A W-L record written in prose: two digit runs joined by a hyphen or en dash (review SH-WR-04). Not preceded or followed by another digit or word character, so "top-5" and "Figure-8" never match. */
+const RECORD_SHAPE_PATTERN = /(?<![\w.])(\d+)\s*[-–]\s*(\d+)(?![\w.]*\d)/dgu;
+
 /** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
 const CONFIDENCE_NOUN = 'confidence';
 
@@ -618,11 +621,40 @@ function lintSectionProse(
       licensedIntegers.add(v.count);
     }
   }
+  // Review SH-WR-04: a W-L RECORD shape ("6-4", "6 – 4") is judged as a
+  // PAIR — it must be the exact ordered (wins, losses) of one licensed
+  // record claim. Pooling every licensed integer let an inverted record
+  // ("4-6" against a licensed 6-4) or a re-paired one ship. Its digit runs
+  // are then settled and skipped by the per-integer rule below. The known
+  // limit (a single figure attributed to the wrong entity in the same
+  // section) is recorded in `records/VAL-03-acceptance-map.md`.
+  const licensedRecordPairs = new Set<string>();
+  for (const claim of licensedClaims) {
+    if (claim.value.kind === 'record') {
+      licensedRecordPairs.add(`${claim.value.wins}-${claim.value.losses}`);
+    }
+  }
+  const recordShapeDigitSpans: Array<[number, number]> = [];
+  for (const match of folded.matchAll(RECORD_SHAPE_PATTERN)) {
+    const [winsStart, winsEnd] = match.indices![1]!;
+    const [lossesStart, lossesEnd] = match.indices![2]!;
+    if (overlapsConsumed(winsStart, lossesEnd)) {
+      continue;
+    }
+    recordShapeDigitSpans.push([winsStart, winsEnd], [lossesStart, lossesEnd]);
+    if (!licensedRecordPairs.has(`${Number(match[1])}-${Number(match[2])}`)) {
+      offense = true;
+    }
+  }
+
   const nonFactualSpans = findNonFactualDigitSpans(folded);
   for (const match of folded.matchAll(/\d+/g)) {
     const start = match.index!;
     const end = start + match[0].length;
     if (overlapsConsumed(start, end)) {
+      continue;
+    }
+    if (recordShapeDigitSpans.some(([s, e]) => s === start && e === end)) {
       continue;
     }
     const value = Number(match[0]);
