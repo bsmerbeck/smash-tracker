@@ -6630,3 +6630,79 @@ describe('code review R2-CR-01: the post-spend guard settles atomically and only
     expect(await balanceOf(database)).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review R2-IN-04 (iteration 2): a throw INSIDE the guard's settle (a
+// failed refund transaction, say) must not replace the error that caused
+// the failure. The settle error is logged — with no uid and no token in the
+// log line — and the ORIGINAL error is rethrown, so the provider or
+// assembly root cause is what reaches the 500 handler and its log.
+// ---------------------------------------------------------------------------
+
+describe('code review R2-IN-04: a throw inside the settle never replaces the original error', () => {
+  it('the refund transaction throws while settling a lookup failure: the 500 carries the lookup error, and the settle error is logged without uid or token', async () => {
+    const lines: unknown[][] = [];
+    const record = (...args: unknown[]) => {
+      lines.push(args);
+    };
+    const capturingLogger = {
+      level: 'info',
+      fatal: record,
+      error: record,
+      warn: record,
+      info: record,
+      debug: record,
+      trace: record,
+      silent: record,
+      child: (): unknown => capturingLogger,
+    };
+    const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+    (clients.matches as unknown as { getMatches: () => Promise<never> }).getMatches = vi.fn(
+      async () => {
+        throw new Error('parry.gg transport exploded');
+      },
+    );
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(vi.fn()),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: clients,
+      logger: capturingLogger as never,
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-in04'))[0]!;
+
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      if (path === `credits/${TEST_UID}/balance`) {
+        return {
+          ...ref,
+          transaction: async () => {
+            throw new Error('refund store unavailable');
+          },
+        };
+      }
+      return ref;
+    });
+    lines.length = 0;
+
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(500);
+    const errorOf = (line: unknown[]) =>
+      (line[0] as { err?: { message?: string } } | undefined)?.err?.message;
+    const unhandled = lines.find((line) => line[1] === 'Unhandled error');
+    expect(errorOf(unhandled!)).toBe('parry.gg transport exploded');
+    const settleLines = lines.filter((line) => errorOf(line) === 'refund store unavailable');
+    expect(settleLines).toHaveLength(1);
+    const serialized = JSON.stringify(settleLines[0], (_key, value: unknown) =>
+      value instanceof Error ? { message: value.message, stack: value.stack } : value,
+    );
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
