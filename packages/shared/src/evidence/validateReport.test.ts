@@ -1020,6 +1020,62 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     expect(outcome.status).toBe('failed');
   });
 
+  describe('D-23 / SH-CR-03: only EVIDENCED surviving claims count toward MIN_VIABLE_CLAIMS', () => {
+    /** `evidenced` claims on stages 1.., then `abstained` claims on the next stages, all selected in one section. */
+    function mixedOutcome(evidenced: number, abstained: number) {
+      const rows: Record<string, EvidenceRow> = {};
+      const claims: ClaimAtom[] = [];
+      for (let i = 0; i < evidenced + abstained; i += 1) {
+        const isAbstained = i >= evidenced;
+        const games = isAbstained ? 1 : 10;
+        const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: i + 1 };
+        const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
+        const value = { kind: 'record' as const, wins: games, losses: 0, games };
+        rows[rowId] = { predicate: 'stage_record', subject, value, sample: makeSample(games) };
+        claims.push({
+          id: `c0${i + 1}` as ClaimId,
+          predicate: 'stage_record',
+          subject,
+          value: isAbstained ? { kind: 'abstained', gamesNeeded: 2 } : value,
+          claimKind: 'fact',
+          evidenceIds: [rowId],
+          tier: isAbstained ? null : confidenceTierFor(games),
+          policyVersion: EVIDENCE_POLICY_VERSION,
+          sample: makeSample(games),
+        });
+      }
+      return validateReportOutput({
+        snapshot: makeSnapshot(rows),
+        issuedClaims: claims,
+        output: {
+          sections: { main: { claimIds: claims.map((claim) => claim.id), connective: '' } },
+          action1: null,
+          action2: null,
+          action3: null,
+        },
+        surface: 'scout',
+      });
+    }
+
+    it('an output of nothing but abstained claims FAILS even though every claim survives', () => {
+      const outcome = mixedOutcome(0, 3);
+      expect(outcome.survivingClaimIds).toHaveLength(3);
+      expect(outcome.status).toBe('failed');
+    });
+
+    it('two evidenced claims plus one abstention FAIL the scout minimum of three', () => {
+      const outcome = mixedOutcome(2, 1);
+      expect(outcome.survivingClaimIds).toHaveLength(3);
+      expect(outcome.status).toBe('failed');
+    });
+
+    it('three evidenced claims plus one abstention PASS — abstentions still survive and are delivered', () => {
+      const outcome = mixedOutcome(3, 1);
+      expect(outcome.survivingClaimIds).toHaveLength(4);
+      expect(outcome.status).toBe('passed');
+    });
+  });
+
   it('zero selected claims yields "failed", and an empty snapshot drops every selected claim', () => {
     const emptyOutcome = validateReportOutput({
       snapshot: makeSnapshot({}),

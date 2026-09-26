@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClaimSet,
+  countViableClaims,
   CLAIM_ID_VOCABULARY_SIZE,
   CLAIM_PREDICATES,
   type ClaimPredicate,
@@ -399,5 +400,31 @@ describe('buildClaimSet: all_null_subject fixture (review C2-B2/C2-H1)', () => {
     expect(cohort).toBeDefined();
     expect(cohort!.subject).toEqual(NULL_SUBJECT);
     expect(cohort!.evidenceIds).toContain('cd-all');
+  });
+});
+
+describe('countViableClaims (owner decision D-23): only EVIDENCED claims count toward MIN_VIABLE_CLAIMS', () => {
+  it('counts every non-abstained claim and no abstained one', () => {
+    const evidenced = { value: { kind: 'record', wins: 6, losses: 4, games: 10 } } as const;
+    const rate = { value: { kind: 'rate', numerator: 3, denominator: 5 } } as const;
+    const abstained = { value: { kind: 'abstained', gamesNeeded: 2 } } as const;
+    expect(countViableClaims([])).toBe(0);
+    expect(countViableClaims([abstained, abstained, abstained])).toBe(0);
+    expect(countViableClaims([evidenced, abstained, rate])).toBe(2);
+  });
+
+  it('agrees with buildClaimSet: a thin row set of three abstained claims counts zero', () => {
+    const rows: Record<string, EvidenceRow> = {};
+    for (const stageId of [1, 2, 3]) {
+      rows[`sr-f23-s${stageId}`] = row(
+        'stage_record',
+        { ...NULL_SUBJECT, myFighterId: 23, stageId },
+        { kind: 'record', wins: 1, losses: 0, games: 1 },
+        1,
+      );
+    }
+    const { claims } = buildClaimSet({ rows, surface: 'scout' });
+    expect(claims).toHaveLength(3);
+    expect(countViableClaims(claims)).toBe(0);
   });
 });

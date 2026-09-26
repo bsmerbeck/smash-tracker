@@ -22,6 +22,7 @@ import {
   viableParryMatchesList,
 } from '../test-support/viableEvidenceFixture.js';
 import {
+  buildClaimSet,
   CLAIM_SCHEMA_VERSION,
   evidenceSnapshotRecordSchema,
   MIN_VIABLE_CLAIMS,
@@ -6053,5 +6054,153 @@ describe('post-plan fix (39-10): wasCharged is persisted on the job at spend tim
       wasCharged: false,
     });
     expect(await jobRecord(database, 'wc-swept-legacy')).not.toHaveProperty('wasCharged');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review (owner decision D-23, 2026-09-26; review SH-CR-03): only
+// EVIDENCED (non-abstained) claims count toward MIN_VIABLE_CLAIMS on the
+// pre-call fail-fast. An all-abstention workspace issues plenty of claims —
+// every one "not enough data yet" — and must refund BEFORE the model call on
+// every surface that shares `runReportGeneration` (scout, prep_report and
+// the prep_bundle child; synthesis is proven in reportsSynthesis.test.ts).
+// Money is proven by the balance and the `refund` ledger entries.
+// ---------------------------------------------------------------------------
+
+/** The viable start.gg sets payload cut to ONE game on each of the first two characters — the scouted opponent's usage rows (2 known games) and the advisor rows all fall below the floor. */
+const ALL_ABSTENTION_SETS_RESPONSE = (() => {
+  const nodes = (
+    VIABLE_OPPONENT_SETS_RESPONSE as {
+      player: {
+        sets: {
+          nodes: Array<{ games: Array<{ selections: Array<{ character: { id: number } }> }> }>;
+        };
+      };
+    }
+  ).player.sets.nodes;
+  const firstPerCharacter = new Map<number, (typeof nodes)[number]>();
+  for (const node of nodes) {
+    const characterId = node.games[0]!.selections[0]!.character.id;
+    if (!firstPerCharacter.has(characterId)) {
+      firstPerCharacter.set(characterId, node);
+    }
+  }
+  return {
+    player: {
+      sets: { pageInfo: { totalPages: 1 }, nodes: [...firstPerCharacter.values()].slice(0, 2) },
+    },
+  };
+})();
+
+function allAbstentionScoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return gqlResponse(RESOLVE_RESPONSE);
+    }
+    return gqlResponse(ALL_ABSTENTION_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+const STARTGG_BINDING = {
+  provider: 'startgg',
+  startggUserSlug: 'user/07dc2239',
+  displayTag: 'Pandem1c',
+  method: 'matchHistory',
+  confirmedAt: 1,
+};
+
+/** A billable BARE app (no own history) whose opponent public history is the all-abstention cut; the model spy must never be called. */
+function allAbstentionBillableApp() {
+  const modelSpy = vi.fn(async () => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: VALID_REPORT,
+  }));
+  const built = buildBareTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: allAbstentionScoutFetchMock(),
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+  });
+  return { ...built, modelSpy };
+}
+
+/** The persisted snapshot's rows, rebuilt into the claim set the route issued — proves the precondition (plenty of claims, none evidenced) from what the route actually wrote. */
+function issuedFromStoredSnapshot(database: FakeDatabase) {
+  const nodes = Object.values(snapshotNodes(database)) as Array<{
+    rows: Parameters<typeof buildClaimSet>[0]['rows'];
+  }>;
+  expect(nodes).toHaveLength(1);
+  return buildClaimSet({ rows: nodes[0]!.rows, surface: 'scout' }).claims;
+}
+
+describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the pre-call fail-fast (code review SH-CR-03)', () => {
+  it('legacy scout: an all-abstention workspace issuing >= MIN claims refunds exactly once, BEFORE any model call', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'd23-legacy');
+
+    expect(response.statusCode).toBe(502);
+    const issued = issuedFromStoredSnapshot(database);
+    expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+    expect(issued.filter((claim) => claim.value.kind !== 'abstained')).toEqual([]);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'd23-legacy')).toMatchObject({
+      status: 'failed',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['d23-legacy']);
+    expect(refundLedgerRefs(database)).toEqual(['d23-legacy']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(storedScoutReports(database)).toEqual([]);
+  });
+
+  it('prep_report: the same all-abstention workspace refunds exactly once before any model call and rests at refunded', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: STARTGG_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'd23-prep');
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'd23-prep')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['d23-prep']);
+    expect(refundLedgerRefs(database)).toEqual(['d23-prep']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_bundle child: an all-abstention child refunds its one slot exactly once before any model call', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY, BUNDLE_OPPONENT_NAMES, STARTGG_BINDING);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-d23');
+    expect(await balanceOf(database)).toBe(7);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
   });
 });

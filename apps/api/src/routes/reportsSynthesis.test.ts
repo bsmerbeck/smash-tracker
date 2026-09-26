@@ -1824,6 +1824,51 @@ describe('D-21 thin-evidence FAIL FAST on post_event_synthesis (plan 39-08)', ()
   });
 });
 
+describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the synthesis fail-fast (code review SH-CR-03)', () => {
+  it('two annotated games (two distinct abstained claims — as many as the minimum, none evidenced): ZERO model calls, exactly one refund, balance restored', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    // Two games, one moment each, against DIFFERENT opponent characters, so
+    // the two abstained claims do not collapse into one.
+    seedMatch(database, 'm1', {
+      source: 'startgg',
+      opponent_id: 2,
+      vodTimestamps: [{ seconds: 42, note: 'thin moment' }],
+    });
+    seedMatch(database, 'm2', {
+      source: 'startgg',
+      opponent_id: 3,
+      vodTimestamps: [{ seconds: 90, note: 'thin moment' }],
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const thin = await assembledFor(database);
+    expect(thin.claimSet.claims.length).toBeGreaterThanOrEqual(
+      MIN_VIABLE_CLAIMS.post_event_synthesis,
+    );
+    expect(thin.claimSet.claims.filter((claim) => claim.value.kind !== 'abstained')).toEqual([]);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    expect((database.dump() as Record<string, unknown>).practicePlans).toBeUndefined();
+  });
+});
+
 describe('C4-H1: the synthesis snapshot write and D-21 check sit BELOW the claim transaction (plan 39-08)', () => {
   /** `runSynthesisGeneration`'s body with comment lines stripped — so a comment can neither satisfy nor break the order. */
   function synthesisBody(): string {
