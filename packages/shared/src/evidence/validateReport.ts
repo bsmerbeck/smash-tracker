@@ -502,11 +502,13 @@ const RECORD_SHAPE_PATTERN = /(?<![\w.])(\d+)\s*[-–]\s*(\d+)(?![\w.]*\d)/dgu;
 const CONFIDENCE_NOUN = 'confidence';
 
 /**
- * A sentence that talks about confidence (review R2-CR-02): the noun, or the
- * adjective/adverb built on it. Every tier word inside such a sentence is
- * judged as a confidence word, wherever it sits.
+ * Prose that talks about confidence (reviews R2-CR-02, R3-CR-02): the noun,
+ * or any word built on its stem ("confident", "confidently",
+ * "overconfident"). Every tier word in a SECTION whose prose matches this
+ * anywhere is judged as a confidence word, wherever it sits. Deliberately
+ * unanchored — over-matching only withholds prose (D-22).
  */
-const CONFIDENCE_MENTION_PATTERN = /\bconfiden(?:ce|t|tly)\b/;
+const CONFIDENCE_MENTION_PATTERN = /confiden(?:ce|t)/u;
 
 /** True when `word` is a confidence TIER word — a key of the licensed table (`low`/`medium`/`high`), read from the table rather than restated. */
 function isTierWord(word: string): boolean {
@@ -758,13 +760,18 @@ function lintSectionProse(
   //
   // Review SH-WR-01: the tier words (`low`/`medium`/`high`) are ordinary
   // Smash vocabulary ("high recovery", "low percent"), so a tier word in a
-  // sentence that never mentions confidence is not judged. Review R2-CR-02:
-  // inside a sentence that DOES mention confidence, every tier word is a
-  // confidence word wherever it sits — "Confidence is high here.",
-  // "(confidence: high)", "our confidence in this read is high" — not only
-  // when it is adjacent to the noun, which let an unlicensed tier ship. The
-  // noun "confidence" itself and the forbidden strength words are still
-  // judged wherever they appear.
+  // section that never mentions confidence is not judged. Review R3-CR-02
+  // (iteration 3): once a section's prose mentions confidence ANYWHERE,
+  // every tier word in that section is a confidence word — "Confidence is
+  // high here.", "(confidence: high)", and the answer to a confidence
+  // question ("Our confidence in this read? High."). R2-CR-02 judged the
+  // sentence, and a split on "? " or "! " moved the answer out of it; the
+  // section has no split to escape. The cost is a Smash-sense tier word in
+  // a section that also mentions confidence ("Confidence is medium, so keep
+  // your shield high."): its prose is withheld too (review R3-IN-01, an
+  // accepted over-strip recorded in `records/RPT-08-rubric.md`). The noun
+  // "confidence" itself and the forbidden strength words are still judged
+  // wherever they appear.
   const licensedConfidenceWords = new Set<string>();
   for (const claim of licensedClaims) {
     for (const word of confidenceWordsFor(claim.tier)) {
@@ -782,11 +789,8 @@ function lintSectionProse(
       offense = true;
     }
   }
-  for (const sentence of splitSentences(lower)) {
-    if (!CONFIDENCE_MENTION_PATTERN.test(sentence.text)) {
-      continue;
-    }
-    for (const word of sentence.text.match(/[a-z]+/g) ?? []) {
+  if (CONFIDENCE_MENTION_PATTERN.test(lower)) {
+    for (const word of lower.match(/[a-z]+/g) ?? []) {
       if (isTierWord(word) && !licensedConfidenceWords.has(word)) {
         offense = true;
       }
