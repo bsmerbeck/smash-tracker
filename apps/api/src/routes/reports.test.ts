@@ -6453,3 +6453,180 @@ describe('code review SH-WR-05 / API-IN-03: droppedClaimCount counts claims only
     expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review R2-CR-01 (iteration 2): the post-spend guard settles the job
+// with ONE atomic transaction that moves it `queued` -> `failed` ONLY when
+// the queued row is still THIS execution's own, and refunds only when that
+// transaction committed. A job another execution of the same job id owns
+// (its queued row, its `running` claim, or its delivered `succeeded`
+// record), or one already `failed`/`refunded`, is never touched — the guard
+// used to fail and refund a bundle child a concurrent execution had already
+// delivered, minting a credit. Money: balance + `refund` ledger entries,
+// never `credit_refunded` (`refundCredit` is not balance-idempotent).
+// ---------------------------------------------------------------------------
+
+interface ProviderGate {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+
+function providerGate(): ProviderGate {
+  let resolve!: () => void;
+  let reject!: (err: Error) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * A billable prep app (parry.gg bindings) whose provider lookup BLOCKS: every
+ * `users.getUser` call opens a gate the test releases (the lookup continues
+ * normally) or rejects (the lookup throws inside the resolver). The model
+ * always returns the viable selection, so an execution that gets past the
+ * lookup delivers.
+ */
+function gatedLookupPrepApp() {
+  const gates: ProviderGate[] = [];
+  const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+  const users = clients.users as unknown as { getUser: (...args: unknown[]) => Promise<unknown> };
+  const lookup = users.getUser;
+  users.getUser = vi.fn(async (...args: unknown[]) => {
+    const gate = providerGate();
+    gates.push(gate);
+    await gate.promise;
+    return lookup(...args);
+  });
+  const modelSpy = vi.fn(async () => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: VALID_REPORT,
+  }));
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: clients,
+  });
+  return { ...built, gates, modelSpy };
+}
+
+async function waitForGates(gates: ProviderGate[], count: number): Promise<void> {
+  await vi.waitFor(() => expect(gates.length).toBe(count));
+}
+
+describe('code review R2-CR-01: the post-spend guard settles atomically and only its own queued job', () => {
+  it("the reviewer's scenario: execution B of a bundle child DELIVERS, then execution A's lookup throws — no refund, and the delivered job is untouched", async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    gates[1]!.resolve();
+    const responseB = await executionB;
+    expect(responseB.statusCode).toBe(200);
+    const delivered = await jobRecord(database, child.jobId);
+    expect(delivered).toMatchObject({ status: 'succeeded', reason: 'prep_bundle' });
+    expect(typeof delivered.resultRef).toBe('string');
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    const responseA = await executionA;
+
+    expect(responseA.statusCode).toBe(500);
+    expect(await jobRecord(database, child.jobId)).toEqual(delivered);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    expect(storedScoutReports(database)).toHaveLength(1);
+  });
+
+  it('both executions of one bundle child throw in the same tick: exactly one refund, the job rests refunded', async () => {
+    const { app, database, gates, modelSpy } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-both'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    const boom = new Error('parry.gg transport exploded');
+    for (const gate of gates) {
+      gate.reject(boom);
+    }
+    const [responseA, responseB] = await Promise.all([executionA, executionB]);
+
+    expect(responseA.statusCode).toBe(500);
+    expect(responseB.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('owned by another request: A throws while B (which re-queued the child) is still in flight — A touches nothing, B delivers, no refund', async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-owned'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    const queuedByB = await jobRecord(database, child.jobId);
+    expect(queuedByB).toMatchObject({ status: 'queued' });
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    expect((await executionA).statusCode).toBe(500);
+    expect(await jobRecord(database, child.jobId)).toEqual(queuedByB);
+    expect(refundLedgerRefs(database)).toEqual([]);
+
+    gates[1]!.resolve();
+    expect((await executionB).statusCode).toBe(200);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'succeeded' });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it("a job another execution has claimed `running` is never failed or refunded by A's guard", async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-running'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const now = Date.now();
+    const runningElsewhere = {
+      status: 'running',
+      createdAt: now,
+      updatedAt: now,
+      attempt: 1,
+      creditRef: child.jobId,
+      reason: 'prep_bundle',
+      wasCharged: true,
+    };
+    database.seed(`reportJobs/${TEST_UID}/${child.jobId}`, runningElsewhere);
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    expect((await executionA).statusCode).toBe(500);
+
+    expect(await jobRecord(database, child.jobId)).toEqual(runningElsewhere);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+});
