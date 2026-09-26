@@ -361,7 +361,9 @@ export function ScoutPage() {
 
           <FullAnalysisSection games={report.games} gamerTag={report.player.gamerTag} />
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Plan 39.1-49: the pair hugs its own content (UI-SPEC §13.1 — no
+              card stretched to its taller neighbour). */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
             <ScoutCharactersCard characters={report.characters} />
             <ScoutStagesCard stages={report.stages} />
           </div>
