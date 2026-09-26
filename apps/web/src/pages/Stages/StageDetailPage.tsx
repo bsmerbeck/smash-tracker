@@ -42,6 +42,7 @@ import {
   sortMatchesNewestFirst,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Phase 38-06 (DRL-01/D-06/D-13): the per-stage detail route every stage row
@@ -513,6 +514,7 @@ export function StageDetailPage() {
                       type="button"
                       variant="link"
                       size="sm"
+                      className={MUTED_LINK_TONE}
                       onClick={() => setByOpponentExpanded((prev) => !prev)}
                       aria-expanded={byOpponentExpanded}
                       aria-controls={BY_OPPONENT_TABLE_ID}
@@ -686,6 +688,7 @@ export function StageDetailPage() {
                       type="button"
                       variant="link"
                       size="sm"
+                      className={MUTED_LINK_TONE}
                       onClick={() => setByCharacterExpanded((prev) => !prev)}
                       aria-expanded={byCharacterExpanded}
                       aria-controls={BY_CHARACTER_TABLE_ID}

@@ -42,6 +42,7 @@ import {
   placeReferenceLabel,
   rateDomainTicks,
 } from './trendGeometry';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -695,7 +696,13 @@ function PeriodTableTwin({ props }: { props: TrendLinePeriodProps }): ReactEleme
   const { points, labels } = props;
   return (
     <Collapsible open={open} onOpenChange={setOpen} data-slot="trend-line-period-table">
-      <Button type="button" variant="link" size="sm" onClick={() => setOpen((o) => !o)}>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className={MUTED_LINK_TONE}
+        onClick={() => setOpen((o) => !o)}
+      >
         {labels.tableToggle}
       </Button>
       <CollapsibleContent>

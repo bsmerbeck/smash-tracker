@@ -16,6 +16,7 @@ import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { LIST_CAP, LIST_INLINE_MAX } from '@/components/analytics/BoundedList';
 import { groupEncounters, type EncounterGroup, type EncounterSet } from './encounterGrouping';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Phase 39.1 Plan 18 (UIX-08/D-10, UI-SPEC §8.6): owner note 10 ("could
@@ -300,6 +301,7 @@ export function RecentEncounters({
                 type="button"
                 variant="link"
                 size="sm"
+                className={MUTED_LINK_TONE}
                 onClick={() => {
                   if (fitsInline) {
                     setShowAllExpanded(true);
@@ -316,6 +318,7 @@ export function RecentEncounters({
                 type="button"
                 variant="link"
                 size="sm"
+                className={MUTED_LINK_TONE}
                 onClick={() => setShowAllExpanded(false)}
               >
                 {t('analytics.list.showFewer')}

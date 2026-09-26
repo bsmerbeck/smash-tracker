@@ -15,7 +15,7 @@ import { computeRatingHistory } from '@/lib/glicko';
 import { filterBySource } from '@/hooks/useFilteredMatches';
 import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
 import { GridCell } from '@/components/analytics/PageGrid';
-import { StatFigure } from '@/components/analytics/StatRow';
+import { StatFigure, StatRow } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
@@ -204,10 +204,14 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <p className="text-xs text-muted-foreground">{t('dashboard.hero.ignoresSourceFilter')}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <SplitStat label={t('common.casual')} record={casual} />
-          <SplitStat label={t('common.competitive')} record={competitive} />
-        </div>
+        {/* Plan 39.1-39 (UI-SPEC §7.3): the one stat idiom — one StatRow,
+            never a hand-rolled two-column grid; each record wraps whole. */}
+        <StatRow
+          figures={[
+            <SplitStat key="casual" label={t('common.casual')} record={casual} />,
+            <SplitStat key="competitive" label={t('common.competitive')} record={competitive} />,
+          ]}
+        />
         {bothHaveData && delta != null && (
           <p className="text-sm">
             <span className="text-muted-foreground">{t('dashboard.hero.deltaLabel')} </span>
@@ -240,7 +244,7 @@ function SplitStat({ label, record }: { label: string; record: WinLossRecord }) 
     <StatFigure
       label={label}
       value={`${record.winRate}%`}
-      support={<Record wins={record.wins} losses={record.losses} cue="none" />}
+      support={<Record wins={record.wins} losses={record.losses} cue="none" wrap />}
     />
   );
 }
@@ -257,10 +261,12 @@ function OnlineOfflineCard({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent>
         {hasAny ? (
-          <div className="grid grid-cols-2 gap-2">
-            <SplitStat label={t('dashboard.hero.online')} record={online} />
-            <SplitStat label={t('dashboard.hero.offline')} record={offline} />
-          </div>
+          <StatRow
+            figures={[
+              <SplitStat key="online" label={t('dashboard.hero.online')} record={online} />,
+              <SplitStat key="offline" label={t('dashboard.hero.offline')} record={offline} />,
+            ]}
+          />
         ) : (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         )}

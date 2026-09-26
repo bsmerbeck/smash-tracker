@@ -34,6 +34,7 @@ import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { cn } from '@/lib/utils';
 import { describeEventAxisGames } from '@/lib/eventAxisSummary';
 import { matchesDrillDown, type DrillDownAxes, type EventKeyResolver } from '@/lib/drillDownParams';
+import { INLINE_LINK_TONE, MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Phase 38 (D-07/D-08): the ONE terminus every drill-down in this milestone
@@ -743,10 +744,7 @@ export function FilteredMatchList({
                         <p>{facts.stageName}</p>
                         <p>{new Date(match.time).toLocaleString(i18n.language)}</p>
                         {facts.tournamentLink && (
-                          <Link
-                            to={facts.tournamentLink.href}
-                            className="text-primary hover:underline"
-                          >
+                          <Link to={facts.tournamentLink.href} className={INLINE_LINK_TONE}>
                             {facts.tournamentLink.label}
                           </Link>
                         )}
@@ -895,7 +893,7 @@ export function FilteredMatchList({
                                   {facts.tournamentLink && (
                                     <Link
                                       to={facts.tournamentLink.href}
-                                      className="text-primary hover:underline"
+                                      className={INLINE_LINK_TONE}
                                     >
                                       {facts.tournamentLink.label}
                                     </Link>
@@ -919,6 +917,7 @@ export function FilteredMatchList({
                   type="button"
                   variant="link"
                   size="sm"
+                  className={MUTED_LINK_TONE}
                   aria-controls={rootId}
                   onClick={handleShowMore}
                 >

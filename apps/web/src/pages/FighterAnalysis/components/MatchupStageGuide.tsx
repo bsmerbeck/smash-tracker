@@ -37,6 +37,7 @@ import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /** WR-C06 (39.1-REVIEW.md): a stable id the show-all/show-fewer toggle's `aria-controls` points at — this component mounts once per `FighterAnalysisPage`, so a single static id is safe. */
 const STAGE_GUIDE_TABLE_ID = 'matchup-stage-guide-table';
@@ -228,6 +229,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                 type="button"
                 variant="link"
                 size="sm"
+                className={MUTED_LINK_TONE}
                 onClick={() => setExpanded((prev) => !prev)}
                 aria-expanded={expanded}
                 aria-controls={STAGE_GUIDE_TABLE_ID}

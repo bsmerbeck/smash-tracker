@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 export type InsightLineTone = 'steady' | 'notable';
 
@@ -41,7 +42,7 @@ export function InsightLine({ text, chip, tone, door }: InsightLineProps) {
         <span>{text}</span>
         {door && (
           <span data-slot="insight-line-door" className="shrink-0">
-            <Button asChild size="sm" variant="link">
+            <Button asChild size="sm" variant="link" className={MUTED_LINK_TONE}>
               {door}
             </Button>
           </span>
@@ -65,7 +66,7 @@ export function InsightLine({ text, chip, tone, door }: InsightLineProps) {
       <span>{text}</span>
       {door && (
         <span data-slot="insight-line-door" className="shrink-0">
-          <Button asChild size="sm" variant="link">
+          <Button asChild size="sm" variant="link" className={MUTED_LINK_TONE}>
             {door}
           </Button>
         </span>

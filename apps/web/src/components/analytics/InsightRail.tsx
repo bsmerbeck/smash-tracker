@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { InsightCardErrorBoundary } from './InsightCardErrorBoundary';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * One card's stable identity plus a factory that builds its content, given
@@ -183,7 +184,13 @@ export function InsightRail({
             data-card-kind="all-dismissed"
           >
             <p className="text-sm leading-5 text-muted-foreground">{labels.allDismissed}</p>
-            <Button type="button" variant="link" size="sm" onClick={onRestore}>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className={MUTED_LINK_TONE}
+              onClick={onRestore}
+            >
               {labels.restore}
             </Button>
           </div>
@@ -231,7 +238,13 @@ export function InsightRail({
           <span className="text-xs leading-4 text-muted-foreground tabular-nums">
             {labels.dismissedCount(dismissedIds.length)}
           </span>
-          <Button type="button" variant="link" size="sm" onClick={onRestore}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className={MUTED_LINK_TONE}
+            onClick={onRestore}
+          >
             {labels.restore}
           </Button>
         </div>

@@ -13,6 +13,7 @@ import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 const USAGE_BAR_HEIGHT_PX = 10;
 
@@ -303,7 +304,7 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
                   type="button"
                   variant="link"
                   size="sm"
-                  className="w-fit self-start px-0"
+                  className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
                   onClick={() => setPocketsExpanded(true)}
                 >
                   {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
@@ -320,7 +321,7 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
                     type="button"
                     variant="link"
                     size="sm"
-                    className="w-fit self-start px-0"
+                    className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
                     onClick={() => setPocketsExpanded(false)}
                   >
                     {t('analytics.list.showFewer')}

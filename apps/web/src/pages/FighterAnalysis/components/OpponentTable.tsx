@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { LIST_CAP } from '@/components/analytics/BoundedList';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * One row's prepared data — the shape a HOST builds, never something this
@@ -133,6 +134,7 @@ export function OpponentTable({
                 type="button"
                 variant="link"
                 size="sm"
+                className={MUTED_LINK_TONE}
                 onClick={() => setExpanded((prev) => !prev)}
                 aria-expanded={expanded}
                 aria-controls={tableId}

@@ -363,6 +363,8 @@ describe('HeroStats split cards — one StatRow, wrapping records (plan 39.1-39)
     makeMatch({ id: 'q1', time: 7, win: true, matchType: 'quickplay' }),
     makeMatch({ id: 'q2', time: 8, win: true, matchType: 'quickplay' }),
     makeMatch({ id: 'q3', time: 9, win: false, matchType: 'quickplay' }),
+    makeMatch({ id: 'f1', time: 10, win: true, matchType: 'offline-friendly' }),
+    makeMatch({ id: 'f2', time: 11, win: false, matchType: 'offline-friendly' }),
   ];
 
   function cardOf(title: string): HTMLElement {
@@ -400,7 +402,7 @@ describe('HeroStats split cards — one StatRow, wrapping records (plan 39.1-39)
     render(<HeroStats matches={manualOnly} timeFilteredMatches={manualOnly} />);
     const card = cardOf('Casual vs Competitive');
     expect(card.querySelector('[data-slot="stat-row"]')).not.toBeNull();
-    expect(screen.getByText('no data')).toBeInTheDocument();
+    expect(within(card).getByText('no data')).toBeInTheDocument();
     expect(screen.queryByText(/pts$/)).not.toBeInTheDocument();
   });
 });
