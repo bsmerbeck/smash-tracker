@@ -618,6 +618,18 @@ export const reportJobSchema = z.object({
    * as false.
    */
   wasCharged: z.boolean().nullish(),
+  /**
+   * Code review R2-CR-01 (iteration 2): an opaque, server-minted token that
+   * names the ONE request execution which wrote this job's current
+   * `queued`/`running` row. Two executions of the same job id (a double
+   * click, two tabs, a client retry) each write their own, so a failure path
+   * can settle the job atomically ONLY when the row is still its own and
+   * never fail or refund a job another execution owns. Written on the
+   * non-terminal rows only (terminal `.set()`s replace the node without it);
+   * never projected into any API response. `.nullish()` — every job written
+   * before this field, and every terminal record, has no value.
+   */
+  executionId: z.string().nullish(),
 });
 export type ReportJob = z.infer<typeof reportJobSchema>;
 

@@ -665,50 +665,76 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   }
 
   /**
-   * Code review API-WR-01: `failJob` for a throw that escaped the window
-   * between the spend and the `running` claim — but ONLY when the job has
-   * not already reached a terminal status. Several `resolveScout`
-   * implementations call `failJob` themselves before rethrowing, and
-   * `refundCredit` is not balance-idempotent, so a second `failJob` here
-   * would refund twice. The job node is re-read: `failed`/`refunded` means
-   * it is settled and nothing more happens. If the read itself fails, the
-   * refund is NOT attempted (a missed refund is visible and recoverable by
-   * the owner; a double refund mints a credit) and the failure is logged.
+   * Code review R2-CR-01 (iteration 2): the ONE atomic settle for a failure
+   * that happens while a job is still this execution's own. A single
+   * `jobRef.transaction()` moves the job to `failed` ONLY when its stored
+   * status is one of `from` AND its `executionId` is this execution's own
+   * token; anything else — `succeeded`, `failed`, `refunded`, a status not in
+   * `from`, or a row another execution of the same job id wrote — aborts
+   * with nothing written. Returns true only when THIS transaction committed
+   * the `failed` row, which is what licenses the one refund (`failJob`).
+   *
+   * Two executions of one job id can both pass the handler's read-then-write
+   * duplicate check. `refundCredit` is not balance-idempotent, so the old
+   * re-read-then-`failJob` guard refunded twice when both threw, and failed
+   * and refunded a bundle child the other execution had already DELIVERED
+   * (minting a credit). A pre-paid bundle child's credit belongs to the job,
+   * not to either execution, so only the execution that still owns the row
+   * may return it.
+   *
+   * RTDB transactions first run against the SDK's local cache, which is
+   * `null` on a listener-less server even when the node exists (review
+   * CR-01's abort-on-null trap). A null input is therefore returned
+   * unchanged to force the server compare; a node that truly does not exist
+   * commits that no-op and is reported as not settled.
    */
-  async function failJobUnlessSettled(params: {
-    request: ReportRequestContext;
+  async function settleOwnedJob(params: {
     jobRef: ReturnType<typeof app.firebase.database.ref>;
+    executionId: string;
+    from: ReadonlyArray<'queued' | 'running'>;
+  }): Promise<boolean> {
+    const { jobRef, executionId, from } = params;
+    const result = await jobRef.transaction((current) => {
+      if (current === null || current === undefined) {
+        return null;
+      }
+      const job = current as { status?: unknown; executionId?: unknown };
+      if (!(from as readonly unknown[]).includes(job.status) || job.executionId !== executionId) {
+        return undefined;
+      }
+      return { ...(current as Record<string, unknown>), status: 'failed', updatedAt: Date.now() };
+    });
+    const settled = result.snapshot.val() as { status?: unknown; executionId?: unknown } | null;
+    return result.committed && settled?.status === 'failed' && settled.executionId === executionId;
+  }
+
+  /**
+   * `failJob` behind `settleOwnedJob`: the job is failed, and a spent credit
+   * refunded, only when this execution's atomic settle committed. Used by
+   * every failure path that can run while a concurrent execution of the same
+   * job id may own the job — the post-spend guard and the prep resolver's own
+   * failure branches (a bundle child is the shared case). Returns whether it
+   * settled, so a caller can tell a no-op apart from a failure.
+   */
+  async function failOwnedJob(params: {
+    uid: string;
+    jobRef: ReturnType<typeof app.firebase.database.ref>;
+    executionId: string;
+    from: ReadonlyArray<'queued' | 'running'>;
     jobId: string;
     creditRef: string;
     spent: boolean;
     reason?: PrepReportReason;
-    jobCreatedAt: number;
-    jobAttempt: number;
-  }): Promise<void> {
-    const { request, jobRef, jobId, creditRef, spent, reason, jobCreatedAt, jobAttempt } = params;
-    let status: unknown;
-    try {
-      status = ((await jobRef.get()).val() as { status?: unknown } | null)?.status;
-    } catch (readErr) {
-      request.log.error(
-        { err: readErr },
-        'could not re-read a report job after a pre-generation throw; refund not attempted',
-      );
-      return;
+    createdAt: number;
+    attempt: number;
+    day: string | null;
+  }): Promise<boolean> {
+    const { jobRef, executionId, from, ...failParams } = params;
+    if (!(await settleOwnedJob({ jobRef, executionId, from }))) {
+      return false;
     }
-    if (status === 'failed' || status === 'refunded') {
-      return;
-    }
-    await failJob({
-      uid: request.uid,
-      jobId,
-      creditRef,
-      spent,
-      reason,
-      createdAt: jobCreatedAt,
-      attempt: jobAttempt,
-      day: null,
-    });
+    await failJob(failParams);
+    return true;
   }
 
   /**
@@ -754,6 +780,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     jobCreatedAt: number;
     jobAttempt: number;
     reason?: PrepReportReason;
+    /** R2-CR-01: this request execution's own token, written on the job's queued row by the caller. */
+    executionId: string;
     resolveScout: () => Promise<ScoutResolutionOutcome>;
     payloadOptions?: { binding?: ScoutBinding; curatedCanonicalName?: string };
   }): Promise<GenerationOutcome> {
@@ -765,6 +793,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobCreatedAt,
       jobAttempt,
       reason,
+      executionId,
       resolveScout,
       payloadOptions,
     } = params;
@@ -777,9 +806,15 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // here used to return a 500 with the job left `queued` and the credit
     // spent; the stuck-job sweep reads only the `running` index, so nothing
     // ever recovered it. Now the job fails and refunds through the ONE
-    // existing `failJob`, exactly once: some resolvers already call `failJob`
-    // before rethrowing, so the job is re-read first and a job that has
-    // already reached a terminal status is not failed (or refunded) again.
+    // existing `failJob`, exactly once.
+    //
+    // Code review R2-CR-01: "exactly once" is enforced by ONE atomic
+    // transaction (`failOwnedJob`), not by a re-read. It moves the job
+    // `queued` -> `failed` only when the queued row is still this
+    // execution's own, and the refund happens only when that transaction
+    // committed. A resolver that already failed the job, a concurrent
+    // execution of the same job id that re-queued it, claimed it `running`
+    // or delivered it `succeeded` — all of them make this a no-op.
     let scout: ScoutReportData;
     let payload: ReportPayload;
     try {
@@ -795,15 +830,18 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payloadOptions,
       );
     } catch (err) {
-      await failJobUnlessSettled({
-        request,
+      await failOwnedJob({
+        uid: request.uid,
         jobRef,
+        executionId,
+        from: ['queued'],
         jobId,
         creditRef,
         spent,
         reason,
-        jobCreatedAt,
-        jobAttempt,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: null,
       });
       throw err;
     }
@@ -824,6 +862,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       ...(reason ? { reason } : {}),
       // Post-plan fix (39-10): every whole-node write carries the spend fact.
       wasCharged: spent,
+      // R2-CR-01: the running row is this execution's own, like the queued one.
+      executionId,
     });
 
     if (reason) {
@@ -1521,11 +1561,20 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobCreatedAt: number;
       jobAttempt: number;
       reason: PrepReportReason;
+      executionId: string;
     },
   ): () => Promise<ScoutResolutionOutcome> {
-    const failCurrentJob = (): Promise<void> =>
-      failJob({
+    // Code review R2-CR-01: a prep job (a pre-paid bundle child above all)
+    // can have two concurrent executions, so the resolver's own failure
+    // branches settle through the same atomic, ownership-checked transaction
+    // as the post-spend guard — never a bare `failJob` over a job the other
+    // execution re-queued, claimed or delivered.
+    const failCurrentJob = async (): Promise<void> => {
+      await failOwnedJob({
         uid: ctx.uid,
+        jobRef: app.firebase.database.ref(`reportJobs/${ctx.uid}/${ctx.jobId}`),
+        executionId: ctx.executionId,
+        from: ['queued'],
         jobId: ctx.jobId,
         creditRef: ctx.jobId,
         spent: ctx.spent,
@@ -1534,6 +1583,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         attempt: ctx.jobAttempt,
         day: null,
       });
+    };
 
     if (binding.provider === 'startgg') {
       return async () => {
@@ -2316,6 +2366,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       const jobCreatedAt = existingJob?.createdAt ?? Date.now();
       const jobAttempt = existingJob ? existingJob.attempt + 1 : 0;
+      // Code review R2-CR-01: this request execution's own token, written on
+      // the queued and running rows it owns. Failure paths settle the job
+      // only while it still carries this token (`settleOwnedJob`).
+      const executionId = randomUUID();
 
       let spent = false;
       let resolveScout: () => Promise<ScoutResolutionOutcome>;
@@ -2370,6 +2424,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             // its recorded spend fact across this rewrite (conditional
             // spread: absent on a pre-39-10 child, never null).
             ...(recordedSpend !== null ? { wasCharged: recordedSpend } : {}),
+            executionId,
           }),
         );
 
@@ -2443,6 +2498,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           jobCreatedAt,
           jobAttempt,
           reason: effectiveReason as PrepReportReason,
+          executionId,
         });
         payloadOptions = { binding, curatedCanonicalName: opponentName };
       } else {
@@ -2509,6 +2565,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             updatedAt: Date.now(),
             attempt: jobAttempt,
             creditRef: jobId,
+            executionId,
           }),
         );
 
@@ -2689,6 +2746,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // Phase 27 (Task 2): the EFFECTIVE reason — `prep_bundle`, not the
         // request's own `prep_report`, when this is a pre-paid child.
         reason: effectiveReason,
+        executionId,
         resolveScout,
         payloadOptions,
       });
