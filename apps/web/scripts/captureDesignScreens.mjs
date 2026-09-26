@@ -227,6 +227,37 @@ function collectMetrics(floorGames) {
     bottom: document.querySelectorAll('[data-slot="trend-period-dot"][data-pinned="bottom"]')
       .length,
   };
+  // Plan 39.1-38: each StatRow's rendered column count (distinct child lefts
+  // within 2px, zero-width children ignored), its fixed-columns / lead-span
+  // flags and whether its first figure spans the whole row.
+  const statRows = [...document.querySelectorAll('[data-slot="stat-row"]')].map((row) => {
+    const rowRect = row.getBoundingClientRect();
+    const kids = [...row.children]
+      .map((child) => child.getBoundingClientRect())
+      .filter((r) => r.width > 0);
+    const lefts = [];
+    for (const r of kids) if (!lefts.some((l) => Math.abs(l - r.left) <= 2)) lefts.push(r.left);
+    return {
+      figures: kids.length,
+      columns: lefts.length,
+      fixedColumns: row.hasAttribute('data-fixed-columns'),
+      leadSpan: row.hasAttribute('data-lead-span'),
+      firstSpansRow: kids.length > 1 && kids[0].width >= rowRect.width - 2,
+    };
+  });
+  // Plan 39.1-38: where content starts — the top of the page shell's first
+  // child after its filter row (null when no page shell renders).
+  const shell = document.querySelector('[data-slot="page-shell"]');
+  const filterRowEl = shell?.querySelector(':scope > [data-slot="page-filter-row"]') ?? null;
+  const firstContent = shell
+    ? ([...shell.children].find((child) => child !== filterRowEl) ?? null)
+    : null;
+  const firstContentTop = firstContent
+    ? Math.round(firstContent.getBoundingClientRect().top + window.scrollY)
+    : null;
+  const filterRowHeight = filterRowEl
+    ? Math.round(filterRowEl.getBoundingClientRect().height)
+    : null;
   const cards = [...document.querySelectorAll('[data-slot="card"]')].map((card) => {
     const rect = card.getBoundingClientRect();
     const title =
@@ -235,6 +266,9 @@ function collectMetrics(floorGames) {
     return { title, width: Math.round(rect.width), height: Math.round(rect.height) };
   });
   return {
+    statRows,
+    firstContentTop,
+    filterRowHeight,
     scrollHeight: document.documentElement.scrollHeight,
     innerHeight: window.innerHeight,
     screens: Number((document.documentElement.scrollHeight / window.innerHeight).toFixed(2)),
@@ -302,7 +336,18 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
     await waitForStableLayout(page);
     const name = `live-${route.id}-${width}.png`;
     const file = path.join(scaleDir, name);
-    await page.screenshot({ path: file, fullPage: true });
+    // Plan 39.1-38 [Rule 1]: `fullPage: true` still runs Puppeteer's own
+    // beyond-viewport capture, which re-emulates the device metrics INSIDE the
+    // shot — the Trends career timeline's ResponsiveContainer re-measured to a
+    // transient ~140px width there in 2 of 4 batch runs, while live sampling
+    // of the same sequence read 1094px throughout. The viewport already spans
+    // the page, so capture it as-is: no resize happens during the shot.
+    const fullHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.screenshot({
+      path: file,
+      captureBeyondViewport: false,
+      clip: { x: 0, y: 0, width, height: Math.max(VIEWPORT_HEIGHTS[width], fullHeight) },
+    });
     if (fs.statSync(file).size < MIN_PNG_BYTES) {
       throw new Error(`${name} is under ${MIN_PNG_BYTES} bytes`);
     }
