@@ -35,8 +35,15 @@ function buildIdVocabulary(prefix: string, size: number): readonly string[] {
   );
 }
 
-/** `c01`..`c32`, ascending, zero-padded to two digits. */
-export const CLAIM_ID_VOCABULARY = buildIdVocabulary(
+/**
+ * `c01`..`c32`, ascending, zero-padded to two digits.
+ *
+ * The `@__PURE__` marks on this and `ACTION_ID_VOCABULARY` are load-bearing:
+ * without them Rolldown treats this module (and every module importing it,
+ * e.g. `actions.ts`/`snapshot.ts`) as side-effectful and pins it into the web
+ * app's EAGER shared chunk. `buildIdVocabulary` only freezes a fresh array.
+ */
+export const CLAIM_ID_VOCABULARY = /* @__PURE__ */ buildIdVocabulary(
   'c',
   CLAIM_ID_VOCABULARY_SIZE,
 ) as readonly ClaimId[];
@@ -52,7 +59,7 @@ export type ClaimId = `c${string}`;
 export const ACTION_ID_VOCABULARY_SIZE = 9;
 
 /** `a01`..`a09`. */
-export const ACTION_ID_VOCABULARY = buildIdVocabulary(
+export const ACTION_ID_VOCABULARY = /* @__PURE__ */ buildIdVocabulary(
   'a',
   ACTION_ID_VOCABULARY_SIZE,
 ) as readonly ActionId[];

@@ -60,11 +60,19 @@ export interface EvidenceSnapshot {
 /** The shape assertion the API's `snapshotIdFor` output (plan 39-06) must satisfy — 64 lowercase hex characters (a sha256 digest). */
 export const SNAPSHOT_ID_LENGTH = 64;
 
-const SNAPSHOT_ID_PATTERN = new RegExp(`^[0-9a-f]{${SNAPSHOT_ID_LENGTH}}$`);
+/**
+ * A regex LITERAL plus a separate length check, never a `new RegExp` built
+ * from a template literal: Rolldown cannot prove an interpolated template
+ * argument side-effect free, so that one initializer made this whole module
+ * (and `actions.ts`, which imports it) "side-effectful" and pinned both into
+ * the web app's EAGER shared chunk. Equivalent to `^[0-9a-f]{64}$` (no `m`
+ * flag, so `$` only matches at the end of input).
+ */
+const LOWERCASE_HEX_PATTERN = /^[0-9a-f]+$/;
 
 /** True when `value` has the shape a content-addressed snapshot id must have. Construction of that id is plan 39-06's, in `apps/api`. */
 export function isSnapshotId(value: string): boolean {
-  return SNAPSHOT_ID_PATTERN.test(value);
+  return value.length === SNAPSHOT_ID_LENGTH && LOWERCASE_HEX_PATTERN.test(value);
 }
 
 /**

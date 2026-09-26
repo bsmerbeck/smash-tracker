@@ -268,8 +268,12 @@ export function vodPatternCondition(claim: ClaimAtom, context: DrillConditionCon
   return groupSize >= 2;
 }
 
-/** The closed D-18 table — exactly these four rows, total over the four predicates it names. Adding a row here without a firing fixture fails `actions.test.ts`'s coverage battery. */
-export const DRILL_TEMPLATE_TABLE: readonly DrillTemplateRow[] = Object.freeze([
+/**
+ * The closed D-18 table — exactly these four rows, total over the four predicates it names. Adding a row here without a firing fixture fails `actions.test.ts`'s coverage battery.
+ *
+ * `@__PURE__` is load-bearing (freezing a fresh literal has no observable effect): without it Rolldown keeps this module in the web app's EAGER shared chunk.
+ */
+export const DRILL_TEMPLATE_TABLE: readonly DrillTemplateRow[] = /* @__PURE__ */ Object.freeze([
   {
     id: 'stage_habit',
     predicate: 'stage_record',
