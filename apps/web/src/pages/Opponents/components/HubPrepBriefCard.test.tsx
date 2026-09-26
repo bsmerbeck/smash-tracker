@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PrepBriefStatus, TournamentEntry } from '@smash-tracker/shared';
@@ -321,18 +321,36 @@ describe('HubPrepBriefCard (PREP-05, D-11/D-13)', () => {
       expect(screen.queryByText(/Review Today Locals/)).not.toBeInTheDocument();
     });
 
-    it('a pending or errored status falls through to the next state rather than guessing a debrief', async () => {
-      const { unmount } = renderCard({
-        entries: [shared],
-        statuses: { past1: 'pending' },
+    it('code review WEB-01: a PENDING debrief status renders nothing — never a door the settled render would retract', async () => {
+      renderCard({ entries: [shared], statuses: { past1: 'pending' }, blocks: [blockFor(shared)] });
+      await waitFor(() => expect(getPrep).toHaveBeenCalledWith('past1'));
+      expect(await cardState()).toBeNull();
+    });
+
+    it('code review WEB-01: a PENDING debrief status hides a qualifying upcoming door too, until the status lands', async () => {
+      const upcoming = makeEntry({ entryKey: 'up1', firstSetAt: NOW + DAY_MS });
+      renderCard({
+        entries: [shared, upcoming],
+        statuses: { past1: 'pending', up1: briefListing('rival') },
         blocks: [blockFor(shared)],
       });
-      expect(await cardState()).toBe('addEvent');
-      unmount();
+      await waitFor(() => expect(getPrep).toHaveBeenCalledWith('up1'));
+      expect(await cardState()).toBeNull();
+    });
 
+    it('an ERRORED debrief status falls through to the next state, so a failing endpoint never hides the card for good', async () => {
       renderCard({ entries: [shared], statuses: { past1: 'error' }, blocks: [blockFor(shared)] });
       await waitFor(() => expect(getPrep).toHaveBeenCalledWith('past1'));
       expect(await cardState()).toBe('addEvent');
+
+      const upcoming = makeEntry({ entryKey: 'up1', firstSetAt: NOW + DAY_MS });
+      cleanup();
+      renderCard({
+        entries: [shared, upcoming],
+        statuses: { past1: 'error', up1: briefListing('rival') },
+        blocks: [blockFor(shared)],
+      });
+      expect(await cardState()).toBe('upcoming');
     });
 
     it('C1-H7: a past-dated ADMIN-IMPORTED shared entry produces no debrief and no upcoming affordance, and its status is never read', async () => {

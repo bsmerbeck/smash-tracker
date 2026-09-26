@@ -335,14 +335,19 @@ describe('DashboardPrepActionSlot', () => {
       expect(slotState()).toBeNull();
     });
 
-    it('a pending or errored brief read falls through to the next state rather than guessing', () => {
-      for (const read of ['pending', 'error'] as const) {
-        withEntries([pastEntry], 'prepare');
-        mockBriefs({ past: read });
-        const { unmount } = renderSlot();
-        expect(slotState()).toBe('addEvent');
-        unmount();
-      }
+    it('code review WEB-01: a PENDING review-status read renders nothing — never the add-event door the settled render would retract', () => {
+      withEntries([pastEntry], 'prepare');
+      mockBriefs({ past: 'pending' });
+      renderSlot();
+      expect(usePrepBrief).toHaveBeenCalledWith('past');
+      expect(slotState()).toBeNull();
+    });
+
+    it('an ERRORED review-status read falls through to the next state, so a failing endpoint never hides the slot for good', () => {
+      withEntries([pastEntry], 'prepare');
+      mockBriefs({ past: 'error' });
+      renderSlot();
+      expect(slotState()).toBe('addEvent');
     });
 
     it('C1-H7: a past-dated ADMIN-IMPORTED entry never produces a review state, and its status is never read', () => {
