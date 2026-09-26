@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,6 +12,27 @@ import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as statsModule from '@/lib/stats';
 import * as drillDownParamsModule from '@/lib/drillDownParams';
+import type { TrendLineProps } from '@/components/charts/TrendLine';
+
+/**
+ * Plan 39.1-39: records the H2H trend's props (points, onSelectPoint) while
+ * still rendering the REAL TrendLine, so every other case in this file sees
+ * the unchanged chart.
+ */
+let capturedHubTrendProps: TrendLineProps | undefined;
+vi.mock('@/components/charts/TrendLine', async () => {
+  const actual = await vi.importActual<typeof import('@/components/charts/TrendLine')>(
+    '@/components/charts/TrendLine',
+  );
+  const RealTrendLine = actual.TrendLine;
+  return {
+    ...actual,
+    TrendLine: (props: TrendLineProps) => {
+      capturedHubTrendProps = props;
+      return <RealTrendLine {...props} />;
+    },
+  };
+});
 
 /**
  * WR-03 (38-REVIEW-FIX): a partial mock of `matchesDrillDown` (defaulting to
@@ -1080,5 +1101,105 @@ describe('OpponentHubPage', () => {
     const h1 = screen.getByRole('heading', { level: 1, name: 'rival' });
     expect(row.contains(h1)).toBe(false);
     expect(row.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+});
+
+// Plan 39.1-39 (VIZ-01, UI-SPEC section 11 "line points at most 60"; section
+// 10.2 readable tooltips): the H2H event trend renders at most 60 points on
+// any account (binned by the engine, never by the chart), built ONLY through
+// buildEventTrendPoints; clicking a bin drills event=bin:... and the terminus
+// lists exactly that bin's games; a tournament anchor's event= still lists
+// exactly that anchor's games.
+describe('OpponentHubPage — bounded, readable event trend (plan 39.1-39)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const START = Date.UTC(2026, 0, 5, 18);
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    capturedHubTrendProps = undefined;
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    setMockUser(makeMockUser());
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  function longHistory() {
+    return [
+      ...Array.from({ length: 150 }, (_, i) =>
+        makeMatch({ id: `d${i}`, time: START + i * DAY, win: i % 3 !== 0, opponent: 'rival' }),
+      ),
+      makeMatch({
+        id: 'g1',
+        time: START + 200 * DAY,
+        win: true,
+        opponent: 'rival',
+        eventName: 'Genesis 9',
+      }),
+      makeMatch({
+        id: 'g2',
+        time: START + 200 * DAY + 60_000,
+        win: false,
+        opponent: 'rival',
+        eventName: 'Genesis 9',
+      }),
+    ];
+  }
+
+  function eventPoints() {
+    if (capturedHubTrendProps?.mode !== 'event')
+      throw new Error('expected event-mode TrendLine props');
+    return capturedHubTrendProps;
+  }
+
+  it('a 151-anchor history renders at most 60 points, with readable labels (no engine key, no ISO)', async () => {
+    listMatches.mockResolvedValue(longHistory());
+    renderHub('/opponents/rival');
+    await waitFor(() => expect(capturedHubTrendProps?.mode).toBe('event'));
+    await waitFor(() => expect(eventPoints().points.length).toBeGreaterThan(1));
+    const { points } = eventPoints();
+    expect(points.length).toBeLessThanOrEqual(60);
+    expect(points.some((p) => p.eventKey.startsWith('bin:'))).toBe(true);
+    for (const point of points) {
+      expect(point.context.eventLabel).not.toContain('::');
+      expect(point.context.eventLabel).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it("clicking a bin drills event=bin:... and the terminus lists exactly that bin's games", async () => {
+    listMatches.mockResolvedValue(longHistory());
+    renderHub('/opponents/rival');
+    await waitFor(() => expect(eventPoints().points.length).toBeGreaterThan(1));
+    const bin = eventPoints().points.find((p) => p.eventKey.startsWith('bin:'))!;
+    act(() => eventPoints().onSelectPoint!(bin));
+    await waitFor(() =>
+      expect(screen.getByTestId('location-probe').textContent).toContain(
+        `event=${encodeURIComponent(bin.eventKey)}`,
+      ),
+    );
+    const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+    await waitFor(() => {
+      const table = within(listEl).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(bin.wins + bin.losses);
+    });
+  });
+
+  it("arriving with a tournament anchor's event= still lists exactly that anchor's games", async () => {
+    listMatches.mockResolvedValue(longHistory());
+    const key = `tournament:genesis 9:${START + 200 * DAY}`;
+    renderHub(`/opponents/rival?event=${encodeURIComponent(key)}`);
+    const listEl = await waitFor(() => {
+      const el = document.getElementById('opponent-hub-list');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await waitFor(() => {
+      const table = within(listEl).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(2);
+    });
   });
 });

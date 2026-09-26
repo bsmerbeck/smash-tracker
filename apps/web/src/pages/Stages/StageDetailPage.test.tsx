@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -943,5 +943,68 @@ describe('StageDetailPage — rows are DrillableRows, never brand-red links (pla
     );
     expect(foxRow.querySelector('svg.lucide-chevron-right')).not.toBeNull();
     expectNoBrandRed(list);
+  });
+});
+
+// Plan 39.1-39 (VIZ-01, UI-SPEC section 11; section 10.2): the Over Time trend
+// renders at most 60 points on any account (the engine bins; the chart never
+// does), built through buildEventTrendPoints with readable labels; a bin click
+// drills event=bin:... and the games list shows exactly that bin's games.
+describe('StageDetailPage — bounded, readable event trend (plan 39.1-39)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const START = Date.UTC(2026, 0, 5, 18);
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    capturedTrendLineProps = undefined;
+    setMockUser(makeMockUser());
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listMatches.mockResolvedValue(
+      Array.from({ length: 150 }, (_, i) =>
+        makeMatch({ id: `d${i}`, time: START + i * DAY, win: i % 3 !== 0 }),
+      ),
+    );
+  });
+
+  function eventProps() {
+    if (capturedTrendLineProps?.mode !== 'event')
+      throw new Error('expected event-mode TrendLine props');
+    return capturedTrendLineProps;
+  }
+
+  it('a 150-anchor stage renders at most 60 points, every label readable', async () => {
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(eventProps().points.length).toBeGreaterThan(1));
+    const { points } = eventProps();
+    expect(points.length).toBeLessThanOrEqual(60);
+    expect(points.every((p) => p.eventKey.startsWith('bin:week:'))).toBe(true);
+    for (const point of points) {
+      expect(point.context.eventLabel).not.toContain('::');
+      expect(point.context.eventLabel).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it("clicking a bin drills event=bin:... and the games list shows exactly that bin's games", async () => {
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(eventProps().points.length).toBeGreaterThan(1));
+    const bin = eventProps().points[3]!;
+    act(() => eventProps().onSelectPoint!(bin));
+    await waitFor(() => {
+      const table = document.querySelector('table[data-total-rows]') as HTMLElement;
+      expect(table).not.toBeNull();
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(bin.wins + bin.losses);
+    });
+    expect(bin.wins + bin.losses).toBe(7);
   });
 });

@@ -56,6 +56,8 @@ import {
   evaluateTableClip,
   evaluateBrandRedText,
   evaluateRecordFit,
+  evaluateMarkCount,
+  evaluateMatrixHug,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -249,7 +251,17 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-38: the hub's filter bar is one unboxed filter row — no
     // height limit and no owners (its h1 lives in the unchanged header row
     // above; the hub has no HorizonSwitch, audit 7.5's second half).
-    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect', 'filter-row', 'brand-red-text'],
+    // Plan 39.1-39: mark-count (UI-SPEC §11, the H2H event trend at most 60
+    // points) and matrix-hug (audit 7.4, the cross-tab at its card edge).
+    checks: [
+      'form-strip-fit',
+      'axis-ticks',
+      'plot-aspect',
+      'filter-row',
+      'brand-red-text',
+      'mark-count',
+      'matrix-hug',
+    ],
     filterRow: {},
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6): What they play never hides a column
     // behind a horizontal scroll on a phone.
@@ -260,12 +272,23 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'stage-detail',
     loadedMarker: '[data-slot="stage-detail-body"]',
     // Plan 39.1-37: axis-ticks and plot-aspect on the Over Time event trend.
-    checks: ['axis-ticks', 'plot-aspect', 'brand-red-text'],
+    // Plan 39.1-39: mark-count (UI-SPEC §11, the Over Time trend at most 60 points).
+    checks: ['axis-ticks', 'plot-aspect', 'brand-red-text', 'mark-count'],
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6; deferred from 39.1-37): the By
     // Character list never hides its Win Rate column behind a horizontal
     // scroll on a phone.
     narrowChecks: ['table-clip'],
     clipTargets: ['[data-slot="stage-by-character"]'],
+  },
+  {
+    // Plan 39.1-39 (deferred from 39.1-37): the SAME stage page on the
+    // harness's `recent` scale (~150 session anchors on Battlefield — over
+    // UI-SPEC §11's 60 line points unless the engine bins them), inside the
+    // MainLayout-geometry shell at production widths.
+    id: 'stage-detail-recent',
+    loadedMarker: '[data-slot="stage-detail-body"]',
+    scale: 'recent',
+    checks: ['mark-count', 'axis-ticks'],
   },
 ];
 
@@ -330,6 +353,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   // Plan 39.1-39: brand-red-text and record-fit.
   const wantBrandRedText = checks.includes('brand-red-text');
   const wantRecordFit = checks.includes('record-fit');
+  const wantMarkCount = checks.includes('mark-count');
+  const wantMatrixHug = checks.includes('matrix-hug');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1045,7 +1070,45 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-39: mark-count — per Recharts line inside a card, the number
+  // of rendered point marks in its `.recharts-line-dots` group (UI-SPEC §11).
+  // Recharts 3 draws the dots group in its own z-index layer, a SIBLING of
+  // `.recharts-line` (not a descendant — the first RED run's all-unmeasured
+  // result caught that), so the groups are read from the card directly.
+  const markLines = [];
+  if (wantMarkCount) {
+    for (const card of document.querySelectorAll('[data-slot="card"]')) {
+      for (const dots of card.querySelectorAll('.recharts-line-dots')) {
+        markLines.push({ selectorPath: describeElement(dots), count: dots.children.length });
+      }
+    }
+  }
+
+  // Plan 39.1-39: matrix-hug — each MatrixHeat grid table's left edge vs its
+  // card content box's left edge (one getComputedStyle per table's content box).
+  const matrixTables = [];
+  if (wantMatrixHug) {
+    for (const table of document.querySelectorAll('[data-slot="matrix-heat-grid"] table')) {
+      const box =
+        table.closest('[data-slot="card-content"]') ?? table.closest('[data-slot="card"]');
+      if (!box) continue;
+      const boxRect = box.getBoundingClientRect();
+      const boxStyle = window.getComputedStyle(box);
+      const contentLeft =
+        boxRect.left +
+        (parseFloat(boxStyle.borderLeftWidth) || 0) +
+        (parseFloat(boxStyle.paddingLeft) || 0);
+      matrixTables.push({
+        selectorPath: describeElement(table),
+        left: table.getBoundingClientRect().left,
+        contentLeft,
+      });
+    }
+  }
+
   return {
+    markLines,
+    matrixTables,
     brandRed,
     recordCards,
     clipTargets,
@@ -1264,6 +1327,14 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     }
     if (checks.includes('record-fit')) {
       violations.push(...evaluateRecordFit(measurements.recordCards));
+    }
+    if (checks.includes('mark-count')) {
+      violations.push(...evaluateMarkCount(measurements.markLines));
+    }
+    if (checks.includes('matrix-hug')) {
+      violations.push(
+        ...evaluateMatrixHug({ viewportWidth: viewport.width, tables: measurements.matrixTables }),
+      );
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own

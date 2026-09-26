@@ -558,3 +558,87 @@ describe('formatEventAnchorTickLabel (plan 39.1-37, human-event-axis)', () => {
     }
   });
 });
+
+/**
+ * Plan 39.1-39 (VIZ-01/VIZ-03): `formatEventAnchorLabel` is the untruncated,
+ * readable name of an event-trend point — a bin reads as its calendar period,
+ * a session as a date, a tournament as its whole name — and
+ * `formatEventAnchorTickLabel` builds on it. Read through the namespace so a
+ * RED run fails on an assertion.
+ */
+async function loadEventAnchorLabel(): Promise<EventAnchorTickFormatter> {
+  const mod = (await import('./periodTicks')) as Record<string, unknown>;
+  expect(typeof mod.formatEventAnchorLabel, 'formatEventAnchorLabel is exported').toBe('function');
+  return mod.formatEventAnchorLabel as EventAnchorTickFormatter;
+}
+
+describe('formatEventAnchorLabel (plan 39.1-39, readable event labels)', () => {
+  const march = Date.UTC(2026, 2, 1);
+
+  it('a bin:month key reads as the month-year label', async () => {
+    const label = await loadEventAnchorLabel();
+    expect(
+      label(
+        { eventKey: `bin:month:${march}`, eventLabel: '2026-03', dateMs: march + 5 * 86_400_000 },
+        'en',
+      ),
+    ).toBe('Mar 2026');
+  });
+
+  it("bin:quarter / bin:year / bin:week read as the period trend's label for that grain", async () => {
+    const label = await loadEventAnchorLabel();
+    expect(
+      label(
+        { eventKey: `bin:quarter:${Date.UTC(2026, 0, 1)}`, eventLabel: '2026-Q1', dateMs: march },
+        'en',
+      ),
+    ).toBe('2026-Q1');
+    expect(
+      label(
+        { eventKey: `bin:year:${Date.UTC(2026, 0, 1)}`, eventLabel: '2026', dateMs: march },
+        'en',
+      ),
+    ).toBe('2026');
+    expect(
+      label(
+        { eventKey: `bin:week:${Date.UTC(2026, 2, 2)}`, eventLabel: '2026-W10', dateMs: march },
+        'en',
+      ),
+    ).toBe('2026-W10');
+  });
+
+  it('a session key never returns an ISO string or the key', async () => {
+    const label = await loadEventAnchorLabel();
+    const startMs = Date.UTC(2026, 2, 3, 18);
+    const text = label(
+      {
+        eventKey: `session::${startMs}`,
+        eventLabel: new Date(startMs).toISOString(),
+        dateMs: startMs,
+      },
+      'en',
+    );
+    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    expect(text).not.toContain('session::');
+    expect(text).toBe('Mar 3, 2026');
+  });
+
+  it('a tournament reads as its whole name (untruncated), and the tick label still truncates it', async () => {
+    const label = await loadEventAnchorLabel();
+    const tick = await loadEventAnchorFormatter();
+    const point = {
+      eventKey: 'tournament:the big house 12:1',
+      eventLabel: 'The Big House 12',
+      dateMs: 1,
+    };
+    expect(label(point, 'en')).toBe('The Big House 12');
+    expect(tick(point, 'en').length).toBeLessThan('The Big House 12'.length);
+  });
+
+  it('the tick label of a bin is its readable period label', async () => {
+    const tick = await loadEventAnchorFormatter();
+    expect(
+      tick({ eventKey: `bin:month:${march}`, eventLabel: '2026-03', dateMs: march }, 'en'),
+    ).toBe('Mar 2026');
+  });
+});

@@ -196,3 +196,25 @@ describe('MatrixHeat', () => {
     expect(grid?.querySelectorAll('button')).toHaveLength(1);
   });
 });
+
+// Plan 39.1-39 (design audit 7.4): the grid sits at the card's content edge —
+// no centring — so the card hugs its content; the narrow Tabs stack is unchanged.
+describe('MatrixHeat — the grid hugs the card content edge (plan 39.1-39)', () => {
+  it('the grid table carries no mx-auto (and keeps w-max)', () => {
+    const { container } = render(
+      <MatrixHeat rows={rows} cols={cols} cells={sparseCells} emptyMessage="none" />,
+    );
+    const table = container.querySelector('[data-slot="matrix-heat-grid"] table') as HTMLElement;
+    expect(table).not.toBeNull();
+    const classes = table.className.split(/\s+/);
+    expect(classes).not.toContain('mx-auto');
+    expect(classes).toContain('w-max');
+  });
+
+  it('the narrow stack still renders its tabs', () => {
+    const { container } = render(
+      <MatrixHeat rows={rows} cols={cols} cells={sparseCells} emptyMessage="none" layout="stack" />,
+    );
+    expect(container.querySelector('[data-slot="matrix-heat-stack"]')).not.toBeNull();
+  });
+});

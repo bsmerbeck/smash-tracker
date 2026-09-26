@@ -2153,3 +2153,66 @@ test('record-fit: a route that requested the family but collected no record is e
   ]);
   assert.deepEqual(typesOf(evaluateFamilyPresence('record-fit', [])), ['record-fit-unmeasured']);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-39: mark-count and matrix-hug (namespace reads — RED fails on an
+// assertion, not a module-link error).
+// ---------------------------------------------------------------------------
+
+test('mark-count: a line with 150 point marks is one mark-count-over (count 150, limit 60)', () => {
+  const evaluateMarkCount = fn38('evaluateMarkCount');
+  const v = evaluateMarkCount([{ selectorPath: '#trend', count: 150 }]);
+  assert.deepEqual(typesOf(v), ['mark-count-over']);
+  assert.equal(v[0].count, 150);
+  assert.equal(v[0].limit, 60);
+});
+
+test('mark-count: exactly 60 point marks passes', () => {
+  const evaluateMarkCount = fn38('evaluateMarkCount');
+  assert.deepEqual(evaluateMarkCount([{ selectorPath: '#trend', count: 60 }]), []);
+});
+
+test('mark-count: a route that requested the family but rendered no line is exactly one mark-count-unmeasured', () => {
+  const evaluateMarkCount = fn38('evaluateMarkCount');
+  assert.deepEqual(typesOf(evaluateMarkCount([])), ['mark-count-unmeasured']);
+});
+
+test('matrix-hug: a matrix table 200px right of its card content edge is one matrix-not-left-aligned', () => {
+  const evaluateMatrixHug = fn38('evaluateMatrixHug');
+  const v = evaluateMatrixHug({
+    viewportWidth: 1440,
+    tables: [{ selectorPath: '#m', left: 524, contentLeft: 324 }],
+  });
+  assert.deepEqual(typesOf(v), ['matrix-not-left-aligned']);
+  assert.equal(v[0].offsetPx, 200);
+});
+
+test('matrix-hug: a table within 2px of the content edge passes', () => {
+  const evaluateMatrixHug = fn38('evaluateMatrixHug');
+  assert.deepEqual(
+    evaluateMatrixHug({
+      viewportWidth: 1440,
+      tables: [{ selectorPath: '#m', left: 326, contentLeft: 324 }],
+    }),
+    [],
+  );
+});
+
+test('matrix-hug: under 1024px the family is not evaluated', () => {
+  const evaluateMatrixHug = fn38('evaluateMatrixHug');
+  assert.deepEqual(
+    evaluateMatrixHug({
+      viewportWidth: 390,
+      tables: [{ selectorPath: '#m', left: 524, contentLeft: 324 }],
+    }),
+    [],
+  );
+  assert.deepEqual(evaluateMatrixHug({ viewportWidth: 1023, tables: [] }), []);
+});
+
+test('matrix-hug: no matrix at 1024px and wider is exactly one matrix-hug-unmeasured', () => {
+  const evaluateMatrixHug = fn38('evaluateMatrixHug');
+  assert.deepEqual(typesOf(evaluateMatrixHug({ viewportWidth: 1024, tables: [] })), [
+    'matrix-hug-unmeasured',
+  ]);
+});

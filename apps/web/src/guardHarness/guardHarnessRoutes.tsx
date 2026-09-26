@@ -53,7 +53,8 @@ export interface GuardHarnessRouteEntry {
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
-   * `trends-casual` and (plan 39.1-39) `dashboard-app` and the capture-only `gsp`.
+   * `trends-casual` and (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
+   * capture-only `gsp`.
    */
   shell?: 'app';
 }
@@ -192,6 +193,18 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/stages/1',
     element: <StageDetailPage />,
     loadedMarker: '[data-slot="stage-detail-body"]',
+  },
+  {
+    // Plan 39.1-39 (deferred from 39.1-37): the SAME stage page on the
+    // harness's `recent` scale (guardLayout sends `x-guard-layout-scale:
+    // recent`), in the MainLayout-geometry shell — ~150 session anchors on
+    // Battlefield, the mark-count family's over-the-bound account.
+    id: 'stage-detail-recent',
+    path: '/stages/:stageId',
+    initialEntry: '/stages/1',
+    element: <StageDetailPage />,
+    loadedMarker: '[data-slot="stage-detail-body"]',
+    shell: 'app',
   },
   {
     // Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): a

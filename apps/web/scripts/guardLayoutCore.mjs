@@ -1313,3 +1313,55 @@ export function evaluateRecordFit(cards = []) {
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-39: mark-count (UI-SPEC §11 line points) and matrix-hug (audit 7.4).
+// ---------------------------------------------------------------------------
+
+/** UI-SPEC §11: a line chart shows at most this many points (mirrors `MARK_BOUND_LINE_POINTS`). */
+export const MARK_COUNT_LINE_POINTS_LIMIT = 60;
+
+/**
+ * UI-SPEC §11 ("line points at most 60"): every rendered line's point-mark
+ * count is at most the bound. `lines` is `[{ selectorPath, count }]`; a count
+ * over the limit is one `mark-count-over`; a route that requested the family
+ * but rendered no line is exactly one `mark-count-unmeasured`.
+ */
+export function evaluateMarkCount(lines = [], limit = MARK_COUNT_LINE_POINTS_LIMIT) {
+  if (lines.length === 0) return [{ type: 'mark-count-unmeasured' }];
+  return lines
+    .filter((line) => line.count > limit)
+    .map((line) => ({
+      type: 'mark-count-over',
+      selectorPath: line.selectorPath,
+      count: line.count,
+      limit,
+    }));
+}
+
+/** Audit 7.4: a matrix table may sit at most this many px right of its card's content edge. */
+export const MATRIX_HUG_TOLERANCE_PX = 2;
+/** The family is evaluated from this viewport width up (the grid form; below it the Tabs stack renders). */
+export const MATRIX_HUG_MIN_VIEWPORT_PX = 1024;
+
+/**
+ * Design audit 7.4: a cross-tab matrix sits at its card's content edge (no
+ * centring), so the card hugs its content. `tables` is
+ * `[{ selectorPath, left, contentLeft }]`. Below 1024px the family is not
+ * evaluated at all; at 1024px and wider no matrix is exactly one
+ * `matrix-hug-unmeasured`; a table more than 2px right of the content edge is
+ * one `matrix-not-left-aligned`.
+ */
+export function evaluateMatrixHug({ viewportWidth, tables = [] } = {}) {
+  if (!(viewportWidth >= MATRIX_HUG_MIN_VIEWPORT_PX)) return [];
+  if (tables.length === 0) return [{ type: 'matrix-hug-unmeasured' }];
+  return tables
+    .filter((table) => table.left - table.contentLeft > MATRIX_HUG_TOLERANCE_PX)
+    .map((table) => ({
+      type: 'matrix-not-left-aligned',
+      selectorPath: table.selectorPath,
+      left: table.left,
+      contentLeft: table.contentLeft,
+      offsetPx: table.left - table.contentLeft,
+    }));
+}

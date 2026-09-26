@@ -21,9 +21,10 @@
  * period-dot radii, recharts x-tick texts and card titles with sizes).
  *
  * Datasets: `realistic` (guard:layout's default 300-game fixture), `career`
- * (plan 39.1-34's 8,400-game scale) or `recent` (below — defined HERE and
- * passed through the harness's `extraScales` option, so
- * `guardLayoutHarness.mjs` and guard:layout's defaults are untouched). The
+ * (plan 39.1-34's 8,400-game scale), `recent` (plan 39.1-36's two-horizon
+ * scale — one definition, `guardLayoutHarness.mjs`'s `buildRecentScale`,
+ * since plan 39.1-39 also measures it in guard:layout) or the capture-only
+ * `gsp` scale (below, passed through the harness's `extraScales`). The
  * scale is sent as the `x-guard-layout-scale` request header; an unknown
  * value exits non-zero rather than silently falling back.
  *
@@ -36,8 +37,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
-import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
-import { buildRealisticScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import {
+  buildRealisticScale,
+  buildRecentScale,
+  startGuardLayoutHarnessServer,
+} from './guardLayoutHarness.mjs';
 import { LAYOUT_ORACLE_ROUTES, createHardTimeoutExit } from './guardLayout.mjs';
 
 const HARD_TIMEOUT_MS = 8 * 60 * 1000;
@@ -68,9 +72,6 @@ const KNOWN_SCALES = new Set(['realistic', 'recent', 'career', 'gsp']);
 const DIRECTIONAL_STATES = new Set(['steady', 'up', 'down']);
 /** `ABSTENTION_FLOOR_GAMES` — mirrored (a plain Node script cannot import the TS policy module's constant without a transform; the value is fixed by D-07). */
 const FLOOR_GAMES = 3;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 function fail(code, message) {
   console.error(`captureDesignScreens: ${message}`);
@@ -117,71 +118,6 @@ function parseArgs(argv) {
   }
   args.routeEntries = args.routes.map((id) => known.get(id));
   return args;
-}
-
-/** Shifts every row's time so the LAST row sits at `endMs`; ids are untouched. */
-function shiftToEnd(matches, endMs) {
-  const last = matches.reduce((max, match) => Math.max(max, match.time), -Infinity);
-  const delta = endMs - last;
-  return matches.map((match) => ({ ...match, time: match.time + delta }));
-}
-
-/**
- * Plan 39.1-36: the `recent` scale — two-horizon content the stale
- * `realistic` fixture (every game in 2023) cannot show. Two seeded runs with
- * the realistic scale's mains (Fox 8, Falco 22), opponent characters [1, 10]
- * and stage [1], so every harness route still resolves (/opponents/synthopp15,
- * /stages/1):
- * - an older, sparse segment: ~420 games in sessions of 3-6 spaced 10 days
- *   apart (~30 months; monthly periods hold well under 50 games per main);
- * - a dense segment: 1,300 games in sessions of 18-30 spaced 26h apart
- *   (~2 months; monthly periods hold 150+ games per main), ending one day
- *   before the harness starts.
- * The Fighter hero's period series therefore shows more than one dot-size
- * step and the D-15 scoped last-30 / last-90 windows are non-empty.
- *
- * DELIBERATELY anchored to the wall clock (dev-only): this scale exists to
- * show what a CURRENT account looks like. The harness is excluded from the
- * production build (guardHarnessProductionBuild.guard.test.ts) and
- * guard:layout never selects this scale, so no oracle depends on the date.
- */
-function buildRecentScale() {
-  const common = {
-    mainFighterIds: [8, 22],
-    opponentFighterIds: [1, 10],
-    stageIds: [1],
-  };
-  const denseRaw = generateSyntheticMatches({
-    ...common,
-    seed: 39_136_002,
-    count: 1_300,
-    startMs: 0,
-    sessionSizeRange: [18, 30],
-    sessionGapMs: 26 * HOUR_MS,
-    winRate: 0.58,
-  });
-  const dense = shiftToEnd(denseRaw, Date.now() - DAY_MS);
-  const denseStart = dense.reduce((min, match) => Math.min(min, match.time), Infinity);
-  const olderRaw = generateSyntheticMatches({
-    ...common,
-    seed: 39_136_001,
-    count: 420,
-    startMs: 0,
-    sessionSizeRange: [3, 6],
-    sessionGapMs: 10 * DAY_MS,
-    winRate: 0.52,
-  });
-  const older = shiftToEnd(olderRaw, denseStart - 7 * DAY_MS);
-  const matches = [...older, ...dense].sort((a, b) =>
-    a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-  );
-  return {
-    matches,
-    fighters: { primary: [8, 22], secondary: [] },
-    aliases: {},
-    opponentNotes: {},
-    tournaments: [],
-  };
 }
 
 /** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
@@ -429,12 +365,9 @@ async function main() {
   const scaleDir = path.join(args.out, args.scale);
   fs.mkdirSync(scaleDir, { recursive: true });
 
-  const extraScales =
-    args.scale === 'recent'
-      ? { recent: buildRecentScale() }
-      : args.scale === 'gsp'
-        ? { gsp: buildGspScale() }
-        : {};
+  // `recent` is registered by the harness itself (plan 39.1-39 moved its one
+  // definition there); only the capture-only `gsp` scale is passed in.
+  const extraScales = args.scale === 'gsp' ? { gsp: buildGspScale() } : {};
   const { server, baseUrl } = await startGuardLayoutHarnessServer({ extraScales });
   let browser;
   try {

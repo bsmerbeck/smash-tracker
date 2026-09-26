@@ -9,7 +9,9 @@ import {
   MARK_BOUND_HEAT_CELLS,
   MARK_BOUND_LINE_POINTS,
   MARK_BOUND_STRIP_TICKS,
+  buildOpponentEventSeries,
   buildPeriodSeries,
+  buildStageEventSeries,
 } from '@smash-tracker/shared';
 import {
   generateSyntheticMatches,
@@ -345,5 +347,76 @@ describe('Whole-phase mark-bound oracle (VIZ-01)', () => {
         expect(directionChipTexts(container)).toEqual([]);
       });
     }
+  });
+});
+
+/**
+ * Plan 39.1-39 (VIZ-01, UI-SPEC §11 "line points at most 60"): stage detail
+ * and the opponent hub bound their event trends STRUCTURALLY — the exact
+ * pipeline both hosts run (`binEventSeries` over the engine's event series,
+ * then `buildEventTrendPoints`) over a sparg0-sized fixture (8,400 games,
+ * ~495 sessions, the career scale's parameters), with a non-vacuity check
+ * that the unbinned series is over the bound. The page-level jsdom cases
+ * live in StageDetailPage.test.tsx / OpponentHubPage.test.tsx.
+ */
+describe('mark bounds — stage detail and hub event trends (plan 39.1-39)', () => {
+  const sparg0 = generateSyntheticMatches({
+    seed: 39_134_001,
+    count: 8_400,
+    startMs: Date.UTC(2018, 11, 18, 18),
+    sessionSizeRange: [6, 28],
+    sessionGapMs: 135 * 60 * 60 * 1000,
+    winRate: 0.73,
+    mainFighterIds: [8, 22],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  });
+
+  async function pipeline() {
+    const shared = (await import('@smash-tracker/shared')) as Record<string, unknown>;
+    // A variable specifier keeps Vite's import analysis from failing the whole
+    // file at transform time while the module does not exist yet (RED).
+    const specifier = '@/lib/eventTrendPoints';
+    const mod = (await import(/* @vite-ignore */ specifier).catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    expect(typeof shared.binEventSeries, 'binEventSeries is exported').toBe('function');
+    expect(mod, 'lib/eventTrendPoints exists').not.toBeNull();
+    return {
+      bin: shared.binEventSeries as (series: unknown[]) => unknown[],
+      points: mod!.buildEventTrendPoints as (input: {
+        series: unknown[];
+        opponentTag: string;
+        t: (key: string) => string;
+        locale: string;
+      }) => unknown[],
+    };
+  }
+
+  it('stage detail: the sparg0-sized stage series is over 60 anchors and renders at most 60 points', async () => {
+    const { bin, points } = await pipeline();
+    const series = buildStageEventSeries({ matches: sparg0, stageId: 1, refreshedAt: 1 });
+    expect(series.length).toBeGreaterThan(MARK_BOUND_LINE_POINTS);
+    const rendered = points({ series: bin(series), opponentTag: '', t: (k) => k, locale: 'en' });
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+  });
+
+  it("hub: the sparg0-sized fixture's most-played opponent series is over 60 anchors and renders at most 60 points", async () => {
+    const { bin, points } = await pipeline();
+    const counts = new Map<string, number>();
+    for (const m of sparg0) counts.set(m.opponent, (counts.get(m.opponent) ?? 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    const series = buildOpponentEventSeries({
+      matches: sparg0,
+      aliasMap: {},
+      opponentTag: top,
+      refreshedAt: 1,
+    });
+    expect(series.length).toBeGreaterThan(MARK_BOUND_LINE_POINTS);
+    const rendered = points({ series: bin(series), opponentTag: top, t: (k) => k, locale: 'en' });
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
   });
 });

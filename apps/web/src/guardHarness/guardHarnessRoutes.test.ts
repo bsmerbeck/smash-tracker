@@ -14,8 +14,17 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly fourteen entries: the eight real analytics routes, the trends-career, trends-casual and dashboard-app oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(14);
+  it('has exactly fifteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(15);
+  });
+
+  // Plan 39.1-39 (mark-count): the stage page on the harness's recent scale.
+  it('plan 39.1-39: stage-detail-recent mounts the stage page at /stages/1 in the app shell with the stage loaded marker', () => {
+    const recent = findGuardHarnessRoute('stage-detail-recent');
+    expect(recent?.path).toBe('/stages/:stageId');
+    expect(recent?.initialEntry).toBe('/stages/1');
+    expect(recent?.shell).toBe('app');
+    expect(recent?.loadedMarker).toBe('[data-slot="stage-detail-body"]');
   });
 
   // Plan 39.1-39 (record-fit): the Dashboard measured inside the production-
@@ -78,12 +87,13 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(findGuardHarnessRoute(null)).toBeUndefined();
   });
 
-  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual, dashboard-app and gsp entries opt into the MainLayout-geometry app shell', () => {
+  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual, dashboard-app, stage-detail-recent and gsp entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
     expect(shelled.map((r) => r.id).sort()).toEqual([
       'dashboard-app',
       'gsp',
       'matchups',
+      'stage-detail-recent',
       'trends-career',
       'trends-casual',
     ]);

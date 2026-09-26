@@ -153,6 +153,77 @@ function buildSparseScale() {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Shifts every row's time so the LAST row sits at `endMs`; ids are untouched. */
+function shiftToEnd(matches, endMs) {
+  const last = matches.reduce((max, match) => Math.max(max, match.time), -Infinity);
+  const delta = endMs - last;
+  return matches.map((match) => ({ ...match, time: match.time + delta }));
+}
+
+/**
+ * Plan 39.1-36: the `recent` scale — two-horizon content the stale
+ * `realistic` fixture (every game in 2023) cannot show. Two seeded runs with
+ * the realistic scale's mains (Fox 8, Falco 22), opponent characters [1, 10]
+ * and stage [1], so every harness route still resolves (/opponents/synthopp15,
+ * /stages/1):
+ * - an older, sparse segment: ~420 games in sessions of 3-6 spaced 10 days
+ *   apart (~30 months; monthly periods hold well under 50 games per main);
+ * - a dense segment: 1,300 games in sessions of 18-30 spaced 26h apart
+ *   (~2 months; monthly periods hold 150+ games per main), ending one day
+ *   before the harness starts.
+ * The Fighter hero's period series therefore shows more than one dot-size
+ * step and the D-15 scoped last-30 / last-90 windows are non-empty.
+ *
+ * DELIBERATELY anchored to the wall clock (dev-only): this scale exists to
+ * show what a CURRENT account looks like. The harness is excluded from the
+ * production build (guardHarnessProductionBuild.guard.test.ts). Plan 39.1-39
+ * moved this ONE definition here from `captureDesignScreens.mjs` and
+ * registered it in the scale map: guard:layout's `stage-detail-recent` route
+ * selects it per page for the mark-count family, whose assertion (at most 60
+ * line points) holds for any anchor date; it is never the initial scale.
+ */
+export function buildRecentScale() {
+  const common = {
+    mainFighterIds: [8, 22],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  };
+  const denseRaw = generateSyntheticMatches({
+    ...common,
+    seed: 39_136_002,
+    count: 1_300,
+    startMs: 0,
+    sessionSizeRange: [18, 30],
+    sessionGapMs: 26 * HOUR_MS,
+    winRate: 0.58,
+  });
+  const dense = shiftToEnd(denseRaw, Date.now() - DAY_MS);
+  const denseStart = dense.reduce((min, match) => Math.min(min, match.time), Infinity);
+  const olderRaw = generateSyntheticMatches({
+    ...common,
+    seed: 39_136_001,
+    count: 420,
+    startMs: 0,
+    sessionSizeRange: [3, 6],
+    sessionGapMs: 10 * DAY_MS,
+    winRate: 0.52,
+  });
+  const older = shiftToEnd(olderRaw, denseStart - 7 * DAY_MS);
+  const matches = [...older, ...dense].sort((a, b) =>
+    a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  return {
+    matches,
+    fighters: { primary: [8, 22], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
 /**
  * Plan 39.1-34: `extraScales` merges caller-supplied in-memory datasets into
  * the fixture plugin's scale map (selected per page via the
@@ -166,6 +237,7 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     sparse: buildSparseScale(),
     career: buildCareerScale(),
     casual: buildCasualScale(),
+    recent: buildRecentScale(),
     ...extraScales,
   };
   const server = await createViteServer({
