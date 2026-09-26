@@ -25,7 +25,8 @@ import { isValidatedRecord } from '@/components/claims/provenance';
  * as its connective followed by one line per claim in stored order, every
  * figure / sample / tier read from the claim object and never from prose. A
  * legacy record (no `sections`) renders exactly what it rendered before this
- * plan — `reportMarkdown.test.ts` pins it byte-for-byte. On BOTH paths a
+ * plan — `reportMarkdown.test.ts` pins it byte-for-byte — followed only by the
+ * disclosure lines the card also shows (code review IN-05). On BOTH paths a
  * heading whose body would be empty is suppressed (plan 39-06's projection
  * writes `confidenceNotes: ''` on every claims-era record, per D-03). The
  * export is English-only, like every heading in it; the claim lines mirror
@@ -240,16 +241,57 @@ function withheldProseLine(report: StoredScoutReport): string | null {
     : `Commentary for ${COUNT.format(count)} sections was withheld because it couldn't be verified against your match data.`;
 }
 
+/**
+ * Code review IN-05: the legacy provenance label the card shows
+ * (`LegacyReportBadge`) for EVERY record the shared fail-closed
+ * `isValidatedRecord` rejects — a pre-Phase-39 record and a half-written
+ * claims-era one alike. English mirror of `reports.legacy.badge` +
+ * `reports.legacy.explain` (en.json); the export has no i18n.
+ */
+function legacyLabelLine(report: StoredScoutReport): string | null {
+  if (isValidatedRecord(report)) {
+    return null;
+  }
+  return "Legacy: generated before this app's report validator existed — its content wasn't machine-checked against your match data.";
+}
+
+/**
+ * Code review IN-05: the dropped-claims disclosure the card shows
+ * (`DroppedClaimsNote`), from the stored `droppedClaimCount` — rendered as
+ * stored, never recomputed (it counts claims only since SH-WR-05; dropped
+ * action slots are not in it). Same explicit finite-integer guard as the
+ * card, so no line can read `NaN`. English mirror of
+ * `reports.droppedClaims_one` / `_other` (en.json).
+ */
+function droppedClaimsLine(report: StoredScoutReport): string | null {
+  const count: unknown = report.droppedClaimCount;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+    return null;
+  }
+  return count === 1
+    ? "1 claim couldn't be verified and was removed from this report."
+    : `${COUNT.format(count)} claims couldn't be verified and were removed from this report.`;
+}
+
+/**
+ * The disclosure lines after the body, in the card's order: legacy label,
+ * dropped claims, withheld commentary. The legacy body itself stays
+ * byte-identical to the pre-Phase-39 builder (plan 39-09's pin is an exact
+ * prefix of the legacy export).
+ */
 export function reportToMarkdown(record: ScoutReportRecord): string {
   const { player, report, createdAt } = record;
   const generatedDate = new Date(createdAt).toLocaleDateString();
   const title = `# Scout Report: ${player.gamerTag} — ${generatedDate}`;
-  if (!report.sections) {
-    return assemble(title, legacySections(report));
-  }
-  const markdown = assemble(title, claimsEraSections(report));
-  const disclosure = withheldProseLine(report);
-  return disclosure ? `${markdown}\n\n${disclosure}` : markdown;
+  const markdown = report.sections
+    ? assemble(title, claimsEraSections(report))
+    : assemble(title, legacySections(report));
+  const disclosures = [
+    legacyLabelLine(report),
+    droppedClaimsLine(report),
+    report.sections ? withheldProseLine(report) : null,
+  ].filter((line): line is string => line !== null);
+  return [markdown, ...disclosures].join('\n\n');
 }
 
 /**
