@@ -18,6 +18,7 @@ import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
 import { evidenceIdFor } from './snapshot.js';
 import { ABSTENTION_FLOOR_GAMES, EVIDENCE_POLICY_VERSION, confidenceTierFor } from './policy.js';
 import {
+  UNKNOWN_BUCKET_NAMED_PATTERN,
   validateReportOutput,
   type ReportSelectionOutput,
   type ReportSelectionSection,
@@ -815,6 +816,17 @@ describe('judgeDeliveredProse: R7 lexical on delivered prose', () => {
     expect(judgeDeliveredProse('They are 4-2 on Unknown Stage, a strong pick.')).toBe('R7');
     expect(judgeDeliveredProse('They picked an unknown stage in 3 of 12 games.')).toBe('R7');
     expect(judgeDeliveredProse('Their Unknown Character games are all wins.')).toBe('R7');
+  });
+
+  it('convicts the plural naming too', () => {
+    expect(judgeDeliveredProse('Their Unknown Stages record is 6-4.')).toBe('R7');
+  });
+
+  it("SH-WR-08: the validator's R7 lexical pattern is a DELIBERATE duplicate of this judge's — same source, same flags", () => {
+    // The judge keeps its own copy (it must never read the validator's
+    // decisions); this assertion is what stops the two from drifting apart.
+    expect(UNKNOWN_BUCKET_NAMED_PATTERN.source).toBe(UNKNOWN_BUCKET_NAMING.source);
+    expect(UNKNOWN_BUCKET_NAMED_PATTERN.flags).toBe(UNKNOWN_BUCKET_NAMING.flags);
   });
 
   it('does not convict ordinary uses of "unknown", or empty prose', () => {

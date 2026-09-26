@@ -93,7 +93,15 @@ export interface AdversarialFixture {
   actions?: readonly [FixtureActionSlot | null, FixtureActionSlot | null, FixtureActionSlot | null];
   expected: {
     legacyAccepts: boolean;
-    validatorVerdict: 'accepted' | 'dropped' | 'failed';
+    /**
+     * What the validator must do with this fixture, observed on its outcome:
+     * - `accepted` — nothing dropped, no prose withheld;
+     * - `stripped` — no claim or action dropped, but at least one section's
+     *   PROSE withheld (R4/R5, and R7's lexical half under D-22);
+     * - `dropped` — at least one claim or action slot dropped;
+     * - `failed` — nothing survives and the output fails (a cold start).
+     */
+    validatorVerdict: 'accepted' | 'stripped' | 'dropped' | 'failed';
   };
 }
 
@@ -786,6 +794,21 @@ const unknownBucketNamedAsRealStage: AdversarialFixture = {
   expected: { legacyAccepts: true, validatorVerdict: 'dropped' },
 };
 
+// SH-WR-08: the PLURAL naming ("Unknown Stages") — the validator's lexical
+// pattern once lacked `s?`, so this prose shipped while the VAL-03 judge
+// (which has always matched plurals) convicted it.
+const unknownBucketNamedPlural: AdversarialFixture = {
+  ...unknownBucketNamedAsRealStage,
+  id: 'unknown-bucket-named-plural',
+  sections: [
+    {
+      prose: `Their Unknown Stages record is ${UNKNOWN_BUCKET_NAMED_WINS}-${UNKNOWN_BUCKET_NAMED_LOSSES}.`,
+      licensedClaimIds: ['c01'],
+    },
+  ],
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
+};
+
 // ---------------------------------------------------------------------------
 // sub_floor / R6 — an assertion resting on fewer than ABSTENTION_FLOOR_GAMES
 // countable games.
@@ -1115,4 +1138,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   allNullSubject,
   actionUnlinked,
   ordinaryProse,
+  unknownBucketNamedPlural,
 ];

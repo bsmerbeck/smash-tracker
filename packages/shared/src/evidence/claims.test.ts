@@ -8,7 +8,8 @@ import {
   type ClaimValue,
   type ReportSurface,
 } from './claims.js';
-import type { EvidenceRow } from './snapshot.js';
+import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
+import { validateReportOutput } from './validateReport.js';
 import {
   ABSTENTION_FLOOR_GAMES,
   CONFIDENCE_TIER_BOUNDS,
@@ -246,8 +247,16 @@ describe('buildClaimSet: every CLAIM_PREDICATES member has a row mapping (Task 2
   });
 });
 
-describe("buildClaimSet: unknown-bucket rows never enter a known-entity claim's denominator", () => {
-  it('an unknown-stage row stays a separate claim carrying the unknown stage identifier, and does not alter the known-stage claim value', () => {
+describe('SH-IN-05 / D-22: a stage-0 (unknown-bucket) row is never DELIVERED as a claim', () => {
+  // The DENOMINATOR proof (unknown-stage games never folded into a known
+  // stage's rate) lives where denominators are actually computed — the API
+  // row builder's tests (`apps/api/src/reports/generate.test.ts`). The
+  // builder passes a row's value through unchanged, so this file cannot
+  // prove anything about denominators; what it CAN prove is the pipeline
+  // contract: `buildClaimSet` issues whatever rows it is handed (it never
+  // branches), and the one validator rejects the unknown-bucket claim on its
+  // own id (R7, structural) while the known-stage claim survives.
+  it('the builder issues the stage-0 row verbatim, and validateReportOutput drops it under R7 while the known-stage claim survives', () => {
     const knownSubject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
     const unknownSubject: ClaimSubject = {
       ...NULL_SUBJECT,
@@ -262,13 +271,45 @@ describe("buildClaimSet: unknown-bucket rows never enter a known-entity claim's 
     };
 
     const result = buildClaimSet({ rows, surface: 'scout' });
-
     expect(result.claims).toHaveLength(2);
     const known = result.claims.find((claim) => claim.subject.stageId === 1)!;
     const unknown = result.claims.find((claim) => claim.subject.stageId === UNKNOWN_STAGE_ID)!;
     expect(known.value).toEqual(knownValue);
-    expect(unknown.subject.stageId).toBe(UNKNOWN_STAGE_ID);
-    expect(unknown.subject.stageId).not.toBe(1);
+
+    const snapshot: EvidenceSnapshot = {
+      policyVersion: EVIDENCE_POLICY_VERSION,
+      claimSchemaVersion: 1,
+      refreshedAt: REFRESHED_AT,
+      cohort: {
+        online: 0,
+        offline: 0,
+        unspecified: 0,
+        manual: 0,
+        startgg: 0,
+        parrygg: 0,
+        mixedContext: false,
+        minorityShare: 0,
+        minorityLabel: null,
+        majorityLabel: null,
+      },
+      rows,
+      matchIdDigest: { count: 13, hash: 'claims-test-unknown-bucket' },
+    };
+    const outcome = validateReportOutput({
+      snapshot,
+      issuedClaims: result.claims,
+      output: {
+        sections: { main: { claimIds: [known.id, unknown.id], connective: '' } },
+        action1: null,
+        action2: null,
+        action3: null,
+      },
+      surface: 'scout',
+    });
+    expect(outcome.survivingClaimIds).toEqual([known.id]);
+    expect(outcome.droppedClaims.find((dropped) => dropped.claimId === unknown.id)?.rule).toBe(
+      'R7',
+    );
   });
 });
 

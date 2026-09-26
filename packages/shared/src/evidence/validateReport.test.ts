@@ -764,6 +764,29 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
 // Task 3: drop-or-fail, remaining rules, migration gate.
 // ---------------------------------------------------------------------------
 
+/**
+ * Four evidenced claims over the all-null-subject fixture's four rows (c01
+ * recent_form 16-9, c02 cohort, c03 stage_record 6-4, c04 my_character
+ * 16-9), selected by the given sections — a scout output that clears
+ * MIN_VIABLE_CLAIMS on its own claims.
+ */
+function fourClaimOutput(sections: Record<string, ReportSelectionSection>): ValidateReportInput {
+  const fixture = findFixture('all-null-subject');
+  const ids = ['c01', 'c02', 'c03', 'c04'] as ClaimId[];
+  const issuedClaims = Object.entries(fixture.snapshot.rows).map(([evidenceId, row], index) =>
+    toClaimAtom(
+      { claimId: ids[index]!, evidenceIds: [evidenceId], assertedValue: row.value },
+      fixture.snapshot,
+    ),
+  );
+  return {
+    snapshot: fixture.snapshot,
+    issuedClaims,
+    output: { sections, action1: null, action2: null, action3: null },
+    surface: 'scout',
+  };
+}
+
 describe('validateReportOutput: the remaining rules and the outcome policy (Task 3)', () => {
   it('R6: a sub-floor evidenced claim is dropped while an abstained claim on the same sample is not', () => {
     const fixture = findFixture('sub-floor-assertion');
@@ -805,55 +828,181 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     expect(abstainedOutcome.survivingClaimIds).toContain('c01');
   });
 
-  it('R7: an unknown-bucket denominator and an unknown bucket named as a real entity are both dropped with R7', () => {
-    const denomFixture = findFixture('unknown-bucket-in-denominator');
-    expect(dropRule(validateReportOutput(bridge(denomFixture)), 'c01')).toBe('R7');
-
-    const namedFixture = findFixture('unknown-bucket-named-as-real-stage');
-    expect(dropRule(validateReportOutput(bridge(namedFixture)), 'c01')).toBe('R7');
+  it('R7 (D-22): both unknown_bucket fixtures have their section prose withheld while claim c01 survives — a prose hit never drops a claim', () => {
+    for (const id of ['unknown-bucket-in-denominator', 'unknown-bucket-named-as-real-stage']) {
+      const outcome = validateReportOutput(bridge(findFixture(id)));
+      expect(dropRule(outcome, 'c01'), id).toBeUndefined();
+      expect(outcome.survivingClaimIds, id).toContain('c01');
+      expect(outcome.strippedSectionIds, id).toEqual(['section-0']);
+    }
   });
 
-  it('R7 (lexical) also STRIPS the section: in an output that still passes, prose naming the unknown bucket is never delivered (plan 39-13, VAL-03)', () => {
+  it('R7 (lexical, D-22) STRIPS the section and drops nothing: prose naming the unknown bucket is never delivered, and its claim still counts (plan 39-13, VAL-03)', () => {
     // Three evidenced claims in one clean section keep the scout output at
     // MIN_VIABLE_CLAIMS; a fourth section's prose names the unknown bucket.
-    // Its claim is dropped (R7), and its prose must not ship either — the
-    // API persists every section's connective that is not in
-    // strippedSectionIds.
-    const fixture = findFixture('all-null-subject');
-    const clean = ['c01', 'c02', 'c03'] as ClaimId[];
-    const issuedClaims = fixture.output.claims
-      .map((claim) => toClaimAtom(claim, fixture.snapshot))
-      .concat(
-        Object.entries(fixture.snapshot.rows)
-          .filter(([evidenceId]) => evidenceId !== fixture.output.claims[0]!.evidenceIds[0])
-          .map(([evidenceId, row], index) =>
-            toClaimAtom(
-              { claimId: clean[index]!, evidenceIds: [evidenceId], assertedValue: row.value },
-              fixture.snapshot,
-            ),
-          ),
-      )
-      .map((claim, index) => ({ ...claim, id: (['c04', ...clean] as ClaimId[])[index]! }));
-    const outcome = validateReportOutput({
-      snapshot: fixture.snapshot,
-      issuedClaims,
-      output: {
-        sections: {
-          overview: { claimIds: clean, connective: '' },
-          watchFor: {
-            claimIds: ['c04'],
-            connective: 'They are 16-9 on Unknown Stage, a strong pick.',
-          },
+    // Its prose must not ship — the API persists every section's connective
+    // that is not in strippedSectionIds — but its claim (engine-authored,
+    // judged on its own ids) survives.
+    const outcome = validateReportOutput(
+      fourClaimOutput({
+        overview: { claimIds: ['c01', 'c02', 'c03'], connective: '' },
+        watchFor: {
+          claimIds: ['c04'],
+          connective: 'They are 16-9 on Unknown Stage, a strong pick.',
         },
-        action1: null,
-        action2: null,
-        action3: null,
-      },
-      surface: 'scout',
-    });
+      }),
+    );
     expect(outcome.status).toBe('passed');
-    expect(dropRule(outcome, 'c04')).toBe('R7');
+    expect(dropRule(outcome, 'c04')).toBeUndefined();
+    expect(outcome.survivingClaimIds).toContain('c04');
     expect(outcome.strippedSectionIds).toEqual(['watchFor']);
+  });
+
+  it('R7 (lexical, D-22 / SH-CR-02): lowercase "unknown character" in a section that shares a claim with a clean section strips only that prose — no claim is dropped and the output still passes', () => {
+    const outcome = validateReportOutput(
+      fourClaimOutput({
+        overview: { claimIds: ['c01', 'c02'], connective: 'Stay patient.' },
+        gameplan: {
+          claimIds: ['c02', 'c03'],
+          connective: 'If they pull an unknown character pocket pick, reset to neutral.',
+        },
+      }),
+    );
+    expect(outcome.status).toBe('passed');
+    expect(outcome.droppedClaims).toEqual([]);
+    expect(outcome.survivingClaimIds).toEqual(['c01', 'c02', 'c03']);
+    expect(outcome.strippedSectionIds).toEqual(['gameplan']);
+  });
+
+  it('R7 (lexical, D-22 / SH-WR-08): plural and any-casing forms of the unknown bucket strip the section too', () => {
+    for (const connective of [
+      'Their Unknown Stages record is 16-9.',
+      'Some of those games were on unknown stages.',
+      'Their UNKNOWN CHARACTERS are a mystery.',
+    ]) {
+      const outcome = validateReportOutput(
+        fourClaimOutput({
+          overview: { claimIds: ['c01', 'c02', 'c03'], connective: '' },
+          watchFor: { claimIds: ['c04'], connective },
+        }),
+      );
+      expect(outcome.strippedSectionIds, connective).toEqual(['watchFor']);
+      expect(outcome.droppedClaims, connective).toEqual([]);
+    }
+  });
+
+  it("API-WR-04 (D-22): a later section naming the unknown bucket never removes a claim an EARLIER section's delivered prose rests on", () => {
+    // overview and watchFor share c04 (16-9). overview's prose names 16-9
+    // (licensed by c04); only watchFor names the unknown bucket. Before
+    // D-22, watchFor's R7 hit dropped c04 AFTER overview had been linted
+    // with c04 licensed, so overview shipped a figure no stored claim backed.
+    const outcome = validateReportOutput(
+      fourClaimOutput({
+        overview: { claimIds: ['c01', 'c04'], connective: 'Your form reads 16-9 lately.' },
+        gameplan: { claimIds: ['c02', 'c03'], connective: '' },
+        watchFor: { claimIds: ['c04'], connective: 'Watch the Unknown Stage games.' },
+      }),
+    );
+    expect(outcome.survivingClaimIds).toContain('c04');
+    expect(outcome.strippedSectionIds).toEqual(['watchFor']);
+    // Every section that is delivered rests only on surviving claims.
+    const surviving = new Set(outcome.survivingClaimIds);
+    expect(['c01', 'c04'].every((id) => surviving.has(id))).toBe(true);
+  });
+
+  describe('R7 (structural, D-22 / SH-WR-02): a claim whose own stage/fighter id is the unknown bucket or off the roster is rejected', () => {
+    const UNKNOWN_BUCKET_ID = 0;
+
+    function singleClaimOutcome(
+      predicate: EvidenceRow['predicate'],
+      subject: ClaimSubject,
+      value: ClaimAtom['value'],
+    ) {
+      const rowId = evidenceIdFor({ predicate, subject, opponentOrder: [] });
+      const row: EvidenceRow = { predicate, subject, value, sample: makeSample(10) };
+      const claim: ClaimAtom = {
+        id: 'c01',
+        predicate,
+        subject,
+        value,
+        claimKind: 'fact',
+        evidenceIds: [rowId],
+        tier: value.kind === 'abstained' ? null : confidenceTierFor(10),
+        policyVersion: EVIDENCE_POLICY_VERSION,
+        sample: makeSample(10),
+      };
+      return validateReportOutput({
+        snapshot: makeSnapshot({ [rowId]: row }),
+        issuedClaims: [claim],
+        output: {
+          sections: { main: { claimIds: ['c01'], connective: '' } },
+          action1: null,
+          action2: null,
+          action3: null,
+        },
+        surface: 'scout',
+      });
+    }
+
+    it('an evidenced stage_record on stage id 0 is dropped under R7', () => {
+      const outcome = singleClaimOutcome(
+        'stage_record',
+        { ...NULL_SUBJECT, myFighterId: 23, stageId: UNKNOWN_BUCKET_ID },
+        { kind: 'record', wins: 6, losses: 4, games: 10 },
+      );
+      expect(dropRule(outcome, 'c01')).toBe('R7');
+    });
+
+    it('an evidenced character_matchup_record against opponent fighter id 0 is dropped under R7', () => {
+      const outcome = singleClaimOutcome(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: 23, opponentFighterId: UNKNOWN_BUCKET_ID },
+        { kind: 'record', wins: 6, losses: 4, games: 10 },
+      );
+      expect(dropRule(outcome, 'c01')).toBe('R7');
+    });
+
+    it('an abstained claim about the unknown fighter bucket is rejected too (D-22: id 0 ⇒ claim rejected)', () => {
+      const outcome = singleClaimOutcome(
+        'matchup_advisor_pick',
+        { ...NULL_SUBJECT, opponentFighterId: UNKNOWN_BUCKET_ID },
+        { kind: 'abstained', gamesNeeded: 2 },
+      );
+      expect(dropRule(outcome, 'c01')).toBe('R7');
+    });
+
+    it('an entity value naming fighter id 0, or a stage off the StageList, is dropped under R7', () => {
+      expect(
+        dropRule(
+          singleClaimOutcome(
+            'matchup_advisor_pick',
+            { ...NULL_SUBJECT, opponentFighterId: 23 },
+            { kind: 'entity', entityKind: 'fighter', entityId: String(UNKNOWN_BUCKET_ID) },
+          ),
+          'c01',
+        ),
+      ).toBe('R7');
+      expect(
+        dropRule(
+          singleClaimOutcome(
+            'matchup_advisor_pick',
+            { ...NULL_SUBJECT, opponentFighterId: 23 },
+            { kind: 'entity', entityKind: 'stage', entityId: '9999' },
+          ),
+          'c01',
+        ),
+      ).toBe('R7');
+    });
+
+    it('control: the same shapes on roster ids survive', () => {
+      const outcome = singleClaimOutcome(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId: 23, opponentFighterId: 8 },
+        { kind: 'record', wins: 6, losses: 4, games: 10 },
+      );
+      expect(outcome.droppedClaims).toEqual([]);
+      expect(outcome.survivingClaimIds).toEqual(['c01']);
+    });
   });
 
   it('R8: an action slot referencing a dropped (never-issued) claim becomes null and is reported', () => {
