@@ -7178,3 +7178,127 @@ describe('code review R3-WR-01: a straddled bundle child is refunded at most onc
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-WR-02): a prep single (or legacy) execution
+// spends its OWN credit (`spendCredit` per execution, one shared ref). The
+// R2-CR-01 ownership gate is right for the JOB RECORD — only the owner may
+// fail it — but it also withheld the refund of that execution's own spend
+// when a crafted duplicate (same client-sent jobId) had taken the job over,
+// so the user paid two credits for one report. A bundle child's one credit
+// belongs to the job and is still refunded only by the owner.
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+function seedRivalPrepBrief(database: FakeDatabase): void {
+  seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+    likelyOpponents: { rival: true },
+    scoutBindings: { rival: P39_PARRY_BINDING },
+  });
+}
+
+describe('code review R3-WR-02: an execution that loses a prep single still refunds its OWN spend, exactly once', () => {
+  it('R3-C: B re-queues and DELIVERS; A resolves NOT FOUND — A refunds its own credit, the delivered job is untouched', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    const executionA = postPrepSingle(app, 'dup-single');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, 'dup-single');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    const responseB = await executionB;
+    expect(responseB.statusCode).toBe(200);
+    const delivered = await jobRecord(database, 'dup-single');
+    expect(delivered).toMatchObject({ status: 'succeeded', reason: 'prep_report' });
+
+    lookupGates[0]!.resolve('missing');
+    const responseA = await executionA;
+
+    expect(responseA.statusCode).toBe(404);
+    expect(spendLedgerRefs(database)).toEqual(['dup-single', 'dup-single']);
+    expect(refundLedgerRefs(database)).toEqual(['dup-single']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, 'dup-single')).toEqual(delivered);
+    expect(storedScoutReports(database)).toHaveLength(1);
+  });
+
+  it('A loses its running claim to B, which re-queued after A spent — A answers 409 and refunds its own credit once; B delivers', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    const executionA = postPrepSingle(app, 'dup-claim');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, 'dup-claim');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[0]!.resolve('found');
+    const responseA = await executionA;
+    expect(responseA.statusCode).toBe(409);
+
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    expect((await executionB).statusCode).toBe(200);
+
+    expect(spendLedgerRefs(database)).toEqual(['dup-claim', 'dup-claim']);
+    expect(refundLedgerRefs(database)).toEqual(['dup-claim']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, 'dup-claim')).toMatchObject({ status: 'succeeded' });
+  });
+
+  it("control: when the stuck-job sweep already failed and refunded this execution's stale running job, its late failure refunds nothing more", async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const execution = postPrepSingle(app, 'late-after-sweep');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    lookupGates[0]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    expect(await jobRecord(database, 'late-after-sweep')).toMatchObject({ status: 'running' });
+
+    // Sixteen minutes later (past the fifteen-minute staleness window) the
+    // sweep fails the job and refunds its credit.
+    const realNow = Date.now.bind(Date);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 16 * 60 * 1000);
+    try {
+      const sweep = await runSweepStuckReportJobs(database as never, { now: Date.now() });
+      expect(sweep).toEqual({ swept: 1, refunded: 1 });
+      modelGates[0]!.resolve(BELOW_MINIMUM_SELECTION);
+      const response = await execution;
+      expect(response.statusCode).toBe(502);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(spendLedgerRefs(database)).toEqual(['late-after-sweep']);
+    expect(refundLedgerRefs(database)).toEqual(['late-after-sweep']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('control: a bundle child whose credit belongs to the job is still refunded only by the owner (B delivers, A resolves not found: no refund)', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-wr02-bundle'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    expect((await executionB).statusCode).toBe(200);
+    lookupGates[0]!.resolve('missing');
+    expect((await executionA).statusCode).toBe(404);
+
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'succeeded' });
+  });
+});
