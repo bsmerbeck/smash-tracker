@@ -72,3 +72,23 @@ describe('InsightLine', () => {
     });
   });
 });
+
+describe('InsightLine door link tone (plan 39.1-39, UI-SPEC §4.3)', () => {
+  it.each(['steady', 'notable'] as const)(
+    '%s tone: the non-primary door reads in the muted link tone, never brand red',
+    (tone) => {
+      render(
+        <InsightLine
+          text="line"
+          tone={tone}
+          chip={<span>chip</span>}
+          door={<a href="/games">See the 3 games</a>}
+        />,
+      );
+      const classes = screen.getByRole('link', { name: 'See the 3 games' }).className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+    },
+  );
+});

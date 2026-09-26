@@ -14,8 +14,18 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly thirteen entries: the eight real analytics routes, the trends-career and trends-casual oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(13);
+  it('has exactly fourteen entries: the eight real analytics routes, the trends-career, trends-casual and dashboard-app oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(14);
+  });
+
+  // Plan 39.1-39 (record-fit): the Dashboard measured inside the production-
+  // geometry shell, where 39.1-36's capture saw the split records overprint.
+  it('plan 39.1-39: dashboard-app mounts the Dashboard at /dashboard in the app shell with the dashboard loaded marker', () => {
+    const app = findGuardHarnessRoute('dashboard-app');
+    expect(app?.path).toBe('/dashboard');
+    expect(app?.initialEntry).toBe('/dashboard');
+    expect(app?.shell).toBe('app');
+    expect(app?.loadedMarker).toBe('[data-slot="dashboard-body"]');
   });
 
   it('CR-01: carries the period-axis tick fixture route', () => {
@@ -68,9 +78,10 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(findGuardHarnessRoute(null)).toBeUndefined();
   });
 
-  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual and gsp entries opt into the MainLayout-geometry app shell', () => {
+  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual, dashboard-app and gsp entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
     expect(shelled.map((r) => r.id).sort()).toEqual([
+      'dashboard-app',
       'gsp',
       'matchups',
       'trends-career',

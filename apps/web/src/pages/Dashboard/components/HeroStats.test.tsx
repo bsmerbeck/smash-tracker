@@ -345,3 +345,62 @@ describe('HeroStats', () => {
     });
   });
 });
+
+/**
+ * Plan 39.1-39 (coordinator item 2026-09-25, UI-SPEC §7.3 / §7.4 / §6.5
+ * rule 2): each split card's two figures are ONE StatRow (never a hand-rolled
+ * two-column grid) and each record wraps whole tokens inside its own cell,
+ * so the two records never overprint (39.1-36's capture: "1,0266–184").
+ */
+describe('HeroStats split cards — one StatRow, wrapping records (plan 39.1-39)', () => {
+  const matches = [
+    makeMatch({ id: 'm1', time: 1, win: true }),
+    makeMatch({ id: 'm2', time: 2, win: false }),
+    makeMatch({ id: 'm3', time: 3, win: true }),
+    makeMatch({ id: 'c1', time: 4, win: true, source: 'startgg' }),
+    makeMatch({ id: 'c2', time: 5, win: false, source: 'startgg' }),
+    makeMatch({ id: 'c3', time: 6, win: false, source: 'startgg' }),
+    makeMatch({ id: 'q1', time: 7, win: true, matchType: 'quickplay' }),
+    makeMatch({ id: 'q2', time: 8, win: true, matchType: 'quickplay' }),
+    makeMatch({ id: 'q3', time: 9, win: false, matchType: 'quickplay' }),
+  ];
+
+  function cardOf(title: string): HTMLElement {
+    return screen.getByText(title).closest('[data-slot="card"]') as HTMLElement;
+  }
+
+  it.each(['Casual vs Competitive', 'Online vs Offline'])(
+    '%s renders exactly one stat-row holding two figures, and no grid-cols-2 gap-2 wrapper',
+    (title) => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const card = cardOf(title);
+      const rows = card.querySelectorAll('[data-slot="stat-row"]');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.children).toHaveLength(2);
+      expect(card.querySelector('.grid-cols-2.gap-2')).toBeNull();
+    },
+  );
+
+  it.each(['Casual vs Competitive', 'Online vs Offline'])(
+    "%s: each figure's record is in whole-token wrap mode",
+    (title) => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const records = cardOf(title).querySelectorAll('[data-slot="record"]');
+      expect(records.length).toBe(2);
+      for (const record of records) {
+        const classes = (record as HTMLElement).className.split(/\s+/);
+        expect(classes).toContain('flex-wrap');
+        expect(classes).not.toContain('whitespace-nowrap');
+      }
+    },
+  );
+
+  it('the empty-side state and the delta line are unchanged', () => {
+    const manualOnly = matches.filter((m) => m.source !== 'startgg');
+    render(<HeroStats matches={manualOnly} timeFilteredMatches={manualOnly} />);
+    const card = cardOf('Casual vs Competitive');
+    expect(card.querySelector('[data-slot="stat-row"]')).not.toBeNull();
+    expect(screen.getByText('no data')).toBeInTheDocument();
+    expect(screen.queryByText(/pts$/)).not.toBeInTheDocument();
+  });
+});

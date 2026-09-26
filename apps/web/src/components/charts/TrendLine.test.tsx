@@ -1147,3 +1147,18 @@ describe('TrendLine — the reference label sits on a card-coloured ground (sket
     expect(label.getAttribute('paint-order')).toBe('stroke');
   });
 });
+
+describe('TrendLine table-twin toggle link tone (plan 39.1-39, UI-SPEC §4.3)', () => {
+  it('"View as table" is a muted link, never brand red', () => {
+    const points = makePeriodSeries(6, (i) => ({ wins: i, losses: 6 - i, total: 6, rate: i / 6 }));
+    render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const classes = screen
+      .getByRole('button', { name: PERIOD_LABELS.tableToggle })
+      .className.split(/\s+/);
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).not.toContain('text-primary');
+  });
+});

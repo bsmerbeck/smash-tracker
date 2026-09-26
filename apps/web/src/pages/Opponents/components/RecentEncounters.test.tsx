@@ -174,6 +174,34 @@ describe('RecentEncounters (39.1-18 Task 2, UIX-08/D-10)', () => {
     expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(12);
   });
 
+  // Plan 39.1-39 (UI-SPEC §4.3): "Show all sets" / "Show fewer" are muted
+  // links (MUTED_LINK_TONE), never brand-red text.
+  it('plan 39.1-39: the show-all-sets and show-fewer controls carry the muted link tone', async () => {
+    const user = userEvent.setup();
+    const matches: Match[] = Array.from({ length: 12 }, (_, i) =>
+      makeMatch({
+        id: `s${i}`,
+        time: 1000 + i,
+        win: i % 2 === 0,
+        externalId: `sgg:${i}:g1`,
+        eventName: 'One Big Event',
+      }),
+    );
+    renderEncounters(matches, {
+      tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }),
+    });
+    const muted = (el: HTMLElement) => {
+      const classes = el.className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+    };
+    const showAll = screen.getByRole('button', { name: 'Show all sets' });
+    muted(showAll);
+    await user.click(showAll);
+    muted(screen.getByRole('button', { name: /show fewer/i }));
+  });
+
   it('a manual-only fixture renders session headers with single rows and no set score', () => {
     const matches = [
       makeMatch({ id: 'm1', time: 1000, win: true }),

@@ -2005,3 +2005,151 @@ test('table-clip: a declared target matching nothing is exactly one table-clip-u
   assert.equal(v[0].selector, '#by-char');
   assert.deepEqual(typesOf(evaluateTableClip([])), ['table-clip-unmeasured']);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-39: brand-red-text and record-fit (read through the namespace so
+// a RED run fails on an assertion, not a module-link error).
+// ---------------------------------------------------------------------------
+
+const PROBE = 'oklch(0.577 0.245 27.325)';
+const redEl = (overrides = {}) => ({
+  tag: 'button',
+  text: 'Show all',
+  selectorPath: 'div > button',
+  color: PROBE,
+  ...overrides,
+});
+
+test('brand-red-text: every element whose colour equals the probe is one violation naming tag, text and selector', () => {
+  const evaluateBrandRedText = fn38('evaluateBrandRedText');
+  const v = evaluateBrandRedText({
+    probe: PROBE,
+    scanned: 40,
+    elements: [redEl(), redEl({ tag: 'a', text: 'Genesis 9', selectorPath: 'td > a' })],
+  });
+  assert.deepEqual(typesOf(v), ['brand-red-text', 'brand-red-text']);
+  assert.equal(v[0].tag, 'button');
+  assert.equal(v[0].text, 'Show all');
+  assert.equal(v[1].selectorPath, 'td > a');
+});
+
+test('brand-red-text: an rgb probe matches an rgb element exactly', () => {
+  const evaluateBrandRedText = fn38('evaluateBrandRedText');
+  const v = evaluateBrandRedText({
+    probe: 'rgb(230, 0, 18)',
+    scanned: 3,
+    elements: [redEl({ color: 'rgb(230, 0, 18)' })],
+  });
+  assert.deepEqual(typesOf(v), ['brand-red-text']);
+});
+
+test('brand-red-text: an element one channel unit away from the probe is not a violation', () => {
+  const evaluateBrandRedText = fn38('evaluateBrandRedText');
+  const v = evaluateBrandRedText({
+    probe: 'rgb(230, 0, 18)',
+    scanned: 3,
+    elements: [redEl({ color: 'rgb(230, 0, 19)' }), redEl({ color: 'rgb(229, 0, 18)' })],
+  });
+  assert.deepEqual(v, []);
+});
+
+test('brand-red-text: an empty or transparent probe is exactly one brand-red-text-unmeasured', () => {
+  const evaluateBrandRedText = fn38('evaluateBrandRedText');
+  for (const probe of ['', 'rgba(0, 0, 0, 0)', 'transparent', undefined]) {
+    const v = evaluateBrandRedText({ probe, scanned: 12, elements: [redEl()] });
+    assert.deepEqual(typesOf(v), ['brand-red-text-unmeasured'], String(probe));
+  }
+});
+
+test('brand-red-text: zero scanned text elements is exactly one brand-red-text-unmeasured', () => {
+  const evaluateBrandRedText = fn38('evaluateBrandRedText');
+  assert.deepEqual(typesOf(evaluateBrandRedText({ probe: PROBE, scanned: 0, elements: [] })), [
+    'brand-red-text-unmeasured',
+  ]);
+});
+
+const recBox = (left, top, width, height) => ({
+  left,
+  top,
+  right: left + width,
+  bottom: top + height,
+});
+
+test('record-fit: two record rects in one card that intersect are one record-overlap naming both texts', () => {
+  const evaluateRecordFit = fn38('evaluateRecordFit');
+  const v = evaluateRecordFit([
+    {
+      selectorPath: '#card',
+      records: [
+        {
+          text: '1,026–184 · 85% · 1,210',
+          rect: recBox(0, 0, 130, 16),
+          cellRect: recBox(0, 0, 130, 60),
+        },
+        {
+          text: '6–184 · 3% · 190',
+          rect: recBox(120, 0, 100, 16),
+          cellRect: recBox(120, 0, 100, 60),
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(typesOf(v), ['record-overlap']);
+  assert.deepEqual(v[0].texts, ['1,026–184 · 85% · 1,210', '6–184 · 3% · 190']);
+});
+
+test('record-fit: rects 1px apart are not an overlap', () => {
+  const evaluateRecordFit = fn38('evaluateRecordFit');
+  const v = evaluateRecordFit([
+    {
+      selectorPath: '#card',
+      records: [
+        { text: 'a', rect: recBox(0, 0, 100, 16), cellRect: recBox(0, 0, 100, 60) },
+        { text: 'b', rect: recBox(101, 0, 100, 16), cellRect: recBox(101, 0, 100, 60) },
+      ],
+    },
+  ]);
+  assert.deepEqual(v, []);
+});
+
+test('record-fit: a record over its figure cell right edge by more than 0.5px is record-overflow; exactly at the edge passes', () => {
+  const evaluateRecordFit = fn38('evaluateRecordFit');
+  const over = evaluateRecordFit([
+    {
+      selectorPath: '#card',
+      records: [{ text: 'a', rect: recBox(0, 0, 100.6, 16), cellRect: recBox(0, 0, 100, 60) }],
+    },
+  ]);
+  assert.deepEqual(typesOf(over), ['record-overflow']);
+  const edge = evaluateRecordFit([
+    {
+      selectorPath: '#card',
+      records: [{ text: 'a', rect: recBox(0, 0, 100, 16), cellRect: recBox(0, 0, 100, 60) }],
+    },
+  ]);
+  assert.deepEqual(edge, []);
+});
+
+test('record-fit: records in different cards are never compared', () => {
+  const evaluateRecordFit = fn38('evaluateRecordFit');
+  const v = evaluateRecordFit([
+    {
+      selectorPath: '#a',
+      records: [{ text: 'a', rect: recBox(0, 0, 100, 16), cellRect: recBox(0, 0, 100, 60) }],
+    },
+    {
+      selectorPath: '#b',
+      records: [{ text: 'b', rect: recBox(50, 0, 100, 16), cellRect: recBox(50, 0, 100, 60) }],
+    },
+  ]);
+  assert.deepEqual(v, []);
+});
+
+test('record-fit: a route that requested the family but collected no record is exactly one record-fit-unmeasured', () => {
+  const evaluateRecordFit = fn38('evaluateRecordFit');
+  assert.deepEqual(typesOf(evaluateRecordFit([])), ['record-fit-unmeasured']);
+  assert.deepEqual(typesOf(evaluateRecordFit([{ selectorPath: '#a', records: [] }])), [
+    'record-fit-unmeasured',
+  ]);
+  assert.deepEqual(typesOf(evaluateFamilyPresence('record-fit', [])), ['record-fit-unmeasured']);
+});

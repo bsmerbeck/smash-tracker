@@ -54,6 +54,8 @@ import {
   evaluatePlacement,
   evaluateInsightOrder,
   evaluateTableClip,
+  evaluateBrandRedText,
+  evaluateRecordFit,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -88,9 +90,19 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="dashboard-body"]',
     // Plan 39.1-38: the toolbar is the one unboxed filter row (no page h1 —
     // the Dashboard has none); phone StatRows collapse to two columns.
-    checks: ['filter-row'],
+    // Plan 39.1-39: record-fit (the split cards' two records never
+    // overprint or leave their cells) and brand-red-text (UI-SPEC §4.3).
+    checks: ['filter-row', 'record-fit', 'brand-red-text'],
     filterRow: { maxHeightPx: 72, owns: ['[data-slot="horizon-switch"]'] },
     narrowChecks: ['stat-row-columns'],
+  },
+  {
+    // Plan 39.1-39: the SAME Dashboard inside the MainLayout-geometry shell
+    // (production card widths) — where 39.1-36's shelled capture recorded
+    // the Casual vs Competitive / Online vs Offline record overprint.
+    id: 'dashboard-app',
+    loadedMarker: '[data-slot="dashboard-body"]',
+    checks: ['record-fit', 'brand-red-text'],
   },
   {
     id: 'fighter-analysis',
@@ -101,7 +113,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-38: filter-row (one unboxed row owning the h1 and the
     // HorizonSwitch) and placement (sketch 001-C: the vs lists 2-up inside
     // the hero's 8-col column, directly under the hero).
-    checks: ['form-strip-fit', 'axis-ticks', 'filter-row', 'placement'],
+    // Plan 39.1-39: brand-red-text (UI-SPEC §4.3) on every analytics route.
+    checks: ['form-strip-fit', 'axis-ticks', 'filter-row', 'placement', 'brand-red-text'],
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       {
@@ -136,6 +149,8 @@ export const LAYOUT_ORACLE_ROUTES = [
       'row-cohesion',
       // Plan 39.1-33: the single-row form-strip family.
       'form-strip-fit',
+      // Plan 39.1-39: no brand-red text (UI-SPEC §4.3).
+      'brand-red-text',
     ],
     extraViewports: ['1024x768', '1280x800'],
     // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
@@ -165,7 +180,7 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-38 Task 3 (UI-SPEC §8.4 "insight before chart"): on a phone
     // the rail renders before the match table; at 1024+ the table keeps its
     // desktop place above the rail (grid placement, never `order`).
-    checks: ['filter-row', 'placement'],
+    checks: ['filter-row', 'placement', 'brand-red-text'],
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       { kind: 'above', first: '#match-data-table', then: '[data-slot="match-data-rail"]' },
@@ -184,7 +199,7 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the reads rail renders directly after the stat row and before the
     // career timeline; at 1024+ the timeline keeps its desktop place above
     // the rails (grid placement, never `order`).
-    checks: ['career-timeline', 'filter-row', 'placement'],
+    checks: ['career-timeline', 'filter-row', 'placement', 'brand-red-text'],
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       {
@@ -222,7 +237,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: ['career-timeline'],
     timelineExpect: { state: 'thin', formStrip: true },
   },
-  { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]' },
+  // Plan 39.1-39: brand-red-text (UI-SPEC §4.3).
+  { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]', checks: ['brand-red-text'] },
   {
     id: 'opponent-hub',
     loadedMarker: '[data-slot="opponent-hub-body"]',
@@ -233,7 +249,7 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-38: the hub's filter bar is one unboxed filter row — no
     // height limit and no owners (its h1 lives in the unchanged header row
     // above; the hub has no HorizonSwitch, audit 7.5's second half).
-    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect', 'filter-row'],
+    checks: ['form-strip-fit', 'axis-ticks', 'plot-aspect', 'filter-row', 'brand-red-text'],
     filterRow: {},
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6): What they play never hides a column
     // behind a horizontal scroll on a phone.
@@ -244,7 +260,7 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'stage-detail',
     loadedMarker: '[data-slot="stage-detail-body"]',
     // Plan 39.1-37: axis-ticks and plot-aspect on the Over Time event trend.
-    checks: ['axis-ticks', 'plot-aspect'],
+    checks: ['axis-ticks', 'plot-aspect', 'brand-red-text'],
     // Plan 39.1-38 Task 3 (UI-SPEC §6.6; deferred from 39.1-37): the By
     // Character list never hides its Win Rate column behind a horizontal
     // scroll on a phone.
@@ -311,6 +327,9 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantPlacement = checks.includes('placement');
   const wantInsightOrder = checks.includes('insight-order');
   const wantTableClip = checks.includes('table-clip');
+  // Plan 39.1-39: brand-red-text and record-fit.
+  const wantBrandRedText = checks.includes('brand-red-text');
+  const wantRecordFit = checks.includes('record-fit');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -941,7 +960,94 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-39: brand-red-text — a hidden probe span styled
+  // `color: var(--primary)` resolves the brand red to the browser's own
+  // computed form; every visible element with at least one non-whitespace
+  // direct text node (SVG text included; the HorizonSwitch — whose inset is
+  // reserved red chrome — skipped) is compared against it EXACTLY. For SVG
+  // text the painted colour is `fill`, so it is compared too. Only offenders
+  // travel back, with the probe value and the scanned count.
+  const brandRed = { probe: null, scanned: 0, elements: [] };
+  if (wantBrandRedText) {
+    const probeEl = document.createElement('span');
+    probeEl.setAttribute('aria-hidden', 'true');
+    probeEl.style.cssText =
+      'position:absolute;visibility:hidden;pointer-events:none;color:var(--primary)';
+    probeEl.textContent = 'x';
+    document.body.appendChild(probeEl);
+    const probe = window.getComputedStyle(probeEl).color;
+    probeEl.remove();
+    brandRed.probe = probe;
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.closest('[data-slot="horizon-switch"]')) continue;
+      let hasText = false;
+      for (const child of el.childNodes) {
+        if (child.nodeType === 3 && child.textContent.trim().length > 0) {
+          hasText = true;
+          break;
+        }
+      }
+      if (!hasText) continue;
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) continue;
+      const style = window.getComputedStyle(el);
+      if (style.visibility === 'hidden' || style.display === 'none') continue;
+      brandRed.scanned += 1;
+      const isSvgText = el instanceof SVGElement;
+      const painted = isSvgText ? style.fill : style.color;
+      if (style.color === probe || painted === probe) {
+        brandRed.elements.push({
+          tag: el.tagName.toLowerCase(),
+          text: (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40),
+          selectorPath: describeElement(el),
+          color: painted === probe ? painted : style.color,
+        });
+      }
+    }
+  }
+
+  // Plan 39.1-39: record-fit — every [data-slot="record"] inside each card,
+  // with its rect and the rect of its figure cell (the nearest ancestor whose
+  // PARENT is a CSS grid; one getComputedStyle per ancestor step, records
+  // only). A record with no grid ancestor inside its card is measured
+  // against the card itself.
+  const recordCards = [];
+  if (wantRecordFit) {
+    for (const card of document.querySelectorAll('[data-slot="card"]')) {
+      const records = [];
+      for (const recordEl of card.querySelectorAll('[data-slot="record"]')) {
+        const box = recordEl.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) continue;
+        let cell = null;
+        for (let node = recordEl; node && node !== card; node = node.parentElement) {
+          const parent = node.parentElement;
+          if (!parent) break;
+          const display = window.getComputedStyle(parent).display;
+          if (display === 'grid' || display === 'inline-grid') {
+            cell = node;
+            break;
+          }
+          if (parent === card) break;
+        }
+        const cellBox = (cell ?? card).getBoundingClientRect();
+        records.push({
+          text: (recordEl.textContent ?? '').trim().replace(/\s+/g, ' '),
+          rect: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
+          cellRect: {
+            left: cellBox.left,
+            right: cellBox.right,
+            top: cellBox.top,
+            bottom: cellBox.bottom,
+          },
+        });
+      }
+      if (records.length > 0) recordCards.push({ selectorPath: describeElement(card), records });
+    }
+  }
+
   return {
+    brandRed,
+    recordCards,
     clipTargets,
     filterRows,
     filterRowOwnedInCards,
@@ -1151,6 +1257,13 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     }
     if (checks.includes('table-clip')) {
       violations.push(...evaluateTableClip(measurements.clipTargets));
+    }
+    // Plan 39.1-39 (each evaluator carries its own -unmeasured path).
+    if (checks.includes('brand-red-text')) {
+      violations.push(...evaluateBrandRedText(measurements.brandRed));
+    }
+    if (checks.includes('record-fit')) {
+      violations.push(...evaluateRecordFit(measurements.recordCards));
     }
 
     // Plan 39.1-20 Task 3: recorded regardless of pass/fail — the plan's own

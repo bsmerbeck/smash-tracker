@@ -54,7 +54,7 @@ export function Record({
   const glyph = CONFIDENCE_GLYPH[tier ?? 'none'];
 
   return (
-    <span className={cn('tabular-nums whitespace-nowrap', className)}>
+    <span data-slot="record" className={cn('tabular-nums whitespace-nowrap', className)}>
       <span className={cn(emphasis && 'font-semibold')}>{recordText}</span>
       {showRate && (
         <>

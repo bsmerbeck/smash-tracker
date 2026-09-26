@@ -53,7 +53,7 @@ export interface GuardHarnessRouteEntry {
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
-   * `trends-casual` and (plan 39.1-39) the capture-only `gsp`.
+   * `trends-casual` and (plan 39.1-39) `dashboard-app` and the capture-only `gsp`.
    */
   shell?: 'app';
 }
@@ -107,6 +107,18 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/dashboard',
     element: <DashboardPage />,
     loadedMarker: '[data-slot="dashboard-body"]',
+  },
+  {
+    // Plan 39.1-39 (record-fit): the SAME Dashboard page at the SAME path,
+    // measured inside the MainLayout-geometry shell (the `trends-career`
+    // precedent) — production card widths, where 39.1-36's shelled capture
+    // recorded the Casual vs Competitive / Online vs Offline overprint.
+    id: 'dashboard-app',
+    path: '/dashboard',
+    initialEntry: '/dashboard',
+    element: <DashboardPage />,
+    loadedMarker: '[data-slot="dashboard-body"]',
+    shell: 'app',
   },
   {
     id: 'fighter-analysis',

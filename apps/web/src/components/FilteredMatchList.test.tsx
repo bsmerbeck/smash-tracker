@@ -1099,3 +1099,43 @@ describe('WR-04: focus after a row delete', () => {
     await waitFor(() => expect(document.activeElement).toBe(triggers[1]));
   });
 });
+
+/**
+ * Plan 39.1-39 (UI-SPEC §4.3): the paging control is a muted link
+ * (MUTED_LINK_TONE); the tournament links are inline content links in the
+ * foreground tone with an underline on hover (INLINE_LINK_TONE) — neither is
+ * ever brand-red text.
+ */
+describe('FilteredMatchList link tone (plan 39.1-39)', () => {
+  function classesOf(el: HTMLElement) {
+    return el.className.split(/\s+/);
+  }
+
+  it('the "Show 50 more" paging control carries the muted link tone', () => {
+    renderList({ matches: makeManyMatches(300), axes: {}, layout: 'table' });
+    const classes = classesOf(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).not.toContain('text-primary');
+  });
+
+  it.each(['table', 'stack'] as const)(
+    '%s layout: the tournament link is an inline foreground link, never brand red',
+    async (layout) => {
+      const user = userEvent.setup();
+      renderList({
+        matches: [makeMatch({ id: 'novid-1', vodUrl: undefined })],
+        layout,
+        tournamentLinkForMatch: () => ({ href: '/tournaments/xyz', label: 'View tournament' }),
+      });
+      await user.click(screen.getByRole('button', { name: /show details|opens video/i }));
+      const classes = classesOf(screen.getByRole('link', { name: 'View tournament' }));
+      expect(classes).toContain('text-foreground');
+      expect(classes).toContain('underline-offset-4');
+      expect(classes).toContain('hover:underline');
+      expect(classes).not.toContain('text-primary');
+    },
+  );
+});

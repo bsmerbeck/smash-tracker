@@ -409,6 +409,42 @@ describe('StageDetailPage', () => {
     expect(within(byCharacterCard).getAllByRole('row')).toHaveLength(8);
   });
 
+  // Plan 39.1-39 (UI-SPEC §4.3): the page's own show-all / show-fewer
+  // toggles are muted links (MUTED_LINK_TONE), never brand-red text.
+  it('plan 39.1-39: both show-all toggles and the show-fewer toggle carry the muted link tone', async () => {
+    const opponentFighters = SpriteList.slice(0, 7).map((s) => s.id);
+    listMatches.mockResolvedValue(
+      Array.from({ length: 9 }, (_, i) =>
+        makeMatch({
+          id: `m${i}`,
+          time: i + 1,
+          win: true,
+          opponent: `opponent${i}`,
+          opponent_id: opponentFighters[i % 7]!,
+        }),
+      ),
+    );
+    renderStageAt('/stages/1');
+    await waitFor(() => expect(screen.getByText('By Opponent')).toBeInTheDocument());
+    const muted = (el: HTMLElement) => {
+      const classes = el.className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+    };
+    const byOpponentCard = screen
+      .getByText('By Opponent')
+      .closest('[data-slot="card"]') as HTMLElement;
+    const byCharacterCard = screen
+      .getByText('By Character')
+      .closest('[data-slot="card"]') as HTMLElement;
+    const showAllOpponents = within(byOpponentCard).getByRole('button', { name: /show all 9/i });
+    muted(showAllOpponents);
+    muted(within(byCharacterCard).getByRole('button', { name: /show all 7/i }));
+    await userEvent.setup().click(showAllOpponents);
+    muted(within(byOpponentCard).getByRole('button', { name: /show fewer/i }));
+  });
+
   it('WR-C06 (39.1-REVIEW.md): both show-all/show-fewer toggles carry aria-expanded and aria-controls pointing at their own table', async () => {
     listMatches.mockResolvedValue(
       Array.from({ length: 9 }, (_, i) =>

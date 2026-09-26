@@ -397,3 +397,48 @@ describe('InsightRail', () => {
     expect(unlocksNextSource).not.toMatch(/salience/i);
   });
 });
+
+describe('InsightRail restore link tone (plan 39.1-39, UI-SPEC §4.3)', () => {
+  function expectMuted(el: HTMLElement) {
+    const classes = el.className.split(/\s+/);
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).not.toContain('text-primary');
+  }
+
+  it('the all-dismissed card restore control is a muted link', () => {
+    const cards = [makeCard('a', 'A')];
+    render(
+      <InsightRail
+        rail={{ cards, unlocksNext: null, lines: [], promotionQueue: [] }}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={['a']}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    for (const button of screen.getAllByRole('button', { name: LABELS.restore })) {
+      expectMuted(button);
+    }
+  });
+
+  it('the rail-foot restore control is a muted link', () => {
+    const cards = [makeCard('a', 'A'), makeCard('b', 'B')];
+    render(
+      <InsightRail
+        rail={{ cards, unlocksNext: null, lines: [], promotionQueue: [] }}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={['a']}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expectMuted(screen.getByRole('button', { name: LABELS.restore }));
+  });
+});

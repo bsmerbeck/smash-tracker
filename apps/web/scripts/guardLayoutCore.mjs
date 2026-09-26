@@ -1218,3 +1218,98 @@ export function evaluateTableClip(targets, tolerancePx = 1) {
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-39: brand-red-text and record-fit.
+// ---------------------------------------------------------------------------
+
+/** A resolved probe colour that cannot identify `--primary` (the var failed to resolve). */
+function isUnresolvedColour(value) {
+  if (typeof value !== 'string') return true;
+  const v = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    v === '' ||
+    v === 'transparent' ||
+    v === 'rgba(0, 0, 0, 0)' ||
+    /^rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)$/.test(v) ||
+    /\/\s*0\s*\)$/.test(v)
+  );
+}
+
+function normaliseColour(value) {
+  return String(value).trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * UI-SPEC §4.3 (red = the one filled primary door, the HorizonSwitch inset,
+ * the focus ring and app chrome — never text): every text-bearing element
+ * whose computed colour EXACTLY equals the resolved `--primary` probe colour
+ * is one `brand-red-text` violation. `input` is `{ probe, scanned, elements }`
+ * where `probe` is the probe span's computed `color`, `scanned` the number of
+ * text-bearing elements the collector compared, and `elements` the
+ * candidates `[{ tag, text, selectorPath, color }]`. A probe that did not
+ * resolve, or zero scanned elements, is exactly one
+ * `brand-red-text-unmeasured` (never a vacuous pass).
+ */
+export function evaluateBrandRedText({ probe, scanned, elements = [] } = {}) {
+  if (isUnresolvedColour(probe)) {
+    return [{ type: 'brand-red-text-unmeasured', reason: 'probe', probe: probe ?? null }];
+  }
+  if (!scanned) {
+    return [{ type: 'brand-red-text-unmeasured', reason: 'no-text-elements' }];
+  }
+  const target = normaliseColour(probe);
+  return elements
+    .filter((el) => normaliseColour(el.color) === target)
+    .map((el) => ({
+      type: 'brand-red-text',
+      tag: el.tag,
+      text: el.text,
+      selectorPath: el.selectorPath,
+      color: el.color,
+    }));
+}
+
+/** UI-SPEC §6.5 rule 2 / §7.4: a record may not leave its figure cell by more than this many px. */
+export const RECORD_OVERFLOW_TOLERANCE_PX = 0.5;
+
+/**
+ * UI-SPEC §7.3 / §7.4 ("wraps whole") / §6.5 rule 2: inside one card, every
+ * record's box is pairwise disjoint from every other record's box
+ * (`record-overlap`, naming both texts), and every record's right edge stays
+ * inside its figure cell (`record-overflow`, over 0.5px). Records in
+ * different cards are never compared. `cards` is
+ * `[{ selectorPath, records: [{ text, rect, cellRect }] }]`; zero records
+ * across every card is exactly one `record-fit-unmeasured`.
+ */
+export function evaluateRecordFit(cards = []) {
+  const total = cards.reduce((sum, card) => sum + (card.records?.length ?? 0), 0);
+  if (total === 0) return [{ type: 'record-fit-unmeasured' }];
+  const violations = [];
+  for (const card of cards) {
+    const records = card.records ?? [];
+    for (let i = 0; i < records.length; i += 1) {
+      const a = records[i];
+      if (a.cellRect && a.rect.right > a.cellRect.right + RECORD_OVERFLOW_TOLERANCE_PX) {
+        violations.push({
+          type: 'record-overflow',
+          selectorPath: card.selectorPath,
+          text: a.text,
+          recordRight: a.rect.right,
+          cellRight: a.cellRect.right,
+        });
+      }
+      for (let j = i + 1; j < records.length; j += 1) {
+        const b = records[j];
+        if (rectsIntersect(a.rect, b.rect)) {
+          violations.push({
+            type: 'record-overlap',
+            selectorPath: card.selectorPath,
+            texts: [a.text, b.text],
+          });
+        }
+      }
+    }
+  }
+  return violations;
+}
