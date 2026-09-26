@@ -911,6 +911,17 @@ describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged
     expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
   });
 
+  // Plan 39.1-51 (whole-page review, OOS-40-B on the terminus's own copy): the
+  // summary and progress line printed '1720 games' / 'Showing 20 of 1720
+  // games' ungrouped on the recent drill routes (UI-SPEC §5 thousands separators).
+  it('plan 39.1-51: counts of 1,000+ in the summary and progress line are grouped (1,234 games, Showing 20 of 1,234 games)', () => {
+    const matches = makeManyMatches(1234);
+    renderList({ matches, axes: { fighterId: mario.id }, layout: 'stack' });
+    expect(screen.getByText(/^1,234 games ·/)).toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 1,234 games/);
+  });
+
   it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', async () => {
     const user = userEvent.setup();
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
