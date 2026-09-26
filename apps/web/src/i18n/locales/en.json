@@ -179,29 +179,29 @@
       "body": "You haven't saved favorite fighters yet, so this page uses the fighters seen in your recorded matches. Choosing favorites is optional and just personalizes these pages."
     },
     "evidence": {
-      "abstained_one": "Not enough data yet — {{count}} more game needed.",
-      "abstained_other": "Not enough data yet — {{count}} more games needed.",
+      "abstained_one": "Not enough data yet — {{count, grouped}} more game needed.",
+      "abstained_other": "Not enough data yet — {{count, grouped}} more games needed.",
       "sampleCue": {
-        "low_one": "{{count}} game · low confidence",
-        "low_other": "{{count}} games · low confidence",
-        "medium_one": "{{count}} game · medium confidence",
-        "medium_other": "{{count}} games · medium confidence",
-        "high_one": "{{count}} game · high confidence",
-        "high_other": "{{count}} games · high confidence"
+        "low_one": "{{count, grouped}} game · low confidence",
+        "low_other": "{{count, grouped}} games · low confidence",
+        "medium_one": "{{count, grouped}} game · medium confidence",
+        "medium_other": "{{count, grouped}} games · medium confidence",
+        "high_one": "{{count, grouped}} game · high confidence",
+        "high_other": "{{count, grouped}} games · high confidence"
       },
-      "unknownRow_one": "Unknown ({{count}} game, excluded)",
-      "unknownRow_other": "Unknown ({{count}} games, excluded)",
-      "unnamedBucket_one": "{{count}} game with no opponent name recorded",
-      "unnamedBucket_other": "{{count}} games with no opponent name recorded",
+      "unknownRow_one": "Unknown ({{count, grouped}} game, excluded)",
+      "unknownRow_other": "Unknown ({{count, grouped}} games, excluded)",
+      "unnamedBucket_one": "{{count, grouped}} game with no opponent name recorded",
+      "unnamedBucket_other": "{{count, grouped}} games with no opponent name recorded",
       "mixedContext": "Mixed context",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
       "sampleCueGlyph": {
-        "low_one": "low confidence, {{count}} game",
-        "low_other": "low confidence, {{count}} games",
-        "medium_one": "medium confidence, {{count}} game",
-        "medium_other": "medium confidence, {{count}} games",
-        "high_one": "high confidence, {{count}} game",
-        "high_other": "high confidence, {{count}} games"
+        "low_one": "low confidence, {{count, grouped}} game",
+        "low_other": "low confidence, {{count, grouped}} games",
+        "medium_one": "medium confidence, {{count, grouped}} game",
+        "medium_other": "medium confidence, {{count, grouped}} games",
+        "high_one": "high confidence, {{count, grouped}} game",
+        "high_other": "high confidence, {{count, grouped}} games"
       },
       "cohort": {
         "online": "online",
@@ -3161,8 +3161,8 @@
       },
       "legend": "Fact · Trend · Suggestion",
       "allDismissed": "Every read on this rail is dismissed.",
-      "dismissedCount_one": "{{count}} dismissed on this device",
-      "dismissedCount_other": "{{count}} dismissed on this device",
+      "dismissedCount_one": "{{count, grouped}} dismissed on this device",
+      "dismissedCount_other": "{{count, grouped}} dismissed on this device",
       "restore": "Restore",
       "dismiss": "Dismiss",
       "dismissedToast": "Insight dismissed on this device.",
@@ -3170,8 +3170,8 @@
       "unavailable": "Insights aren’t available for this view yet."
     },
     "door": {
-      "seeGames_one": "See the {{count}} game",
-      "seeGames_other": "See the {{count}} games",
+      "seeGames_one": "See the {{count, grouped}} game",
+      "seeGames_other": "See the {{count, grouped}} games",
       "openMatchup": "Open matchup",
       "openOpponent": "Open opponent",
       "openStage": "Open stage",
@@ -3184,8 +3184,8 @@
       "down": "Down",
       "steady": "steady",
       "thin": "Thin",
-      "noDirection_one": "n {{count}} · no direction",
-      "noDirection_other": "n {{count}} · no direction",
+      "noDirection_one": "n {{count, grouped}} · no direction",
+      "noDirection_other": "n {{count, grouped}} · no direction",
       "noGames": "no games",
       "horizon": {
         "last30": "last 30",
@@ -3215,37 +3215,37 @@
     },
     "evidence": {
       "twoHorizon": {
-        "last30": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames}} · {{cue}}",
-        "lastEvent": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames}} · {{cue}}",
-        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames}} · {{cue}}"
+        "last30": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}"
       },
       "single": "{{record}} · {{cue}}",
-      "span": "Those {{count}} games span {{from}} – {{to}}.",
-      "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}}).",
+      "span": "Those {{count, grouped}} games span {{from}} – {{to}}.",
+      "range": "{{rate}} over {{count, grouped}}, inside the usual range ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}",
       "tier": {
         "low": "low confidence",
         "medium": "medium confidence",
         "high": "high confidence"
       },
-      "spots_one": "{{record}} · {{count}} spot · {{tier}} · lifetime scope",
-      "spots_other": "{{record}} · {{count}} spots · {{tier}} · lifetime scope",
-      "longSessions_one": "{{count}} session ran past {{games}} games · {{tier}}",
-      "longSessions_other": "{{count}} sessions ran past {{games}} games · {{tier}}"
+      "spots_one": "{{record}} · {{count, grouped}} spot · {{tier}} · lifetime scope",
+      "spots_other": "{{record}} · {{count, grouped}} spots · {{tier}} · lifetime scope",
+      "longSessions_one": "{{count, grouped}} session ran past {{games, grouped}} games · {{tier}}",
+      "longSessions_other": "{{count, grouped}} sessions ran past {{games, grouped}} games · {{tier}}"
     },
     "mark": {
       "nextGame": "Next game",
       "rateVsBaseline": "{{rate}} vs {{baseline}}",
-      "tiltCostRow_one": "Next game after 2 straight losses — {{rate}} over {{count}} spot vs {{baseline}} baseline; opens those games.",
-      "tiltCostRow_other": "Next game after 2 straight losses — {{rate}} over {{count}} spots vs {{baseline}} baseline; opens those games.",
+      "tiltCostRow_one": "Next game after 2 straight losses — {{rate}} over {{count, grouped}} spot vs {{baseline}} baseline; opens those games.",
+      "tiltCostRow_other": "Next game after 2 straight losses — {{rate}} over {{count, grouped}} spots vs {{baseline}} baseline; opens those games.",
       "sessionBuckets": {
         "label": "Win rate by game number within a session",
         "range": "Games {{from}}–{{to}}",
         "open": "Games {{from}}+"
       },
-      "bucketValue": "{{rate}} · {{count}}",
-      "setStrip_one": "{{count}} set — {{won}} won, {{lost}} lost.",
-      "setStrip_other": "{{count}} sets — {{won}} won, {{lost}} lost.",
+      "bucketValue": "{{rate}} · {{count, grouped}}",
+      "setStrip_one": "{{count, grouped}} set — {{won}} won, {{lost}} lost.",
+      "setStrip_other": "{{count, grouped}} sets — {{won}} won, {{lost}} lost.",
       "setTick": "vs {{opponent}} · {{record}}",
       "setTickNoOpponent": "Set · {{record}}"
     },
@@ -3258,17 +3258,17 @@
         "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime."
       },
       "thinRecent": {
-        "scoped_one": "Only {{count}} game vs {{fighter}} in the last 12 months — showing lifetime.",
-        "scoped_other": "Only {{count}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "scoped_one": "Only {{count, grouped}} game vs {{fighter}} in the last 12 months — showing lifetime.",
+        "scoped_other": "Only {{count, grouped}} games vs {{fighter}} in the last 12 months — showing lifetime.",
         "page": {
-          "last30": "Only {{count}} games in the last 30 — showing all time.",
-          "lastEvent": "Only {{count}} games at the last event — showing all time.",
-          "last90": "Only {{count}} games in the last 90 days — showing all time."
+          "last30": "Only {{count, grouped}} games in the last 30 — showing all time.",
+          "lastEvent": "Only {{count, grouped}} games at the last event — showing all time.",
+          "last90": "Only {{count, grouped}} games in the last 90 days — showing all time."
         }
       },
       "locked_one": "vs {{fighter}} — 1 more game unlocks this read.",
-      "locked_other": "vs {{fighter}} — {{count}} more games unlock this read.",
-      "lockedMeter": "{{have}} of {{need}} games",
+      "locked_other": "vs {{fighter}} — {{count, grouped}} more games unlock this read.",
+      "lockedMeter": "{{have, grouped}} of {{need, grouped}} games",
       "steady": {
         "last30": "No notable change over the last 30 games.",
         "lastEvent": "No notable change at the last event.",
@@ -3287,32 +3287,32 @@
         "last90": "{{entity}} — win rate down {{points}} pts over the last 90 days."
       },
       "collapsed": {
-        "last30": "{{entity}} — {{record}} across all {{count}} games.",
-        "lastEvent": "{{entity}} — {{record}} across all {{count}} games at the last event.",
-        "last90": "{{entity}} — {{record}} across all {{count}} games."
+        "last30": "{{entity}} — {{record}} across all {{count, grouped}} games.",
+        "lastEvent": "{{entity}} — {{record}} across all {{count, grouped}} games at the last event.",
+        "last90": "{{entity}} — {{record}} across all {{count, grouped}} games."
       },
-      "steady": "{{entity}} — {{record}} over the last {{count}} games, inside the usual range for a {{rate}} record ({{lower}}–{{upper}}).",
-      "thinRecent": "Only {{count}} games recently — showing all time.",
-      "thin": "{{entity}} — only {{count}} games so far, too few to call a trend.",
+      "steady": "{{entity}} — {{record}} over the last {{count, grouped}} games, inside the usual range for a {{rate}} record ({{lower}}–{{upper}}).",
+      "thinRecent": "Only {{count, grouped}} games recently — showing all time.",
+      "thin": "{{entity}} — only {{count, grouped}} games so far, too few to call a trend.",
       "locked_one": "{{entity}} — 1 more game unlocks this read.",
-      "locked_other": "{{entity}} — {{count}} more games unlock this read."
+      "locked_other": "{{entity}} — {{count, grouped}} more games unlock this read."
     },
     "characterMovers": {
-      "up": "vs {{fighter}} — win rate up {{points}} pts over the last {{count}} games.",
-      "down": "vs {{fighter}} — win rate down {{points}} pts over the last {{count}} games.",
-      "steady": "vs characters — no notable change across {{count}} matchups with 8+ recent games.",
-      "thinRecent": "Only {{count}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+      "up": "vs {{fighter}} — win rate up {{points}} pts over the last {{count, grouped}} games.",
+      "down": "vs {{fighter}} — win rate down {{points}} pts over the last {{count, grouped}} games.",
+      "steady": "vs characters — no notable change across {{count, grouped}} matchups with 8+ recent games.",
+      "thinRecent": "Only {{count, grouped}} games vs {{fighter}} in the last 12 months — showing lifetime.",
       "locked_one": "vs {{fighter}} — 1 more game unlocks this read.",
-      "locked_other": "vs {{fighter}} — {{count}} more games unlock this read.",
-      "sub": "No notable decliners across the other {{count}} matchups with 8+ recent games."
+      "locked_other": "vs {{fighter}} — {{count, grouped}} more games unlock this read.",
+      "sub": "No notable decliners across the other {{count, grouped}} matchups with 8+ recent games."
     },
     "rivalMovers": {
-      "up": "vs {{opponent}} — win rate up {{points}} pts over the last {{count}} games.",
-      "down": "vs {{opponent}} — win rate down {{points}} pts over the last {{count}} games.",
-      "steady": "vs players — no notable change across {{count}} opponents with 8+ recent games.",
-      "thinRecent": "vs players — only {{count}} opponents reached 8 games at the last event — showing all time.",
+      "up": "vs {{opponent}} — win rate up {{points}} pts over the last {{count, grouped}} games.",
+      "down": "vs {{opponent}} — win rate down {{points}} pts over the last {{count, grouped}} games.",
+      "steady": "vs players — no notable change across {{count, grouped}} opponents with 8+ recent games.",
+      "thinRecent": "vs players — only {{count, grouped}} opponents reached 8 games at the last event — showing all time.",
       "locked_one": "vs {{opponent}} — 1 more game unlocks this read.",
-      "locked_other": "vs {{opponent}} — {{count}} more games unlock this read."
+      "locked_other": "vs {{opponent}} — {{count, grouped}} more games unlock this read."
     },
     "lastEventRecap": {
       "hidden": "No event recorded yet.",
@@ -3325,20 +3325,20 @@
       "setLosses_other": "Set losses — {{named}}."
     },
     "ratingMove": {
-      "up": "Rating — up {{points}} over the last {{count}} games ({{startRating}} → {{endRating}} ±{{band}}).",
-      "down": "Rating — down {{points}} over the last {{count}} games ({{startRating}} → {{endRating}} ±{{band}}).",
-      "steady": "Rating — no move beyond the ±{{band}} band over the last {{count}} games ({{startRating}} → {{endRating}}).",
-      "thin": "Rating — {{startRating}} → {{endRating}} at the last event; {{count}} games are too few to call a move.",
-      "collapsed": "Rating — {{endRating}} ±{{band}} after {{count}} games; the band is still wide.",
+      "up": "Rating — up {{points}} over the last {{count, grouped}} games ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Rating — down {{points}} over the last {{count, grouped}} games ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Rating — no move beyond the ±{{band}} band over the last {{count, grouped}} games ({{startRating}} → {{endRating}}).",
+      "thin": "Rating — {{startRating}} → {{endRating}} at the last event; {{count, grouped}} games are too few to call a move.",
+      "collapsed": "Rating — {{endRating}} ±{{band}} after {{count, grouped}} games; the band is still wide.",
       "locked_one": "Rating — 1 more game unlocks this read.",
-      "locked_other": "Rating — {{count}} more games unlock this read."
+      "locked_other": "Rating — {{count, grouped}} more games unlock this read."
     },
     "tiltCost": {
       "trend": "After 2 straight losses — next game {{spotRate}} vs {{baselineRate}} baseline.",
       "suggestion": "After 2 straight losses — next game {{spotRate}} vs {{baselineRate}} baseline; a reset after two losses is worth testing.",
-      "steady": "After 2 straight losses — next game {{spotRate}} over {{spotCount}} spots; no notable cost vs {{baselineRate}}.",
+      "steady": "After 2 straight losses — next game {{spotRate}} over {{spotCount, grouped}} spots; no notable cost vs {{baselineRate}}.",
       "locked_one": "After 2 straight losses — 1 more such spot unlocks this read.",
-      "locked_other": "After 2 straight losses — {{count}} more such spots unlock this read."
+      "locked_other": "After 2 straight losses — {{count, grouped}} more such spots unlock this read."
     },
     "sessionFatigue": {
       "hidden": "Not enough long sessions yet to compare.",
@@ -3351,16 +3351,16 @@
       "up": "Setting — online runs {{points}} pts higher ({{onlineRate}} vs {{offlineRate}}).",
       "down": "Setting — offline runs {{points}} pts higher ({{onlineRate}} vs {{offlineRate}}).",
       "steady": "Setting — no notable online/offline gap ({{onlineRate}} vs {{offlineRate}}).",
-      "thin": "Not enough {{shortSide}} games to compare ({{count}}).",
+      "thin": "Not enough {{shortSide}} games to compare ({{count, grouped}}).",
       "locked_one": "Setting — 1 more {{shortSide}} game unlocks the online/offline comparison.",
-      "locked_other": "Setting — {{count}} more {{shortSide}} games unlock the online/offline comparison."
+      "locked_other": "Setting — {{count, grouped}} more {{shortSide}} games unlock the online/offline comparison."
     },
     "volumeForm": {
       "up": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise.",
       "down": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise.",
       "steady": "Volume — months of {{threshold}}+ games run {{highRate}} vs {{lowRate}} otherwise; no notable difference.",
       "locked_one": "Volume — 1 more month of play unlocks the volume read.",
-      "locked_other": "Volume — {{count}} more months of play unlock the volume read."
+      "locked_other": "Volume — {{count, grouped}} more months of play unlock the volume read."
     },
     "mixShift": {
       "hidden": "Not enough of a shift in match mix to report yet.",
@@ -3368,38 +3368,38 @@
     },
     "rosterCore": {
       "fact": "Roster — {{fighter}} is the main at {{share}}% of play; {{secondaryCount}} secondaries, {{pocketCount}} pockets.",
-      "thin": "Roster — main not established yet; {{count}} games on one fighter set it."
+      "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it."
     },
     "rosterShift": {
       "hidden": "Not enough of a shift in who gets played to report yet.",
       "steady": "Roster — no notable shift in who gets played over the last 30 games.",
-      "up": "{{fighter}} — share of play up {{points}} pts over the last {{count}} games.",
-      "down": "{{fighter}} — share of play down {{points}} pts over the last {{count}} games."
+      "up": "{{fighter}} — share of play up {{points}} pts over the last {{count, grouped}} games.",
+      "down": "{{fighter}} — share of play down {{points}} pts over the last {{count, grouped}} games."
     },
     "secondaryPayoff": {
       "trend": "vs {{opponent}} — {{secondary}} runs {{secondaryRate}}% where {{main}} runs {{mainRate}}%.",
       "suggestion": "vs {{opponent}} — {{secondary}} runs {{secondaryRate}}% where {{main}} runs {{mainRate}}%; the secondary is worth the pick.",
       "steady": "Secondaries — no matchup where a secondary notably beats the main.",
       "locked_one": "vs {{opponent}} — 1 more game on {{secondary}} unlocks this read.",
-      "locked_other": "vs {{opponent}} — {{count}} more games on {{secondary}} unlock this read."
+      "locked_other": "vs {{opponent}} — {{count, grouped}} more games on {{secondary}} unlock this read."
     },
     "pocketCost": {
       "hidden": "Not enough pocket games yet to report a cost.",
-      "fact": "Pockets — {{pocketRate}}% over {{pocketGames}} games vs {{mainRate}}% on the main.",
+      "fact": "Pockets — {{pocketRate}}% over {{pocketGames, grouped}} games vs {{mainRate}}% on the main.",
       "steady": "Pockets — no notable cost vs the main ({{pocketRate}}% vs {{mainRate}}%)."
     },
     "matchupOrPlayer": {
       "hidden": "Not enough games or opponents yet to tell player from matchup.",
-      "player": "{{matchup}} — {{lossShare}} of {{totalLosses}} losses came from one player, {{opponent}}, in {{opponentGames}} games.",
+      "player": "{{matchup}} — {{lossShare}} of {{totalLosses, grouped}} losses came from one player, {{opponent}}, in {{opponentGames, grouped}} games.",
       "matchup": "{{matchup}} — losses are spread across {{distinctOpponents}} players; no single opponent stands out."
     },
     "bestMatchup": {
       "locked": "Best record — not enough games yet to name one.",
-      "fact": "Best record — vs {{vs}}, {{record}} over {{count}}."
+      "fact": "Best record — vs {{vs}}, {{record}} over {{count, grouped}}."
     },
     "worstMatchup": {
       "locked": "Toughest record — not enough games yet to name one.",
-      "fact": "Toughest record — vs {{vs}}, {{record}} over {{count}}."
+      "fact": "Toughest record — vs {{vs}}, {{record}} over {{count, grouped}}."
     }
   },
   "analytics": {

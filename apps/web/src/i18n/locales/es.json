@@ -179,29 +179,29 @@
       "body": "Aún no has guardado luchadores favoritos, así que esta página usa los luchadores vistos en tus partidas registradas. Elegir favoritos es opcional y solo personaliza estas páginas."
     },
     "evidence": {
-      "abstained_one": "Aún no hay suficientes datos — falta {{count}} partida más.",
-      "abstained_other": "Aún no hay suficientes datos — faltan {{count}} partidas más.",
+      "abstained_one": "Aún no hay suficientes datos — falta {{count, grouped}} partida más.",
+      "abstained_other": "Aún no hay suficientes datos — faltan {{count, grouped}} partidas más.",
       "sampleCue": {
-        "low_one": "{{count}} partida · confianza baja",
-        "low_other": "{{count}} partidas · confianza baja",
-        "medium_one": "{{count}} partida · confianza media",
-        "medium_other": "{{count}} partidas · confianza media",
-        "high_one": "{{count}} partida · confianza alta",
-        "high_other": "{{count}} partidas · confianza alta"
+        "low_one": "{{count, grouped}} partida · confianza baja",
+        "low_other": "{{count, grouped}} partidas · confianza baja",
+        "medium_one": "{{count, grouped}} partida · confianza media",
+        "medium_other": "{{count, grouped}} partidas · confianza media",
+        "high_one": "{{count, grouped}} partida · confianza alta",
+        "high_other": "{{count, grouped}} partidas · confianza alta"
       },
-      "unknownRow_one": "Desconocido ({{count}} partida, excluida)",
-      "unknownRow_other": "Desconocido ({{count}} partidas, excluidas)",
-      "unnamedBucket_one": "{{count}} partida sin nombre de oponente registrado",
-      "unnamedBucket_other": "{{count}} partidas sin nombre de oponente registrado",
+      "unknownRow_one": "Desconocido ({{count, grouped}} partida, excluida)",
+      "unknownRow_other": "Desconocido ({{count, grouped}} partidas, excluidas)",
+      "unnamedBucket_one": "{{count, grouped}} partida sin nombre de oponente registrado",
+      "unnamedBucket_other": "{{count, grouped}} partidas sin nombre de oponente registrado",
       "mixedContext": "Contexto mixto",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mezclado con {{majorityLabel}}.",
       "sampleCueGlyph": {
-        "low_one": "confianza baja, {{count}} partida",
-        "low_other": "confianza baja, {{count}} partidas",
-        "medium_one": "confianza media, {{count}} partida",
-        "medium_other": "confianza media, {{count}} partidas",
-        "high_one": "confianza alta, {{count}} partida",
-        "high_other": "confianza alta, {{count}} partidas"
+        "low_one": "confianza baja, {{count, grouped}} partida",
+        "low_other": "confianza baja, {{count, grouped}} partidas",
+        "medium_one": "confianza media, {{count, grouped}} partida",
+        "medium_other": "confianza media, {{count, grouped}} partidas",
+        "high_one": "confianza alta, {{count, grouped}} partida",
+        "high_other": "confianza alta, {{count, grouped}} partidas"
       },
       "cohort": {
         "online": "en línea",
@@ -3161,8 +3161,8 @@
       },
       "legend": "Hecho · Tendencia · Sugerencia",
       "allDismissed": "Todas las lecturas de este panel están descartadas.",
-      "dismissedCount_one": "{{count}} descartada en este dispositivo",
-      "dismissedCount_other": "{{count}} descartadas en este dispositivo",
+      "dismissedCount_one": "{{count, grouped}} descartada en este dispositivo",
+      "dismissedCount_other": "{{count, grouped}} descartadas en este dispositivo",
       "restore": "Restaurar",
       "dismiss": "Descartar",
       "dismissedToast": "Lectura descartada en este dispositivo.",
@@ -3170,8 +3170,8 @@
       "unavailable": "Los análisis todavía no están disponibles para esta vista."
     },
     "door": {
-      "seeGames_one": "Ver la {{count}} partida",
-      "seeGames_other": "Ver las {{count}} partidas",
+      "seeGames_one": "Ver la {{count, grouped}} partida",
+      "seeGames_other": "Ver las {{count, grouped}} partidas",
       "openMatchup": "Abrir enfrentamiento",
       "openOpponent": "Abrir rival",
       "openStage": "Abrir escenario",
@@ -3184,8 +3184,8 @@
       "down": "Baja",
       "steady": "estable",
       "thin": "Escaso",
-      "noDirection_one": "n {{count}} · sin dirección",
-      "noDirection_other": "n {{count}} · sin dirección",
+      "noDirection_one": "n {{count, grouped}} · sin dirección",
+      "noDirection_other": "n {{count, grouped}} · sin dirección",
       "noGames": "sin partidas",
       "horizon": {
         "last30": "últimas 30",
@@ -3215,37 +3215,37 @@
     },
     "evidence": {
       "twoHorizon": {
-        "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}",
-        "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}",
-        "last90": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames}} · {{cue}}"
+        "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}",
+        "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}",
+        "last90": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}"
       },
       "single": "{{record}} · {{cue}}",
-      "span": "Esas {{count}} partidas van de {{from}} a {{to}}.",
-      "range": "{{rate}} sobre {{count}}, dentro del rango habitual ({{lower}}–{{upper}}).",
+      "span": "Esas {{count, grouped}} partidas van de {{from}} a {{to}}.",
+      "range": "{{rate}} sobre {{count, grouped}}, dentro del rango habitual ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}",
       "tier": {
         "low": "confianza baja",
         "medium": "confianza media",
         "high": "confianza alta"
       },
-      "spots_one": "{{record}} · {{count}} caso · {{tier}} · alcance histórico",
-      "spots_other": "{{record}} · {{count}} casos · {{tier}} · alcance histórico",
-      "longSessions_one": "{{count}} sesión pasó de {{games}} partidas · {{tier}}",
-      "longSessions_other": "{{count}} sesiones pasaron de {{games}} partidas · {{tier}}"
+      "spots_one": "{{record}} · {{count, grouped}} caso · {{tier}} · alcance histórico",
+      "spots_other": "{{record}} · {{count, grouped}} casos · {{tier}} · alcance histórico",
+      "longSessions_one": "{{count, grouped}} sesión pasó de {{games, grouped}} partidas · {{tier}}",
+      "longSessions_other": "{{count, grouped}} sesiones pasaron de {{games, grouped}} partidas · {{tier}}"
     },
     "mark": {
       "nextGame": "Siguiente partida",
       "rateVsBaseline": "{{rate}} vs {{baseline}}",
-      "tiltCostRow_one": "Siguiente partida tras 2 derrotas seguidas — {{rate}} en {{count}} caso vs {{baseline}} de referencia; abre esas partidas.",
-      "tiltCostRow_other": "Siguiente partida tras 2 derrotas seguidas — {{rate}} en {{count}} casos vs {{baseline}} de referencia; abre esas partidas.",
+      "tiltCostRow_one": "Siguiente partida tras 2 derrotas seguidas — {{rate}} en {{count, grouped}} caso vs {{baseline}} de referencia; abre esas partidas.",
+      "tiltCostRow_other": "Siguiente partida tras 2 derrotas seguidas — {{rate}} en {{count, grouped}} casos vs {{baseline}} de referencia; abre esas partidas.",
       "sessionBuckets": {
         "label": "Porcentaje de victorias según el número de partida en la sesión",
         "range": "Partidas {{from}}–{{to}}",
         "open": "Partidas {{from}}+"
       },
-      "bucketValue": "{{rate}} · {{count}}",
-      "setStrip_one": "{{count}} set — {{won}} ganado, {{lost}} perdido.",
-      "setStrip_other": "{{count}} sets — {{won}} ganados, {{lost}} perdidos.",
+      "bucketValue": "{{rate}} · {{count, grouped}}",
+      "setStrip_one": "{{count, grouped}} set — {{won}} ganado, {{lost}} perdido.",
+      "setStrip_other": "{{count, grouped}} sets — {{won}} ganados, {{lost}} perdidos.",
       "setTick": "vs {{opponent}} · {{record}}",
       "setTickNoOpponent": "Set · {{record}}"
     },
@@ -3258,17 +3258,17 @@
         "scoped": "Sin partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico."
       },
       "thinRecent": {
-        "scoped_one": "Solo {{count}} partida vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
-        "scoped_other": "Solo {{count}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+        "scoped_one": "Solo {{count, grouped}} partida vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+        "scoped_other": "Solo {{count, grouped}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
         "page": {
-          "last30": "Solo {{count}} partidas en las últimas 30 — se muestra el histórico.",
-          "lastEvent": "Solo {{count}} partidas en el último evento — se muestra el histórico.",
-          "last90": "Solo {{count}} partidas en los últimos 90 días — se muestra el histórico."
+          "last30": "Solo {{count, grouped}} partidas en las últimas 30 — se muestra el histórico.",
+          "lastEvent": "Solo {{count, grouped}} partidas en el último evento — se muestra el histórico.",
+          "last90": "Solo {{count, grouped}} partidas en los últimos 90 días — se muestra el histórico."
         }
       },
       "locked_one": "vs {{fighter}} — 1 partida más desbloquea esta lectura.",
-      "locked_other": "vs {{fighter}} — {{count}} partidas más desbloquean esta lectura.",
-      "lockedMeter": "{{have}} de {{need}} partidas",
+      "locked_other": "vs {{fighter}} — {{count, grouped}} partidas más desbloquean esta lectura.",
+      "lockedMeter": "{{have, grouped}} de {{need, grouped}} partidas",
       "steady": {
         "last30": "Sin cambio notable en las últimas 30 partidas.",
         "lastEvent": "Sin cambio notable en el último evento.",
@@ -3287,32 +3287,32 @@
         "last90": "{{entity}} — tasa de victorias baja {{points}} pts en los últimos 90 días."
       },
       "collapsed": {
-        "last30": "{{entity}} — {{record}} en las {{count}} partidas registradas.",
-        "lastEvent": "{{entity}} — {{record}} en las {{count}} partidas registradas del último evento.",
-        "last90": "{{entity}} — {{record}} en las {{count}} partidas registradas."
+        "last30": "{{entity}} — {{record}} en las {{count, grouped}} partidas registradas.",
+        "lastEvent": "{{entity}} — {{record}} en las {{count, grouped}} partidas registradas del último evento.",
+        "last90": "{{entity}} — {{record}} en las {{count, grouped}} partidas registradas."
       },
-      "steady": "{{entity}} — {{record}} en las últimas {{count}} partidas, dentro del rango habitual para una marca de {{rate}} ({{lower}}–{{upper}}).",
-      "thinRecent": "Solo {{count}} partidas recientes — se muestra el histórico.",
-      "thin": "{{entity}} — solo {{count}} partidas hasta ahora, muy pocas para hablar de tendencia.",
+      "steady": "{{entity}} — {{record}} en las últimas {{count, grouped}} partidas, dentro del rango habitual para una marca de {{rate}} ({{lower}}–{{upper}}).",
+      "thinRecent": "Solo {{count, grouped}} partidas recientes — se muestra el histórico.",
+      "thin": "{{entity}} — solo {{count, grouped}} partidas hasta ahora, muy pocas para hablar de tendencia.",
       "locked_one": "{{entity}} — 1 partida más desbloquea esta lectura.",
-      "locked_other": "{{entity}} — {{count}} partidas más desbloquean esta lectura."
+      "locked_other": "{{entity}} — {{count, grouped}} partidas más desbloquean esta lectura."
     },
     "characterMovers": {
-      "up": "vs {{fighter}} — tasa de victorias sube {{points}} pts en las últimas {{count}} partidas.",
-      "down": "vs {{fighter}} — tasa de victorias baja {{points}} pts en las últimas {{count}} partidas.",
-      "steady": "vs personajes — sin cambio notable en {{count}} enfrentamientos con 8+ partidas recientes.",
-      "thinRecent": "Solo {{count}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
+      "up": "vs {{fighter}} — tasa de victorias sube {{points}} pts en las últimas {{count, grouped}} partidas.",
+      "down": "vs {{fighter}} — tasa de victorias baja {{points}} pts en las últimas {{count, grouped}} partidas.",
+      "steady": "vs personajes — sin cambio notable en {{count, grouped}} enfrentamientos con 8+ partidas recientes.",
+      "thinRecent": "Solo {{count, grouped}} partidas vs {{fighter}} en los últimos 12 meses — se muestra el histórico.",
       "locked_one": "vs {{fighter}} — 1 partida más desbloquea esta lectura.",
-      "locked_other": "vs {{fighter}} — {{count}} partidas más desbloquean esta lectura.",
-      "sub": "Sin bajadas notables en los otros {{count}} enfrentamientos con 8+ partidas recientes."
+      "locked_other": "vs {{fighter}} — {{count, grouped}} partidas más desbloquean esta lectura.",
+      "sub": "Sin bajadas notables en los otros {{count, grouped}} enfrentamientos con 8+ partidas recientes."
     },
     "rivalMovers": {
-      "up": "vs {{opponent}} — tasa de victorias sube {{points}} pts en las últimas {{count}} partidas.",
-      "down": "vs {{opponent}} — tasa de victorias baja {{points}} pts en las últimas {{count}} partidas.",
-      "steady": "vs rivales — sin cambio notable en {{count}} rivales con 8+ partidas recientes.",
-      "thinRecent": "vs rivales — solo {{count}} rivales llegaron a 8 partidas en el último evento — se muestra el histórico.",
+      "up": "vs {{opponent}} — tasa de victorias sube {{points}} pts en las últimas {{count, grouped}} partidas.",
+      "down": "vs {{opponent}} — tasa de victorias baja {{points}} pts en las últimas {{count, grouped}} partidas.",
+      "steady": "vs rivales — sin cambio notable en {{count, grouped}} rivales con 8+ partidas recientes.",
+      "thinRecent": "vs rivales — solo {{count, grouped}} rivales llegaron a 8 partidas en el último evento — se muestra el histórico.",
       "locked_one": "vs {{opponent}} — 1 partida más desbloquea esta lectura.",
-      "locked_other": "vs {{opponent}} — {{count}} partidas más desbloquean esta lectura."
+      "locked_other": "vs {{opponent}} — {{count, grouped}} partidas más desbloquean esta lectura."
     },
     "lastEventRecap": {
       "hidden": "Aún no hay ningún evento registrado.",
@@ -3325,20 +3325,20 @@
       "setLosses_other": "Sets perdidos — {{named}}."
     },
     "ratingMove": {
-      "up": "Clasificación — sube {{points}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
-      "down": "Clasificación — baja {{points}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
-      "steady": "Clasificación — sin movimiento fuera de la banda ±{{band}} en las últimas {{count}} partidas ({{startRating}} → {{endRating}}).",
-      "thin": "Clasificación — {{startRating}} → {{endRating}} en el último evento; {{count}} partidas son muy pocas para hablar de un movimiento.",
-      "collapsed": "Clasificación — {{endRating}} ±{{band}} tras {{count}} partidas; la banda sigue siendo amplia.",
+      "up": "Clasificación — sube {{points}} en las últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
+      "down": "Clasificación — baja {{points}} en las últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",
+      "steady": "Clasificación — sin movimiento fuera de la banda ±{{band}} en las últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}}).",
+      "thin": "Clasificación — {{startRating}} → {{endRating}} en el último evento; {{count, grouped}} partidas son muy pocas para hablar de un movimiento.",
+      "collapsed": "Clasificación — {{endRating}} ±{{band}} tras {{count, grouped}} partidas; la banda sigue siendo amplia.",
       "locked_one": "Clasificación — 1 partida más desbloquea esta lectura.",
-      "locked_other": "Clasificación — {{count}} partidas más desbloquean esta lectura."
+      "locked_other": "Clasificación — {{count, grouped}} partidas más desbloquean esta lectura."
     },
     "tiltCost": {
       "trend": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} vs {{baselineRate}} de referencia.",
       "suggestion": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} vs {{baselineRate}} de referencia; vale la pena probar una pausa tras dos derrotas.",
-      "steady": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} en {{spotCount}} casos; sin coste notable vs {{baselineRate}}.",
+      "steady": "Tras 2 derrotas seguidas — la siguiente partida {{spotRate}} en {{spotCount, grouped}} casos; sin coste notable vs {{baselineRate}}.",
       "locked_one": "Tras 2 derrotas seguidas — 1 caso más desbloquea esta lectura.",
-      "locked_other": "Tras 2 derrotas seguidas — {{count}} casos más desbloquean esta lectura."
+      "locked_other": "Tras 2 derrotas seguidas — {{count, grouped}} casos más desbloquean esta lectura."
     },
     "sessionFatigue": {
       "hidden": "Aún no hay suficientes sesiones largas para comparar.",
@@ -3351,16 +3351,16 @@
       "up": "Entorno — online rinde {{points}} pts más ({{onlineRate}} vs {{offlineRate}}).",
       "down": "Entorno — offline rinde {{points}} pts más ({{onlineRate}} vs {{offlineRate}}).",
       "steady": "Entorno — sin diferencia notable entre online y offline ({{onlineRate}} vs {{offlineRate}}).",
-      "thin": "No hay suficientes partidas {{shortSide}} para comparar ({{count}}).",
+      "thin": "No hay suficientes partidas {{shortSide}} para comparar ({{count, grouped}}).",
       "locked_one": "Entorno — 1 partida {{shortSide}} más desbloquea la comparación online/offline.",
-      "locked_other": "Entorno — {{count}} partidas {{shortSide}} más desbloquean la comparación online/offline."
+      "locked_other": "Entorno — {{count, grouped}} partidas {{shortSide}} más desbloquean la comparación online/offline."
     },
     "volumeForm": {
       "up": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto.",
       "down": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto.",
       "steady": "Volumen — los meses de {{threshold}}+ partidas rinden {{highRate}} vs {{lowRate}} el resto; sin diferencia notable.",
       "locked_one": "Volumen — 1 mes más de juego desbloquea esta lectura.",
-      "locked_other": "Volumen — {{count}} meses más de juego desbloquean esta lectura."
+      "locked_other": "Volumen — {{count, grouped}} meses más de juego desbloquean esta lectura."
     },
     "mixShift": {
       "hidden": "Aún no hay un cambio notable en la mezcla de partidas.",
@@ -3368,38 +3368,38 @@
     },
     "rosterCore": {
       "fact": "Plantel — {{fighter}} es el principal con {{share}}% del juego; {{secondaryCount}} secundarios, {{pocketCount}} de bolsillo.",
-      "thin": "Plantel — el principal aún no está establecido; {{count}} partidas con un mismo personaje lo confirman."
+      "thin": "Plantel — el principal aún no está establecido; {{count, grouped}} partidas con un mismo personaje lo confirman."
     },
     "rosterShift": {
       "hidden": "Aún no hay un cambio notable en quién se juega.",
       "steady": "Plantel — sin cambio notable en quién se juega en las últimas 30 partidas.",
-      "up": "{{fighter}} — su parte del juego sube {{points}} pts en las últimas {{count}} partidas.",
-      "down": "{{fighter}} — su parte del juego baja {{points}} pts en las últimas {{count}} partidas."
+      "up": "{{fighter}} — su parte del juego sube {{points}} pts en las últimas {{count, grouped}} partidas.",
+      "down": "{{fighter}} — su parte del juego baja {{points}} pts en las últimas {{count, grouped}} partidas."
     },
     "secondaryPayoff": {
       "trend": "vs {{opponent}} — {{secondary}} rinde {{secondaryRate}}% donde {{main}} rinde {{mainRate}}%.",
       "suggestion": "vs {{opponent}} — {{secondary}} rinde {{secondaryRate}}% donde {{main}} rinde {{mainRate}}%; vale la pena elegir el secundario.",
       "steady": "Secundarios — ningún enfrentamiento donde un secundario supere notablemente al principal.",
       "locked_one": "vs {{opponent}} — 1 partida más con {{secondary}} desbloquea esta lectura.",
-      "locked_other": "vs {{opponent}} — {{count}} partidas más con {{secondary}} desbloquean esta lectura."
+      "locked_other": "vs {{opponent}} — {{count, grouped}} partidas más con {{secondary}} desbloquean esta lectura."
     },
     "pocketCost": {
       "hidden": "Aún no hay suficientes partidas de bolsillo para reportar un coste.",
-      "fact": "De bolsillo — {{pocketRate}}% en {{pocketGames}} partidas vs {{mainRate}}% del principal.",
+      "fact": "De bolsillo — {{pocketRate}}% en {{pocketGames, grouped}} partidas vs {{mainRate}}% del principal.",
       "steady": "De bolsillo — sin coste notable frente al principal ({{pocketRate}}% vs {{mainRate}}%)."
     },
     "matchupOrPlayer": {
       "hidden": "Aún no hay suficientes partidas ni rivales para distinguir jugador de enfrentamiento.",
-      "player": "{{matchup}} — {{lossShare}} de {{totalLosses}} derrotas vinieron de un solo jugador, {{opponent}}, en {{opponentGames}} partidas.",
+      "player": "{{matchup}} — {{lossShare}} de {{totalLosses, grouped}} derrotas vinieron de un solo jugador, {{opponent}}, en {{opponentGames, grouped}} partidas.",
       "matchup": "{{matchup}} — las derrotas se reparten entre {{distinctOpponents}} jugadores; ninguno destaca por sí solo."
     },
     "bestMatchup": {
       "locked": "Mejor marca — aún no hay suficientes partidas para nombrar una.",
-      "fact": "Mejor marca — vs {{vs}}, {{record}} en {{count}}."
+      "fact": "Mejor marca — vs {{vs}}, {{record}} en {{count, grouped}}."
     },
     "worstMatchup": {
       "locked": "Marca más difícil — aún no hay suficientes partidas para nombrar una.",
-      "fact": "Marca más difícil — vs {{vs}}, {{record}} en {{count}}."
+      "fact": "Marca más difícil — vs {{vs}}, {{record}} en {{count, grouped}}."
     }
   },
   "analytics": {

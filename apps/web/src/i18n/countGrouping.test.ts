@@ -9,11 +9,13 @@ import i18n, { SUPPORTED_LANGUAGES } from '@/i18n';
  * game counts of 1,000 or more printed ungrouped in insight copy ('See the 1425
  * games' on the recent Trends fixture, 'over 4237' / 'high confidence, 4237
  * games' on career). UI-SPEC §5: "Thousands separators through
- * `Intl.NumberFormat(i18n.language)`". The fix is i18next's built-in `number`
- * formatter in the interpolation (`{{count, number}}`), which formats with
- * `Intl.NumberFormat(<language>)` — so each locale groups its own way (en
+ * `Intl.NumberFormat(i18n.language)`". The fix is an i18next interpolation
+ * format, `{{count, grouped}}` (registered in `@/i18n`), which formats a number
+ * with `Intl.NumberFormat(<language>)` — so each locale groups its own way (en
  * 1,425 · de 1.425 · fr 1 425 · ja 1,425; es keeps 4-digit counts whole, per
- * CLDR's two-digit minimum grouping).
+ * CLDR's two-digit minimum grouping) — and passes a host's already-formatted
+ * string through (the built-in `number` format first tried here printed "NaN"
+ * for those: TrendsReadMarks' bucket counts).
  */
 
 const LOCALES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'locales');
@@ -100,7 +102,15 @@ describe('OOS-40-B: insight-copy counts are grouped per locale (plan 39.1-51)', 
     expect(i18n.t('insights.door.seeGames', { count: 1 })).toBe('See the 1 game');
   });
 
-  it('every insight-copy string in all six locales formats its count placeholders with the number formatter', () => {
+  it('a count a host already formatted as a string passes through unchanged (never "NaN")', async () => {
+    await i18n.changeLanguage('en');
+    expect(i18n.t('insights.mark.bucketValue', { rate: '81%', count: '1,234' })).toBe(
+      '81% · 1,234',
+    );
+    expect(i18n.t('insights.door.seeGames', { count: 1425 })).not.toMatch(/NaN/);
+  });
+
+  it('every insight-copy string in all six locales formats its count placeholders with the grouped formatter', () => {
     expect(SUPPORTED_LANGUAGES).toHaveLength(6);
     const unformatted: string[] = [];
     let scanned = 0;
@@ -111,7 +121,7 @@ describe('OOS-40-B: insight-copy counts are grouped per locale (plan 39.1-51)', 
           for (const match of value.matchAll(/\{\{\s*([A-Za-z]+)\s*(,[^}]*)?\}\}/g)) {
             if (!COUNT_PLACEHOLDERS.includes(match[1]!)) continue;
             scanned += 1;
-            if (!/^,\s*number\s*$/.test(match[2] ?? ''))
+            if (!/^,\s*grouped\s*$/.test(match[2] ?? ''))
               unformatted.push(`${code}:${key}:${match[0]}`);
           }
         }

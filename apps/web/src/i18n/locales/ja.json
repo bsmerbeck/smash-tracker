@@ -179,29 +179,29 @@
       "body": "お気に入りのファイターがまだ保存されていないため、このページでは記録された対戦で使用されたファイターを表示しています。お気に入りの選択は任意で、これらのページをパーソナライズするだけです。"
     },
     "evidence": {
-      "abstained_one": "まだデータが足りません — あと{{count}}戦必要です。",
-      "abstained_other": "まだデータが足りません — あと{{count}}戦必要です。",
+      "abstained_one": "まだデータが足りません — あと{{count, grouped}}戦必要です。",
+      "abstained_other": "まだデータが足りません — あと{{count, grouped}}戦必要です。",
       "sampleCue": {
-        "low_one": "{{count}}戦 · 信頼度低",
-        "low_other": "{{count}}戦 · 信頼度低",
-        "medium_one": "{{count}}戦 · 信頼度中",
-        "medium_other": "{{count}}戦 · 信頼度中",
-        "high_one": "{{count}}戦 · 信頼度高",
-        "high_other": "{{count}}戦 · 信頼度高"
+        "low_one": "{{count, grouped}}戦 · 信頼度低",
+        "low_other": "{{count, grouped}}戦 · 信頼度低",
+        "medium_one": "{{count, grouped}}戦 · 信頼度中",
+        "medium_other": "{{count, grouped}}戦 · 信頼度中",
+        "high_one": "{{count, grouped}}戦 · 信頼度高",
+        "high_other": "{{count, grouped}}戦 · 信頼度高"
       },
-      "unknownRow_one": "不明（{{count}}戦、除外）",
-      "unknownRow_other": "不明（{{count}}戦、除外）",
-      "unnamedBucket_one": "対戦相手名が未記録の試合が{{count}}戦あります",
-      "unnamedBucket_other": "対戦相手名が未記録の試合が{{count}}戦あります",
+      "unknownRow_one": "不明（{{count, grouped}}戦、除外）",
+      "unknownRow_other": "不明（{{count, grouped}}戦、除外）",
+      "unnamedBucket_one": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
+      "unnamedBucket_other": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
       "mixedContext": "混合コンテキスト",
       "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
       "sampleCueGlyph": {
-        "low_one": "信頼度低、{{count}}戦",
-        "low_other": "信頼度低、{{count}}戦",
-        "medium_one": "信頼度中、{{count}}戦",
-        "medium_other": "信頼度中、{{count}}戦",
-        "high_one": "信頼度高、{{count}}戦",
-        "high_other": "信頼度高、{{count}}戦"
+        "low_one": "信頼度低、{{count, grouped}}戦",
+        "low_other": "信頼度低、{{count, grouped}}戦",
+        "medium_one": "信頼度中、{{count, grouped}}戦",
+        "medium_other": "信頼度中、{{count, grouped}}戦",
+        "high_one": "信頼度高、{{count, grouped}}戦",
+        "high_other": "信頼度高、{{count, grouped}}戦"
       },
       "cohort": {
         "online": "オンライン",
@@ -3161,8 +3161,8 @@
       },
       "legend": "事実 · 傾向 · 提案",
       "allDismissed": "このパネルの分析はすべて非表示にされています。",
-      "dismissedCount_one": "この端末で{{count}}件を非表示中",
-      "dismissedCount_other": "この端末で{{count}}件を非表示中",
+      "dismissedCount_one": "この端末で{{count, grouped}}件を非表示中",
+      "dismissedCount_other": "この端末で{{count, grouped}}件を非表示中",
       "restore": "元に戻す",
       "dismiss": "非表示にする",
       "dismissedToast": "この端末で分析を非表示にしました。",
@@ -3170,8 +3170,8 @@
       "unavailable": "この画面の分析はまだ利用できません。"
     },
     "door": {
-      "seeGames_one": "{{count}}試合を見る",
-      "seeGames_other": "{{count}}試合を見る",
+      "seeGames_one": "{{count, grouped}}試合を見る",
+      "seeGames_other": "{{count, grouped}}試合を見る",
       "openMatchup": "相性を開く",
       "openOpponent": "対戦相手を開く",
       "openStage": "ステージを開く",
@@ -3184,8 +3184,8 @@
       "down": "下降",
       "steady": "横ばい",
       "thin": "データ不足",
-      "noDirection_one": "n {{count}} · 方向なし",
-      "noDirection_other": "n {{count}} · 方向なし",
+      "noDirection_one": "n {{count, grouped}} · 方向なし",
+      "noDirection_other": "n {{count, grouped}} · 方向なし",
       "noGames": "試合なし",
       "horizon": {
         "last30": "直近30戦",
@@ -3215,37 +3215,37 @@
     },
     "evidence": {
       "twoHorizon": {
-        "last30": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}",
-        "lastEvent": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}",
-        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames}}戦中 {{baselineRate}} · {{cue}}"
+        "last30": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "lastEvent": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}"
       },
       "single": "{{record}} · {{cue}}",
-      "span": "この{{count}}試合の期間は{{from}}〜{{to}}です。",
-      "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
+      "span": "この{{count, grouped}}試合の期間は{{from}}〜{{to}}です。",
+      "range": "{{count, grouped}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
       "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}",
       "tier": {
         "low": "信頼度低",
         "medium": "信頼度中",
         "high": "信頼度高"
       },
-      "spots_one": "{{record}} · {{count}}件 · {{tier}} · 全期間の範囲",
-      "spots_other": "{{record}} · {{count}}件 · {{tier}} · 全期間の範囲",
-      "longSessions_one": "{{count}}セッションが{{games}}試合を超えました · {{tier}}",
-      "longSessions_other": "{{count}}セッションが{{games}}試合を超えました · {{tier}}"
+      "spots_one": "{{record}} · {{count, grouped}}件 · {{tier}} · 全期間の範囲",
+      "spots_other": "{{record}} · {{count, grouped}}件 · {{tier}} · 全期間の範囲",
+      "longSessions_one": "{{count, grouped}}セッションが{{games, grouped}}試合を超えました · {{tier}}",
+      "longSessions_other": "{{count, grouped}}セッションが{{games, grouped}}試合を超えました · {{tier}}"
     },
     "mark": {
       "nextGame": "次の試合",
       "rateVsBaseline": "{{rate}}(基準 {{baseline}})",
-      "tiltCostRow_one": "2連敗直後の次の試合 — {{count}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
-      "tiltCostRow_other": "2連敗直後の次の試合 — {{count}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
+      "tiltCostRow_one": "2連敗直後の次の試合 — {{count, grouped}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
+      "tiltCostRow_other": "2連敗直後の次の試合 — {{count, grouped}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
       "sessionBuckets": {
         "label": "セッション内の試合番号別の勝率",
         "range": "{{from}}–{{to}}試合目",
         "open": "{{from}}試合目以降"
       },
-      "bucketValue": "{{rate}} · {{count}}",
-      "setStrip_one": "{{count}}セット — {{won}}勝、{{lost}}敗。",
-      "setStrip_other": "{{count}}セット — {{won}}勝、{{lost}}敗。",
+      "bucketValue": "{{rate}} · {{count, grouped}}",
+      "setStrip_one": "{{count, grouped}}セット — {{won}}勝、{{lost}}敗。",
+      "setStrip_other": "{{count, grouped}}セット — {{won}}勝、{{lost}}敗。",
       "setTick": "vs {{opponent}} · {{record}}",
       "setTickNoOpponent": "セット · {{record}}"
     },
@@ -3258,17 +3258,17 @@
         "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。"
       },
       "thinRecent": {
-        "scoped_one": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
-        "scoped_other": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
+        "scoped_one": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+        "scoped_other": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
         "page": {
-          "last30": "直近30試合のうち{{count}}試合のみ — 全期間のデータを表示しています。",
-          "lastEvent": "直近のイベントは{{count}}試合のみ — 全期間のデータを表示しています。",
-          "last90": "直近90日間で{{count}}試合のみ — 全期間のデータを表示しています。"
+          "last30": "直近30試合のうち{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+          "lastEvent": "直近のイベントは{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+          "last90": "直近90日間で{{count, grouped}}試合のみ — 全期間のデータを表示しています。"
         }
       },
       "locked_one": "{{fighter}}戦 — あと1試合でこの分析が解放されます。",
-      "locked_other": "{{fighter}}戦 — あと{{count}}試合でこの分析が解放されます。",
-      "lockedMeter": "{{need}}戦中{{have}}戦",
+      "locked_other": "{{fighter}}戦 — あと{{count, grouped}}試合でこの分析が解放されます。",
+      "lockedMeter": "{{need, grouped}}戦中{{have, grouped}}戦",
       "steady": {
         "last30": "直近30試合で有意な変化はありません。",
         "lastEvent": "直近のイベントで有意な変化はありません。",
@@ -3287,32 +3287,32 @@
         "last90": "{{entity}} — 直近90日間で勝率が{{points}}ポイント下降。"
       },
       "collapsed": {
-        "last30": "{{entity}} — 記録全{{count}}試合で{{record}}。",
-        "lastEvent": "{{entity}} — 直近のイベント全{{count}}試合で{{record}}。",
-        "last90": "{{entity}} — 記録全{{count}}試合で{{record}}。"
+        "last30": "{{entity}} — 記録全{{count, grouped}}試合で{{record}}。",
+        "lastEvent": "{{entity}} — 直近のイベント全{{count, grouped}}試合で{{record}}。",
+        "last90": "{{entity}} — 記録全{{count, grouped}}試合で{{record}}。"
       },
-      "steady": "{{entity}} — 直近{{count}}試合で{{record}}、{{rate}}の成績として通常の範囲内です（{{lower}}〜{{upper}}）。",
-      "thinRecent": "直近の試合は{{count}}戦のみ — 全期間のデータを表示しています。",
-      "thin": "{{entity}} — これまでに{{count}}試合のみで、傾向を判断するには不足しています。",
+      "steady": "{{entity}} — 直近{{count, grouped}}試合で{{record}}、{{rate}}の成績として通常の範囲内です（{{lower}}〜{{upper}}）。",
+      "thinRecent": "直近の試合は{{count, grouped}}戦のみ — 全期間のデータを表示しています。",
+      "thin": "{{entity}} — これまでに{{count, grouped}}試合のみで、傾向を判断するには不足しています。",
       "locked_one": "{{entity}} — あと1試合でこの分析が解放されます。",
-      "locked_other": "{{entity}} — あと{{count}}試合でこの分析が解放されます。"
+      "locked_other": "{{entity}} — あと{{count, grouped}}試合でこの分析が解放されます。"
     },
     "characterMovers": {
-      "up": "vs {{fighter}} — 直近{{count}}試合で勝率が{{points}}ポイント上昇。",
-      "down": "vs {{fighter}} — 直近{{count}}試合で勝率が{{points}}ポイント下降。",
-      "steady": "vs キャラクター — 直近8試合以上ある{{count}}件の相性で有意な変化はありません。",
-      "thinRecent": "過去12か月で{{fighter}}戦は{{count}}試合のみ — 全期間のデータを表示しています。",
+      "up": "vs {{fighter}} — 直近{{count, grouped}}試合で勝率が{{points}}ポイント上昇。",
+      "down": "vs {{fighter}} — 直近{{count, grouped}}試合で勝率が{{points}}ポイント下降。",
+      "steady": "vs キャラクター — 直近8試合以上ある{{count, grouped}}件の相性で有意な変化はありません。",
+      "thinRecent": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
       "locked_one": "vs {{fighter}} — あと1試合でこの分析が解放されます。",
-      "locked_other": "vs {{fighter}} — あと{{count}}試合でこの分析が解放されます。",
-      "sub": "直近8試合以上ある他の{{count}}件の相性で、有意な下降は見られません。"
+      "locked_other": "vs {{fighter}} — あと{{count, grouped}}試合でこの分析が解放されます。",
+      "sub": "直近8試合以上ある他の{{count, grouped}}件の相性で、有意な下降は見られません。"
     },
     "rivalMovers": {
-      "up": "vs {{opponent}} — 直近{{count}}試合で勝率が{{points}}ポイント上昇。",
-      "down": "vs {{opponent}} — 直近{{count}}試合で勝率が{{points}}ポイント下降。",
-      "steady": "vs 対戦相手 — 直近8試合以上ある{{count}}人の相手で有意な変化はありません。",
-      "thinRecent": "vs 対戦相手 — 直近のイベントで8試合に達した相手は{{count}}人のみ — 全期間のデータを表示しています。",
+      "up": "vs {{opponent}} — 直近{{count, grouped}}試合で勝率が{{points}}ポイント上昇。",
+      "down": "vs {{opponent}} — 直近{{count, grouped}}試合で勝率が{{points}}ポイント下降。",
+      "steady": "vs 対戦相手 — 直近8試合以上ある{{count, grouped}}人の相手で有意な変化はありません。",
+      "thinRecent": "vs 対戦相手 — 直近のイベントで8試合に達した相手は{{count, grouped}}人のみ — 全期間のデータを表示しています。",
       "locked_one": "vs {{opponent}} — あと1試合でこの分析が解放されます。",
-      "locked_other": "vs {{opponent}} — あと{{count}}試合でこの分析が解放されます。"
+      "locked_other": "vs {{opponent}} — あと{{count, grouped}}試合でこの分析が解放されます。"
     },
     "lastEventRecap": {
       "hidden": "まだイベントが記録されていません。",
@@ -3325,20 +3325,20 @@
       "setLosses_other": "セット負け — {{named}}。"
     },
     "ratingMove": {
-      "up": "レーティング — 直近{{count}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",
-      "down": "レーティング — 直近{{count}}試合で{{points}}下降（{{startRating}} → {{endRating}} ±{{band}}）。",
-      "steady": "レーティング — 直近{{count}}試合で±{{band}}の帯を超える動きはありません（{{startRating}} → {{endRating}}）。",
-      "thin": "レーティング — 直近のイベントで{{startRating}} → {{endRating}}。{{count}}試合では動きを判断するには不足しています。",
-      "collapsed": "レーティング — {{count}}試合後で{{endRating}} ±{{band}}。帯はまだ広い状態です。",
+      "up": "レーティング — 直近{{count, grouped}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",
+      "down": "レーティング — 直近{{count, grouped}}試合で{{points}}下降（{{startRating}} → {{endRating}} ±{{band}}）。",
+      "steady": "レーティング — 直近{{count, grouped}}試合で±{{band}}の帯を超える動きはありません（{{startRating}} → {{endRating}}）。",
+      "thin": "レーティング — 直近のイベントで{{startRating}} → {{endRating}}。{{count, grouped}}試合では動きを判断するには不足しています。",
+      "collapsed": "レーティング — {{count, grouped}}試合後で{{endRating}} ±{{band}}。帯はまだ広い状態です。",
       "locked_one": "レーティング — あと1試合でこの分析が解放されます。",
-      "locked_other": "レーティング — あと{{count}}試合でこの分析が解放されます。"
+      "locked_other": "レーティング — あと{{count, grouped}}試合でこの分析が解放されます。"
     },
     "tiltCost": {
       "trend": "2連敗の直後 — 次の試合は基準の{{baselineRate}}に対して{{spotRate}}。",
       "suggestion": "2連敗の直後 — 次の試合は基準の{{baselineRate}}に対して{{spotRate}}。2連敗後に一度休むのを試す価値があります。",
-      "steady": "2連敗の直後 — 次の試合は{{spotCount}}件で{{spotRate}}、基準の{{baselineRate}}に対して有意な低下はありません。",
+      "steady": "2連敗の直後 — 次の試合は{{spotCount, grouped}}件で{{spotRate}}、基準の{{baselineRate}}に対して有意な低下はありません。",
       "locked_one": "2連敗の直後 — あと1件でこの分析が解放されます。",
-      "locked_other": "2連敗の直後 — あと{{count}}件でこの分析が解放されます。"
+      "locked_other": "2連敗の直後 — あと{{count, grouped}}件でこの分析が解放されます。"
     },
     "sessionFatigue": {
       "hidden": "比較できるだけの長いセッションがまだありません。",
@@ -3351,16 +3351,16 @@
       "up": "対戦環境 — オンラインの方が{{points}}ポイント高い成績です（{{onlineRate}} vs {{offlineRate}}）。",
       "down": "対戦環境 — オフラインの方が{{points}}ポイント高い成績です（{{onlineRate}} vs {{offlineRate}}）。",
       "steady": "対戦環境 — オンラインとオフラインで有意な差はありません（{{onlineRate}} vs {{offlineRate}}）。",
-      "thin": "{{shortSide}}の試合が{{count}}戦しかなく、比較するには不足しています。",
+      "thin": "{{shortSide}}の試合が{{count, grouped}}戦しかなく、比較するには不足しています。",
       "locked_one": "対戦環境 — あと1戦の{{shortSide}}の試合でオンライン/オフライン比較が解放されます。",
-      "locked_other": "対戦環境 — あと{{count}}戦の{{shortSide}}の試合でオンライン/オフライン比較が解放されます。"
+      "locked_other": "対戦環境 — あと{{count, grouped}}戦の{{shortSide}}の試合でオンライン/オフライン比較が解放されます。"
     },
     "volumeForm": {
       "up": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}です。",
       "down": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}です。",
       "steady": "プレー量 — {{threshold}}戦以上の月は{{highRate}}、それ以外は{{lowRate}}で、有意な差はありません。",
       "locked_one": "プレー量 — あと1か月分の対戦でこの分析が解放されます。",
-      "locked_other": "プレー量 — あと{{count}}か月分の対戦でこの分析が解放されます。"
+      "locked_other": "プレー量 — あと{{count, grouped}}か月分の対戦でこの分析が解放されます。"
     },
     "mixShift": {
       "hidden": "対戦タイプの構成にまだ有意な変化はありません。",
@@ -3368,38 +3368,38 @@
     },
     "rosterCore": {
       "fact": "使用キャラ構成 — {{fighter}}がメインで使用率{{share}}%、サブ{{secondaryCount}}体、ポケット{{pocketCount}}体。",
-      "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count}}試合に達すると確定します。"
+      "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count, grouped}}試合に達すると確定します。"
     },
     "rosterShift": {
       "hidden": "使用キャラの構成にまだ有意な変化はありません。",
       "steady": "使用キャラ構成 — 直近30試合で誰を使うかに有意な変化はありません。",
-      "up": "{{fighter}} — 直近{{count}}試合で使用率が{{points}}ポイント上昇。",
-      "down": "{{fighter}} — 直近{{count}}試合で使用率が{{points}}ポイント下降。"
+      "up": "{{fighter}} — 直近{{count, grouped}}試合で使用率が{{points}}ポイント上昇。",
+      "down": "{{fighter}} — 直近{{count, grouped}}試合で使用率が{{points}}ポイント下降。"
     },
     "secondaryPayoff": {
       "trend": "vs {{opponent}} — {{secondary}}は{{secondaryRate}}%、{{main}}は{{mainRate}}%です。",
       "suggestion": "vs {{opponent}} — {{secondary}}は{{secondaryRate}}%、{{main}}は{{mainRate}}%です。サブを選ぶ価値があります。",
       "steady": "サブキャラ — メインを有意に上回る相性は見つかりません。",
       "locked_one": "vs {{opponent}} — {{secondary}}であと1試合でこの分析が解放されます。",
-      "locked_other": "vs {{opponent}} — {{secondary}}であと{{count}}試合でこの分析が解放されます。"
+      "locked_other": "vs {{opponent}} — {{secondary}}であと{{count, grouped}}試合でこの分析が解放されます。"
     },
     "pocketCost": {
       "hidden": "コストを判断できるだけのポケットキャラの試合数がまだありません。",
-      "fact": "ポケットキャラ — {{pocketGames}}試合で{{pocketRate}}%、メインは{{mainRate}}%です。",
+      "fact": "ポケットキャラ — {{pocketGames, grouped}}試合で{{pocketRate}}%、メインは{{mainRate}}%です。",
       "steady": "ポケットキャラ — メインに対して有意なコストはありません（{{pocketRate}}% vs {{mainRate}}%）。"
     },
     "matchupOrPlayer": {
       "hidden": "プレイヤー要因か相性要因かを判断できるだけの試合数・対戦相手数がまだありません。",
-      "player": "{{matchup}} — {{totalLosses}}敗中{{lossShare}}敗が{{opponentGames}}試合の1人のプレイヤー、{{opponent}}によるものです。",
+      "player": "{{matchup}} — {{totalLosses, grouped}}敗中{{lossShare}}敗が{{opponentGames, grouped}}試合の1人のプレイヤー、{{opponent}}によるものです。",
       "matchup": "{{matchup}} — 敗北は{{distinctOpponents}}人のプレイヤーに分散しており、突出した相手はいません。"
     },
     "bestMatchup": {
       "locked": "最高成績 — まだ名前を挙げられるだけの試合数がありません。",
-      "fact": "最高成績 — vs {{vs}}、{{count}}戦{{record}}。"
+      "fact": "最高成績 — vs {{vs}}、{{count, grouped}}戦{{record}}。"
     },
     "worstMatchup": {
       "locked": "最も苦手な相性 — まだ名前を挙げられるだけの試合数がありません。",
-      "fact": "最も苦手な相性 — vs {{vs}}、{{count}}戦{{record}}。"
+      "fact": "最も苦手な相性 — vs {{vs}}、{{count, grouped}}戦{{record}}。"
     }
   },
   "analytics": {
