@@ -213,7 +213,7 @@ function MatrixHeatGrid({
 }) {
   return (
     <div className="overflow-x-auto" data-slot="matrix-heat-grid">
-      <table className="mx-auto w-max border-separate border-spacing-0 text-sm">
+      <table className="w-max border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             <th className="sticky left-0 z-10 w-32 border-r border-border bg-card p-2 text-left" />

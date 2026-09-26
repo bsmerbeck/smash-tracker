@@ -1,13 +1,14 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
   UNKNOWN_STAGE_ID,
   buildStageBreakdown,
+  binEventSeries,
   buildStageEventSeries,
   isUnknownCharacter,
+  resolveEventBin,
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -44,6 +45,11 @@ import {
 } from '@/lib/drillDownParams';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import {
+  buildEventKeysForMatch,
+  buildEventTrendPoints,
+  readableEventLabel,
+} from '@/lib/eventTrendPoints';
 
 /**
  * Phase 38-06 (DRL-01/D-06/D-13): the per-stage detail route every stage row
@@ -124,7 +130,7 @@ function winRatePercent(wins: number, losses: number): number {
 }
 
 export function StageDetailPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
   const params = useParams<{ stageId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -175,10 +181,17 @@ export function StageDetailPage() {
     [matches, resolvedStageId, refreshedAt],
   );
 
-  const eventAnchor = useMemo(
-    () => (eventAxis != null ? (fullEventSeries.find((a) => a.key === eventAxis) ?? null) : null),
-    [fullEventSeries, eventAxis],
-  );
+  // Plan 39.1-39: `event=` names either an anchor or a display bin
+  // (`bin:<grain>:<ms>`, written by a click on the binned trend) — a bin
+  // resolves against the FULL series at its own grain.
+  const eventAnchor = useMemo(() => {
+    if (eventAxis == null) return null;
+    return (
+      fullEventSeries.find((a) => a.key === eventAxis) ??
+      resolveEventBin(fullEventSeries, eventAxis) ??
+      null
+    );
+  }, [fullEventSeries, eventAxis]);
 
   // D-06: arriving with an event axis scopes EVERY region (by-opponent,
   // by-character, over-time, games) to that event; arriving without one is
@@ -258,37 +271,28 @@ export function StageDetailPage() {
         : [],
     [sourceMatches, resolvedStageId, refreshedAt],
   );
+  // Plan 39.1-39 (VIZ-01, UI-SPEC §11): the PLOTTED series is binned by the
+  // engine to at most 60 points (identity at or under the bound); the chart
+  // never bins. Points come only through the shared host mapper, with
+  // readable, pre-resolved tooltip labels (UI-SPEC §10.2).
   const trendPoints: TrendEventPoint[] = useMemo(
     () =>
-      trendSeries.map((anchor) => ({
-        eventKey: anchor.key,
-        cumulativeWinRate: anchor.cumulativeWinRate,
-        wins: anchor.wins,
-        losses: anchor.losses,
-        context: {
-          opponentTag: '',
-          eventLabel: anchor.label,
-          dateMs: anchor.startMs,
-        },
-      })),
-    [trendSeries],
+      buildEventTrendPoints({
+        series: binEventSeries(trendSeries),
+        opponentTag: '',
+        t,
+        locale: i18n.language,
+      }),
+    [trendSeries, t, i18n.language],
   );
 
-  const eventKeyByMatchId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const anchor of fullEventSeries) {
-      for (const id of anchor.matchIds) {
-        map.set(id, anchor.key);
-      }
-    }
-    return map;
-  }, [fullEventSeries]);
-  // WR-03 (38-REVIEW-FIX): `useCallback`, not a plain function-per-render —
-  // see `OpponentHubPage.tsx`'s identical fix for the full rationale
-  // (`FilteredMatchList`'s D-16 memoize-by-reference contract).
-  const eventKeyForMatch = useCallback(
-    (match: Match): string | undefined => eventKeyByMatchId.get(match.id),
-    [eventKeyByMatchId],
+  // WR-03 (38-REVIEW-FIX): a memoised resolver, never a function-per-render
+  // (`FilteredMatchList`'s D-16 memoize-by-reference contract). Plan 39.1-39:
+  // a game resolves to its anchor key AND its bin key at every grain, so a
+  // bin click and a tournament link each list exactly their own games.
+  const eventKeyForMatch = useMemo(
+    () => buildEventKeysForMatch(fullEventSeries),
+    [fullEventSeries],
   );
 
   /**
@@ -385,7 +389,15 @@ export function StageDetailPage() {
     resolvedStageId === UNKNOWN_STAGE_ID
       ? t('common.unknown')
       : (stage?.name ?? t('common.unknown'));
-  const eventLabel = eventAxis != null ? (eventAnchor?.label ?? eventAxis) : null;
+  // Plan 39.1-39: the subtitle names the event the way the trend's tooltip
+  // does (a session's date, a bin's period, a tournament's name) — never an
+  // engine key or ISO string.
+  const eventLabel =
+    eventAxis != null
+      ? eventAnchor
+        ? readableEventLabel({ point: eventAnchor, t, locale: i18n.language })
+        : eventAxis
+      : null;
 
   // Plan 39.1-37 (UIX-01): the one page container (content capped at 1440px).
   return (

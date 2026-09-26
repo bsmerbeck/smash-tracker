@@ -406,7 +406,10 @@ describe('mark bounds — stage detail and hub event trends (plan 39.1-39)', () 
   it("hub: the sparg0-sized fixture's most-played opponent series is over 60 anchors and renders at most 60 points", async () => {
     const { bin, points } = await pipeline();
     const counts = new Map<string, number>();
-    for (const m of sparg0) counts.set(m.opponent, (counts.get(m.opponent) ?? 0) + 1);
+    for (const m of sparg0) {
+      const tag = m.opponent ?? '';
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
     const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
     const series = buildOpponentEventSeries({
       matches: sparg0,

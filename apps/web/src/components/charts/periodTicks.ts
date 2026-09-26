@@ -1,4 +1,4 @@
-import type { PeriodGrain, PeriodPoint } from '@smash-tracker/shared';
+import { parseEventBinKey, type PeriodGrain, type PeriodPoint } from '@smash-tracker/shared';
 import { formatEventTickLabel, selectEventTicks } from './eventTicks';
 
 /**
@@ -137,22 +137,45 @@ export interface EventAnchorTickPoint {
 }
 
 /**
- * Plan 39.1-37: an event-anchored trend's axis text — NEVER the anchor's
- * engine key. A session anchor reads as its locale short date (local time,
- * WR-02 — the same cached formatter the fine-grain period ticks use; its
- * engine label is an ISO string); a tournament anchor reads as its name
- * through `formatEventTickLabel`'s 12-character truncation, falling back to
- * the date when the name is empty.
+ * Plan 39.1-39 (VIZ-03, UI-SPEC §10.2): the readable, UNTRUNCATED name of an
+ * event-trend point — never its engine key, never an ISO string. A session
+ * anchor reads as its locale short date (local time, WR-02); a month bin as
+ * its month-year (UTC, the bucket's own zone); a week / quarter / year bin as
+ * the period trend's row label for that grain (the engine's calendar label,
+ * e.g. `2026-W10`, `2026-Q1`, `2026`); a tournament anchor as its whole name,
+ * falling back to the date when the name is empty.
  */
-export function formatEventAnchorTickLabel(point: EventAnchorTickPoint, locale: string): string {
+export function formatEventAnchorLabel(point: EventAnchorTickPoint, locale: string): string {
   if (point.eventKey.startsWith(SESSION_ANCHOR_KEY_PREFIX)) {
     return formatShortDate(point.dateMs, locale);
   }
-  const name = point.eventLabel.trim();
-  if (name === '') {
-    return formatShortDate(point.dateMs, locale);
+  // Plan 39.1-39: a display bin (`binEventSeries`) — its key format is parsed
+  // by the engine's own `parseEventBinKey`, never re-derived here.
+  const bin = parseEventBinKey(point.eventKey);
+  if (bin) {
+    if (bin.grain === 'month') {
+      return formatMonthYear(bin.bucketStartMs, locale);
+    }
+    const label = point.eventLabel.trim();
+    return label !== '' ? label : formatYearOnly(bin.bucketStartMs, locale);
   }
-  return formatEventTickLabel(name);
+  const name = point.eventLabel.trim();
+  return name === '' ? formatShortDate(point.dateMs, locale) : name;
+}
+
+/**
+ * Plan 39.1-37: an event-anchored trend's axis text — NEVER the anchor's
+ * engine key. Built on `formatEventAnchorLabel` (plan 39.1-39): a session
+ * reads as its date and a bin as its period label, unchanged; a tournament
+ * name goes through `formatEventTickLabel`'s 12-character truncation.
+ */
+export function formatEventAnchorTickLabel(point: EventAnchorTickPoint, locale: string): string {
+  const label = formatEventAnchorLabel(point, locale);
+  const isTournament =
+    !point.eventKey.startsWith(SESSION_ANCHOR_KEY_PREFIX) &&
+    parseEventBinKey(point.eventKey) === null &&
+    point.eventLabel.trim() !== '';
+  return isTournament ? formatEventTickLabel(label) : label;
 }
 
 /** CHART_AXIS_FONT_SIZE (12px) sibling constant — the per-character pixel allowance a legible tick label needs, ASCII vs. wide (CJK et al.) characters. */

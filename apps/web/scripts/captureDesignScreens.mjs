@@ -37,11 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
-import {
-  buildRealisticScale,
-  buildRecentScale,
-  startGuardLayoutHarnessServer,
-} from './guardLayoutHarness.mjs';
+import { buildRealisticScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
 import { LAYOUT_ORACLE_ROUTES, createHardTimeoutExit } from './guardLayout.mjs';
 
 const HARD_TIMEOUT_MS = 8 * 60 * 1000;

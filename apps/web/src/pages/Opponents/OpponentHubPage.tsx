@@ -11,6 +11,7 @@ import {
   RECENCY_TREATMENT,
   UNKNOWN_STAGE_ID,
   buildOpponentCrossTab,
+  binEventSeries,
   buildOpponentEventSeries,
   confidenceTierFor,
   resolveAliasChain,
@@ -96,6 +97,7 @@ import {
 } from './tournamentHistory';
 import { buildEvidencePacket } from './evidencePacket';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { buildEventKeysForMatch, buildEventTrendPoints } from '@/lib/eventTrendPoints';
 
 /**
  * Phase 38-05 (D-01/D-02): the opponent hub — a child route of the SAME
@@ -572,40 +574,28 @@ export function OpponentHubPage() {
     });
   }, [trendSourceMatches, aliasMap, targetIdentity, refreshedAt]);
 
-  const eventKeyByMatchId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const anchor of eventSeries) {
-      for (const id of anchor.matchIds) {
-        map.set(id, anchor.key);
-      }
-    }
-    return map;
-  }, [eventSeries]);
-
-  // WR-03 (38-REVIEW-FIX): `useCallback`, not a plain function-per-render —
-  // `FilteredMatchList`'s own doc comment states its narrowing is memoized
+  // WR-03 (38-REVIEW-FIX): a memoised resolver, never a function-per-render
+  // — `FilteredMatchList`'s own doc comment states its narrowing is memoized
   // by array reference AND this resolver's reference (D-16); an unstable
   // reference here defeats that memo on every render even when neither the
-  // matches nor the axes actually changed.
-  const eventKeyForMatch = useCallback(
-    (match: Match): string | undefined => eventKeyByMatchId.get(match.id),
-    [eventKeyByMatchId],
-  );
+  // matches nor the axes actually changed. Plan 39.1-39: a game resolves to
+  // its anchor key AND its bin key at every grain, so a bin click and a
+  // tournament set row's anchor key each list exactly their own games.
+  const eventKeyForMatch = useMemo(() => buildEventKeysForMatch(eventSeries), [eventSeries]);
 
+  // Plan 39.1-39 (VIZ-01, UI-SPEC §11 / §10.2): the PLOTTED series is binned
+  // by the engine to at most 60 points (identity at or under the bound), and
+  // points come only through the shared host mapper with readable,
+  // pre-resolved tooltip labels.
   const trendPoints: TrendEventPoint[] = useMemo(
     () =>
-      eventSeries.map((anchor) => ({
-        eventKey: anchor.key,
-        cumulativeWinRate: anchor.cumulativeWinRate,
-        wins: anchor.wins,
-        losses: anchor.losses,
-        context: {
-          opponentTag: profile?.opponent ?? pathTag ?? '',
-          eventLabel: anchor.label,
-          dateMs: anchor.startMs,
-        },
-      })),
-    [eventSeries, profile, pathTag],
+      buildEventTrendPoints({
+        series: binEventSeries(eventSeries),
+        opponentTag: profile?.opponent ?? pathTag ?? '',
+        t,
+        locale: i18n.language,
+      }),
+    [eventSeries, profile, pathTag, t, i18n.language],
   );
 
   // Plan 39.1-18 (UI-SPEC §8.6): the H2H trend's insight slot — `formNow` at

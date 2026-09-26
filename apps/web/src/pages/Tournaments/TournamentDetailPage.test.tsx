@@ -624,7 +624,8 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down (CR-03)',
     // opponent's real record from the three fixture games above.
     expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
     expect(await screen.findByText('By Opponent')).toBeInTheDocument();
-    const rivalLink = screen.getByRole('link', { name: 'rival' });
+    // Plan 39.1-39: stage-detail rows are DrillableRows (shared accessible name).
+    const rivalLink = screen.getByRole('link', { name: 'rival — By Opponent, opens details' });
     expect(rivalLink).toBeInTheDocument();
     const row = rivalLink.closest('tr')!;
     expect(row.textContent).toContain('2');
@@ -718,8 +719,13 @@ describe('TournamentDetailPage -> StageDetailPage stage-row drill-down across a 
     // Both blocks' games show up on the destination — exactly the 2 games
     // the row's own count promised, not just the most recent block's 1.
     expect(await screen.findByText('By Opponent')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'laterival' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'earlyrival' })).toBeInTheDocument();
+    // Plan 39.1-39: stage-detail rows are DrillableRows (shared accessible name).
+    expect(
+      screen.getByRole('link', { name: 'laterival — By Opponent, opens details' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'earlyrival — By Opponent, opens details' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('No games recorded on this stage yet.')).not.toBeInTheDocument();
   });
 
