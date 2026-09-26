@@ -126,8 +126,15 @@ function OwnAccountPrepActionSlot() {
     );
   }
 
-  // A pending or errored brief read is UNKNOWN: fall through to the next
-  // state rather than guessing a review.
+  // Code review WEB-01: a PENDING review-status read is unknown — render
+  // nothing rather than an add-event door the settled render would retract
+  // (the same rule as the registry/profile reads above). An ERRORED read
+  // still falls through to the next state, so a failing endpoint never hides
+  // the slot for good.
+  if (reviewCandidate && reviewQuery.isPending) {
+    return null;
+  }
+
   if (reviewCandidate && reviewQuery.isSuccess && isDebriefWindowOpen(reviewQuery.data, now)) {
     return (
       <Card className="border-dashed" data-testid="dashboard-prep-action-slot" data-state="review">

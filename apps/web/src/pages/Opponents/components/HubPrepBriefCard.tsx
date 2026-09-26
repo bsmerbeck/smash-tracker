@@ -63,7 +63,8 @@ export function HubPrepBriefCard(props: HubPrepBriefCardProps) {
 
 /**
  * The card's state machine, in precedence order: debrief override, then
- * upcoming, then add-event. Exactly one renders; there is no blank state.
+ * upcoming, then add-event. At most one renders; while a read that could
+ * change the answer is still pending, nothing renders (unknown is not empty).
  *
  * - debrief: the most recent SHARED event (a registry entry one of this
  *   opponent's tournament blocks resolves to) whose SERVER status is in the
@@ -125,8 +126,15 @@ function OwnAccountHubPrepBriefCard({
     return null;
   }
 
-  // A pending or errored status is UNKNOWN, so the chain falls through to
-  // the next state rather than guessing a debrief.
+  // Code review WEB-01: a PENDING debrief status is unknown, and unknown is
+  // not empty — the debrief override outranks every later state, so any door
+  // drawn now could be retracted when the status lands. Render nothing. An
+  // ERRORED status still falls through, so a failing endpoint never hides
+  // the card for good.
+  if (debriefCandidate && debriefQuery.isPending) {
+    return null;
+  }
+
   if (debriefCandidate && debriefQuery.isSuccess && isDebriefWindowOpen(debriefQuery.data, now)) {
     return (
       <HubPrepBriefShell
