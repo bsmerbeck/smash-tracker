@@ -147,6 +147,19 @@ describe('TrendsReadMark (39.1-40)', () => {
     expect(scale?.textContent?.replace(/\s+/g, '')).toBe('0%50%100%');
   });
 
+  it("TiltCost (002-C): 'Next game' is a meta label and the rate-vs-baseline sits flush right in the row's trailing slot", () => {
+    const insight = ownRead('tiltCost', tiltFixture());
+    const { container } = renderMark(insight);
+    const label = [
+      ...container.querySelectorAll('[data-slot="comparison-bars-dumbbell"] span'),
+    ].find((el) => el.textContent === 'Next game')!;
+    expect(label.className).toMatch(/\btext-xs\b/);
+    expect(label.className).toMatch(/\btext-muted-foreground\b/);
+    const trailing = container.querySelector('[data-slot="dumbbell-delta"]');
+    expect(trailing?.textContent).toMatch(/^\d+% vs \d+%$/);
+    expect(container.querySelector('[data-slot="dumbbell-record"]')?.textContent).toBe('');
+  });
+
   it("TiltCost: following the 'Next game' row stays in the app (same route, the card's claim)", () => {
     renderMark(ownRead('tiltCost', tiltFixture()), { probe: true });
     fireEvent.click(document.querySelector('[data-slot="comparison-bars-dumbbell"] a')!);
