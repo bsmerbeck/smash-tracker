@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/table';
 import type { ScoutRecentEvent } from '@smash-tracker/shared';
 import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
+import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * Builds the public event URL for an event with a `slug`, or `null` when the
@@ -64,7 +65,8 @@ function EventCell({ event }: { event: ScoutRecentEvent }) {
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          // Plan 39.1-49 (UI-SPEC §4.3): the kit's inline link tone, never brand red.
+          className={`inline-flex items-center gap-1 font-medium ${INLINE_LINK_TONE}`}
         >
           {event.eventName}
           <ExternalLink className="size-3" />

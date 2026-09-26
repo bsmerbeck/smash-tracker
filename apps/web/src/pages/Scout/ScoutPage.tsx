@@ -365,7 +365,11 @@ export function ScoutPage() {
             <ScoutCharactersCard characters={report.characters} />
             <ScoutStagesCard stages={report.stages} />
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Plan 39.1-49 (orchestrator 2026-09-26): Recent Events takes the
+              full content width — in a half-width lg:grid-cols-2 card its
+              four columns hid Placement, Entrants and Date behind a sideways
+              scroll at 1440. Common Opponents follows it full width. */}
+          <div className="flex flex-col gap-4">
             <ScoutRecentEventsCard events={report.recentEvents} />
             <ScoutCommonOpponentsCard opponents={report.commonOpponents} />
           </div>
