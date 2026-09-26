@@ -27,6 +27,9 @@ interface ChartTooltipProps {
  * is load-bearing — it is what keeps a rate from ever rendering stripped of
  * the game it came from (T-37-01-04).
  */
+/** Plan 39.1-39: the key prefix of a display bin (`bin:<grain>:<bucketStartMs>`, `binEventSeries`). */
+const BIN_EVENT_KEY_PREFIX = 'bin:';
+
 /** True for a `TrendEventPoint` (has an `eventKey`), false for the numeric-mode `TrendChartPoint` — the ONLY branch this component makes on point shape. */
 function isEventPoint(point: TrendChartPoint | TrendEventPoint): point is TrendEventPoint {
   return 'eventKey' in point;
@@ -60,7 +63,14 @@ export function ChartTooltip({ active, payload }: ChartTooltipProps) {
         </p>
         <p className="text-muted-foreground">{t('shared.chartTooltip.whenOnly', { date })}</p>
         <p className="text-muted-foreground">
-          {t('shared.chartTooltip.eventScore', { wins: point.wins, losses: point.losses })}
+          {/* Plan 39.1-39: a display bin (`binEventSeries`) is a calendar
+              period, not an event — its score line says so. */}
+          {t(
+            point.eventKey.startsWith(BIN_EVENT_KEY_PREFIX)
+              ? 'shared.chartTooltip.periodScore'
+              : 'shared.chartTooltip.eventScore',
+            { wins: point.wins, losses: point.losses },
+          )}
         </p>
       </div>
     );

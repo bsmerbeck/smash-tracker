@@ -226,7 +226,8 @@
       "resultOnly": "{{result}}",
       "gameNumber": "Spiel {{game}}",
       "whoWhereEvent": "{{opponent}} bei {{event}}",
-      "eventScore": "{{wins}}–{{losses}} bei diesem Event"
+      "eventScore": "{{wins}}–{{losses}} bei diesem Event",
+      "periodScore": "{{wins}}–{{losses}} in diesem Zeitraum"
     },
     "ruleset": {
       "control": {

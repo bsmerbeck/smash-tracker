@@ -226,7 +226,8 @@
       "resultOnly": "{{result}}",
       "gameNumber": "{{game}}戦目",
       "whoWhereEvent": "{{opponent}}（{{event}}）",
-      "eventScore": "今回のイベント：{{wins}}–{{losses}}"
+      "eventScore": "今回のイベント：{{wins}}–{{losses}}",
+      "periodScore": "この期間：{{wins}}–{{losses}}"
     },
     "ruleset": {
       "control": {

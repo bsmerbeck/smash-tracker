@@ -226,7 +226,8 @@
       "resultOnly": "{{result}}",
       "gameNumber": "Manche {{game}}",
       "whoWhereEvent": "{{opponent}} à {{event}}",
-      "eventScore": "{{wins}}–{{losses}} pour cet événement"
+      "eventScore": "{{wins}}–{{losses}} pour cet événement",
+      "periodScore": "{{wins}}–{{losses}} sur cette période"
     },
     "ruleset": {
       "control": {
