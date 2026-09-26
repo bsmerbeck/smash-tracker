@@ -175,3 +175,38 @@ describe('RosterUsage', () => {
     expect(expandedRows.length - 1).toBe(25);
   });
 });
+
+/**
+ * Plan 39.1-49 (OOS-3's same-class find: the Roster name starved to 0px at
+ * 390; UI-SPEC §8.4): each roster row keeps its `@container/roster-row`; the
+ * name, share and chevron sit in a line-1 wrapper and the usage bar and
+ * Record in a line-2 wrapper that drops under the name below a 480px row
+ * width; at or above 480px both wrappers are `display: contents`.
+ */
+describe('RosterUsage — two-line rows below a 480px row width (plan 39.1-49)', () => {
+  it('roster row two-line: line-1 name + share + chevron, line-2 bar + record, contents at 480px and wider', () => {
+    const [a, b] = [roster[1]!, roster[2]!];
+    renderRoster([...matchesFor(a, 30, 10), ...matchesFor(b, 12, 8)]);
+    const rows = Array.from(document.querySelectorAll('li[data-slot="roster-row"]'));
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const row of rows) {
+      expect(row.className.split(/\s+/)).toContain('@container/roster-row');
+      const line1 = row.querySelector('[data-slot="roster-row-line1"]');
+      const line2 = row.querySelector('[data-slot="roster-row-line2"]');
+      expect(line1).not.toBeNull();
+      expect(line2).not.toBeNull();
+      const name = line1!.querySelector('span[title]');
+      expect(name!.className).toMatch(/\bmin-w-0\b/);
+      expect(name!.className).toMatch(/\btruncate\b/);
+      expect(line1!.textContent).toMatch(/\d+%/);
+      expect(line1!.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+      expect(line2!.querySelector('[data-slot="roster-usage-bar-track"]')).not.toBeNull();
+      expect(line2!.querySelector('[data-slot="record"]')).not.toBeNull();
+      expect(line1!.className.split(/\s+/)).toContain('@min-[480px]/roster-row:contents');
+      expect(line2!.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['basis-full', '@min-[480px]/roster-row:contents']),
+      );
+      expect(row.querySelectorAll('a')).toHaveLength(1);
+    }
+  });
+});
