@@ -92,9 +92,13 @@ function SessionRow({
   t,
 }: SessionRowProps) {
   const dateLabel = formatDate(session.start, locale);
+  // Plan 39.1-40 OOS-4 (UI-SPEC §6.5 rules 1-2, §8.2 "date · … · Record"):
+  // the date is never the row's flexible slot — it reads whole on line 1
+  // with the Record pushed right; the duration and the loss run wrap on a
+  // meta line under it. One overlay still covers both lines.
   return (
     <li className="flex flex-col gap-2 rounded-md p-2 hover:bg-accent">
-      <div className="relative flex items-center gap-2">
+      <div className="relative flex flex-col gap-0.5">
         <DrillableRow
           as="overlay"
           onActivate={onToggle}
@@ -104,17 +108,19 @@ function SessionRow({
             context: t('trends.sessions.title'),
           })}
         />
-        <span className="min-w-0 flex-1 truncate">{dateLabel}</span>
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {formatDuration(session, t)}
-        </span>
-        <Record wins={session.wins} losses={session.losses} cue="none" />
-        {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD && (
-          <span className="shrink-0 text-xs font-medium text-destructive tabular-nums">
-            {t('trends.sessions.tiltRun', { count: session.longestLossRun })}
-          </span>
-        )}
-        <DrillableRowChevron />
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 whitespace-nowrap tabular-nums">{dateLabel}</span>
+          <Record wins={session.wins} losses={session.losses} cue="none" className="ml-auto" />
+          <DrillableRowChevron />
+        </div>
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs leading-4 text-muted-foreground tabular-nums">
+          <span>{formatDuration(session, t)}</span>
+          {session.longestLossRun >= TILT_HIGHLIGHT_THRESHOLD && (
+            <span className="shrink-0 text-xs font-medium text-destructive tabular-nums">
+              {t('trends.sessions.tiltRun', { count: session.longestLossRun })}
+            </span>
+          )}
+        </div>
       </div>
       {isExpanded && <FilteredMatchList matches={sortedMatches} axes={axes} />}
     </li>
