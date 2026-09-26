@@ -454,6 +454,23 @@ interface ReportRequestContext {
  * copied storage step, or a copied job state machine) is the specific
  * failure this extraction exists to prevent.
  */
+/**
+ * Code review R2-IN-04: a loggable copy of `err` with every occurrence of
+ * `uid` in its message and stack replaced — RTDB errors name the path they
+ * failed on, and a report job's path carries the uid. Never mutates `err`.
+ */
+function redactUid(err: unknown, uid: string): Record<string, unknown> {
+  const redact = (text: string): string => (uid.length > 0 ? text.split(uid).join('<uid>') : text);
+  if (err instanceof Error) {
+    return {
+      type: err.name,
+      message: redact(err.message),
+      ...(typeof err.stack === 'string' ? { stack: redact(err.stack) } : {}),
+    };
+  }
+  return { message: redact(String(err)) };
+}
+
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
   const { config, startggConfig, stripeConfig, parryggConfig, prepPaidConfig } = options;
 
@@ -738,6 +755,32 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   }
 
   /**
+   * Code review R2-IN-04 (iteration 2): `failOwnedJob` for a failure that is
+   * already on its way out as a thrown error. The settle can throw too (a
+   * refund transaction that fails, an unreachable database) — that error is
+   * logged here and swallowed, and the ORIGINAL `cause` is rethrown, so the
+   * provider or assembly root cause is what reaches the 500 handler and its
+   * log. The settle error is logged with the uid redacted from its message
+   * and stack (RTDB errors name the path they failed on); no token is ever
+   * part of a database error.
+   */
+  async function failOwnedJobThenRethrow(
+    params: Parameters<typeof failOwnedJob>[0] & { log: ReportRequestContext['log'] },
+    cause: unknown,
+  ): Promise<never> {
+    const { log, ...settleParams } = params;
+    try {
+      await failOwnedJob(settleParams);
+    } catch (settleErr) {
+      log.error(
+        { err: redactUid(settleErr, settleParams.uid) },
+        'could not settle a report job after a failure; the original error is rethrown',
+      );
+    }
+    throw cause;
+  }
+
+  /**
    * Phase 39 (D-05/RPT-07): persists a job's evidence snapshot ONCE at its
    * CONTENT-ADDRESSED path `evidenceSnapshots/{uid}/{snapshotId}` and returns
    * the id. The path is derived from the snapshot's content (`snapshotIdFor`)
@@ -830,20 +873,23 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payloadOptions,
       );
     } catch (err) {
-      await failOwnedJob({
-        uid: request.uid,
-        jobRef,
-        executionId,
-        from: ['queued'],
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: null,
-      });
-      throw err;
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          jobRef,
+          executionId,
+          from: ['queued'],
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          day: null,
+        },
+        err,
+      );
     }
 
     // BILL-06/MEAS-03: transition to `running` immediately before the
