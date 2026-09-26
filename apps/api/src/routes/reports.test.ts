@@ -37,7 +37,7 @@ import {
 } from '@smash-tracker/shared';
 import { buildApp } from '../app.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
-import { assembleReportPayload } from '../reports/generate.js';
+import { assembleReportPayload, REPORT_MODEL } from '../reports/generate.js';
 import { projectScoutSelection } from '../reports/claimSelection.js';
 import { buildScoutReport } from '../startgg/scout.js';
 import { buildParryScoutReport } from '../parrygg/scout.js';
@@ -6419,5 +6419,18 @@ describe('code review API-WR-01: a throw after the spend and before running refu
     expect(await jobRecord(database, 'wr01-startgg-once')).toMatchObject({ status: 'failed' });
     expect(refundLedgerRefs(database)).toEqual(['wr01-startgg-once']);
     expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+describe('code review API-IN-02: the stored model name is the one REPORT_MODEL constant', () => {
+  it('a delivered scout report records exactly the model the generation call used', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+
+    expect((await postLegacy(app, 'in02-model')).statusCode).toBe(200);
+
+    expect(REPORT_MODEL).toBe('claude-opus-4-8');
+    const calledWith = (modelSpy.mock.calls[0] as unknown as [{ model: string }])[0].model;
+    expect(calledWith).toBe(REPORT_MODEL);
+    expect(storedScoutReports(database)[0]!.model).toBe(REPORT_MODEL);
   });
 });
