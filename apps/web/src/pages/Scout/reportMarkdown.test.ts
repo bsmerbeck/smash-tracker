@@ -120,9 +120,18 @@ const LEGACY_BASELINE_MARKDOWN = [
   'Only 20 games sampled — treat character splits as light samples.',
 ].join('\n');
 
+/**
+ * Code review IN-05: English mirror of `reports.legacy.badge` + `.explain` —
+ * the provenance label the card shows on every record that is not validated.
+ * The export appends it AFTER the pinned body, so the pin above stays an exact
+ * byte prefix of the legacy export.
+ */
+const LEGACY_LINE =
+  "Legacy: generated before this app's report validator existed — its content wasn't machine-checked against your match data.";
+
 describe('reportToMarkdown — legacy byte identity (plan 39-09, C2-H4)', () => {
-  it('renders a legacy record (no claims, no sections) byte-identically to the pre-Phase-39 builder', () => {
-    expect(reportToMarkdown(BASE_RECORD)).toBe(LEGACY_BASELINE_MARKDOWN);
+  it('renders a legacy record (no claims, no sections) byte-identically to the pre-Phase-39 builder, then the legacy label (IN-05)', () => {
+    expect(reportToMarkdown(BASE_RECORD)).toBe(`${LEGACY_BASELINE_MARKDOWN}\n\n${LEGACY_LINE}`);
   });
 });
 
@@ -279,12 +288,81 @@ describe('reportToMarkdown — withheld-prose disclosure line (plan 39-10, D-20)
     expect(md).not.toContain(PREFIX);
   });
 
-  it('the LEGACY path is untouched: a legacy record with a stray count still equals the 39-09 byte-identity pin', () => {
+  it('the LEGACY path is untouched: a legacy record with a stray count still equals the 39-09 byte-identity pin plus the legacy label (IN-05)', () => {
     const legacyWithCount: ScoutReportRecord = {
       ...BASE_RECORD,
       report: { ...BASE_RECORD.report, strippedSectionCount: 3 },
     };
-    expect(reportToMarkdown(legacyWithCount)).toBe(LEGACY_BASELINE_MARKDOWN);
-    expect(reportToMarkdown(BASE_RECORD)).toBe(LEGACY_BASELINE_MARKDOWN);
+    expect(reportToMarkdown(legacyWithCount)).toBe(`${LEGACY_BASELINE_MARKDOWN}\n\n${LEGACY_LINE}`);
+    expect(reportToMarkdown(BASE_RECORD)).toBe(`${LEGACY_BASELINE_MARKDOWN}\n\n${LEGACY_LINE}`);
+  });
+});
+
+/**
+ * Code review IN-05: the export is the copy a paying user keeps, so it
+ * discloses what the card discloses — the legacy provenance label
+ * (`LegacyReportBadge`, shown for every record `isValidatedRecord` rejects)
+ * and the dropped-claims line (`DroppedClaimsNote`, shown from the stored
+ * count, which since SH-WR-05 counts claims only). Order matches the card:
+ * legacy label, dropped claims, withheld commentary — all after the body.
+ */
+describe('reportToMarkdown — legacy label and dropped-claims line (code review IN-05)', () => {
+  const DROPPED_ONE = "1 claim couldn't be verified and was removed from this report.";
+  const DROPPED_TWO = "2 claims couldn't be verified and were removed from this report.";
+  const DROPPED_SUFFIX = 'removed from this report.';
+  const WITHHELD_ONE =
+    "Commentary for 1 section was withheld because it couldn't be verified against your match data.";
+
+  function occurrences(markdown: string, needle: string): number {
+    return markdown.split(needle).length - 1;
+  }
+
+  function withDropped(count: unknown): ScoutReportRecord {
+    return {
+      ...CLAIMS_ERA_RECORD,
+      report: { ...CLAIMS_ERA_RECORD.report, droppedClaimCount: count as number | undefined },
+    };
+  }
+
+  it('a validated claims-era record carries NO legacy label', () => {
+    expect(reportToMarkdown(CLAIMS_ERA_RECORD)).not.toContain(LEGACY_LINE);
+  });
+
+  it('a legacy record carries the legacy label exactly once, last', () => {
+    const md = reportToMarkdown(BASE_RECORD);
+    expect(occurrences(md, LEGACY_LINE)).toBe(1);
+    expect(md.endsWith(`\n\n${LEGACY_LINE}`)).toBe(true);
+  });
+
+  it('a half-written claims-era record (no validation block) is labelled legacy, fail-closed like the card', () => {
+    const md = reportToMarkdown({
+      ...CLAIMS_ERA_RECORD,
+      report: { ...CLAIMS_ERA_RECORD.report, validation: undefined },
+    });
+    expect(occurrences(md, LEGACY_LINE)).toBe(1);
+  });
+
+  it('droppedClaimCount 1 carries the singular line exactly once', () => {
+    const md = reportToMarkdown(withDropped(1));
+    expect(occurrences(md, DROPPED_ONE)).toBe(1);
+    expect(occurrences(md, DROPPED_SUFFIX)).toBe(1);
+  });
+
+  it('droppedClaimCount 2 carries the plural line exactly once, before the withheld-prose line', () => {
+    const md = reportToMarkdown(withDropped(2));
+    expect(occurrences(md, DROPPED_TWO)).toBe(1);
+    expect(md.endsWith(`\n\n${DROPPED_TWO}\n\n${WITHHELD_ONE}`)).toBe(true);
+  });
+
+  it.each([
+    { label: 'absent', count: undefined },
+    { label: '0', count: 0 },
+    { label: '-1', count: -1 },
+    { label: '1.5', count: 1.5 },
+    { label: 'NaN', count: Number.NaN },
+  ])('droppedClaimCount $label carries no dropped-claims line', ({ count }) => {
+    const md = reportToMarkdown(withDropped(count));
+    expect(md).not.toContain(DROPPED_SUFFIX);
+    expect(md).not.toContain('NaN');
   });
 });
