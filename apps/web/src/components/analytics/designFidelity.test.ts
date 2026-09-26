@@ -214,3 +214,60 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Plan 39.1-39 Task 2 (deviation, recorded in SUMMARY): the page-owned list
+ * controls whose text is a kit label ("Show all N" / "Show fewer" /
+ * "Show 50 more") take the one muted link tone in the same task as the kit,
+ * so guard:layout's post-kit gate can tell kit labels from page links. Each
+ * `<Button … variant="link" …>` opening tag in these files carries
+ * MUTED_LINK_TONE.
+ */
+const PAGE_LIST_CONTROL_FILES: readonly string[] = [
+  'apps/web/src/pages/MatchData/components/RosterUsage.tsx',
+  'apps/web/src/pages/FighterAnalysis/components/MatchupStageGuide.tsx',
+  'apps/web/src/pages/FighterAnalysis/components/OpponentTable.tsx',
+  'apps/web/src/pages/Opponents/components/OpponentList.tsx',
+  'apps/web/src/pages/Opponents/components/RecentEncounters.tsx',
+  'apps/web/src/pages/Stages/StageDetailPage.tsx',
+];
+
+/** Every `<Button …>` opening tag (up to its first unbraced `>`) that declares variant="link". */
+function linkButtonOpeningTags(source: string): string[] {
+  const tags: string[] = [];
+  for (const match of source.matchAll(/<Button\b/g)) {
+    let depth = 0;
+    let end = match.index! + 7;
+    for (; end < source.length; end += 1) {
+      const ch = source[end];
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+      else if (ch === '>' && depth === 0) break;
+    }
+    const tag = source.slice(match.index!, end + 1);
+    if (/variant="link"/.test(tag)) tags.push(tag);
+  }
+  return tags;
+}
+
+describe('design fidelity — page list controls use the muted link tone (plan 39.1-39 Task 2)', () => {
+  it('the opening-tag scanner finds a toned and an untoned link button (non-vacuity)', () => {
+    const tags = linkButtonOpeningTags(
+      '<Button type="button" variant="link" size="sm" onClick={() => go(1 > 0)}>a</Button>' +
+        '<Button variant="link" className={MUTED_LINK_TONE}>b</Button><Button>c</Button>',
+    );
+    expect(tags).toHaveLength(2);
+    expect(tags[0]).not.toMatch(/MUTED_LINK_TONE/);
+    expect(tags[1]).toMatch(/MUTED_LINK_TONE/);
+  });
+
+  it.each(PAGE_LIST_CONTROL_FILES)(
+    '%s: every Button variant="link" carries MUTED_LINK_TONE',
+    (file) => {
+      const tags = linkButtonOpeningTags(readRepoFile(file));
+      expect(tags.length).toBeGreaterThan(0);
+      const untoned = tags.filter((tag) => !/MUTED_LINK_TONE/.test(tag));
+      expect(untoned).toEqual([]);
+    },
+  );
+});
