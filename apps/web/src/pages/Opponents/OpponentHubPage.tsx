@@ -816,6 +816,24 @@ export function OpponentHubPage() {
 
   const displayTag = profile?.opponent ?? pathTag ?? '';
 
+  // Code review R2-WR-01: the prep-brief card depends only on `allMatches`
+  // (its identity, resolver and tournament blocks — WEB-02) and never on
+  // the FILTERED `profile`. `profile` is null whenever the Dashboard's
+  // source/range filter leaves no game against this opponent (e.g. a
+  // `manual` filter over an opponent met only at a synced event), and the
+  // card used to live only inside the non-null branch, so its debrief door
+  // vanished exactly then. The element is built here, outside that branch:
+  // the hub body mounts it at its UI-SPEC D.2 slot, and the empty state
+  // mounts it right below the empty-state panel. Exactly one renders.
+  const prepBriefCard = prepIdentity ? (
+    <HubPrepBriefCard
+      opponentIdentity={prepIdentity}
+      opponentTag={displayTag}
+      resolveOpponent={prepResolve}
+      tournamentBlocks={prepTournamentBlocks}
+    />
+  ) : null;
+
   // Plan 39.1-26 (gap closure, Task 2): the terminus's active-filter summary
   // when the active claim is this page's OWN trend insight — the SAME
   // verdict sentence the slot above renders, via `buildOpponentFormNowVerdict`.
@@ -845,9 +863,13 @@ export function OpponentHubPage() {
       </div>
 
       {!profile ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-          {t('opponents.hub.empty', { opponent: displayTag })}
-        </div>
+        <>
+          <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
+            {t('opponents.hub.empty', { opponent: displayTag })}
+          </div>
+          {/* Code review R2-WR-01: the card survives an empty FILTERED profile. */}
+          {prepBriefCard}
+        </>
       ) : (
         <div
           key={profile.opponent}
@@ -1056,15 +1078,8 @@ export function OpponentHubPage() {
             <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
           </ChartCard>
 
-          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. */}
-          {prepIdentity && (
-            <HubPrepBriefCard
-              opponentIdentity={prepIdentity}
-              opponentTag={displayTag}
-              resolveOpponent={prepResolve}
-              tournamentBlocks={prepTournamentBlocks}
-            />
-          )}
+          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot. */}
+          {prepBriefCard}
 
           {/*
             Absorbed scouting cards (D-12) — content unchanged, chart.js
