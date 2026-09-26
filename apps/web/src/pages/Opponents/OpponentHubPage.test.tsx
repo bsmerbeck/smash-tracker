@@ -474,6 +474,9 @@ describe('OpponentHubPage', () => {
       expect(classes).toContain('text-muted-foreground');
       expect(classes).toContain('hover:text-foreground');
       expect(classes).not.toContain('text-primary');
+      // Design-fidelity loop (after-39.1-39 realistic hub 390): the link sits
+      // flush with the h1's left edge when the header wraps — no button inset.
+      expect(classes).toContain('px-0');
     });
 
     it('renders a "Merge into..." affordance on the header', async () => {
