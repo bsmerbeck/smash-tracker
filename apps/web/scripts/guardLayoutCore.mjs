@@ -186,6 +186,39 @@ export function evaluateCardContentOverflow(cards, tolerancePx = 1) {
  * just short text). Each `header` is
  * `{ selectorPath, contentWidth, parts: [{ role, width, height, lineHeight }] }`.
  */
+/**
+ * Plan 39.1-50 (OOS-11, UI-SPEC §7.8 rule 5): the header-squeeze family's
+ * default scan — every card header, measuring its title and description.
+ */
+export const DEFAULT_HEADER_SQUEEZE_CONFIG = Object.freeze({
+  header: '[data-slot="card-header"]',
+  parts: Object.freeze([
+    Object.freeze({ role: 'title', selector: '[data-slot="card-title"]' }),
+    Object.freeze({ role: 'description', selector: '[data-slot="card-description"]' }),
+  ]),
+});
+
+/**
+ * Plan 39.1-50: the headers and parts header-squeeze measures on `route`. A
+ * route that declares `headerSqueeze: { header, parts: [{ role, selector }] }`
+ * is measured on exactly those; every other route (Matchups) keeps the
+ * default card-header scan, byte-unchanged. Pure; the result is what the
+ * in-browser collector receives through `familyConfig`.
+ */
+export function headerSqueezeConfigForRoute(route) {
+  const declared = route && route.headerSqueeze;
+  if (declared && declared.header && Array.isArray(declared.parts)) {
+    return {
+      header: declared.header,
+      parts: declared.parts.map((part) => ({ role: part.role, selector: part.selector })),
+    };
+  }
+  return {
+    header: DEFAULT_HEADER_SQUEEZE_CONFIG.header,
+    parts: DEFAULT_HEADER_SQUEEZE_CONFIG.parts.map((part) => ({ ...part })),
+  };
+}
+
 export function evaluateHeaderSqueeze(headers, minShare = HEADER_SQUEEZE_MIN_SHARE) {
   const violations = [];
   for (const header of headers) {

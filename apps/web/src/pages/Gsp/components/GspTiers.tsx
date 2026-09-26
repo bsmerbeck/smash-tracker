@@ -107,6 +107,7 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
               <div className="flex flex-col gap-1">
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
+                    data-slot="gsp-tier-progress-fill"
                     className="h-full rounded-full bg-primary"
                     style={{ width: `${Math.round((position.progressToNext ?? 0) * 100)}%` }}
                   />

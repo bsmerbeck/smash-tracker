@@ -62,6 +62,7 @@ import {
   evaluateTextFit,
   evaluateRailCards,
   tableClipModeForRoute,
+  headerSqueezeConfigForRoute,
   tableClipSweepRoutes,
   tableClipSweepScanned,
   fitTargetsForViewport,
@@ -126,7 +127,20 @@ export const LAYOUT_ORACLE_ROUTES = [
     // HorizonSwitch) and placement (sketch 001-C: the vs lists 2-up inside
     // the hero's 8-col column, directly under the hero).
     // Plan 39.1-39: brand-red-text (UI-SPEC §4.3) on every analytics route.
-    checks: ['form-strip-fit', 'axis-ticks', 'filter-row', 'placement', 'brand-red-text'],
+    // Plan 39.1-50 (OOS-11, UI-SPEC §7.8 rule 5): header-squeeze scoped to
+    // the insight-rail header's overline.
+    checks: [
+      'form-strip-fit',
+      'axis-ticks',
+      'filter-row',
+      'placement',
+      'brand-red-text',
+      'header-squeeze',
+    ],
+    headerSqueeze: {
+      header: '[data-slot="insight-rail-header"]',
+      parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
+    },
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       {
@@ -196,7 +210,12 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-38 Task 3 (UI-SPEC §8.4 "insight before chart"): on a phone
     // the rail renders before the match table; at 1024+ the table keeps its
     // desktop place above the rail (grid placement, never `order`).
-    checks: ['filter-row', 'placement', 'brand-red-text'],
+    // Plan 39.1-50 (OOS-11): header-squeeze scoped to the rail header.
+    checks: ['filter-row', 'placement', 'brand-red-text', 'header-squeeze'],
+    headerSqueeze: {
+      header: '[data-slot="insight-rail-header"]',
+      parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
+    },
     filterRow: { maxHeightPx: 72, owns: ['h1', '[data-slot="horizon-switch"]'] },
     placement: [
       { kind: 'above', first: '#match-data-table', then: '[data-slot="match-data-rail"]' },
@@ -234,7 +253,13 @@ export const LAYOUT_ORACLE_ROUTES = [
       'brand-red-text',
       'grid-balance',
       'rail-cards',
+      // Plan 39.1-50 (OOS-11): header-squeeze scoped to the rail header.
+      'header-squeeze',
     ],
+    headerSqueeze: {
+      header: '[data-slot="insight-rail-header"]',
+      parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
+    },
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
     // The reads rail's cards are InsightCards (data-slot="insight-card"), so
     // grid-balance counts them too — otherwise the centre cell of row 3 is
@@ -572,14 +597,24 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
 
   const headers = [];
   if (wantHeaderSqueeze) {
-    for (const headerEl of document.querySelectorAll('[data-slot="card-header"]')) {
+    // Plan 39.1-50: the route's headers and parts arrive through familyConfig
+    // (`headerSqueezeConfigForRoute`); a route without its own declaration
+    // gets the default card-header / card-title / card-description scan.
+    const squeeze = familyConfig.headerSqueeze || {
+      header: '[data-slot="card-header"]',
+      parts: [
+        { role: 'title', selector: '[data-slot="card-title"]' },
+        { role: 'description', selector: '[data-slot="card-description"]' },
+      ],
+    };
+    for (const headerEl of document.querySelectorAll(squeeze.header)) {
       const style = window.getComputedStyle(headerEl);
       const paddingLeft = parseFloat(style.paddingLeft) || 0;
       const paddingRight = parseFloat(style.paddingRight) || 0;
       const contentWidth = headerEl.clientWidth - paddingLeft - paddingRight;
       const parts = [];
-      for (const role of ['card-title', 'card-description']) {
-        for (const partEl of headerEl.querySelectorAll(`[data-slot="${role}"]`)) {
+      for (const { role, selector } of squeeze.parts) {
+        for (const partEl of headerEl.querySelectorAll(selector)) {
           const partRect = partEl.getBoundingClientRect();
           const partStyle = window.getComputedStyle(partEl);
           let lineHeight = parseFloat(partStyle.lineHeight);
@@ -587,7 +622,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
             lineHeight = (parseFloat(partStyle.fontSize) || 14) * 1.2;
           }
           parts.push({
-            role: role === 'card-title' ? 'title' : 'description',
+            role,
             width: partRect.width,
             height: partRect.height,
             lineHeight,
@@ -1646,6 +1681,8 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       clipTargets: route.clipTargets ?? [],
       railCards: route.railCards ?? null,
       gridBalance: route.gridBalance ?? null,
+      // Plan 39.1-50: only when header-squeeze was requested.
+      headerSqueeze: checks.includes('header-squeeze') ? headerSqueezeConfigForRoute(route) : null,
     };
     const measurements = await page.evaluate(
       collectPageMeasurements,

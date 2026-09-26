@@ -304,6 +304,60 @@ test('header-squeeze: 200px of 400 on 3 lines passes — exactly the 0.5 share b
   assert.equal(violations.length, 0);
 });
 
+// --- header-squeeze: config (plan 39.1-50, OOS-11) ---
+
+test('header-squeeze: config — a route without headerSqueeze gets the default card-header scan', () => {
+  const config = guardLayoutCoreNs.headerSqueezeConfigForRoute?.({ id: 'matchups' });
+  assert.deepEqual(config, {
+    header: '[data-slot="card-header"]',
+    parts: [
+      { role: 'title', selector: '[data-slot="card-title"]' },
+      { role: 'description', selector: '[data-slot="card-description"]' },
+    ],
+  });
+});
+
+test("header-squeeze: config — a route that declares headerSqueeze gets its own header and parts", () => {
+  const declared = {
+    header: '[data-slot="insight-rail-header"]',
+    parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
+  };
+  const config = guardLayoutCoreNs.headerSqueezeConfigForRoute?.({
+    id: 'trends',
+    headerSqueeze: declared,
+  });
+  assert.deepEqual(config, declared);
+});
+
+test('header-squeeze: config — an overline 100 wide in a 342 header over 4 lines of 16px fails', () => {
+  const violations = evaluateHeaderSqueeze([
+    {
+      selectorPath: '[data-slot="insight-rail-header"]',
+      contentWidth: 342,
+      parts: [{ role: 'overline', width: 100, height: 64, lineHeight: 16 }],
+    },
+  ]);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].role, 'overline');
+  assert.equal(violations[0].lines, 4);
+});
+
+test('header-squeeze: config — the same overline at the full 342 width on one line passes', () => {
+  const violations = evaluateHeaderSqueeze([
+    {
+      selectorPath: '[data-slot="insight-rail-header"]',
+      contentWidth: 342,
+      parts: [{ role: 'overline', width: 342, height: 16, lineHeight: 16 }],
+    },
+  ]);
+  assert.equal(violations.length, 0);
+});
+
+test('header-squeeze: config — no matched header is exactly one header-squeeze-unmeasured', () => {
+  const violations = evaluateFamilyPresence('header-squeeze', []);
+  assert.deepEqual(violations, [{ type: 'header-squeeze-unmeasured' }]);
+});
+
 // --- axis-ticks ---
 
 function makeSurface(overrides = {}) {

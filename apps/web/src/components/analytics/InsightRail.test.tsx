@@ -233,6 +233,34 @@ describe('InsightRail', () => {
     expect(legend.textContent).toBe('legend content');
   });
 
+  // Plan 39.1-50 (OOS-11, UI-SPEC §7.8 rule 5, sketch 001-C): the overline
+  // reads on its own line with the claim legend on the line below — never
+  // squeezed beside the legend into 3-4 lines.
+  it('the header is two rows: the overline line, then a wrapping legend row', () => {
+    const { container } = render(
+      <InsightRail
+        rail={emptyRail()}
+        header="Insights · last 30 games vs all time"
+        legend={<span>legend content</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    const header = container.querySelector('[data-slot="insight-rail-header"]')!;
+    const [first, second] = Array.from(header.children);
+    expect(first).toHaveAttribute('data-slot', 'insight-rail-overline');
+    expect(first!.textContent).toBe('Insights · last 30 games vs all time');
+    expect(second).toHaveAttribute('data-slot', 'insight-rail-legend');
+    expect(second).toHaveAttribute('aria-hidden', 'true');
+    expect(second!.textContent).toBe('legend content');
+    expect(header.className).toMatch(/\bflex-col\b/);
+    expect(header.className).not.toMatch(/\bjustify-between\b/);
+    expect(second!.className).toMatch(/\bflex-wrap\b/);
+  });
+
   it("calls onDismiss with the dismissed card's id when its dismiss button is clicked", async () => {
     const user = userEvent.setup();
     const onDismiss = vi.fn();

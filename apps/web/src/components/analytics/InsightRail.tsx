@@ -156,7 +156,10 @@ export function InsightRail({
   return (
     <div data-slot="insight-rail">
       <div className="flex items-center justify-between gap-2" data-slot="insight-rail-header">
-        <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
+        <p
+          data-slot="insight-rail-overline"
+          className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+        >
           {header}
         </p>
         <div aria-hidden="true" data-slot="insight-rail-legend" className="flex items-center gap-1">
