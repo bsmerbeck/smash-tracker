@@ -222,11 +222,15 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
 
-  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's five cards
+  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's cards
   // render as `GridCell span={3}` — 4 per row at the widest breakpoint, the
-  // fifth wrapping to a second row LEFT-ALIGNED (never stretched to a
-  // sibling's height — `PageGrid`'s `items-start` is hardcoded, never a prop).
-  it('renders the hero row as five span-3 grid cells, the fifth wrapping left-aligned', async () => {
+  // second row LEFT-ALIGNED (never stretched to a sibling's height —
+  // `PageGrid`'s `items-start` is hardcoded, never a prop).
+  // Plan 39.1-50 REWROTE this case from five cells to six. Reason: design
+  // audit 5.4 / the planner decision — the selected fighter's record joins
+  // the hero row as the sixth 3-span tile (left-aligned beside Rating),
+  // replacing the centred span-12 tracker card.
+  it('renders the hero row as six span-3 grid cells, the sixth holding the fighter record tile', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
 
@@ -235,11 +239,16 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
 
     const heroCells = Array.from(container.querySelectorAll('[data-span="3"]'));
-    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating —
-    // exactly the hero row's five cards, no more.
-    expect(heroCells).toHaveLength(5);
+    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating,
+    // and the selected fighter's record — exactly six, no more.
+    expect(heroCells).toHaveLength(6);
+    expect(heroCells[5]!.querySelector('[data-slot="fighter-record-tile"]')).not.toBeNull();
     for (const cell of heroCells) {
       expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
+    }
+    // No span-12 cell holds the tracker any more.
+    for (const wide of container.querySelectorAll('[data-span="12"]')) {
+      expect(wide.querySelector('[data-slot="fighter-record-tile"]')).toBeNull();
     }
   });
 
@@ -553,6 +562,21 @@ describe('DashboardPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
+    it('plan 39.1-50: the skeleton mirrors the loaded hero row — six span-3 stat-row skeletons and no 12-span stat-row skeleton', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      // CardSkeleton's stat-row variant is its only two-column block grid.
+      const statRowSkeletonCells = (span: string) =>
+        Array.from(container.querySelectorAll(`[data-span="${span}"]`)).filter((cell) =>
+          cell.querySelector('.grid-cols-2 [data-slot="skeleton-block"]'),
+        );
+      expect(statRowSkeletonCells('3')).toHaveLength(6);
+      expect(statRowSkeletonCells('12')).toHaveLength(0);
+    });
+
     it('renders zero skeleton blocks once the dashboard has loaded', async () => {
       getFighters.mockResolvedValue({ primary: [1], secondary: [] });
       listMatches.mockResolvedValue([]);
@@ -626,7 +650,11 @@ describe('DashboardPage', () => {
     expect(row.closest('[data-slot="card"]')).toBeNull();
   });
 
-  it('plan 39.1-38: the Overall Record tracker (three short figures) keeps fixed columns', async () => {
+  // Plan 39.1-50 REWROTE this plan-39.1-38 case (the three-figure tracker's
+  // fixed-columns StatRow). Reason: UI-SPEC section 8.7 / section 6.5 rule 4 —
+  // the tracker is now the fighter record hero tile, one win-rate lead with a
+  // Record support line, so there is no three-figure row left to fix.
+  it('plan 39.1-50: the fighter record tile names the selected fighter and states the record once', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     const base = {
       fighter_id: 1,
@@ -640,12 +668,10 @@ describe('DashboardPage', () => {
       { ...base, id: 'm1', time: Date.now() - 1000, win: true },
       { ...base, id: 'm2', time: Date.now() - 2000, win: false },
     ]);
-    renderDashboard();
-    const titles = await screen.findAllByText('Overall Record');
-    const rows = titles
-      .map((el) => el.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]'))
-      .filter((el): el is Element => Boolean(el));
-    expect(rows.length).toBeGreaterThan(0);
-    for (const statRow of rows) expect(statRow).toHaveAttribute('data-fixed-columns', '');
+    const { container } = renderDashboard();
+    expect(await screen.findByText('Mario record')).toBeInTheDocument();
+    const tile = container.querySelector('[data-slot="fighter-record-tile"]');
+    expect(tile).not.toBeNull();
+    expect(tile!.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]')).toBeNull();
   });
 });

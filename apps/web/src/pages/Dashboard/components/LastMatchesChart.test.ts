@@ -13,13 +13,33 @@ import { LastMatchesChart, buildFormCurveSeries } from './LastMatchesChart';
  * Curve's colour assertion reads it) and renders the stub's own test id.
  */
 type ChartData = { labels: unknown[]; datasets: Array<Record<string, unknown>> };
-const captured = vi.hoisted(() => ({ data: null as ChartData | null }));
+type TickCallback = (value: unknown, index: number, ticks: unknown[]) => unknown;
+type ChartOptionsShape = {
+  plugins?: { legend?: { display?: boolean } };
+  scales?: {
+    x?: {
+      grid?: { display?: boolean };
+      ticks?: {
+        maxRotation?: number;
+        minRotation?: number;
+        autoSkip?: boolean;
+        align?: string;
+        callback?: TickCallback;
+      };
+    };
+  };
+};
+const captured = vi.hoisted(() => ({
+  data: null as ChartData | null,
+  options: null as ChartOptionsShape | null,
+}));
 
 vi.mock('react-chartjs-2', async () => {
   const { createElement: h } = await import('react');
   return {
-    Line: (props: { data: ChartData }) => {
+    Line: (props: { data: ChartData; options: ChartOptionsShape }) => {
       captured.data = props.data;
+      captured.options = props.options;
       return h('div', { 'data-testid': 'chartjs-stub', 'data-chart-type': 'line', role: 'img' });
     },
   };
@@ -216,5 +236,73 @@ describe('LastMatchesChart (UI-SPEC §10.4: no per-card control; the page horizo
     renderChart([], 'last30');
     expect(screen.getByText('Submit a match to see the match chart.')).toBeInTheDocument();
     expect(screen.queryByTestId('chartjs-stub')).toBeNull();
+  });
+});
+
+/**
+ * Plan 39.1-50 (orchestrator 2026-09-26; the owner rejected text legends —
+ * sketch 001-C / 002-C): no chart.js legend box, horizontal x labels with only
+ * the two ends labelled by their games' dates, no vertical grid, and the series
+ * named by the caption's series-ink swatch.
+ */
+describe('LastMatchesChart Form Curve legend and x axis (plan 39.1-50)', () => {
+  function shortDate(ms: number): string {
+    return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(new Date(ms));
+  }
+  const spread = Array.from({ length: 6 }, (_, i) =>
+    makeMatch({ id: `s${i}`, time: Date.now() - (10 - i) * DAY_MS, win: i % 2 === 0 }),
+  );
+
+  it('draws no chart.js legend box', () => {
+    captured.options = null;
+    renderChart(spread, 'last30');
+    expect(captured.options?.plugins?.legend?.display).toBe(false);
+  });
+
+  it('keeps the x ticks horizontal, never auto-skipped, aligned inner, with no x grid', () => {
+    captured.options = null;
+    renderChart(spread, 'last30');
+    const x = captured.options?.scales?.x;
+    expect(x?.ticks?.maxRotation).toBe(0);
+    expect(x?.ticks?.minRotation).toBe(0);
+    expect(x?.ticks?.autoSkip).toBe(false);
+    expect(x?.ticks?.align).toBe('inner');
+    expect(x?.grid?.display).toBe(false);
+  });
+
+  it('labels only the two ends, each with its plotted game date', () => {
+    captured.options = null;
+    renderChart(spread, 'last30');
+    const callback = captured.options?.scales?.x?.ticks?.callback;
+    expect(typeof callback).toBe('function');
+    const ticks = spread.map((_, i) => ({ value: i }));
+    const labels = spread.map((_, i) => callback!(i, i, ticks));
+    expect(labels[0]).toBe(shortDate(spread[0]!.time));
+    expect(labels.at(-1)).toBe(shortDate(spread.at(-1)!.time));
+    for (const label of labels.slice(1, -1)) expect(label).toBe('');
+  });
+
+  it('labels only the right end when the first and last games share a calendar day', () => {
+    const base = Date.UTC(2026, 3, 10, 9);
+    const sameDay = Array.from({ length: 4 }, (_, i) =>
+      makeMatch({ id: `d${i}`, time: base + i * 60 * 60 * 1000, win: true }),
+    );
+    captured.options = null;
+    renderChart(sameDay, 'last30');
+    const callback = captured.options?.scales?.x?.ticks?.callback;
+    const ticks = sameDay.map((_, i) => ({ value: i }));
+    expect(callback!(0, 0, ticks)).toBe('');
+    expect(callback!(3, 3, ticks)).toBe(shortDate(sameDay[3]!.time));
+  });
+
+  it('names the series with an aria-hidden series-ink swatch before the unchanged caption text', () => {
+    const { container } = renderChart(spread, 'last30');
+    const caption = container.querySelector('[data-slot="form-curve-caption"]');
+    const swatch = caption?.querySelector('[data-slot="form-curve-swatch"]');
+    expect(swatch).not.toBeNull();
+    expect(swatch).toHaveAttribute('aria-hidden', 'true');
+    expect(caption?.firstElementChild).toBe(swatch);
+    expect((swatch as HTMLElement).style.backgroundColor).toBe('rgb(49, 134, 233)');
+    expect(caption?.textContent).toBe('Running win rate · last 30 games');
   });
 });
