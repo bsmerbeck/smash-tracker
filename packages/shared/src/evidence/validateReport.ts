@@ -316,6 +316,12 @@ function valuesEqual(a: ClaimValue, b: ClaimValue): boolean {
 
 const SUBJECT_AXES = ['myFighterId', 'opponentFighterId', 'stageId', 'opponentTag'] as const;
 
+/** Rubric R6's countable games for one ROW: its eligible denominator, or its raw sample size for an axis-free row (`recent_form`/`cohort_disclosure`). */
+function countableGames(row: EvidenceRow): number {
+  const axisFree = SUBJECT_AXES.every((axis) => row.subject[axis] === null);
+  return axisFree ? row.sample.rawSampleSize : row.sample.eligibleDenominator;
+}
+
 interface ClaimVerdict {
   rule: RUBRIC_RULE_ID;
   detail: string;
@@ -342,11 +348,18 @@ function validateClaim(
 
   const rows: EvidenceRow[] = [];
   for (const evidenceId of claim.evidenceIds) {
-    const row = snapshot.rows[evidenceId];
-    if (!row) {
+    // Own keys only (review SH-WR-03): an id like `constructor` must never
+    // resolve through the prototype chain to something that is not a row.
+    if (!Object.prototype.hasOwnProperty.call(snapshot.rows, evidenceId)) {
       return { rule: 'R1', detail: `evidence id "${evidenceId}" is not a key of the snapshot` };
     }
-    rows.push(row);
+    rows.push(snapshot.rows[evidenceId]!);
+  }
+
+  // R3 (predicate half, review SH-WR-03): every cited row carries the
+  // claim's own predicate — a claim cannot borrow a row of another family.
+  if (rows.some((row) => row.predicate !== claim.predicate)) {
+    return { rule: 'R3', detail: 'a cited row carries a different predicate than the claim' };
   }
 
   // R3: every non-null axis of the claim's subject must appear in at least
@@ -395,21 +408,28 @@ function validateClaim(
   }
 
   // R6: an evidenced (non-abstained) claim needs at least the floor's worth
-  // of countable games — re-derived from the claim's own sample, never
-  // trusted from whatever produced `issuedClaims`.
-  if (claim.value.kind !== 'abstained' && claim.sample.eligibleDenominator < effectiveFloor()) {
-    return {
-      rule: 'R6',
-      detail: `only ${claim.sample.eligibleDenominator} countable games, below the abstention floor`,
-    };
+  // of countable games in EVERY cited row — read from the SNAPSHOT rows
+  // (review SH-WR-03), never from the claim's own `sample`, which is exactly
+  // what produced `issuedClaims`. Countable games are the row's eligible
+  // denominator, or its raw sample size for an axis-free row (rubric R6).
+  if (claim.value.kind !== 'abstained') {
+    const floor = effectiveFloor();
+    const thin = rows.find((row) => countableGames(row) < floor);
+    if (thin) {
+      return {
+        rule: 'R6',
+        detail: `only ${countableGames(thin)} countable games, below the abstention floor`,
+      };
+    }
   }
 
-  // R2: recompute from the FIRST cited row (review C2-B2 — the row the
+  // R2: recompute against EVERY cited row (review C2-B2 — the rows the
   // claim actually fetched, never a row derived independently from the
-  // subject). An abstained value has nothing to recompute against.
+  // subject; review SH-WR-03 — all of them, not only the first). An
+  // abstained value has nothing to recompute against.
   if (claim.value.kind !== 'abstained') {
-    const rebuilt = rows[0]!.value;
-    if (!valuesEqual(claim.value, rebuilt)) {
+    const value = claim.value;
+    if (rows.some((row) => !valuesEqual(value, row.value))) {
       return {
         rule: 'R2',
         detail: 'asserted value does not match the value recomputed from the cited row(s)',
@@ -417,14 +437,18 @@ function validateClaim(
     }
   }
 
-  // R7 (recompute half): a rate's denominator must equal the row's own
-  // eligible (known-field) denominator, never a raw count that could
-  // silently fold the unknown bucket in.
-  if (claim.value.kind === 'rate' && claim.value.denominator !== claim.sample.eligibleDenominator) {
-    return {
-      rule: 'R7',
-      detail: 'rate denominator does not equal the eligible (known-field) denominator',
-    };
+  // R7 (recompute half): a rate's denominator must equal every cited ROW's
+  // own eligible (known-field) denominator (review SH-WR-03 — the row, not
+  // the claim's sample), never a raw count that could silently fold the
+  // unknown bucket in.
+  if (claim.value.kind === 'rate') {
+    const denominator = claim.value.denominator;
+    if (rows.some((row) => denominator !== row.sample.eligibleDenominator)) {
+      return {
+        rule: 'R7',
+        detail: 'rate denominator does not equal the eligible (known-field) denominator',
+      };
+    }
   }
 
   return null;
