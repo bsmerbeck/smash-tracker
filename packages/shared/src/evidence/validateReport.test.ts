@@ -1443,13 +1443,34 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     }
   });
 
-  it('the corpus contains at least one fixture for each of the three verdict values, over a non-empty corpus', () => {
+  it('the corpus contains at least one fixture for each of the four verdict values, over a non-empty corpus', () => {
     expect(ADVERSARIAL_FIXTURES.length).toBeGreaterThan(0);
     const verdicts = new Set(ADVERSARIAL_FIXTURES.map((f) => f.expected.validatorVerdict));
     expect(verdicts.has('accepted')).toBe(true);
+    expect(verdicts.has('stripped')).toBe(true);
     expect(verdicts.has('dropped')).toBe(true);
     expect(verdicts.has('failed')).toBe(true);
   });
+
+  it.each(ADVERSARIAL_FIXTURES.map((fixture) => [fixture.id, fixture] as const))(
+    'SH-WR-07: fixture %s — its expected.validatorVerdict label matches what the validator actually does',
+    (_id, fixture) => {
+      // This file may read the labels (only the VAL-03 judge must not). The
+      // observed verdict, most severe first: any claim or action dropped;
+      // else any section's prose withheld; else nothing survived; else
+      // accepted.
+      const outcome = validateReportOutput(bridge(fixture));
+      const observed =
+        outcome.droppedClaimCount > 0 || outcome.droppedActions.length > 0
+          ? 'dropped'
+          : outcome.strippedSectionIds.length > 0
+            ? 'stripped'
+            : outcome.survivingClaimIds.length === 0
+              ? 'failed'
+              : 'accepted';
+      expect(observed).toBe(fixture.expected.validatorVerdict);
+    },
+  );
 
   it('tier_boundary fixtures produce the tier the policy function computes, with no off-by-one at the boundaries', () => {
     const boundaryGames = [
