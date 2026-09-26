@@ -6706,3 +6706,158 @@ describe('code review R2-IN-04: a throw inside the settle never replaces the ori
     expect(serialized).not.toContain(TEST_TOKEN);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review R2-WR-02 (iteration 2): the three writes between the spend and
+// the model call that API-WR-01 left unguarded — the prep running-claim
+// transaction, the legacy `jobRef.set(runningRecord)`, and the running-index
+// update — must not strand a spent credit. A throw at each point settles the
+// job through the same atomic, ownership-checked settle and refunds exactly
+// once; the job never rests `queued` (nothing sweeps it) or `running`
+// without its index entry (the sweep reads only the index).
+// ---------------------------------------------------------------------------
+
+/** Makes ONE write on `database` throw: the first call for which `shouldThrow(path, op, value)` is true. */
+function failOneWrite(
+  database: FakeDatabase,
+  shouldThrow: (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => boolean,
+): { thrown: () => boolean } {
+  let thrown = false;
+  const originalRef = database.ref.bind(database);
+  const maybeThrow = (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => {
+    if (!thrown && shouldThrow(path, op, value)) {
+      thrown = true;
+      throw new Error(`injected ${op} failure`);
+    }
+  };
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        maybeThrow(path ?? '', 'set', value);
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        maybeThrow(path ?? '', 'update', values);
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        maybeThrow(path ?? '', 'transaction', undefined);
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { thrown: () => thrown };
+}
+
+function prepSingleWr02App() {
+  const built = prepBillableApp('viable', () => ({
+    stop_reason: 'end_turn',
+    parsed_output: VALID_REPORT,
+  }));
+  seedPrepBrief(built.database, TEST_UID, P39_ENTRY_KEY, {
+    likelyOpponents: { rival: true },
+    scoutBindings: { rival: P39_PARRY_BINDING },
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+function runningIndexEntry(database: FakeDatabase, jobId: string): unknown {
+  const dump = database.dump() as {
+    reportJobsByStatus?: { running?: Record<string, Record<string, unknown>> };
+  };
+  return dump.reportJobsByStatus?.running?.[TEST_UID]?.[jobId] ?? null;
+}
+
+describe('code review R2-WR-02: a throw at the running claim or the running index never strands a credit', () => {
+  it('prep_report: the running-claim transaction throws — the job settles, refunds once and rests refunded', async () => {
+    const { app, database, modelSpy } = prepSingleWr02App();
+    const jobPath = `reportJobs/${TEST_UID}/wr02-claim`;
+    const injected = failOneWrite(database, (path, op) => path === jobPath && op === 'transaction');
+
+    const response = await postPrepSingle(app, 'wr02-claim');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-claim')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wr02-claim']);
+    expect(refundLedgerRefs(database)).toEqual(['wr02-claim']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy scout: the plain running `.set()` throws — the job settles failed, refunds once', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    const jobPath = `reportJobs/${TEST_UID}/wr02-legacy-set`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath && op === 'set' && (value as { status?: string }).status === 'running',
+    );
+
+    const response = await postLegacy(app, 'wr02-legacy-set');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-legacy-set')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual(['wr02-legacy-set']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report: the running-index update throws after the claim — the job settles, refunds once, and no running entry is left', async () => {
+    const { app, database, modelSpy } = prepSingleWr02App();
+    const indexKey = `reportJobsByStatus/running/${TEST_UID}/wr02-index`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === '' && op === 'update' && (value as Record<string, unknown>)[indexKey] === true,
+    );
+
+    const response = await postPrepSingle(app, 'wr02-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-index')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(runningIndexEntry(database, 'wr02-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['wr02-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy scout: the running-index update throws — the job settles failed, refunds once, no running entry', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    const indexKey = `reportJobsByStatus/running/${TEST_UID}/wr02-legacy-index`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === '' && op === 'update' && (value as Record<string, unknown>)[indexKey] === true,
+    );
+
+    const response = await postLegacy(app, 'wr02-legacy-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-legacy-index')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(runningIndexEntry(database, 'wr02-legacy-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['wr02-legacy-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
