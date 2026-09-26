@@ -325,9 +325,16 @@ export function bundleIdFromSlotRef(ref: string): string | null {
  * Code review R2-IN-03: the DURABLE spend fact for a bundle, read from its
  * `creditBundleOps/{uid}/{bundleId}` operation marker. `'debited'` means the
  * bundle's credits were taken (true); `'insufficient'` means no debit
- * happened (false). A `'claiming'` marker is ambiguous — a process can stop
- * between the balance debit and the marker's `'debited'` write — and an
- * absent marker is unknown: both return `null`, never a guess.
+ * happened (false).
+ *
+ * Code review R3-IN-03 (iteration 3): an ABSENT marker also means no debit
+ * (false). `spendCredits` is the only writer of these markers — it writes
+ * `'claiming'` before it touches the balance, then `'insufficient'` or
+ * `'debited'` — and nothing ever deletes one, so a bundle whose credits were
+ * taken always has a marker. A free-access submission writes none.
+ *
+ * A `'claiming'` marker alone is ambiguous — a process can stop between the
+ * balance debit and the marker's `'debited'` write — so it returns `null`.
  */
 export async function readBundleSpendFact(
   database: Database,
@@ -340,7 +347,7 @@ export async function readBundleSpendFact(
   if (marker?.status === 'debited') {
     return true;
   }
-  if (marker?.status === 'insufficient') {
+  if (marker === null || marker?.status === 'insufficient') {
     return false;
   }
   return null;

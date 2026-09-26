@@ -2595,12 +2595,16 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // Code review R2-IN-03: a pre-39-10 child carries no recorded fact, so
         // it reads the bundle's DURABLE purchase record instead —
         // `creditBundleOps/{uid}/{bundleId}`, the marker `spendCredits` wrote
-        // (`debited` = charged, `insufficient` = not), the bundle id derived
-        // from the child's own slot ref. LAST RESORT ONLY: when that record
-        // is absent too (a bundle bought with free access never writes one,
-        // and a stranded `claiming` marker is ambiguous), `spent` below still
-        // falls back to the uid's LIVE free-access status — the one input
-        // left, knowingly imperfect, because nothing durable says otherwise.
+        // (`debited` = charged; `insufficient` or absent = not), the bundle id
+        // derived from the child's own slot ref.
+        // Code review R3-IN-03 (iteration 3): live free access is NEVER
+        // consulted. A paid bundle's children are written only after its
+        // `debited` marker, and markers are never deleted, so a child whose
+        // bundle has no marker was submitted free. Any fact still unknown
+        // below — a stranded `claiming` marker, whose children can only come
+        // from a later free submission of the same id, or a row whose id is
+        // not a slot ref, which the bundle route never writes — is taken as
+        // NOT charged, so a refund can never be minted from it.
         let recordedSpend: boolean | null =
           preSpent && typeof existingJob!.wasCharged === 'boolean' ? existingJob!.wasCharged : null;
         if (preSpent && recordedSpend === null) {
@@ -2667,9 +2671,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           // atomically by the bundle submission (or never spent at all, for
           // an allowlisted uid's bundle) — never spend a second time here.
           // API-CR-01: trust the fact recorded at purchase (R2-IN-03: or the
-          // bundle's durable op record); `!freeAccess` is only the last
-          // resort for a pre-39-10 child with neither.
-          spent = recordedSpend ?? !freeAccess;
+          // bundle's durable op record). R3-IN-03: an unknown fact is NOT
+          // charged — never re-derived from live free access.
+          spent = recordedSpend ?? false;
         } else if (!freeAccess) {
           // V7-C: non-allowlisted uids spend one credit per generation
           // attempt, identical to the legacy branch below.

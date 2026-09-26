@@ -6221,8 +6221,9 @@ describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the pre-call fa
 // terminal write — it never re-derives `spent` from the uid's free-access
 // status at execution time, which can change between purchase and run (the
 // REPORTS_ALLOWED_UIDS list and the demo allowlist are both live inputs).
-// Recomputing is only the fallback for a pre-39-10 child that carries no
-// fact. Money: balance + `refund` ledger entries, never `credit_refunded`.
+// Since code review R3-IN-03 it is never recomputed at all: a pre-39-10 child
+// with no fact reads the durable bundle-op record, and an unknown fact is
+// not charged. Money: balance + `refund` ledger entries, never `credit_refunded`.
 // ---------------------------------------------------------------------------
 
 /** A prep app whose free-access list the test can change between purchase and execution; the model refuses, so every executed child FAILS. */
@@ -6884,8 +6885,9 @@ describe('code review R2-WR-02: a throw at the running claim or the running inde
 // recorded `wasCharged`) takes its spend fact from the DURABLE purchase
 // record — `creditBundleOps/{uid}/{bundleId}`, `debited` meaning charged —
 // not from the uid's LIVE free-access status, which can change between
-// purchase and execution. Live free access remains only the last resort
-// when that record is absent too. Money: balance + `refund` ledger entries.
+// purchase and execution. (R3-IN-03: an absent record now means not
+// charged; live free access is never read.) Money: balance + `refund` ledger
+// entries.
 // ---------------------------------------------------------------------------
 
 /** Rewrites a stored child job without its `wasCharged` — the shape every child written before 39-10 has. */
