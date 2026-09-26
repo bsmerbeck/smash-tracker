@@ -6861,3 +6861,77 @@ describe('code review R2-WR-02: a throw at the running claim or the running inde
     expect(await balanceOf(database)).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review R2-IN-03 (iteration 2): a bundle child from before 39-10 (no
+// recorded `wasCharged`) takes its spend fact from the DURABLE purchase
+// record — `creditBundleOps/{uid}/{bundleId}`, `debited` meaning charged —
+// not from the uid's LIVE free-access status, which can change between
+// purchase and execution. Live free access remains only the last resort
+// when that record is absent too. Money: balance + `refund` ledger entries.
+// ---------------------------------------------------------------------------
+
+/** Rewrites a stored child job without its `wasCharged` — the shape every child written before 39-10 has. */
+async function stripSpendFact(database: FakeDatabase, jobId: string): Promise<void> {
+  const rest = { ...(await jobRecord(database, jobId)) };
+  delete rest.wasCharged;
+  database.seed(`reportJobs/${TEST_UID}/${jobId}`, rest);
+  expect(await jobRecord(database, jobId)).not.toHaveProperty('wasCharged');
+}
+
+describe('code review R2-IN-03: a pre-39-10 bundle child falls back to the durable bundle-op record, not live free access', () => {
+  it('PAID bundle (marker debited), free access GAINED before the child runs: the failed child is refunded exactly once', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const child = (await submitBundle(app, 'bundle-in03-paid'))[0]!;
+    expect(await balanceOf(database)).toBe(7);
+    expect(
+      (await database.ref(`creditBundleOps/${TEST_UID}/bundle-in03-paid`).get()).val(),
+    ).toMatchObject({ status: 'debited' });
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.add(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
+  });
+
+  it('bundle bought FREE with a non-debited marker on record, free access LOST before the child runs: no refund is minted', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    // An earlier paid attempt at this bundle id found too few credits; the
+    // uid then gained free access and submitted it free.
+    database.seed(`creditBundleOps/${TEST_UID}/bundle-in03-free`, {
+      status: 'insufficient',
+      amount: 3,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const child = (await submitBundle(app, 'bundle-in03-free'))[0]!;
+    expect(await balanceOf(database)).toBe(5);
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+});
