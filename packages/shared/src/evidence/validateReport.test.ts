@@ -1086,6 +1086,43 @@ describe('R2-WR-03: digits inside a licensed opponent tag are part of the name, 
   });
 });
 
+describe('R2-IN-01: an opponent-perspective W-L is the reversed licensed pair, with the opponent as the subject', () => {
+  it('the opponent as subject, "against you": the reversed pair of that opponent\'s licensed record passes', () => {
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo is 2-3 against you.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, "MkLeo's record against you is 2-3."),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('the opponent as subject with the UNREVERSED pair is a false statement and strips', () => {
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo is 3-2 against you.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+
+  it('controls: the player as subject keeps the exact ordered pair rule', () => {
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'You are 3-2 against MkLeo.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'You are 2-3 against MkLeo.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+    // Without "against you" the tag at the start is not read as the subject
+    // of a head-to-head statement: the exact ordered pair rule applies.
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo sets went 3-2 your way.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('known limit (recorded in the VAL-03 map): a winner-first loss idiom is withheld', () => {
+    expect(
+      validateHeadToHead('MkLeo', { wins: 2, losses: 3 }, 'You lost that stretch 3-2 to MkLeo.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Task 3: drop-or-fail, remaining rules, migration gate.
 // ---------------------------------------------------------------------------
