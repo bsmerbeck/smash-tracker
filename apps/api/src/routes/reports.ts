@@ -912,44 +912,94 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       executionId,
     });
 
-    if (reason) {
-      // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
-      // only, claim the queued->running transition with a `.transaction()`
-      // that aborts when the stored status is ALREADY `running` within the
-      // staleness window — this narrows (without claiming to eliminate) the
-      // pre-existing read-then-write race the single-writer-per-job
-      // invariant otherwise assumes away for two near-simultaneous
-      // executions of the SAME bundle child. Legacy jobs keep the plain
-      // sequential `.set()` below, so their behavior stays byte-identical.
-      const claim = await jobRef.transaction((current) => {
-        const existing = current as { status?: string; updatedAt?: number } | null;
-        if (
-          existing &&
-          existing.status === 'running' &&
-          typeof existing.updatedAt === 'number' &&
-          Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
-        ) {
-          return undefined;
+    // Code review R2-WR-02 (iteration 2): the claim below and the running
+    // index write after it sit after the spend, so a throw at either must not
+    // strand the credit. A claim that throws leaves the job `queued` (nothing
+    // sweeps it) — or, if the write applied before the call failed, `running`
+    // under THIS execution's token — so it settles from either, ownership
+    // checked. An index write that throws leaves the job `running` with no
+    // `reportJobsByStatus/running` entry, the only index the stuck-job sweep
+    // reads, so it settles from `running` and clears the shard it claimed.
+    // Both go through the same atomic settle as the post-spend guard, and the
+    // original error is rethrown.
+    try {
+      if (reason) {
+        // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
+        // only, claim the queued->running transition with a `.transaction()`
+        // that aborts when the stored status is ALREADY `running` within the
+        // staleness window — this narrows (without claiming to eliminate) the
+        // pre-existing read-then-write race the single-writer-per-job
+        // invariant otherwise assumes away for two near-simultaneous
+        // executions of the SAME bundle child. Legacy jobs keep the plain
+        // sequential `.set()` below, so their behavior stays byte-identical.
+        const claim = await jobRef.transaction((current) => {
+          const existing = current as { status?: string; updatedAt?: number } | null;
+          if (
+            existing &&
+            existing.status === 'running' &&
+            typeof existing.updatedAt === 'number' &&
+            Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
+          ) {
+            return undefined;
+          }
+          return runningRecord;
+        });
+        if (!claim.committed) {
+          return {
+            ok: false,
+            failure: {
+              status: 409,
+              error: 'Conflict',
+              message: 'A report generation for this job is already in progress',
+            },
+          };
         }
-        return runningRecord;
-      });
-      if (!claim.committed) {
-        return {
-          ok: false,
-          failure: {
-            status: 409,
-            error: 'Conflict',
-            message: 'A report generation for this job is already in progress',
-          },
-        };
+      } else {
+        await jobRef.set(runningRecord);
       }
-    } else {
-      await jobRef.set(runningRecord);
+    } catch (err) {
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          jobRef,
+          executionId,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          from: ['queued', 'running'],
+          day: null,
+        },
+        err,
+      );
     }
-    await app.firebase.database.ref().update({
-      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
-      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
-    });
+    try {
+      await app.firebase.database.ref().update({
+        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
+        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+      });
+    } catch (err) {
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          jobRef,
+          executionId,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          from: ['running'],
+          day: jobDay,
+        },
+        err,
+      );
+    }
     void createEvent(
       app.firebase.database,
       buildBillingEnvelope({
