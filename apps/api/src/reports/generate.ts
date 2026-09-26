@@ -482,6 +482,14 @@ function buildEvidenceRows(inputs: EvidenceRowInputs): Record<string, EvidenceRo
   const opponentTag = scout.player.gamerTag;
   const opponentOrder = orderSnapshotOpponents([opponentTag]);
   const rows: Record<string, EvidenceRow> = {};
+  // Code review API-WR-02: the scout's unmapped-character bucket
+  // (`UNMAPPED_FIGHTER_ID = 0`, every game with no mapped character) is
+  // often in the opponent's top five, but it is never a row subject. The
+  // named payload fields keep `topCharacterIds` whole (the advisor claims
+  // are zipped against it by index); every row family here reads only the
+  // KNOWN ids.
+  const isKnownTopCharacter = (fighterId: number): boolean => KNOWN_FIGHTER_IDS.has(fighterId);
+  const knownTopCharacterIds = topCharacterIds.filter(isKnownTopCharacter);
 
   function addRow(
     predicate: ClaimPredicate,
@@ -494,7 +502,7 @@ function buildEvidenceRows(inputs: EvidenceRowInputs): Record<string, EvidenceRo
   }
 
   // stage_record + stage_pick_rate, per opponent top character.
-  for (const opponentFighterId of topCharacterIds) {
+  for (const opponentFighterId of knownTopCharacterIds) {
     const matchesVsCharacter = rawMatches.filter(
       (match) => match.opponent_id === opponentFighterId,
     );
@@ -546,7 +554,7 @@ function buildEvidenceRows(inputs: EvidenceRowInputs): Record<string, EvidenceRo
       recordOf(matchesAsCharacter),
       characterAxisSample(matchesAsCharacter, refreshedAt),
     );
-    for (const opponentFighterId of topCharacterIds) {
+    for (const opponentFighterId of knownTopCharacterIds) {
       const matchupMatches = matchesAsCharacter.filter(
         (match) => match.opponent_id === opponentFighterId,
       );
@@ -620,7 +628,7 @@ function buildEvidenceRows(inputs: EvidenceRowInputs): Record<string, EvidenceRo
   // same way the named `matchupAdvisor` field is.
   topCharacterIds.forEach((opponentFighterId, index) => {
     const claim = matchupAdvisorClaims[index];
-    if (!claim) {
+    if (!claim || !isKnownTopCharacter(opponentFighterId)) {
       return;
     }
     const subject: ClaimSubject = { ...NULL_SUBJECT, opponentFighterId };
