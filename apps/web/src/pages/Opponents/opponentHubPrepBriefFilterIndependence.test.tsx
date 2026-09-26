@@ -18,6 +18,13 @@ import { OpponentHubPage } from './OpponentHubPage';
  * identity resolver) must not depend on the Dashboard's global source/range
  * filter. A `manual` source filter removes a synced event's games from the
  * FILTERED match set; the card's debrief door for that event must survive it.
+ *
+ * Code review R2-WR-01 (iteration 2): the common case has NO manual games
+ * against this opponent at all — the user met them only at a synced event.
+ * The filter then leaves the hub's filtered `profile` null and the page shows
+ * its empty state, and the card must STILL mount (it depends only on
+ * `allMatches`, never on the filtered branch). The workspace below has no
+ * manual games for exactly that reason.
  */
 
 vi.mock('firebase/auth', async () => {
@@ -147,32 +154,33 @@ describe('Opponent hub prep-brief card ignores the global analytics filter (code
     listAliases.mockResolvedValue({});
     listNotes.mockResolvedValue({});
     listMatches.mockResolvedValue([
-      // Manual games (kept by the `manual` source filter).
-      makeMatch('m1', 1),
-      makeMatch('m2', 2),
-      // The synced Summit games (removed by the `manual` source filter).
+      // Only the synced Summit games — no manual game against this opponent,
+      // so the `manual` source filter removes every one of them.
       makeMatch('s1', SUMMIT_AT, { source: 'startgg', eventName: 'Summit' }),
       makeMatch('s2', SUMMIT_AT + 10 * 60 * 1000, { source: 'startgg', eventName: 'Summit' }),
     ]);
     setMockUser(makeMockUser());
   });
 
-  it('control: with no filter active the shared synced event opens the debrief door', async () => {
+  it('control: with no filter active the shared synced event opens the debrief door inside the hub body', async () => {
     renderHub();
     expect(await cardState()).toBe('debrief');
+    expect(document.querySelector('[data-slot="opponent-hub-body"]')).not.toBeNull();
     expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
       'href',
       '/tournaments/summit/prep',
     );
   });
 
-  it('a manual source filter that hides the synced event leaves the debrief door unchanged', async () => {
+  it('a manual source filter that hides every game against the opponent (the hub shows its empty state) leaves the debrief door unchanged', async () => {
     window.localStorage.setItem(
       analyticsFilterStorageKey('test-uid', null),
       JSON.stringify({ source: 'manual', range: 'all' }),
     );
     renderHub();
     expect(await cardState()).toBe('debrief');
+    // The filtered profile is empty: the hub body is gone, the card is not.
+    expect(document.querySelector('[data-slot="opponent-hub-body"]')).toBeNull();
     expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
       'href',
       '/tournaments/summit/prep',
