@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
  * mechanism exactly: `readFileSync` over the raw source with NO comment
  * stripping (a banned word in a comment or an identifier fails too), the
  * same monetization regex and the same reserved-placement regex, plus the
- * `opponents.hub` copy namespace of the English bundle. The hub and the
+ * `opponents.hub` copy namespace of all six bundles (IN-02). The hub and the
  * dashboard are FREE entry points; paid vocabulary stays confined to
  * `prepPaid/` and `postEventPaid/`.
  */
@@ -88,9 +88,14 @@ describe('opponent hub prep-brief structural integrity (no paid affordance, D-11
     expect(source).not.toMatch(/Sparkles|text-primary|bg-primary|variant="default"/);
   });
 
-  it('the opponents.hub copy namespace contains no monetization vocabulary', () => {
-    const bundle = JSON.parse(readFileSync(resolve('src/i18n/locales/en.json'), 'utf-8'));
-    expect(bundle.opponents.hub.prepBrief).toBeDefined();
-    expect(JSON.stringify(bundle.opponents.hub)).not.toMatch(MONETIZATION_VOCABULARY);
-  });
+  // Code review IN-02: every shipped locale, not just English — the regex's
+  // `stripe` / `checkout` / `$N` alternatives catch a leak in any language.
+  it.each(['en', 'es', 'fr', 'de', 'pt', 'ja'])(
+    'the %s opponents.hub copy namespace contains no monetization vocabulary',
+    (locale) => {
+      const bundle = JSON.parse(readFileSync(resolve(`src/i18n/locales/${locale}.json`), 'utf-8'));
+      expect(bundle.opponents.hub.prepBrief).toBeDefined();
+      expect(JSON.stringify(bundle.opponents.hub)).not.toMatch(MONETIZATION_VOCABULARY);
+    },
+  );
 });
