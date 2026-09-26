@@ -5769,7 +5769,11 @@ interface RecordedJobWrite {
   value?: unknown;
 }
 
-/** Records every write with its path AND value, so a test can find WHEN `wasCharged` first lands on the job node. */
+/**
+ * Records every write with its path AND value, so a test can find WHEN `wasCharged` first lands on the job node.
+ * A transaction records the value it COMMITTED (a copy, taken when it resolves), or no value when it aborted —
+ * since code review R3-WR-01 the prep queued write is a transaction as well as the running claim.
+ */
 function recordWritesWithValues(database: FakeDatabase): RecordedJobWrite[] {
   const writes: RecordedJobWrite[] = [];
   const originalRef = database.ref.bind(database);
@@ -5786,8 +5790,13 @@ function recordWritesWithValues(database: FakeDatabase): RecordedJobWrite[] {
         return ref.update(values);
       },
       transaction: async (fn: (current: unknown) => unknown) => {
-        writes.push({ op: 'transaction', path: path ?? '' });
-        return ref.transaction(fn);
+        const entry: RecordedJobWrite = { op: 'transaction', path: path ?? '' };
+        writes.push(entry);
+        const result = await ref.transaction(fn);
+        if (result.committed) {
+          entry.value = structuredClone(result.snapshot.val());
+        }
+        return result;
       },
     };
   });
@@ -5814,8 +5823,8 @@ function firstRunningWrite(writes: RecordedJobWrite[], jobId: string): number {
   return writes.findIndex(
     (write) =>
       write.path === jobPath &&
-      (write.op === 'transaction' ||
-        (write.op === 'set' && (write.value as { status?: string }).status === 'running')),
+      (write.op === 'transaction' || write.op === 'set') &&
+      (write.value as { status?: string } | undefined)?.status === 'running',
   );
 }
 
@@ -6299,11 +6308,13 @@ describe('code review API-CR-01: a bundle child trusts the spend fact recorded a
     await postPrepSingle(app, child.jobId, child.opponentName);
 
     const jobPath = `reportJobs/${TEST_UID}/${child.jobId}`;
+    // Since code review R3-WR-01 the queued rewrite is a compare-and-set
+    // transaction; the recorder captures the value it committed.
     const queuedRewrite = writes.find(
       (write) =>
         write.path === jobPath &&
-        write.op === 'set' &&
-        (write.value as { status?: string }).status === 'queued',
+        (write.op === 'set' || write.op === 'transaction') &&
+        (write.value as { status?: string } | undefined)?.status === 'queued',
     );
     expect(queuedRewrite?.value).toMatchObject({ status: 'queued', wasCharged: true });
   });
@@ -6775,7 +6786,13 @@ describe('code review R2-WR-02: a throw at the running claim or the running inde
   it('prep_report: the running-claim transaction throws — the job settles, refunds once and rests refunded', async () => {
     const { app, database, modelSpy } = prepSingleWr02App();
     const jobPath = `reportJobs/${TEST_UID}/wr02-claim`;
-    const injected = failOneWrite(database, (path, op) => path === jobPath && op === 'transaction');
+    // Since code review R3-WR-01 the queued write is the FIRST transaction on
+    // the job node (a compare-and-set); the running claim is the second.
+    let jobTransactions = 0;
+    const injected = failOneWrite(
+      database,
+      (path, op) => path === jobPath && op === 'transaction' && ++jobTransactions === 2,
+    );
 
     const response = await postPrepSingle(app, 'wr02-claim');
 

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -736,8 +737,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
    * `failJob` behind `settleOwnedJob`: the job is failed, and a spent credit
    * refunded, only when this execution's atomic settle committed. Used by
    * every failure path that can run while a concurrent execution of the same
-   * job id may own the job — the post-spend guard and the prep resolver's own
-   * failure branches (a bundle child is the shared case). Returns whether it
+   * job id may own the job — the post-spend guard, the prep resolver's own
+   * failure branches (a bundle child is the shared case) and, since review
+   * R3-WR-01, every failure after the running claim. Returns whether it
    * settled, so a caller can tell a no-op apart from a failure.
    */
   async function failOwnedJob(params: {
@@ -752,6 +754,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     createdAt: number;
     attempt: number;
     day: string | null;
+    failureReason?: ReportFailureReason;
   }): Promise<boolean> {
     const { jobRef, executionId, from, ...failParams } = params;
     if (!(await settleOwnedJob({ jobRef, executionId, from }))) {
@@ -932,26 +935,33 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     try {
       if (reason) {
         // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
-        // only, claim the queued->running transition with a `.transaction()`
-        // that aborts when the stored status is ALREADY `running` within the
-        // staleness window — this narrows (without claiming to eliminate) the
-        // pre-existing read-then-write race the single-writer-per-job
-        // invariant otherwise assumes away for two near-simultaneous
-        // executions of the SAME bundle child. Legacy jobs keep the plain
-        // sequential `.set()` below, so their behavior stays byte-identical.
+        // only, claim the queued->running transition with a `.transaction()`.
+        // Review R3-WR-01 (iteration 3): the claim commits ONLY over this
+        // execution's own `queued` row (its status is `queued` and its token
+        // is this execution's). The old rule aborted only on a fresh
+        // `running` row, so a duplicate execution that re-queued the job over
+        // this one's claim could claim it as well. Anything else — another
+        // execution's row, a resolved job, a missing node — is a 409. A null
+        // first-run input (the SDK's local cache) is returned unchanged to
+        // force the server compare; a node that truly does not exist commits
+        // that no-op and is reported as not claimed. Legacy jobs keep the
+        // plain sequential `.set()` below, so their behavior is unchanged.
         const claim = await jobRef.transaction((current) => {
-          const existing = current as { status?: string; updatedAt?: number } | null;
-          if (
-            existing &&
-            existing.status === 'running' &&
-            typeof existing.updatedAt === 'number' &&
-            Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
-          ) {
+          if (current === null || current === undefined) {
+            return null;
+          }
+          const existing = current as { status?: unknown; executionId?: unknown };
+          if (existing.status !== 'queued' || existing.executionId !== executionId) {
             return undefined;
           }
           return runningRecord;
         });
-        if (!claim.committed) {
+        const claimed = claim.snapshot.val() as { status?: unknown; executionId?: unknown } | null;
+        if (
+          !claim.committed ||
+          claimed?.status !== 'running' ||
+          claimed.executionId !== executionId
+        ) {
           return {
             ok: false,
             failure: {
@@ -1020,19 +1030,38 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }),
     );
 
-    // Phase 39 (D-05/RPT-07, review C4-H1): everything from here to the model
-    // call sits STRICTLY BELOW the queued->running claim above — below the
-    // prep `jobRef.transaction(...)` and its `!claim.committed` 409 return,
-    // and below the legacy branch's plain `jobRef.set(runningRecord)`. That
-    // claim is the single-writer window for two near-simultaneous executions
-    // of the SAME jobId, and `refundCredit` is NOT balance-idempotent (an
-    // unconditional increment transaction plus a ledger append; only its
-    // `credit_refunded` EVENT is deduped). Above the claim, both executions
-    // would reach the D-21 `failJob` below and return one spend twice; here,
-    // the loser is turned away by the existing 409 exactly like every other
-    // failure branch's loser. Legacy (no-`reason`) jobs gain NO transaction:
-    // their single-writer property is still the handler's pre-existing
-    // `running`-within-staleness pre-check, unchanged by this phase.
+    // Phase 39 (D-05/RPT-07, review C4-H1), corrected by review R3-WR-01
+    // (iteration 3): everything from here to the model call sits STRICTLY
+    // BELOW the queued->running claim above. The claim alone is NOT a
+    // single-writer window: a duplicate execution that read the job before
+    // this claim and wrote its own `queued` row after it used to erase this
+    // execution's `running` row and claim the job too, and a bare `failJob`
+    // on both sides then returned one spend twice (`refundCredit` is NOT
+    // balance-idempotent: an unconditional increment transaction plus a
+    // ledger append; only its `credit_refunded` EVENT is deduped), or failed
+    // and refunded a job the other side had already delivered. Two guards
+    // close it together. The handler's prep queued write is a compare-and-set
+    // against the row it read, and the prep claim commits only over this
+    // execution's OWN queued row, so a straddling duplicate is turned away
+    // with a 409 before it can take the job. And every failure below settles
+    // through `failOwnedJob` from `running` with this execution's token, so
+    // only the execution that still owns the running row can fail or refund
+    // the job. Legacy (no-`reason`) jobs keep the plain `.set()` queued write
+    // and running write; their failures below go through the same owned
+    // settle.
+    const ownedRunningFailure = {
+      uid: request.uid,
+      jobRef,
+      executionId,
+      from: ['running'] as const,
+      jobId,
+      creditRef,
+      spent,
+      reason,
+      createdAt: jobCreatedAt,
+      attempt: jobAttempt,
+      day: jobDay,
+    };
     const surface = reportSurfaceFor(reason);
     const issuedClaims = payload.claimSet.claims;
     let snapshotId: string;
@@ -1040,19 +1069,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       snapshotId = await writeEvidenceSnapshot(request.uid, payload.snapshot);
     } catch (err) {
       // A snapshot that cannot be persisted is an internal fault, not a
-      // validation outcome: the catch-all sibling shape (one failJob, then
-      // rethrow) so the job never rests `running` with the credit held.
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
-      });
-      throw err;
+      // validation outcome: the catch-all sibling shape (one owned settle,
+      // then rethrow) so the job never rests `running` with the credit held.
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
     // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
@@ -1061,8 +1080,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // helper the validator's status uses), so a workspace already below the
     // surface minimum — including one issuing only abstentions — makes NO
     // model call — the
-    // job goes through the one existing `failJob` (its unchanged refund)
-    // with `failureReason: 'validation'`, and nothing is stored. The
+    // job goes through the owned settle (`failOwnedJob`, whose `failJob` is
+    // the one unchanged refund) with `failureReason: 'validation'`, and
+    // nothing is stored. The
     // snapshot above IS still written on this path, deliberately: it is the
     // evidence for WHY the job failed, it is content-addressed so the write
     // is idempotent, and a refunded job with no snapshot would leave the
@@ -1071,15 +1091,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // deliver — that is the decision, not a gap to backfill with a degraded
     // report.
     if (countViableClaims(issuedClaims) < MIN_VIABLE_CLAIMS[surface]) {
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
+      await failOwnedJob({
+        ...ownedRunningFailure,
         failureReason: 'validation',
       });
       return {
@@ -1097,16 +1110,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       report = await generateScoutReport(client, payload);
     } catch (err) {
       if (err instanceof ReportGenerationError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         const message =
           err.reason === 'refusal'
             ? 'The model declined to generate a report for this request'
@@ -1116,16 +1120,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         return { ok: false, failure: { status: 502, error: 'Bad Gateway', message } };
       }
       if (err instanceof Anthropic.RateLimitError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         return {
           ok: false,
           failure: {
@@ -1136,16 +1131,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         };
       }
       if (err instanceof Anthropic.APIError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         request.log.error({ err }, 'Claude report generation failed');
         return {
           ok: false,
@@ -1156,17 +1142,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           },
         };
       }
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
-      });
-      throw err;
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
     // Phase 39 (D-06/D-07/RPT-07, review C2-H2): the validator seam and the
@@ -1190,15 +1166,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       log: request.log,
     });
     if (!built.ok) {
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
+      await failOwnedJob({
+        ...ownedRunningFailure,
         failureReason: 'validation',
       });
       return {
@@ -1217,17 +1186,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     try {
       await ref.set(record);
     } catch (err) {
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
-      });
-      throw err;
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
     const id = ref.key;
@@ -2415,6 +2374,12 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       const existingJob: ReportJob | null = existingSnapshot.exists()
         ? reportJobSchema.parse(existingSnapshot.val())
         : null;
+      // Code review R3-WR-01: the raw row as read, the expected value of the
+      // prep branch's compare-and-set queued write below. A copy, so no later
+      // in-place change to a returned snapshot value can move it.
+      const readJobRow: unknown = existingSnapshot.exists()
+        ? structuredClone(existingSnapshot.val())
+        : null;
 
       // Idempotent retry: a jobId that already succeeded returns the stored
       // result WITHOUT spending a credit or calling Anthropic again. If the
@@ -2528,21 +2493,47 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // `queued`, carrying the enum `reason` — no entryKey, opponent
         // name, gamer tag, or provider id ever lands on the job node
         // (Information Disclosure mitigation, T-27-33).
-        await jobRef.set(
-          reportJobSchema.parse({
-            status: 'queued',
-            createdAt: jobCreatedAt,
-            updatedAt: Date.now(),
-            attempt: jobAttempt,
-            creditRef: jobId,
-            reason: effectiveReason,
-            // API-CR-01: `.set()` replaces the node — a pre-paid child keeps
-            // its recorded spend fact across this rewrite (conditional
-            // spread: absent on a pre-39-10 child, never null).
-            ...(recordedSpend !== null ? { wasCharged: recordedSpend } : {}),
-            executionId,
-          }),
-        );
+        //
+        // Code review R3-WR-01 (iteration 3): the queued write is a
+        // COMPARE-AND-SET against the row this request read above. The old
+        // plain `.set()` let a duplicate execution that read the job before
+        // another execution's running claim erase that claim afterwards and
+        // take the job too (the straddle): a bundle child's one credit was
+        // then refunded twice, or refunded after the other execution had
+        // delivered. Any write to the node since the read — a claim, a
+        // re-queue, a settle — aborts this one with a 409, before any spend.
+        const queuedRecord = reportJobSchema.parse({
+          status: 'queued',
+          createdAt: jobCreatedAt,
+          updatedAt: Date.now(),
+          attempt: jobAttempt,
+          creditRef: jobId,
+          reason: effectiveReason,
+          // API-CR-01: the write replaces the node — a pre-paid child keeps
+          // its recorded spend fact across this rewrite (conditional
+          // spread: absent on a pre-39-10 child, never null).
+          ...(recordedSpend !== null ? { wasCharged: recordedSpend } : {}),
+          executionId,
+        });
+        const queuedWrite = await jobRef.transaction((current) => {
+          if (current === null || current === undefined) {
+            // The SDK's local cache reads null on a listener-less server even
+            // when the node exists. For a fresh job id null IS the row that was
+            // read, so the record commits; otherwise null is returned
+            // unchanged, forcing the server compare (a node that truly
+            // vanished commits that no-op and is reported as not queued).
+            return readJobRow === null ? queuedRecord : null;
+          }
+          return isDeepStrictEqual(current, readJobRow) ? queuedRecord : undefined;
+        });
+        const queuedRow = queuedWrite.snapshot.val() as { executionId?: unknown } | null;
+        if (!queuedWrite.committed || queuedRow?.executionId !== executionId) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'A report generation for this job is already in progress',
+            statusCode: 409,
+          });
+        }
 
         if (preSpent) {
           // Phase 27 (Task 2): the credit for this slot was already spent
