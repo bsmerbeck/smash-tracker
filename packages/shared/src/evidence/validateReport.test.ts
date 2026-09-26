@@ -288,6 +288,122 @@ describe('validateReportOutput: the wave-1 oracle passing direction (Task 1)', (
   });
 });
 
+describe("SH-WR-03: the recompute reads the SNAPSHOT rows — never the claim's own metadata — and checks every cited row", () => {
+  const STAGE_SUBJECT: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
+  const RECORD_ROW_ID = evidenceIdFor({
+    predicate: 'stage_record',
+    subject: STAGE_SUBJECT,
+    opponentOrder: [],
+  });
+
+  function outcomeFor(snapshotRows: Record<string, EvidenceRow>, claim: ClaimAtom) {
+    return validateReportOutput({
+      snapshot: makeSnapshot(snapshotRows),
+      issuedClaims: [claim],
+      output: {
+        sections: { main: { claimIds: [claim.id], connective: '' } },
+        action1: null,
+        action2: null,
+        action3: null,
+      },
+      surface: 'scout',
+    });
+  }
+
+  function recordClaim(overrides: Partial<ClaimAtom> = {}): ClaimAtom {
+    return {
+      id: 'c01',
+      predicate: 'stage_record',
+      subject: STAGE_SUBJECT,
+      value: { kind: 'record', wins: 6, losses: 4, games: 10 },
+      claimKind: 'fact',
+      evidenceIds: [RECORD_ROW_ID],
+      tier: confidenceTierFor(10),
+      policyVersion: EVIDENCE_POLICY_VERSION,
+      sample: makeSample(10),
+      ...overrides,
+    };
+  }
+
+  const RECORD_ROW: EvidenceRow = {
+    predicate: 'stage_record',
+    subject: STAGE_SUBJECT,
+    value: { kind: 'record', wins: 6, losses: 4, games: 10 },
+    sample: makeSample(10),
+  };
+
+  it('an evidence id naming an inherited Object property ("constructor") is R1, never a throw', () => {
+    const claim = recordClaim({ evidenceIds: ['constructor'] });
+    expect(() => outcomeFor({ [RECORD_ROW_ID]: RECORD_ROW }, claim)).not.toThrow();
+    expect(dropRule(outcomeFor({ [RECORD_ROW_ID]: RECORD_ROW }, claim), 'c01')).toBe('R1');
+  });
+
+  it("a cited row whose predicate differs from the claim's is R3", () => {
+    const rateRowId = evidenceIdFor({
+      predicate: 'stage_pick_rate',
+      subject: STAGE_SUBJECT,
+      opponentOrder: [],
+    });
+    const rateRow: EvidenceRow = { ...RECORD_ROW, predicate: 'stage_pick_rate' };
+    const claim = recordClaim({ evidenceIds: [rateRowId] });
+    expect(dropRule(outcomeFor({ [rateRowId]: rateRow }, claim), 'c01')).toBe('R3');
+  });
+
+  it('R2 compares the value against EVERY cited row, not only the first', () => {
+    const otherRowId = evidenceIdFor({
+      predicate: 'stage_record',
+      subject: { ...STAGE_SUBJECT, stageId: 3 },
+      opponentOrder: [],
+    });
+    const otherRow: EvidenceRow = {
+      ...RECORD_ROW,
+      subject: { ...STAGE_SUBJECT, stageId: 3 },
+      value: { kind: 'record', wins: 1, losses: 9, games: 10 },
+    };
+    const claim = recordClaim({ evidenceIds: [RECORD_ROW_ID, otherRowId] });
+    expect(
+      dropRule(outcomeFor({ [RECORD_ROW_ID]: RECORD_ROW, [otherRowId]: otherRow }, claim), 'c01'),
+    ).toBe('R2');
+  });
+
+  it("R6 reads the ROW's countable games: a claim whose own sample claims 10 games over a 1-game row is dropped", () => {
+    const thinRow: EvidenceRow = {
+      ...RECORD_ROW,
+      value: { kind: 'record', wins: 1, losses: 0, games: 1 },
+      sample: makeSample(1),
+    };
+    const claim = recordClaim({
+      value: { kind: 'record', wins: 1, losses: 0, games: 1 },
+      sample: makeSample(10),
+    });
+    expect(dropRule(outcomeFor({ [RECORD_ROW_ID]: thinRow }, claim), 'c01')).toBe('R6');
+  });
+
+  it("R7 (recompute) compares a rate's denominator with the ROW's eligible denominator, not the claim's own sample", () => {
+    const rateSubject: ClaimSubject = { ...NULL_SUBJECT, stageId: 1 };
+    const rateRowId = evidenceIdFor({
+      predicate: 'stage_pick_rate',
+      subject: rateSubject,
+      opponentOrder: [],
+    });
+    const rateRow: EvidenceRow = {
+      predicate: 'stage_pick_rate',
+      subject: rateSubject,
+      value: { kind: 'rate', numerator: 4, denominator: 12 },
+      sample: { ...makeSample(12), eligibleDenominator: 10 },
+    };
+    const claim: ClaimAtom = {
+      ...recordClaim(),
+      predicate: 'stage_pick_rate',
+      subject: rateSubject,
+      value: { kind: 'rate', numerator: 4, denominator: 12 },
+      evidenceIds: [rateRowId],
+      sample: makeSample(12),
+    };
+    expect(dropRule(outcomeFor({ [rateRowId]: rateRow }, claim), 'c01')).toBe('R7');
+  });
+});
+
 describe('validateReportOutput: purity (grep-gated separately; this proves no side effect via double-invocation)', () => {
   it('does not mutate its input snapshot or issuedClaims', () => {
     const fixture = findFixture('well-formed-control');
