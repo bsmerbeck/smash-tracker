@@ -812,7 +812,7 @@ export function OpponentHubPage() {
               type="button"
               variant="link"
               size="sm"
-              className={MUTED_LINK_TONE}
+              className={`px-0 ${MUTED_LINK_TONE}`}
               onClick={() => setMergeCandidate(profile.opponent)}
             >
               {t('opponents.list.mergeInto')}
