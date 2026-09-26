@@ -613,6 +613,59 @@ const proseEntityDigitBearingTag: AdversarialFixture = {
   expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
 };
 
+// Code review R3-CR-01 (iteration 3): head-to-head prose written from the
+// OPPONENT's side. The licensed record is 3-2 (the player won 3). A W-L pair
+// must be the exact ordered licensed pair from the player's side, and a
+// section whose prose carries an opponent-perspective marker ("against you",
+// "beat you", ...) withholds every pair in it, because the lint cannot tell
+// whose record the pair states. Every fixture below is withheld: the
+// inverted user-clause records (false), the unreversed opponent-subject
+// record (false), and the reversed one (true, but not licensable).
+function makeProseEntityPerspectiveFixture(input: {
+  id: string;
+  prose: string;
+}): AdversarialFixture {
+  return {
+    ...proseEntityDigitBearingTag,
+    id: input.id,
+    snapshot: makeSnapshot(proseEntityDigitBearingTag.snapshot.rows, {
+      matchIdDigest: { count: 5, hash: `fixture-${input.id}-hash` },
+    }),
+    sections: [{ prose: input.prose, licensedClaimIds: ['c01'] }],
+    expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
+  };
+}
+
+const proseEntityPerspectiveUserClauseTough = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-user-clause-tough',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} is tough against you, and you are 2-3 in your sets.`,
+});
+
+const proseEntityPerspectiveUserClauseTrail = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-user-clause-trail',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} vs you: you trail 2-3.`,
+});
+
+const proseEntityPerspectiveUserClauseSit = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-user-clause-sit',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} has struggled against you, yet you sit at 2-3.`,
+});
+
+const proseEntityPerspectiveOpponentSubjectUnreversed = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-opponent-subject-unreversed',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} is 3-2 against you.`,
+});
+
+const proseEntityPerspectiveOpponentSubjectReversed = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-opponent-subject-reversed',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} is 2-3 against you.`,
+});
+
+const proseEntityPerspectiveSplitQuestion = makeProseEntityPerspectiveFixture({
+  id: 'prose-entity-perspective-split-question',
+  prose: `Against you? ${PROSE_ENTITY_DIGIT_TAG} is 3-2.`,
+});
+
 const PROSE_ENCODING_JA_SUBJECT: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
 const PROSE_ENCODING_JA_ROW_ID = evidenceIdFor({
   predicate: 'stage_record',
@@ -1250,4 +1303,10 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   confidenceWordTierInParenthetical,
   confidenceWordTierEndOfSentence,
   proseEntityDigitBearingTag,
+  proseEntityPerspectiveUserClauseTough,
+  proseEntityPerspectiveUserClauseTrail,
+  proseEntityPerspectiveUserClauseSit,
+  proseEntityPerspectiveOpponentSubjectUnreversed,
+  proseEntityPerspectiveOpponentSubjectReversed,
+  proseEntityPerspectiveSplitQuestion,
 ];

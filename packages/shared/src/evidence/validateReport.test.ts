@@ -1013,7 +1013,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Code review iteration 2 (R2-WR-03, R2-IN-01): head-to-head prose. One
+// Code review iteration 2 (R2-WR-03) and iteration 3 (R3-CR-01): head-to-head prose. One
 // section licensing one `head_to_head_record` claim against `tag`.
 // ---------------------------------------------------------------------------
 
@@ -1086,19 +1086,59 @@ describe('R2-WR-03: digits inside a licensed opponent tag are part of the name, 
   });
 });
 
-describe('R2-IN-01: an opponent-perspective W-L is the reversed licensed pair, with the opponent as the subject', () => {
-  it('the opponent as subject, "against you": the reversed pair of that opponent\'s licensed record passes', () => {
-    expect(
-      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo is 2-3 against you.'),
-    ).toEqual({ stripped: [], dropped: 0 });
-    expect(
-      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, "MkLeo's record against you is 2-3."),
-    ).toEqual({ stripped: [], dropped: 0 });
+describe("R3-CR-01: a W-L pair is the exact ordered licensed pair from the player's side, and an opponent-perspective section withholds every pair", () => {
+  it('opponent-perspective phrasings are withheld again, whichever order the pair is in', () => {
+    // A licensed 3-2 (the player won 3). "MkLeo is 3-2 against you" is false
+    // from MkLeo's side; "MkLeo is 2-3 against you" is true but is withheld
+    // too: the lint cannot read perspective, so it never licenses it.
+    for (const prose of [
+      'MkLeo is 3-2 against you.',
+      'MkLeo is 2-3 against you.',
+      "MkLeo's record against you is 2-3.",
+      'MkLeo beat you 3-2.',
+      'MkLeo leads you 3-2 in sets.',
+      'MkLeo vs. you: 3-2.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
   });
 
-  it('the opponent as subject with the UNREVERSED pair is a false statement and strips', () => {
+  it("the reviewer's inverted user-clause phrasings all strip", () => {
+    for (const prose of [
+      'MkLeo is tough against you, and you are 2-3 in your sets.',
+      'MkLeo vs you: you trail 2-3.',
+      'MkLeo has struggled against you, yet you sit at 2-3.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('the perspective marker is judged over the whole section, so a sentence split cannot move the pair away from it', () => {
     expect(
-      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo is 3-2 against you.'),
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'Against you? MkLeo is 3-2.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+    expect(
+      validateHeadToHead(
+        'MkLeo',
+        { wins: 3, losses: 2 },
+        'MkLeo plays patiently against you. Their record here: 3-2.',
+      ),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
+  });
+
+  it('known limit (recorded in the VAL-03 map): a TRUE user-clause record in a perspective section is over-stripped', () => {
+    expect(
+      validateHeadToHead(
+        'MkLeo',
+        { wins: 3, losses: 2 },
+        'MkLeo has struggled against you, and you lead 3-2.',
+      ),
     ).toEqual({ stripped: ['main'], dropped: 0 });
   });
 
@@ -1109,10 +1149,12 @@ describe('R2-IN-01: an opponent-perspective W-L is the reversed licensed pair, w
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'You are 2-3 against MkLeo.'),
     ).toEqual({ stripped: ['main'], dropped: 0 });
-    // Without "against you" the tag at the start is not read as the subject
-    // of a head-to-head statement: the exact ordered pair rule applies.
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo sets went 3-2 your way.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    // A perspective marker with no W-L pair in the section strips nothing.
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo plays patiently against you.'),
     ).toEqual({ stripped: [], dropped: 0 });
   });
 
