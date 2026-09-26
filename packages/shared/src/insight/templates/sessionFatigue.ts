@@ -5,6 +5,7 @@ import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '
 import { SUGGESTION_MIN_GAMES } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
+import { buildSessionBucketsMark } from '../marks.js';
 
 const TEMPLATE_ID = 'sessionFatigue' as const;
 
@@ -23,6 +24,8 @@ interface SessionCohorts {
   longSessionCount: number;
   late: Match[];
   early: Match[];
+  /** Plan 39.1-40: games 11-20 (0-based indices 10..19) of every session that reaches game 11 — the mark's middle bucket, display context only. */
+  middle: Match[];
 }
 
 /**
@@ -48,7 +51,24 @@ function splitSessionCohorts(matches: Match[]): SessionCohorts {
     }
   }
 
-  return { longSessionCount: longSessions.length, late, early };
+  // Plan 39.1-40 (sketch 002-C, DD-12): the middle bucket of the card's mark.
+  // It never feeds the verdict, the state or the counted set.
+  const middle: Match[] = [];
+  for (const session of sessions) {
+    if (session.length > SESSION_EARLY_GAME_COUNT) {
+      middle.push(...session.slice(SESSION_EARLY_GAME_COUNT, SESSION_LATE_GAME_INDEX));
+    }
+  }
+
+  return { longSessionCount: longSessions.length, late, early, middle };
+}
+
+function bucketOf(
+  fromGame: number,
+  toGame: number | null,
+  rate: { wins: number; losses: number; total: number },
+) {
+  return { fromGame, toGame, wins: rate.wins, losses: rate.losses, total: rate.total };
 }
 
 function buildSessionFatigueInsight(input: {
@@ -63,7 +83,7 @@ function buildSessionFatigueInsight(input: {
     return null;
   }
 
-  const { longSessionCount, late, early } = splitSessionCohorts(scopedMatches);
+  const { longSessionCount, late, early, middle } = splitSessionCohorts(scopedMatches);
 
   const lateRate = toRateValue(late);
   const earlyRate = toRateValue(early);
@@ -174,6 +194,14 @@ function buildSessionFatigueInsight(input: {
     // Plan 39.1-22: the late-session cohort — the pooled cohort this card's own
     // count (`late.length`/`window.games`) counts.
     countedMatchIds: countedMatchIdsOf(late),
+    // Plan 39.1-40 (sketch 002-C): the three game-number buckets. Bucket 1 and
+    // bucket 3 are the verdict's own cohorts verbatim (the baseline and recent
+    // claims); the middle bucket is display context only.
+    mark: buildSessionBucketsMark([
+      bucketOf(1, SESSION_EARLY_GAME_COUNT, earlyRate),
+      bucketOf(SESSION_EARLY_GAME_COUNT + 1, SESSION_LATE_GAME_INDEX, toRateValue(middle)),
+      bucketOf(SESSION_LATE_GAME_INDEX + 1, null, lateRate),
+    ]),
   };
 
   return insight;

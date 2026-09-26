@@ -26,6 +26,8 @@ import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatPercent } from '@/lib/formatPercent';
+import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
+import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention. */
 function claimChipKindFor(kind: Insight['kind']): ClaimChipKind {
@@ -68,12 +70,10 @@ function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
  * `FALLBACK_ROUTE_BY_KIND` mapping) follow, capped at 3 total.
  */
 function buildDoorNodes(
-  insight: Insight,
+  descriptors: InsightDoorDescriptor[],
   t: TFunction,
-  subjectPath: (personalPath: string) => string,
   extraDoors: ReactNode[] = [],
 ): InsightCardDoors | undefined {
-  const descriptors = buildInsightDoors({ insight, subjectPath });
   const doorLinks = descriptors.map((door) => (
     <Link key={door.kind} to={door.href}>
       {insightDoorLabel(door, t)}
@@ -107,6 +107,29 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
   }
   if (insight.templateId === 'lastEventRecap') {
     return t('insights.evidence.single', { record, cue });
+  }
+  // TiltCost pools every spot of the account's history and SessionFatigue
+  // every session — lifetime / cohort samples, never a recent horizon. Card
+  // states that reach here always carry a tier (n at least 8); a tier-less
+  // one falls back to the single-sample line.
+  if (insight.templateId === 'tiltCost' || insight.templateId === 'sessionFatigue') {
+    if (!tier) {
+      return t('insights.evidence.single', { record, cue });
+    }
+    const tierLabel = t(`insights.evidence.tier.${tier}`);
+    if (insight.templateId === 'tiltCost') {
+      return t('insights.evidence.spots', {
+        record,
+        count: claim.value.total,
+        tier: tierLabel,
+      });
+    }
+    const lateGameNumber = Number(insight.copy.values.lateGameNumber);
+    return t('insights.evidence.longSessions', {
+      count: Number(insight.copy.values.longSessionCount),
+      games: lateGameNumber - 1,
+      tier: tierLabel,
+    });
   }
   // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
   // percent formatter instead of a bare `${Math.round(x * 100)}%` template
@@ -258,12 +281,17 @@ export function TrendsReadsRail({
         {t('insights.door.ratingModelNote')}
       </button>
     ) : null;
-    const doors = buildDoorNodes(
-      insight,
-      t,
-      subjectPath,
-      ratingModelButton ? [ratingModelButton] : [],
-    );
+    // One descriptor build per card: the doors AND the mark's games href.
+    const descriptors = buildInsightDoors({ insight, subjectPath });
+    const doors = buildDoorNodes(descriptors, t, ratingModelButton ? [ratingModelButton] : []);
+    const gamesHref = descriptors.find((door) => door.kind === 'games')?.href ?? '';
+    // Plan 39.1-40 (sketch 002-C): the evidence mark, only when the card has one.
+    const mark =
+      trendsReadMarkKind(insight) !== null ? (
+        <TrendsReadMark insight={insight} gamesHref={gamesHref} />
+      ) : undefined;
+    const subLineKey = insight.copy.values.subLineKey;
+    const sub = typeof subLineKey === 'string' ? t(subLineKey, insight.copy.values) : undefined;
     return {
       id: insight.id,
       render: ({ onDismiss }) => (
@@ -280,6 +308,8 @@ export function TrendsReadsRail({
             verdict={verdict}
             evidence={evidence}
             span={span}
+            mark={mark}
+            sub={sub}
             caveat={caveat}
             doors={doors}
             onDismiss={onDismiss}

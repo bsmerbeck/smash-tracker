@@ -3219,7 +3219,32 @@
       "single": "{{record}} · {{cue}}",
       "span": "Those {{count}} games span {{from}} – {{to}}.",
       "range": "{{rate}} over {{count}}, inside the usual range ({{lower}}–{{upper}}).",
-      "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}"
+      "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}",
+      "tier": {
+        "low": "low confidence",
+        "medium": "medium confidence",
+        "high": "high confidence"
+      },
+      "spots_one": "{{record}} · {{count}} spot · {{tier}} · lifetime scope",
+      "spots_other": "{{record}} · {{count}} spots · {{tier}} · lifetime scope",
+      "longSessions_one": "{{count}} session ran past {{games}} games · {{tier}}",
+      "longSessions_other": "{{count}} sessions ran past {{games}} games · {{tier}}"
+    },
+    "mark": {
+      "nextGame": "Next game",
+      "rateVsBaseline": "{{rate}} vs {{baseline}}",
+      "tiltCostRow_one": "Next game after 2 straight losses — {{rate}} over {{count}} spot vs {{baseline}} baseline; opens those games.",
+      "tiltCostRow_other": "Next game after 2 straight losses — {{rate}} over {{count}} spots vs {{baseline}} baseline; opens those games.",
+      "sessionBuckets": {
+        "label": "Win rate by game number within a session",
+        "range": "Games {{from}}–{{to}}",
+        "open": "Games {{from}}+"
+      },
+      "bucketValue": "{{rate}} · {{count}}",
+      "setStrip_one": "{{count}} set — {{won}} won, {{lost}} lost.",
+      "setStrip_other": "{{count}} sets — {{won}} won, {{lost}} lost.",
+      "setTick": "vs {{opponent}} · {{record}}",
+      "setTickNoOpponent": "Set · {{record}}"
     },
     "state": {
       "collapsed": {

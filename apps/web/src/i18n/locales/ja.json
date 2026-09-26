@@ -3219,7 +3219,32 @@
       "single": "{{record}} · {{cue}}",
       "span": "この{{count}}試合の期間は{{from}}〜{{to}}です。",
       "range": "{{count}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
-      "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}"
+      "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}",
+      "tier": {
+        "low": "信頼度低",
+        "medium": "信頼度中",
+        "high": "信頼度高"
+      },
+      "spots_one": "{{record}} · {{count}}件 · {{tier}} · 全期間の範囲",
+      "spots_other": "{{record}} · {{count}}件 · {{tier}} · 全期間の範囲",
+      "longSessions_one": "{{count}}セッションが{{games}}試合を超えました · {{tier}}",
+      "longSessions_other": "{{count}}セッションが{{games}}試合を超えました · {{tier}}"
+    },
+    "mark": {
+      "nextGame": "次の試合",
+      "rateVsBaseline": "{{rate}}(基準 {{baseline}})",
+      "tiltCostRow_one": "2連敗直後の次の試合 — {{count}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
+      "tiltCostRow_other": "2連敗直後の次の試合 — {{count}}件で{{rate}}、基準は{{baseline}}。該当する試合を開きます。",
+      "sessionBuckets": {
+        "label": "セッション内の試合番号別の勝率",
+        "range": "{{from}}–{{to}}試合目",
+        "open": "{{from}}試合目以降"
+      },
+      "bucketValue": "{{rate}} · {{count}}",
+      "setStrip_one": "{{count}}セット — {{won}}勝、{{lost}}敗。",
+      "setStrip_other": "{{count}}セット — {{won}}勝、{{lost}}敗。",
+      "setTick": "vs {{opponent}} · {{record}}",
+      "setTickNoOpponent": "セット · {{record}}"
     },
     "state": {
       "collapsed": {

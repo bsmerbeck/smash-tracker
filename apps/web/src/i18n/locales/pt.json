@@ -3219,7 +3219,32 @@
       "single": "{{record}} · {{cue}}",
       "span": "Essas {{count}} partidas vão de {{from}} a {{to}}.",
       "range": "{{rate}} em {{count}}, dentro da faixa habitual ({{lower}}–{{upper}}).",
-      "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}"
+      "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}",
+      "tier": {
+        "low": "confiança baixa",
+        "medium": "confiança média",
+        "high": "confiança alta"
+      },
+      "spots_one": "{{record}} · {{count}} caso · {{tier}} · escopo histórico",
+      "spots_other": "{{record}} · {{count}} casos · {{tier}} · escopo histórico",
+      "longSessions_one": "{{count}} sessão passou de {{games}} partidas · {{tier}}",
+      "longSessions_other": "{{count}} sessões passaram de {{games}} partidas · {{tier}}"
+    },
+    "mark": {
+      "nextGame": "Próxima partida",
+      "rateVsBaseline": "{{rate}} vs {{baseline}}",
+      "tiltCostRow_one": "Próxima partida após 2 derrotas seguidas — {{rate}} em {{count}} caso vs {{baseline}} de referência; abre essas partidas.",
+      "tiltCostRow_other": "Próxima partida após 2 derrotas seguidas — {{rate}} em {{count}} casos vs {{baseline}} de referência; abre essas partidas.",
+      "sessionBuckets": {
+        "label": "Taxa de vitórias pelo número da partida na sessão",
+        "range": "Partidas {{from}}–{{to}}",
+        "open": "Partidas {{from}}+"
+      },
+      "bucketValue": "{{rate}} · {{count}}",
+      "setStrip_one": "{{count}} set — {{won}} vencido, {{lost}} perdido.",
+      "setStrip_other": "{{count}} sets — {{won}} vencidos, {{lost}} perdidos.",
+      "setTick": "vs {{opponent}} · {{record}}",
+      "setTickNoOpponent": "Set · {{record}}"
     },
     "state": {
       "collapsed": {

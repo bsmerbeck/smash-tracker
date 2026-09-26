@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
 import {
   ACCOUNT_SCOPE,
   TRENDS_READ_TEMPLATES,
@@ -103,8 +104,20 @@ function backfill(templateId: string): Insight {
   }).find((insight) => insight.templateId === templateId)!;
 }
 
-function renderMark(insight: Insight) {
-  return render(<TrendsReadMark insight={insight} gamesHref={GAMES_HREF} />);
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</output>
+  );
+}
+
+function renderMark(insight: Insight, { probe = false } = {}) {
+  return render(
+    <MemoryRouter initialEntries={['/trends']}>
+      <TrendsReadMark insight={insight} gamesHref={GAMES_HREF} />
+      {probe && <LocationProbe />}
+    </MemoryRouter>,
+  );
 }
 
 function rateOf(claim: Insight['recent']): number {
@@ -132,6 +145,14 @@ describe('TrendsReadMark (39.1-40)', () => {
 
     const scale = container.querySelector('[data-slot="trends-read-scale"]');
     expect(scale?.textContent?.replace(/\s+/g, '')).toBe('0%50%100%');
+  });
+
+  it("TiltCost: following the 'Next game' row stays in the app (same route, the card's claim)", () => {
+    renderMark(ownRead('tiltCost', tiltFixture()), { probe: true });
+    fireEvent.click(document.querySelector('[data-slot="comparison-bars-dumbbell"] a')!);
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/trends?claim=tiltCost%3Aaccount%3Alast30#games',
+    );
   });
 
   it('SessionFatigue: three rows Games 1–10 / 11–20 / 21+ with rate and n', () => {

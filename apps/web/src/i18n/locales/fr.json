@@ -3219,7 +3219,32 @@
       "single": "{{record}} · {{cue}}",
       "span": "Ces {{count}} matchs s'étendent de {{from}} à {{to}}.",
       "range": "{{rate}} sur {{count}}, dans la plage habituelle ({{lower}}–{{upper}}).",
-      "allTimeOnly": "{{record}} · {{rate}} historique · {{cue}}"
+      "allTimeOnly": "{{record}} · {{rate}} historique · {{cue}}",
+      "tier": {
+        "low": "confiance faible",
+        "medium": "confiance moyenne",
+        "high": "confiance élevée"
+      },
+      "spots_one": "{{record}} · {{count}} cas · {{tier}} · périmètre historique",
+      "spots_other": "{{record}} · {{count}} cas · {{tier}} · périmètre historique",
+      "longSessions_one": "{{count}} session a dépassé {{games}} matchs · {{tier}}",
+      "longSessions_other": "{{count}} sessions ont dépassé {{games}} matchs · {{tier}}"
+    },
+    "mark": {
+      "nextGame": "Match suivant",
+      "rateVsBaseline": "{{rate}} vs {{baseline}}",
+      "tiltCostRow_one": "Match suivant après 2 défaites d'affilée — {{rate}} sur {{count}} cas vs {{baseline}} de référence ; ouvre ces matchs.",
+      "tiltCostRow_other": "Match suivant après 2 défaites d'affilée — {{rate}} sur {{count}} cas vs {{baseline}} de référence ; ouvre ces matchs.",
+      "sessionBuckets": {
+        "label": "Taux de victoire selon le numéro du match dans la session",
+        "range": "Matchs {{from}}–{{to}}",
+        "open": "Matchs {{from}}+"
+      },
+      "bucketValue": "{{rate}} · {{count}}",
+      "setStrip_one": "{{count}} set — {{won}} gagné, {{lost}} perdu.",
+      "setStrip_other": "{{count}} sets — {{won}} gagnés, {{lost}} perdus.",
+      "setTick": "vs {{opponent}} · {{record}}",
+      "setTickNoOpponent": "Set · {{record}}"
     },
     "state": {
       "collapsed": {

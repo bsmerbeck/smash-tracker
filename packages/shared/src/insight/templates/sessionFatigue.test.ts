@@ -118,7 +118,9 @@ describe('sessionFatigue session-buckets mark (39.1-40)', () => {
   }
 
   it.each([
-    ['steady', (_s: number, g: number) => g % 2 === 0],
+    // Steady: every cohort at 50% — alternating games, and game 21 (index 20)
+    // won in every other session.
+    ['steady', (s: number, g: number) => (g === 20 ? s % 2 === 0 : g % 2 === 0)],
     ['trend', (_s: number, g: number) => g < 10],
   ] as const)(
     'a %s read carries exactly three buckets (1-10, 11-20, 21+); bucket 1 = the baseline claim, bucket 3 = the recent claim',

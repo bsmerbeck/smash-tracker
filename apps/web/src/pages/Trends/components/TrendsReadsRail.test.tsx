@@ -435,9 +435,18 @@ describe('TrendsReadsRail', () => {
           mark!.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
         ).toBeTruthy();
       }
-      expect(
-        cardFor('tiltCost').querySelector('[data-slot="comparison-bars-dumbbell"]'),
-      ).not.toBeNull();
+      const tiltCard = cardFor('tiltCost');
+      const rowHref = tiltCard
+        .querySelector('[data-slot="comparison-bars-dumbbell"] a')
+        ?.getAttribute('href');
+      const doorHref = tiltCard
+        .querySelector('[data-slot="insight-card-doors"] a')
+        ?.getAttribute('href');
+      // The 'Next game' row links to the card's own counted games.
+      // (The router Link resolves against the current path; the kit row keeps
+      // the same-route relative href — both land on the same location.)
+      expect(rowHref).toBeTruthy();
+      expect(new URL(rowHref!, 'http://app/').href).toBe(new URL(doorHref!, 'http://app/').href);
       expect(
         cardFor('sessionFatigue').querySelector('[data-slot="trends-session-buckets"]'),
       ).not.toBeNull();
