@@ -32,6 +32,15 @@ final task._
 
 **Method mix:** not yet recorded.
 
+**Denominators (code review API-WR-05/06):** an `exact` row's denominator is the persisted reconcile
+run's `reconciledUnits` plus its phantom and duplicate exceptions, and its numerator is
+`reconciledUnits` minus the missing ones — the outbox-pending rows that run's `checked` also counts
+are left out of both. An `approximate` row's denominator is `eventCounts` over
+`RECONCILED_EVENT_NAMES`. A row reads `n/a` when its denominator is 0, when it is approximate with
+no exception rows at all (no reconcile evidence — never read as 100%), or when it is the readout's
+own current UTC day (partial). No numerator is ever negative. The readout prints these definitions
+as its own footnotes, which are transcribed below verbatim.
+
 ### FOOTNOTES
 
 _Not yet filled — the footnotes are transcribed verbatim from the readout's printed output, never

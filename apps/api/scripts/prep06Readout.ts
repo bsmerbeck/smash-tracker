@@ -12,12 +12,17 @@
  * REQUIRES, both read from `process.env` ONLY — never a CLI argument (a
  * flag lands in shell history and in every `ps` listing on the machine):
  *
- *   PREP06_API_BASE_URL    the API origin, e.g. https://grandfinals.gg
+ *   PREP06_API_BASE_URL    the API's Cloud Run SERVICE URL, e.g.
+ *                          https://smash-tracker-api-781901075636.us-central1.run.app
+ *                          (NOT https://grandfinals.gg — Firebase Hosting rewrites
+ *                          only /api/** and /s/**, so /internal/jobs/* there is the
+ *                          SPA shell; the script refuses a Hosting origin and any
+ *                          non-https origin before sending the secret)
  *   INTERNAL_JOBS_SECRET   the shared secret sent as X-Internal-Jobs-Secret
  *
  * Usage, from the repo root:
  *
- *   PREP06_API_BASE_URL=https://grandfinals.gg \
+ *   PREP06_API_BASE_URL=https://smash-tracker-api-781901075636.us-central1.run.app \
  *   INTERNAL_JOBS_SECRET=<the real secret> \
  *     pnpm --filter @smash-tracker/api exec tsx scripts/prep06Readout.ts --days 7
  *
@@ -30,7 +35,9 @@
  * secret sent as the `X-Internal-Jobs-Secret` header. On a non-200 response,
  * prints the HTTP status only — never the response body (which could echo
  * request context back) and never the request headers (which carry the
- * secret).
+ * secret). A 200 that is not `application/json`, is not valid JSON, or does
+ * not match the route's response schema fails LOUDLY (exit code 1) with a
+ * static message — again never the body (code review API-WR-07).
  *
  * PRINTS ONLY: the window, one row per day (day, method, reconcile%,
  * duplicate%, numerator, denominator), the method mix, and the footnotes —
@@ -38,9 +45,13 @@
  * static labels. NEVER prints: a uid, an opponent tag, an event payload, a
  * header value, or a URL with the secret embedded in it.
  */
-import type { FunnelReadoutResult } from '../src/jobs/funnelReadout.js';
 import { RECONCILED_EVENT_NAMES } from '../src/jobs/reconcile.js';
-import { computeReadout, type Readout } from './prep06ReadoutCore.js';
+import {
+  assertSendableBaseUrl,
+  computeReadout,
+  parseFunnelReadoutResponse,
+  type Readout,
+} from './prep06ReadoutCore.js';
 
 const INTERNAL_JOBS_SECRET_HEADER = 'x-internal-jobs-secret';
 const MIN_DAYS = 1;
@@ -98,9 +109,13 @@ async function main(): Promise<void> {
   const apiBaseUrl = process.env.PREP06_API_BASE_URL;
   if (!apiBaseUrl) {
     throw new Error(
-      'PREP06_API_BASE_URL is required (the API origin, e.g. https://grandfinals.gg) — export it in your own shell, it is never read from a flag',
+      'PREP06_API_BASE_URL is required (the Cloud Run service URL, see docs/prep06-readout-runbook.md) — export it in your own shell, it is never read from a flag',
     );
   }
+  // Code review API-WR-07: refuse, BEFORE the secret leaves this machine, a
+  // non-https origin or a Firebase Hosting origin (which answers
+  // /internal/jobs/* with the SPA shell and a 200).
+  assertSendableBaseUrl(apiBaseUrl);
   // Read at invocation time from process.env ONLY — never a CLI argument
   // (docs/prep06-readout-runbook.md states the same rule to the owner).
   const secret = process.env.INTERNAL_JOBS_SECRET;
@@ -117,16 +132,22 @@ async function main(): Promise<void> {
     headers: { [INTERNAL_JOBS_SECRET_HEADER]: secret },
   });
 
-  if (!response.ok) {
-    // Status only — never the response body or the request headers, either
-    // of which could leak request context or the secret into a log.
-    console.error(`funnel-readout request failed: HTTP ${response.status}`);
+  // Status, media type and shape are checked by the pure core; every failure
+  // message is static text plus the status — never the response body or the
+  // request headers, either of which could leak request context or the
+  // secret into a log.
+  const outcome = parseFunnelReadoutResponse({
+    status: response.status,
+    contentType: response.headers.get('content-type'),
+    bodyText: response.status === 200 ? await response.text() : '',
+  });
+  if (!outcome.ok) {
+    console.error(outcome.message);
     process.exitCode = 1;
     return;
   }
 
-  const result = (await response.json()) as FunnelReadoutResult;
-  const readout = computeReadout(result, RECONCILED_EVENT_NAMES);
+  const readout = computeReadout(outcome.result, RECONCILED_EVENT_NAMES);
   printReadout(readout, (line) => console.log(line));
 }
 

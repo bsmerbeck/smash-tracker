@@ -36,6 +36,10 @@ function dayWithSummary(
       missing: 1,
       phantom: 1,
       duplicate: 0,
+      // Code review API-WR-06: a current summary carries the reconciled
+      // units apart from the outbox rows; by default none are outbox rows.
+      reconciledUnits: overrides.checked ?? 100,
+      outboxPending: 0,
       generatedAt: 1_700_000_000_000,
       ...overrides,
     },
@@ -55,17 +59,20 @@ function approximateDay(
 }
 
 describe('computeDayMetric — exact arm (Task 1)', () => {
-  it('computes reconcilePercent and duplicatePercent from the persisted checked denominator', () => {
+  it('computes reconcilePercent and duplicatePercent from the persisted reconciled units (code review API-WR-06 denominator)', () => {
+    // Updated for API-WR-06: phantoms and duplicates are ledger anomalies the
+    // run found BEYOND the units it checked, so they join the denominator
+    // rather than being subtracted from a count that never included them.
     const day = dayWithSummary({ checked: 100, missing: 1, phantom: 1, duplicate: 2 });
 
     const metric = computeDayMetric(day, RECONCILED_EVENT_NAMES);
 
     expect(metric.method).toBe('exact');
-    expect(metric.denominator).toBe(100);
-    expect(metric.numerator).toBe(96); // 100 - 1 - 1 - 2
-    expect(metric.reconcilePercent).toBeCloseTo(96, 5);
-    expect(metric.duplicatePercent).toBeCloseTo(2, 5);
-    expect(metric.note).toContain('checked');
+    expect(metric.denominator).toBe(103); // 100 reconciled units + 1 phantom + 2 duplicate
+    expect(metric.numerator).toBe(99); // 100 - 1 missing
+    expect(metric.reconcilePercent).toBeCloseTo((99 / 103) * 100, 5);
+    expect(metric.duplicatePercent).toBeCloseTo((2 / 103) * 100, 5);
+    expect(metric.note).toContain('reconciledUnits');
     expect(metric.note.length).toBeGreaterThan(0);
   });
 
@@ -81,7 +88,7 @@ describe('computeDayMetric — exact arm (Task 1)', () => {
     expect(metric.note.length).toBeGreaterThan(0);
   });
 
-  it('labels the metric method "exact" whenever a persisted summary is present', () => {
+  it('labels the metric method "exact" whenever a persisted summary with reconciledUnits is present', () => {
     const day = dayWithSummary();
 
     const metric = computeDayMetric(day, RECONCILED_EVENT_NAMES);

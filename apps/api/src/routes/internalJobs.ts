@@ -65,10 +65,14 @@ const reconcileSummarySchema = z.object({
   missing: z.number().int().nonnegative(),
   phantom: z.number().int().nonnegative(),
   duplicate: z.number().int().nonnegative(),
+  // Code review API-WR-06: additive, absent on older summaries.
+  reconciledUnits: z.number().int().nonnegative().nullish(),
+  outboxPending: z.number().int().nonnegative().nullish(),
   generatedAt: z.number().int().nonnegative(),
 });
 
-const funnelReadoutResultSchema = z.object({
+/** The `GET /internal/jobs/funnel-readout` 200 body — exported so the owner-run PREP-06 readout's own response check can be proven to agree with it. */
+export const funnelReadoutResultSchema = z.object({
   generatedAt: z.number().int().nonnegative(),
   days: z.array(
     z.object({

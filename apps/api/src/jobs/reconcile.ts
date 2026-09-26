@@ -283,7 +283,11 @@ export async function runReconcile(
   // see pending-projection volume alongside reconciliation drift; it does
   // not currently produce its own exception class (GA4 projection failures
   // are covered by the outbox's own retry/backoff, not this job).
-  result.checked += Object.keys((outboxSnapshot.val() ?? {}) as Record<string, unknown>).length;
+  const outboxPendingCount = Object.keys(
+    (outboxSnapshot.val() ?? {}) as Record<string, unknown>,
+  ).length;
+  const reconciledUnits = result.checked;
+  result.checked += outboxPendingCount;
 
   // D-19 (39-CONTEXT.md): additive second write target. A fresh payload
   // object spreading `result` — `result` itself is never mutated and never
@@ -293,7 +297,19 @@ export async function runReconcile(
   // day's prior summary in full (never appends) — this run is the exclusive
   // writer of its own day-shard, the same property `writeException` already
   // relies on for `reconciliationExceptions/{day}/*`.
-  const reconcileSummaryPayload = { ...result, generatedAt: Date.now() };
+  //
+  // Code review API-WR-06: `checked` also counts the outbox-pending rows,
+  // which no exception class ever evaluates, so it is not an honest
+  // denominator. The units ACTUALLY reconciled (the domain transitions the
+  // passes above checked) and the outbox-pending count are persisted apart;
+  // the PREP-06 readout's exact arm uses `reconciledUnits`. Numbers only,
+  // always present, so the write is RTDB-safe as-is.
+  const reconcileSummaryPayload = {
+    ...result,
+    reconciledUnits,
+    outboxPending: outboxPendingCount,
+    generatedAt: Date.now(),
+  };
   await database.ref(`reconcileSummaries/${day}`).set(reconcileSummaryPayload);
 
   return result;

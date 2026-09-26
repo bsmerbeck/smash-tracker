@@ -33,6 +33,15 @@ export interface ReconcileSummary {
   missing: number;
   phantom: number;
   duplicate: number;
+  /**
+   * Code review API-WR-06: the domain units the run actually reconciled —
+   * `checked` minus the outbox-pending rows it also counts. Absent on a
+   * summary written before this field existed; the readout then refuses to
+   * call the day exact.
+   */
+  reconciledUnits?: number;
+  /** Code review API-WR-06: the outbox-pending rows counted into `checked` (never evaluated by any exception class). */
+  outboxPending?: number;
   generatedAt: number;
 }
 
@@ -105,7 +114,18 @@ function parseReconcileSummary(raw: unknown): ReconcileSummary | undefined {
     typeof duplicate === 'number' &&
     typeof generatedAt === 'number'
   ) {
-    return { checked, missing, phantom, duplicate, generatedAt };
+    const { reconciledUnits, outboxPending } = value;
+    return {
+      checked,
+      missing,
+      phantom,
+      duplicate,
+      // Conditional spread: a summary written before these fields existed
+      // yields no key at all, never an undefined own-property.
+      ...(typeof reconciledUnits === 'number' ? { reconciledUnits } : {}),
+      ...(typeof outboxPending === 'number' ? { outboxPending } : {}),
+      generatedAt,
+    };
   }
   return undefined;
 }
