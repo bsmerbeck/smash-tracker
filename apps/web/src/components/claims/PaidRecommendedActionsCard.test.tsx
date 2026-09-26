@@ -127,8 +127,16 @@ describe('storedActions', () => {
     expect(atom.sample.dateRange).toBeNull();
   });
 
-  it('never returns more than three actions', () => {
+  // Code review WEB-05: this replaces a `length <= 3` assertion that could
+  // never fail (three slot keys, one candidate each). The exact resolution is
+  // pinned here; the cap itself is proven where it can break, in
+  // `storedActionsCap.test.ts` (four slot keys, four resolvable slots).
+  it('resolves the three stored slots to exactly their three candidates, in slot order', () => {
     const { actions } = resolveStoredActions({ actions: ACTION_SLOTS, claims: ACTION_CLAIM_MAP });
-    expect(actions.length).toBeLessThanOrEqual(3);
+    expect(actions.map((action) => [action.kind, action.claimIds])).toEqual([
+      ['matchup_practice', [PRACTICE_CLAIM.id]],
+      ['drill', [STAGE_HABIT_CLAIM.id]],
+      ['drill', [FAMILIARITY_CLAIM.id]],
+    ]);
   });
 });
