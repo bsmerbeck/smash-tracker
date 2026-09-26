@@ -6204,3 +6204,132 @@ describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the pre-call fa
     expect(await balanceOf(database)).toBe(8);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review API-CR-01: a pre-paid bundle child TRUSTS the spend fact its
+// bundle recorded at purchase (`wasCharged` on the stored child job) and
+// carries it through the queued rewrite, the running claim and every
+// terminal write — it never re-derives `spent` from the uid's free-access
+// status at execution time, which can change between purchase and run (the
+// REPORTS_ALLOWED_UIDS list and the demo allowlist are both live inputs).
+// Recomputing is only the fallback for a pre-39-10 child that carries no
+// fact. Money: balance + `refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+/** A prep app whose free-access list the test can change between purchase and execution; the model refuses, so every executed child FAILS. */
+function mutableAccessPrepApp(initialAllowed: string[]) {
+  const reportsConfig: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(initialAllowed),
+  };
+  const modelSpy = vi.fn(async () => ({ stop_reason: 'refusal' as const, parsed_output: null }));
+  const built = buildTestApp({
+    reports: reportsConfig,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    }),
+  });
+  return { ...built, modelSpy, allowedUids: reportsConfig.allowedUids as Set<string> };
+}
+
+describe('code review API-CR-01: a bundle child trusts the spend fact recorded at purchase', () => {
+  it('bought while FREE, then free access is LOST before the child runs: the failed child is never refunded (no credit minted) and keeps wasCharged false on every write', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const jobs = await submitBundle(app, 'bundle-cr01-free');
+    expect(await jobRecord(database, jobs[0]!.jobId)).toMatchObject({ wasCharged: false });
+    expect(await balanceOf(database)).toBe(5);
+
+    allowedUids.delete(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(firstWasChargedWrite(writes, child.jobId, true)).toBe(-1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(spendLedgerRefs(database)).toEqual([]);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+
+  it('PAID, then free access is GAINED before the child runs: the failed child is refunded exactly once and keeps wasCharged true', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-cr01-paid');
+    expect(await balanceOf(database)).toBe(7);
+
+    allowedUids.add(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(firstWasChargedWrite(writes, child.jobId, false)).toBe(-1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
+  });
+
+  it('the queued rewrite of a pre-paid child carries the recorded fact, so the node never sits without it', async () => {
+    const { app, database, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-cr01-queued');
+    allowedUids.add(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+
+    await postPrepSingle(app, child.jobId, child.opponentName);
+
+    const jobPath = `reportJobs/${TEST_UID}/${child.jobId}`;
+    const queuedRewrite = writes.find(
+      (write) =>
+        write.path === jobPath &&
+        write.op === 'set' &&
+        (write.value as { status?: string }).status === 'queued',
+    );
+    expect(queuedRewrite?.value).toMatchObject({ status: 'queued', wasCharged: true });
+  });
+
+  it('fallback: a pre-39-10 child with NO recorded fact still derives it from free access (a non-free uid is refunded once)', async () => {
+    const { app, database } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 7);
+    const now = Date.now();
+    database.seed(`reportJobs/${TEST_UID}/legacy-child-1`, {
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      attempt: 0,
+      creditRef: 'legacy-child-1',
+      reason: 'prep_bundle',
+    });
+
+    const response = await postPrepSingle(app, 'legacy-child-1', BUNDLE_OPPONENT_NAMES[0]);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'legacy-child-1')).toMatchObject({
+      status: 'refunded',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual(['legacy-child-1']);
+    expect(await balanceOf(database)).toBe(8);
+  });
+});
