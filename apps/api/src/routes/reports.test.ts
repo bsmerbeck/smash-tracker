@@ -6319,7 +6319,7 @@ describe('code review API-CR-01: a bundle child trusts the spend fact recorded a
     expect(queuedRewrite?.value).toMatchObject({ status: 'queued', wasCharged: true });
   });
 
-  it('fallback: a pre-39-10 child with NO recorded fact still derives it from free access (a non-free uid is refunded once)', async () => {
+  it('code review R3-IN-03: a pre-39-10 child with NO recorded fact and no bundle-op record to read is NOT charged — live free access is never consulted, no refund is minted', async () => {
     const { app, database } = mutableAccessPrepApp(['someone-else']);
     seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
     database.seed(`credits/${TEST_UID}/balance`, 7);
@@ -6337,11 +6337,11 @@ describe('code review API-CR-01: a bundle child trusts the spend fact recorded a
 
     expect(response.statusCode).toBe(502);
     expect(await jobRecord(database, 'legacy-child-1')).toMatchObject({
-      status: 'refunded',
-      wasCharged: true,
+      status: 'failed',
+      wasCharged: false,
     });
-    expect(refundLedgerRefs(database)).toEqual(['legacy-child-1']);
-    expect(await balanceOf(database)).toBe(8);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(7);
   });
 });
 
@@ -7300,5 +7300,65 @@ describe('code review R3-WR-02: an execution that loses a prep single still refu
     expect(refundLedgerRefs(database)).toEqual([]);
     expect(await balanceOf(database)).toBe(0);
     expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'succeeded' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-IN-03): `creditBundleOps/{uid}/{bundleId}` is
+// written only by `spendCredits` (its claim, its `insufficient` set and its
+// `debited` update) and nothing ever removes it, and a PAID bundle's children
+// are written only after its `debited` marker. So for an existing pre-39-10
+// child, an ABSENT marker proves a free-access submission: not charged.
+// Live free access — the last mint path — is no longer consulted.
+// ---------------------------------------------------------------------------
+
+describe('code review R3-IN-03: an absent or stranded bundle-op marker means a pre-39-10 child was not charged', () => {
+  it('bundle bought FREE (no marker at all), free access LOST before the child runs: no refund is minted', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const child = (await submitBundle(app, 'bundle-in03-nomarker'))[0]!;
+    expect(await balanceOf(database)).toBe(5);
+    expect(
+      (await database.ref(`creditBundleOps/${TEST_UID}/bundle-in03-nomarker`).get()).exists(),
+    ).toBe(false);
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+
+  it('a stranded CLAIMING marker (a paid attempt that never materialised children) and a free submission of the same id: not charged, no refund', async () => {
+    const { app, database, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    database.seed(`creditBundleOps/${TEST_UID}/bundle-in03-claiming`, {
+      status: 'claiming',
+      amount: 3,
+      createdAt: 1,
+    });
+    const child = (await submitBundle(app, 'bundle-in03-claiming'))[0]!;
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
   });
 });
