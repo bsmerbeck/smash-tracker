@@ -10,6 +10,7 @@ import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { OpponentHubPage } from '@/pages/Opponents/OpponentHubPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { GspPage } from '@/pages/Gsp/GspPage';
+import { ScoutPage } from '@/pages/Scout/ScoutPage';
 
 /**
  * The layout-oracle harness's route table (Phase 39.1 Plan 09, review
@@ -218,6 +219,17 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     element: <GspPage />,
     loadedMarker: '[data-slot="gsp-body"]',
     shell: 'app',
+  },
+  {
+    // Plan 39.1-49: the Scout page, unshelled like the other real routes.
+    // Its report exists only after the search form's POST /api/scout (the
+    // fixture plugin answers it), so guard:layout's `scout` route drives the
+    // form and expands Full analysis before this marker appears.
+    id: 'scout',
+    path: '/scout',
+    initialEntry: '/scout',
+    element: <ScoutPage />,
+    loadedMarker: '[data-slot="scout-full-analysis"][data-state="open"]',
   },
 ];
 

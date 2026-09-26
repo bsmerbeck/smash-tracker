@@ -1365,3 +1365,237 @@ export function evaluateMatrixHug({ viewportWidth, tables = [] } = {}) {
       offsetPx: table.left - table.contentLeft,
     }));
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-49: the all-route table-clip sweep and the text-fit family.
+// ---------------------------------------------------------------------------
+
+/**
+ * UI-SPEC §6.6 "< 640 tables become stacked rows": what the sweep discovers
+ * on every route — tables, grids, lists and (OOS-5) tab lists. A candidate
+ * whose nearest horizontal scroll / clip container hides content is a
+ * table-clipped offender.
+ */
+export const TABLE_CLIP_SCAN_SELECTOR =
+  'table, [role="table"], [role="grid"], [role="tablist"], ul, ol, [role="list"]';
+
+/**
+ * Matchups (and every `matchups-*` route plan 39.1-41 adds) is rebuilt by
+ * plans 39.1-41..48: its clips are printed, never enforced here. An exact id
+ * or the `matchups-` prefix only — `match-data` shares the `match` prefix
+ * and stays enforced.
+ */
+export function tableClipModeForRoute(id) {
+  return id === 'matchups' || String(id).startsWith('matchups-') ? 'routed' : 'enforce';
+}
+
+/** Every oracle route the sweep visits: all of them except the synthetic `-fixture` routes, in input order. */
+export function tableClipSweepRoutes(routes) {
+  return routes.filter((route) => !/-fixture$/.test(route.id));
+}
+
+/** The number of distinct visible candidates (discovered plus declared) the sweep measured. */
+export function tableClipSweepScanned({ candidates = [], declared = [] } = {}) {
+  const seen = new Set();
+  for (const item of [...candidates, ...declared.filter((d) => d.found)]) {
+    if (item.hidden) continue;
+    seen.add(item.targetPath);
+  }
+  return seen.size;
+}
+
+/**
+ * The sweep's pure evaluator. `candidates` are every visible-or-hidden match
+ * of TABLE_CLIP_SCAN_SELECTOR, `declared` each route clipTarget's first match
+ * (`found` false when it matched nothing), each item
+ * `{ targetPath, kind, hidden, clipId, clipPath, scrollWidth, clientWidth }`
+ * where the sizes are the nearest ancestor-or-self horizontal scroll / clip
+ * container's (`clipId` null when there is none). `page` is
+ * `{ scrollWidth, innerWidth }`. One violation per clipping container (never
+ * one per candidate inside it); a page wider than its viewport is one
+ * sweep-page-overflow. Routed mode (Matchups) reports both as
+ * table-clip-routed; zero visible candidates, or a declared target matching
+ * nothing, stays a table-clip-unmeasured violation in either mode.
+ */
+export function evaluateTableClipSweep(
+  { candidates = [], declared = [], page = {} } = {},
+  { mode = 'enforce', tolerancePx = 1 } = {},
+) {
+  const violations = [];
+  const routed = mode === 'routed';
+  const report = (violation) => {
+    if (routed) {
+      violations.push({ ...violation, type: 'table-clip-routed', routedType: violation.type });
+    } else {
+      violations.push(violation);
+    }
+  };
+
+  for (const item of declared) {
+    if (!item.found) {
+      violations.push({ type: 'table-clip-unmeasured', selector: item.selector });
+    }
+  }
+  const measured = [...candidates, ...declared.filter((item) => item.found)].filter(
+    (item) => !item.hidden,
+  );
+  if (measured.length === 0) {
+    violations.push({ type: 'table-clip-unmeasured', reason: 'no-visible-candidates' });
+  }
+
+  const byContainer = new Map();
+  for (const item of measured) {
+    if (item.clipId === null || item.clipId === undefined) continue;
+    if (typeof item.scrollWidth !== 'number' || typeof item.clientWidth !== 'number') continue;
+    if (!(item.scrollWidth > item.clientWidth + tolerancePx)) continue;
+    const entry = byContainer.get(item.clipId);
+    if (entry) {
+      // A declared target is usually also a discovered candidate: one path once.
+      if (!entry.candidates.includes(item.targetPath)) entry.candidates.push(item.targetPath);
+    } else {
+      byContainer.set(item.clipId, { item, candidates: [item.targetPath] });
+    }
+  }
+  for (const { item, candidates: inside } of byContainer.values()) {
+    report({
+      type: 'table-clipped',
+      selectorPath: item.clipPath ?? item.targetPath,
+      kind: item.kind,
+      scrollWidth: item.scrollWidth,
+      clientWidth: item.clientWidth,
+      candidates: inside,
+    });
+  }
+
+  if (
+    typeof page.scrollWidth === 'number' &&
+    typeof page.innerWidth === 'number' &&
+    page.scrollWidth > page.innerWidth + tolerancePx
+  ) {
+    report({
+      type: 'sweep-page-overflow',
+      selectorPath: 'html',
+      scrollWidth: page.scrollWidth,
+      innerWidth: page.innerWidth,
+    });
+  }
+  return violations;
+}
+
+/**
+ * Drives a page that needs input before its loaded marker exists (Scout):
+ * each step waits for its selector first, then types / clicks / only waits.
+ * An unknown step type throws naming it; a failed wait rejects naming the
+ * step index and selector — the runner reports the route UNMEASURED, never
+ * a pass.
+ */
+export async function runRoutePrepare(page, steps = [], { timeoutMs = 15_000 } = {}) {
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (!['type', 'click', 'wait'].includes(step?.type)) {
+      throw new Error(`prepare step ${index}: unknown step type "${step?.type}"`);
+    }
+    try {
+      await page.waitForSelector(step.selector, { timeout: timeoutMs });
+    } catch (error) {
+      throw new Error(
+        `prepare step ${index} (${step.type}) never found "${step.selector}": ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
+    if (step.type === 'type') {
+      await page.type(step.selector, step.text ?? '');
+    } else if (step.type === 'click') {
+      await page.click(step.selector);
+    }
+  }
+}
+
+/**
+ * UI-SPEC §6.5 rule 1: the one flexible slot may truncate with a `title` —
+ * but a slot starved below this width shows 'U…', '(' or nothing at all, so
+ * a title no longer excuses it.
+ */
+export const MIN_TRUNCATED_LABEL_PX = 48;
+
+/** The route's declared text-fit targets measured at `viewportName` (`[]` for a route without any). */
+export function fitTargetsForViewport(route, viewportName) {
+  return (route?.fitTargets ?? []).filter((target) =>
+    (target.viewports ?? []).includes(viewportName),
+  );
+}
+
+/**
+ * The text-fit family (plan 39.1-49; OOS-3, OOS-9, OOS-10). Each target is
+ * `{ selector, found, scanned, left, right, items }` and each item
+ * `{ selectorPath, hidden, left, right, cardInnerLeft, cardInnerRight,
+ * hasText, clips, scrollWidth, clientWidth, scrollHeight, clientHeight,
+ * lineClamped, titled }`. Reports EVERY offender:
+ * - content-escape: a visible descendant past its card's inner edges (the
+ *   target's own box when it has no card) by more than `tolerancePx`;
+ * - text-cut: a visible text-bearing box that clips its own text (hidden /
+ *   clip overflow, ellipsis or a line clamp) — exempt only when titled AND
+ *   at least `minLabelPx` wide;
+ * - text-fit-unmeasured: a target matching nothing or scanning nothing.
+ */
+export function evaluateTextFit(
+  { targets = [] } = {},
+  { tolerancePx = 1, minLabelPx = MIN_TRUNCATED_LABEL_PX } = {},
+) {
+  const violations = [];
+  for (const target of targets) {
+    if (!target.found) {
+      violations.push({
+        type: 'text-fit-unmeasured',
+        selector: target.selector,
+        reason: 'no-match',
+      });
+      continue;
+    }
+    if (!target.scanned) {
+      violations.push({
+        type: 'text-fit-unmeasured',
+        selector: target.selector,
+        reason: 'no-descendants',
+      });
+      continue;
+    }
+    for (const item of target.items ?? []) {
+      if (item.hidden) continue;
+      const innerLeft = typeof item.cardInnerLeft === 'number' ? item.cardInnerLeft : target.left;
+      const innerRight =
+        typeof item.cardInnerRight === 'number' ? item.cardInnerRight : target.right;
+      if (
+        typeof innerLeft === 'number' &&
+        typeof innerRight === 'number' &&
+        (item.left < innerLeft - tolerancePx || item.right > innerRight + tolerancePx)
+      ) {
+        violations.push({
+          type: 'content-escape',
+          target: target.selector,
+          selectorPath: item.selectorPath,
+          overflowPx: Math.max(innerLeft - item.left, item.right - innerRight),
+        });
+      }
+      if (!item.hasText || !item.clips) continue;
+      const cutWide = item.scrollWidth > item.clientWidth + tolerancePx;
+      const cutTall =
+        Boolean(item.lineClamped) && item.scrollHeight > item.clientHeight + tolerancePx;
+      if (!cutWide && !cutTall) continue;
+      if (item.titled && item.clientWidth >= minLabelPx) continue;
+      violations.push({
+        type: 'text-cut',
+        target: target.selector,
+        selectorPath: item.selectorPath,
+        scrollWidth: item.scrollWidth,
+        clientWidth: item.clientWidth,
+        scrollHeight: item.scrollHeight,
+        clientHeight: item.clientHeight,
+        titled: Boolean(item.titled),
+      });
+    }
+  }
+  return violations;
+}

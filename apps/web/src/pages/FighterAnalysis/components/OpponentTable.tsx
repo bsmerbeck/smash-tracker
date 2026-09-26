@@ -87,7 +87,7 @@ export function OpponentTable({
           <p className="text-sm text-muted-foreground">{t('fighterAnalysis.opponents.empty')}</p>
         ) : (
           <>
-            <Table id={tableId}>
+            <Table id={tableId} data-slot="opponent-table">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('matchups.opponent')}</TableHead>

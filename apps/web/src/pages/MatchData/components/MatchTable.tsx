@@ -514,7 +514,7 @@ export function MatchTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-slot="match-table-toolbar">
         <Input
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}

@@ -224,6 +224,64 @@ export function buildRecentScale() {
   };
 }
 
+/** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
+function seededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Plan 39.1-39: the `gsp` scale (plan 39.1-49 moved this ONE definition here
+ * verbatim from `captureDesignScreens.mjs` and registered it in the scale
+ * map, so guard:layout's `gsp` route and capture:design read the same data) — the realistic scale's games
+ * (guard:layout's own 300-game fixture, one definition) with a deterministic
+ * `gsp` value on every game of the harness mains (a seeded walk between 9 and
+ * 11 million per fighter: a win climbs 40-140k, a loss drops 30-120k), two
+ * calibration readings per main and gsp settings with an Elite threshold,
+ * so GspCurve, GspVsGlicko and GainsAnalysis all render data.
+ */
+function buildGspScale() {
+  const base = buildRealisticScale();
+  const random = seededRandom(39_139_001);
+  const mains = base.fighters.primary;
+  const level = new Map(mains.map((id) => [id, 9_600_000]));
+  const clamp = (value) => Math.min(11_000_000, Math.max(9_000_000, value));
+  const matches = [...base.matches]
+    .sort((a, b) => (a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : 1))
+    .map((match) => {
+      if (!level.has(match.fighter_id)) return match;
+      const step = match.win ? 40_000 + random() * 100_000 : -(30_000 + random() * 90_000);
+      const next = Math.round(clamp(level.get(match.fighter_id) + step));
+      level.set(match.fighter_id, next);
+      return { ...match, gsp: next };
+    });
+  const byFighter = mains.map((id) => matches.filter((m) => m.fighter_id === id));
+  const gspReadings = byFighter.flatMap((games, index) =>
+    [0.33, 0.66].map((at, n) => {
+      const anchor = games[Math.floor(games.length * at)];
+      return {
+        id: `gsp-reading-${mains[index]}-${n}`,
+        fighter_id: mains[index],
+        gsp: Math.round(clamp((anchor?.gsp ?? 9_800_000) + 150_000)),
+        time: (anchor?.time ?? 0) + 60_000,
+      };
+    }),
+  );
+  const lastTime = matches.reduce((max, match) => Math.max(max, match.time), 0);
+  return {
+    ...base,
+    matches,
+    gspReadings,
+    gspSettings: { eliteThreshold: 10_400_000, updatedAt: lastTime },
+  };
+}
+
 /**
  * Plan 39.1-34: `extraScales` merges caller-supplied in-memory datasets into
  * the fixture plugin's scale map (selected per page via the
@@ -238,6 +296,7 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     career: buildCareerScale(),
     casual: buildCasualScale(),
     recent: buildRecentScale(),
+    gsp: buildGspScale(),
     ...extraScales,
   };
   const server = await createViteServer({

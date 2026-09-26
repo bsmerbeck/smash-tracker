@@ -14,8 +14,19 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly fifteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(15);
+  it('has exactly sixteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route and (plan 39.1-49) the scout route', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(16);
+  });
+
+  // Plan 39.1-49: the Scout page joins the harness so the all-route
+  // table-clip sweep can measure its three multi-host tables.
+  it('plan 39.1-49: the scout route mounts ScoutPage at /scout, unshelled, with the expanded Full analysis marker', () => {
+    const scout = findGuardHarnessRoute('scout');
+    expect(scout?.path).toBe('/scout');
+    expect(scout?.initialEntry).toBe('/scout');
+    expect(scout?.shell).toBeUndefined();
+    expect(scout?.loadedMarker).toBe('[data-slot="scout-full-analysis"][data-state="open"]');
+    expect(scout?.element).toBeTruthy();
   });
 
   // Plan 39.1-39 (mark-count): the stage page on the harness's recent scale.
@@ -99,9 +110,12 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     ]);
   });
 
-  // Plan 39.1-39 (OWNER DECISION 2026-09-25): the GSP page is screenshotted by
-  // capture:design only — it is never one of guard:layout's measured routes.
-  it('plan 39.1-39: a capture-only gsp route mounts the GSP page at /gsp in the app shell, absent from LAYOUT_ORACLE_ROUTES', () => {
+  // Plan 39.1-39 (OWNER DECISION 2026-09-25) made gsp a capture-only route.
+  // REWRITTEN by plan 39.1-49 (orchestrator 2026-09-26): OOS-9 (the GspHero
+  // figures leave their cards at 390) needs a committed failing oracle, and a
+  // capture is not one — so gsp is now a guard:layout route at 390x844 only,
+  // on the harness's seeded gsp scale.
+  it('plan 39.1-49: the gsp route mounts the GSP page at /gsp in the app shell, and guard:layout declares it at 390x844 on the gsp scale', () => {
     const gsp = findGuardHarnessRoute('gsp');
     expect(gsp?.path).toBe('/gsp');
     expect(gsp?.initialEntry).toBe('/gsp');
@@ -117,7 +131,10 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     );
     expect(oracleBlock.length).toBeGreaterThan(1000);
     expect(oracleBlock).toMatch(/id: 'stage-detail'/);
-    expect(oracleBlock).not.toMatch(/id: 'gsp'/);
+    expect(oracleBlock).toMatch(/id: 'gsp'/);
+    const gspBlock = oracleBlock.slice(oracleBlock.indexOf("id: 'gsp'"));
+    expect(gspBlock).toMatch(/scale: 'gsp'/);
+    expect(gspBlock).toMatch(/viewports: \['390x844'\]/);
   });
 
   it('plan 39.1-35: trends-casual mounts the Trends page at its real path with the trends loaded marker', () => {

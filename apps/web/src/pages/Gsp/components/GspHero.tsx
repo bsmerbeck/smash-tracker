@@ -62,7 +62,7 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
   const isElite = roundedMmr !== null && roundedMmr >= GSP_MODEL.ELITE_MMR;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5" data-slot="gsp-hero">
       <HeroCard label={t('gsp.hero.currentGsp')}>
         {lastPoint !== null ? (
           <>

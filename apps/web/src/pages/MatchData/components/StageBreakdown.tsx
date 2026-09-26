@@ -116,27 +116,31 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
         <CardDescription>{t('analytics.list.sortMostGames')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <StatRow
-          // Plan 39.1-38: three short figures stay three-up on a phone
-          // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
-          fixedColumns
-          figures={[
-            <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
-            <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
-            <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
-          ]}
-        />
-        <BoundedList
-          cap={LIST_CAP}
-          rows={rows}
-          labels={{
-            showAll: t('analytics.list.showAll', { count: records.length }),
-            showFewer: t('analytics.list.showFewer'),
-            showMore: t('analytics.list.showMore50'),
-            terminus: t('analytics.list.allStages', { count: records.length }),
-          }}
-          empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
-        />
+        {/* Plan 39.1-49: a layout-neutral text-fit hook (display: contents —
+            the CardContent's own flex column still lays these children out). */}
+        <div data-slot="stage-breakdown" className="contents">
+          <StatRow
+            // Plan 39.1-38: three short figures stay three-up on a phone
+            // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
+            fixedColumns
+            figures={[
+              <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
+              <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
+              <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
+            ]}
+          />
+          <BoundedList
+            cap={LIST_CAP}
+            rows={rows}
+            labels={{
+              showAll: t('analytics.list.showAll', { count: records.length }),
+              showFewer: t('analytics.list.showFewer'),
+              showMore: t('analytics.list.showMore50'),
+              terminus: t('analytics.list.allStages', { count: records.length }),
+            }}
+            empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
+          />
+        </div>
       </CardContent>
     </Card>
   );

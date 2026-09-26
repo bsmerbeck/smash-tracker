@@ -169,7 +169,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
           </p>
         ) : (
           <>
-            <Table id={STAGE_GUIDE_TABLE_ID}>
+            <Table id={STAGE_GUIDE_TABLE_ID} data-slot="matchup-stage-guide">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('matchups.opponent')}</TableHead>

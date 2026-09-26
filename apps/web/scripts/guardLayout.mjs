@@ -58,6 +58,14 @@ import {
   evaluateRecordFit,
   evaluateMarkCount,
   evaluateMatrixHug,
+  evaluateTableClipSweep,
+  evaluateTextFit,
+  tableClipModeForRoute,
+  tableClipSweepRoutes,
+  tableClipSweepScanned,
+  fitTargetsForViewport,
+  runRoutePrepare,
+  TABLE_CLIP_SCAN_SELECTOR,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
   WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
@@ -135,6 +143,10 @@ export const LAYOUT_ORACLE_ROUTES = [
       { first: '[data-slot="fighter-hero-body"]', then: '[data-slot="insight-rail"]' },
       { first: '[data-slot="insight-rail"]', then: '[data-slot="fighter-vs-lists"]' },
     ],
+    // Plan 39.1-49: declared into the all-route table-clip sweep (clipTargets
+    // only — no new narrowChecks, so this route's own measurements are
+    // unchanged).
+    clipTargets: ['[data-slot="matchup-stage-guide"]', '[data-slot="opponent-table"]'],
   },
   {
     id: 'matchups',
@@ -189,6 +201,14 @@ export const LAYOUT_ORACLE_ROUTES = [
     ],
     narrowChecks: ['stat-row-columns', 'insight-order'],
     orderPairs: [{ first: '[data-slot="match-data-rail"]', then: '#match-data-table' }],
+    // Plan 39.1-49 (OOS-3, OOS-10): the text-fit family's declared targets —
+    // the Stage Breakdown and Roster Usage lists and the match table's
+    // toolbar, at the phone width and at 1440.
+    fitTargets: [
+      { selector: '[data-slot="stage-breakdown"]', viewports: ['390x844', '1440x900'] },
+      { selector: '[data-slot="roster-usage"]', viewports: ['390x844', '1440x900'] },
+      { selector: '[data-slot="match-table-toolbar"]', viewports: ['390x844', '1440x900'] },
+    ],
   },
   {
     id: 'trends',
@@ -289,6 +309,35 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="stage-detail-body"]',
     scale: 'recent',
     checks: ['mark-count', 'axis-ticks'],
+  },
+  {
+    // Plan 39.1-49: the Scout page, driven through its search form (a real
+    // POST /api/scout answered by the fixture plugin from the harness
+    // dataset) and its Full analysis section expanded — the narrowest host
+    // of the three Scout multi-host tables. Phone width only: its desktop
+    // lg:grid-cols-2 pairs are out of this plan's scope.
+    id: 'scout',
+    loadedMarker: '[data-slot="scout-full-analysis"][data-state="open"]',
+    viewports: ['390x844'],
+    prepare: [
+      { type: 'type', selector: 'form input', text: 'guard-scout' },
+      { type: 'click', selector: 'form button[type="submit"]' },
+      { type: 'wait', selector: '[data-slot="scout-full-analysis"]' },
+      { type: 'click', selector: '[data-slot="scout-full-analysis"] > button' },
+      { type: 'wait', selector: '[data-slot="scout-full-analysis"][data-state="open"]' },
+    ],
+    clipTargets: ['[data-slot="opponent-table"]', '[data-slot="what-they-play"]'],
+  },
+  {
+    // Plan 39.1-49 (OOS-9): the GSP page on the harness's seeded `gsp` scale
+    // (the one definition capture:design also reads), phone width only — its
+    // desktop layout is Phase 41's contract (UI-SPEC §12). No `checks`: the
+    // default families plus the text-fit target on the hero figures.
+    id: 'gsp',
+    loadedMarker: '[data-slot="gsp-body"]',
+    scale: 'gsp',
+    viewports: ['390x844'],
+    fitTargets: [{ selector: '[data-slot="gsp-hero"]', viewports: ['390x844'] }],
   },
 ];
 
@@ -1140,6 +1189,318 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   };
 }
 
+/**
+ * Plan 39.1-49: the all-route table-clip sweep's collector. Runs entirely
+ * inside the browser (no closures over module scope). Every match of
+ * `scanSelector` plus each declared selector's first match, with `hidden`
+ * for no client rects, visibility hidden, a box at most 1px in either axis,
+ * or an ancestor-or-self clip-path / clip; visible items report their
+ * nearest ancestor-or-self (before body) horizontal scroll / clip container
+ * as a per-page `clipId`, its path and its scroll / client widths.
+ */
+function collectTableClipSweep(scanSelector, declaredSelectors) {
+  function describeElement(el) {
+    if (el.getAttribute('data-testid')) {
+      return `[data-testid="${el.getAttribute('data-testid')}"]`;
+    }
+    if (el.id) {
+      return `#${el.id}`;
+    }
+    if (el.getAttribute('data-slot')) {
+      return `${el.tagName.toLowerCase()}[data-slot="${el.getAttribute('data-slot')}"]`;
+    }
+    const parts = [];
+    let node = el;
+    let depth = 0;
+    while (node && node.nodeType === 1 && depth < 4) {
+      let selector = node.tagName.toLowerCase();
+      if (node.getAttribute('data-slot')) {
+        selector += `[data-slot="${node.getAttribute('data-slot')}"]`;
+      } else if (node.parentElement) {
+        const siblingsOfType = Array.from(node.parentElement.children).filter(
+          (child) => child.tagName === node.tagName,
+        );
+        if (siblingsOfType.length > 1) {
+          selector += `:nth-of-type(${siblingsOfType.indexOf(node) + 1})`;
+        }
+      }
+      parts.unshift(selector);
+      node = node.parentElement;
+      depth += 1;
+    }
+    return parts.join(' > ');
+  }
+
+  function isHidden(el) {
+    if (el.getClientRects().length === 0) return true;
+    const style = window.getComputedStyle(el);
+    if (style.visibility === 'hidden') return true;
+    const box = el.getBoundingClientRect();
+    if (box.width <= 1 || box.height <= 1) return true;
+    for (let node = el; node && node !== document.documentElement; node = node.parentElement) {
+      const s = node === el ? style : window.getComputedStyle(node);
+      if (s.clipPath && s.clipPath !== 'none') return true;
+      if (s.clip && s.clip !== 'auto') return true;
+    }
+    return false;
+  }
+
+  const clipIds = new Map();
+  function measure(el) {
+    const kind = el.getAttribute('role') || el.tagName.toLowerCase();
+    const targetPath = describeElement(el);
+    if (isHidden(el)) {
+      return { targetPath, kind, hidden: true, clipId: null, clipPath: null };
+    }
+    let clipEl = null;
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      const overflowX = window.getComputedStyle(node).overflowX;
+      if (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'hidden') {
+        clipEl = node;
+        break;
+      }
+    }
+    if (!clipEl) {
+      return {
+        targetPath,
+        kind,
+        hidden: false,
+        clipId: null,
+        clipPath: null,
+        scrollWidth: null,
+        clientWidth: null,
+      };
+    }
+    if (!clipIds.has(clipEl)) clipIds.set(clipEl, clipIds.size);
+    return {
+      targetPath,
+      kind,
+      hidden: false,
+      clipId: clipIds.get(clipEl),
+      clipPath: describeElement(clipEl),
+      scrollWidth: clipEl.scrollWidth,
+      clientWidth: clipEl.clientWidth,
+    };
+  }
+
+  const candidates = Array.from(document.querySelectorAll(scanSelector)).map(measure);
+  const declared = declaredSelectors.map((selector) => {
+    const el = document.querySelector(selector);
+    if (!el) return { selector, found: false };
+    return { selector, found: true, ...measure(el) };
+  });
+  return {
+    candidates,
+    declared,
+    page: {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    },
+  };
+}
+
+/**
+ * Plan 39.1-49: the text-fit collector (runs inside the browser). For every
+ * match of each target selector, a breadth-first walk of its descendants —
+ * never into svg internals or a horizontal scroll container (the sweep owns
+ * those). `hidden` ONLY for no client rects, visibility hidden, a zero clip
+ * rect / inset clip-path, or an sr-only box (absolute and at most 1px both
+ * ways): a zero-width, full-height text box stays visible, which is exactly
+ * the starved Roster name the content-overflow walk cannot see.
+ */
+function collectTextFit(targetSelectors) {
+  function describeElement(el) {
+    if (el.getAttribute('data-testid')) {
+      return `[data-testid="${el.getAttribute('data-testid')}"]`;
+    }
+    if (el.id) {
+      return `#${el.id}`;
+    }
+    const parts = [];
+    let node = el;
+    let depth = 0;
+    while (node && node.nodeType === 1 && depth < 4) {
+      let selector = node.tagName.toLowerCase();
+      if (node.getAttribute('data-slot')) {
+        selector += `[data-slot="${node.getAttribute('data-slot')}"]`;
+      } else if (node.parentElement) {
+        const siblingsOfType = Array.from(node.parentElement.children).filter(
+          (child) => child.tagName === node.tagName,
+        );
+        if (siblingsOfType.length > 1) {
+          selector += `:nth-of-type(${siblingsOfType.indexOf(node) + 1})`;
+        }
+      }
+      parts.unshift(selector);
+      node = node.parentElement;
+      depth += 1;
+    }
+    return parts.join(' > ');
+  }
+
+  const cardEdges = new Map();
+  function edgesOf(card) {
+    if (!cardEdges.has(card)) {
+      const rect = card.getBoundingClientRect();
+      const style = window.getComputedStyle(card);
+      cardEdges.set(card, {
+        left: rect.left + (parseFloat(style.borderLeftWidth) || 0),
+        right: rect.right - (parseFloat(style.borderRightWidth) || 0),
+      });
+    }
+    return cardEdges.get(card);
+  }
+
+  const targets = [];
+  for (const selector of targetSelectors) {
+    const roots = Array.from(document.querySelectorAll(selector));
+    if (roots.length === 0) {
+      targets.push({ selector, found: false, scanned: 0, items: [] });
+      continue;
+    }
+    const items = [];
+    let scanned = 0;
+    let left = Infinity;
+    let right = -Infinity;
+    for (const root of roots) {
+      const rootRect = root.getBoundingClientRect();
+      if (rootRect.width > 0) {
+        left = Math.min(left, rootRect.left);
+        right = Math.max(right, rootRect.right);
+      }
+      const queue = Array.from(root.children);
+      while (queue.length > 0) {
+        const el = queue.shift();
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        const hidden =
+          el.getClientRects().length === 0 ||
+          style.visibility === 'hidden' ||
+          style.clip === 'rect(0px, 0px, 0px, 0px)' ||
+          (style.clipPath && style.clipPath.startsWith('inset')) ||
+          (style.position === 'absolute' && rect.width <= 1 && rect.height <= 1);
+        const isSvg = el.tagName.toLowerCase() === 'svg';
+        const scroller = style.overflowX === 'auto' || style.overflowX === 'scroll';
+        if (!hidden) {
+          scanned += 1;
+          const card = el.closest('[data-slot="card"]');
+          const edges = card ? edgesOf(card) : null;
+          const lineClamp = style.webkitLineClamp || style.getPropertyValue('-webkit-line-clamp');
+          const lineClamped = Boolean(lineClamp) && lineClamp !== 'none';
+          let titled = false;
+          for (let node = el; node; node = node.parentElement) {
+            if ((node.getAttribute('title') ?? '').trim().length > 0) {
+              titled = true;
+              break;
+            }
+            if (node === root) break;
+          }
+          items.push({
+            selectorPath: describeElement(el),
+            hidden: false,
+            left: rect.left,
+            right: rect.right,
+            cardInnerLeft: edges ? edges.left : null,
+            cardInnerRight: edges ? edges.right : null,
+            hasText: !isSvg && (el.textContent ?? '').trim().length > 0,
+            clips:
+              !isSvg &&
+              (style.overflowX === 'hidden' ||
+                style.overflowX === 'clip' ||
+                style.textOverflow === 'ellipsis' ||
+                lineClamped),
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+            lineClamped,
+            titled,
+          });
+        }
+        if (!isSvg && !scroller) {
+          for (const child of el.children) queue.push(child);
+        }
+      }
+    }
+    targets.push({
+      selector,
+      found: true,
+      scanned,
+      left: Number.isFinite(left) ? left : null,
+      right: Number.isFinite(right) ? right : null,
+      items,
+    });
+  }
+  return { targets };
+}
+
+/**
+ * Plan 39.1-49: one shell=app page load (production geometry — the harness's
+ * MainLayout-geometry shell, what capture:design shoots) for the narrow
+ * passes. Runs the route's prepare steps, waits for its loaded marker, then
+ * (when asked) the table-clip sweep and the text-fit targets declared for
+ * this viewport. A failed load or prepare is UNMEASURED, never a pass.
+ */
+async function measureShellPasses(browser, baseUrl, route, viewport, { sweep, fitTargets }) {
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: viewport.width, height: viewport.height });
+    if (route.scale) {
+      await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
+    }
+    await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}&shell=app`, {
+      waitUntil: 'networkidle0',
+    });
+    try {
+      await runRoutePrepare(page, route.prepare ?? [], { timeoutMs: ROUTE_LOAD_TIMEOUT_MS });
+    } catch (error) {
+      return {
+        unmeasured: true,
+        reason: `shell=app prepare failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    try {
+      await page.waitForSelector(route.loadedMarker, { timeout: ROUTE_LOAD_TIMEOUT_MS });
+    } catch {
+      return {
+        unmeasured: true,
+        reason: `shell=app page-loaded marker "${route.loadedMarker}" never appeared within ${ROUTE_LOAD_TIMEOUT_MS}ms`,
+      };
+    }
+    const result = { unmeasured: false, sweep: null, textFit: null };
+    if (sweep) {
+      const measured = await page.evaluate(
+        collectTableClipSweep,
+        TABLE_CLIP_SCAN_SELECTOR,
+        route.clipTargets ?? [],
+      );
+      const mode = tableClipModeForRoute(route.id);
+      const violations = evaluateTableClipSweep(measured, { mode });
+      const clipped = violations.filter(
+        (v) =>
+          v.type === 'table-clipped' ||
+          (v.type === 'table-clip-routed' && v.routedType === 'table-clipped'),
+      ).length;
+      result.sweep = { mode, violations, scanned: tableClipSweepScanned(measured), clipped };
+    }
+    if (fitTargets.length > 0) {
+      const measured = await page.evaluate(
+        collectTextFit,
+        fitTargets.map((target) => target.selector),
+      );
+      const violations = evaluateTextFit(measured);
+      result.textFit = {
+        targets: fitTargets.length,
+        scanned: measured.targets.reduce((sum, target) => sum + (target.scanned ?? 0), 0),
+        violations,
+      };
+    }
+    return result;
+  } finally {
+    await page.close();
+  }
+}
+
 async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
   const page = await browser.newPage();
   try {
@@ -1153,6 +1514,17 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}`, {
       waitUntil: 'networkidle0',
     });
+
+    // Plan 39.1-49: a route that needs input before its loaded marker exists
+    // (Scout) drives the page first; a failed step is UNMEASURED.
+    try {
+      await runRoutePrepare(page, route.prepare ?? [], { timeoutMs: ROUTE_LOAD_TIMEOUT_MS });
+    } catch (error) {
+      return {
+        unmeasured: true,
+        reason: `prepare failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
 
     try {
       await page.waitForSelector(route.loadedMarker, { timeout: ROUTE_LOAD_TIMEOUT_MS });
@@ -1552,6 +1924,62 @@ async function main() {
     await hardTimeoutExit();
   };
 
+  // Plan 39.1-49: the shell=app passes after a route's measurement at a
+  // viewport — the all-route table-clip sweep at every narrow viewport (at
+  // most NARROW_VIEWPORT_MAX_WIDTH_PX wide) and the text-fit targets the
+  // route declares for that viewport. Always prints its TABLE_CLIP /
+  // TEXT_FIT line; enforce-mode offenders are ordinary VIOLATION lines,
+  // Matchups' routed ones TABLE_CLIP_ROUTED lines (exit code untouched).
+  const sweptIds = new Set(tableClipSweepRoutes(LAYOUT_ORACLE_ROUTES).map((route) => route.id));
+  async function runShellPasses(route, viewport) {
+    const sweep = viewport.width <= NARROW_VIEWPORT_MAX_WIDTH_PX && sweptIds.has(route.id);
+    const fitTargets = fitTargetsForViewport(route, viewport.name);
+    if (!sweep && fitTargets.length === 0) return;
+    const result = await measureShellPasses(browser, baseUrl, route, viewport, {
+      sweep,
+      fitTargets,
+    });
+    if (hardTimedOut) return;
+    if (result.unmeasured) {
+      console.log(
+        `UNMEASURED route=${route.id} viewport=${viewport.name} reason="${result.reason}"`,
+      );
+      unmeasuredIds.add(route.id);
+      exitCode = 1;
+      return;
+    }
+    if (result.sweep) {
+      const { mode, violations, scanned, clipped } = result.sweep;
+      console.log(
+        `TABLE_CLIP route=${route.id} viewport=${viewport.name} shell=app mode=${mode} scanned=${scanned} clipped=${clipped}`,
+      );
+      for (const violation of violations) {
+        if (violation.type === 'table-clip-routed') {
+          console.log(
+            `TABLE_CLIP_ROUTED route=${route.id} viewport=${viewport.name} owner=39.1-41..48 selector=${violation.selectorPath ?? 'n/a'} detail=${JSON.stringify(violation)}`,
+          );
+          continue;
+        }
+        console.log(
+          `VIOLATION route=${route.id} viewport=${viewport.name} type=${violation.type} selector=${violation.selectorPath ?? 'n/a'} detail=${JSON.stringify(violation)}`,
+        );
+        exitCode = 1;
+      }
+    }
+    if (result.textFit) {
+      const { targets, scanned, violations } = result.textFit;
+      console.log(
+        `TEXT_FIT route=${route.id} viewport=${viewport.name} shell=app targets=${targets} scanned=${scanned} offenders=${violations.length}`,
+      );
+      for (const violation of violations) {
+        console.log(
+          `VIOLATION route=${route.id} viewport=${viewport.name} type=${violation.type} selector=${violation.selectorPath ?? 'n/a'} detail=${JSON.stringify(violation)}`,
+        );
+        exitCode = 1;
+      }
+    }
+  }
+
   try {
     await withHardTimeout(
       (async () => {
@@ -1581,6 +2009,7 @@ async function main() {
               );
               unmeasuredIds.add(route.id);
               exitCode = 1;
+              await runShellPasses(route, viewport);
               continue;
             }
             measuredCount += 1;
@@ -1624,6 +2053,7 @@ async function main() {
               );
               exitCode = 1;
             }
+            await runShellPasses(route, viewport);
           }
         }
       })().catch((error) => {

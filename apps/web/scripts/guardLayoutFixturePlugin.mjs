@@ -27,6 +27,8 @@
  * `fighters` shape as `/users/me/fighters` so the two never disagree).
  */
 
+import { buildScoutGuardReport } from './scoutGuardFixture.mjs';
+
 /**
  * @param {object} [options]
  * @param {Record<string, { matches?: unknown[]; fighters?: unknown; aliases?: unknown }>} [options.scales] - Named fixture datasets, keyed by scale name.
@@ -35,17 +37,13 @@
  */
 export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = null } = {}) {
   let currentScale = initialScale;
+  // Plan 39.1-49: one Scout report per scale, built on first request.
+  const scoutReports = new Map();
 
   return {
     name: 'guard-layout-fixture',
     configureServer(server) {
       server.middlewares.use('/api', (req, res, next) => {
-        if (req.method !== 'GET') {
-          next();
-          return;
-        }
-        res.setHeader('Content-Type', 'application/json');
-        const url = req.url ?? '';
         // Plan 39.1-34 (T-39.1-34-01): a request may name one of the
         // IN-MEMORY fixture scales via `x-guard-layout-scale` (guardLayout's
         // `trends-career` route sends `career`). The header only ever
@@ -58,6 +56,29 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
             ? requestedScale
             : currentScale;
         const dataset = scaleName ? scales[scaleName] : undefined;
+        const url = req.url ?? '';
+
+        // Plan 39.1-49 (T-39.1-49-03): the ONE non-GET this loopback dev
+        // server answers — the Scout page's lookup, drained and answered with
+        // a schema-valid report built from the active dataset.
+        if (req.method === 'POST' && url === '/scout') {
+          req.resume();
+          req.on('end', () => {
+            const key = scaleName ?? '';
+            if (!scoutReports.has(key)) {
+              scoutReports.set(key, buildScoutGuardReport(dataset?.matches ?? []));
+            }
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify(scoutReports.get(key)));
+          });
+          return;
+        }
+        if (req.method !== 'GET') {
+          next();
+          return;
+        }
+        res.setHeader('Content-Type', 'application/json');
 
         if (url === '/matches' || url.startsWith('/matches?')) {
           res.statusCode = 200;
@@ -113,6 +134,31 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
         if (url === '/gsp-settings' && dataset?.gspSettings !== undefined) {
           res.statusCode = 200;
           res.end(JSON.stringify(dataset.gspSettings));
+          return;
+        }
+
+        // Plan 39.1-49: the Scout page's other reads, each in a shape its
+        // schema accepts (the catch-all's bare `{}` fails an array schema and
+        // the reports-config / credits / parry.gg status objects), so the
+        // measured page has no query errors or retries.
+        if (url === '/reports/config') {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ enabled: false }));
+          return;
+        }
+        if (url === '/reports') {
+          res.statusCode = 200;
+          res.end('[]');
+          return;
+        }
+        if (url === '/billing/credits') {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ freeAccess: false, balance: 0, packs: [] }));
+          return;
+        }
+        if (url === '/integrations/parrygg/status') {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ linked: false }));
           return;
         }
 

@@ -237,15 +237,17 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
           <CardTitle>{t('matchData.roster.title')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">
-            {t('analytics.roster.mainNotEstablished')}
-          </p>
-          <RosterRowList
-            entries={flatEntries}
-            t={t}
-            subjectPath={subjectPath}
-            fighterName={fighterName}
-          />
+          <div data-slot="roster-usage" className="contents">
+            <p className="text-sm text-muted-foreground">
+              {t('analytics.roster.mainNotEstablished')}
+            </p>
+            <RosterRowList
+              entries={flatEntries}
+              t={t}
+              subjectPath={subjectPath}
+              fighterName={fighterName}
+            />
+          </div>
         </CardContent>
       </Card>
     );
@@ -261,76 +263,79 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
         <CardTitle>{t('matchData.roster.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <RosterGroup label={t('analytics.roster.main')}>
-          <RosterRowList
-            entries={[mainEntry]}
-            t={t}
-            subjectPath={subjectPath}
-            fighterName={fighterName}
-          />
-        </RosterGroup>
-
-        {secondaryEntries.length > 0 && (
-          <RosterGroup label={t('analytics.roster.secondaries')}>
+        {/* Plan 39.1-49: a layout-neutral text-fit hook (display: contents). */}
+        <div data-slot="roster-usage" className="contents">
+          <RosterGroup label={t('analytics.roster.main')}>
             <RosterRowList
-              entries={secondaryEntries}
+              entries={[mainEntry]}
               t={t}
               subjectPath={subjectPath}
               fighterName={fighterName}
             />
           </RosterGroup>
-        )}
 
-        {model.pockets.fighterIds.length > 0 && (
-          <RosterGroup label={t('analytics.roster.pockets')}>
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <ul className="flex flex-col gap-1">
-                <li
-                  className="flex flex-col gap-1 rounded-md p-2 text-sm text-muted-foreground"
-                  data-slot="roster-pocket-summary"
-                >
-                  <span>
-                    {t('analytics.roster.pocketsRow', {
-                      count: model.pockets.fighterIds.length,
-                      games: model.pockets.games,
-                    })}
-                    {' · '}
-                    {pocketRatePercent}%
-                  </span>
-                </li>
-              </ul>
-              {!pocketsExpanded ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
-                  onClick={() => setPocketsExpanded(true)}
-                >
-                  {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
-                </Button>
-              ) : (
-                <>
-                  <RosterRowList
-                    entries={pocketEntries.slice(0, LIST_INLINE_MAX)}
-                    t={t}
-                    subjectPath={subjectPath}
-                    fighterName={fighterName}
-                  />
+          {secondaryEntries.length > 0 && (
+            <RosterGroup label={t('analytics.roster.secondaries')}>
+              <RosterRowList
+                entries={secondaryEntries}
+                t={t}
+                subjectPath={subjectPath}
+                fighterName={fighterName}
+              />
+            </RosterGroup>
+          )}
+
+          {model.pockets.fighterIds.length > 0 && (
+            <RosterGroup label={t('analytics.roster.pockets')}>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <ul className="flex flex-col gap-1">
+                  <li
+                    className="flex flex-col gap-1 rounded-md p-2 text-sm text-muted-foreground"
+                    data-slot="roster-pocket-summary"
+                  >
+                    <span>
+                      {t('analytics.roster.pocketsRow', {
+                        count: model.pockets.fighterIds.length,
+                        games: model.pockets.games,
+                      })}
+                      {' · '}
+                      {pocketRatePercent}%
+                    </span>
+                  </li>
+                </ul>
+                {!pocketsExpanded ? (
                   <Button
                     type="button"
                     variant="link"
                     size="sm"
                     className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
-                    onClick={() => setPocketsExpanded(false)}
+                    onClick={() => setPocketsExpanded(true)}
                   >
-                    {t('analytics.list.showFewer')}
+                    {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
                   </Button>
-                </>
-              )}
-            </div>
-          </RosterGroup>
-        )}
+                ) : (
+                  <>
+                    <RosterRowList
+                      entries={pocketEntries.slice(0, LIST_INLINE_MAX)}
+                      t={t}
+                      subjectPath={subjectPath}
+                      fighterName={fighterName}
+                    />
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
+                      onClick={() => setPocketsExpanded(false)}
+                    >
+                      {t('analytics.list.showFewer')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </RosterGroup>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

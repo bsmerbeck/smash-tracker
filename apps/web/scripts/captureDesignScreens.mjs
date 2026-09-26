@@ -23,8 +23,8 @@
  * Datasets: `realistic` (guard:layout's default 300-game fixture), `career`
  * (plan 39.1-34's 8,400-game scale), `recent` (plan 39.1-36's two-horizon
  * scale — one definition, `guardLayoutHarness.mjs`'s `buildRecentScale`,
- * since plan 39.1-39 also measures it in guard:layout) or the capture-only
- * `gsp` scale (below, passed through the harness's `extraScales`). The
+ * since plan 39.1-39 also measures it in guard:layout) or the `gsp` scale
+ * (plan 39.1-49 moved its one definition into the harness too). The
  * scale is sent as the `x-guard-layout-scale` request header; an unknown
  * value exits non-zero rather than silently falling back.
  *
@@ -37,8 +37,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
-import { buildRealisticScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
 import { LAYOUT_ORACLE_ROUTES, createHardTimeoutExit } from './guardLayout.mjs';
+import { runRoutePrepare } from './guardLayoutCore.mjs';
 
 const HARD_TIMEOUT_MS = 8 * 60 * 1000;
 const WAIT_TIMEOUT_MS = 30_000;
@@ -58,11 +59,11 @@ const DEFAULT_ROUTES = [
   'stage-detail',
 ];
 /**
- * Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): routes this
- * tool can screenshot that guard:layout never measures. Mirrors the harness
- * route table's capture-only `gsp` entry (`guardHarnessRoutes.tsx`).
+ * Routes this tool can screenshot that guard:layout never measures. Plan
+ * 39.1-49 made `gsp` a guard:layout route (OOS-9), so none remain; the list
+ * stays as the extension point.
  */
-const CAPTURE_ONLY_ROUTES = [{ id: 'gsp', loadedMarker: '[data-slot="gsp-body"]' }];
+const CAPTURE_ONLY_ROUTES = [];
 const KNOWN_SCALES = new Set(['realistic', 'recent', 'career', 'gsp']);
 /** Mirrors `DeltaChip`'s data-state values that assert a read. */
 const DIRECTIONAL_STATES = new Set(['steady', 'up', 'down']);
@@ -114,62 +115,6 @@ function parseArgs(argv) {
   }
   args.routeEntries = args.routes.map((id) => known.get(id));
   return args;
-}
-
-/** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
-function seededRandom(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * Plan 39.1-39: the capture-only `gsp` scale — the realistic scale's games
- * (guard:layout's own 300-game fixture, one definition) with a deterministic
- * `gsp` value on every game of the harness mains (a seeded walk between 9 and
- * 11 million per fighter: a win climbs 40-140k, a loss drops 30-120k), two
- * calibration readings per main and gsp settings with an Elite threshold,
- * so GspCurve, GspVsGlicko and GainsAnalysis all render data.
- */
-function buildGspScale() {
-  const base = buildRealisticScale();
-  const random = seededRandom(39_139_001);
-  const mains = base.fighters.primary;
-  const level = new Map(mains.map((id) => [id, 9_600_000]));
-  const clamp = (value) => Math.min(11_000_000, Math.max(9_000_000, value));
-  const matches = [...base.matches]
-    .sort((a, b) => (a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : 1))
-    .map((match) => {
-      if (!level.has(match.fighter_id)) return match;
-      const step = match.win ? 40_000 + random() * 100_000 : -(30_000 + random() * 90_000);
-      const next = Math.round(clamp(level.get(match.fighter_id) + step));
-      level.set(match.fighter_id, next);
-      return { ...match, gsp: next };
-    });
-  const byFighter = mains.map((id) => matches.filter((m) => m.fighter_id === id));
-  const gspReadings = byFighter.flatMap((games, index) =>
-    [0.33, 0.66].map((at, n) => {
-      const anchor = games[Math.floor(games.length * at)];
-      return {
-        id: `gsp-reading-${mains[index]}-${n}`,
-        fighter_id: mains[index],
-        gsp: Math.round(clamp((anchor?.gsp ?? 9_800_000) + 150_000)),
-        time: (anchor?.time ?? 0) + 60_000,
-      };
-    }),
-  );
-  const lastTime = matches.reduce((max, match) => Math.max(max, match.time), 0);
-  return {
-    ...base,
-    matches,
-    gspReadings,
-    gspSettings: { eliteThreshold: 10_400_000, updatedAt: lastTime },
-  };
 }
 
 /** Runs inside the page: the per-capture metrics record. */
@@ -346,6 +291,9 @@ async function captureRoute({ browser, baseUrl, route, width, scale, shell, scal
     await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': scale });
     const url = `${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}${shell ? '&shell=app' : ''}`;
     await page.goto(url, { waitUntil: 'networkidle0', timeout: WAIT_TIMEOUT_MS });
+    // Plan 39.1-49: a route that needs input first (Scout) is driven exactly
+    // as guard:layout drives it.
+    await runRoutePrepare(page, route.prepare ?? [], { timeoutMs: WAIT_TIMEOUT_MS });
     try {
       await page.waitForSelector(route.loadedMarker, { timeout: WAIT_TIMEOUT_MS });
     } catch {
@@ -396,10 +344,9 @@ async function main() {
   const scaleDir = path.join(args.out, args.scale);
   fs.mkdirSync(scaleDir, { recursive: true });
 
-  // `recent` is registered by the harness itself (plan 39.1-39 moved its one
-  // definition there); only the capture-only `gsp` scale is passed in.
-  const extraScales = args.scale === 'gsp' ? { gsp: buildGspScale() } : {};
-  const { server, baseUrl } = await startGuardLayoutHarnessServer({ extraScales });
+  // `recent` (plan 39.1-39) and `gsp` (plan 39.1-49) are registered by the
+  // harness itself — one definition each, shared with guard:layout.
+  const { server, baseUrl } = await startGuardLayoutHarnessServer();
   let browser;
   try {
     browser = await puppeteer.launch({

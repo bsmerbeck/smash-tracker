@@ -2216,3 +2216,407 @@ test('matrix-hug: no matrix at 1024px and wider is exactly one matrix-hug-unmeas
     'matrix-hug-unmeasured',
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-49: the all-route table-clip sweep, route prepare steps and the
+// text-fit family. Read through the namespace (fn38) so a RED run fails on an
+// assertion rather than a module-link error.
+// ---------------------------------------------------------------------------
+
+const sweepItem = (overrides = {}) => ({
+  targetPath: 'ul',
+  kind: 'ul',
+  hidden: false,
+  clipId: 0,
+  clipPath: 'div.card',
+  scrollWidth: 326,
+  clientWidth: 326,
+  ...overrides,
+});
+const sweepPage = { scrollWidth: 390, innerWidth: 390 };
+
+test('table-clip: sweep — a candidate whose clip container is 420 wide in a 326 box is one table-clipped violation naming the container', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  const v = evaluateTableClipSweep({
+    candidates: [sweepItem({ targetPath: 'table', clipPath: '#wrap', scrollWidth: 420 })],
+    declared: [],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(v), ['table-clipped']);
+  assert.equal(v[0].selectorPath, '#wrap');
+});
+
+test('table-clip: sweep — 327 in a 326 box passes (1px tolerance); no clip container (null sizes) passes', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  assert.deepEqual(
+    evaluateTableClipSweep({ candidates: [sweepItem({ scrollWidth: 327 })], page: sweepPage }),
+    [],
+  );
+  assert.deepEqual(
+    evaluateTableClipSweep({
+      candidates: [
+        sweepItem({ clipId: null, clipPath: null, scrollWidth: null, clientWidth: null }),
+      ],
+      page: sweepPage,
+    }),
+    [],
+  );
+});
+
+test('table-clip: sweep — hidden candidates (sr-only, display:none, print-only) are skipped and not counted as scanned', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  const tableClipSweepScanned = fn38('tableClipSweepScanned');
+  const input = {
+    candidates: [
+      sweepItem({ targetPath: 'ul.visible' }),
+      sweepItem({ targetPath: 'ul.sr-only', hidden: true, clipId: 1, scrollWidth: 900 }),
+      sweepItem({ targetPath: 'ul.none', hidden: true, clipId: 2, scrollWidth: 900 }),
+      sweepItem({ targetPath: 'ul.print', hidden: true, clipId: 3, scrollWidth: 900 }),
+    ],
+    declared: [],
+    page: sweepPage,
+  };
+  assert.deepEqual(evaluateTableClipSweep(input), []);
+  assert.equal(tableClipSweepScanned(input), 1);
+});
+
+test('table-clip: sweep — three candidates sharing one clip container are ONE violation; two containers are two', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  const one = evaluateTableClipSweep({
+    candidates: [
+      sweepItem({ targetPath: 'table', clipId: 4, scrollWidth: 500 }),
+      sweepItem({ targetPath: 'ul:nth-of-type(1)', clipId: 4, scrollWidth: 500 }),
+      sweepItem({ targetPath: 'ul:nth-of-type(2)', clipId: 4, scrollWidth: 500 }),
+    ],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(one), ['table-clipped']);
+  assert.equal(one[0].candidates.length, 3);
+  const two = evaluateTableClipSweep({
+    candidates: [
+      sweepItem({ targetPath: 'table', clipId: 4, scrollWidth: 500 }),
+      sweepItem({ targetPath: 'ol', clipId: 5, scrollWidth: 500 }),
+    ],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(two), ['table-clipped', 'table-clipped']);
+});
+
+test('table-clip: sweep — zero visible candidates is exactly one table-clip-unmeasured; a declared target matching nothing is unmeasured naming it; a declared target that clips is table-clipped', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  assert.deepEqual(
+    typesOf(evaluateTableClipSweep({ candidates: [sweepItem({ hidden: true })], page: sweepPage })),
+    ['table-clip-unmeasured'],
+  );
+  const missing = evaluateTableClipSweep({
+    candidates: [sweepItem()],
+    declared: [{ selector: '[data-slot="opponent-table"]', found: false }],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(missing), ['table-clip-unmeasured']);
+  assert.equal(missing[0].selector, '[data-slot="opponent-table"]');
+  const clipping = evaluateTableClipSweep({
+    candidates: [],
+    declared: [
+      sweepItem({
+        selector: '[data-slot="match-table"]',
+        found: true,
+        targetPath: 'table',
+        clipId: 9,
+        clipPath: 'div.overflow-x-auto',
+        scrollWidth: 980,
+      }),
+    ],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(clipping), ['table-clipped']);
+});
+
+test('table-clip: sweep — a page scrollWidth more than 1 px over innerWidth is one sweep-page-overflow', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  assert.deepEqual(
+    typesOf(
+      evaluateTableClipSweep({
+        candidates: [sweepItem()],
+        page: { scrollWidth: 392, innerWidth: 390 },
+      }),
+    ),
+    ['sweep-page-overflow'],
+  );
+  assert.deepEqual(
+    evaluateTableClipSweep({
+      candidates: [sweepItem()],
+      page: { scrollWidth: 391, innerWidth: 390 },
+    }),
+    [],
+  );
+});
+
+test('table-clip: sweep — routed mode reports table-clip-routed in place of table-clipped and sweep-page-overflow, and keeps table-clip-unmeasured', () => {
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  const v = evaluateTableClipSweep(
+    {
+      candidates: [sweepItem({ scrollWidth: 600 })],
+      declared: [{ selector: '#gone', found: false }],
+      page: { scrollWidth: 500, innerWidth: 390 },
+    },
+    { mode: 'routed' },
+  );
+  assert.deepEqual(typesOf(v).sort(), [
+    'table-clip-routed',
+    'table-clip-routed',
+    'table-clip-unmeasured',
+  ]);
+  assert.deepEqual(
+    v
+      .filter((x) => x.type === 'table-clip-routed')
+      .map((x) => x.routedType)
+      .sort(),
+    ['sweep-page-overflow', 'table-clipped'],
+  );
+});
+
+test('table-clip: sweep — TABLE_CLIP_SCAN_SELECTOR matches a [role="tablist"] element (OOS-5); a tablist whose own box scrolls 520 in 326 is one table-clipped violation', () => {
+  const selector = ns38.TABLE_CLIP_SCAN_SELECTOR;
+  assert.equal(typeof selector, 'string');
+  const parts = selector.split(',').map((part) => part.trim());
+  for (const want of [
+    'table',
+    '[role="table"]',
+    '[role="grid"]',
+    '[role="tablist"]',
+    'ul',
+    'ol',
+    '[role="list"]',
+  ]) {
+    assert.ok(parts.includes(want), `scan selector includes ${want}`);
+  }
+  const evaluateTableClipSweep = fn38('evaluateTableClipSweep');
+  const v = evaluateTableClipSweep({
+    candidates: [
+      sweepItem({
+        targetPath: 'div[role=tablist]',
+        kind: 'tablist',
+        clipId: 7,
+        clipPath: 'div[role=tablist]',
+        scrollWidth: 520,
+        clientWidth: 326,
+      }),
+    ],
+    page: sweepPage,
+  });
+  assert.deepEqual(typesOf(v), ['table-clipped']);
+  assert.equal(v[0].kind, 'tablist');
+});
+
+test('table-clip: mode — matchups and matchups-sketch-deep are routed; match-data, fighter-analysis, scout, stage-detail are enforced (the match prefix trap)', () => {
+  const tableClipModeForRoute = fn38('tableClipModeForRoute');
+  assert.equal(tableClipModeForRoute('matchups'), 'routed');
+  assert.equal(tableClipModeForRoute('matchups-sketch-deep'), 'routed');
+  for (const id of ['match-data', 'fighter-analysis', 'scout', 'stage-detail']) {
+    assert.equal(tableClipModeForRoute(id), 'enforce', id);
+  }
+});
+
+test('table-clip: routes — tableClipSweepRoutes keeps every route except ids ending in -fixture, in input order', () => {
+  const tableClipSweepRoutes = fn38('tableClipSweepRoutes');
+  const routes = [
+    { id: 'stretched-card-fixture' },
+    { id: 'dashboard' },
+    { id: 'period-axis-ticks-fixture' },
+    { id: 'scout' },
+    { id: 'gsp' },
+    { id: 'fixture-like-but-real' },
+  ];
+  assert.deepEqual(
+    tableClipSweepRoutes(routes).map((r) => r.id),
+    ['dashboard', 'scout', 'gsp', 'fixture-like-but-real'],
+  );
+});
+
+function fakePreparePage({ failSelector = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async waitForSelector(selector, options) {
+      calls.push(['wait', selector, options?.timeout]);
+      if (selector === failSelector) throw new Error('Waiting failed: timeout exceeded');
+    },
+    async type(selector, text) {
+      calls.push(['type', selector, text]);
+    },
+    async click(selector) {
+      calls.push(['click', selector]);
+    },
+  };
+}
+
+test('prepare: runRoutePrepare runs type / click / wait steps in order, each waiting for its selector first', async () => {
+  const runRoutePrepare = fn38('runRoutePrepare');
+  const page = fakePreparePage();
+  await runRoutePrepare(
+    page,
+    [
+      { type: 'type', selector: 'form input', text: 'guard-scout' },
+      { type: 'click', selector: 'form button[type="submit"]' },
+      { type: 'wait', selector: '[data-slot="scout-full-analysis"]' },
+    ],
+    { timeoutMs: 1234 },
+  );
+  assert.deepEqual(page.calls, [
+    ['wait', 'form input', 1234],
+    ['type', 'form input', 'guard-scout'],
+    ['wait', 'form button[type="submit"]', 1234],
+    ['click', 'form button[type="submit"]'],
+    ['wait', '[data-slot="scout-full-analysis"]', 1234],
+  ]);
+});
+
+test('prepare: an unknown step type throws naming it', async () => {
+  const runRoutePrepare = fn38('runRoutePrepare');
+  await assert.rejects(
+    runRoutePrepare(fakePreparePage(), [{ type: 'hover', selector: 'a' }]),
+    /unknown step type "hover"/,
+  );
+});
+
+test('prepare: a failing wait rejects naming the step index and selector', async () => {
+  const runRoutePrepare = fn38('runRoutePrepare');
+  await assert.rejects(
+    runRoutePrepare(fakePreparePage({ failSelector: '#late' }), [
+      { type: 'wait', selector: '#ok' },
+      { type: 'click', selector: '#late' },
+    ]),
+    (error) => /step 1/.test(error.message) && error.message.includes('#late'),
+  );
+});
+
+test('prepare: an empty list is a no-op', async () => {
+  const runRoutePrepare = fn38('runRoutePrepare');
+  const page = fakePreparePage();
+  await runRoutePrepare(page, []);
+  await runRoutePrepare(page);
+  assert.deepEqual(page.calls, []);
+});
+
+const fitItem = (overrides = {}) => ({
+  selectorPath: 'span.name',
+  hidden: false,
+  left: 40,
+  right: 300,
+  cardInnerLeft: 17,
+  cardInnerRight: 373,
+  hasText: true,
+  clips: false,
+  scrollWidth: 80,
+  clientWidth: 80,
+  scrollHeight: 20,
+  clientHeight: 20,
+  lineClamped: false,
+  titled: false,
+  ...overrides,
+});
+const fitTarget = (items, overrides = {}) => ({
+  selector: '[data-slot="stage-breakdown"]',
+  found: true,
+  scanned: items.length,
+  left: 33,
+  right: 357,
+  items,
+  ...overrides,
+});
+
+test('text-fit: escape — a descendant 2 px past its card inner right edge is one content-escape naming the target and the offender; 1 px passes', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  const v = evaluateTextFit({
+    targets: [fitTarget([fitItem({ selectorPath: 'span.figure', right: 375 })])],
+  });
+  assert.deepEqual(typesOf(v), ['content-escape']);
+  assert.equal(v[0].target, '[data-slot="stage-breakdown"]');
+  assert.equal(v[0].selectorPath, 'span.figure');
+  assert.deepEqual(evaluateTextFit({ targets: [fitTarget([fitItem({ right: 374 })])] }), []);
+});
+
+test('text-fit: escape — the left edge is symmetric; a descendant with no card ancestor is measured against the target box', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([fitItem({ left: 15 })])] })), [
+    'content-escape',
+  ]);
+  assert.deepEqual(evaluateTextFit({ targets: [fitTarget([fitItem({ left: 16 })])] }), []);
+  const noCard = fitItem({ cardInnerLeft: null, cardInnerRight: null, left: 40, right: 360 });
+  assert.deepEqual(
+    typesOf(evaluateTextFit({ targets: [fitTarget([noCard], { left: 33, right: 357 })] })),
+    ['content-escape'],
+  );
+  assert.deepEqual(
+    evaluateTextFit({ targets: [fitTarget([noCard], { left: 33, right: 359 })] }),
+    [],
+  );
+});
+
+test('text-fit: cut — overflow hidden with scrollWidth 120 / clientWidth 80 and no title is one text-cut; titled at 80 px passes', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  const cut = fitItem({ clips: true, scrollWidth: 120, clientWidth: 80 });
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([cut])] })), ['text-cut']);
+  assert.deepEqual(evaluateTextFit({ targets: [fitTarget([{ ...cut, titled: true }])] }), []);
+});
+
+test('text-fit: cut — a titled box starved to 16 px, or to 0 px at full height, is a text-cut (MIN_TRUNCATED_LABEL_PX 48)', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  assert.equal(ns38.MIN_TRUNCATED_LABEL_PX, 48);
+  const starved = fitItem({ clips: true, titled: true, scrollWidth: 120, clientWidth: 16 });
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([starved])] })), ['text-cut']);
+  const zero = fitItem({
+    clips: true,
+    titled: true,
+    scrollWidth: 64,
+    clientWidth: 0,
+    left: 60,
+    right: 60,
+    clientHeight: 20,
+    scrollHeight: 20,
+  });
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([zero])] })), ['text-cut']);
+});
+
+test('text-fit: cut — a line-clamped box with scrollHeight 40 / clientHeight 20 is a text-cut; overflow visible never is; a hidden (sr-only) box is skipped', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  const clamped = fitItem({ clips: true, lineClamped: true, scrollHeight: 40, clientHeight: 20 });
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([clamped])] })), ['text-cut']);
+  const visible = fitItem({ clips: false, scrollWidth: 300, clientWidth: 80 });
+  assert.deepEqual(evaluateTextFit({ targets: [fitTarget([visible])] }), []);
+  const srOnly = fitItem({ hidden: true, clips: true, scrollWidth: 300, clientWidth: 1 });
+  assert.deepEqual(evaluateTextFit({ targets: [fitTarget([srOnly, fitItem()])] }), []);
+});
+
+test('text-fit: presence — a declared target with found=false is one text-fit-unmeasured naming its selector; zero scanned descendants is text-fit-unmeasured', () => {
+  const evaluateTextFit = fn38('evaluateTextFit');
+  const missing = evaluateTextFit({
+    targets: [{ selector: '[data-slot="gsp-hero"]', found: false, scanned: 0, items: [] }],
+  });
+  assert.deepEqual(typesOf(missing), ['text-fit-unmeasured']);
+  assert.equal(missing[0].selector, '[data-slot="gsp-hero"]');
+  assert.deepEqual(typesOf(evaluateTextFit({ targets: [fitTarget([], { scanned: 0 })] })), [
+    'text-fit-unmeasured',
+  ]);
+});
+
+test('text-fit: routes — fitTargetsForViewport returns only the targets declaring the viewport; a route without fitTargets returns []', () => {
+  const fitTargetsForViewport = fn38('fitTargetsForViewport');
+  const route = {
+    id: 'match-data',
+    fitTargets: [
+      { selector: '#a', viewports: ['390x844', '1440x900'] },
+      { selector: '#b', viewports: ['390x844'] },
+    ],
+  };
+  assert.deepEqual(
+    fitTargetsForViewport(route, '1440x900').map((t) => t.selector),
+    ['#a'],
+  );
+  assert.deepEqual(
+    fitTargetsForViewport(route, '390x844').map((t) => t.selector),
+    ['#a', '#b'],
+  );
+  assert.deepEqual(fitTargetsForViewport({ id: 'trends' }, '390x844'), []);
+});

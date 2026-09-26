@@ -47,7 +47,12 @@ export function FullAnalysisSection({
   const [open, setOpen] = useState(false);
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="rounded-lg border"
+      data-slot="scout-full-analysis"
+    >
       <CollapsibleTrigger asChild>
         <button
           type="button"
