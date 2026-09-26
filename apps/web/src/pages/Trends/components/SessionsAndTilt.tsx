@@ -166,7 +166,9 @@ export function SessionsAndTilt({ matches }: SessionsAndTiltProps) {
         {sessions.length === 0 ? (
           empty
         ) : (
-          <>
+          // Plan 39.1-40 (OOS-4): the layout-neutral text-fit hook (display:
+          // contents — CardContent's gap still spaces the StatRow and the list).
+          <div className="contents" data-slot="sessions-and-tilt">
             <StatRow
               figures={[
                 <StatFigure
@@ -232,7 +234,7 @@ export function SessionsAndTilt({ matches }: SessionsAndTiltProps) {
               }}
               empty={empty}
             />
-          </>
+          </div>
         )}
       </CardContent>
     </Card>

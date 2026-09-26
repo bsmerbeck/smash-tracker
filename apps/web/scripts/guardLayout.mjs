@@ -254,6 +254,10 @@ export const LAYOUT_ORACLE_ROUTES = [
       { first: '[data-slot="trends-hero-body"]', then: '[data-slot="trends-reads-rail"]' },
       { first: '[data-slot="trends-reads-rail"]', then: '[data-slot="career-timeline"]' },
     ],
+    // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
+    fitTargets: [
+      { selector: '[data-slot="sessions-and-tilt"]', viewports: ['1440x900', '390x844'] },
+    ],
   },
   {
     // Plan 39.1-34: the ONE sparg0-shaped dataset (8,400 games over ~7.7
@@ -268,6 +272,10 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: ['career-timeline', 'rail-cards'],
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 2 },
     timelineExpect: { strips: true, state: 'full' },
+    // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
+    fitTargets: [
+      { selector: '[data-slot="sessions-and-tilt"]', viewports: ['1440x900', '390x844'] },
+    ],
   },
   {
     // Plan 39.1-35: the casual account (41 games over three months,
@@ -281,6 +289,10 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: ['career-timeline', 'rail-cards'],
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 1 },
     timelineExpect: { state: 'thin', formStrip: true },
+    // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
+    fitTargets: [
+      { selector: '[data-slot="sessions-and-tilt"]', viewports: ['1440x900', '390x844'] },
+    ],
   },
   // Plan 39.1-39: brand-red-text (UI-SPEC §4.3).
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]', checks: ['brand-red-text'] },
