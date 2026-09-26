@@ -1,11 +1,29 @@
 import { createElement } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { SpriteList } from '@/data/sprites';
 import { chartColors } from '@/lib/chartTheme';
 import { DashboardContext, type DashboardContextValue } from '../DashboardContext';
-import { LastMatchesChart, buildFormCurveData, buildFormCurveSeries } from './LastMatchesChart';
+import { LastMatchesChart, buildFormCurveSeries } from './LastMatchesChart';
+
+/**
+ * The vitest alias stub for react-chartjs-2 drops every prop, so this file
+ * mocks the module locally: the Line records its `data` prop (the Form
+ * Curve's colour assertion reads it) and renders the stub's own test id.
+ */
+type ChartData = { labels: unknown[]; datasets: Array<Record<string, unknown>> };
+const captured = vi.hoisted(() => ({ data: null as ChartData | null }));
+
+vi.mock('react-chartjs-2', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    Line: (props: { data: ChartData }) => {
+      captured.data = props.data;
+      return h('div', { 'data-testid': 'chartjs-stub', 'data-chart-type': 'line', role: 'img' });
+    },
+  };
+});
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.UTC(2026, 8, 25, 12);
@@ -37,7 +55,8 @@ const mixedAge: Match[] = [
     makeMatch({ id: `old${i}`, time: NOW_MS - (200 + i) * DAY_MS, win: true }),
   ),
   ...Array.from({ length: 12 }, (_, i) =>
-    makeMatch({ id: `new${i}`, time: NOW_MS - (10 + i) * DAY_MS, win: i < 3 }),
+    // The three OLDEST in-window games (i = 9..11) are the wins.
+    makeMatch({ id: `new${i}`, time: NOW_MS - (10 + i) * DAY_MS, win: i >= 9 }),
   ),
 ];
 
@@ -131,20 +150,6 @@ describe('buildFormCurveSeries (the page horizon picks the plotted games)', () =
   });
 });
 
-describe('buildFormCurveData (DD-11: the Form Curve takes the series ink, never brand red)', () => {
-  it("the single dataset's line and point rings are the series blue", () => {
-    const data = buildFormCurveData(buildFormCurveSeries(fifty, 'last30', NOW_MS), 'Win Rate');
-    expect(data.datasets).toHaveLength(1);
-    const [dataset] = data.datasets;
-    expect(dataset!.borderColor).toBe(chartColors.series);
-    expect(dataset!.pointBorderColor).toBe(chartColors.series);
-    expect(dataset!.borderColor).not.toBe(chartColors.red);
-    expect(dataset!.pointBorderColor).not.toBe(chartColors.red);
-    expect(dataset!.label).toBe('Win Rate');
-    expect(data.labels).toHaveLength(30);
-  });
-});
-
 const mario = SpriteList.find((s) => s.id === 1)!;
 
 function renderChart(matches: Match[], horizon: HorizonKey) {
@@ -191,6 +196,20 @@ describe('LastMatchesChart (UI-SPEC §10.4: no per-card control; the page horizo
     expect(container.querySelector('[data-slot="form-curve-window-empty"]')?.textContent).toBe(
       'Fewer than 3 games in the last 90 days — the curve needs at least 3.',
     );
+  });
+
+  it("DD-11: the Form Curve's single dataset (line and point rings) is the series blue, never brand red", () => {
+    captured.data = null;
+    renderChart(recent, 'last30');
+    expect(captured.data).not.toBeNull();
+    expect(captured.data!.datasets).toHaveLength(1);
+    const [dataset] = captured.data!.datasets;
+    expect(dataset!.borderColor).toBe(chartColors.series);
+    expect(dataset!.pointBorderColor).toBe(chartColors.series);
+    expect(dataset!.borderColor).not.toBe(chartColors.red);
+    expect(dataset!.pointBorderColor).not.toBe(chartColors.red);
+    expect(dataset!.label).toBe('Win Rate');
+    expect(captured.data!.labels).toHaveLength(recent.length);
   });
 
   it('keeps the empty-account copy when the fighter has no games', () => {

@@ -55,8 +55,12 @@ const HARNESS_FIGHTER_B_ID = 22;
  * selected Matchups/FighterAnalysis pairing is guaranteed well above
  * `ABSTENTION_FLOOR_GAMES` (3) regardless of PRNG output. `stageIds: [1]`
  * (Battlefield) for the same reason on the stage-detail route.
+ *
+ * Exported (plan 39.1-39) so capture:design's capture-only `gsp` scale is
+ * built FROM this one definition (the same games plus GSP readings), never
+ * a second copy of the fixture parameters.
  */
-function buildRealisticScale() {
+export function buildRealisticScale() {
   // generateSyntheticMatches already assigns each row a unique, deterministic
   // `id` (`synth-<seed>-<i>`) — no re-keying needed.
   const matches = generateSyntheticMatches({

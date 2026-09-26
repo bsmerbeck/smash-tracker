@@ -101,6 +101,21 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
           return;
         }
 
+        // Plan 39.1-39: the GSP page's reads, answered ONLY when the active
+        // dataset carries them (capture:design's capture-only `gsp` scale).
+        // Every other scale falls through to the catch-all below exactly as
+        // before, so the eight measured routes' responses are byte-unchanged.
+        if (url === '/gsp-readings' && dataset?.gspReadings !== undefined) {
+          res.statusCode = 200;
+          res.end(JSON.stringify(dataset.gspReadings));
+          return;
+        }
+        if (url === '/gsp-settings' && dataset?.gspSettings !== undefined) {
+          res.statusCode = 200;
+          res.end(JSON.stringify(dataset.gspSettings));
+          return;
+        }
+
         // Defensive catch-all (perfFixturePlugin.mjs's own convention): any
         // other /api/** GET the mounted page might fire gets a minimal,
         // schema-agnostic empty shape rather than a 404 that could surface a

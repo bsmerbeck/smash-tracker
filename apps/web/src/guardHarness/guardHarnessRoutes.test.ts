@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoutes';
@@ -86,7 +87,7 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(gsp?.shell).toBe('app');
     expect(gsp?.loadedMarker).toBe('[data-slot="gsp-body"]');
     const oracleSource = fs.readFileSync(
-      fileURLToPath(new URL('../../scripts/guardLayout.mjs', import.meta.url)),
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../scripts/guardLayout.mjs'),
       'utf8',
     );
     const oracleBlock = oracleSource.slice(

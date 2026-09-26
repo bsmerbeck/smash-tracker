@@ -287,10 +287,16 @@
     },
     "formCurve": {
       "title": "Form Curve",
-      "window": "Window",
-      "windowAria": "Rolling window",
-      "lastN": "Last {{count}}",
-      "cumulative": "Cumulative",
+      "caption": {
+        "last30": "Running win rate · last 30 games",
+        "lastEvent": "Running win rate · last event",
+        "last90": "Running win rate · last 90 days"
+      },
+      "windowEmpty": {
+        "last30": "Fewer than 3 games recorded — the curve needs at least 3.",
+        "lastEvent": "Fewer than 3 games at the last event — the curve needs at least 3.",
+        "last90": "Fewer than 3 games in the last 90 days — the curve needs at least 3."
+      },
       "empty": "Submit a match to see the match chart.",
       "winRate": "Win Rate",
       "opponent": "Opponent: {{name}}"

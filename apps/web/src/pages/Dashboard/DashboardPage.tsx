@@ -304,7 +304,7 @@ export function DashboardPage() {
               <WinLossTracker matches={matches} />
             </GridCell>
             <GridCell span={6}>
-              <LastMatchesChart matches={matches} />
+              <LastMatchesChart matches={matches} horizon={horizon} />
             </GridCell>
             <GridCell span={6}>
               <PreviousMatches matches={matches} />

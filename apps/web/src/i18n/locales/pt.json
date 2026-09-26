@@ -287,10 +287,16 @@
     },
     "formCurve": {
       "title": "Curva de forma",
-      "window": "Janela",
-      "windowAria": "Janela móvel",
-      "lastN": "Últimas {{count}}",
-      "cumulative": "Acumulado",
+      "caption": {
+        "last30": "Taxa de vitórias acumulada · últimas 30 partidas",
+        "lastEvent": "Taxa de vitórias acumulada · último evento",
+        "last90": "Taxa de vitórias acumulada · últimos 90 dias"
+      },
+      "windowEmpty": {
+        "last30": "Menos de 3 partidas registradas — a curva precisa de pelo menos 3.",
+        "lastEvent": "Menos de 3 partidas no último evento — a curva precisa de pelo menos 3.",
+        "last90": "Menos de 3 partidas nos últimos 90 dias — a curva precisa de pelo menos 3."
+      },
       "empty": "Registre uma partida para ver o gráfico.",
       "winRate": "Taxa de vitórias",
       "opponent": "Oponente: {{name}}"

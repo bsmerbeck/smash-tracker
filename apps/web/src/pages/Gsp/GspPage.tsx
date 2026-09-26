@@ -148,8 +148,11 @@ export function GspPage() {
     }
   }
 
+  // data-slot="gsp-body" (plan 39.1-39): exists only once every data hook
+  // has settled and a fighter is resolved — the capture-only harness route's
+  // page-loaded marker (captureDesignScreens.mjs). Layout-neutral.
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6" data-slot="gsp-body">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">{t('gsp.header.title')}</h1>
         <p className="max-w-lg text-sm text-muted-foreground">{t('gsp.header.subtitle')}</p>

@@ -11,7 +11,7 @@
  * USAGE (absolute --out path):
  *   pnpm --filter @smash-tracker/web run capture:design -- \
  *     --out /abs/dir [--routes fighter-analysis,trends,dashboard] \
- *     [--widths 1440,390] [--scale realistic|recent|career] [--no-shell]
+ *     [--widths 1440,390] [--scale realistic|recent|career|gsp] [--no-shell]
  *
  * Output: `<out>/<scale>/live-<route>-<width>.png` and `<out>/<scale>/metrics.json`
  * (an array of per-route-per-width records: scroll metrics, every DeltaChip's
@@ -37,7 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
-import { startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildRealisticScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
 import { LAYOUT_ORACLE_ROUTES, createHardTimeoutExit } from './guardLayout.mjs';
 
 const HARD_TIMEOUT_MS = 8 * 60 * 1000;
@@ -57,7 +57,13 @@ const DEFAULT_ROUTES = [
   'opponent-hub',
   'stage-detail',
 ];
-const KNOWN_SCALES = new Set(['realistic', 'recent', 'career']);
+/**
+ * Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): routes this
+ * tool can screenshot that guard:layout never measures. Mirrors the harness
+ * route table's capture-only `gsp` entry (`guardHarnessRoutes.tsx`).
+ */
+const CAPTURE_ONLY_ROUTES = [{ id: 'gsp', loadedMarker: '[data-slot="gsp-body"]' }];
+const KNOWN_SCALES = new Set(['realistic', 'recent', 'career', 'gsp']);
 /** Mirrors `DeltaChip`'s data-state values that assert a read. */
 const DIRECTIONAL_STATES = new Set(['steady', 'up', 'down']);
 /** `ABSTENTION_FLOOR_GAMES` — mirrored (a plain Node script cannot import the TS policy module's constant without a transform; the value is fixed by D-07). */
@@ -103,7 +109,9 @@ function parseArgs(argv) {
   for (const width of args.widths) {
     if (!VIEWPORT_HEIGHTS[width]) fail(2, `unsupported width ${width} (supported: 1440, 390)`);
   }
-  const known = new Map(LAYOUT_ORACLE_ROUTES.map((route) => [route.id, route]));
+  const known = new Map(
+    [...LAYOUT_ORACLE_ROUTES, ...CAPTURE_ONLY_ROUTES].map((route) => [route.id, route]),
+  );
   for (const id of args.routes) {
     if (!known.has(id)) fail(2, `unknown route "${id}"`);
   }
@@ -173,6 +181,62 @@ function buildRecentScale() {
     aliases: {},
     opponentNotes: {},
     tournaments: [],
+  };
+}
+
+/** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
+function seededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Plan 39.1-39: the capture-only `gsp` scale — the realistic scale's games
+ * (guard:layout's own 300-game fixture, one definition) with a deterministic
+ * `gsp` value on every game of the harness mains (a seeded walk between 9 and
+ * 11 million per fighter: a win climbs 40-140k, a loss drops 30-120k), two
+ * calibration readings per main and gsp settings with an Elite threshold,
+ * so GspCurve, GspVsGlicko and GainsAnalysis all render data.
+ */
+function buildGspScale() {
+  const base = buildRealisticScale();
+  const random = seededRandom(39_139_001);
+  const mains = base.fighters.primary;
+  const level = new Map(mains.map((id) => [id, 9_600_000]));
+  const clamp = (value) => Math.min(11_000_000, Math.max(9_000_000, value));
+  const matches = [...base.matches]
+    .sort((a, b) => (a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : 1))
+    .map((match) => {
+      if (!level.has(match.fighter_id)) return match;
+      const step = match.win ? 40_000 + random() * 100_000 : -(30_000 + random() * 90_000);
+      const next = Math.round(clamp(level.get(match.fighter_id) + step));
+      level.set(match.fighter_id, next);
+      return { ...match, gsp: next };
+    });
+  const byFighter = mains.map((id) => matches.filter((m) => m.fighter_id === id));
+  const gspReadings = byFighter.flatMap((games, index) =>
+    [0.33, 0.66].map((at, n) => {
+      const anchor = games[Math.floor(games.length * at)];
+      return {
+        id: `gsp-reading-${mains[index]}-${n}`,
+        fighter_id: mains[index],
+        gsp: Math.round(clamp((anchor?.gsp ?? 9_800_000) + 150_000)),
+        time: (anchor?.time ?? 0) + 60_000,
+      };
+    }),
+  );
+  const lastTime = matches.reduce((max, match) => Math.max(max, match.time), 0);
+  return {
+    ...base,
+    matches,
+    gspReadings,
+    gspSettings: { eliteThreshold: 10_400_000, updatedAt: lastTime },
   };
 }
 
@@ -265,7 +329,10 @@ function collectMetrics(floorGames) {
       '';
     return { title, width: Math.round(rect.width), height: Math.round(rect.height) };
   });
+  // Plan 39.1-39: the GSP page's chart.js canvases (capture-only `gsp` route).
+  const gspCanvases = document.querySelectorAll('[data-slot="gsp-body"] canvas').length;
   return {
+    gspCanvases,
     statRows,
     firstContentTop,
     filterRowHeight,
@@ -362,7 +429,12 @@ async function main() {
   const scaleDir = path.join(args.out, args.scale);
   fs.mkdirSync(scaleDir, { recursive: true });
 
-  const extraScales = args.scale === 'recent' ? { recent: buildRecentScale() } : {};
+  const extraScales =
+    args.scale === 'recent'
+      ? { recent: buildRecentScale() }
+      : args.scale === 'gsp'
+        ? { gsp: buildGspScale() }
+        : {};
   const { server, baseUrl } = await startGuardLayoutHarnessServer({ extraScales });
   let browser;
   try {
@@ -399,7 +471,7 @@ async function main() {
         });
         records.push(record);
         console.log(
-          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'}`,
+          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'} gspCanvases=${record.gspCanvases}`,
         );
       }
     }

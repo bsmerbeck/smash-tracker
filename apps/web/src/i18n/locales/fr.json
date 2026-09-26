@@ -287,10 +287,16 @@
     },
     "formCurve": {
       "title": "Courbe de forme",
-      "window": "Fenêtre",
-      "windowAria": "Fenêtre glissante",
-      "lastN": "{{count}} derniers",
-      "cumulative": "Cumulé",
+      "caption": {
+        "last30": "Taux de victoire cumulé · 30 derniers matchs",
+        "lastEvent": "Taux de victoire cumulé · dernier événement",
+        "last90": "Taux de victoire cumulé · 90 derniers jours"
+      },
+      "windowEmpty": {
+        "last30": "Moins de 3 matchs enregistrés — la courbe en demande au moins 3.",
+        "lastEvent": "Moins de 3 matchs au dernier événement — la courbe en demande au moins 3.",
+        "last90": "Moins de 3 matchs sur les 90 derniers jours — la courbe en demande au moins 3."
+      },
       "empty": "Enregistrez un match pour voir le graphique.",
       "winRate": "Taux de victoire",
       "opponent": "Adversaire : {{name}}"

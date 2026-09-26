@@ -287,10 +287,16 @@
     },
     "formCurve": {
       "title": "Formkurve",
-      "window": "Fenster",
-      "windowAria": "Gleitendes Fenster",
-      "lastN": "Letzte {{count}}",
-      "cumulative": "Kumuliert",
+      "caption": {
+        "last30": "Laufende Winrate · letzte 30 Matches",
+        "lastEvent": "Laufende Winrate · letztes Event",
+        "last90": "Laufende Winrate · letzte 90 Tage"
+      },
+      "windowEmpty": {
+        "last30": "Weniger als 3 Matches erfasst — die Kurve braucht mindestens 3.",
+        "lastEvent": "Weniger als 3 Matches beim letzten Event — die Kurve braucht mindestens 3.",
+        "last90": "Weniger als 3 Matches in den letzten 90 Tagen — die Kurve braucht mindestens 3."
+      },
       "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
       "winRate": "Winrate",
       "opponent": "Gegner: {{name}}"

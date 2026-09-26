@@ -9,6 +9,7 @@ import { TrendsPage } from '@/pages/Trends/TrendsPage';
 import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { OpponentHubPage } from '@/pages/Opponents/OpponentHubPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
+import { GspPage } from '@/pages/Gsp/GspPage';
 
 /**
  * The layout-oracle harness's route table (Phase 39.1 Plan 09, review
@@ -51,8 +52,8 @@ export interface GuardHarnessRouteEntry {
    * MainLayout-geometry wrapper (`GuardAppShell.tsx`) so its content is
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
-   * route except `matchups`, (plan 39.1-34) `trends-career` and (plan 39.1-35)
-   * `trends-casual`.
+   * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
+   * `trends-casual` and (plan 39.1-39) the capture-only `gsp`.
    */
   shell?: 'app';
 }
@@ -179,6 +180,19 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/stages/1',
     element: <StageDetailPage />,
     loadedMarker: '[data-slot="stage-detail-body"]',
+  },
+  {
+    // Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): a
+    // CAPTURE-ONLY route — `captureDesignScreens.mjs` screenshots the GSP
+    // page's three chart.js charts on its `gsp` fixture scale. It is never
+    // one of guard:layout's `LAYOUT_ORACLE_ROUTES` (GSP stays chart.js until
+    // Phase 41 and is not an analytics route).
+    id: 'gsp',
+    path: '/gsp',
+    initialEntry: '/gsp',
+    element: <GspPage />,
+    loadedMarker: '[data-slot="gsp-body"]',
+    shell: 'app',
   },
 ];
 
