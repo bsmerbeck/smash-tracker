@@ -159,3 +159,58 @@ describe('design fidelity — source-tree guard (plan 39.1-36)', () => {
     });
   });
 });
+
+/**
+ * Plan 39.1-39 (DD-11, UI-SPEC §4.3 "brand red is never a data mark";
+ * OWNER DECISION 2026-09-25 extends the rule to the GSP page): no non-test
+ * file under the eight scanned page directories may reach for the brand-red
+ * chart ink again. No allowlist.
+ */
+const RED_INK_PAGE_DIRS: readonly string[] = [
+  'apps/web/src/pages/Dashboard/',
+  'apps/web/src/pages/FighterAnalysis/',
+  'apps/web/src/pages/Matchups/',
+  'apps/web/src/pages/MatchData/',
+  'apps/web/src/pages/Trends/',
+  'apps/web/src/pages/Opponents/',
+  'apps/web/src/pages/Stages/',
+  'apps/web/src/pages/Gsp/',
+];
+const RED_CHART_INK_PATTERN = /\bredLineDataset\b|\bchartColors\.(red|redSoft)\b/;
+const RED_INK_SCANNED = NON_TEST_FILES.filter((file) =>
+  RED_INK_PAGE_DIRS.some((dir) => file.startsWith(dir)),
+);
+
+describe('design fidelity — no brand-red chart ink on an analytics or GSP page (plan 39.1-39)', () => {
+  it('the pattern detects each red-ink reference (non-vacuity)', () => {
+    for (const fixture of [
+      '...redLineDataset(),',
+      'backgroundColor: chartColors.red,',
+      'fill: chartColors.redSoft',
+      "import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';",
+    ]) {
+      expect(RED_CHART_INK_PATTERN.test(fixture), fixture).toBe(true);
+    }
+    expect(RED_CHART_INK_PATTERN.test('...seriesLineDataset(),')).toBe(false);
+    expect(RED_CHART_INK_PATTERN.test('borderColor: chartColors.series,')).toBe(false);
+  });
+
+  it('the scanned set is non-empty and includes the Form Curve and all three GSP chart files', () => {
+    expect(RED_INK_SCANNED.length).toBeGreaterThan(50);
+    for (const file of [
+      'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
+      'apps/web/src/pages/Gsp/components/GspCurve.tsx',
+      'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
+      'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
+    ]) {
+      expect(RED_INK_SCANNED).toContain(file);
+    }
+  });
+
+  it('no scanned file references redLineDataset, chartColors.red or chartColors.redSoft', () => {
+    const offenders = RED_INK_SCANNED.filter((file) =>
+      RED_CHART_INK_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+});

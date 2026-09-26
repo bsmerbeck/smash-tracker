@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoutes';
 
@@ -11,8 +13,8 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
-  it('has exactly twelve entries: the eight real analytics routes, the trends-career and trends-casual oracle routes, and the stretch and period-axis fixture routes', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(12);
+  it('has exactly thirteen entries: the eight real analytics routes, the trends-career and trends-casual oracle routes, the stretch and period-axis fixture routes, and the capture-only gsp route', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(13);
   });
 
   it('CR-01: carries the period-axis tick fixture route', () => {
@@ -65,9 +67,35 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(findGuardHarnessRoute(null)).toBeUndefined();
   });
 
-  it('plans 39.1-30/34/35: exactly the matchups, trends-career and trends-casual entries opt into the MainLayout-geometry app shell', () => {
+  it('plans 39.1-30/34/35/39: exactly the matchups, trends-career, trends-casual and gsp entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
-    expect(shelled.map((r) => r.id).sort()).toEqual(['matchups', 'trends-career', 'trends-casual']);
+    expect(shelled.map((r) => r.id).sort()).toEqual([
+      'gsp',
+      'matchups',
+      'trends-career',
+      'trends-casual',
+    ]);
+  });
+
+  // Plan 39.1-39 (OWNER DECISION 2026-09-25): the GSP page is screenshotted by
+  // capture:design only — it is never one of guard:layout's measured routes.
+  it('plan 39.1-39: a capture-only gsp route mounts the GSP page at /gsp in the app shell, absent from LAYOUT_ORACLE_ROUTES', () => {
+    const gsp = findGuardHarnessRoute('gsp');
+    expect(gsp?.path).toBe('/gsp');
+    expect(gsp?.initialEntry).toBe('/gsp');
+    expect(gsp?.shell).toBe('app');
+    expect(gsp?.loadedMarker).toBe('[data-slot="gsp-body"]');
+    const oracleSource = fs.readFileSync(
+      fileURLToPath(new URL('../../scripts/guardLayout.mjs', import.meta.url)),
+      'utf8',
+    );
+    const oracleBlock = oracleSource.slice(
+      oracleSource.indexOf('export const LAYOUT_ORACLE_ROUTES'),
+      oracleSource.indexOf('const HARD_TIMEOUT_MS'),
+    );
+    expect(oracleBlock.length).toBeGreaterThan(1000);
+    expect(oracleBlock).toMatch(/id: 'stage-detail'/);
+    expect(oracleBlock).not.toMatch(/id: 'gsp'/);
   });
 
   it('plan 39.1-35: trends-casual mounts the Trends page at its real path with the trends loaded marker', () => {

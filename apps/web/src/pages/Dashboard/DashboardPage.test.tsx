@@ -360,6 +360,25 @@ describe('DashboardPage', () => {
         ),
       );
     });
+
+    // Plan 39.1-39 (UI-SPEC §10.4, D-06): the Form Curve has no window select
+    // of its own — it plots the page horizon's window, so the same switch
+    // press re-windows it and its caption names the new window.
+    it('the Form Curve follows the page horizon (no per-card select)', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonFixture());
+
+      const { container } = renderDashboard();
+
+      const caption = () => container.querySelector('[data-slot="form-curve-caption"]');
+      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 30 games'));
+      expect(screen.queryByRole('combobox', { name: 'Rolling window' })).toBeNull();
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 90 days'));
+    });
   });
 
   it('shows a no-matches empty state for a new user with fighters but no matches yet', async () => {
