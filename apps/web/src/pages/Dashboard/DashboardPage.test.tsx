@@ -252,6 +252,25 @@ describe('DashboardPage', () => {
     }
   });
 
+  // Plan 39.1-50 Task 3 (DEFECT found on the after capture, UI-SPEC §6.1
+  // "no orphan half"): with six hero tiles the second hero row holds Rating
+  // and the fighter tile (6 columns), so the 6-span Form Curve packed in
+  // beside them and left Previous Matches alone on the next row. The Form
+  // Curve starts its own row at lg, so it and Previous Matches stay a pair.
+  it('the Form Curve cell starts a new row at lg, pairing it with Previous Matches', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderDashboard();
+
+    const curveCell = (await screen.findByText('Form Curve')).closest('[data-span]')!;
+    const previousCell = screen.getByText('Previous Matches').closest('[data-span]')!;
+    expect(curveCell).toHaveAttribute('data-span', '6');
+    expect(curveCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(previousCell).toHaveAttribute('data-span', '6');
+    expect(curveCell.nextElementSibling).toBe(previousCell);
+  });
+
   it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);

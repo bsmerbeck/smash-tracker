@@ -206,6 +206,18 @@ describe('PreviousMatches (plan 39.1-50, OOS-12b: the page horizon, the kit list
     });
   });
 
+  // Plan 39.1-50 Task 3 (DEFECT found on the after capture): the 32 px
+  // delete button grew its row past the 20 px text line, so manual and
+  // synced rows had different heights. Its negative block margin keeps the
+  // row on the text line's height.
+  it('the delete button never grows its row past the text line (negative block margin)', () => {
+    const games = fiftyGames();
+    const { container } = renderList(games, 'last30');
+    const buttons = Array.from(container.querySelectorAll('[aria-label="Delete match"]'));
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons) expect(button.className).toMatch(/(^|\s)-my-1\.5(\s|$)/);
+  });
+
   it('the delete action renders only for a manual game, and confirming deletes that id', async () => {
     const games = fiftyGames();
     const { container } = renderList(games, 'last30');
