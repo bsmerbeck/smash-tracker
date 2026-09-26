@@ -453,6 +453,7 @@ function wasRejected(run: PipelineRun): boolean {
   const { outcome } = run;
   return (
     outcome.droppedClaimCount > 0 ||
+    outcome.droppedActions.length > 0 ||
     outcome.strippedSectionIds.length > 0 ||
     (outcome.status === 'failed' && outcome.survivingClaimIds.length === 0)
   );

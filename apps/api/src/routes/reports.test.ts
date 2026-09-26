@@ -6434,3 +6434,22 @@ describe('code review API-IN-02: the stored model name is the one REPORT_MODEL c
     expect(storedScoutReports(database)[0]!.model).toBe(REPORT_MODEL);
   });
 });
+
+describe('code review SH-WR-05 / API-IN-03: droppedClaimCount counts claims only, never a dropped action slot', () => {
+  it('a delivered report whose ONLY drop is an unlinked action slot stores no droppedClaimCount and emits no report_claims_dropped', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        // c09 is never selected, so it never survives: an R8 action drop.
+        { action1: { actionId: 'a01', claimId: 'c09' } },
+      ),
+    );
+
+    expect((await postLegacy(app, 'wr05-action-only')).statusCode).toBe(200);
+
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report).not.toHaveProperty('droppedClaimCount');
+    expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
+  });
+});

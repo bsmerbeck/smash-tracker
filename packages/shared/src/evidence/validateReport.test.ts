@@ -1005,11 +1005,15 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     });
   });
 
-  it('R8: an action slot referencing a dropped (never-issued) claim becomes null and is reported', () => {
+  it('R8: an action slot referencing a dropped (never-issued) claim becomes null and is reported — as a dropped ACTION, never a dropped claim (SH-WR-05)', () => {
     const fixture = findFixture('action-unlinked');
     const outcome = validateReportOutput(bridge(fixture));
-    const actionDrop = outcome.droppedClaims.find((d) => d.claimId === 'a01');
+    const actionDrop = outcome.droppedActions.find((d) => d.actionId === 'a01');
     expect(actionDrop?.rule).toBe('R8');
+    // SH-WR-05 / API-IN-03: droppedClaimCount (the "N claims couldn't be
+    // verified" caption and the report_claims_dropped event) counts claims only.
+    expect(outcome.droppedClaims.some((d) => d.claimId === 'a01')).toBe(false);
+    expect(outcome.droppedClaimCount).toBe(0);
     // The claim the action tried to reference (c09) was never issued at all.
     expect(outcome.survivingClaimIds).not.toContain('c09');
   });
