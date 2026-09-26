@@ -1613,6 +1613,10 @@
     },
     "droppedClaims_one": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
     "droppedClaims_other": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
+    "droppedClaimsPlan_one": "{{count}}件の主張を検証できなかったため、この練習プランから削除しました。",
+    "droppedClaimsPlan_other": "{{count}}件の主張を検証できなかったため、この練習プランから削除しました。",
+    "droppedPlanSections_one": "{{count}}件のセクションを検証できなかったため、この練習プランから削除しました。",
+    "droppedPlanSections_other": "{{count}}件のセクションを検証できなかったため、この練習プランから削除しました。",
     "withheldProse_one": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
     "withheldProse_other": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
     "actions": {

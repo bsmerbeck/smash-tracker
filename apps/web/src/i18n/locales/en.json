@@ -1613,6 +1613,10 @@
     },
     "droppedClaims_one": "1 claim couldn't be verified and was removed from this report.",
     "droppedClaims_other": "{{count}} claims couldn't be verified and were removed from this report.",
+    "droppedClaimsPlan_one": "1 claim couldn't be verified and was removed from this plan.",
+    "droppedClaimsPlan_other": "{{count}} claims couldn't be verified and were removed from this plan.",
+    "droppedPlanSections_one": "1 section couldn't be verified and was removed from this plan.",
+    "droppedPlanSections_other": "{{count}} sections couldn't be verified and were removed from this plan.",
     "withheldProse_one": "Commentary for 1 section was withheld because it couldn't be verified against your match data.",
     "withheldProse_other": "Commentary for {{count}} sections was withheld because it couldn't be verified against your match data.",
     "actions": {

@@ -12,14 +12,34 @@ import { useTranslation } from 'react-i18next';
  * fractional or negative count is not a count at all. Absent, null, zero,
  * negative, fractional and non-numeric values all render nothing.
  */
-export function DroppedClaimsNote({ count }: { count: unknown }) {
+/**
+ * Code review IN-04: which sentence the count gets. `report` (the default) is
+ * a scout report; `plan` is a claims-era practice plan; `legacyPlan` is a
+ * Phase 28 practice plan, whose stored `droppedClaimCount` counts focus-area
+ * SECTIONS dropped by 28-06's citation check, not claims.
+ */
+export type DroppedClaimsNoteVariant = 'report' | 'plan' | 'legacyPlan';
+
+const DROPPED_NOTE_KEY: Record<DroppedClaimsNoteVariant, string> = {
+  report: 'reports.droppedClaims',
+  plan: 'reports.droppedClaimsPlan',
+  legacyPlan: 'reports.droppedPlanSections',
+};
+
+export function DroppedClaimsNote({
+  count,
+  variant = 'report',
+}: {
+  count: unknown;
+  variant?: DroppedClaimsNoteVariant;
+}) {
   const { t } = useTranslation();
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
     return null;
   }
   return (
     <p className="text-xs text-muted-foreground" data-dropped-claims-note="">
-      {t('reports.droppedClaims', { count })}
+      {t(DROPPED_NOTE_KEY[variant], { count })}
     </p>
   );
 }

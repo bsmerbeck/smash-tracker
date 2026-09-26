@@ -1613,6 +1613,10 @@
     },
     "droppedClaims_one": "{{count}} affirmation n'a pas pu être vérifiée et a été retirée de ce rapport.",
     "droppedClaims_other": "{{count}} affirmations n'ont pas pu être vérifiées et ont été retirées de ce rapport.",
+    "droppedClaimsPlan_one": "{{count}} affirmation n'a pas pu être vérifiée et a été retirée de ce plan.",
+    "droppedClaimsPlan_other": "{{count}} affirmations n'ont pas pu être vérifiées et ont été retirées de ce plan.",
+    "droppedPlanSections_one": "{{count}} section n'a pas pu être vérifiée et a été retirée de ce plan.",
+    "droppedPlanSections_other": "{{count}} sections n'ont pas pu être vérifiées et ont été retirées de ce plan.",
     "withheldProse_one": "Le commentaire de {{count}} section a été retenu, car il n'a pas pu être vérifié par rapport à vos données de matchs.",
     "withheldProse_other": "Les commentaires de {{count}} sections ont été retenus, car ils n'ont pas pu être vérifiés par rapport à vos données de matchs.",
     "actions": {

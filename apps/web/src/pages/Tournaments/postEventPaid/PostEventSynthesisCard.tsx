@@ -23,6 +23,7 @@ import {
 } from '@/lib/reportJobCharge';
 import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
 import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
+import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
 import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
 import { PaidRecommendedActionsCard } from '@/components/claims/PaidRecommendedActionsCard';
 import { resolveClaimSection, type ResolvedClaimSection } from '@/components/claims/claimSection';
@@ -300,6 +301,13 @@ export function PostEventSynthesisCard({
 
             {isExpanded && planData && (
               <div className="flex flex-col gap-4 rounded-md border p-3">
+                {/* Code review IN-04 (D-08): a plan that is not validated
+                    carries the same legacy provenance label as a scout report. */}
+                <LegacyReportBadge
+                  variant="card"
+                  claimSchemaVersion={planData.plan.claimSchemaVersion}
+                  validation={planData.plan.validation}
+                />
                 <SafeMarkdown body={planData.plan.summary} />
                 {planData.plan.focusAreas.map((focusArea, index) => (
                   <div key={`${focusArea.title}-${index}`} className="flex flex-col gap-2">
@@ -349,7 +357,13 @@ export function PostEventSynthesisCard({
                 )}
                 {/* Plan 39-10 (D-07 / D-20): once each, after the last
                     focus area / claim section, from the stored counts. */}
-                <DroppedClaimsNote count={planData.plan.droppedClaimCount} />
+                {/* Code review IN-04: a claims-era plan's count is dropped
+                    claims; a legacy (28-06) plan's is dropped focus-area
+                    sections. */}
+                <DroppedClaimsNote
+                  count={planData.plan.droppedClaimCount}
+                  variant={planData.plan.sections != null ? 'plan' : 'legacyPlan'}
+                />
                 <WithheldProseNote
                   strippedSectionCount={planData.plan.strippedSectionCount}
                   claimSchemaVersion={planData.plan.claimSchemaVersion}

@@ -1613,6 +1613,10 @@
     },
     "droppedClaims_one": "{{count}} afirmação não pôde ser verificada e foi removida deste relatório.",
     "droppedClaims_other": "{{count}} afirmações não puderam ser verificadas e foram removidas deste relatório.",
+    "droppedClaimsPlan_one": "{{count}} afirmação não pôde ser verificada e foi removida deste plano.",
+    "droppedClaimsPlan_other": "{{count}} afirmações não puderam ser verificadas e foram removidas deste plano.",
+    "droppedPlanSections_one": "{{count}} seção não pôde ser verificada e foi removida deste plano.",
+    "droppedPlanSections_other": "{{count}} seções não puderam ser verificadas e foram removidas deste plano.",
     "withheldProse_one": "O comentário de {{count}} seção foi omitido porque não pôde ser verificado com seus dados de partidas.",
     "withheldProse_other": "Os comentários de {{count}} seções foram omitidos porque não puderam ser verificados com seus dados de partidas.",
     "actions": {

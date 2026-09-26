@@ -1613,6 +1613,10 @@
     },
     "droppedClaims_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Bericht entfernt.",
     "droppedClaims_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Bericht entfernt.",
+    "droppedClaimsPlan_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Plan entfernt.",
+    "droppedClaimsPlan_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Plan entfernt.",
+    "droppedPlanSections_one": "{{count}} Abschnitt konnte nicht überprüft werden und wurde aus diesem Plan entfernt.",
+    "droppedPlanSections_other": "{{count}} Abschnitte konnten nicht überprüft werden und wurden aus diesem Plan entfernt.",
     "withheldProse_one": "Der Kommentar zu {{count}} Abschnitt wurde zurückgehalten, weil er sich nicht mit deinen Matchdaten abgleichen ließ.",
     "withheldProse_other": "Die Kommentare zu {{count}} Abschnitten wurden zurückgehalten, weil sie sich nicht mit deinen Matchdaten abgleichen ließen.",
     "actions": {
