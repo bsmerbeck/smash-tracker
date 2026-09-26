@@ -77,7 +77,14 @@ import {
   type SynthesisAnthropicClient,
   type SynthesisPayload,
 } from '../reports/synthesis.js';
-import { bundleSlotRef, refundCredit, spendCredit, spendCredits } from '../billing/credits.js';
+import {
+  bundleIdFromSlotRef,
+  bundleSlotRef,
+  readBundleSpendFact,
+  refundCredit,
+  spendCredit,
+  spendCredits,
+} from '../billing/credits.js';
 import { createEvent, dayShardKey } from '../events/ledger.js';
 import { buildBillingEnvelope } from '../events/envelope.js';
 // Phase 27 (RPT-01, Task 3): the ONE symbol the reports layer imports from
@@ -2493,10 +2500,23 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // allowlist and the demo allowlist can both change between purchase
         // and execution), so re-deriving it here could mint a refund for a
         // credit never spent, or withhold one for a credit that was.
-        // Recomputed from `freeAccess` ONLY for a pre-39-10 child that carries
-        // no recorded fact.
-        const recordedSpend =
+        // Code review R2-IN-03: a pre-39-10 child carries no recorded fact, so
+        // it reads the bundle's DURABLE purchase record instead —
+        // `creditBundleOps/{uid}/{bundleId}`, the marker `spendCredits` wrote
+        // (`debited` = charged, `insufficient` = not), the bundle id derived
+        // from the child's own slot ref. LAST RESORT ONLY: when that record
+        // is absent too (a bundle bought with free access never writes one,
+        // and a stranded `claiming` marker is ambiguous), `spent` below still
+        // falls back to the uid's LIVE free-access status — the one input
+        // left, knowingly imperfect, because nothing durable says otherwise.
+        let recordedSpend: boolean | null =
           preSpent && typeof existingJob!.wasCharged === 'boolean' ? existingJob!.wasCharged : null;
+        if (preSpent && recordedSpend === null) {
+          const bundleId = bundleIdFromSlotRef(jobId);
+          if (bundleId !== null) {
+            recordedSpend = await readBundleSpendFact(app.firebase.database, request.uid, bundleId);
+          }
+        }
         if (preSpent) {
           effectiveReason = 'prep_bundle';
         }
@@ -2528,8 +2548,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           // Phase 27 (Task 2): the credit for this slot was already spent
           // atomically by the bundle submission (or never spent at all, for
           // an allowlisted uid's bundle) — never spend a second time here.
-          // API-CR-01: trust the fact recorded at purchase; `!freeAccess` is
-          // only the fallback for a pre-39-10 child with no recorded fact.
+          // API-CR-01: trust the fact recorded at purchase (R2-IN-03: or the
+          // bundle's durable op record); `!freeAccess` is only the last
+          // resort for a pre-39-10 child with neither.
           spent = recordedSpend ?? !freeAccess;
         } else if (!freeAccess) {
           // V7-C: non-allowlisted uids spend one credit per generation

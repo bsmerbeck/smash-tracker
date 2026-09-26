@@ -307,6 +307,45 @@ export function bundleSlotRef(bundleId: string, slot: number): string {
   return `${bundleId}:${slot}`;
 }
 
+/**
+ * The inverse of `bundleSlotRef`: the bundle id a slot ref was built from, or
+ * `null` when `ref` is not a slot ref (no `:`, or a suffix that is not a
+ * positive slot number). Splits on the LAST `:`, since the slot is always the
+ * final segment.
+ */
+export function bundleIdFromSlotRef(ref: string): string | null {
+  const separator = ref.lastIndexOf(':');
+  if (separator <= 0 || !/^[1-9]\d*$/.test(ref.slice(separator + 1))) {
+    return null;
+  }
+  return ref.slice(0, separator);
+}
+
+/**
+ * Code review R2-IN-03: the DURABLE spend fact for a bundle, read from its
+ * `creditBundleOps/{uid}/{bundleId}` operation marker. `'debited'` means the
+ * bundle's credits were taken (true); `'insufficient'` means no debit
+ * happened (false). A `'claiming'` marker is ambiguous — a process can stop
+ * between the balance debit and the marker's `'debited'` write — and an
+ * absent marker is unknown: both return `null`, never a guess.
+ */
+export async function readBundleSpendFact(
+  database: Database,
+  uid: string,
+  bundleId: string,
+): Promise<boolean | null> {
+  const marker = (await bundleOpRef(database, uid, bundleId).get()).val() as {
+    status?: unknown;
+  } | null;
+  if (marker?.status === 'debited') {
+    return true;
+  }
+  if (marker?.status === 'insufficient') {
+    return false;
+  }
+  return null;
+}
+
 export type SpendCreditsOutcome = 'debited' | 'insufficient' | 'alreadyProcessed';
 
 interface CreditBundleOpMarker {
