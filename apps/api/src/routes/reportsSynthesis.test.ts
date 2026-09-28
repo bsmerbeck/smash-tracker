@@ -2059,7 +2059,8 @@ describe('migration battery: shared validator vs the shipped validatePracticePla
       CLAIM_SELECTION_SECTION_IDS.map((sectionId, index) => {
         const area = focusAreas[index];
         if (!area) {
-          return [sectionId, { claimIds: [], connective: 'Nothing here.' }];
+          // R6-WR-01: "nothing" is a listed figure word, so the filler is worded around it.
+          return [sectionId, { claimIds: [], connective: 'No moment cited here.' }];
         }
         const claimIds = extractCitationTokens(area.evidence).map((token) => {
           const evidenceId = vodEvidenceId(token.sourceVodRef, token.seconds);
