@@ -195,12 +195,73 @@ export function judgeUnsupported(
 const UNKNOWN_BUCKET_NAMING = /\bunknown\s+(?:stage|character)s?\b/iu;
 
 /**
- * R7's lexical half, re-judged on DELIVERED prose: a section whose prose was
- * not stripped must not name the unknown stage/character bucket as if it were
- * a real, pickable entity (rubric R7). Reads only the prose text.
+ * The judge's OWN copy of owner decision D-24's figure vocabulary (English
+ * number words zero to twenty, the tens, "hundred", "dozen", "half", and the
+ * ordinals first to tenth). Deliberately written here rather than imported:
+ * the judge must never read the validator's decisions, so a word the
+ * validator forgot shows up as a VAL-03 conviction instead of agreeing with
+ * itself.
  */
-export function judgeDeliveredProse(prose: string): RubricRuleId | null {
-  return UNKNOWN_BUCKET_NAMING.test(prose.normalize('NFC')) ? 'R7' : null;
+const JUDGE_FIGURE_WORD =
+  /(?<![\p{L}\p{N}_])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?![\p{L}\p{N}_])/iu;
+
+/** The judge's own copy of D-24's confidence-tier words: the owner's list. */
+const JUDGE_TIER_WORD =
+  /(?<![\p{L}\p{N}_])(?:low|medium|high|moderate|strong|weak)(?![\p{L}\p{N}_])/iu;
+
+/**
+ * Re-judges DELIVERED prose (a section the validator did not strip) from the
+ * text alone:
+ * - R7: it must not name the unknown stage/character bucket as if it were a
+ *   real, pickable entity.
+ * - D-24 (owner decision, 2026-09-28): commentary is qualitative only. It
+ *   must carry no digit (any Unicode number character), no percent sign and
+ *   no spelled-out figure (convicted under R4), and no confidence-tier word
+ *   (convicted under R5). A W-L pair of any shape is made of digits or
+ *   number words, so it is covered by the same test.
+ *
+ * `names` are the entity names the prose may legitimately contain (canonical
+ * fighter/stage names and the job's opponent tags). Only a name with at least
+ * one letter is removed before the figure test, so "Sparg0" or "Pokémon
+ * Stadium 2" is a name while a digit-only tag stays a figure.
+ */
+export function judgeDeliveredProse(
+  prose: string,
+  names: readonly string[] = [],
+): RubricRuleId | null {
+  const nfc = prose.normalize('NFC');
+  if (UNKNOWN_BUCKET_NAMING.test(nfc)) {
+    return 'R7';
+  }
+  let residual = nfc;
+  for (const name of [...names].sort((a, b) => b.length - a.length)) {
+    const normalized = name.normalize('NFC');
+    if (/\p{L}/u.test(normalized)) {
+      residual = residual.split(normalized).join(' ');
+    }
+  }
+  if (/\p{N}/u.test(residual) || /[%％﹪]/u.test(residual) || JUDGE_FIGURE_WORD.test(residual)) {
+    return 'R4';
+  }
+  if (JUDGE_TIER_WORD.test(residual)) {
+    return 'R5';
+  }
+  return null;
+}
+
+/** The canonical fighter and stage names, read from the roster tables. */
+const CANONICAL_NAMES: readonly string[] = [
+  ...SpriteList.map((fighter) => fighter.name),
+  ...StageList.map((stage) => stage.name),
+];
+
+/** Every name a run's delivered prose may carry: the canonical names plus the opponent tags in the snapshot's own rows and the issued claims. */
+function namesFor(snapshot: EvidenceSnapshot, issuedClaims: readonly ClaimAtom[]): string[] {
+  const tags = [
+    ...Object.values(snapshot.rows).map((row) => row.subject.opponentTag),
+    ...issuedClaims.map((claim) => claim.subject.opponentTag),
+  ].filter((tag): tag is string => tag !== null);
+  return [...CANONICAL_NAMES, ...tags];
 }
 
 // ---------------------------------------------------------------------------
@@ -371,11 +432,12 @@ function convictionsOf(run: PipelineRun): Conviction[] {
     }
   }
   const stripped = new Set(run.outcome.strippedSectionIds);
+  const names = namesFor(run.snapshot, run.issuedClaims);
   for (const [sectionId, section] of Object.entries(run.selection.sections)) {
     if (stripped.has(sectionId)) {
       continue;
     }
-    const rule = judgeDeliveredProse(section.connective);
+    const rule = judgeDeliveredProse(section.connective, names);
     if (rule !== null) {
       convictions.push({
         fixtureId: run.fixtureId,
@@ -828,6 +890,38 @@ describe('judgeDeliveredProse: R7 lexical on delivered prose', () => {
     // decisions); this assertion is what stops the two from drifting apart.
     expect(UNKNOWN_BUCKET_NAMED_PATTERN.source).toBe(UNKNOWN_BUCKET_NAMING.source);
     expect(UNKNOWN_BUCKET_NAMED_PATTERN.flags).toBe(UNKNOWN_BUCKET_NAMING.flags);
+  });
+
+  it('D-24: convicts delivered prose carrying any figure (digits of any script, a percent sign, a number word) under R4 and any tier word under R5', () => {
+    for (const prose of [
+      'You are 3-2 against them.',
+      'They are 3—2 against you.',
+      'You are ３-２ here.',
+      'They won ٣ sets.',
+      'A big % of their games end early.',
+      'They are three and two against you.',
+      'They took the first set.',
+      'Half of their wins came late.',
+    ]) {
+      expect(judgeDeliveredProse(prose), prose).toBe('R4');
+    }
+    for (const prose of [
+      'Confidence here is high.',
+      'Keep your shield high.',
+      'This is a strong read.',
+      'Treat this as a medium read.',
+    ]) {
+      expect(judgeDeliveredProse(prose), prose).toBe('R5');
+    }
+  });
+
+  it('D-24: names are removed before the figure test, but only names with a letter', () => {
+    expect(judgeDeliveredProse('Stay patient against Sparg0.', ['Sparg0'])).toBeNull();
+    expect(
+      judgeDeliveredProse('Pokémon Stadium 2 suits you.', ['Pokémon Stadium 2', 'Battlefield']),
+    ).toBeNull();
+    expect(judgeDeliveredProse('Stay patient against Sparg0.')).toBe('R4');
+    expect(judgeDeliveredProse('Watch 7 closely.', ['7'])).toBe('R4');
   });
 
   it('does not convict ordinary uses of "unknown", or empty prose', () => {

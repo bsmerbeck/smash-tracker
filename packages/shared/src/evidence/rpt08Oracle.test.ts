@@ -157,8 +157,17 @@ describe('adversarial fixture corpus coverage (Task 2)', () => {
     });
   });
 
-  it('C2-H3: ordinary_prose carries at least four sentences with a Unicode decimal digit, and at least one digit run absent from every licensed claim value', () => {
+  it('D-24: the qualitative ordinary_prose corpus carries no digit at all — the negative corpus is the commentary a report is now asked to write', () => {
     const fixture = findFixture('ordinary-prose-negative-corpus');
+    const prose = (fixture.sections ?? []).map((section) => section.prose).join(' ');
+    expect(prose.length).toBeGreaterThan(0);
+    expect(prose).not.toMatch(/\p{N}/u);
+    expect(prose).not.toMatch(/%/);
+  });
+
+  it('C2-H3 (kept under D-24): the numeric-idiom ordinary_prose fixture carries at least four sentences with a Unicode decimal digit, and at least one digit run absent from every licensed claim value', () => {
+    const fixture = findFixture('ordinary-prose-numeric-idiom');
+    expect(fixture.family).toBe('ordinary_prose');
     const prose = (fixture.sections ?? []).map((section) => section.prose).join(' ');
     const sentences = prose.split(/(?<=[.!?])\s+/);
     const digitBearingSentences = sentences.filter((sentence) => /\p{Nd}/u.test(sentence));

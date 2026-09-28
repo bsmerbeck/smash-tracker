@@ -344,6 +344,24 @@ describe('EVID-10 engine parity — SYSTEM_PROMPT reads claim fields, not a pros
   it('never asks the model to state or hedge a confidence level (the retired instructional grounding)', () => {
     expect(extractSystemPrompt()).not.toMatch(/confidence|hedg|sample-size|percentage/i);
   });
+
+  it('D-24: states UP FRONT that commentary is qualitative only and every figure lives in the claims, naming each withheld form', () => {
+    const prompt = extractSystemPrompt();
+    const rule = prompt.indexOf('qualitative commentary only');
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(prompt.indexOf('Your job is'));
+    expect(prompt).toContain('Every figure the user sees comes from the claims');
+    for (const form of [
+      'no digits',
+      'no number words',
+      'no win-loss records or scores',
+      'no percent signs',
+      'low, medium, high, moderate, strong or weak',
+      'is withheld from the user',
+    ]) {
+      expect(prompt, form).toContain(form);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

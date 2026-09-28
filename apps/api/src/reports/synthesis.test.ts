@@ -633,6 +633,35 @@ describe('generatePracticePlan', () => {
     expect(capturedSystem).not.toMatch(/\d/);
     expect(capturedSystem).not.toMatch(/confidence|hedg|VERBATIM/i);
   });
+
+  it('D-24: the synthesis prompt states up front that commentary is qualitative only and every figure lives in the claims', async () => {
+    let capturedSystem = '';
+    const client: SynthesisAnthropicClient = {
+      messages: {
+        parse: async (params) => {
+          capturedSystem = params.system;
+          return { stop_reason: 'end_turn', parsed_output: VALID_PLAN };
+        },
+      },
+    };
+
+    await generatePracticePlan(client, PAYLOAD);
+
+    const rule = capturedSystem.indexOf('qualitative commentary only');
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(capturedSystem.indexOf('Your job is'));
+    expect(capturedSystem).toContain('Every figure the user sees comes from the claims');
+    for (const form of [
+      'no digits',
+      'no number words',
+      'no win-loss records or scores',
+      'no percent signs',
+      'low, medium, high, moderate, strong or weak',
+      'is withheld from the user',
+    ]) {
+      expect(capturedSystem, form).toContain(form);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

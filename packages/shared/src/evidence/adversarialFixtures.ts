@@ -506,13 +506,16 @@ const proseEncodingFullwidthDigit: AdversarialFixture = {
   },
   sections: [
     {
-      // U+FF16/U+FF10 (fullwidth "6"/"0") — a fullwidth digit IS a digit;
-      // the lint must not fail to recognize it as licensed by c01's 60%.
+      // U+FF16/U+FF10 (fullwidth "6"/"0") — a fullwidth digit IS a digit.
+      // Owner decision D-24: section commentary is qualitative only, so any
+      // digit (fullwidth included) withholds the prose, even when a claim in
+      // the section licenses its value (c01's 60%). The figure lives on the
+      // claim line, never in the prose.
       prose: 'They picked this stage in roughly ６０% of games.',
       licensedClaimIds: ['c01'],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 const PROSE_ENCODING_OPPONENT_TAG_NFC = 'José'; // "José", NFC (single precomposed U+00E9)
@@ -608,7 +611,12 @@ const proseEntityDigitBearingTag: AdversarialFixture = {
     ],
   },
   sections: [
-    { prose: `You are 3-2 against ${PROSE_ENTITY_DIGIT_TAG}.`, licensedClaimIds: ['c01'] },
+    {
+      // D-24: qualitative commentary naming the tag. The tag's own "0" is
+      // part of the name (consumed first), never a figure.
+      prose: `Stay patient against ${PROSE_ENTITY_DIGIT_TAG} and punish the landing.`,
+      licensedClaimIds: ['c01'],
+    },
   ],
   expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
 };
@@ -701,11 +709,13 @@ const proseEncodingJaLocale: AdversarialFixture = {
   },
   sections: [
     {
+      // D-24: the record's own figures in any locale are still digits, so the
+      // prose is withheld; the record lives on the claim line.
       prose: 'このステージでの成績は12勝4敗です。',
       licensedClaimIds: ['c01'],
     },
   ],
-  expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
 };
 
 // ---------------------------------------------------------------------------
@@ -1267,12 +1277,15 @@ const ORDINARY_PROSE_ROW_ID = evidenceIdFor({
   opponentOrder: [],
 });
 
-// Licensed claim values: 6, 4, 10 (the row below) and 62 (a rate numerator,
-// below) — the "17" and "5th" numerals in the prose are deliberately absent
-// from this set, so the digit rule is genuinely exercised (review C2-H3).
+// Owner decision D-24: section commentary is QUALITATIVE ONLY. This corpus is
+// the qualitative coaching English a report is now asked to write — no
+// digit, number word, W-L pair, percentage or confidence-tier word — still
+// deliberately loaded with words the entity lint could false-positive on
+// (lowercase and capitalised fighter/stage names, "unknown", "Game" plus a
+// letter). It must ship untouched.
 const ORDINARY_PROSE_TEXT = [
   'Unknown matchups are rare for this opponent, so trust what you already see on tape.',
-  'A well-timed link punish could swing Game 1: X; if they swap to Y, counter with Z.',
+  'A well-timed link punish could swing the opening game: X; if they swap to Y, counter with Z.',
   'Fox players in this bracket often crowd the ledge — never assume a cloud of pressure is safe to challenge.',
   'Hero mains sometimes gamble on a random spell; treat it as noise, not signal, in your gameplan.',
   'Peach floats are a constant threat, but pit your patience against her impatience and wait for an opening.',
@@ -1280,10 +1293,26 @@ const ORDINARY_PROSE_TEXT = [
   'Robin has a slow neutral, so a Temple layout with long sightlines could favor you more than a compact Summit.',
   'unknown is not the same as unsafe — treat an unfamiliar habit as a question to answer, not a threat to fear.',
   'Link his punish game to your own habits: could you tighten your ledge options before the next set?',
+  'A calm gamer never panics off a bad opening pick; adjust and move on to the next stock.',
+  'They almost always take their strike-order pick late in a long stage list, so plan your counterpick around it.',
+  'Never assume their usual pick order tells you their true preference in a strike-order list — it might just be habit.',
+  'Watch for their recovery and their combo starters, and keep your shield up.',
+].join(' ');
+
+// The PRE-D-24 negative corpus's numeric coaching idiom (review C2-H3): real,
+// non-claim numerals ("Game 1", "top-5", "3rd", a licensed "6-4") and tier
+// words used as Smash vocabulary ("high recovery", "low percent"). Under
+// D-24 every one of these withholds the section's prose — disclosed, never
+// refunded (D-22), and never a validation failure (the output's status is
+// decided by claims alone). Kept so the price of D-24 stays visible.
+// Licensed claim values: 6, 4, 10 (the row below); "17" and "5th" are not.
+const ORDINARY_PROSE_NUMERIC_IDIOM_TEXT = [
+  'A well-timed link punish could swing Game 1: X; if they swap to Y, counter with Z.',
   'A calm gamer never panics off one bad game-1 pick; adjust and move on to the next stock.',
   'They almost always take their strike-order pick 3rd in a five-stage list, so plan your counterpick around it.',
   'Never assume their top-5 pick order tells you their true preference in a strike-order list — it might just be habit.',
-  // Review SH-WR-01: tier words as ordinary Smash vocabulary, never a confidence claim.
+  'Your record here is 6-4, and they placed 17th and 5th at their last events.',
+  // Review SH-WR-01: tier words as ordinary Smash vocabulary.
   'Watch for their high recovery and low percent combos, and keep your shield high.',
 ].join(' ');
 
@@ -1311,6 +1340,195 @@ const ordinaryProse: AdversarialFixture = {
   sections: [{ prose: ORDINARY_PROSE_TEXT, licensedClaimIds: ['c01'] }],
   expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
 };
+
+const ordinaryProseNumericIdiom: AdversarialFixture = {
+  ...ordinaryProse,
+  id: 'ordinary-prose-numeric-idiom',
+  snapshot: makeSnapshot(ordinaryProse.snapshot.rows, {
+    matchIdDigest: { count: 10, hash: 'fixture-ordinary-prose-numeric-idiom-hash' },
+  }),
+  sections: [{ prose: ORDINARY_PROSE_NUMERIC_IDIOM_TEXT, licensedClaimIds: ['c01'] }],
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
+};
+
+// ---------------------------------------------------------------------------
+// Owner decision D-24 (code review R4-CR-01 / R4-CR-02, iteration 4):
+// section commentary is QUALITATIVE ONLY. A section's prose is withheld when
+// it carries any digit (Unicode and fullwidth included), a spelled-out
+// number word, a percentage, a W-L-like pair with any separator, or a
+// confidence-tier word anywhere — true or false. Tag and name spans are
+// consumed first, so "Zer0Frame" and "Pokémon Stadium 2" are names, not
+// figures. Every head-to-head fixture below licenses 3-2 (the player won 3)
+// against the made-up tag; every phrasing is FALSE except where noted, and
+// every one is withheld.
+// ---------------------------------------------------------------------------
+
+const D24_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  // R4-CR-01's separator bypasses (the em dash is the R3-CR-01 target).
+  ['em-dash', `${PROSE_ENTITY_DIGIT_TAG} is 3—2 against you.`],
+  ['to', `${PROSE_ENTITY_DIGIT_TAG} is 3 to 2 against you.`],
+  ['colon', `${PROSE_ENTITY_DIGIT_TAG} is 3:2 against you.`],
+  ['slash', `${PROSE_ENTITY_DIGIT_TAG} is 3/2 against you.`],
+  ['minus-sign', `${PROSE_ENTITY_DIGIT_TAG} is 3 − 2 against you.`],
+  ['lost-em-dash', `You have lost 3—2 to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  // Phrasings outside the retired closed marker list.
+  ['leads-head-to-head', `${PROSE_ENTITY_DIGIT_TAG} leads the head-to-head 3-2.`],
+  ['leads', `${PROSE_ENTITY_DIGIT_TAG} leads 3-2.`],
+  ['up-on-you', `${PROSE_ENTITY_DIGIT_TAG} is up 3-2 on you.`],
+  ['won-this-matchup', `${PROSE_ENTITY_DIGIT_TAG} has won this matchup 3-2.`],
+  ['won-your-sets', `${PROSE_ENTITY_DIGIT_TAG} won your sets 3-2.`],
+  ['holds-an-edge', `${PROSE_ENTITY_DIGIT_TAG} holds a 3-2 edge in your sets.`],
+  ['better-of-you', `${PROSE_ENTITY_DIGIT_TAG} has gotten the better of you, 3-2.`],
+  ['your-number', `${PROSE_ENTITY_DIGIT_TAG} has your number at 3-2.`],
+  ['you-lost-head-to-head', 'You lost the head-to-head 3-2.'],
+  ['you-are-down', `You are down 3-2 to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['you-trail', `You trail ${PROSE_ENTITY_DIGIT_TAG} 3-2.`],
+  ['in-your-meetings', `${PROSE_ENTITY_DIGIT_TAG} is 3-2 in your meetings.`],
+  // The count form.
+  ['won-of-your-sets', `${PROSE_ENTITY_DIGIT_TAG} has won 3 of your 5 sets.`],
+  ['you-won-only', `You have won only 2 of 5 sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['took-sets', `${PROSE_ENTITY_DIGIT_TAG} took 3 sets, you took 2.`],
+  ['you-are-seven-one', `You are 7-1 against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  // Spelled-out figures.
+  ['spelled-three-and-two', `${PROSE_ENTITY_DIGIT_TAG} is three and two against you.`],
+  ['spelled-sets-to', `${PROSE_ENTITY_DIGIT_TAG} leads the series three sets to two.`],
+  ['spelled-seven-and-one', `You are seven and one against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['spelled-ordinal', `${PROSE_ENTITY_DIGIT_TAG} took the first set and never looked back.`],
+  ['spelled-half', `Half of your sets against ${PROSE_ENTITY_DIGIT_TAG} went the distance.`],
+  ['spelled-dozen', `You have played ${PROSE_ENTITY_DIGIT_TAG} a dozen times.`],
+  ['spelled-twenty', `${PROSE_ENTITY_DIGIT_TAG} has twenty wins on the circuit.`],
+  // TRUE, and withheld all the same: figures live on the claim line.
+  ['true-player-record', `You are 3-2 against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['true-opponent-record', `${PROSE_ENTITY_DIGIT_TAG} is 2-3 against you.`],
+];
+
+const d24RecordFixtures: readonly AdversarialFixture[] = D24_RECORD_PHRASINGS.map(
+  ([suffix, prose]) => makeProseEntityPerspectiveFixture({ id: `d24-record-${suffix}`, prose }),
+);
+
+// R4-CR-02: tier words without the "confiden" stem, a misspelt stem, the
+// mixed case, and invisible characters inside the stem — each on a LOW-tier
+// claim, so each is false; and each is withheld by the tier word itself.
+const D24_TIER_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['how-sure', 'Take them to this stage. How sure should you be? High.'],
+  ['certainty', 'Take them to this stage. Certainty: high.'],
+  ['high-certainty', 'This is a high-certainty read.'],
+  ['trust', 'Trust in this read: high.'],
+  ['reliability', 'Reliability of this read: high.'],
+  ['conviction', 'Our conviction here is high.'],
+  ['misspelt', 'Our confidance here is high.'],
+  ['caps', 'Our CONFIDENCE here is HIGH.'],
+  ['soft-hyphen', 'Con\u00adfidence here is high.'],
+  ['zero-width', 'Con\u200bfidence here is high.'],
+  ['very-strong', 'Our confidence here: very strong.'],
+  ['moderate', 'This is a moderate read at best.'],
+  ['weak', 'The evidence for this pick is weak.'],
+  ['medium', 'Treat this as a medium read.'],
+  ['smash-sense', 'Keep your shield high and punish the low recovery.'],
+  // The iteration-4 review's probe strings, verbatim (with the record).
+  ['probe-certainty', 'Fox on Battlefield: 3-2. Certainty: high.'],
+  ['probe-how-sure', 'Fox on Battlefield: 3-2. How sure should you be? High.'],
+  ['probe-rock-solid', 'Fox on Battlefield: 3-2. This read is rock solid.'],
+];
+
+const d24TierFixtures: readonly AdversarialFixture[] = D24_TIER_PHRASINGS.map(([suffix, prose]) =>
+  makeConfidenceWordFixture({
+    id: `d24-tier-${suffix}`,
+    games: CONFIDENCE_TIER_BOUNDS.low,
+    prose,
+    validatorVerdict: 'stripped',
+  }),
+);
+
+// R4-CR-02's union case: one HIGH-tier and one LOW-tier claim in the same
+// section. "high" is false for the thin claim, and the section cannot say
+// which claim it means — withheld.
+const D24_MIXED_TIER_HIGH_SUBJECT: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
+const D24_MIXED_TIER_LOW_SUBJECT: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 59 };
+const D24_MIXED_TIER_HIGH_ROW_ID = evidenceIdFor({
+  predicate: 'stage_record',
+  subject: D24_MIXED_TIER_HIGH_SUBJECT,
+  opponentOrder: [],
+});
+const D24_MIXED_TIER_LOW_ROW_ID = evidenceIdFor({
+  predicate: 'stage_record',
+  subject: D24_MIXED_TIER_LOW_SUBJECT,
+  opponentOrder: [],
+});
+const D24_MIXED_TIER_HIGH_VALUE: ClaimValue = {
+  kind: 'record',
+  wins: CONFIDENCE_TIER_BOUNDS.high - 1,
+  losses: 1,
+  games: CONFIDENCE_TIER_BOUNDS.high,
+};
+const D24_MIXED_TIER_LOW_VALUE: ClaimValue = {
+  kind: 'record',
+  wins: CONFIDENCE_TIER_BOUNDS.low - 1,
+  losses: 1,
+  games: CONFIDENCE_TIER_BOUNDS.low,
+};
+
+const d24MixedTierUnion: AdversarialFixture = {
+  id: 'd24-tier-mixed-union',
+  family: 'confidence_word',
+  rubricRuleIds: ['R5'],
+  snapshot: makeSnapshot(
+    {
+      [D24_MIXED_TIER_HIGH_ROW_ID]: makeRow(
+        'stage_record',
+        D24_MIXED_TIER_HIGH_SUBJECT,
+        D24_MIXED_TIER_HIGH_VALUE,
+        CONFIDENCE_TIER_BOUNDS.high,
+      ),
+      [D24_MIXED_TIER_LOW_ROW_ID]: makeRow(
+        'stage_record',
+        D24_MIXED_TIER_LOW_SUBJECT,
+        D24_MIXED_TIER_LOW_VALUE,
+        CONFIDENCE_TIER_BOUNDS.low,
+      ),
+    },
+    { matchIdDigest: { count: 2, hash: 'fixture-d24-tier-mixed-union-hash' } },
+  ),
+  issuedClaimIds: ['c01', 'c02'],
+  output: {
+    claims: [
+      makeClaim('c01', [D24_MIXED_TIER_HIGH_ROW_ID], D24_MIXED_TIER_HIGH_VALUE),
+      makeClaim('c02', [D24_MIXED_TIER_LOW_ROW_ID], D24_MIXED_TIER_LOW_VALUE),
+    ],
+  },
+  sections: [{ prose: 'Confidence in the thin read is high.', licensedClaimIds: ['c01', 'c02'] }],
+  expected: { legacyAccepts: true, validatorVerdict: 'stripped' },
+};
+
+// The qualitative controls: commentary that names licensed entities and a
+// digit-bearing canonical stage name, with no figure and no tier word, ships.
+const d24QualitativeControlTag = makeProseEntityPerspectiveFixture({
+  id: 'd24-qualitative-control-tag',
+  prose: `${PROSE_ENTITY_DIGIT_TAG} likes to camp the ledge; take the centre and make them come to you.`,
+});
+const d24QualitativeControls: readonly AdversarialFixture[] = [
+  {
+    ...d24QualitativeControlTag,
+    expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+  },
+  {
+    ...d24MixedTierUnion,
+    id: 'd24-qualitative-control-stage-name',
+    family: 'prose_entity',
+    rubricRuleIds: ['R4'],
+    snapshot: makeSnapshot(d24MixedTierUnion.snapshot.rows, {
+      matchIdDigest: { count: 2, hash: 'fixture-d24-qualitative-control-stage-name-hash' },
+    }),
+    sections: [
+      {
+        prose:
+          'Pokémon Stadium 2 rewards your patience, and Battlefield platforms suit your landing game.',
+        licensedClaimIds: ['c01', 'c02'],
+      },
+    ],
+    expected: { legacyAccepts: true, validatorVerdict: 'accepted' },
+  },
+];
 
 // ---------------------------------------------------------------------------
 // The corpus
@@ -1362,4 +1580,9 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   confidenceWordTierAfterSemicolon,
   confidenceWordTierAfterNewline,
   confidenceWordTierAfterDash,
+  ordinaryProseNumericIdiom,
+  ...d24RecordFixtures,
+  ...d24TierFixtures,
+  d24MixedTierUnion,
+  ...d24QualitativeControls,
 ];

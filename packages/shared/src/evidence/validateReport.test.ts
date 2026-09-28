@@ -522,10 +522,11 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     expect(outcome.strippedSectionIds).toEqual([]);
   });
 
-  it('prose_encoding: a fullwidth numeral licensed by a rate claim does NOT fail', () => {
+  it('prose_encoding (D-24): a fullwidth numeral is a digit — the prose is withheld even when a claim licenses its value, and the claim survives', () => {
     const fixture = findFixture('prose-encoding-fullwidth-digit');
     const outcome = validateReportOutput(bridge(fixture));
-    expect(outcome.strippedSectionIds).toEqual([]);
+    expect(outcome.strippedSectionIds).toEqual(['section-0']);
+    expect(outcome.survivingClaimIds).toContain('c01');
   });
 
   it('prose_encoding: an NFD-spelled licensed opponent tag does NOT fail (NFC-normalized before comparison)', () => {
@@ -534,10 +535,11 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     expect(outcome.strippedSectionIds).toEqual([]);
   });
 
-  it('prose_encoding: a ja-locale sentence with no unlicensed specific does NOT fail', () => {
+  it('prose_encoding (D-24): a ja-locale sentence restating the record in digits is withheld', () => {
     const fixture = findFixture('prose-encoding-ja-locale');
     const outcome = validateReportOutput(bridge(fixture));
-    expect(outcome.strippedSectionIds).toEqual([]);
+    expect(outcome.strippedSectionIds).toEqual(['section-0']);
+    expect(outcome.survivingClaimIds).toContain('c01');
   });
 
   it('the model prose string in the outcome-adjacent input is byte-identical to what was passed in — the validator never edits prose', () => {
@@ -760,7 +762,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     expect(outcome.strippedSectionIds).toEqual(['s1', 's2', 's3']);
   });
 
-  describe('C2-H3 digit rule', () => {
+  describe('C2-H3 digit rule, under D-24 (any figure withholds the prose)', () => {
     function digitScan(prose: string) {
       const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: 1 };
       const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
@@ -794,24 +796,20 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       });
     }
 
-    it('each NON_FACTUAL_NUMERIC_PATTERNS shape passes clean', () => {
+    it('D-24: the retired NON_FACTUAL_NUMERIC_PATTERNS shapes no longer exempt anything — each one withholds the prose', () => {
       expect(NON_FACTUAL_NUMERIC_PATTERNS.length).toBe(5);
-      expect(digitScan('Game 1: X; if they swap to Y, counter with Z.').strippedSectionIds).toEqual(
-        [],
-      );
-      expect(digitScan('Focus on their top-5 characters this bracket.').strippedSectionIds).toEqual(
-        [],
-      );
-      expect(
-        digitScan('This is likely a best-of-5 set, plan your bans.').strippedSectionIds,
-      ).toEqual([]);
-      expect(
-        digitScan('They almost always take their pick 3rd in the order.').strippedSectionIds,
-      ).toEqual([]);
+      for (const prose of [
+        'Game 1: X; if they swap to Y, counter with Z.',
+        'Focus on their top-5 characters this bracket.',
+        'This is likely a best-of-5 set, plan your bans.',
+        'They almost always take their pick 3rd in the order.',
+      ]) {
+        expect(digitScan(prose).strippedSectionIds, prose).toEqual(['main']);
+      }
     });
 
-    it('a licensed integer written as a fullwidth numeral passes (the folding rule)', () => {
-      expect(digitScan('Their record here is ６ wins.').strippedSectionIds).toEqual([]);
+    it('D-24: a licensed integer written as a fullwidth numeral is still a figure', () => {
+      expect(digitScan('Their record here is ６ wins.').strippedSectionIds).toEqual(['main']);
     });
 
     it('an unlicensed percentage, W-L record shape, and raw count each still fail', () => {
@@ -826,10 +824,14 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ]);
     });
 
-    it('SH-WR-04: a W-L record shape needs the EXACT ordered (wins, losses) pair of one licensed record claim — an inverted or re-paired record is stripped', () => {
+    it('SH-WR-04 under D-24: every W-L shape is withheld — the licensed pair included, since the record lives on the claim line', () => {
       // Licensed record: 6-4 (10 games).
-      expect(digitScan('You are 6-4 on Battlefield, keep it.').strippedSectionIds).toEqual([]);
-      expect(digitScan('You are 6 – 4 on Battlefield, keep it.').strippedSectionIds).toEqual([]);
+      expect(digitScan('You are 6-4 on Battlefield, keep it.').strippedSectionIds).toEqual([
+        'main',
+      ]);
+      expect(digitScan('You are 6 – 4 on Battlefield, keep it.').strippedSectionIds).toEqual([
+        'main',
+      ]);
       expect(digitScan('You are 4-6 on Battlefield, so ban it.').strippedSectionIds).toEqual([
         'main',
       ]);
@@ -851,12 +853,14 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ]);
     });
 
-    it('SH-CR-01: a real list position (start of text or line, then whitespace) and a standalone ordinal stay exempt', () => {
+    it('D-24: a list position and a standalone ordinal are figures too — no numeric shape is exempt', () => {
       expect(
         digitScan('1. Punish their landing.\n2. Stay patient at ledge.').strippedSectionIds,
-      ).toEqual([]);
-      expect(digitScan('3) Reset to neutral when in doubt.').strippedSectionIds).toEqual([]);
-      expect(digitScan('They take their pick 3rd in the order.').strippedSectionIds).toEqual([]);
+      ).toEqual(['main']);
+      expect(digitScan('3) Reset to neutral when in doubt.').strippedSectionIds).toEqual(['main']);
+      expect(digitScan('They take their pick 3rd in the order.').strippedSectionIds).toEqual([
+        'main',
+      ]);
     });
   });
 
@@ -936,10 +940,10 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       expect(lintWith([{ stageId: 19 }], 'Figure-8 Circuit on this opponent is fine.')).toEqual([]);
     });
 
-    it('"low"/"high" as ordinary Smash vocabulary is not a confidence word in a sentence that never mentions confidence', () => {
+    it('D-24: "low"/"high" are confidence-tier words anywhere, Smash sense included — the prose is withheld', () => {
       expect(
         lintWith([{ stageId: 1 }], 'Watch for their high recovery and low percent combos.'),
-      ).toEqual([]);
+      ).toEqual(['main']);
     });
 
     it('R2-CR-02: a tier word anywhere in a sentence that mentions confidence is judged — not only when it sits beside the noun', () => {
@@ -955,12 +959,18 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       ]);
     });
 
-    it('R2-CR-02 controls: the licensed tier word near "confidence" passes, and tier words in a section that never mentions confidence stay ordinary Smash vocabulary', () => {
-      expect(lintWith([{ stageId: 1 }], 'Confidence is medium here.')).toEqual([]);
-      expect(lintWith([{ stageId: 1 }], 'Our confidence in this read is medium.')).toEqual([]);
-      expect(lintWith([{ stageId: 1 }], 'Keep your shield high. Their recovery is low.')).toEqual(
-        [],
-      );
+    it('D-24: a tier word is withheld even when a claim in the section licenses that tier, and in a section that never mentions confidence', () => {
+      expect(lintWith([{ stageId: 1 }], 'Confidence is medium here.')).toEqual(['main']);
+      expect(lintWith([{ stageId: 1 }], 'Our confidence in this read is medium.')).toEqual([
+        'main',
+      ]);
+      expect(lintWith([{ stageId: 1 }], 'Keep your shield high. Their recovery is low.')).toEqual([
+        'main',
+      ]);
+    });
+
+    it('D-24 control: the noun "confidence" with no tier word or figure, on a tiered claim, is qualitative commentary and ships', () => {
+      expect(lintWith([{ stageId: 1 }], 'Play this stage with confidence.')).toEqual([]);
     });
 
     it('R3-CR-02: R5 does not depend on sentence splitting — a tier word anywhere in a section that mentions confidence is judged', () => {
@@ -1076,23 +1086,29 @@ function validateHeadToHead(
 }
 
 describe('R2-WR-03: digits inside a licensed opponent tag are part of the name, not figures', () => {
-  it('"You are 3-2 against Sparg0." passes when 3-2 is licensed — the tag is sentence-final', () => {
+  it('qualitative prose naming a digit-bearing tag passes — the tag is sentence-final', () => {
     expect(
-      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 3-2 against Sparg0.'),
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Stay patient against Sparg0.'),
     ).toEqual({ stripped: [], dropped: 0 });
   });
 
   it('the tag mid-sentence passes too, and a digit-bearing tag of any shape is consumed whole', () => {
     expect(
-      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Against Sparg0 you are 3-2 so far.'),
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Against Sparg0 you tend to rush.'),
     ).toEqual({ stripped: [], dropped: 0 });
     expect(
       validateHeadToHead(
         'Zer0Frame 2',
         { wins: 6, losses: 4 },
-        'You are 6-4 against Zer0Frame 2 this season.',
+        'Zer0Frame 2 camps the ledge, so take the centre this season.',
       ),
     ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('D-24: the licensed record beside the tag is withheld all the same', () => {
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 3-2 against Sparg0.'),
+    ).toEqual({ stripped: ['main'], dropped: 0 });
   });
 
   it('controls: an unlicensed figure beside the tag still strips, and so does a wrong record', () => {
@@ -1132,12 +1148,12 @@ describe('R3-IN-02: only a tag that contains a letter consumes its span in the d
 
   it('control: a letter-bearing digit tag is still consumed whole', () => {
     expect(
-      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'You are 3-2 against Sparg0.'),
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Sparg0 likes to camp the ledge.'),
     ).toEqual({ stripped: [], dropped: 0 });
   });
 });
 
-describe("R3-CR-01: a W-L pair is the exact ordered licensed pair from the player's side, and an opponent-perspective section withholds every pair", () => {
+describe('R3-CR-01, superseded by D-24: every W-L pair in prose is withheld, whichever side states it', () => {
   it('opponent-perspective phrasings are withheld again, whichever order the pair is in', () => {
     // A licensed 3-2 (the player won 3). "MkLeo is 3-2 against you" is false
     // from MkLeo's side; "MkLeo is 2-3 against you" is true but is withheld
@@ -1183,7 +1199,7 @@ describe("R3-CR-01: a W-L pair is the exact ordered licensed pair from the playe
     ).toEqual({ stripped: ['main'], dropped: 0 });
   });
 
-  it('known limit (recorded in the VAL-03 map): a TRUE user-clause record in a perspective section is over-stripped', () => {
+  it('D-24: a TRUE user-clause record is withheld like any other figure', () => {
     expect(
       validateHeadToHead(
         'MkLeo',
@@ -1193,23 +1209,23 @@ describe("R3-CR-01: a W-L pair is the exact ordered licensed pair from the playe
     ).toEqual({ stripped: ['main'], dropped: 0 });
   });
 
-  it('controls: the player as subject keeps the exact ordered pair rule', () => {
+  it('D-24: the player as subject is withheld too — no W-L pair is ever licensed in prose', () => {
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'You are 3-2 against MkLeo.'),
-    ).toEqual({ stripped: [], dropped: 0 });
+    ).toEqual({ stripped: ['main'], dropped: 0 });
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'You are 2-3 against MkLeo.'),
     ).toEqual({ stripped: ['main'], dropped: 0 });
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo sets went 3-2 your way.'),
-    ).toEqual({ stripped: [], dropped: 0 });
+    ).toEqual({ stripped: ['main'], dropped: 0 });
     // A perspective marker with no W-L pair in the section strips nothing.
     expect(
       validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'MkLeo plays patiently against you.'),
     ).toEqual({ stripped: [], dropped: 0 });
   });
 
-  it('known limit (recorded in the VAL-03 map): a winner-first loss idiom is withheld', () => {
+  it('D-24: a winner-first loss idiom is withheld', () => {
     expect(
       validateHeadToHead('MkLeo', { wins: 2, losses: 3 }, 'You lost that stretch 3-2 to MkLeo.'),
     ).toEqual({ stripped: ['main'], dropped: 0 });
@@ -1348,13 +1364,17 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
   });
 
   it("API-WR-04 (D-22): a later section naming the unknown bucket never removes a claim an EARLIER section's delivered prose rests on", () => {
-    // overview and watchFor share c04 (16-9). overview's prose names 16-9
-    // (licensed by c04); only watchFor names the unknown bucket. Before
-    // D-22, watchFor's R7 hit dropped c04 AFTER overview had been linted
-    // with c04 licensed, so overview shipped a figure no stored claim backed.
+    // overview and watchFor share c04 (16-9). overview's prose rests on c04
+    // (qualitative under D-24); only watchFor names the unknown bucket.
+    // Before D-22, watchFor's R7 hit dropped c04 AFTER overview had been
+    // linted with c04 licensed, so overview shipped prose no stored claim
+    // backed.
     const outcome = validateReportOutput(
       fourClaimOutput({
-        overview: { claimIds: ['c01', 'c04'], connective: 'Your form reads 16-9 lately.' },
+        overview: {
+          claimIds: ['c01', 'c04'],
+          connective: 'Your recent form is holding up well lately.',
+        },
         gameplan: { claimIds: ['c02', 'c03'], connective: '' },
         watchFor: { claimIds: ['c04'], connective: 'Watch the Unknown Stage games.' },
       }),
@@ -1719,5 +1739,261 @@ describe('validateReportOutput: the remaining rules and the outcome policy (Task
     const fixture = findFixture('all-null-subject');
     const outcome = validateReportOutput(bridge(fixture));
     expect(outcome.survivingClaimIds).toContain('c01');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Owner decision D-24 (code review R4-CR-01 / R4-CR-02, iteration 4): report
+// commentary is QUALITATIVE ONLY. A section's prose is withheld (disclosed,
+// never refunded — D-22) when it carries a digit of any script, a
+// spelled-out number word, a percentage, a W-L-like pair with any
+// separator, or a confidence-tier word ANYWHERE. Tag and name spans are
+// consumed first. Every figure a user sees comes from a checked claim.
+// ---------------------------------------------------------------------------
+
+/** One section licensing one `stage_record` claim per spec (the opponent plays Fox on the given stage), each `wins`-`games - wins` over `games`. */
+function validateStageRecords(
+  specs: ReadonlyArray<{ stageId: number; games: number; wins: number }>,
+  prose: string,
+): { stripped: readonly string[]; dropped: number; tiers: string } {
+  const rows: Record<string, EvidenceRow> = {};
+  const claims: ClaimAtom[] = [];
+  specs.forEach((spec, index) => {
+    const subject: ClaimSubject = { ...NULL_SUBJECT, opponentFighterId: 8, stageId: spec.stageId };
+    const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
+    const value = {
+      kind: 'record' as const,
+      wins: spec.wins,
+      losses: spec.games - spec.wins,
+      games: spec.games,
+    };
+    rows[rowId] = { predicate: 'stage_record', subject, value, sample: makeSample(spec.games) };
+    claims.push({
+      id: `c0${index + 1}` as ClaimId,
+      predicate: 'stage_record',
+      subject,
+      value,
+      claimKind: 'fact',
+      evidenceIds: [rowId],
+      tier: confidenceTierFor(spec.games),
+      policyVersion: EVIDENCE_POLICY_VERSION,
+      sample: makeSample(spec.games),
+    });
+  });
+  const outcome = validateReportOutput({
+    snapshot: makeSnapshot(rows),
+    issuedClaims: claims,
+    output: {
+      sections: { main: { claimIds: claims.map((claim) => claim.id), connective: prose } },
+      action1: null,
+      action2: null,
+      action3: null,
+    },
+    surface: 'scout',
+  });
+  return {
+    stripped: outcome.strippedSectionIds,
+    dropped: outcome.droppedClaimCount,
+    tiers: claims.map((claim) => claim.tier).join('/'),
+  };
+}
+
+describe('D-24 / R4-CR-01: every W-L restatement is withheld, whatever its separator, phrasing or spelling', () => {
+  // The iteration-4 review's probes (`r4v`), verbatim. A licensed 3-2: the
+  // player won 3 and lost 2 against MkLeo. Every row is FALSE.
+  const FALSE_HEAD_TO_HEAD = [
+    'MkLeo leads the head-to-head 3-2.',
+    'MkLeo leads 3-2.',
+    'MkLeo is up 3-2 on you.',
+    'MkLeo has won this matchup 3-2.',
+    'MkLeo won your sets 3-2.',
+    'MkLeo holds a 3-2 edge in your sets.',
+    'MkLeo has gotten the better of you, 3-2.',
+    'MkLeo has your number at 3-2.',
+    'You lost the head-to-head 3-2.',
+    'You are down 3-2 to MkLeo.',
+    'You trail MkLeo 3-2.',
+    'MkLeo is 3-2 in your meetings.',
+    'MkLeo has won 3 of your 5 sets.',
+    'You have won only 2 of 5 sets against MkLeo.',
+    'MkLeo took 3 sets, you took 2.',
+    'MkLeo is 3-2 against you.',
+    // Separators and spellings.
+    'MkLeo is 3—2 against you.',
+    'MkLeo is 3 to 2 against you.',
+    'MkLeo is 3:2 against you.',
+    'MkLeo is 3/2 against you.',
+    'MkLeo is 3 − 2 against you.',
+    'MkLeo is three and two against you.',
+    'MkLeo leads the series three sets to two.',
+    'You have lost 3—2 to MkLeo.',
+    'You are 7-1 against MkLeo.',
+    'You are 7—1 against MkLeo.',
+    'You are 7 to 1 against MkLeo.',
+    'You are seven and one against MkLeo.',
+  ];
+
+  it.each(FALSE_HEAD_TO_HEAD)('withholds %j', (prose) => {
+    expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose)).toEqual({
+      stripped: ['main'],
+      dropped: 0,
+    });
+  });
+
+  it('the TRUE statements are withheld too: figures live on the claim line, never in the prose', () => {
+    for (const prose of [
+      'You are 3-2 against MkLeo.',
+      'You lead MkLeo 3-2.',
+      'You have won 3 of 5 sets against MkLeo.',
+      'MkLeo is 2-3 against you.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('spelled-out numbers, a dozen, a half and the ordinals are figures', () => {
+    for (const prose of [
+      'You have played MkLeo a dozen times.',
+      'Half of your sets against MkLeo went the distance.',
+      'MkLeo took the first set and never looked back.',
+      'Your second set against MkLeo went better.',
+      'MkLeo has won ninety sets this year.',
+      'MkLeo has twenty wins on the circuit.',
+      'Zero of those sets were close.',
+      'Three of them went to the last stock.',
+      'MkLeo won the tenth game.',
+      'MkLeo won twice.',
+      'MkLeo won twenty-one sets.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('digits of any script and a percentage are figures', () => {
+    for (const prose of [
+      'MkLeo is ３-２ against you.',
+      'MkLeo won ٣ sets.',
+      'MkLeo won the set 3² times over.',
+      'MkLeo wins about ½ of your games.',
+      'MkLeo wins a big ％ of your games.',
+      'MkLeo wins a big % of your games.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('qualitative commentary survives, and word boundaries hold (someone, tone, highlight, often)', () => {
+    for (const prose of [
+      'MkLeo tends to camp ledge against you, so take the center.',
+      'Someone who panics against MkLeo drops the lead; stay calm and highlight his landing habits.',
+      'The tone of the set often shifts once MkLeo is behind.',
+      'Play this matchup with confidence and patience.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('names still consume their letters and digits first: a digit-bearing canonical name or tag is not a figure', () => {
+    expect(
+      validateHeadToHead('Sparg0', { wins: 3, losses: 2 }, 'Sparg0 punishes a rushed approach.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    expect(
+      validateStageRecords(
+        [{ stageId: 59, games: 10, wins: 6 }],
+        'Fox on Pokémon Stadium 2 rewards your patience.',
+      ).stripped,
+    ).toEqual([]);
+  });
+});
+
+describe('D-24 / R4-CR-02: a confidence-tier word withholds the prose anywhere in the section, with no confidence stem required', () => {
+  // The iteration-4 review's probes (`r4v`), verbatim: one LOW-tier claim
+  // (Fox on Battlefield, 3-2 over five games). Every row is false.
+  const PROBE_ROWS = [
+    'Fox on Battlefield: 3-2. Certainty: high.',
+    'Fox on Battlefield: 3-2. How sure should you be? High.',
+    'Fox on Battlefield: 3-2. This is a high-certainty read.',
+    'Fox on Battlefield: 3-2. Trust in this read: high.',
+    'Fox on Battlefield: 3-2. Reliability of this read: high.',
+    'Fox on Battlefield: 3-2. Our conviction here is high.',
+    'Fox on Battlefield: 3-2. Our confidance here is high.',
+    'Fox on Battlefield: 3-2. Our CONFIDENCE here is HIGH.',
+    'Fox on Battlefield: 3-2. Con­fidence here is high.',
+    'Fox on Battlefield: 3-2. Con​fidence here is high.',
+    'Fox on Battlefield: 3-2. Our confidence here: very strong.',
+    'Fox on Battlefield: 3-2. This read is rock solid.',
+    'Fox on Battlefield: 3-2. Our confidence in this read? High.',
+  ];
+
+  it.each(PROBE_ROWS)('withholds %j', (prose) => {
+    const result = validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], prose);
+    expect(result.tiers).toBe('low');
+    expect(result.stripped).toEqual(['main']);
+    expect(result.dropped).toBe(0);
+  });
+
+  it('the same tier words without any figure are withheld on their own — synonyms and misspellings of the stem no longer matter', () => {
+    for (const prose of [
+      'How sure should you be? High.',
+      'Certainty: high.',
+      'This is a high-certainty read.',
+      'Trust in this read: high.',
+      'Reliability of this read: high.',
+      'Our conviction here is high.',
+      'Our confidance here is high.',
+      'Our confidence here: very strong.',
+      'This is a moderate read at best.',
+      'The evidence for this pick is weak.',
+      'Treat this as a medium read.',
+      'This is highly likely to come up.',
+      'This is their strongest stage.',
+    ]) {
+      expect(
+        validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], prose).stripped,
+        prose,
+      ).toEqual(['main']);
+    }
+  });
+
+  it('the union case: a section holding a HIGH-tier and a LOW-tier claim cannot say "high"', () => {
+    const result = validateStageRecords(
+      [
+        { stageId: 1, games: 20, wins: 12 },
+        { stageId: 3, games: 5, wins: 3 },
+      ],
+      'Confidence in the thin read is high.',
+    );
+    expect(result.tiers).toBe('high/low');
+    expect(result.stripped).toEqual(['main']);
+    expect(result.dropped).toBe(0);
+  });
+
+  it('every key of the licensed tier table is one of the withheld tier words', () => {
+    for (const tier of ['low', 'medium', 'high']) {
+      expect(
+        validateStageRecords([{ stageId: 1, games: 20, wins: 12 }], `This is a ${tier} read.`)
+          .stripped,
+        tier,
+      ).toEqual(['main']);
+    }
+  });
+
+  it('known limit (recorded in the rubric): a strength adjective outside the closed tier vocabulary, with no figure, is not recognised', () => {
+    expect(
+      validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], 'This read is rock solid.')
+        .stripped,
+    ).toEqual([]);
   });
 });
