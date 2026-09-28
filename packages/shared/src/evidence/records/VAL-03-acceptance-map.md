@@ -51,7 +51,12 @@ row 4 (any figure in prose withholds it) and row 5 (any tier word in prose withh
 iteration 6 extends rows 1, 4 and 5 again, still with no dimension added or removed: the check reads
 the delivered text, and the judge reads its word lists from the rubric (R6-WR-04). Iteration 7 adds
 the natural zero-side, even-record, count-after-name and "I"-as-one phrasings to the rubric's lists
-(R7-WR-01..03), again with no dimension added or removed.
+(R7-WR-01..03), again with no dimension added or removed. Iteration 8 narrows two of those rules so
+ordinary commentary ships again (R8-WR-01: only a closed list of attributive words, `count-gap-words`,
+bridges a digit-bearing name or tag and a count noun; R8-WR-02: the singular "no set/win/game/stock"
+is a figure only when not attributive, "not beaten/won by" is the passive, and "not lost to" a
+possessive names a habit), again with no dimension added or removed; the `d24-r8` fixtures hold both
+the over-strip controls and the probes that must stay withheld.
 
 ## Owner-decision coverage (D-20 / D-21)
 
@@ -96,7 +101,7 @@ D-24 word lists"), reads the delivered text without folding, and implements ever
 own code: its own tokenizer, number-word parser, roman-numeral parser (a token is a numeral when it
 round-trips through a canonical roman spelling), tier-suffix stripping and segmenter. It therefore
 catches a rule the validator IMPLEMENTS wrongly, but it cannot catch a rule the rubric does not
-state: both sides implement the same rubric. The metamorphic suite requires every R5, R6 and R7
+state: both sides implement the same rubric. The metamorphic suite requires every R5, R6, R7 and R8
 phrasing, and every sentence under each transform that changes the delivered text (Markdown
 markers, format characters, combining marks, fullwidth and mathematical letterforms, ligatures,
 bidi overrides and isolates, tag characters, roman-numeral characters, intraword emphasis and
@@ -111,9 +116,13 @@ class); deliberate obfuscation of a listed word — split into chunks ("tw o"), 
 ("twoo"), letters separated by apostrophes, an "x'" prefix, a suffix or a glued roman numeral
 ("twoish", "IItimes") — which the iteration-7 threat model places outside D-24 (the model has no
 reason to obfuscate, the only user-controlled text reaches only that user's own report, and the
-structured claims remain the source of truth: R7-CR-04..08, R7-WR-05, recorded as INFO); and a
-fighter or stage mention outside the canonical name table, or a tag outside the job's
-claims, is not recognised as an entity. The price is stated too: true commentary that restates a
+structured claims remain the source of truth: R7-CR-04..08, R7-WR-05, recorded as INFO); a zero
+side stated through one of the iteration-8 exemptions ("not lost to his main", "not beaten by that
+player"), which ships because the phrase reads as a habit or a passive (R8-WR-02); the natural
+zero-side, sweep and even-record phrasings with unlisted verbs or predicates ("haven't taken a set
+off", "in straight games", "is level"), deferred by the orchestrator (R8-WR-03); and a fighter or
+stage mention outside the canonical name table, or a tag outside the job's claims, is not
+recognised as an entity. The price is stated too: true commentary that restates a
 figure, the everyday sense of a listed word ("keep your shield high", "once he is offstage", "make
 sure", "the top platform", "most of his kills", "always shield", "never chase", "only commit",
 "even so", "double jump", "a perfect shield", "you and I", a lone letter used as a label), and any

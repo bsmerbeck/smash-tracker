@@ -151,7 +151,8 @@ The price, stated: ordinary words on these lists are withheld in their everyday 
 he is offstage", "make sure", "the top platform", "most of his kills", "solid ledge options", "keep
 your shield high", "always shield", "never chase", "only commit", "even so", "double jump", "a
 perfect shield", "you and I", a lone letter used as a label, "you have not won the neutral",
-"stay level with the ledge", "no win, so reset", "not lost to the ledge trap"), and so is any accent, invisible character or Markdown marker outside a licensed name.
+"stay level with the ledge", "no win, so reset", "not lost to the ledge trap"), and so is any
+accent, invisible character or Markdown marker outside a licensed name.
 The prompts name them, so most commentary is written around them. The R8-WR-02 exemptions have a
 price in the other direction, stated too: "you have not lost to his main" and "you are not beaten by
 that player" ship, although they may state a zero side; the structured claims remain the source of

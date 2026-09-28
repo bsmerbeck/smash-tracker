@@ -182,19 +182,19 @@ API's pre-call fail-fast alike (owner decision D-23):
    charged, disclosed, never refunded, and it never touches claim survival. The model prompts
    state the rule up front, so most commentary is written to survive it.
 
-Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c` and re-pinned for code review iteration 7):
+Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c` and re-pinned for code review iteration 8):
 
 - `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
   `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
-- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:1203`;
+- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:1232`;
   API pre-call fail-fast — `apps/api/src/routes/reports.ts:1459` (scout, prep) and
   `reports.ts:1811` (post-event synthesis).
 - The D-24 rule — doc comment `validateReport.ts:449-470`; the allowlist
   `PROSE_DISALLOWED_CHARACTER` `:482`, `MARKDOWN_MARKER` `:489`, `FIGURE_WORD_SOURCE` `:511`,
-  `FIGURE_PHRASE_PATTERN` `:535`, `TIER_STEMS` `:549` and `TIER_FORMS` `:593`, `ROMAN_TOKEN`
-  `:616`, `LONE_ONE_BEFORE_COUNT` `:659`, `SPELLED_LETTER_RUN` `:670`, `isGluedFigure` `:728`, `hasFigureOrTierWord` `:786`,
-  `NAME_COUNT_FOLLOWER` `:841`; enforcement in `lintSectionProse` (`:875`) at
-  `validateReport.ts:1053-1075`. Prompt statement — `apps/api/src/reports/generate.ts:1102-1104`
+  `FIGURE_PHRASE_PATTERN` `:557`, `TIER_STEMS` `:573` and `TIER_FORMS` `:617`, `ROMAN_TOKEN`
+  `:640`, `LONE_ONE_BEFORE_COUNT` `:683`, `SPELLED_LETTER_RUN` `:694`, `isGluedFigure` `:752`, `hasFigureOrTierWord` `:810`,
+  `NAME_COUNT_FOLLOWER` `:870`; enforcement in `lintSectionProse` (`:904`) at
+  `validateReport.ts:1082-1104`. Prompt statement — `apps/api/src/reports/generate.ts:1102-1104`
   and `apps/api/src/reports/synthesis.ts:504-506`.
 - Events — `EVENT_CATALOG` at `packages/shared/src/events.ts:80`; `report_failed_validation`
   `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
