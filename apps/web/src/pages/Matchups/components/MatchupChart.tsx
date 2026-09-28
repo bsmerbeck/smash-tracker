@@ -16,7 +16,12 @@ import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { CHART_H_COMPACT } from '@/components/charts/tokens';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { buildFormStripEvents, formStripLabels, formStripWindowNote } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  formStripLabels,
+  formStripRecentWindow,
+  formStripWindowNote,
+} from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatPercent } from '@/lib/formatPercent';
@@ -303,8 +308,9 @@ export function MatchupChart({
   );
 
   const formStripEvents = useMemo(
-    () => buildFormStripEvents(matchupMatches, recentWindow, t, i18n.language),
-    [matchupMatches, recentWindow, t, i18n.language],
+    // Plan 39.1-42: the strip dims nothing when the horizons collapse.
+    () => buildFormStripEvents(matchupMatches, formStripRecentWindow(insight), t, i18n.language),
+    [matchupMatches, insight, t, i18n.language],
   );
 
   function handleSelectPeriodPoint(point: PeriodPoint) {

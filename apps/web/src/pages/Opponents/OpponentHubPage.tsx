@@ -37,6 +37,7 @@ import {
   buildFormStripEvents,
   createFormStripSetKeyResolver,
   formStripLabels,
+  formStripRecentWindow,
 } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
@@ -628,13 +629,9 @@ export function OpponentHubPage() {
   // strip derivation every FormStrip host uses (`buildFormStripEvents` over
   // `trendSourceMatches`) instead of `groupEncounters`' one-pseudo-set-per-
   // manual-game rows — Recent Encounters keeps its own grouping (UIX-08).
-  const trendRecentWindow = useMemo(
-    () => ({
-      fromMs: trendInsight?.window.fromMs ?? null,
-      toMs: trendInsight?.window.toMs ?? null,
-    }),
-    [trendInsight],
-  );
+  // Plan 39.1-42 (UI-SPEC §7.10): collapsed horizons dim nothing; an empty
+  // window dims every set.
+  const trendRecentWindow = useMemo(() => formStripRecentWindow(trendInsight), [trendInsight]);
   const formStripEvents: FormStripEvent[] = useMemo(
     () => buildFormStripEvents(trendSourceMatches, trendRecentWindow, t, i18n.language),
     [trendSourceMatches, trendRecentWindow, t, i18n.language],

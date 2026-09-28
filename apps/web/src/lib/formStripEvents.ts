@@ -189,11 +189,12 @@ export function buildFormStripEvents(
     }
   }
 
+  // Plan 39.1-42 (UI-SPEC §7.10 "collapsed: no dimming", sketch 002-C): with
+  // no recent window (collapsed horizons, or no insight) nothing is dimmed;
+  // a window with no games still dims every set (§7.10 zero-data rule).
+  const hasWindow = recentWindow.fromMs != null && recentWindow.toMs != null;
   const inWindow = (m: Match): boolean =>
-    recentWindow.fromMs != null &&
-    recentWindow.toMs != null &&
-    m.time >= recentWindow.fromMs &&
-    m.time <= recentWindow.toMs;
+    !hasWindow || (m.time >= recentWindow.fromMs! && m.time <= recentWindow.toMs!);
 
   function toFormStripEvent(key: string, label: string, eventMatches: Match[]): FormStripEvent {
     const bySet = new Map<string, Match[]>();
@@ -297,6 +298,35 @@ export function formStripLabels(
     shownOfTotal: ({ shown, total }) => t('analytics.strip.footShownOf', { shown, total }),
     allShown: ({ total }) => t('analytics.strip.allShown', { count: total }),
   };
+}
+
+/**
+ * Plan 39.1-42 (UI-SPEC §7.10 zero-data rule): a recent window that holds NO
+ * game — every set falls outside it, so every tick dims. Distinct from "no
+ * window" (`{ fromMs: null, toMs: null }`), which dims nothing.
+ */
+export const FORM_STRIP_EMPTY_WINDOW: { fromMs: number; toMs: number } = {
+  fromMs: Number.POSITIVE_INFINITY,
+  toMs: Number.NEGATIVE_INFINITY,
+};
+
+/**
+ * Plan 39.1-42 (UI-SPEC §7.10): the strip's recent window from the host's
+ * `formNow` insight — none (nothing dimmed) without an insight or when its
+ * horizons collapse (the foot reads "Whole record shown"); the empty window
+ * when the horizon holds no games (every tick dimmed); else its real span.
+ */
+export function formStripRecentWindow(insight: Insight | null | undefined): {
+  fromMs: number | null;
+  toMs: number | null;
+} {
+  if (!insight || insight.state === 'collapsed') {
+    return { fromMs: null, toMs: null };
+  }
+  if (insight.window.games === 0 || insight.window.fromMs == null || insight.window.toMs == null) {
+    return FORM_STRIP_EMPTY_WINDOW;
+  }
+  return { fromMs: insight.window.fromMs, toMs: insight.window.toMs };
 }
 
 /**

@@ -29,7 +29,12 @@ import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
-import { buildFormStripEvents, formStripLabels, formStripWindowNote } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  formStripLabels,
+  formStripRecentWindow,
+  formStripWindowNote,
+} from '@/lib/formStripEvents';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
@@ -182,8 +187,10 @@ export function FighterHero({
     // WR-04 (39.1-REVIEW.md): the SAME builder Matchups uses — manual games
     // split into 3-hour sessions named "Session · <date>", never one
     // `__manual__` bucket captioned "Unknown".
-    () => buildFormStripEvents(fighterMatches, recentWindow, t, i18n.language),
-    [fighterMatches, recentWindow, t, i18n.language],
+    // Plan 39.1-42: the strip dims nothing when the horizons collapse.
+    () =>
+      buildFormStripEvents(fighterMatches, formStripRecentWindow(formNowInsight), t, i18n.language),
+    [fighterMatches, formNowInsight, t, i18n.language],
   );
 
   // Plan 39.1-36 (audit 1.3/1.7, sketch 001-C `shareBar`): each by-match-type

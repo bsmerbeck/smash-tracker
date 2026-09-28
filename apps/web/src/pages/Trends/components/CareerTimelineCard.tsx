@@ -6,6 +6,7 @@ import {
   TREND_MIN_RECENT_GAMES,
   buildCareerTimeline,
   calendarBucketBounds,
+  resolveWindow,
   type CareerRatingGrain,
   type CareerRatingPoint,
   type HorizonKey,
@@ -24,7 +25,11 @@ import {
 import { FormStrip } from '@/components/charts/FormStrip';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
 import { formatPercent } from '@/lib/formatPercent';
-import { buildFormStripEvents, formStripLabels } from '@/lib/formStripEvents';
+import {
+  FORM_STRIP_EMPTY_WINDOW,
+  buildFormStripEvents,
+  formStripLabels,
+} from '@/lib/formStripEvents';
 
 export interface CareerTimelineCardProps {
   /** The page's filtered, own-account matches (38 D-04) — never a coach subject. */
@@ -356,20 +361,28 @@ export function CareerTimelineCard({
   // strips — the SAME builder every other FormStrip host uses, with the
   // timeline's own recent window (one source of truth for "recent").
   const recentWindow = timeline.recentWindow;
+  // Plan 39.1-42 (UI-SPEC §7.10, sketch 002-C): the timeline has no recent
+  // window when the horizon is empty OR collapses — the strip tells them
+  // apart: an empty horizon dims every tick and names itself; collapsed
+  // horizons dim nothing ("Whole record shown").
+  const stripWindow = useMemo(() => {
+    if (timeline.state !== 'thin') {
+      return null;
+    }
+    if (recentWindow) {
+      return {
+        range: { fromMs: recentWindow.fromMs ?? null, toMs: recentWindow.toMs ?? null },
+        note: t(`analytics.strip.windowHighlighted.${horizon}`),
+      };
+    }
+    const empty = resolveWindow({ matches, horizon, scoped: false, nowMs }).window.games === 0;
+    return empty
+      ? { range: FORM_STRIP_EMPTY_WINDOW, note: t(`analytics.strip.windowEmpty.${horizon}`) }
+      : { range: { fromMs: null, toMs: null }, note: t('analytics.strip.windowAll') };
+  }, [timeline.state, recentWindow, matches, horizon, nowMs, t]);
   const thinEvents = useMemo(
-    () =>
-      timeline.state === 'thin'
-        ? buildFormStripEvents(
-            matches,
-            {
-              fromMs: recentWindow?.fromMs ?? null,
-              toMs: recentWindow?.toMs ?? null,
-            },
-            t,
-            locale,
-          )
-        : [],
-    [timeline.state, matches, recentWindow, t, locale],
+    () => (stripWindow ? buildFormStripEvents(matches, stripWindow.range, t, locale) : []),
+    [stripWindow, matches, t, locale],
   );
   const thinStrip =
     timeline.state === 'thin' ? (
@@ -387,7 +400,7 @@ export function CareerTimelineCard({
           title: ({ shown, total }) =>
             shown === total ? t('analytics.timeline.thin.overline', { count: total }) : undefined,
           // The strip dims by the timeline's recent window; the note names it.
-          windowNote: recentWindow ? t(`analytics.strip.windowHighlighted.${horizon}`) : undefined,
+          windowNote: stripWindow?.note,
         }}
         availableWidthPx={stripWidthPx}
         onSelectSet={onSelectSet}

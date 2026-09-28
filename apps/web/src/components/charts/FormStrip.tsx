@@ -495,7 +495,9 @@ function StripHead({ title, legend }: { title: string; legend: FormStripLegend }
       >
         {title}
       </p>
-      <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5 text-xs leading-4 text-muted-foreground">
+      {/* Sketch 003 `.legend{align-items:center}`: a baseline row would set
+          the swatch items' text off the text-only items' line. */}
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-xs leading-4 text-muted-foreground">
         {items.map((item) => (
           <span
             key={item.key}
