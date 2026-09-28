@@ -51,7 +51,10 @@ export const ABSTAINED_KEYS: Readonly<{ one: string; other: string }> = {
  * noun every shipped sentence pairs it with. Adding a word tightens the
  * lint and needs the `ordinary_prose` corpus re-run (see
  * `FORBIDDEN_CONFIDENCE_WORDS` below); removing one loosens it and needs a
- * fixture.
+ * fixture. Owner decision D-24 (2026-09-28): commentary is qualitative only,
+ * so the prose lint now WITHHOLDS every tier word (these keys and the
+ * owner's `moderate`/`strong`/`weak`) anywhere in a section; of this list
+ * only the noun "confidence" is still licensed, by a tiered claim.
  */
 export const LICENSED_CONFIDENCE_WORDS: Readonly<Record<ConfidenceTier, readonly string[]>> = {
   low: ['low', 'confidence'],

@@ -5,8 +5,9 @@
  * `records/RPT-08-rubric.md`). Connective prose is linted for factual
  * specifics its own section's claims do not license. The outcome is
  * drop-then-fail: invalid claims are dropped first (rules R1-R3, R6-R7), a
- * prose fault (R4/R5, and R7's lexical half — D-22) strips ONLY that
- * section's prose and never touches claim survival (the C1-H4/C2-H3
+ * prose fault (R4/R5 — under owner decision D-24 any figure or confidence-tier
+ * word, since commentary is qualitative only — and R7's lexical half, D-22)
+ * strips ONLY that section's prose and never touches claim survival (the C1-H4/C2-H3
  * money-path fix — see the FAILURE SEMANTICS comment on `lintSectionProse`
  * below), and the output's `status` is decided by the surviving EVIDENCED
  * claim count (`countViableClaims`, D-23) against `MIN_VIABLE_CLAIMS[surface]`
@@ -23,11 +24,7 @@ import type { ActionId, ClaimAtom, ClaimId, ClaimValue, ReportSurface } from './
 import { MIN_VIABLE_CLAIMS, countViableClaims } from './claims.js';
 import type { EvidenceRow, EvidenceSnapshot } from './snapshot.js';
 import { effectiveFloor } from './policy.js';
-import {
-  FORBIDDEN_CONFIDENCE_WORDS,
-  LICENSED_CONFIDENCE_WORDS,
-  confidenceWordsFor,
-} from './confidencePhrases.js';
+import { FORBIDDEN_CONFIDENCE_WORDS, confidenceWordsFor } from './confidencePhrases.js';
 import { SpriteList } from '../fighterData.js';
 import { StageList } from '../stageData.js';
 
@@ -171,24 +168,15 @@ export const MATCHUP_MARKERS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * The five NON-FACTUAL NUMERIC shapes (review C2-H3) — the admission
- * criterion for any future addition is the same one plan 39-03 uses for
- * `FORBIDDEN_CONFIDENCE_WORDS`: the `ordinary_prose` corpus stays green AND
- * the `prose_entity`/digit-battery positive fixtures stay convicted. A
- * pattern that also lets a real figure through is not admissible.
+ * RETIRED by owner decision D-24 (2026-09-28, code review R4-CR-01): the
+ * five non-factual numeric shapes (review C2-H3) the digit rule used to
+ * exempt — a list position, an ordinal suffix, "Game 1", "top-5",
+ * "best-of-5". Report commentary is now QUALITATIVE ONLY, so every digit
+ * withholds its section's prose and no numeric shape is exempt; the lint no
+ * longer consults this list. It stays exported only so the package's public
+ * surface (`evidence/index.ts`) is unchanged.
  *
- * Every shape captures the exempt digit run in its FIRST capture group that
- * participated (`findNonFactualDigitSpans` reads the group's own indices).
- *
- * Shape 1 (list position) is deliberately narrow (review SH-CR-01): only a
- * one- or two-digit run at the START of the text or of a line, followed by
- * `.` or `)` and then whitespace and more text. The previous "any digit run
- * before `.` or `)`" form exempted every sentence-final figure ("…is 83.")
- * and the whole-number half of every decimal ("71.4%"), so unlicensed
- * figures shipped. Shape 2 keeps the ordinal SUFFIX spelling (`3rd`, `1st`)
- * as its own standalone token — the `ordinary_prose` corpus's "strike-order
- * pick 3rd" sentence needs it. Known limit, recorded rather than hidden: a
- * placement ordinal ("placed 2nd") is exempt under the same shape.
+ * @deprecated Not consulted by the prose lint since D-24.
  */
 export const NON_FACTUAL_NUMERIC_PATTERNS: readonly RegExp[] = Object.freeze([
   /(?:^|\n)[ \t]*(\d{1,2})[.)](?=[ \t]+\S)/g,
@@ -205,35 +193,6 @@ function foldDigitsToAscii(text: string): string {
     result += /\p{Nd}/u.test(ch) ? ch.normalize('NFKC') : ch;
   }
   return result;
-}
-
-/** The absolute [start, end) span of the DIGITS ONLY inside every `NON_FACTUAL_NUMERIC_PATTERNS` match in `text` — the span of the first capture group that participated, read from the match's own indices (`d` flag), so a shape whose digits are not at the END of the match (a list position followed by `.`) is located exactly. Used to exempt a digit run from R4's digit rule. */
-function findNonFactualDigitSpans(text: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
-  for (const pattern of NON_FACTUAL_NUMERIC_PATTERNS) {
-    const flags = new Set([...pattern.flags, 'g', 'd']);
-    const re = new RegExp(pattern.source, [...flags].join(''));
-    for (const match of text.matchAll(re)) {
-      const groups = match.indices ?? [];
-      for (let group = 1; group < groups.length; group += 1) {
-        const span = groups[group];
-        if (span !== undefined) {
-          spans.push([span[0], span[1]]);
-          break;
-        }
-      }
-    }
-  }
-  return spans;
-}
-
-/** True when `run` — an ASCII decimal digit run, its own [start, end) span in the same folded text — matches one of `findNonFactualDigitSpans(text)` exactly. */
-function isNonFactualDigitRun(
-  spans: ReadonlyArray<[number, number]>,
-  start: number,
-  end: number,
-): boolean {
-  return spans.some(([s, e]) => s === start && e === end);
 }
 
 /** Splits `text` into sentences on the same boundary rpt08Oracle.test.ts uses (a `.`/`!`/`?` followed by whitespace), returning each sentence's own [start, end) offsets so a match can be located to its containing sentence. */
@@ -455,7 +414,8 @@ function validateClaim(
 }
 
 // ---------------------------------------------------------------------------
-// The D-04 prose lint (R4, R5) and R7's lexical half.
+// The D-04 prose lint (R4, R5 — under owner decision D-24 any figure or
+// confidence-tier word in commentary) and R7's lexical half.
 //
 // FAILURE SEMANTICS — the C1-H4 + C2-H3 money-path fix. A section failing R4
 // or R5 does NOT drop that section's claims and does NOT fail the output —
@@ -495,37 +455,58 @@ function validateClaim(
  */
 export const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)s?\b/iu;
 
-/** A W-L record written in prose: two digit runs joined by a hyphen or en dash (review SH-WR-04). Not preceded or followed by another digit or word character, so "top-5" and "Figure-8" never match. */
-const RECORD_SHAPE_PATTERN = /(?<![\w.])(\d+)\s*[-–]\s*(\d+)(?![\w.]*\d)/dgu;
+/**
+ * Owner decision D-24 (2026-09-28, code review R4-CR-01 / R4-CR-02): report
+ * commentary is QUALITATIVE ONLY. Every figure a user sees comes from a
+ * checked claim, which the app renders beside the prose, so a section whose
+ * prose carries a figure of any form, or a word grading a finding's
+ * confidence, is WITHHELD (disclosed as "commentary withheld", never
+ * refunded — D-22), true or false. This one strict rule replaces the
+ * pattern-patching that came before it: the W-L pair rule and its
+ * opponent-perspective marker list (R3-CR-01), the per-integer licence and
+ * its non-factual numeric exemptions (C2-H3), and the "confiden" gate on
+ * tier words (R3-CR-02). Each of those was bypassed by a phrasing outside
+ * its closed list (an em dash, "3 to 2", "You trail MkLeo 3-2", "Certainty:
+ * high."); a figure or a tier word cannot be restated without one of the
+ * forms below. The model prompt states the rule up front, so most
+ * commentary is written to survive it.
+ *
+ * Canonical fighter/stage names and known opponent tags are consumed FIRST
+ * (see `lintSectionProse`), so the digits and words inside a name
+ * ("Pokémon Stadium 2", "Sparg0", "Zero Suit Samus") are never read as
+ * figures.
+ */
+
+/** Any Unicode number character — decimal digits of every script (fullwidth included), superscripts, vulgar fractions and letter-like numerals. */
+const NUMBER_CHARACTER_PATTERN = /\p{N}/u;
+
+/** A percentage sign: ASCII, fullwidth, small, per-mille and per-ten-thousand. */
+const PERCENT_SIGN_PATTERN = /[%％﹪‰‱]/u;
+
+/**
+ * A spelled-out English figure as a whole word, any casing: the cardinals
+ * zero to twenty, the tens, "hundred"/"thousand", "dozen", "half",
+ * "twice"/"thrice", and the ordinals first to tenth. "twenty-one" matches on
+ * "twenty"; "someone" and "often" do not match, because a letter or digit
+ * on either side ends the match.
+ */
+const FIGURE_WORD_PATTERN =
+  /(?<![\p{L}\p{N}_])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|dozens?|half|halves|twice|thrice|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?![\p{L}\p{N}_])/iu;
+
+/**
+ * A confidence-tier word as a whole word, any casing: the shipped tier
+ * vocabulary (`low`/`medium`/`high`, the keys of `LICENSED_CONFIDENCE_WORDS`)
+ * and the grading words the owner named (`moderate`, `strong`, `weak`), with
+ * their comparative, superlative and adverb forms. Withheld ANYWHERE in a
+ * section, Smash sense included ("keep your shield high") — no "confiden"
+ * stem is required, so a synonym for confidence ("Certainty: high.") cannot
+ * route around it.
+ */
+const TIER_WORD_PATTERN =
+  /(?<![\p{L}\p{N}_])(?:low|lower|lowest|medium|high|higher|highest|highly|moderate|moderately|strong|stronger|strongest|strongly|weak|weaker|weakest|weakly)(?![\p{L}\p{N}_])/iu;
 
 /** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
 const CONFIDENCE_NOUN = 'confidence';
-
-/**
- * Prose that talks about confidence (reviews R2-CR-02, R3-CR-02): the noun,
- * or any word built on its stem ("confident", "confidently",
- * "overconfident"). Every tier word in a SECTION whose prose matches this
- * anywhere is judged as a confidence word, wherever it sits. Deliberately
- * unanchored — over-matching only withholds prose (D-22).
- */
-const CONFIDENCE_MENTION_PATTERN = /confiden(?:ce|t)/u;
-
-/** True when `word` is a confidence TIER word — a key of the licensed table (`low`/`medium`/`high`), read from the table rather than restated. */
-function isTierWord(word: string): boolean {
-  return Object.prototype.hasOwnProperty.call(LICENSED_CONFIDENCE_WORDS, word);
-}
-
-/**
- * Review R3-CR-01 (iteration 3): an OPPONENT-PERSPECTIVE marker — "you" as
- * the object of a head-to-head preposition or result verb ("against you",
- * "vs. you", "beat you", "leads you"). A section whose prose carries one
- * anywhere withholds every W-L pair in it: the lint cannot tell whose record
- * a pair states once the opponent can be the subject, so it never licenses
- * one there, true or false. A CLOSED list — an opponent-subject phrasing
- * outside it is the recorded limit in `records/VAL-03-acceptance-map.md`.
- */
-const OPPONENT_PERSPECTIVE_PATTERN =
-  /\b(?:against|versus|vs\.?|over|beat|beats|beaten|lead|leads|led|trail|trails|trailed|edge|edges|edged|sweep|sweeps|swept|top|tops|topped|best|bests|bested|own|owns|owned|dominate|dominates|dominated|outplay|outplays|outplayed)\s+you\b/iu;
 
 interface ProseLintResult {
   /** True when R4, R5 or R7's lexical half fired anywhere in this section's prose — the section's PROSE is stripped, its claims are untouched. */
@@ -563,9 +544,10 @@ function lintSectionProse(
   // CONSUMES its span, so a shorter canonical name contained in a longer one
   // ("Battlefield" in "Small Battlefield", "Link" in "Toon Link", "Pokémon
   // Stadium" in "Pokémon Stadium 2") is never matched a second time on its
-  // own. The consumed spans also exempt the digits INSIDE a matched name
-  // ("Pokémon Stadium 2", "Figure-8 Circuit") from the digit rule below — a
-  // digit that is part of a canonical name is not a figure.
+  // own. The consumed spans also exempt the digits and words INSIDE a
+  // matched name ("Pokémon Stadium 2", "Figure-8 Circuit", "Zero Suit
+  // Samus") from the D-24 figure rule below — part of a canonical name is
+  // not a figure.
   const licensedEntityNames = new Set<string>();
   for (const claim of licensedClaims) {
     if (claim.subject.myFighterId !== null) {
@@ -635,7 +617,7 @@ function lintSectionProse(
   // A known opponent tag is a NAME, like a canonical fighter or stage name:
   // every token-bounded occurrence (longest tag first) consumes its span, so
   // the digits inside it ("Sparg0", "Zer0Frame 2") are never read as figures
-  // by the digit rule below. Whether the tag itself is licensed is judged by
+  // by the D-24 figure rule below. Whether the tag itself is licensed is judged by
   // the tag check further down; consuming never licenses anything. Review
   // R3-IN-02 (iteration 3): only a tag that contains at least one LETTER is
   // consumed. A digit-only tag ("7") is indistinguishable from a figure, so
@@ -667,84 +649,6 @@ function lintSectionProse(
     }
   }
 
-  // --- R4: the digit rule ---
-  const licensedIntegers = new Set<number>();
-  for (const claim of licensedClaims) {
-    const v = claim.value;
-    if (v.kind === 'record') {
-      licensedIntegers.add(v.wins);
-      licensedIntegers.add(v.losses);
-      licensedIntegers.add(v.games);
-    } else if (v.kind === 'rate') {
-      licensedIntegers.add(v.numerator);
-      licensedIntegers.add(v.denominator);
-      if (v.denominator > 0) {
-        licensedIntegers.add(Math.round((v.numerator / v.denominator) * 100));
-      }
-    } else if (v.kind === 'count') {
-      licensedIntegers.add(v.count);
-    }
-  }
-  // Review SH-WR-04: a W-L RECORD shape ("6-4", "6 – 4") is judged as a
-  // PAIR — it must be the exact ordered (wins, losses) of one licensed
-  // record claim. Pooling every licensed integer let an inverted record
-  // ("4-6" against a licensed 6-4) or a re-paired one ship. Its digit runs
-  // are then settled and skipped by the per-integer rule below. The known
-  // limit (a single figure attributed to the wrong entity in the same
-  // section) is recorded in `records/VAL-03-acceptance-map.md`.
-  //
-  // Review R3-CR-01 (iteration 3): there is NO perspective exception. The
-  // R2-IN-01 rule licensed the REVERSED pair in a sentence that opened with
-  // the opponent's tag and said "against you", and it shipped an inverted
-  // record whenever a later clause restated the pair from the player's side
-  // ("MkLeo is tough against you, and you are 2-3"). Instead, a section
-  // whose prose carries an opponent-perspective marker anywhere
-  // (`OPPONENT_PERSPECTIVE_PATTERN`) withholds every pair in it — judged over
-  // the whole section, never per sentence, so a sentence split cannot move a
-  // pair away from its marker. That over-strips a true player-side record in
-  // such a section; D-22 makes a withheld prose section cheap, and a shipped
-  // inverted record is not. Both limits are recorded in the VAL-03 map.
-  const licensedRecordPairs = new Set<string>();
-  for (const claim of licensedClaims) {
-    if (claim.value.kind === 'record') {
-      licensedRecordPairs.add(`${claim.value.wins}-${claim.value.losses}`);
-    }
-  }
-  const opponentPerspective = OPPONENT_PERSPECTIVE_PATTERN.test(folded);
-  const recordShapeDigitSpans: Array<[number, number]> = [];
-  for (const match of folded.matchAll(RECORD_SHAPE_PATTERN)) {
-    const [winsStart, winsEnd] = match.indices![1]!;
-    const [lossesStart, lossesEnd] = match.indices![2]!;
-    if (overlapsConsumed(winsStart, lossesEnd)) {
-      continue;
-    }
-    recordShapeDigitSpans.push([winsStart, winsEnd], [lossesStart, lossesEnd]);
-    const pair = `${Number(match[1])}-${Number(match[2])}`;
-    if (opponentPerspective || !licensedRecordPairs.has(pair)) {
-      offense = true;
-    }
-  }
-
-  const nonFactualSpans = findNonFactualDigitSpans(folded);
-  for (const match of folded.matchAll(/\d+/g)) {
-    const start = match.index!;
-    const end = start + match[0].length;
-    if (overlapsConsumed(start, end)) {
-      continue;
-    }
-    if (recordShapeDigitSpans.some(([s, e]) => s === start && e === end)) {
-      continue;
-    }
-    const value = Number(match[0]);
-    if (licensedIntegers.has(value)) {
-      continue;
-    }
-    if (isNonFactualDigitRun(nonFactualSpans, start, end)) {
-      continue;
-    }
-    offense = true;
-  }
-
   // --- R4: opponent tags (verbatim, case-sensitive, on token boundaries) ---
   //
   // Review SH-WR-01: a tag known elsewhere in the job convicts only as a
@@ -759,30 +663,48 @@ function lintSectionProse(
     }
   }
 
-  // --- R5: confidence words ---
+  // --- D-24: commentary is qualitative only (R4 figures, R5 tier words) ---
   //
-  // Review SH-WR-01: the tier words (`low`/`medium`/`high`) are ordinary
-  // Smash vocabulary ("high recovery", "low percent"), so a tier word in a
-  // section that never mentions confidence is not judged. Review R3-CR-02
-  // (iteration 3): once a section's prose mentions confidence ANYWHERE,
-  // every tier word in that section is a confidence word — "Confidence is
-  // high here.", "(confidence: high)", and the answer to a confidence
-  // question ("Our confidence in this read? High."). R2-CR-02 judged the
-  // sentence, and a split on "? " or "! " moved the answer out of it; the
-  // section has no split to escape. The cost is a Smash-sense tier word in
-  // a section that also mentions confidence ("Confidence is medium, so keep
-  // your shield high."): its prose is withheld too (review R3-IN-01, an
-  // accepted over-strip recorded in `records/RPT-08-rubric.md`). The noun
-  // "confidence" itself and the forbidden strength words are still judged
-  // wherever they appear.
+  // Judged on the prose with every consumed name span blanked out, so a
+  // name's own digits and words are never figures. Any number character,
+  // percent sign or spelled-out figure (R4) and any confidence-tier word
+  // (R5) withholds the section's prose, whether or not a claim in the
+  // section carries that value or tier. A W-L pair, whatever its separator
+  // ("3—2", "3 to 2", "3:2", "three and two"), is made of these, so it
+  // needs no rule of its own.
+  let residual = '';
+  let cursor = 0;
+  for (const [start, end] of [...consumedNameSpans].sort((a, b) => a[0] - b[0])) {
+    if (start < cursor) {
+      continue;
+    }
+    residual += folded.slice(cursor, start) + ' ';
+    cursor = end;
+  }
+  residual += folded.slice(cursor);
+  if (
+    NUMBER_CHARACTER_PATTERN.test(residual) ||
+    PERCENT_SIGN_PATTERN.test(residual) ||
+    FIGURE_WORD_PATTERN.test(residual) ||
+    TIER_WORD_PATTERN.test(residual)
+  ) {
+    offense = true;
+  }
+
+  // --- R5: the forbidden strength words and the noun "confidence" ---
+  //
+  // The strength vocabulary (`FORBIDDEN_CONFIDENCE_WORDS`) is rejected
+  // outright. The noun "confidence" is licensed only by a section claim that
+  // carries a tier (an all-abstention section cannot speak of confidence);
+  // with no tier word and no figure beside it, it is qualitative
+  // commentary ("Play this stage with confidence.").
   const licensedConfidenceWords = new Set<string>();
   for (const claim of licensedClaims) {
     for (const word of confidenceWordsFor(claim.tier)) {
       licensedConfidenceWords.add(word);
     }
   }
-  const lower = folded.toLowerCase();
-  const tokens = lower.match(/[a-z']+/g) ?? [];
+  const tokens = folded.toLowerCase().match(/[a-z']+/g) ?? [];
   for (const token of tokens) {
     if ((FORBIDDEN_CONFIDENCE_WORDS as readonly string[]).includes(token)) {
       offense = true;
@@ -790,13 +712,6 @@ function lintSectionProse(
     }
     if (token === CONFIDENCE_NOUN && !licensedConfidenceWords.has(token)) {
       offense = true;
-    }
-  }
-  if (CONFIDENCE_MENTION_PATTERN.test(lower)) {
-    for (const word of lower.match(/[a-z]+/g) ?? []) {
-      if (isTierWord(word) && !licensedConfidenceWords.has(word)) {
-        offense = true;
-      }
     }
   }
 

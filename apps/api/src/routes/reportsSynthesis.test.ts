@@ -180,7 +180,9 @@ function seedOneAnnotation(database: FakeDatabase, matchId = 'm1', seconds = 42)
 
 /** Connective prose that passes the prose lint (no digit, no entity name, no confidence word). */
 const CLEAN_PROSE: Readonly<Record<ClaimSelectionSectionId, string>> = {
-  overview: 'A strong showing overall.',
+  // Qualitative only (owner decision D-24): "strong" is a confidence-tier
+  // word and would withhold the section.
+  overview: 'A composed showing overall.',
   gameplan: 'Drill the punish you annotated.',
   watchFor: 'Watch the moments you flagged.',
 };
@@ -818,7 +820,7 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     const planSnapshot = await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get();
     expect(planSnapshot.exists()).toBe(true);
     const plan = planSnapshot.val() as StoredPracticePlan;
-    expect(plan.summary).toBe('A strong showing overall.');
+    expect(plan.summary).toBe(CLEAN_PROSE.overview);
     // Phase 39 (plan 39-08, migrated): the claim-anchored record replaces the
     // model-authored focusAreas — `projectPracticePlanSelection` omits the
     // key; the stored claims, sections and validation block carry the plan.
