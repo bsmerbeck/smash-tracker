@@ -2327,8 +2327,15 @@ describe('post-plan fix (39-10): wasCharged on the post_event_synthesis job', ()
 
 describe('code review R4-WR-02: the synthesis model call is one bounded attempt', () => {
   it('reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
-    const modelSpy = vi.fn(async (_params: unknown, _options?: unknown) => ({
-      stop_reason: 'end_turn' as const,
+    // Typed with the SDK call's two parameters so the per-request options
+    // (the second argument) can be read back from the recorded call.
+    const modelSpy = vi.fn<
+      (
+        params: unknown,
+        options?: unknown,
+      ) => Promise<{ stop_reason: 'end_turn'; parsed_output: unknown }>
+    >(async () => ({
+      stop_reason: 'end_turn',
       parsed_output: citablePlan('m1', 42),
     }));
     const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });

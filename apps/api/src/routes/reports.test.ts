@@ -7527,8 +7527,15 @@ function expectBoundedSingleAttempt(options: R4ModelCall['options']): number {
 
 describe('code review R4-WR-02: one model call per job, no retries, bounded well inside the stale window', () => {
   it('the legacy scout model call reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
-    const modelSpy = vi.fn(async (_params: unknown, _options?: unknown) => ({
-      stop_reason: 'end_turn' as const,
+    // Typed with the SDK call's two parameters so the per-request options
+    // (the second argument) can be read back from the recorded call.
+    const modelSpy = vi.fn<
+      (
+        params: unknown,
+        options?: unknown,
+      ) => Promise<{ stop_reason: 'end_turn'; parsed_output: unknown }>
+    >(async () => ({
+      stop_reason: 'end_turn',
       parsed_output: VALID_REPORT,
     }));
     const { app, database } = buildTestApp({
