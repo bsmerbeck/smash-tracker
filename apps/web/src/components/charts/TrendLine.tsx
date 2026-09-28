@@ -827,6 +827,69 @@ function modelX(model: PeriodPlotModel, index: number, count: number): number {
   return model.firstXPx + (index * model.plotWidthPx) / (count - 1);
 }
 
+/** UI-SPEC §7.13: the recent band is never narrower than this (px). */
+const PERIOD_BAND_MIN_WIDTH_PX = 4;
+
+/**
+ * Plan 39.1-41 (sketch 003 `.band`, UI-SPEC §7.13 "from the period containing
+ * the window start to the right edge", "1px left edge"): Recharts draws a
+ * category ReferenceArea from the first period's centre to the last
+ * period's centre. The band instead covers the first period's whole slot
+ * (half a category step left of its centre, never left of the plot) and
+ * runs to the plot's right edge (the last centre plus the x-axis padding),
+ * with a 1px series-1 left edge.
+ */
+function periodBandShape(model: PeriodPlotModel, count: number) {
+  const halfStepPx = count > 1 ? model.plotWidthPx / (count - 1) / 2 : model.plotWidthPx / 2;
+  return function renderBand(shapeProps: unknown): ReactElement<SVGElement> {
+    const { x, y, width, height, x1, x2 } = shapeProps as {
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      x1?: string | number;
+      x2?: string | number;
+    };
+    if (
+      typeof x !== 'number' ||
+      typeof y !== 'number' ||
+      typeof width !== 'number' ||
+      typeof height !== 'number'
+    ) {
+      return (<g />) as ReactElement<SVGElement>;
+    }
+    const left = Math.max(model.plotLeftPx, x - halfStepPx);
+    const right = Math.max(left + PERIOD_BAND_MIN_WIDTH_PX, x + width + PERIOD_X_AXIS_PADDING_PX);
+    return (
+      // Recharts types a ReferenceArea shape as ReactElement<SVGElement>.
+      (
+        <g>
+          <rect
+            className="recharts-reference-area-rect"
+            x={left}
+            y={y}
+            width={right - left}
+            height={height}
+            fill={CHART_TOKENS.series1}
+            fillOpacity={0.1}
+            x1={x1}
+            x2={x2}
+          />
+          <line
+            data-slot="trend-period-band-edge"
+            x1={left}
+            x2={left}
+            y1={y}
+            y2={y + height}
+            stroke={CHART_TOKENS.series1}
+            strokeWidth={1}
+          />
+        </g>
+      ) as ReactElement<SVGElement>
+    );
+  };
+}
+
 /**
  * Used only to derive the initial plot-width estimate before
  * `ResponsiveContainer`'s first real `onResize` callback fires — mirrors
@@ -968,6 +1031,7 @@ function PeriodTrendChart({
           fill={CHART_TOKENS.series1}
           fillOpacity={0.1}
           ifOverflow="visible"
+          shape={periodBandShape(model, points.length)}
         />
       )}
       <Line
