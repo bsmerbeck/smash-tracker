@@ -10,23 +10,14 @@ import type {
   PeriodPoint,
   PeriodSeries,
 } from '@smash-tracker/shared';
-import {
-  PERIOD_TREND_MIN_PERIODS,
-  classify,
-  confidenceTierFor,
-  resolveWindow,
-  toRateValue,
-} from '@smash-tracker/shared';
+import { PERIOD_TREND_MIN_PERIODS, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { ShareBar, type ShareBarSegment } from '@/components/charts/inlineMarks';
 import { CHART_H_COMPACT } from '@/components/charts/tokens';
-import { StatRow, StatFigure } from '@/components/analytics/StatRow';
-import { DeltaChip } from '@/components/analytics/DeltaChip';
-import { deltaChipView } from '@/components/analytics/deltaChipView';
-import { Record } from '@/components/analytics/Record';
+import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';
+import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import {
@@ -38,15 +29,7 @@ import {
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
-import { getMatchTypeRecords } from '@/lib/stats';
 import { formatPercent } from '@/lib/formatPercent';
-
-/**
- * The three recent-window figures the hero's `StatRow` renders as buttons —
- * a SECOND control for the same page-level persisted horizon `useHorizon`
- * owns (D-06). Order is fixed, matching UI-SPEC §8.1's stat row.
- */
-const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
 
 /** UI-SPEC §8.5 / sketch 001-C: the hero strip draws at most the last 60 games. */
 const HERO_STRIP_LIMIT = 60;
@@ -56,17 +39,6 @@ function claimChipKindFor(kind: InsightKind): ClaimChipKind {
   if (kind === 'inference') return 'trend';
   if (kind === 'recommendation') return 'suggestion';
   return 'fact';
-}
-
-/**
- * `getMatchTypeRecords`'s own grouping rule (apps/web/src/lib/stats.ts): a
- * missing, '' or 'none' match type folds into 'unspecified'. The per-type
- * recent windows below MUST partition `fighterMatches` by the same rule, or
- * a row's chip would speak for a different set of games than its record.
- */
-function matchTypeKeyOf(match: Match): string {
-  const raw = match.matchType ?? '';
-  return raw === '' || raw === 'none' ? 'unspecified' : raw;
 }
 
 /** `●●● / ●●○ / ●○○ / ○○○` — duplicated from `Record.tsx`'s own private map (not exported); see the small-helper-duplication convention. */
@@ -156,25 +128,6 @@ export function FighterHero({
     allMatches.length > 0 ? Math.round((fighterMatches.length / allMatches.length) * 100) : 0;
   const allTimeTier = confidenceTierFor(baselineAllTime.total);
 
-  const horizonFigures = useMemo(() => {
-    return RECENT_HORIZON_KEYS.map((key) => {
-      const { window, matches: recentMatches } = resolveWindow({
-        matches: fighterMatches,
-        horizon: key,
-        scoped: true,
-        nowMs,
-      });
-      const recentRate = toRateValue(recentMatches);
-      const { state, deltaPoints } = classify({
-        recent: recentRate,
-        baseline: baselineAllTime,
-        scoped: true,
-        hasAction: false,
-      });
-      return { key, window, recentRate, state, deltaPoints };
-    });
-  }, [fighterMatches, baselineAllTime, nowMs]);
-
   const overallRatePercent = baselineAllTime.rate * 100;
   const recentWindow = useMemo(
     () => ({
@@ -192,47 +145,6 @@ export function FighterHero({
       buildFormStripEvents(fighterMatches, formStripRecentWindow(formNowInsight), t, i18n.language),
     [fighterMatches, formNowInsight, t, i18n.language],
   );
-
-  // Plan 39.1-36 (audit 1.3/1.7, sketch 001-C `shareBar`): each by-match-type
-  // row compares THAT type's recent window (the page horizon, D-15 scoped)
-  // with THAT type's own all-time rate — never the type against the
-  // fighter's overall rate, which read "Steady" on zero recent games.
-  const typeRows = useMemo(() => {
-    const byType = new Map<string, Match[]>();
-    for (const match of fighterMatches) {
-      const key = matchTypeKeyOf(match);
-      const group = byType.get(key);
-      if (group) {
-        group.push(match);
-      } else {
-        byType.set(key, [match]);
-      }
-    }
-    return getMatchTypeRecords(fighterMatches).map((record) => {
-      const typeMatches = byType.get(record.matchType) ?? [];
-      const typeBaseline = toRateValue(typeMatches);
-      const { matches: typeRecentMatches } = resolveWindow({
-        matches: typeMatches,
-        horizon,
-        scoped: true,
-        nowMs,
-      });
-      const typeRecent = toRateValue(typeRecentMatches);
-      const { state, deltaPoints } = classify({
-        recent: typeRecent,
-        baseline: typeBaseline,
-        scoped: true,
-        hasAction: false,
-      });
-      return { record, typeRecent, typeBaseline, state, deltaPoints };
-    });
-  }, [fighterMatches, horizon, nowMs]);
-
-  function handleSelectHorizon(next: HorizonKey): void {
-    // T-39.1-14-03: never write a horizon while the match query is loading.
-    if (isLoading) return;
-    setHorizon(next);
-  }
 
   if (!hasMatches) {
     return (
@@ -281,138 +193,6 @@ export function FighterHero({
         cue: evidenceCue,
       })
     : '';
-
-  const allTimeFigure = (
-    <StatFigure
-      key="all-time"
-      label={t('fighterAnalysis.hero.allTime')}
-      value={`${Math.round(overallRatePercent)}%`}
-      lead
-      support={
-        <Record
-          wins={baselineAllTime.wins}
-          losses={baselineAllTime.losses}
-          cueLabel={
-            allTimeTier
-              ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
-              : undefined
-          }
-        />
-      }
-    />
-  );
-
-  const recentFigureNodes = horizonFigures.map(({ key, recentRate, state, deltaPoints }) => {
-    const isPressed = horizon === key;
-    // The figure overline ("30 games", "Last event", "90 days") names the
-    // horizon, so the chip never repeats it.
-    const chipView = deltaChipView({
-      state,
-      deltaPoints,
-      recentGames: recentRate.total,
-      horizon: key,
-      horizonOwnedByParent: true,
-      t,
-    });
-    const delta = chipView ? (
-      <DeltaChip
-        {...chipView}
-        ariaLabel={t('analytics.dumbbell.rowAria', {
-          label: t(`insights.horizon.${key}`),
-          recentRecord: `${recentRate.wins}–${recentRate.losses}`,
-          baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
-        })}
-      />
-    ) : null;
-
-    if (state === 'locked') {
-      // Plan 39.1-36 (audit 1.3): below the floor the figure is a muted em
-      // dash plus the honest chip ("no games" / "n N · no direction") — no
-      // repeated per-figure unlock sentence. The Record appears only when
-      // the window holds a game (Record itself omits the rate below 3).
-      return (
-        <StatFigure
-          key={key}
-          label={t(`insights.horizon.short.${key}`)}
-          state="none"
-          value={<span className="text-muted-foreground">{'—'}</span>}
-          support={
-            recentRate.total > 0 ? (
-              <Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />
-            ) : undefined
-          }
-          delta={delta}
-          onSelect={() => handleSelectHorizon(key)}
-          pressed={isPressed}
-        />
-      );
-    }
-
-    if (state === 'collapsed') {
-      return (
-        <StatFigure
-          key={key}
-          label={t(`insights.horizon.short.${key}`)}
-          state="collapsed"
-          value={t('analytics.stat.collapsedValue')}
-          support={t('analytics.stat.collapsedSupport', {
-            recent: recentRate.total,
-            total: baselineAllTime.total,
-          })}
-          onSelect={() => handleSelectHorizon(key)}
-          pressed={isPressed}
-        />
-      );
-    }
-
-    const isThinRecent = state === 'thinRecent' || state === 'thin';
-
-    return (
-      <StatFigure
-        key={key}
-        label={t(`insights.horizon.short.${key}`)}
-        value={`${Math.round(recentRate.rate * 100)}%`}
-        state={isThinRecent ? 'thinRecent' : 'populated'}
-        support={<Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />}
-        delta={delta}
-        onSelect={() => handleSelectHorizon(key)}
-        pressed={isPressed}
-      />
-    );
-  });
-
-  const shareBarSegments: ShareBarSegment[] = typeRows.map(
-    ({ record, typeRecent, typeBaseline, state, deltaPoints }) => {
-      const key = record.matchType === 'unspecified' ? 'none' : record.matchType;
-      const label = t(`analytics.matchType.${key}`, { defaultValue: record.matchType });
-      // The rows' header ("By Match Type") does not name the horizon, so the
-      // chip carries it: "no games · last 30", "Steady · last 30".
-      const chipView = deltaChipView({
-        state,
-        deltaPoints,
-        recentGames: typeRecent.total,
-        horizon,
-        horizonOwnedByParent: false,
-        t,
-      });
-      return {
-        key: record.matchType,
-        label,
-        count: record.total,
-        record: <Record wins={record.wins} losses={record.losses} cue="none" />,
-        delta: chipView ? (
-          <DeltaChip
-            {...chipView}
-            ariaLabel={t('analytics.dumbbell.rowAria', {
-              label,
-              recentRecord: `${typeRecent.wins}–${typeRecent.losses}`,
-              baselineRecord: `${typeBaseline.wins}–${typeBaseline.losses}`,
-            })}
-          />
-        ) : null,
-      };
-    },
-  );
 
   // CR-02 (39.1-REVIEW): a period point drills by its own KEY, never by its
   // `[startMs, endMs]` bounds — `eventSession`/`set` groups are not
@@ -484,7 +264,14 @@ export function FighterHero({
         )}
 
         {/* 3. stat row of four */}
-        <StatRow leadWidth figures={[allTimeFigure, ...recentFigureNodes]} />
+        {/* Plan 39.1-43: the kit's horizon stat row (plan 44's pairing hero renders the same piece). */}
+        <HorizonStatRow
+          matches={fighterMatches}
+          horizon={horizon}
+          onSelectHorizon={setHorizon}
+          disabled={isLoading}
+          nowMs={nowMs}
+        />
 
         {/* 4. form strip. min-w-0 (plan 39.1-20 Task 3 [Rule 1]): without
             it, this flex item refuses to shrink below FormStrip's
@@ -558,14 +345,7 @@ export function FighterHero({
         </div>
 
         {/* 6. by match type */}
-        <ShareBar
-          segments={shareBarSegments}
-          total={fighterMatches.length}
-          headerLabel={t('matchups.insights.byMatchType')}
-          shareSuffix={(pct) => `${pct}%`}
-          emptyNode={t('analytics.share.empty')}
-          ariaSummary={t('analytics.share.aria', { count: fighterMatches.length })}
-        />
+        <MatchTypeShareBar matches={fighterMatches} horizon={horizon} nowMs={nowMs} />
 
         {/* 7. doors */}
         {gamesDoor && (

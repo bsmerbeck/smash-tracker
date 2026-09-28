@@ -380,7 +380,7 @@ describe('FighterAnalysisPage', () => {
 
     renderFighterAnalysis();
 
-    await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('By match type')).toBeInTheDocument());
     expect(screen.getByText('Quickplay')).toBeInTheDocument();
     expect(screen.getByText('Unspecified')).toBeInTheDocument();
     expect(screen.queryByText('quickplay')).not.toBeInTheDocument();
@@ -405,7 +405,7 @@ describe('FighterAnalysisPage', () => {
 
     renderFighterAnalysis();
 
-    await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('By match type')).toBeInTheDocument());
     const hero = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
     const chips = Array.from(hero.querySelectorAll('[data-slot="delta-chip"]'));
     expect(chips.length).toBeGreaterThan(0);

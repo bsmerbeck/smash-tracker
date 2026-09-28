@@ -999,7 +999,6 @@
       "last10": "直近10戦（新しい順）",
       "formRolling": "調子（直近10戦）",
       "typeColumn": "種類",
-      "allTime": "通算",
       "identityMeta": "対戦の{{pct}}% · {{confidence}}",
       "verdictMeta": {
         "last30": "FormNow · 直近30試合 対 通算",
@@ -3420,7 +3419,8 @@
     "stat": {
       "collapsedValue": "= 全試合",
       "collapsedSupport": "{{total}}戦中{{recent}}戦",
-      "noGames": "まだ試合がありません"
+      "noGames": "まだ試合がありません",
+      "allTime": "通算"
     },
     "strip": {
       "aria_one": "調子ストリップ、{{count}}試合中{{shown}}試合",
@@ -3462,7 +3462,8 @@
         "last30": "直近30試合に対戦がありません — 全期間のデータを表示しています。",
         "lastEvent": "直近のイベントに対戦がありません — 全期間のデータを表示しています。",
         "last90": "直近90日間に対戦がありません — 全期間のデータを表示しています。"
-      }
+      },
+      "byMatchType": "対戦の種類別"
     },
     "dumbbell": {
       "legend": {

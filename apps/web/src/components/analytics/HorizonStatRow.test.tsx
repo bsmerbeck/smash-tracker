@@ -32,14 +32,14 @@ function makeMatch(overrides: Partial<Match> & { id: string; time: number; win: 
   } as Match;
 }
 
-/** 200 games one day apart with a named event every 20 — populated horizons. */
+/** 200 games one day apart in 20-game named events — populated horizons. */
 function largeFixture(): Match[] {
   return Array.from({ length: 200 }, (_, i) =>
     makeMatch({
       id: `g${i}`,
       time: NOW_MS - (200 - i) * DAY_MS,
       win: i % 3 !== 0,
-      eventName: i % 20 === 0 ? `Event ${Math.floor(i / 20)}` : undefined,
+      eventName: `Event ${Math.floor(i / 20)}`,
       matchType: i % 2 === 0 ? 'quickplay' : 'online-tourney',
     }),
   );
@@ -160,7 +160,7 @@ describe('HorizonStatRow (plan 39.1-43, hero-idioms-kit)', () => {
   it('populated state: the large fixture renders a rate and a record on every horizon figure', async () => {
     await renderRow({ matches: largeFixture() });
     for (const label of ['30 games', 'Last event', '90 days']) {
-      expect(figureButton(label).textContent).toMatch(/\d+%\d+–\d+/);
+      expect(figureButton(label).textContent).toMatch(/\d+%.*\d+–\d+/);
     }
   });
 

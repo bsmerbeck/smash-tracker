@@ -999,7 +999,6 @@
       "last10": "Last 10 (newest first)",
       "formRolling": "Form (rolling 10)",
       "typeColumn": "Type",
-      "allTime": "All time",
       "identityMeta": "{{pct}}% of play · {{confidence}}",
       "verdictMeta": {
         "last30": "FormNow · last 30 games vs all time",
@@ -3420,7 +3419,8 @@
     "stat": {
       "collapsedValue": "= all games",
       "collapsedSupport": "{{recent}} of {{total}} games",
-      "noGames": "No games yet"
+      "noGames": "No games yet",
+      "allTime": "All time"
     },
     "strip": {
       "aria_one": "Form strip, {{shown}} of {{count}} game",
@@ -3462,7 +3462,8 @@
         "last30": "No games in the last 30 — showing all time.",
         "lastEvent": "No games at the last event — showing all time.",
         "last90": "No games in the last 90 days — showing all time."
-      }
+      },
+      "byMatchType": "By match type"
     },
     "dumbbell": {
       "legend": {

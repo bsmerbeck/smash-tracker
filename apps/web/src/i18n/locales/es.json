@@ -999,7 +999,6 @@
       "last10": "Últimas 10 (primero la más nueva)",
       "formRolling": "Forma (ventana de 10)",
       "typeColumn": "Tipo",
-      "allTime": "Siempre",
       "identityMeta": "{{pct}}% de las partidas · {{confidence}}",
       "verdictMeta": {
         "last30": "FormNow · últimas 30 partidas frente a siempre",
@@ -3420,7 +3419,8 @@
     "stat": {
       "collapsedValue": "= todas las partidas",
       "collapsedSupport": "{{recent}} de {{total}} partidas",
-      "noGames": "Aún sin partidas"
+      "noGames": "Aún sin partidas",
+      "allTime": "Siempre"
     },
     "strip": {
       "aria_one": "Franja de forma, {{shown}} de {{count}} partida",
@@ -3462,7 +3462,8 @@
         "last30": "Sin partidas en las últimas 30 — se muestra el histórico.",
         "lastEvent": "Sin partidas en el último evento — se muestra el histórico.",
         "last90": "Sin partidas en los últimos 90 días — se muestra el histórico."
-      }
+      },
+      "byMatchType": "Por tipo de partida"
     },
     "dumbbell": {
       "legend": {

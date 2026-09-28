@@ -999,7 +999,6 @@
       "last10": "10 derniers (du plus récent au plus ancien)",
       "formRolling": "Forme (fenêtre de 10)",
       "typeColumn": "Type",
-      "allTime": "Depuis toujours",
       "identityMeta": "{{pct}} % des parties · {{confidence}}",
       "verdictMeta": {
         "last30": "FormNow · 30 dernières parties contre toujours",
@@ -3420,7 +3419,8 @@
     "stat": {
       "collapsedValue": "= tous les matchs",
       "collapsedSupport": "{{recent}} sur {{total}} matchs",
-      "noGames": "Pas encore de matchs"
+      "noGames": "Pas encore de matchs",
+      "allTime": "Depuis toujours"
     },
     "strip": {
       "aria_one": "Frise de forme, {{shown}} sur {{count}} match",
@@ -3462,7 +3462,8 @@
         "last30": "Aucun match sur les 30 derniers — l'historique est affiché.",
         "lastEvent": "Aucun match au dernier événement — l'historique est affiché.",
         "last90": "Aucun match sur les 90 derniers jours — l'historique est affiché."
-      }
+      },
+      "byMatchType": "Par type de match"
     },
     "dumbbell": {
       "legend": {

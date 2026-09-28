@@ -999,7 +999,6 @@
       "last10": "Letzte 10 (neueste zuerst)",
       "formRolling": "Form (gleitende 10)",
       "typeColumn": "Typ",
-      "allTime": "Gesamt",
       "identityMeta": "{{pct}} % der Spiele · {{confidence}}",
       "verdictMeta": {
         "last30": "FormNow · letzte 30 Spiele gegen Gesamt",
@@ -3420,7 +3419,8 @@
     "stat": {
       "collapsedValue": "= alle Matches",
       "collapsedSupport": "{{recent}} von {{total}} Matches",
-      "noGames": "Noch keine Matches"
+      "noGames": "Noch keine Matches",
+      "allTime": "Gesamt"
     },
     "strip": {
       "aria_one": "Formleiste, {{shown}} von {{count}} Match",
@@ -3462,7 +3462,8 @@
         "last30": "Keine Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
         "lastEvent": "Keine Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
         "last90": "Keine Matches in den letzten 90 Tagen — es wird der Gesamtzeitraum gezeigt."
-      }
+      },
+      "byMatchType": "Nach Match-Typ"
     },
     "dumbbell": {
       "legend": {
