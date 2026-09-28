@@ -1005,15 +1005,6 @@
         "lastEvent": "FormNow · último evento frente a siempre",
         "last90": "FormNow · últimos 90 días frente a siempre"
       },
-      "trendTitle": {
-        "game": "Tasa de victorias por partida · tamaño del punto = partidas",
-        "set": "Tasa de victorias por set · tamaño del punto = partidas",
-        "eventSession": "Tasa de victorias por evento · tamaño del punto = partidas",
-        "week": "Tasa de victorias por semana · tamaño del punto = partidas",
-        "month": "Tasa de victorias por mes · tamaño del punto = partidas",
-        "quarter": "Tasa de victorias por trimestre · tamaño del punto = partidas",
-        "year": "Tasa de victorias por año · tamaño del punto = partidas"
-      },
       "vsCharacters": {
         "title": "vs personajes",
         "empty": "Aún no hay datos de personajes — registra partidas para ver tendencias por personaje."
@@ -3484,20 +3475,20 @@
       "legendHollow": "hueco = menos de 3 partidas",
       "referenceLabel": "{{rate}} histórico",
       "lockedPeriods": {
-        "week_one": "{{count}} semana más desbloquea este período",
-        "week_other": "{{count}} semanas más desbloquean este período",
-        "month_one": "{{count}} mes más desbloquea este período",
-        "month_other": "{{count}} meses más desbloquean este período",
-        "quarter_one": "{{count}} trimestre más desbloquea este período",
-        "quarter_other": "{{count}} trimestres más desbloquean este período",
-        "game_one": "{{count}} partida más desbloquea este período",
-        "game_other": "{{count}} partidas más desbloquean este período",
-        "set_one": "{{count}} set más desbloquea este período",
-        "set_other": "{{count}} sets más desbloquean este período",
-        "eventSession_one": "{{count}} evento más desbloquea este período",
-        "eventSession_other": "{{count}} eventos más desbloquean este período",
-        "year_one": "{{count}} año más desbloquea este período",
-        "year_other": "{{count}} años más desbloquean este período"
+        "week_one": "{{count}} semana más con 3+ partidas desbloquea este gráfico.",
+        "week_other": "{{count}} semanas más con 3+ partidas desbloquean este gráfico.",
+        "month_one": "{{count}} mes más con 3+ partidas desbloquea este gráfico.",
+        "month_other": "{{count}} meses más con 3+ partidas desbloquean este gráfico.",
+        "quarter_one": "{{count}} trimestre más con 3+ partidas desbloquea este gráfico.",
+        "quarter_other": "{{count}} trimestres más con 3+ partidas desbloquean este gráfico.",
+        "game_one": "{{count}} partida más con 3+ partidas desbloquea este gráfico.",
+        "game_other": "{{count}} partidas más con 3+ partidas desbloquean este gráfico.",
+        "set_one": "{{count}} set más con 3+ partidas desbloquea este gráfico.",
+        "set_other": "{{count}} sets más con 3+ partidas desbloquean este gráfico.",
+        "eventSession_one": "{{count}} evento más con 3+ partidas desbloquea este gráfico.",
+        "eventSession_other": "{{count}} eventos más con 3+ partidas desbloquean este gráfico.",
+        "year_one": "{{count}} año más con 3+ partidas desbloquea este gráfico.",
+        "year_other": "{{count}} años más con 3+ partidas desbloquean este gráfico."
       },
       "aria": "Gráfico de tendencia, {{count}} períodos",
       "tableToggle": "Ver como tabla",
@@ -3506,7 +3497,21 @@
         "record": "Récord",
         "rate": "Tasa",
         "sample": "Muestra"
-      }
+      },
+      "title": {
+        "game": "Tasa de victorias por partida",
+        "set": "Tasa de victorias por set",
+        "eventSession": "Tasa de victorias por evento",
+        "week": "Tasa de victorias por semana",
+        "month": "Tasa de victorias por mes",
+        "quarter": "Tasa de victorias por trimestre",
+        "year": "Tasa de victorias por año"
+      },
+      "legend": {
+        "dot": "tamaño = partidas",
+        "reference": "{{rate}} histórico"
+      },
+      "lockedMeter": "{{have}} de {{need}}"
     },
     "roster": {
       "main": "Principal",

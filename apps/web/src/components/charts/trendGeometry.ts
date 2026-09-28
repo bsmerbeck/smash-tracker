@@ -51,6 +51,61 @@ export function fitRateDomain(values: readonly number[]): [number, number] {
   return [lo, hi];
 }
 
+/**
+ * Plan 39.1-43 (moved from TrendLine.tsx, plan 37's plot model): the period
+ * chart's vertical chrome. The chart's outer margin (Recharts' 5px default,
+ * passed explicitly), the y-axis's own top / bottom padding (the room plan
+ * 37 keeps for value labels above a top dot and an edge dot's half), and the
+ * x-axis band the tick labels occupy (Recharts' default 30px).
+ */
+export const PERIOD_CHART_MARGIN_PX = 5;
+export const PERIOD_Y_AXIS_PADDING_TOP_PX = 24;
+export const PERIOD_Y_AXIS_PADDING_BOTTOM_PX = 16;
+export const PERIOD_X_AXIS_HEIGHT_PX = 30;
+
+/** Everything a period chart draws outside its value range (px): 5 + 24 above, 16 + 30 + 5 below. */
+const PERIOD_VALUE_RANGE_CHROME_PX =
+  PERIOD_CHART_MARGIN_PX * 2 +
+  PERIOD_Y_AXIS_PADDING_TOP_PX +
+  PERIOD_Y_AXIS_PADDING_BOTTOM_PX +
+  PERIOD_X_AXIS_HEIGHT_PX;
+
+/**
+ * PD-43-3 (sketch 001-C `trend()` and sketch 003 `trend(d, { height: 160 })`):
+ * the sketches' 160px trend box IS the value range — the fitted domain's
+ * lowest and highest hairlines sit 160px apart, the axis labels, the
+ * value-label room and the x-axis band outside it. The Fighter hero and
+ * Matchups draw their period trend at this value range.
+ */
+export const PERIOD_HERO_VALUE_RANGE_PX = 160;
+
+export interface PeriodPlotVerticalModel {
+  /** The y (px, chart coordinates) of the fitted domain's top — its highest hairline. */
+  valueTopPx: number;
+  /** The y (px) of the fitted domain's bottom — its lowest hairline. */
+  valueBottomPx: number;
+  /** `valueBottomPx - valueTopPx`: the span the domain's values are drawn across. */
+  valueRangePx: number;
+}
+
+/**
+ * The ONE period plot-geometry model (plan 37's, moved here by plan 39.1-43):
+ * TrendLine's tick layout, value-label and reference-label placement and
+ * `rateDomainTicks(domain, valueRangePx)` all read it. On CHART_H_COMPACT
+ * (160px) it leaves an 80px value range — the flat hero trend PD-43-3 fixes.
+ */
+export function periodPlotModel(heightPx: number): PeriodPlotVerticalModel {
+  const valueTopPx = PERIOD_CHART_MARGIN_PX + PERIOD_Y_AXIS_PADDING_TOP_PX;
+  const valueBottomPx =
+    heightPx - PERIOD_CHART_MARGIN_PX - PERIOD_X_AXIS_HEIGHT_PX - PERIOD_Y_AXIS_PADDING_BOTTOM_PX;
+  return { valueTopPx, valueBottomPx, valueRangePx: valueBottomPx - valueTopPx };
+}
+
+/** The chart height (px) whose plot draws exactly `valueRangePx` (240px for the sketches' 160px). */
+export function periodChartHeightForValueRange(valueRangePx: number): number {
+  return valueRangePx + PERIOD_VALUE_RANGE_CHROME_PX;
+}
+
 /** The smallest vertical gap (px) two y-axis hairline ticks may sit apart before the step coarsens. */
 export const MIN_RATE_TICK_GAP_PX = 14;
 
@@ -174,21 +229,48 @@ export function periodValueLabelPlacement(
 export const REFERENCE_LABEL_OFFSET_PX = 5;
 
 /**
- * The three placements tried for the all-time reference label, in order,
+ * The four placements tried for the all-time reference label, in order,
  * named as Recharts 3 names them for a zero-height (horizontal) reference
  * line — verified against the rendered DOM: `insideTopRight` draws the text
  * right-aligned with its top `REFERENCE_LABEL_OFFSET_PX` BELOW the line
  * (sketch 001-C's `.ref-label { transform: translateY(3px) }` — the default),
  * `insideBottomRight` right-aligned with its bottom that far ABOVE the line,
- * `insideTopLeft` left-aligned below the line.
+ * `insideTopLeft` left-aligned below the line and (plan 39.1-43)
+ * `insideBottomLeft` left-aligned above it.
  */
-export type ReferenceLabelPosition = 'insideTopRight' | 'insideBottomRight' | 'insideTopLeft';
+export type ReferenceLabelPosition =
+  'insideTopRight' | 'insideBottomRight' | 'insideTopLeft' | 'insideBottomLeft';
+
+/**
+ * Plan 39.1-43 (OOS-6): the placement result — a slot, or `'none'` when all
+ * four are taken; the host then draws no direct label and the trend head's
+ * reference legend item ("NN% all time") carries the rate.
+ */
+export type ReferenceLabelPlacement = ReferenceLabelPosition | 'none';
 
 const REFERENCE_LABEL_POSITIONS: readonly ReferenceLabelPosition[] = [
   'insideTopRight',
   'insideBottomRight',
   'insideTopLeft',
+  'insideBottomLeft',
 ];
+
+/**
+ * Plan 39.1-43 (OOS-6): sketch 001-C / 003 draw every period dot with a 2px
+ * card-surface halo (`.pt { box-shadow: 0 0 0 2px var(--color-surface) }`);
+ * the reference label must clear the dot's box expanded by it.
+ */
+export const REFERENCE_LABEL_DOT_HALO_PX = 2;
+
+/** A DRAWN period dot (filled or hollow, labelled or not) in chart coordinates. */
+export interface PeriodDotPx {
+  xPx: number;
+  yPx: number;
+  /** The diameter the chart actually renders (games or tier sizing). */
+  diameterPx: number;
+  /** A hollow sub-floor dot — it blocks a slot exactly like a filled one. */
+  subFloor?: boolean;
+}
 
 export interface LabelledPointPx {
   /** The dot's centre x (px, chart coordinates). */
@@ -208,6 +290,8 @@ export interface ReferenceLabelPlacementInput {
   referenceLabelWidthPx: number;
   /** Every point that carries a direct value label. */
   labelledPoints: readonly LabelledPointPx[];
+  /** Plan 39.1-43 (OOS-6): every DRAWN dot — the label never sits over one. */
+  dots?: readonly PeriodDotPx[];
   /** The plot area's left and right edges (px) — the reference line's own extent. */
   plotLeftPx: number;
   plotRightPx: number;
@@ -242,12 +326,15 @@ function referenceLabelBox(
     left: input.plotRightPx - REFERENCE_LABEL_OFFSET_PX - width,
     right: input.plotRightPx - REFERENCE_LABEL_OFFSET_PX,
   };
+  const left = {
+    left: input.plotLeftPx + REFERENCE_LABEL_OFFSET_PX,
+    right: input.plotLeftPx + REFERENCE_LABEL_OFFSET_PX + width,
+  };
   if (position === 'insideTopLeft') {
-    return {
-      left: input.plotLeftPx + REFERENCE_LABEL_OFFSET_PX,
-      right: input.plotLeftPx + REFERENCE_LABEL_OFFSET_PX + width,
-      ...below,
-    };
+    return { ...left, ...below };
+  }
+  if (position === 'insideBottomLeft') {
+    return { ...left, ...above };
   }
   return position === 'insideBottomRight' ? { ...right, ...above } : { ...right, ...below };
 }
@@ -270,20 +357,34 @@ function valueLabelBox(point: LabelledPointPx): Box {
   };
 }
 
+/** A drawn dot's box: its centre ± (diameter / 2 + the 2px surface halo). */
+function dotBox(dot: PeriodDotPx): Box {
+  const half = dot.diameterPx / 2 + REFERENCE_LABEL_DOT_HALO_PX;
+  return {
+    left: dot.xPx - half,
+    right: dot.xPx + half,
+    top: dot.yPx - half,
+    bottom: dot.yPx + half,
+  };
+}
+
 /**
- * The reference-label collision rule (design-audit item 10): the first of
- * under-the-line right (the sketch), above-the-line right, then
- * under-the-line left whose modelled box meets no value label's box. When
- * every slot is taken the last candidate is returned — the layout oracle's
- * `reference-label-collision` check reports that case in a real browser.
+ * The reference-label collision rule (design-audit item 10; plan 39.1-43
+ * OOS-6): the first of under-the-line right (the sketch), above-the-line
+ * right, under-the-line left, then above-the-line left whose modelled box
+ * meets no value label's box AND no drawn dot's box (filled or hollow, with
+ * its 2px halo). When every slot is taken the result is `'none'`: the host
+ * draws no direct label, and the trend head's reference legend item states
+ * the same rate. The layout oracle's `reference-label-collision` and
+ * `reference-label-dot-collision` checks verify the rendered result.
  */
-export function placeReferenceLabel(input: ReferenceLabelPlacementInput): ReferenceLabelPosition {
-  const valueBoxes = input.labelledPoints.map(valueLabelBox);
+export function placeReferenceLabel(input: ReferenceLabelPlacementInput): ReferenceLabelPlacement {
+  const blockers = [...input.labelledPoints.map(valueLabelBox), ...(input.dots ?? []).map(dotBox)];
   for (const position of REFERENCE_LABEL_POSITIONS) {
     const box = referenceLabelBox(position, input);
-    if (!valueBoxes.some((valueBox) => boxesIntersect(box, valueBox))) {
+    if (!blockers.some((blocker) => boxesIntersect(box, blocker))) {
       return position;
     }
   }
-  return REFERENCE_LABEL_POSITIONS[REFERENCE_LABEL_POSITIONS.length - 1]!;
+  return 'none';
 }

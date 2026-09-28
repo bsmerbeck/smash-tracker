@@ -216,19 +216,18 @@ describe('MatchupChart', () => {
   // REWRITTEN by plan 39.1-41 (PD-41-1): the scoped trend never bins finer
   // than a quarter, so the all-sub-floor case is 8 quarters of 2 games (was
   // 10 single-game 'game' points).
-  it('at "quarter" grain with every quarter sub-floor (n=2 < the 3-game floor): renders only hollow dots and draws no connecting line segment', () => {
+  // REWRITTEN by plan 39.1-43 (was: 8 sub-floor quarters drew 8 hollow dots
+  // and no connecting line): PD-43-1 / UI-SPEC 7.13 — the trend locks while
+  // fewer than 8 quarters reach the 3-game floor, so 8 quarters of 2 games
+  // are the locked trend (the hollow / unjoined rule itself is pinned in
+  // TrendLine.test.tsx on a drawn series).
+  it('at "quarter" grain with every quarter sub-floor (n=2 < the 3-game floor): the locked trend — "8 more quarters", meter "0 of 8", no plot (PD-43-1)', () => {
     const { container } = renderChart(quarterlySequence(8, 2));
-    const circles = container.querySelectorAll('circle');
-    expect(circles.length).toBe(8);
-    for (const circle of Array.from(circles)) {
-      expect(circle.getAttribute('stroke')).toBe('var(--viz-context)');
-    }
-    // The stroked connecting line's `d` attribute is empty/absent when every
-    // `lineRatePercent` value is `null` (Recharts draws nothing to connect).
-    const line = container.querySelector('.trend-line-period-line');
-    expect(line).not.toBeNull();
-    const d = line?.getAttribute('d') ?? '';
-    expect(d.trim()).toBe('');
+    expect(container.querySelectorAll('circle')).toHaveLength(0);
+    const locked = container.querySelector('[data-slot="trend-line-period-locked"]');
+    expect(locked).not.toBeNull();
+    expect(locked!.textContent).toContain('8 more quarters with 3+ games unlock this chart.');
+    expect(locked!.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('0 of 8');
   });
 
   // REWRITTEN by plan 39.1-42 (PD-42-3, sketch A): the Matchups strip limit

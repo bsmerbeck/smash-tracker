@@ -422,23 +422,28 @@ function makePeriodSeries(
   );
 }
 
+// REWRITTEN by plan 39.1-43 (was two fixed strings): the locked labels are
+// formatters of the kit's { need, have } counts (PD-43-1).
 const PERIOD_LABELS: TrendLinePeriodLabels = {
-  lockedSentence: 'Period trend — 3 more weeks with 3+ games unlock this chart.',
-  lockedCountLabel: '5 of 8 weeks',
+  lockedSentence: ({ need }) => `${need} more weeks with 3+ games unlock this chart.`,
+  lockedCountLabel: ({ have }) => `${have} of 8 weeks`,
   tableToggle: 'View as table',
   tableHeaders: { period: 'Period', record: 'Record', rate: 'Rate', sample: 'Sample' },
 };
 
 describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
   it('renders one hollow dot per sub-floor point (fill=surface, stroke=deemphasis) and one filled dot per normal point (fill=series1, stroke=surface)', () => {
-    const points = makePeriodSeries(8, (i) =>
+    // REWRITTEN by plan 39.1-43 (PD-43-1): 8 points with sub-floor periods now
+    // lock (fewer than 8 at the floor), so the series gains at-floor points to
+    // keep exercising the DRAWN plot this case pins.
+    const points = makePeriodSeries(10, (i) =>
       i === 3 || i === 4 ? { subFloor: true, total: 2, rate: 0.2 } : { rate: 0.5 },
     );
     const { container } = render(
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
     );
     const circles = Array.from(container.querySelectorAll('circle'));
-    expect(circles).toHaveLength(8);
+    expect(circles).toHaveLength(10);
     circles.forEach((circle, i) => {
       const isHollow = i === 3 || i === 4;
       expect(circle.getAttribute('fill')).toBe(isHollow ? 'var(--card)' : 'var(--viz-series-1)');
@@ -447,7 +452,10 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
   });
 
   it('two adjacent sub-floor points render NO line segment between them or to their neighbors — the stroke line breaks into two disjoint runs', () => {
-    const points = makePeriodSeries(8, (i) =>
+    // REWRITTEN by plan 39.1-43 (PD-43-1): 8 points with sub-floor periods now
+    // lock (fewer than 8 at the floor), so the series gains at-floor points to
+    // keep exercising the DRAWN plot this case pins.
+    const points = makePeriodSeries(10, (i) =>
       i === 3 || i === 4 ? { subFloor: true, total: 2, rate: 0.2 } : { rate: 0.5 },
     );
     const { container } = render(
@@ -456,12 +464,11 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     const strokeLine = container.querySelector('.trend-line-period-line .recharts-line-curve');
     expect(strokeLine).not.toBeNull();
     const d = strokeLine!.getAttribute('d') ?? '';
-    // Two disjoint runs of 3 consecutive points each (indices 0-2, indices
-    // 5-7) — exactly 2 "M" (move-to, one per run) and exactly 4 "L"
-    // (line-to: 2 segments per 3-point run). A bug that connected across the
-    // gap would produce 1 "M" and 7 "L" instead.
+    // Two disjoint runs (indices 0-2 and 5-9) — exactly 2 "M" (move-to, one
+    // per run) and exactly 6 "L" (line-to: 2 + 4 segments). A bug that
+    // connected across the gap would produce 1 "M" and 9 "L" instead.
     expect(d.match(/M/g)).toHaveLength(2);
-    expect(d.match(/L/g)).toHaveLength(4);
+    expect(d.match(/L/g)).toHaveLength(6);
   });
 
   it('a fully-connected series (no sub-floor points) renders one unbroken run — sanity check for the gap mechanism above', () => {
@@ -537,10 +544,13 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     );
     expect(container.querySelector('svg')).not.toBeInTheDocument();
     expect(container.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
-    expect(screen.getByText(PERIOD_LABELS.lockedSentence)).toBeInTheDocument();
+    // Plan 39.1-43: 7 points at the floor -> need 1 / have 7, through the formatters.
+    expect(
+      screen.getByText(PERIOD_LABELS.lockedSentence({ need: 1, have: 7 })),
+    ).toBeInTheDocument();
     expect(container.querySelector('[role="img"]')).toHaveAttribute(
       'aria-label',
-      PERIOD_LABELS.lockedCountLabel,
+      PERIOD_LABELS.lockedCountLabel({ need: 1, have: 7 }),
     );
   });
 
@@ -773,10 +783,13 @@ const PERIOD_LABELS_WITH_REFERENCE: TrendLinePeriodLabels = {
 
 describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitted-period-trend)', () => {
   /** Joined periods between 45% and 60%, and one sub-floor 0% period last. */
+  // REWRITTEN by plan 39.1-43 (PD-43-1): was 7 joined + 1 sub-floor (8
+  // points), which now locks; a 50% joined period is PREPENDED so 8 reach the
+  // floor and the sub-floor 0% period stays last (index 8).
   function joinedWithSubFloorZero(): PeriodPoint[] {
-    const joined = [0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58];
-    return makePeriodSeries(8, (i) =>
-      i === 7
+    const joined = [0.5, 0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58];
+    return makePeriodSeries(9, (i) =>
+      i === 8
         ? { subFloor: true, wins: 0, losses: 2, total: 2, rate: 0 }
         : { rate: joined[i], total: 20 },
     );
@@ -814,8 +827,8 @@ describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitt
       />,
     );
     const circles = Array.from(container.querySelectorAll('circle'));
-    expect(circles).toHaveLength(8);
-    const pinned = circles[7]!;
+    expect(circles).toHaveLength(9);
+    const pinned = circles[8]!;
     expect(pinned.getAttribute('data-pinned')).toBe('bottom');
     expect(pinned.getAttribute('fill')).toBe('var(--card)');
     expect(pinned.getAttribute('stroke')).toBe('var(--viz-context)');
@@ -823,12 +836,12 @@ describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitt
       .map((el) => ({ value: Number(el.textContent), y: Number(el.getAttribute('y')) }))
       .sort((a, b) => a.value - b.value)[0]!;
     expect(Number(pinned.getAttribute('cy'))).toBeCloseTo(bottomTick.y, 0);
-    for (const circle of circles.slice(0, 7)) {
+    for (const circle of circles.slice(0, 8)) {
       expect(circle.getAttribute('data-pinned')).toBeNull();
     }
 
     fireEvent.click(screen.getByRole('button', { name: PERIOD_LABELS.tableToggle }));
-    const lastRow = container.querySelectorAll('table tbody tr')[7]!;
+    const lastRow = container.querySelectorAll('table tbody tr')[8]!;
     expect(lastRow.querySelectorAll('td')[2]?.textContent).toBe('0%');
   });
 
@@ -847,16 +860,24 @@ describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitt
   });
 
   it('a sub-floor 100% period is never the labelled maximum', () => {
-    const points = makePeriodSeries(8, (i) =>
+    // REWRITTEN by plan 39.1-43 (PD-43-1): 8 points with sub-floor periods now
+    // lock (fewer than 8 at the floor), so the series gains at-floor points to
+    // keep exercising the DRAWN plot this case pins.
+    const points = makePeriodSeries(9, (i) =>
       i === 2 ? { subFloor: true, wins: 1, losses: 0, total: 1, rate: 1 } : { rate: 0.5 },
     );
     const { container } = render(
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
     );
+    expect(
+      container.querySelector('[data-slot="trend-line-period"]')?.getAttribute('data-state'),
+    ).toBe('drawn');
     expect(renderedValueLabels(container)).not.toContain('100%');
   });
 
-  it('a series with no joined period renders no value label at all', () => {
+  // REWRITTEN by plan 39.1-43 (PD-43-1): a series with no joined period has
+  // no period at the floor, so it is the LOCKED trend — no plot, no label.
+  it('a series with no joined period renders no value label at all (the locked trend, PD-43-1)', () => {
     const points = makePeriodSeries(8, () => ({
       subFloor: true,
       wins: 1,
@@ -867,6 +888,9 @@ describe('TrendLine — period mode fitted to its real range (plan 39.1-37, fitt
     const { container } = render(
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
     );
+    expect(
+      container.querySelector('[data-slot="trend-line-period"]')?.getAttribute('data-state'),
+    ).toBe('locked');
     expect(renderedValueLabels(container)).toEqual([]);
   });
 
@@ -1003,8 +1027,11 @@ describe('TrendLine — event mode human axis, fitted domain, label cap (plan 39
 
 describe('TrendLine — design-fidelity loop (plan 39.1-37 Task 3): marks at the domain edge are whole, labels stay legible', () => {
   it('period mode: a pinned or edge dot is never clipped — the dots layer carries no clip-path', () => {
-    const points = makePeriodSeries(8, (i) =>
-      i === 7 ? { subFloor: true, wins: 0, losses: 2, total: 2, rate: 0 } : { rate: 1 },
+    // REWRITTEN by plan 39.1-43 (PD-43-1): 8 points with sub-floor periods now
+    // lock (fewer than 8 at the floor), so the series gains at-floor points to
+    // keep exercising the DRAWN plot this case pins.
+    const points = makePeriodSeries(9, (i) =>
+      i === 8 ? { subFloor: true, wins: 0, losses: 2, total: 2, rate: 0 } : { rate: 1 },
     );
     const { container } = render(
       <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
@@ -1181,10 +1208,12 @@ function strokedLineCurves(container: HTMLElement): Element[] {
 }
 
 describe('TrendLine — period dot sizing, one data line, surface attributes (plan 39.1-41, sketch 003 A)', () => {
-  const TIER_TOTALS = [2, 5, 8, 20, 20, 20, 20, 20];
+  // REWRITTEN by plan 39.1-43 (PD-43-1): a ninth (20-game) period keeps 8 at
+  // the floor beside the sub-floor first one, so the series still draws.
+  const TIER_TOTALS = [2, 5, 8, 20, 20, 20, 20, 20, 20];
 
   function tierSeries(): PeriodPoint[] {
-    return makePeriodSeries(8, (i) =>
+    return makePeriodSeries(9, (i) =>
       i === 0
         ? { total: 2, wins: 1, losses: 1, rate: 0.5, subFloor: true }
         : { total: TIER_TOTALS[i], rate: 0.5 },
@@ -1226,7 +1255,7 @@ describe('TrendLine — period dot sizing, one data line, surface attributes (pl
         labels={PERIOD_LABELS}
       />,
     );
-    expect(dotRadii(container).map((r) => r * 2)).toEqual([5, 5, 5, 5, 5, 5, 5, 5]);
+    expect(dotRadii(container).map((r) => r * 2)).toEqual([5, 5, 5, 5, 5, 5, 5, 5, 5]);
   });
 
   it('draws exactly ONE stroked line path and exactly ONE y-axis', () => {
@@ -1645,14 +1674,14 @@ describe('TrendLine — the hero value range (plan 39.1-43, PD-43-3, sketch 001-
 
 describe('TrendLine — the reference label clears every drawn dot (plan 39.1-43, OOS-6)', () => {
   /**
-   * 20 weekly points, domain fitted to [30, 70] by a 38% min and a 62% max,
+   * 20 weekly points (40% unless set), domain fitted to [30, 70] by a 38% min and a 62% max,
    * the reference at 50%: on a 640 x 288 plot one rate point is 5.2px, so a
    * dot at 47.7% sits ~12px under the reference line — inside the default
    * (right, under the line) slot.
    */
   function series(rates: Record<number, number>): PeriodPoint[] {
     return makePeriodSeries(20, (i) => ({
-      rate: rates[i] ?? (i === 5 ? 0.38 : i === 10 ? 0.62 : 0.44),
+      rate: rates[i] ?? (i === 5 ? 0.38 : i === 10 ? 0.62 : 0.4),
     }));
   }
 

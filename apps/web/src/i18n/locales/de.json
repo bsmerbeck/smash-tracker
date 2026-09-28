@@ -1005,15 +1005,6 @@
         "lastEvent": "FormNow · letztes Event gegen Gesamt",
         "last90": "FormNow · letzte 90 Tage gegen Gesamt"
       },
-      "trendTitle": {
-        "game": "Siegquote nach Spiel · Punktgröße = Spiele",
-        "set": "Siegquote nach Satz · Punktgröße = Spiele",
-        "eventSession": "Siegquote nach Event · Punktgröße = Spiele",
-        "week": "Siegquote nach Woche · Punktgröße = Spiele",
-        "month": "Siegquote nach Monat · Punktgröße = Spiele",
-        "quarter": "Siegquote nach Quartal · Punktgröße = Spiele",
-        "year": "Siegquote nach Jahr · Punktgröße = Spiele"
-      },
       "vsCharacters": {
         "title": "vs Charaktere",
         "empty": "Noch keine Charakterdaten — erfasse Spiele, um Trends nach Charakter zu sehen."
@@ -3484,20 +3475,20 @@
       "legendHollow": "hohl = unter 3 Matches",
       "referenceLabel": "{{rate}} gesamt",
       "lockedPeriods": {
-        "week_one": "{{count}} weitere Woche schaltet diesen Zeitraum frei",
-        "week_other": "{{count}} weitere Wochen schalten diesen Zeitraum frei",
-        "month_one": "{{count}} weiterer Monat schaltet diesen Zeitraum frei",
-        "month_other": "{{count}} weitere Monate schalten diesen Zeitraum frei",
-        "quarter_one": "{{count}} weiteres Quartal schaltet diesen Zeitraum frei",
-        "quarter_other": "{{count}} weitere Quartale schalten diesen Zeitraum frei",
-        "game_one": "{{count}} weiteres Spiel schaltet diesen Zeitraum frei",
-        "game_other": "{{count}} weitere Spiele schalten diesen Zeitraum frei",
-        "set_one": "{{count}} weiteres Set schaltet diesen Zeitraum frei",
-        "set_other": "{{count}} weitere Sets schalten diesen Zeitraum frei",
-        "eventSession_one": "{{count}} weiteres Event schaltet diesen Zeitraum frei",
-        "eventSession_other": "{{count}} weitere Events schalten diesen Zeitraum frei",
-        "year_one": "{{count}} weiteres Jahr schaltet diesen Zeitraum frei",
-        "year_other": "{{count}} weitere Jahre schalten diesen Zeitraum frei"
+        "week_one": "{{count}} weitere Woche mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "week_other": "{{count}} weitere Wochen mit 3+ Spielen schalten dieses Diagramm frei.",
+        "month_one": "{{count}} weiterer Monat mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "month_other": "{{count}} weitere Monate mit 3+ Spielen schalten dieses Diagramm frei.",
+        "quarter_one": "{{count}} weiteres Quartal mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "quarter_other": "{{count}} weitere Quartale mit 3+ Spielen schalten dieses Diagramm frei.",
+        "game_one": "{{count}} weiteres Spiel mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "game_other": "{{count}} weitere Spiele mit 3+ Spielen schalten dieses Diagramm frei.",
+        "set_one": "{{count}} weiteres Set mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "set_other": "{{count}} weitere Sets mit 3+ Spielen schalten dieses Diagramm frei.",
+        "eventSession_one": "{{count}} weiteres Event mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "eventSession_other": "{{count}} weitere Events mit 3+ Spielen schalten dieses Diagramm frei.",
+        "year_one": "{{count}} weiteres Jahr mit 3+ Spielen schaltet dieses Diagramm frei.",
+        "year_other": "{{count}} weitere Jahre mit 3+ Spielen schalten dieses Diagramm frei."
       },
       "aria": "Trenddiagramm, {{count}} Zeiträume",
       "tableToggle": "Als Tabelle anzeigen",
@@ -3506,7 +3497,21 @@
         "record": "Bilanz",
         "rate": "Quote",
         "sample": "Stichprobe"
-      }
+      },
+      "title": {
+        "game": "Siegquote nach Spiel",
+        "set": "Siegquote nach Satz",
+        "eventSession": "Siegquote nach Event",
+        "week": "Siegquote nach Woche",
+        "month": "Siegquote nach Monat",
+        "quarter": "Siegquote nach Quartal",
+        "year": "Siegquote nach Jahr"
+      },
+      "legend": {
+        "dot": "Größe = Spiele",
+        "reference": "{{rate}} gesamt"
+      },
+      "lockedMeter": "{{have}} von {{need}}"
     },
     "roster": {
       "main": "Main",

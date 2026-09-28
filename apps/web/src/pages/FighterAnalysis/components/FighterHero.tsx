@@ -15,7 +15,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { CHART_H_COMPACT } from '@/components/charts/tokens';
+import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
 import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';
 import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
@@ -215,6 +215,9 @@ export function FighterHero({
       )
     : undefined;
 
+  const overallRateText = `${Math.round(overallRatePercent)}%`;
+  const trendTitle = t(`analytics.trend.title.${periodSeries.grain}`);
+
   const confidenceLabel = allTimeTier
     ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
     : '';
@@ -300,35 +303,33 @@ export function FighterHero({
 
         {/* 5. period trend */}
         <div className="flex flex-col gap-2" data-slot="fighter-hero-trend">
-          <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-            {t(`fighterAnalysis.hero.trendTitle.${periodSeries.grain}`)}
-          </p>
-          {/* Plan 39.1-37 (UI-SPEC §11): the legend names the hollow rule
-              whenever the drawn plot carries a sub-floor period. */}
-          {periodSeries.points.length >= PERIOD_TREND_MIN_PERIODS &&
-            periodSeries.points.some((point) => point.subFloor) && (
-              <p
-                className="truncate text-xs leading-4 text-muted-foreground"
-                data-slot="fighter-hero-trend-legend"
-              >
-                {t('analytics.trend.legendHollow')}
-              </p>
-            )}
+          {/* Plan 39.1-43 (sketch 001-C trendSection / 003 trendLegend): the
+              kit's trend head carries the grain overline and the swatch
+              legend (dot, hollow when a sub-floor period is drawn, the
+              all-time rate, the recent band) — plan 37's separate hollow
+              line and the hero's own overline are gone. PD-43-3: the plot
+              draws the sketches' 160px value range. */}
           <TrendLine
             mode="period"
             points={periodSeries.points}
             onSelectPoint={handleSelectPeriodPoint}
             referenceRate={overallRatePercent}
             emphasisStartMs={recentWindow.fromMs ?? undefined}
-            height={CHART_H_COMPACT}
+            valueRangePx={PERIOD_HERO_VALUE_RANGE_PX}
             labels={{
-              lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
-                count: Math.max(0, PERIOD_TREND_MIN_PERIODS - periodSeries.points.length),
-              }),
-              lockedCountLabel: t('insights.state.lockedMeter', {
-                have: periodSeries.points.length,
-                need: PERIOD_TREND_MIN_PERIODS,
-              }),
+              title: trendTitle,
+              legend: {
+                dot: t('analytics.trend.legend.dot'),
+                hollow: t('analytics.trend.legendHollow'),
+                reference: t('analytics.trend.legend.reference', { rate: overallRateText }),
+                band: t(`insights.horizon.${horizon}`),
+              },
+              // PD-43-1: the kit counts the periods at the floor; the
+              // sentence names what is still missing, the meter what exists.
+              lockedSentence: ({ need }) =>
+                t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, { count: need }),
+              lockedCountLabel: ({ have }) =>
+                t('analytics.trend.lockedMeter', { have, need: PERIOD_TREND_MIN_PERIODS }),
               tableToggle: t('analytics.trend.tableToggle'),
               tableHeaders: {
                 period: t('analytics.trend.tableHeaders.period'),
@@ -338,7 +339,7 @@ export function FighterHero({
               },
               // Plan 39.1-37 (UI-SPEC §7.13, sketch 001-C): "48% all time".
               referenceLabel: t('analytics.trend.referenceLabel', {
-                rate: `${Math.round(overallRatePercent)}%`,
+                rate: overallRateText,
               }),
             }}
           />

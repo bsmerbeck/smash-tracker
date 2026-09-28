@@ -1005,15 +1005,6 @@
         "lastEvent": "FormNow · dernier événement contre toujours",
         "last90": "FormNow · 90 derniers jours contre toujours"
       },
-      "trendTitle": {
-        "game": "Taux de victoire par partie · taille du point = parties",
-        "set": "Taux de victoire par set · taille du point = parties",
-        "eventSession": "Taux de victoire par événement · taille du point = parties",
-        "week": "Taux de victoire par semaine · taille du point = parties",
-        "month": "Taux de victoire par mois · taille du point = parties",
-        "quarter": "Taux de victoire par trimestre · taille du point = parties",
-        "year": "Taux de victoire par an · taille du point = parties"
-      },
       "vsCharacters": {
         "title": "vs personnages",
         "empty": "Pas encore de données de personnages — enregistrez des parties pour voir les tendances par personnage."
@@ -3484,20 +3475,20 @@
       "legendHollow": "creux = moins de 3 matchs",
       "referenceLabel": "{{rate}} historique",
       "lockedPeriods": {
-        "week_one": "{{count}} semaine de plus débloque cette période",
-        "week_other": "{{count}} semaines de plus débloquent cette période",
-        "month_one": "{{count}} mois de plus débloque cette période",
-        "month_other": "{{count}} mois de plus débloquent cette période",
-        "quarter_one": "{{count}} trimestre de plus débloque cette période",
-        "quarter_other": "{{count}} trimestres de plus débloquent cette période",
-        "game_one": "{{count}} match de plus débloque cette période",
-        "game_other": "{{count}} matchs de plus débloquent cette période",
-        "set_one": "{{count}} set de plus débloque cette période",
-        "set_other": "{{count}} sets de plus débloquent cette période",
-        "eventSession_one": "{{count}} événement de plus débloque cette période",
-        "eventSession_other": "{{count}} événements de plus débloquent cette période",
-        "year_one": "{{count}} année de plus débloque cette période",
-        "year_other": "{{count}} années de plus débloquent cette période"
+        "week_one": "{{count}} semaine de plus avec 3+ matchs débloque ce graphique.",
+        "week_other": "{{count}} semaines de plus avec 3+ matchs débloquent ce graphique.",
+        "month_one": "{{count}} mois de plus avec 3+ matchs débloque ce graphique.",
+        "month_other": "{{count}} mois de plus avec 3+ matchs débloquent ce graphique.",
+        "quarter_one": "{{count}} trimestre de plus avec 3+ matchs débloque ce graphique.",
+        "quarter_other": "{{count}} trimestres de plus avec 3+ matchs débloquent ce graphique.",
+        "game_one": "{{count}} match de plus avec 3+ matchs débloque ce graphique.",
+        "game_other": "{{count}} matchs de plus avec 3+ matchs débloquent ce graphique.",
+        "set_one": "{{count}} set de plus avec 3+ matchs débloque ce graphique.",
+        "set_other": "{{count}} sets de plus avec 3+ matchs débloquent ce graphique.",
+        "eventSession_one": "{{count}} événement de plus avec 3+ matchs débloque ce graphique.",
+        "eventSession_other": "{{count}} événements de plus avec 3+ matchs débloquent ce graphique.",
+        "year_one": "{{count}} année de plus avec 3+ matchs débloque ce graphique.",
+        "year_other": "{{count}} années de plus avec 3+ matchs débloquent ce graphique."
       },
       "aria": "Graphique de tendance, {{count}} périodes",
       "tableToggle": "Afficher sous forme de tableau",
@@ -3506,7 +3497,21 @@
         "record": "Bilan",
         "rate": "Taux",
         "sample": "Échantillon"
-      }
+      },
+      "title": {
+        "game": "Taux de victoire par partie",
+        "set": "Taux de victoire par set",
+        "eventSession": "Taux de victoire par événement",
+        "week": "Taux de victoire par semaine",
+        "month": "Taux de victoire par mois",
+        "quarter": "Taux de victoire par trimestre",
+        "year": "Taux de victoire par an"
+      },
+      "legend": {
+        "dot": "taille = parties",
+        "reference": "{{rate}} historique"
+      },
+      "lockedMeter": "{{have}} sur {{need}}"
     },
     "roster": {
       "main": "Principal",

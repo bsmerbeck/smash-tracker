@@ -1005,15 +1005,6 @@
         "lastEvent": "FormNow · last event vs all time",
         "last90": "FormNow · last 90 days vs all time"
       },
-      "trendTitle": {
-        "game": "Win rate by game · dot size = games",
-        "set": "Win rate by set · dot size = games",
-        "eventSession": "Win rate by event · dot size = games",
-        "week": "Win rate by week · dot size = games",
-        "month": "Win rate by month · dot size = games",
-        "quarter": "Win rate by quarter · dot size = games",
-        "year": "Win rate by year · dot size = games"
-      },
       "vsCharacters": {
         "title": "vs characters",
         "empty": "No character data yet — report matches to see trends by character."
@@ -3484,20 +3475,20 @@
       "legendHollow": "hollow = under 3 games",
       "referenceLabel": "{{rate}} all time",
       "lockedPeriods": {
-        "week_one": "{{count}} more week unlocks this period",
-        "week_other": "{{count}} more weeks unlock this period",
-        "month_one": "{{count}} more month unlocks this period",
-        "month_other": "{{count}} more months unlock this period",
-        "quarter_one": "{{count}} more quarter unlocks this period",
-        "quarter_other": "{{count}} more quarters unlock this period",
-        "game_one": "{{count}} more game unlocks this period",
-        "game_other": "{{count}} more games unlock this period",
-        "set_one": "{{count}} more set unlocks this period",
-        "set_other": "{{count}} more sets unlock this period",
-        "eventSession_one": "{{count}} more event unlocks this period",
-        "eventSession_other": "{{count}} more events unlock this period",
-        "year_one": "{{count}} more year unlocks this period",
-        "year_other": "{{count}} more years unlock this period"
+        "week_one": "{{count}} more week with 3+ games unlocks this chart.",
+        "week_other": "{{count}} more weeks with 3+ games unlock this chart.",
+        "month_one": "{{count}} more month with 3+ games unlocks this chart.",
+        "month_other": "{{count}} more months with 3+ games unlock this chart.",
+        "quarter_one": "{{count}} more quarter with 3+ games unlocks this chart.",
+        "quarter_other": "{{count}} more quarters with 3+ games unlock this chart.",
+        "game_one": "{{count}} more game with 3+ games unlocks this chart.",
+        "game_other": "{{count}} more games with 3+ games unlock this chart.",
+        "set_one": "{{count}} more set with 3+ games unlocks this chart.",
+        "set_other": "{{count}} more sets with 3+ games unlock this chart.",
+        "eventSession_one": "{{count}} more event with 3+ games unlocks this chart.",
+        "eventSession_other": "{{count}} more events with 3+ games unlock this chart.",
+        "year_one": "{{count}} more year with 3+ games unlocks this chart.",
+        "year_other": "{{count}} more years with 3+ games unlock this chart."
       },
       "aria": "Trend plot, {{count}} periods",
       "tableToggle": "View as table",
@@ -3506,7 +3497,21 @@
         "record": "Record",
         "rate": "Rate",
         "sample": "Sample"
-      }
+      },
+      "title": {
+        "game": "Win rate by game",
+        "set": "Win rate by set",
+        "eventSession": "Win rate by event",
+        "week": "Win rate by week",
+        "month": "Win rate by month",
+        "quarter": "Win rate by quarter",
+        "year": "Win rate by year"
+      },
+      "legend": {
+        "dot": "size = games",
+        "reference": "{{rate}} all time"
+      },
+      "lockedMeter": "{{have}} of {{need}}"
     },
     "roster": {
       "main": "Main",

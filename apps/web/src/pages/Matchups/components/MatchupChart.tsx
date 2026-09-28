@@ -14,7 +14,7 @@ import type {
 import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
-import { CHART_H_COMPACT } from '@/components/charts/tokens';
+import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
 import { FormStrip } from '@/components/charts/FormStrip';
 import {
   buildFormStripEvents,
@@ -28,7 +28,7 @@ import { formatPercent } from '@/lib/formatPercent';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
 
-/** UI-SPEC §7.13: the trend's total-period-count unlock floor. Duplicated as a local literal (not imported from `PERIOD_TREND_MIN_PERIODS`) only for the locked-sentence's own `count` arithmetic below — the kit component itself already reads the shared constant. */
+/** UI-SPEC §7.13: the trend's unlock floor (8 periods at the 3-game floor) — the locked meter's "of N". Duplicated as a local literal (not imported from `PERIOD_TREND_MIN_PERIODS`); the kit itself counts the periods (plan 39.1-43, PD-43-1). */
 const PERIOD_TREND_LOCKED_FLOOR = 8;
 
 /**
@@ -292,7 +292,7 @@ export function MatchupChart({
   /** CR-02 (39.1-REVIEW): the host's ONE `buildMatchupPeriodSeries` (`../lib/matchupPeriodSeries`) result over `matchupMatches` — plotted here, resolved by the host's terminus. */
   periodSeries: PeriodSeries;
   width?: number;
-  /** Tests only; the page draws the trend at `CHART_H_COMPACT` (sketch 003's compact trend). */
+  /** Tests only; the page draws the trend at the sketches' 160px value range (`PERIOD_HERO_VALUE_RANGE_PX`, PD-43-3). */
   height?: number;
 }) {
   const { t, i18n } = useTranslation();
@@ -365,15 +365,25 @@ export function MatchupChart({
         // Plan 39.1-41 (PD-41-2, sketch 003 `dotSize`): dots by confidence tier.
         dotSizing="tier"
         width={width}
-        height={height ?? CHART_H_COMPACT}
+        // Plan 39.1-43 (PD-43-3, sketch 003 `trend(d, { height: 160 })`): the
+        // 160px VALUE range; an explicit test height keeps its old meaning.
+        {...(height !== undefined ? { height } : { valueRangePx: PERIOD_HERO_VALUE_RANGE_PX })}
         labels={{
-          lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
-            count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
-          }),
-          lockedCountLabel: t('insights.state.lockedMeter', {
-            have: periodSeries.points.length,
-            need: PERIOD_TREND_LOCKED_FLOOR,
-          }),
+          // Plan 39.1-43 (sketch 003 trendSection / trendLegend, PD-43-2).
+          title: t(`analytics.trend.title.${periodSeries.grain}`),
+          legend: {
+            dot: t('analytics.trend.legend.dot'),
+            hollow: t('analytics.trend.legendHollow'),
+            reference: t('analytics.trend.legend.reference', {
+              rate: `${Math.round(overallRate)}%`,
+            }),
+            band: t(`insights.horizon.${horizon}`),
+          },
+          // PD-43-1: the kit counts the periods at the 3-game floor.
+          lockedSentence: ({ need }) =>
+            t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, { count: need }),
+          lockedCountLabel: ({ have }) =>
+            t('analytics.trend.lockedMeter', { have, need: PERIOD_TREND_LOCKED_FLOOR }),
           tableToggle: t('analytics.trend.tableToggle'),
           tableHeaders: {
             period: t('analytics.trend.tableHeaders.period'),
