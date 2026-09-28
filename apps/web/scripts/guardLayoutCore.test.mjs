@@ -3412,3 +3412,22 @@ test('axis-ticks: reference-label-dot-collision — the value-label reference-la
   const types = violations.map((v) => v.type).sort();
   assert.deepEqual(types, ['reference-label-collision', 'reference-label-dot-collision']);
 });
+
+// Plan 39.1-43 (OOS-6 fallback, UI-SPEC 7.13 as amended): when every label
+// slot is taken the kit draws no direct reference label and its head's
+// reference legend item states the rate — the collector then reports the
+// legend item's text with source 'legend', and the PERIOD_TREND line marks it.
+test('period-trend-marks: a legend-sourced reference label (OOS-6 fallback) prints as ref=legend:<text> and still meets the expected text', () => {
+  const surface = deepSurface({ referenceLabelSource: 'legend', valueRangePx: 160 });
+  assert.equal(
+    guardLayoutCoreNs.formatPeriodTrendLine('matchups-sketch-deep', '390x844', surface),
+    'PERIOD_TREND route=matchups-sketch-deep viewport=390x844 state=drawn domain=20,100 dots=5,7 labels=100%|33%|60% lines=1 ref=legend:63%_all_time range=160',
+  );
+  assert.deepEqual(periodTrendTypes([surface]), []);
+  assert.deepEqual(
+    periodTrendTypes([
+      deepSurface({ referenceLabelSource: 'legend', referenceLabel: '62% all time' }),
+    ]),
+    ['period-trend-reference-label'],
+  );
+});
