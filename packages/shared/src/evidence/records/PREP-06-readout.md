@@ -9,7 +9,9 @@ Debrief Spine), plan 39-14.
 This is the TRACKED copy that survives a clean checkout (`.gitignore` ignores `.planning/`). The
 obligations it discharges are written out in
 `.planning/phases/39-evidence-grounded-prep-debrief-spine/39-CONTEXT.md` (D-07, D-14 to D-17, D-19
-to D-21). Its anti-drift test is `packages/shared/src/evidence/prep06Record.test.ts`.
+to D-21; D-22, D-23 and D-24, the owner decisions that changed what a credit buys after this record's
+skeleton was written; and the PREP-06 owner decision of 2026-09-28). Its anti-drift test is
+`packages/shared/src/evidence/prep06Record.test.ts`.
 
 ## PROCEDURE
 
@@ -20,17 +22,45 @@ production; the owner pastes back the printed output and Claude transcribes it h
 
 ## SOAK EVIDENCE
 
-Columns mirror the readout's own printed row (`apps/api/scripts/prep06Readout.ts`, the
-`printReadout` header line): each row states its own `method`, and exact and approximate rows are
-never blended into one figure (D-19).
+Owner run of 2026-09-28, window `20260922..20260928` (7 days). Columns mirror the readout's own
+printed row (`apps/api/scripts/prep06Readout.ts`, the `printReadout` header line): each row states
+its own `method`, and exact and approximate rows are never blended into one figure (D-19).
 
-| day | method | reconcile% | duplicate% | numerator | denominator | note |
-| --- | ------ | ---------- | ---------- | --------- | ----------- | ---- |
+| day      | method      | reconcile% | duplicate% | numerator | denominator | note                                        |
+| -------- | ----------- | ---------- | ---------- | --------- | ----------- | ------------------------------------------- |
+| 20260928 | approximate | n/a        | n/a        | 0         | 0           | partial day (the readout's current UTC day) |
+| 20260927 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260926 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260925 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260924 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260923 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260922 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
 
-_Not yet filled — the owner has not run the readout. Rows are transcribed as printed at plan 39-14's
-final task._
+**Method mix:** `exact=0 approximate=7`.
 
-**Method mix:** not yet recorded.
+**Exact vs approximate, stated separately (never blended):** exact arm — 0 days, so no exact
+percentage exists. Approximate arm — 7 days, every one with numerator 0 over denominator 0 and
+both percentages `n/a`, so it produced no range at all. There is **no soak evidence** in this
+window: no day recorded a reconciled billing event, and no percentage of either method was computed.
+
+The owner's readout output, transcribed exactly as supplied (counts only; checked for identifiers
+before writing — none found):
+
+```text
+window: 20260922..20260928 (7 day(s))
+day       method        reconcile%    duplicate%    numerator   denominator
+20260928  approximate   n/a           n/a           0           0
+  note: partial day — 20260928 is the current UTC day of this readout; the nightly reconcile covers yesterday, so this day is excluded from every percentage.
+20260927  approximate   n/a           n/a           0           0
+20260926  approximate   n/a           n/a           0           0
+20260925  approximate   n/a           n/a           0           0
+20260924  approximate   n/a           n/a           0           0
+20260923  approximate   n/a           n/a           0           0
+20260922  approximate   n/a           n/a           0           0
+  (each non-partial day note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed.)
+methodMix: exact=0 approximate=7
+footnotes: reference bar >=98% reconcile and <0.5% duplicates (not enforced); approximate/exact method definitions; 20260928 partial; 7 of 7 days approximate (pre-deploy of the reconcileSummaries writer).
+```
 
 **Denominators (code review API-WR-05/06):** an `exact` row's denominator is the persisted reconcile
 run's `reconciledUnits` plus its phantom and duplicate exceptions, and its numerator is
@@ -38,13 +68,27 @@ run's `reconciledUnits` plus its phantom and duplicate exceptions, and its numer
 are left out of both. An `approximate` row's denominator is `eventCounts` over
 `RECONCILED_EVENT_NAMES`. A row reads `n/a` when its denominator is 0, when it is approximate with
 no exception rows at all (no reconcile evidence — never read as 100%), or when it is the readout's
-own current UTC day (partial). No numerator is ever negative. The readout prints these definitions
-as its own footnotes, which are transcribed below verbatim.
+own current UTC day (partial). No numerator is ever negative.
 
 ### FOOTNOTES
 
-_Not yet filled — the footnotes are transcribed verbatim from the readout's printed output, never
-paraphrased, at plan 39-14's final task._
+As supplied, the output carries its footnotes on one condensed `footnotes:` line (last line of the
+block above), and the six non-partial days share one condensed note line rather than one `note:`
+line each. That condensed text is transcribed above exactly as supplied and is not reworded here.
+The script's own full footnote wording is fixed in source, in this order:
+`FLIP_RULE_FOOTNOTE`, `APPROXIMATE_METHOD_FOOTNOTE` and `EXACT_METHOD_FOOTNOTE`
+(`apps/api/scripts/prep06ReadoutCore.ts:233-249`), then the partial-day sentence and the
+approximate-day-count sentence (`prep06ReadoutCore.ts:289-302`). Each item of the condensed line
+maps onto one of those, in the same order:
+
+1. `reference bar >=98% reconcile and <0.5% duplicates (not enforced)` — `FLIP_RULE_FOOTNOTE`.
+2. `approximate/exact method definitions` — `APPROXIMATE_METHOD_FOOTNOTE` and
+   `EXACT_METHOD_FOOTNOTE`.
+3. `20260928 partial` — the partial-day sentence: 20260928 was the readout's current UTC day and
+   carries no percentage.
+4. `7 of 7 days approximate (pre-deploy of the reconcileSummaries writer)` — the approximate-day
+   sentence: no day in the window has a persisted reconcile summary, because the writer that
+   produces one ships with Phase 39 and has not been deployed.
 
 **REFERENCE:** v2.5's flip rule — `>=98% reconcile` and `<0.5% duplicates` — is the reference the
 numbers above are read AGAINST. It is not a threshold any code enforces: the readout computes no
@@ -72,8 +116,14 @@ the free-use list (`REPORTS_ALLOWED_UIDS`); the job records whether it actually 
 stored `wasCharged` field, and a failed job is refunded only through the one existing `failJob`
 path. It applies once the owner deploys this phase's code (D-17); nothing here is live today.
 
+A generation is ONE model attempt. `REPORT_MODEL_MAX_RETRIES` is `0` and each attempt is bounded by
+`REPORT_MODEL_TIMEOUT_MS` (8 minutes), on the built client and on every request; a failed attempt
+fails the job and refunds it, and the user retries. A credit never pays for a silent retry.
+
 Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` constant
-(`packages/shared/src/evidence/claims.ts`):
+(`packages/shared/src/evidence/claims.ts`). Only EVIDENCED claims count toward them — every
+comparison goes through the one shared `countViableClaims` helper, in the validator and in the
+API's pre-call fail-fast alike (owner decision D-23):
 
 | surface                | MIN_VIABLE_CLAIMS |
 | ---------------------- | ----------------- |
@@ -87,27 +137,56 @@ Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` c
    recommended actions (the stored slots `action1`, `action2`, `action3`), and a `validation` block
    that names the `snapshotId` the report was checked against, with its `policyVersion` and
    `claimSchemaVersion`. The validation block is written only on a report that passed.
-2. **D-20 — prose-less is still delivered and still charged.** When the prose lint strips the
+2. **D-20 — prose-less is still delivered and still charged.** When the prose lint withholds the
    commentary from one section or from every section, the report is still delivered, as a
-   claims-only report, and the credit is spent — a stripped section is never a refund. It is
+   claims-only report, and the credit is spent — a withheld section is never a refund. It is
    DISCLOSED on the report card (the `reports.withheldProse` caption) and by an equivalent line in
-   the `.md` export, and it is OBSERVABLE: the count is persisted on the stored report as `strippedSectionCount` and emitted
-   as the `report_prose_stripped` event.
-3. **D-21 — thin evidence buys a refund, not a report.** When the EVIDENCED claims issued for a job
-   (abstentions never count — owner decision D-23) are already below the surface's
-   `MIN_VIABLE_CLAIMS` at job claim, the job fails fast: the model is not called,
-   nothing is delivered, the job fails through `failJob` with `failureReason` `validation`, the
-   credit is returned exactly once, the `report_failed_validation` event is emitted, and the UI says
-   there is not enough match evidence yet. This is a DELIBERATE CHANGE from today's shipped
-   behaviour on the live, publicly purchasable scout path, where the same caller is currently charged
-   for a cold-read report. It takes effect only when the owner deploys (D-17).
-4. **D-07 — dropped claims are delivered with a note.** Claims the validator could not support are
-   dropped, and the delivered report says how many (the `reports.droppedClaims` caption, from the
-   stored `droppedClaimCount`); the `report_claims_dropped` event records it. Prose that names the
-   unknown stage or character bucket withholds that section's prose only, disclosed like any other
-   withheld commentary, and never drops a claim (owner decision D-22); a claim whose own stage or
-   fighter id is the unknown bucket is dropped. Only when fewer than `MIN_VIABLE_CLAIMS` evidenced claims survive does the job fail with
-   `failureReason` `validation` and refund through `failJob`.
+   the `.md` export, and it is OBSERVABLE: the count is persisted on the stored report as
+   `strippedSectionCount` and emitted as the `report_prose_stripped` event.
+3. **D-21 and D-23 — thin evidence buys a refund, not a report.** When the EVIDENCED claims issued
+   for a job are already below the surface's `MIN_VIABLE_CLAIMS` at job claim — abstentions never
+   count, so an all-abstention job lands here too (D-23) — the job fails fast: the model is not
+   called, nothing is delivered, the job fails through `failJob` with `failureReason`
+   `validation`, the credit is returned exactly once, the `report_failed_validation` event is
+   emitted, and the UI says there is not enough match evidence yet. This is a DELIBERATE CHANGE
+   from today's shipped behaviour on the live, publicly purchasable scout path, where the same
+   caller is currently charged for a cold-read report. It takes effect only when the owner deploys
+   (D-17).
+4. **D-07 and D-22 — dropped claims are delivered with a note.** Claims the validator could not
+   support are dropped, and the delivered report says how many (the `reports.droppedClaims`
+   caption, from the stored `droppedClaimCount`); the `report_claims_dropped` event records it.
+   Prose that names the unknown stage or character bucket withholds that section's prose only,
+   disclosed like any other withheld commentary, and never drops a claim (owner decision D-22); a
+   claim whose own stage or fighter id is the unknown bucket is dropped. Only when fewer than
+   `MIN_VIABLE_CLAIMS` evidenced claims survive does the job fail with `failureReason`
+   `validation` and refund through `failJob`.
+5. **D-24 — the commentary is qualitative only.** Every figure a user sees comes from a checked
+   claim, shown beside the prose. A section whose prose carries any number character, any percent
+   sign, a spelled-out figure word, or a confidence-tier word (low, medium, high, moderate, strong,
+   weak and their forms) has that section's prose withheld — true or false, and whatever the
+   separator of a win-loss pair. Canonical fighter and stage names and known opponent tags are read
+   first, so the digits inside a name are never figures. A withheld section is handled exactly as
+   in item 2: delivered, charged, disclosed, never refunded, and it never touches claim survival.
+   The model prompts state the rule up front, so most commentary is written to survive it.
+
+Sources, as read at HEAD `2b332e6c` (line numbers pin to that commit):
+
+- `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
+  `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
+- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:820`;
+  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1266` (scout, prep) and
+  `reports.ts:1602` (post-event synthesis).
+- The D-24 rule — doc comment `validateReport.ts:458-478`; patterns `NUMBER_CHARACTER_PATTERN`
+  `:481`, `PERCENT_SIGN_PATTERN` `:484`, `FIGURE_WORD_PATTERN` `:493`, `TIER_WORD_PATTERN` `:505`;
+  enforcement `validateReport.ts:666-691`. Prompt statement — `apps/api/src/reports/generate.ts:1102`
+  and `apps/api/src/reports/synthesis.ts:504`.
+- Events — `EVENT_CATALOG` at `packages/shared/src/events.ts:80`; `report_failed_validation`
+  `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
+- Stored fields — `packages/shared/src/reports.ts`: `strippedSectionCount` `:232`,
+  `droppedClaimCount` `:284`, `failureReason` `:606`, `wasCharged` `:620`.
+- Model bound — `REPORT_MODEL_MAX_RETRIES = 0` at `apps/api/src/routes/reports.ts:132`,
+  `REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000` at `reports.ts:140`, applied on the built client at
+  `reports.ts:567-568` and per request at `reports.ts:155-158`.
 
 ## BOUNDARY
 
@@ -117,6 +196,35 @@ user, an opponent or a tournament, it is not transcribed; it is reported as a de
 
 ## DECISION
 
-**PENDING — owner checkpoint not yet run.** The on/off choice, the owner's rationale, the date, the
-statement that this phase performed no deploy and no environment-variable change, and the owner's
-acknowledgement of the section above are all recorded here at plan 39-14's final task.
+**Recorded 2026-09-28 by the owner at the plan 39-14 checkpoint ([HUMAN]).**
+
+**Option chosen: `intend-on` — `PREP_PAID_REPORTS_ENABLED` = ON.**
+
+**The evidence did not support it, and the owner chose ON anyway.** The owner decided with the
+readout above in front of them. That readout carries no soak evidence: every day in the window is
+0 over 0 with both percentages `n/a`, and the method mix is `exact=0 approximate=7`. Nothing in it
+was read against the v2.5 reference, because there was nothing to read. The decision rests on the
+owner's judgement, not on the flip-rule numbers. No separate rationale was given beyond the decision
+itself.
+
+**Nothing was flipped or deployed in this phase.** This plan performed no deploy and no
+environment-variable change, and the gate is exactly where it was before Phase 39 started (D-17).
+The flip is an owner production action, taken after the Phase 39 deploy:
+
+```sh
+gcloud run services update smash-tracker-api --region us-central1 --update-env-vars PREP_PAID_REPORTS_ENABLED=true
+```
+
+Use `--update-env-vars`, never `--set-env-vars`, which replaces every other variable on the
+service. The value must be exactly the lowercase word `true`. Any other value, including `TRUE`,
+`1`, `yes` or `on`, leaves the gate off (`apps/api/src/config/env.ts:491` and `:511-512`).
+
+**Recommended follow-up:** re-run the readout about a week after launch, once exact days exist,
+and append the result here as a follow-up entry. That run is the first real soak evidence for this
+gate.
+
+**What a credit buys — acknowledged at the same checkpoint.** The owner read the section above
+and explicitly accepted all four behaviours: D-20 (a report with withheld commentary is delivered,
+charged and disclosed); D-21 with D-23 (thin or all-abstention evidence refunds before the model
+is called); D-07 (dropped claims are delivered with a note, and fewer than the minimum refunds);
+and D-24 (the commentary is qualitative only).

@@ -12,10 +12,15 @@ import { MIN_VIABLE_CLAIMS } from './claims.js';
  * shipped `CREDIT_PACKS` row for row (D-16 — a price changed in code without
  * the record, or typed into the record from memory, fails here). Its
  * `WHAT A CREDIT BUYS` section must cite D-07, D-20 and D-21 in its OWN body
- * (review C3-H1 — a mention elsewhere in the record cannot satisfy it), and
- * every constant, field and event name it states is bound to source. The
- * record must carry its boundary statement and its reference line, and must
- * contain nothing secret- or identifier-shaped (D-14: counts only).
+ * (review C3-H1 — a mention elsewhere in the record cannot satisfy it), plus
+ * the owner decisions that changed what a credit buys after the skeleton was
+ * written — D-22, D-23 and D-24 — and every constant, field and event name
+ * it states is bound to source, including the one-attempt model bound read
+ * from the API's own source bytes. The record must carry its boundary
+ * statement and its reference line, and must contain nothing secret- or
+ * identifier-shaped (D-14: counts only). Its DECISION section must be FILLED:
+ * the owner's choice and date, the no-deploy statement, the exact flip
+ * command, and the owner's acknowledgement of what a credit buys.
  *
  * Every checker below returns a list of problems rather than asserting
  * inline, so each one is also proven to FAIL on a deliberately broken copy
@@ -29,7 +34,36 @@ const PRICES_HEADING = '## PRICES';
 const CREDIT_BUYS_HEADING = '## WHAT A CREDIT BUYS';
 const BOUNDARY_HEADING = '## BOUNDARY';
 const DECISION_HEADING = '## DECISION';
-const CREDIT_BUYS_DECISION_IDS = ['D-07', 'D-20', 'D-21'] as const;
+const CREDIT_BUYS_DECISION_IDS = ['D-07', 'D-20', 'D-21', 'D-22', 'D-23', 'D-24'] as const;
+/** The four behaviours the owner accepted at the checkpoint (39-CONTEXT.md, PREP-06 owner decision). */
+const DECISION_ACKNOWLEDGED_IDS = ['D-07', 'D-20', 'D-21', 'D-23', 'D-24'] as const;
+
+/** API source files read as bytes, so the record's statements about them cannot drift. */
+const API_ENV_SOURCE = readFileSync(
+  new URL('../../../../apps/api/src/config/env.ts', import.meta.url),
+  'utf8',
+);
+const API_REPORTS_ROUTE_SOURCE = readFileSync(
+  new URL('../../../../apps/api/src/routes/reports.ts', import.meta.url),
+  'utf8',
+);
+
+/** The value of `export const <name> = <expr>;` in `source`, evaluated for plain integer products only. */
+function integerConstant(source: string, name: string): number | null {
+  const match = source.match(new RegExp(`(?:^|\\n)(?:export )?const ${name} = ([0-9 *]+);`));
+  if (!match?.[1]) {
+    return null;
+  }
+  return match[1]
+    .split('*')
+    .map((factor) => Number(factor.trim()))
+    .reduce((product, factor) => product * factor, 1);
+}
+
+/** The string value of `const <name> = '<value>';` in `source`. */
+function stringConstant(source: string, name: string): string | null {
+  return source.match(new RegExp(`const ${name} = '([^']*)';`))?.[1] ?? null;
+}
 const VALIDATION_EVENT_NAMES = [
   'report_failed_validation',
   'report_claims_dropped',
@@ -146,6 +180,125 @@ function creditBuysProblems(text: string): string[] {
       problems.push(`WHAT A CREDIT BUYS does not name the action slot ${slot}`);
     }
   }
+
+  // D-23: the one shared evidenced-claim counter is named.
+  if (!body.includes('`countViableClaims`')) {
+    problems.push('WHAT A CREDIT BUYS does not name countViableClaims (D-23)');
+  }
+
+  // R4-WR-02: the one-attempt model bound, bound to the API's source bytes.
+  const maxRetries = integerConstant(API_REPORTS_ROUTE_SOURCE, 'REPORT_MODEL_MAX_RETRIES');
+  const timeoutMs = integerConstant(API_REPORTS_ROUTE_SOURCE, 'REPORT_MODEL_TIMEOUT_MS');
+  if (maxRetries === null || timeoutMs === null) {
+    problems.push('the model bound constants are absent from apps/api/src/routes/reports.ts');
+  } else {
+    if (!body.includes(`\`REPORT_MODEL_MAX_RETRIES\` is \`${maxRetries}\``)) {
+      problems.push(
+        `WHAT A CREDIT BUYS does not state REPORT_MODEL_MAX_RETRIES as its source value ${maxRetries}`,
+      );
+    }
+    const minutes = timeoutMs / 60_000;
+    if (!body.includes(`\`REPORT_MODEL_TIMEOUT_MS\` (${minutes} minutes)`)) {
+      problems.push(
+        `WHAT A CREDIT BUYS does not state REPORT_MODEL_TIMEOUT_MS as its source value (${minutes} minutes)`,
+      );
+    }
+  }
+  return problems;
+}
+
+function decisionProblems(text: string): string[] {
+  const body = sectionBody(text, DECISION_HEADING);
+  if (body === null) {
+    return ['DECISION section is absent'];
+  }
+  const problems: string[] = [];
+  if (/PENDING/.test(body)) {
+    problems.push('DECISION section still reads PENDING');
+  }
+  if (!/Option chosen: `(keep-off|intend-on|defer)`/.test(body)) {
+    problems.push('DECISION section does not name the chosen option');
+  }
+  if (!body.includes('`PREP_PAID_REPORTS_ENABLED` = ON')) {
+    problems.push('DECISION section does not state PREP_PAID_REPORTS_ENABLED = ON');
+  }
+  if (!body.includes('2026-09-28')) {
+    problems.push('DECISION section does not carry the decision date');
+  }
+  if (!body.replace(/\s+/g, ' ').includes('no deploy and no environment-variable change')) {
+    problems.push('DECISION section lacks the no-deploy, no-env-change statement (D-17)');
+  }
+  if (!body.includes('`exact=0 approximate=7`')) {
+    problems.push('DECISION section does not restate the method mix it was made against');
+  }
+
+  // The flip command: --update-env-vars only, and the exact enabling value from env.ts.
+  const enablingValue = stringConstant(API_ENV_SOURCE, 'PREP_PAID_REPORTS_ENABLED_VALUE');
+  if (enablingValue === null) {
+    problems.push('PREP_PAID_REPORTS_ENABLED_VALUE is absent from apps/api/src/config/env.ts');
+  }
+  const commands = body.split('\n').filter((line) => line.trim().startsWith('gcloud '));
+  if (commands.length !== 1) {
+    problems.push(`DECISION section carries ${commands.length} gcloud command(s), expected 1`);
+  }
+  for (const command of commands) {
+    if (command.includes('--set-env-vars')) {
+      problems.push('the flip command uses --set-env-vars, which replaces every other variable');
+    }
+    if (
+      enablingValue !== null &&
+      !command.trim().endsWith(`--update-env-vars PREP_PAID_REPORTS_ENABLED=${enablingValue}`)
+    ) {
+      problems.push(
+        `the flip command does not end with --update-env-vars PREP_PAID_REPORTS_ENABLED=${enablingValue}`,
+      );
+    }
+  }
+
+  // C3-H1: the owner's acknowledgement of what a credit buys lands in THIS section.
+  const acknowledgement = body.slice(body.indexOf('**What a credit buys'));
+  if (!body.includes('**What a credit buys')) {
+    problems.push('DECISION section lacks the what-a-credit-buys acknowledgement');
+  } else {
+    for (const id of DECISION_ACKNOWLEDGED_IDS) {
+      if (!acknowledgement.includes(id)) {
+        problems.push(`DECISION acknowledgement does not cite ${id}`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** Soak rows each carry a method, and the stated method mix equals the rows (D-19: never blended). */
+function soakProblems(text: string): string[] {
+  const body = sectionBody(text, '## SOAK EVIDENCE');
+  if (body === null) {
+    return ['SOAK EVIDENCE section is absent'];
+  }
+  const problems: string[] = [];
+  const rows = tableRows(body);
+  if (rows.length === 0) {
+    problems.push('SOAK EVIDENCE table has no rows');
+  }
+  const mix = { exact: 0, approximate: 0 };
+  for (const row of rows) {
+    const method = row[1];
+    if (method !== 'exact' && method !== 'approximate') {
+      problems.push(
+        `soak row ${row[0] ?? '?'} has no method label (got ${JSON.stringify(method)})`,
+      );
+      continue;
+    }
+    mix[method] += 1;
+  }
+  const stated = body.match(/\*\*Method mix:\*\* `exact=(\d+) approximate=(\d+)`/);
+  if (!stated) {
+    problems.push('SOAK EVIDENCE does not state the method mix');
+  } else if (Number(stated[1]) !== mix.exact || Number(stated[2]) !== mix.approximate) {
+    problems.push(
+      `stated method mix exact=${stated[1]} approximate=${stated[2]} differs from the table (exact=${mix.exact} approximate=${mix.approximate})`,
+    );
+  }
   return problems;
 }
 
@@ -253,7 +406,7 @@ describe('PREP-06 record: the price table is bound to CREDIT_PACKS (D-16)', () =
 });
 
 describe("PREP-06 record: WHAT A CREDIT BUYS answers the requirement's second clause (review C3-H1)", () => {
-  it('the section exists, cites D-07/D-20/D-21 in its own body, and every value it states is bound to source', () => {
+  it('the section exists, cites D-07/D-20/D-21 and D-22/D-23/D-24 in its own body, and every value it states is bound to source', () => {
     expect(creditBuysProblems(RECORD)).toEqual([]);
   });
 
@@ -273,6 +426,37 @@ describe("PREP-06 record: WHAT A CREDIT BUYS answers the requirement's second cl
     );
   });
 
+  it.each(['D-22', 'D-23', 'D-24'])(
+    'FAILS when %s appears only OUTSIDE the section (a decision that changed what a credit buys)',
+    (id) => {
+      const body = sectionBody(RECORD, CREDIT_BUYS_HEADING) ?? '';
+      const broken = RECORD.replace(body, body.replaceAll(id, 'a later owner decision'));
+      expect(broken).toContain(id);
+      expect(creditBuysProblems(broken)).toContain(
+        `WHAT A CREDIT BUYS does not cite ${id} in its own body`,
+      );
+    },
+  );
+
+  it('FAILS when the stated model bound drifts from the API source', () => {
+    const broken = RECORD.replace(
+      '`REPORT_MODEL_TIMEOUT_MS` (8 minutes)',
+      '`REPORT_MODEL_TIMEOUT_MS` (10 minutes)',
+    );
+    expect(broken).not.toBe(RECORD);
+    expect(creditBuysProblems(broken).join('\n')).toMatch(
+      /does not state REPORT_MODEL_TIMEOUT_MS as its source value/,
+    );
+    const retries = RECORD.replace(
+      '`REPORT_MODEL_MAX_RETRIES` is `0`',
+      '`REPORT_MODEL_MAX_RETRIES` is `2`',
+    );
+    expect(retries).not.toBe(RECORD);
+    expect(creditBuysProblems(retries).join('\n')).toMatch(
+      /does not state REPORT_MODEL_MAX_RETRIES as its source value/,
+    );
+  });
+
   it('FAILS when a minimum viable claim count drifts from MIN_VIABLE_CLAIMS', () => {
     const broken = RECORD.replace(
       /(\| `post_event_synthesis` \|\s*)(\d+)/,
@@ -283,7 +467,7 @@ describe("PREP-06 record: WHAT A CREDIT BUYS answers the requirement's second cl
   });
 
   it('FAILS on an event name that is not in EVENT_CATALOG', () => {
-    const broken = RECORD.replace('`report_prose_stripped`', '`report_prose_withheld`');
+    const broken = RECORD.replaceAll('`report_prose_stripped`', '`report_prose_withheld`');
     const problems = creditBuysProblems(broken);
     expect(problems).toContain(
       'WHAT A CREDIT BUYS names an event absent from EVENT_CATALOG: report_prose_withheld',
@@ -325,4 +509,68 @@ describe('PREP-06 record: boundary statement, reference line, and the counts-onl
   it('the DECISION section exists', () => {
     expect(sectionBody(RECORD, DECISION_HEADING)).not.toBeNull();
   });
+});
+
+describe('PREP-06 record: the soak evidence and the owner decision are filled (plan 39-14 Task 4)', () => {
+  it('every soak row carries its method, and the stated method mix equals the table (D-19)', () => {
+    expect(soakProblems(RECORD)).toEqual([]);
+  });
+
+  it('FAILS on a soak row whose method label is missing, or a method mix that disagrees with the rows', () => {
+    const unlabelled = RECORD.replace('| 20260927 | approximate |', '| 20260927 |             |');
+    expect(unlabelled).not.toBe(RECORD);
+    expect(soakProblems(unlabelled).join('\n')).toMatch(/soak row 20260927 has no method label/);
+    const blended = RECORD.replace(
+      '**Method mix:** `exact=0 approximate=7`',
+      '**Method mix:** `exact=1 approximate=6`',
+    );
+    expect(blended).not.toBe(RECORD);
+    expect(soakProblems(blended).join('\n')).toMatch(/stated method mix .* differs from the table/);
+  });
+
+  it('the DECISION section names the choice, the date, the no-deploy statement, the exact flip command and the acknowledgement', () => {
+    expect(decisionProblems(RECORD)).toEqual([]);
+  });
+
+  it('FAILS while the DECISION section still reads PENDING', () => {
+    const body = sectionBody(RECORD, DECISION_HEADING) ?? '';
+    const broken = RECORD.replace(body, '\n**PENDING — owner checkpoint not yet run.**\n');
+    const problems = decisionProblems(broken);
+    expect(problems).toContain('DECISION section still reads PENDING');
+    expect(problems).toContain('DECISION section lacks the what-a-credit-buys acknowledgement');
+  });
+
+  it('FAILS on a flip command that uses --set-env-vars or a value other than the one env.ts enables on', () => {
+    const setVars = RECORD.replace(
+      '--update-env-vars PREP_PAID_REPORTS_ENABLED=true',
+      '--set-env-vars PREP_PAID_REPORTS_ENABLED=true',
+    );
+    expect(setVars).not.toBe(RECORD);
+    expect(decisionProblems(setVars)).toContain(
+      'the flip command uses --set-env-vars, which replaces every other variable',
+    );
+    const upper = RECORD.replace(
+      '--update-env-vars PREP_PAID_REPORTS_ENABLED=true',
+      '--update-env-vars PREP_PAID_REPORTS_ENABLED=TRUE',
+    );
+    expect(upper).not.toBe(RECORD);
+    expect(decisionProblems(upper).join('\n')).toMatch(
+      /does not end with --update-env-vars PREP_PAID_REPORTS_ENABLED=true/,
+    );
+  });
+
+  it.each(['D-07', 'D-20', 'D-21', 'D-23', 'D-24'])(
+    'FAILS when the acknowledgement does not cite %s',
+    (id) => {
+      const body = sectionBody(RECORD, DECISION_HEADING) ?? '';
+      const start = body.indexOf('**What a credit buys');
+      const acknowledgement = body.slice(start);
+      const broken = RECORD.replace(
+        acknowledgement,
+        acknowledgement.replaceAll(id, 'an accepted behaviour'),
+      );
+      expect(broken).not.toBe(RECORD);
+      expect(decisionProblems(broken)).toContain(`DECISION acknowledgement does not cite ${id}`);
+    },
+  );
 });
