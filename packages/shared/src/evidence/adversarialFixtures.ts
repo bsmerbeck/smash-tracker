@@ -1282,20 +1282,23 @@ const ORDINARY_PROSE_ROW_ID = evidenceIdFor({
 // digit, number word, W-L pair, percentage or confidence-tier word — still
 // deliberately loaded with words the entity lint could false-positive on
 // (lowercase and capitalised fighter/stage names, "unknown", "Game" plus a
-// letter). It must ship untouched.
+// letter). It must ship untouched. Code review iteration 6 (R6-CR-01,
+// R6-WR-01) lists "never" and "always" and reads a lone "X" as a roman
+// numeral, so the sentences that used them now say "do not", "tend to" and
+// "your pocket pick"; the price is pinned in `validateReport.test.ts`.
 const ORDINARY_PROSE_TEXT = [
   'Unknown matchups are rare for this opponent, so trust what you already see on tape.',
-  'A well-timed link punish could swing the opening game: X; if they swap to Y, counter with Z.',
-  'Fox players in this bracket often crowd the ledge — never assume a cloud of pressure is safe to challenge.',
+  'A well-timed link punish could swing the opening game; if they swap characters, counter with your pocket pick.',
+  'Fox players in this bracket often crowd the ledge — do not assume a cloud of pressure is safe to challenge.',
   'Hero mains sometimes gamble on a random spell; treat it as noise, not signal, in your gameplan.',
   'Peach floats are a constant threat, but pit your patience against her impatience and wait for an opening.',
   'A Snake main who wolfs down stage control early could pressure you into a bad approach — stay calm.',
   'Robin has a slow neutral, so a Temple layout with long sightlines could favor you more than a compact Summit.',
   'unknown is not the same as unsafe — treat an unfamiliar habit as a question to answer, not a threat to fear.',
   'Link his punish game to your own habits: could you tighten your ledge options before the next set?',
-  'A calm gamer never panics off a bad opening pick; adjust and move on to the next stock.',
-  'They almost always take their strike-order pick late in a long stage list, so plan your counterpick around it.',
-  'Never assume their usual pick order tells you their true preference in a strike-order list — it might just be habit.',
+  'A calm gamer does not panic off a bad opening pick; adjust and move on to the next stock.',
+  'They tend to take their strike-order pick late in a long stage list, so plan your counterpick around it.',
+  'Do not assume their usual pick order tells you their true preference in a strike-order list — it might just be habit.',
   'Watch for their recovery and their combo starters, and keep your shield up.',
 ].join(' ');
 

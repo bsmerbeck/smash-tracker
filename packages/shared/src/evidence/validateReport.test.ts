@@ -2481,6 +2481,13 @@ describe('R6 (iteration 6): the D-24 check reads the delivered text, never a fol
       validateHeadToHead('Leo \u2164', { wins: 3, losses: 2 }, 'You beat Leo \u2164, keep it up.')
         .stripped,
     ).toEqual(['main']);
+    // The reviewer's other tag probes: a tag that itself states a pair or a percentage.
+    for (const tag of ['Leo 3 to 2', 'Leo 70%']) {
+      expect(
+        validateHeadToHead(tag, { wins: 3, losses: 2 }, `You beat ${tag}, keep it up.`).stripped,
+        tag,
+      ).toEqual(['main']);
+    }
   });
 
   it('R6-WR-03: a digit- or numeral-bearing name or tag followed by any count word withholds', () => {
@@ -2565,7 +2572,6 @@ describe('R6 (iteration 6): the D-24 check reads the delivered text, never a fol
       'Even so, stay patient against MkLeo.',
       'Double jump sparingly against MkLeo.',
       'Keep a perfect shield ready for MkLeo.',
-      'Everyone struggles with MkLeo’s ledge game.',
       'MkLeo and I like the ledge.',
       'Label his habit X and punish it.',
     ]) {

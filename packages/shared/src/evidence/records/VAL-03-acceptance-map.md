@@ -47,7 +47,9 @@ new way to reach the same `failJob`). The count stays at sixteen.
 **Rows extended for owner decision D-24 (commentary is qualitative only), again with no dimension
 added or removed:** row 1 (the stop-ship judge now re-judges every delivered section for a figure or
 a confidence-tier word, with its own word lists, so a validator gap shows up as a VAL-03 survivor),
-row 4 (any figure in prose withholds it) and row 5 (any tier word in prose withholds it).
+row 4 (any figure in prose withholds it) and row 5 (any tier word in prose withholds it). Code review
+iteration 6 extends rows 1, 4 and 5 again, still with no dimension added or removed: the check reads
+the delivered text, and the judge reads its word lists from the rubric (R6-WR-04).
 
 ## Owner-decision coverage (D-20 / D-21)
 
@@ -73,32 +75,45 @@ Known limits of the PROSE licence (R4, R5), stated rather than hidden. Owner dec
 (2026-09-28, code review R4-CR-01 / R4-CR-02) makes report commentary qualitative only: a section
 whose prose carries a figure or a confidence grade of any form is withheld (disclosed, never
 refunded, D-22), true or false. Since code review iteration 5 (R5-CR-01..04) the check is an
-ALLOWLIST (`records/RPT-08-rubric.md`, "The D-24 allowlist"): the prose is folded (NFKC, format
-characters removed, NFD with combining marks removed, Markdown emphasis and code markers read as
-spaces), canonical names and letter-bearing opponent tags consume their spans, and what remains may
-hold only ASCII letters, whitespace and the listed punctuation. A digit of any script, a percent
-sign, a letter of another script (Japanese, Cyrillic look-alikes), an emoji or a symbol withholds
-the section; the word lists (number, record, quantifier and roman-numeral forms, tier synonyms and
-strength adjectives, and the number and tier words of the app's other locales) catch figures and
-grades spelled in allowed letters. This retires the limits recorded here before: Markdown emphasis,
-invisible characters, compatibility or look-alike letterforms, exact number words outside the list
-("once", "a pair", "both", "undefeated", "III-II"), exact tier synonyms ("mid", "top") and non-English
-prose in another script all used to ship. The VAL-03 judge (R5-WR-02) no longer shares the
-validator's vocabulary: it parses its charset from the rubric text, folds with NFKD, parses number
-words, stems tier words, and a metamorphic suite requires every R5 phrasing to be convicted by the
-judge and withheld by the validator under each meaning-preserving Unicode or Markdown transform.
+ALLOWLIST (`records/RPT-08-rubric.md`, "The D-24 allowlist"), and since code review iteration 6
+(R6-CR-01..04) it reads EXACTLY the text that is delivered. Iteration 5 folded the prose first and
+ran the allowlist on the folded copy, so a roman-numeral character (folded into ASCII letters), a
+bidi override or tag character (deleted, while the browser still applied it) and a Markdown marker
+inside a word (read as a space, while the `.md` renderer re-joined the word) reached the user as a
+figure the check never saw. Now a Markdown marker anywhere withholds the section; only a licensed
+canonical name or a licensed opponent tag consumes its exact span; and every other character must
+be an ASCII letter, the space, the line feed or a listed punctuation mark. The word rules then read
+what is left: the number, record, quantifier, all-or-nothing, even-record, margin and multiple
+words and phrases; tier stems with their suffixes; roman numerals in any case; a lone "I" or "V"
+in a pair; letters spelled out one by one; glued or stretched listed words; and a count word after
+a digit- or numeral-bearing name or tag.
 
-What remains: commentary is English-only, so non-English prose that folds to plain ASCII letters
-and carries none of the listed words is not recognised (the prompts ask for English, plain text);
-a phrasing with no figure and no listed word ships, including vague or degenerate forms ("every
-set", "dead even", "up a set", "your last set", "very confident", "hiiigh", "H-I-G-H"); and a
-fighter or stage mention outside the canonical name table, or a tag outside the job's claims, is not
-recognised as an entity. The price is stated too: true commentary that restates a figure, and the
-everyday sense of a listed word ("keep your shield high", "once he is offstage", "make sure", "the
-top platform", "most of his kills"), is withheld as well, and every mention of an opponent whose
-tag itself reads as a figure or a grade ("High", "Twice") withholds the section (R5-IN-03, decided
-fail-closed). "Zero unsupported factual claims" is a statement about CLAIMS and about prose naming an
-unlicensed entity, a figure or a confidence grade.
+**The judge is independent in IMPLEMENTATION, not in its choice of rules (R6-WR-04).** The VAL-03
+judge (`judgeDeliveredProse`) parses its charset AND its word lists from the rubric's text ("The
+D-24 word lists"), reads the delivered text without folding, and implements every rule with its
+own code: its own tokenizer, number-word parser, roman-numeral parser (a token is a numeral when it
+round-trips through a canonical roman spelling), tier-suffix stripping and segmenter. It therefore
+catches a rule the validator IMPLEMENTS wrongly, but it cannot catch a rule the rubric does not
+state: both sides implement the same rubric. The metamorphic suite requires every R5 and R6
+phrasing, and every sentence under each transform that changes the delivered text (Markdown
+markers, format characters, combining marks, fullwidth and mathematical letterforms, ligatures,
+bidi overrides and isolates, tag characters, roman-numeral characters, intraword emphasis and
+letter separation), to be withheld by the validator AND convicted by the judge; and a test runs
+every word and phrase the rubric lists through both.
+
+What remains: commentary is English-only, so non-English prose in plain ASCII letters that carries
+none of the listed words is not recognised (the prompts ask for English, plain text); a phrasing
+with no figure and no listed word ships, including vague grades outside the lists ("mediocre",
+"great", "so-so", "lopsided", "at the bottom", "very confident" — review R6-IN-01, an accepted
+class); and a fighter or stage mention outside the canonical name table, or a tag outside the job's
+claims, is not recognised as an entity. The price is stated too: true commentary that restates a
+figure, the everyday sense of a listed word ("keep your shield high", "once he is offstage", "make
+sure", "the top platform", "most of his kills", "always shield", "never chase", "only commit",
+"even so", "double jump", "a perfect shield", "you and I", a lone letter used as a label), and any
+accent, invisible character or Markdown marker outside a licensed name, is withheld as well; and
+every mention of an opponent whose tag itself reads as a figure or a grade ("High", "Twice") withholds
+the section (R5-IN-03, decided fail-closed). "Zero unsupported factual claims" is a statement about
+CLAIMS and about prose naming an unlicensed entity, a figure or a confidence grade.
 
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are
 recorded in the owner's terms; this map is where their proofs are named. Neither stands in for the

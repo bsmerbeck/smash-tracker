@@ -197,21 +197,23 @@ export function judgeUnsupported(
 const UNKNOWN_BUCKET_NAMING = /\bunknown\s+(?:stage|character)s?\b/iu;
 
 /**
- * Code review R5-WR-02 (iteration 5): the judge's D-24 check is its OWN
- * decision procedure, built from the rubric's text rather than from the
- * validator's lists, so a word or a character the validator forgets shows up
- * here as a VAL-03 conviction instead of agreeing with itself:
+ * Code review R5-WR-02 (iteration 5) and R6-WR-04 (iteration 6): the judge's
+ * D-24 check is its OWN decision procedure, built from the rubric's TEXT
+ * rather than from the validator's code, so a rule the validator implements
+ * wrongly shows up here as a VAL-03 conviction instead of agreeing with
+ * itself. It is independent in IMPLEMENTATION, not in its choice of rules:
+ * both implement the rules `records/RPT-08-rubric.md` states.
  *
- * - its CHARSET is parsed at load from `records/RPT-08-rubric.md` ("The
- *   D-24 allowlist", step 3), never copied from `validateReport.ts`;
- * - its fold is NFKD with every default-ignorable code point and every mark
- *   removed (the validator uses NFKC, Cf and NFD);
- * - it TOKENISES the residual and classifies each token: a number word is
- *   PARSED (units, teens, tens and scale words, with ordinals derived by
- *   suffix: "-th", "-ieth", and the irregular first/second/third/fifth/
- *   eighth/ninth/twelfth), a tier word is reduced to its stem (a
- *   comparative, superlative or adverb suffix removed) before lookup, and a
- *   roman numeral is any token of two or more of I, V and X.
+ * - its CHARSET and its WORD LISTS are parsed at load from the rubric ("The
+ *   D-24 allowlist" and "The D-24 word lists"), never copied from
+ *   `validateReport.ts`;
+ * - it reads the delivered text as is (R6-WR-04): no fold, so a character
+ *   the renderer keeps (a roman-numeral character, a bidi override, a tag
+ *   character, a Markdown marker inside a word) is judged, not erased;
+ * - it has its own tokenizer, its own number-word parser (units, teens, tens
+ *   and scale words, with ordinals derived by suffix), its own roman-numeral
+ *   parser (a token is a numeral when it round-trips through a canonical
+ *   roman spelling), its own tier-suffix stripping and its own segmenter.
  */
 const RUBRIC_TEXT = readFileSync(
   fileURLToPath(new URL('./records/RPT-08-rubric.md', import.meta.url)),
@@ -286,18 +288,17 @@ function expandRubricPhrase(phrase: string): string[] {
   return sequences.map((sequence) => sequence.join(' '));
 }
 
-/** The judge's fold: NFKD, then default-ignorable code points and marks removed, then Markdown emphasis read as spaces. */
-function judgeFold(text: string): string {
-  return text
-    .normalize('NFKD')
-    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
-    .replace(/\p{M}/gu, '')
-    .replace(/[_*~`]/g, ' ');
+for (const [key, list] of Object.entries(JUDGE_RUBRIC_LISTS)) {
+  if (list.length === 0) {
+    throw new Error(`RPT-08-rubric.md no longer states the D-24 word list ${key}`);
+  }
 }
 
-/** True when `ch` is outside the rubric's allowlist: not an ASCII letter, not whitespace, not a listed mark. */
+const JUDGE_MARKDOWN_MARKERS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.markdownMarkers);
+
+/** True when `ch` is outside the rubric's allowlist: not an ASCII letter, not the space or the line feed, not a listed mark. */
 function outsideJudgeCharset(ch: string): boolean {
-  return !/^[A-Za-z]$/.test(ch) && !/^[ \t\r\n]$/.test(ch) && !JUDGE_ALLOWED_PUNCTUATION.has(ch);
+  return !/^[A-Za-z]$/.test(ch) && ch !== ' ' && ch !== '\n' && !JUDGE_ALLOWED_PUNCTUATION.has(ch);
 }
 
 const JUDGE_UNITS = [
@@ -344,7 +345,7 @@ function isCardinalWord(token: string): boolean {
   return token.endsWith('s') && JUDGE_SCALES.includes(token.slice(0, -1));
 }
 
-/** An ordinal (or a plural ordinal fraction such as "thirds"): irregular, "-ieth" from a ten, or "-th" on a cardinal. */
+/** An ordinal (or a plural ordinal such as "thirds" or "seconds"): irregular, "-ieth" from a ten, or "-th" on a cardinal. */
 function isOrdinalWord(token: string): boolean {
   const singular = token.endsWith('s') ? token.slice(0, -1) : token;
   for (const candidate of new Set([token, singular])) {
@@ -361,141 +362,268 @@ function isOrdinalWord(token: string): boolean {
   return false;
 }
 
-/**
- * The rubric's other figure categories (R4): fractions, collective and
- * multiplicative counts, record words stating a zero side of a W-L record,
- * percentage words and vague quantifiers — and the number words of the
- * app's other locales, one table per locale.
- */
-const JUDGE_FIGURE_LEXICON: ReadonlySet<string> = new Set([
-  'half',
-  'halves',
-  'quarter',
-  'quarters',
-  'once',
-  'twice',
-  'thrice',
-  'single',
-  'pair',
-  'pairs',
-  'couple',
-  'duo',
-  'trio',
-  'both',
-  'none',
-  'nil',
-  'nought',
-  'naught',
-  'undefeated',
-  'unbeaten',
-  'winless',
-  'swept',
-  'sweep',
-  'sweeps',
-  'flawless',
-  'percentage',
-  'pct',
-  'percentile',
-  'most',
-  'several',
-  'few',
-  'fewer',
-  'fewest',
-  'many',
-  'majority',
-  'minority',
-]);
+const JUDGE_FIGURE_WORDS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.figureWords);
+const JUDGE_TIER_STEM_SET: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.tierStems);
+const JUDGE_GLUE_WORDS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.glueWords);
+const JUDGE_GLUE_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.glueExempt);
+const JUDGE_ROMAN_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.romanExempt);
+const JUDGE_ROMAN_PAIR_WORDS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.romanPairWords);
+const JUDGE_SPELLED_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.spelledExempt);
+const JUDGE_FIGURE_PHRASES: readonly (readonly string[])[] = JUDGE_RUBRIC_LISTS.figurePhrases
+  .flatMap(expandRubricPhrase)
+  .map((phrase) => phrase.split(' '));
+const JUDGE_COUNT_SEQUENCES: readonly (readonly string[])[] = [
+  ...JUDGE_RUBRIC_LISTS.countWords.map((word) => [word]),
+  ...JUDGE_RUBRIC_LISTS.countPhrases.map((phrase) => phrase.split(/\s+/)),
+];
 
-const JUDGE_LOCALE_NUMBER_WORDS: Readonly<Record<string, readonly string[]>> = {
-  es: ['uno', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'],
-  fr: ['une', 'deux', 'trois', 'quatre', 'cinq', 'huit', 'neuf', 'dix'],
-  de: ['eins', 'zwei', 'drei', 'vier', 'funf', 'sechs', 'sieben', 'acht', 'neun', 'zehn'],
-  pt: ['dois', 'duas', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez'],
-};
+/** A figure word: the rubric's list, or a number word this judge parses itself. */
+function isFigureWord(token: string): boolean {
+  return JUDGE_FIGURE_WORDS.has(token) || isCardinalWord(token) || isOrdinalWord(token);
+}
 
-/** The rubric's tier and strength vocabulary (R5), each word a STEM: suffixed forms reduce to it. */
-const JUDGE_TIER_STEMS: ReadonlySet<string> = new Set([
-  'low',
-  'medium',
-  'high',
-  'moderate',
-  'strong',
-  'weak',
-  'mid',
-  'middling',
-  'hi',
-  'lo',
-  'top',
-  'max',
-  'min',
-  'poor',
-  'limited',
-  'elevated',
-  'solid',
-  'reliable',
-  'shaky',
-  'certain',
-  'sure',
-  'iffy',
-  // The app's other locales.
-  'alta',
-  'alto',
-  'baja',
-  'bajo',
-  'haute',
-  'basse',
-  'elevee',
-  'faible',
-  'moyenne',
-  'hoch',
-  'hohe',
-  'niedrig',
-  'mittel',
-  'schwach',
-  'baixa',
-  'baixo',
-]);
-
-/** True when `token` (lower case) is a tier stem, or a stem with a comparative, superlative or adverb suffix. */
-function isTierToken(token: string): boolean {
-  if (JUDGE_TIER_STEMS.has(token)) {
+/** A tier word: a rubric stem, or a stem carrying one of the rubric's suffixes (with the e-final, y-final and "-ble" spellings), found by stripping the suffix back off. */
+function isTierWord(token: string): boolean {
+  if (JUDGE_TIER_STEM_SET.has(token)) {
     return true;
   }
-  for (const suffix of ['est', 'er', 'ly']) {
-    if (token.endsWith(suffix) && JUDGE_TIER_STEMS.has(token.slice(0, -suffix.length))) {
+  for (const suffix of JUDGE_RUBRIC_LISTS.tierSuffixes) {
+    if (token.endsWith(suffix) && JUDGE_TIER_STEM_SET.has(token.slice(0, -suffix.length))) {
+      return true;
+    }
+  }
+  for (const [ending, restore] of [
+    ['r', 'e'],
+    ['st', 'e'],
+    ['ier', 'y'],
+    ['iest', 'y'],
+    ['ily', 'y'],
+    ['y', 'e'],
+  ] as const) {
+    if (token.endsWith(ending)) {
+      const stem = token.slice(0, -ending.length) + restore;
+      if (JUDGE_TIER_STEM_SET.has(stem) && (ending !== 'y' || stem.endsWith('le'))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+const ROMAN_VALUES: Readonly<Record<string, number>> = {
+  i: 1,
+  v: 5,
+  x: 10,
+  l: 50,
+  c: 100,
+  d: 500,
+  m: 1000,
+};
+
+/** The canonical roman spelling of `value` (1..3999), built digit by digit. */
+function toRoman(value: number): string {
+  const table: ReadonlyArray<readonly [number, string]> = [
+    [1000, 'm'],
+    [900, 'cm'],
+    [500, 'd'],
+    [400, 'cd'],
+    [100, 'c'],
+    [90, 'xc'],
+    [50, 'l'],
+    [40, 'xl'],
+    [10, 'x'],
+    [9, 'ix'],
+    [5, 'v'],
+    [4, 'iv'],
+    [1, 'i'],
+  ];
+  let rest = value;
+  let out = '';
+  for (const [unit, letters] of table) {
+    while (rest >= unit) {
+      out += letters;
+      rest -= unit;
+    }
+  }
+  return out;
+}
+
+/** The value of `token` read as a roman numeral, or null when it is not a well-formed one (it must round-trip to the same canonical spelling). */
+function romanValue(token: string): number | null {
+  const lower = token.toLowerCase();
+  if (lower.length === 0 || [...lower].some((ch) => !(ch in ROMAN_VALUES))) {
+    return null;
+  }
+  let total = 0;
+  for (let at = 0; at < lower.length; at += 1) {
+    const here = ROMAN_VALUES[lower[at]!]!;
+    const next = at + 1 < lower.length ? ROMAN_VALUES[lower[at + 1]!]! : 0;
+    total += here < next ? -here : here;
+  }
+  return total > 0 && total < 4000 && toRoman(total) === lower ? total : null;
+}
+
+/** A roman numeral of value two or more that is not an exempt word. */
+function isRomanFigure(token: string): boolean {
+  const value = romanValue(token);
+  return value !== null && value >= 2 && !JUDGE_ROMAN_EXEMPT.has(token.toLowerCase());
+}
+
+/** Whether `token` splits into two or more listed or glue words with a figure or tier word first or last (memoised recursion over suffixes). */
+function isGlued(token: string): boolean {
+  if (
+    token.length < 4 ||
+    JUDGE_GLUE_EXEMPT.has(token) ||
+    isFigureWord(token) ||
+    isTierWord(token)
+  ) {
+    return false;
+  }
+  const listed = (piece: string): boolean => isFigureWord(piece) || isTierWord(piece);
+  const memo = new Map<number, Array<{ lastListed: boolean; pieces: number }>>();
+  const tails = (from: number): Array<{ lastListed: boolean; pieces: number }> => {
+    if (from === token.length) {
+      return [{ lastListed: false, pieces: 0 }];
+    }
+    const cached = memo.get(from);
+    if (cached) {
+      return cached;
+    }
+    const out: Array<{ lastListed: boolean; pieces: number }> = [];
+    for (let to = from + 1; to <= token.length; to += 1) {
+      const piece = token.slice(from, to);
+      const pieceListed = listed(piece);
+      if (!pieceListed && !JUDGE_GLUE_WORDS.has(piece)) {
+        continue;
+      }
+      for (const tail of tails(to)) {
+        out.push({
+          lastListed: tail.pieces === 0 ? pieceListed : tail.lastListed,
+          pieces: tail.pieces + 1,
+        });
+      }
+    }
+    memo.set(from, out.slice(0, 16));
+    return memo.get(from)!;
+  };
+  for (let to = 1; to < token.length; to += 1) {
+    const first = token.slice(0, to);
+    const firstListed = listed(first);
+    if (!firstListed && !JUDGE_GLUE_WORDS.has(first)) {
+      continue;
+    }
+    if (tails(to).some((tail) => tail.pieces >= 1 && (firstListed || tail.lastListed))) {
       return true;
     }
   }
   return false;
 }
 
-/** The judge's figure test on already-folded text: R4 when it finds a figure. */
-function judgeFindsFigure(text: string): boolean {
-  if (/\p{N}/u.test(text)) {
-    return true;
-  }
-  // ASCII roman numerals: a token of two or more of I/V/X, or a separated pair of them.
-  if (
-    /(?<![A-Za-z])[IVX]{2,}(?![A-Za-z])|(?<![A-Za-z])[IVX]+\s*[-–—:/]\s*[IVX]+(?![A-Za-z])/.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-  if (/\bperfect\s+records?\b/i.test(text)) {
-    return true;
-  }
-  const localeWords = Object.values(JUDGE_LOCALE_NUMBER_WORDS).flat();
-  for (const raw of text.split(/[^A-Za-z]+/)) {
-    const token = raw.toLowerCase();
-    if (token.length === 0) {
+interface JudgeToken {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** The judge's own tokenizer: maximal ASCII letter runs, marking the tail of a contraction ("m" in "I'm") so it is not read as a word. */
+function judgeTokens(text: string): Array<JudgeToken & { contractionTail: boolean }> {
+  const tokens: Array<JudgeToken & { contractionTail: boolean }> = [];
+  let at = 0;
+  while (at < text.length) {
+    if (!/[A-Za-z]/.test(text[at]!)) {
+      at += 1;
       continue;
     }
+    const start = at;
+    while (at < text.length && /[A-Za-z]/.test(text[at]!)) {
+      at += 1;
+    }
+    const before = text.slice(Math.max(0, start - 2), start);
+    tokens.push({
+      text: text.slice(start, at),
+      start,
+      end: at,
+      contractionTail: /^[A-Za-z]['’]$/.test(before),
+    });
+  }
+  return tokens;
+}
+
+const JUDGE_LETTER_SEPARATORS = /^[\s.,;:!?()[\]"“”‘\-–—/]+$/;
+
+/** R6-CR-04, the judge's reading: two or more single letters joined only by separators, or chained by apostrophes. */
+function judgeFindsSpelledLetters(text: string): boolean {
+  const tokens = judgeTokens(text);
+  const isSingle = (index: number): boolean => {
+    const token = tokens[index]!;
+    if (token.text.length !== 1 || token.contractionTail) {
+      return false;
+    }
+    const after = text.slice(token.end, token.end + 2);
+    return !/^['’][A-Za-z]$/.test(after);
+  };
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    if (!isSingle(index)) {
+      continue;
+    }
+    let last = index;
+    while (
+      last + 1 < tokens.length &&
+      isSingle(last + 1) &&
+      JUDGE_LETTER_SEPARATORS.test(text.slice(tokens[last]!.end, tokens[last + 1]!.start))
+    ) {
+      last += 1;
+    }
+    if (last > index) {
+      const run = text.slice(tokens[index]!.start, tokens[last]!.end).toLowerCase();
+      if (!JUDGE_SPELLED_EXEMPT.has(run)) {
+        return true;
+      }
+      index = last;
+    }
+  }
+  // Apostrophe chains of single letters ("t'w'o"), other than "I'm" and "I'd".
+  for (const match of text.matchAll(/(?:^|[^A-Za-z'’])((?:[A-Za-z]['’])+[A-Za-z])(?![A-Za-z])/g)) {
+    const chain = match[1]!.toLowerCase().replace(/’/g, "'");
+    if (chain !== "i'm" && chain !== "i'd") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** R6-CR-01, the judge's reading: a lone "I" or "V" beside a rubric pair word, or beside a hyphen or en dash ("I-frame" excepted). */
+function judgeFindsLoneNumeralLetter(text: string): boolean {
+  const tokens = judgeTokens(text);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
     if (
-      isCardinalWord(token) ||
-      isOrdinalWord(token) ||
-      JUDGE_FIGURE_LEXICON.has(token) ||
-      localeWords.includes(token)
+      !/^[IiVv]$/.test(token.text) ||
+      token.contractionTail ||
+      /^['’]/.test(text.slice(token.end))
+    ) {
+      continue;
+    }
+    const previous = tokens[index - 1];
+    const next = tokens[index + 1];
+    const gapBefore = previous ? text.slice(previous.end, token.start) : '';
+    const gapAfter = next ? text.slice(token.end, next.start) : '';
+    if (
+      previous &&
+      /^\s+$/.test(gapBefore) &&
+      JUDGE_ROMAN_PAIR_WORDS.has(previous.text.toLowerCase())
+    ) {
+      return true;
+    }
+    if (next && /^\s+$/.test(gapAfter) && JUDGE_ROMAN_PAIR_WORDS.has(next.text.toLowerCase())) {
+      return true;
+    }
+    if (/[-–]\s*$/.test(text.slice(0, token.start))) {
+      return true;
+    }
+    if (
+      /^\s*[-–]/.test(text.slice(token.end)) &&
+      !/^\s*[-–]\s*frames?(?![A-Za-z])/i.test(text.slice(token.end))
     ) {
       return true;
     }
@@ -503,49 +631,142 @@ function judgeFindsFigure(text: string): boolean {
   return false;
 }
 
-/** The judge's grade test on already-folded text: R5 when it finds a tier word. */
-function judgeFindsTier(text: string): boolean {
-  return text.split(/[^A-Za-z]+/).some((raw) => isTierToken(raw.toLowerCase()));
-}
-
-/** The rubric's count nouns: a digit- or numeral-bearing name directly followed by one reads as a count. */
-const JUDGE_COUNT_NOUN =
-  /^\s*(?:win|wins|loss|losses|times|set|sets|game|games|stock|stocks)(?![A-Za-z])/i;
-
-/** Removes every occurrence of `name` from `text`, reporting whether a digit- or numeral-bearing name was read as a count. */
-function removeName(text: string, name: string): { text: string; countRead: boolean } {
-  const numeric = /[0-9]|(?<![A-Za-z])[IVX]+(?![A-Za-z])/.test(name);
-  let out = '';
-  let countRead = false;
-  let from = 0;
-  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, from)) {
-    out += `${text.slice(from, at)} `;
-    from = at + name.length;
-    if (numeric && JUDGE_COUNT_NOUN.test(text.slice(from))) {
-      countRead = true;
+/** The rubric's phrases, matched as consecutive words separated only by whitespace. */
+function judgeFindsFigurePhrase(text: string): boolean {
+  for (const chunk of text.split(/[^A-Za-z\s]+/)) {
+    const words = chunk
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word.length > 0);
+    for (let at = 0; at < words.length; at += 1) {
+      if (
+        JUDGE_FIGURE_PHRASES.some((phrase) =>
+          phrase.every((word, offset) => words[at + offset] === word),
+        )
+      ) {
+        return true;
+      }
     }
   }
-  return { text: out + text.slice(from), countRead };
+  return false;
 }
 
-/** The rubric's R5-IN-03 rule: a tag reads as a figure or a grade when it holds a digit pair, or when its letter words do. */
+/** R6-WR-02: a token with every run of three or more of one letter collapsed to one letter, and to two. */
+function judgeStretchedReadings(token: string): string[] {
+  const runs: string[] = [];
+  for (const ch of token) {
+    if (runs.length > 0 && runs[runs.length - 1]![0] === ch) {
+      runs[runs.length - 1] += ch;
+    } else {
+      runs.push(ch);
+    }
+  }
+  if (!runs.some((run) => run.length >= 3)) {
+    return [];
+  }
+  const collapse = (keep: number): string =>
+    runs.map((run) => (run.length >= 3 ? run.slice(0, keep) : run)).join('');
+  return [collapse(1), collapse(2)];
+}
+
+/** The judge's figure test on text whose charset has already passed: R4 when it finds a figure. */
+function judgeFindsFigure(text: string): boolean {
+  if (/[0-9]/.test(text) || judgeFindsFigurePhrase(text)) {
+    return true;
+  }
+  if (judgeFindsSpelledLetters(text) || judgeFindsLoneNumeralLetter(text)) {
+    return true;
+  }
+  for (const token of judgeTokens(text)) {
+    if (token.contractionTail) {
+      continue;
+    }
+    for (const reading of [token.text, ...judgeStretchedReadings(token.text)]) {
+      const lower = reading.toLowerCase();
+      if (isFigureWord(lower) || isRomanFigure(reading) || isGlued(lower)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** The judge's grade test: R5 when a token (or a stretched reading of it) is a tier word. */
+function judgeFindsTier(text: string): boolean {
+  return judgeTokens(text).some(
+    (token) =>
+      !token.contractionTail &&
+      [token.text, ...judgeStretchedReadings(token.text)].some((reading) =>
+        isTierWord(reading.toLowerCase()),
+      ),
+  );
+}
+
+/** True when a name or tag carries a digit or a standalone upper-case roman numeral. */
+function judgeNumericName(name: string): boolean {
+  return /[0-9]/.test(name) || judgeTokens(name).some((token) => /^[IVXLCDM]+$/.test(token.text));
+}
+
+/** True when `after` opens with one of the rubric's count words or count phrases. */
+function opensWithCount(after: string): boolean {
+  const words = after
+    .trimStart()
+    .split(/[^A-Za-z]+/)
+    .map((word) => word.toLowerCase());
+  return JUDGE_COUNT_SEQUENCES.some((sequence) =>
+    sequence.every((word, offset) => words[offset] === word),
+  );
+}
+
+/** Removes every token-bounded occurrence of `name` (as written, composed or decomposed), reporting whether a numeric name was read as a count. */
+function removeName(text: string, name: string): { text: string; countRead: boolean } {
+  const numeric = judgeNumericName(name);
+  let out = text;
+  let countRead = false;
+  for (const spelling of new Set([name, name.normalize('NFC'), name.normalize('NFD')])) {
+    let rebuilt = '';
+    let from = 0;
+    for (let at = out.indexOf(spelling); at !== -1; at = out.indexOf(spelling, at + 1)) {
+      const before = at > 0 ? out[at - 1]! : '';
+      const after = out[at + spelling.length] ?? '';
+      if (/[\p{L}\p{N}_]/u.test(before) || /[\p{L}\p{N}_]/u.test(after) || at < from) {
+        continue;
+      }
+      rebuilt += `${out.slice(from, at)} entity`;
+      from = at + spelling.length;
+      if (numeric && opensWithCount(out.slice(from))) {
+        countRead = true;
+      }
+    }
+    out = rebuilt + out.slice(from);
+  }
+  return { text: out, countRead };
+}
+
+/** The rubric's R5-IN-03 rule: a tag reads as a figure or a grade when it holds a digit pair or a numeral glyph, or when its letters do. */
 function tagReadsAsFigure(tag: string): boolean {
+  const letters = tag.replace(/[^A-Za-z'’\s-]/g, ' ');
   return (
-    /[0-9]+\s*[-–—:/]\s*[0-9]+/.test(tag) ||
-    judgeFindsFigure(tag.replace(/[0-9]/g, ' ')) ||
-    judgeFindsTier(tag)
+    /[0-9]+\s*(?:[-–—:/]|to|and)\s*[0-9]+/i.test(tag) ||
+    tag.includes('%') ||
+    /[^\P{N}0-9]|[\p{Cf}\p{Cc}]/u.test(tag) ||
+    judgeFindsFigure(letters) ||
+    judgeFindsTier(letters)
   );
 }
 
 /**
  * Re-judges DELIVERED prose (a section the validator did not strip) from the
- * text alone:
+ * text alone, exactly as the user is shown it (code review R6-WR-04: no fold):
  * - R7: it must not name the unknown stage/character bucket as if it were a
  *   real, pickable entity.
- * - D-24 (owner decision, 2026-09-28): commentary is qualitative only. After
- *   the fold and the name removal, a character outside the rubric's charset
- *   or a figure (a digit, a parsed number word, a listed figure word, a
- *   roman numeral) convicts under R4, and a tier word convicts under R5.
+ * - D-24 (owner decision, 2026-09-28): commentary is qualitative only. A
+ *   Markdown marker anywhere convicts under R4. After the names and tags are
+ *   removed, a character outside the rubric's charset or a figure (a parsed
+ *   number word, a listed figure word or phrase, a roman numeral, a lone "I"
+ *   or "V" in a pair, letters spelled out, a glued or stretched listed word,
+ *   or a count word after a numeric name) convicts under R4, and a tier word
+ *   convicts under R5.
  *
  * `names` are the canonical fighter/stage names the prose may legitimately
  * contain, and `tags` the job's opponent tags. Only a name with at least one
@@ -558,16 +779,17 @@ export function judgeDeliveredProse(
   names: readonly string[] = [],
   tags: readonly string[] = [],
 ): RubricRuleId | null {
-  const nfc = prose.normalize('NFC');
-  const folded = judgeFold(prose);
-  if (UNKNOWN_BUCKET_NAMING.test(nfc) || UNKNOWN_BUCKET_NAMING.test(folded)) {
+  if (UNKNOWN_BUCKET_NAMING.test(prose) || UNKNOWN_BUCKET_NAMING.test(prose.normalize('NFC'))) {
     return 'R7';
   }
-  let residual = folded;
+  if ([...prose].some((ch) => JUDGE_MARKDOWN_MARKERS.has(ch))) {
+    return 'R4';
+  }
+  let residual = prose;
   let countRead = false;
   const removable = [
-    ...names.map((name) => judgeFold(name)),
-    ...tags.map((tag) => judgeFold(tag).trim()).filter((tag) => !tagReadsAsFigure(tag)),
+    ...names,
+    ...tags.map((tag) => tag.trim()).filter((tag) => !tagReadsAsFigure(tag)),
   ].filter((name) => /\p{L}/u.test(name));
   for (const name of [...removable].sort((a, b) => b.length - a.length)) {
     const removed = removeName(residual, name);

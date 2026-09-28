@@ -455,93 +455,370 @@ export const UNKNOWN_BUCKET_NAMED_PATTERN = /\bunknown\s+(?:stage|character)s?\b
  * refunded — D-22), true or false. The model prompt states the rule up
  * front, so most commentary is written to survive it.
  *
- * Code review iteration 5 (R5-CR-01..04): the check is an ALLOWLIST, not a
- * denylist. The prose is folded first (`foldProse`), names and known tags
- * consume their spans, and what remains may hold only ASCII letters,
- * whitespace and `PROSE_ALLOWED_PUNCTUATION` — any other character (a digit
- * of any script, a percent sign, a CJK or Cyrillic letter, an emoji, a
- * symbol) withholds the section. The word lists below are defence in depth
- * for figures and grades spelled in allowed letters. Commentary is
- * English-only: non-English prose that folds to ASCII is caught only by the
- * non-English number and tier words listed here.
- *
- * Canonical fighter/stage names and known opponent tags are consumed FIRST
- * (see `lintSectionProse`), so the digits, symbols and words inside a name
- * ("Pokémon Stadium 2", "Sparg0", "Mr. Game & Watch", "Zero Suit Samus") are
- * never read as figures.
+ * Code review iteration 6 (R6-CR-01..04): the check reads EXACTLY the text
+ * that is delivered. Iteration 5 folded the prose (NFKC, format characters
+ * and marks removed, Markdown markers read as spaces) and ran its allowlist
+ * on that copy, while the card and the `.md` export deliver the original, so
+ * a roman-numeral character, a bidi override or a Markdown marker inside a
+ * word reached the user as a figure the check never saw. Now nothing is
+ * folded: a licensed canonical name or a licensed opponent tag consumes its
+ * exact span (so the digits, symbols and accented letters INSIDE it —
+ * "Pokémon Stadium 2", "Mr. Game & Watch", "Sparg0" — are not figures), and
+ * every other character must be on the allowlist. The word rules then run
+ * on what is left, which is plain ASCII by construction. Commentary is
+ * English-only.
  */
 
 /**
- * The punctuation connective prose may carry besides ASCII letters and
- * whitespace (R5-CR-03 / R5-CR-04). `records/RPT-08-rubric.md` states the
- * same list; the VAL-03 judge builds its own charset from that text.
+ * The characters connective prose may carry outside a licensed name or tag
+ * span: ASCII letters, the space, the line feed, and the punctuation
+ * `records/RPT-08-rubric.md` lists (square brackets since R6-IN-05, because
+ * the prompts permit them). Anything else withholds the section — a digit
+ * of any script, a roman-numeral character, a format, bidi or tag
+ * character, a combining mark, a fullwidth or mathematical letterform, a
+ * letter of another script, a tab, a carriage return, an emoji or a symbol.
+ * The VAL-03 judge parses the same list from the rubric's text.
  */
-const PROSE_DISALLOWED_CHARACTER = /[^A-Za-z \t\r\n.,;:'"!?()\-–—’‘“”/]/;
+const PROSE_DISALLOWED_CHARACTER = /[^A-Za-z \n.,;:'"!?()[\]\-–—’‘“”/]/u;
+
+/**
+ * R6-CR-03: a Markdown emphasis or code marker ANYWHERE in the section, a
+ * licensed tag's own span included, withholds it. The `.md` export writes
+ * the connective verbatim, where `t**w**o` renders as "two".
+ */
+const MARKDOWN_MARKER = /[*_~`]/;
 
 /**
  * A spelled-out figure as a whole word, any casing: English cardinals,
  * ordinals (first to tenth, and the number-word ordinals past tenth),
  * fractions and collective or multiplicative counts ("once", "a pair", "a
- * single", "both", "none", "a trio"), record words that state a zero side of
- * a W-L record ("undefeated", "winless", "swept", "a perfect record"),
- * percentage words, vague quantifiers (R5-IN-02), and the number words of
- * the app's other locales (es, fr, de, pt — R5-CR-03). "twenty-one" matches
- * on "twenty"; "someone" and "often" do not, because a letter on either side
- * ends the match.
+ * single", "both", "none", "a trio", "double", "triple", "a brace"), record
+ * words that state a zero or a whole side of a W-L record ("undefeated",
+ * "winless", "swept", "perfect", "spotless", "a shutout", "never", "always",
+ * "every", "all", "nothing"), even-record words ("even", "tied", "split",
+ * "each"), single-result words ("lone", "only", "sole", "solo"), percentage
+ * words, vague quantifiers (R5-IN-02), and the number words of the app's
+ * other locales (es, fr, de, pt — R5-CR-03). An ordinal may take a plural
+ * "-s" ("thirds", "seconds"), and a cardinal with "-th" is an ordinal, as the
+ * VAL-03 judge's number parser reads them. R6-WR-01 added the
+ * all-or-nothing, even-record, multiple, single-result and zero-side words.
+ * "twenty-one" matches on "twenty"; "someone" and "often" do not, because a
+ * letter on either side ends the match.
  */
-const FIGURE_WORD_PATTERN =
-  /(?<![A-Za-z])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|hundreds?|thousands?|millions?|dozens?|scores?|half|halves|quarters?|thirds|twice|thrice|once|single|pairs?|couple|duo|trio|both|none|nil|nought|naught|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|(?:eleven|twelf|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)tie|hundred|thousand|million)th|undefeated|unbeaten|winless|sweeps?|swept|flawless|perfect\s+records?|percentage|pct|percentile|most|several|few|fewer|fewest|many|majority|minority|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|une|deux|trois|quatre|cinq|huit|neuf|dix|eins|zwei|drei|vier|funf|sechs|sieben|acht|neun|zehn|dois|duas|quatro|sete|oito|nove|dez|mitad|moitie|metade)(?![A-Za-z])/i;
+const FIGURE_WORD_SOURCE =
+  'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|(?:hundred|thousand|million|billion|dozen|score)s?|half|halves|quarters?|twice|thrice|once|single|pairs?|couple|duo|trio|both|none|nil|nought|naught|(?:first|second|third|fifth|eighth|ninth|twelfth|(?:twen|thir|for|fif|six|seven|eigh|nine)tieth|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|hundred|thousand|million|billion|dozen|score)th)s?|undefeated|unbeaten|winless|sweeps?|swept|flawless|percentage|pct|percentile|most|several|few|fewer|fewest|many|majority|minority|every|all|each|never|always|nothing|zilch|zip|nada|tied|even|evenly|split|lone|only|sole|solo|double|triple|treble|brace|perfect|shutout|blank|blanked|spotless|unblemished|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|une|deux|trois|quatre|cinq|huit|neuf|dix|eins|zwei|drei|vier|funf|sechs|sieben|acht|neun|zehn|dois|duas|quatro|sete|oito|nove|dez|mitad|moitie|metade';
 
-/** A W-L pair or a token written in ASCII roman numerals ("III-II", "III and II"), case-sensitive so the pronoun "I" survives. */
-const ROMAN_NUMERAL_PATTERN = /(?<![A-Za-z])(?:[IVX]{2,}|[IVX]+\s*[-–—:/]\s*[IVX]+)(?![A-Za-z])/;
+/** `FIGURE_WORD_SOURCE` as whole words anywhere in a text. */
+const FIGURE_WORD_PATTERN = new RegExp(`(?<![A-Za-z])(?:${FIGURE_WORD_SOURCE})(?![A-Za-z])`, 'i');
 
-/**
- * A confidence-tier word as a whole word, any casing: the shipped tier
- * vocabulary (`low`/`medium`/`high`, the keys of `LICENSED_CONFIDENCE_WORDS`)
- * and the grading words the owner named (`moderate`, `strong`, `weak`), with
- * their comparative, superlative and adverb forms; the exact tier synonyms
- * of R5-CR-02 ("mid", "hi", "lo", "top", "max", "poor", "limited", ...); the
- * strength adjectives of R5-IN-02 ("solid", "reliable", "shaky", "certain",
- * "sure", "iffy"); and the tier words of the app's other locales. Withheld
- * ANYWHERE in a section, Smash sense included ("keep your shield high").
- */
-const TIER_WORD_PATTERN =
-  /(?<![A-Za-z])(?:low|lower|lowest|medium|high|higher|highest|highly|moderate|moderately|strong|stronger|strongest|strongly|weak|weaker|weakest|weakly|mid|middling|hi|lo|top|max|min|poor|limited|elevated|solid|reliable|shaky|certain|sure|iffy|alta|alto|baja|bajo|haute|basse|elevee|faible|moyenne|hoch|hohe|niedrig|mittel|schwach|baixa|baixo)(?![A-Za-z])/i;
+/** `FIGURE_WORD_SOURCE` as one whole token. */
+const FIGURE_TOKEN = new RegExp(`^(?:${FIGURE_WORD_SOURCE})$`, 'i');
 
 /**
- * Code review R5-IN-03: a digit-bearing canonical name ("Pokémon Stadium 2",
- * "PictoChat 2", "75m", "Flat Zone X") read as a count — the name directly
- * followed by a count noun or a joining word ("Pokémon Stadium 2 wins").
+ * R6-WR-01: the multi-word figures — a margin ("up a set", "down a game",
+ * "lead them by a set"), an even or single result ("a win and a loss", "a
+ * coin flip"), a multiple ("a hat trick"), a zero side ("shut you out",
+ * "a clean record", "yet to beat"), and "your last set". Whitespace between
+ * the words may be any run of spaces or line breaks.
  */
-const NAME_COUNT_FOLLOWER = /^\s*(?:wins?|loss(?:es)?|times|sets?|games?|stocks?)(?![A-Za-z])/i;
+const FIGURE_PHRASE_PATTERN =
+  /(?<![A-Za-z])(?:(?:by|up|down)\s+an?\s+(?:set|game|stock|match)|an?\s+(?:win|loss|set|game)\s+and\s+an?\s+(?:win|loss|set|game)|hat\s+trick|coin\s+flip|shut\s+(?:\w+\s+)?out|clean\s+records?|perfect\s+records?|yet\s+to\s+(?:beat|lose|win)|last\s+(?:set|game|match))(?![A-Za-z])/i;
 
 /**
- * The D-24 fold (code review R5-CR-01 / R5-CR-04), applied before any name,
- * tag or word is matched: NFKC (fullwidth, mathematical-alphanumeric and
- * ligature letters fold to ASCII, circled and superscript digits to digits,
- * roman-numeral characters to ASCII letters), then every format character
- * (Cf: soft hyphen, zero-width space and joiner, word joiner) removed, then
- * NFD with every combining mark (Mn/Me) removed, then Markdown emphasis and
- * code markers (`_ * ~ ``) turned into spaces.
+ * A confidence-tier word: a STEM below, alone or with a comparative,
+ * superlative, adverb or "-ish" suffix (R6-WR-01) — "lower", "highest",
+ * "strongly", "lowish", "surely", "shakier", "reliably" — plus "minimal"
+ * and "maximal". The stems are the shipped tier vocabulary
+ * (`low`/`medium`/`high`, the keys of `LICENSED_CONFIDENCE_WORDS`), the
+ * owner's grading words (`moderate`, `strong`, `weak`), the exact tier
+ * synonyms of R5-CR-02, the strength adjectives of R5-IN-02 and the tier
+ * words of the app's other locales. Withheld ANYWHERE in a section, Smash
+ * sense included ("keep your shield high").
  */
-function foldProse(text: string): string {
-  return text
-    .normalize('NFKC')
-    .replace(/\p{Cf}/gu, '')
-    .normalize('NFD')
-    .replace(/[\p{Mn}\p{Me}]/gu, '')
-    .replace(/[_*~`]/g, ' ');
+const TIER_STEMS: readonly string[] = [
+  'low',
+  'medium',
+  'high',
+  'moderate',
+  'strong',
+  'weak',
+  'mid',
+  'middling',
+  'hi',
+  'lo',
+  'top',
+  'max',
+  'min',
+  'poor',
+  'limited',
+  'elevated',
+  'solid',
+  'reliable',
+  'shaky',
+  'certain',
+  'sure',
+  'iffy',
+  'minimal',
+  'maximal',
+  'alta',
+  'alto',
+  'baja',
+  'bajo',
+  'haute',
+  'basse',
+  'elevee',
+  'faible',
+  'moyenne',
+  'hoch',
+  'hohe',
+  'niedrig',
+  'mittel',
+  'schwach',
+  'baixa',
+  'baixo',
+];
+
+/** Every suffixed form of every tier stem: "-er", "-est", "-ly", "-ish", with the e-final ("surer"), y-final ("shakier", "shakily") and "-ble" ("reliably") spellings. */
+const TIER_FORMS: ReadonlySet<string> = new Set(
+  TIER_STEMS.flatMap((stem) => {
+    const forms = [stem, `${stem}er`, `${stem}est`, `${stem}ly`, `${stem}ish`];
+    if (stem.endsWith('e')) {
+      forms.push(`${stem}r`, `${stem}st`);
+    }
+    if (stem.endsWith('y')) {
+      const root = stem.slice(0, -1);
+      forms.push(`${root}ier`, `${root}iest`, `${root}ily`);
+    }
+    if (stem.endsWith('le')) {
+      forms.push(`${stem.slice(0, -1)}y`);
+    }
+    return forms;
+  }),
+);
+
+/** True when `token` (any casing) is a tier word in any of its forms. */
+function isTierToken(token: string): boolean {
+  return TIER_FORMS.has(token.toLowerCase());
 }
 
-/** True when `text` (already folded) carries a D-24 figure or grade in allowed letters. */
-function hasFigureOrTierWord(text: string): boolean {
-  return (
-    /[0-9]/.test(text) ||
-    FIGURE_WORD_PATTERN.test(text) ||
-    TIER_WORD_PATTERN.test(text) ||
-    ROMAN_NUMERAL_PATTERN.test(text)
+/** A whole token that is a well-formed roman numeral (case-insensitive), "I" included. */
+const ROMAN_TOKEN = /^(?=[mdclxvi])m{0,3}(?:c[md]|d?c{0,3})(?:x[cl]|l?x{0,3})(?:i[xv]|v?i{0,3})$/i;
+
+/**
+ * R6-CR-01: English words that happen to spell a roman numeral of value two
+ * or more, and the Smash term "DI". Every other standalone numeral token
+ * ("ii", "iv", "XL", "V", "X") withholds the section; "I" alone is the
+ * pronoun and is never read as a numeral on its own.
+ */
+const ROMAN_NUMERAL_EXEMPT: ReadonlySet<string> = new Set([
+  'mix',
+  'mid',
+  'dim',
+  'civil',
+  'vivid',
+  'did',
+  'mild',
+  'lid',
+  'mill',
+  'ill',
+  'di',
+]);
+
+/** True when `token` reads as a roman numeral of value two or more (never "I", never an exempt word). */
+function isRomanNumeralToken(token: string): boolean {
+  const lower = token.toLowerCase();
+  return lower !== 'i' && ROMAN_TOKEN.test(token) && !ROMAN_NUMERAL_EXEMPT.has(lower);
+}
+
+/**
+ * R6-CR-01: a lone "I" or "V" beside "to", "and" or a hyphen or en dash
+ * reads as one side of a W-L pair ("V to I", "I and I", "I-I"). "I-frame" is
+ * the Smash term, not a pair. The price: "you and I" is withheld too.
+ */
+const LONE_NUMERAL_LETTER_IN_PAIR =
+  /(?<![A-Za-z])(?:to|and)\s+[IiVv](?![A-Za-z'’])|[-–]\s*[IiVv](?![A-Za-z'’])|(?<![A-Za-z]|[A-Za-z]['’])[IiVv]\s+(?:to|and)(?![A-Za-z])|(?<![A-Za-z]|[A-Za-z]['’])[IiVv]\s*[-–](?!\s*frames?(?![A-Za-z]))/;
+
+/**
+ * R6-CR-04: two or more single letters joined by spaces or punctuation
+ * ("t-w-o", "H.I.G.H", "t w o", "T, W, O") spell a word out; the run
+ * withholds the section, whatever it spells. A letter is SINGLE when no
+ * letter touches it and it is not part of a contraction ("I'm", "it's",
+ * "o'clock"). "a" and "I" standing alone are ordinary words, and "e.g." and
+ * "i.e." are exempt.
+ */
+const SPELLED_LETTER_RUN =
+  /(?<![A-Za-z])(?<![A-Za-z]['’])[A-Za-z](?![A-Za-z]|['’][A-Za-z])(?:[\s.,;:!?()[\]"“”‘\-–—/]+(?<![A-Za-z]['’])[A-Za-z](?![A-Za-z]|['’][A-Za-z]))+/g;
+const SPELLED_LETTER_EXEMPT: ReadonlySet<string> = new Set(['e.g', 'i.e']);
+
+/** R6-CR-04: single letters chained by apostrophes ("t'w'o"), other than "I'm" and "I'd". */
+const APOSTROPHE_LETTER_CHAIN = /(?<![A-Za-z'’])[A-Za-z](?:['’][A-Za-z])+(?![A-Za-z])/g;
+const APOSTROPHE_CHAIN_EXEMPT: ReadonlySet<string> = new Set(["i'm", "i'd", 'i’m', 'i’d']);
+
+/**
+ * R6-WR-02: the words a glued token may be made of besides the figure and
+ * tier words — the count, confidence and joining words a figure is glued to
+ * ("twotimes", "highconfidence", "threeandtwo", "twofold", "toptier").
+ */
+const GLUE_WORDS: ReadonlySet<string> = new Set([
+  'and',
+  'to',
+  'time',
+  'times',
+  'set',
+  'sets',
+  'game',
+  'games',
+  'win',
+  'wins',
+  'loss',
+  'losses',
+  'stock',
+  'stocks',
+  'match',
+  'matches',
+  'round',
+  'rounds',
+  'confidence',
+  'confident',
+  'record',
+  'records',
+  'straight',
+  'fold',
+  'tier',
+  'tiers',
+  'percent',
+]);
+
+/** Everyday compounds the glue rule would otherwise read as a glued figure. */
+const GLUE_EXEMPT: ReadonlySet<string> = new Set(['everyone', 'midgame']);
+
+/** True when `token` is a figure or tier word as a whole. */
+function isListedWord(token: string): boolean {
+  return FIGURE_TOKEN.test(token) || isTierToken(token);
+}
+
+/**
+ * R6-WR-02: true when `token` segments into two or more listed or glue
+ * words and its first or last segment is a figure or tier word — a glued
+ * figure ("twotimes", "highconfidence", "threeandtwo"). A plain word that
+ * merely CONTAINS a listed word ("often", "alone", "weight", "tone",
+ * "highlight", "shout") does not segment and is not read.
+ */
+function isGluedFigure(token: string): boolean {
+  const lower = token.toLowerCase();
+  if (lower.length < 4 || GLUE_EXEMPT.has(lower) || isListedWord(lower)) {
+    return false;
+  }
+  // segments[i]: the ways lower.slice(0, i) splits into known words, as
+  // [first segment is listed, last segment is listed, segment count].
+  const reachable: Array<Array<{ firstListed: boolean; lastListed: boolean; count: number }>> =
+    Array.from({ length: lower.length + 1 }, () => []);
+  reachable[0]!.push({ firstListed: false, lastListed: false, count: 0 });
+  for (let end = 1; end <= lower.length; end += 1) {
+    for (let start = 0; start < end; start += 1) {
+      if (reachable[start]!.length === 0) {
+        continue;
+      }
+      const piece = lower.slice(start, end);
+      const listed = isListedWord(piece);
+      if (!listed && !GLUE_WORDS.has(piece)) {
+        continue;
+      }
+      for (const path of reachable[start]!) {
+        reachable[end]!.push({
+          firstListed: path.count === 0 ? listed : path.firstListed,
+          lastListed: listed,
+          count: path.count + 1,
+        });
+      }
+    }
+    // Keep the table small: one path per distinct (first, last, count >= 2) shape.
+    const seen = new Set<string>();
+    reachable[end] = reachable[end]!.filter((path) => {
+      const key = `${path.firstListed}:${path.lastListed}:${Math.min(path.count, 2)}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+  return reachable[lower.length]!.some(
+    (path) => path.count >= 2 && (path.firstListed || path.lastListed),
   );
 }
+
+/** R6-WR-02: `token` with every run of three or more of one letter collapsed to one letter, and to two ("hiiigh" -> "high", "hiigh"). Empty when the token has no such run. */
+function stretchedReadings(token: string): string[] {
+  if (!/([A-Za-z])\1\1/i.test(token)) {
+    return [];
+  }
+  return [token.replace(/([A-Za-z])\1{2,}/gi, '$1'), token.replace(/([A-Za-z])\1{2,}/gi, '$1$1')];
+}
+
+/**
+ * True when `text` — plain ASCII by the time this runs (the allowlist has
+ * already passed) — carries a D-24 figure or grade spelled in letters: a
+ * figure word or phrase, a tier word, a roman numeral, a lone "I" or "V" in
+ * a pair, letters spelled out one by one, or a glued or stretched listed word.
+ */
+function hasFigureOrTierWord(text: string): boolean {
+  if (
+    /[0-9]/.test(text) ||
+    FIGURE_WORD_PATTERN.test(text) ||
+    FIGURE_PHRASE_PATTERN.test(text) ||
+    LONE_NUMERAL_LETTER_IN_PAIR.test(text)
+  ) {
+    return true;
+  }
+  for (const match of text.matchAll(SPELLED_LETTER_RUN)) {
+    if (!SPELLED_LETTER_EXEMPT.has(match[0].toLowerCase())) {
+      return true;
+    }
+  }
+  for (const match of text.matchAll(APOSTROPHE_LETTER_CHAIN)) {
+    if (!APOSTROPHE_CHAIN_EXEMPT.has(match[0].toLowerCase())) {
+      return true;
+    }
+  }
+  // Word by word: a token that follows a letter and an apostrophe is the
+  // tail of a contraction ("I'm", "MkLeo's") and is not a word of its own.
+  for (const match of text.matchAll(/(?<![A-Za-z]['’])(?<![A-Za-z])[A-Za-z]+/g)) {
+    const token = match[0];
+    for (const reading of [token, ...stretchedReadings(token)]) {
+      if (
+        isTierToken(reading) ||
+        FIGURE_TOKEN.test(reading) ||
+        isRomanNumeralToken(reading) ||
+        isGluedFigure(reading)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Code review R5-IN-03 / R6-WR-03: a digit- or numeral-bearing name or tag
+ * ("Pokémon Stadium 2", "PictoChat 2", "75m", "Flat Zone X", "Leo 2",
+ * "Sparg0") read as a count — directly followed by a count word.
+ */
+const NAME_COUNT_FOLLOWER =
+  /^\s*(?:wins?|loss(?:es)?|times?|sets?|games?|stocks?|match(?:es)?|rounds?|victor(?:y|ies)|defeats?|straight|in\s+a\s+row)(?![A-Za-z])/i;
+
+/** True when a name or tag carries a digit or a standalone upper-case roman numeral, so a count word after it reads as a count. */
+function isNumericName(name: string): boolean {
+  return /[0-9]|(?<![A-Za-z])[IVXLCDM]+(?![A-Za-z])/.test(name);
+}
+
+/** The exact spellings a name or tag may be delivered in: as written, composed (NFC) and decomposed (NFD). */
+function spellingsOf(name: string): string[] {
+  return Array.from(new Set([name, name.normalize('NFC'), name.normalize('NFD')]));
+}
+
+/** What a consumed name or tag span becomes in the residual: a plain, unlisted word, so it neither joins nor splits the words around it. */
+const CONSUMED_SPAN_PLACEHOLDER = ' Name';
 
 /** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
 const CONFIDENCE_NOUN = 'confidence';
@@ -555,7 +832,9 @@ interface ProseLintResult {
  * Lints ONE section's connective prose against the claims THAT section
  * licenses (and, for opponent tags, the full `allIssuedClaims` so a tag
  * legitimately known elsewhere in the job can still be recognized-but-
- * unlicensed rather than simply invisible). Never mutates `connective`.
+ * unlicensed rather than simply invisible). Never mutates `connective`, and
+ * never reads a transformed copy of it: every rule below sees the text the
+ * user is shown (R6-CR-01..04).
  */
 function lintSectionProse(
   connective: string,
@@ -566,31 +845,34 @@ function lintSectionProse(
     return { offense: false };
   }
 
-  // Code review R5-CR-01 / R5-CR-04: every rule below reads the FOLDED
-  // prose (`foldProse`), so an invisible character, a compatibility or
-  // accented letterform, or Markdown emphasis cannot hide a word from it.
-  const folded = foldProse(connective);
   if (
-    UNKNOWN_BUCKET_NAMED_PATTERN.test(connective.normalize('NFC')) ||
-    UNKNOWN_BUCKET_NAMED_PATTERN.test(folded)
+    UNKNOWN_BUCKET_NAMED_PATTERN.test(connective) ||
+    UNKNOWN_BUCKET_NAMED_PATTERN.test(connective.normalize('NFC'))
   ) {
     return { offense: true };
   }
 
-  const sentences = splitSentences(folded);
+  // R6-CR-03: a Markdown marker anywhere, a tag's own span included.
+  if (MARKDOWN_MARKER.test(connective)) {
+    return { offense: true };
+  }
+
+  const sentences = splitSentences(connective);
 
   let offense = false;
 
   // --- R4: entity matching (fighter/stage names) ---
   //
-  // Review SH-WR-01: names are scanned LONGEST FIRST and every match
-  // CONSUMES its span, so a shorter canonical name contained in a longer one
+  // Review SH-WR-01: names are scanned LONGEST FIRST and every match claims
+  // its span, so a shorter canonical name contained in a longer one
   // ("Battlefield" in "Small Battlefield", "Link" in "Toon Link", "Pokémon
   // Stadium" in "Pokémon Stadium 2") is never matched a second time on its
-  // own. The consumed spans also exempt the digits, symbols and words INSIDE
-  // a matched name ("Pokémon Stadium 2", "Figure-8 Circuit", "Mr. Game &
-  // Watch", "Zero Suit Samus") from the D-24 rule below — part of a
-  // canonical name is not a figure. Names are folded exactly as the prose is.
+  // own. Only a LICENSED name's span is CONSUMED for the D-24 rule below
+  // (R6-CR-01..04): its digits, symbols and accented letters ("Pokémon
+  // Stadium 2", "Figure-8 Circuit", "Mr. Game & Watch") are part of the
+  // name, not figures. A name is matched as written, composed or decomposed,
+  // never folded, so a look-alike or a numeral glyph in its place is not the
+  // name and is judged character by character.
   const licensedEntityNames = new Set<string>();
   for (const claim of licensedClaims) {
     if (claim.subject.myFighterId !== null) {
@@ -612,143 +894,146 @@ function lintSectionProse(
 
   const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const percentPattern = /%/g;
-  const anotherEntityPatternSource = CANONICAL_ENTITY_NAMES.map((name) =>
-    escapeName(foldProse(name)),
-  ).join('|');
+  const anotherEntityPatternSource = CANONICAL_ENTITY_NAMES.flatMap(spellingsOf)
+    .map(escapeName)
+    .join('|');
 
-  const consumedNameSpans: Array<[number, number]> = [];
-  const overlapsConsumed = (start: number, end: number): boolean =>
-    consumedNameSpans.some(([s, e]) => start < e && end > s);
+  const matchedNameSpans: Array<[number, number]> = [];
+  const consumedSpans: Array<[number, number]> = [];
+  const overlapsMatched = (start: number, end: number): boolean =>
+    matchedNameSpans.some(([s, e]) => start < e && end > s);
+  const countReadAfter = (name: string, end: number): boolean =>
+    isNumericName(name) && NAME_COUNT_FOLLOWER.test(connective.slice(end));
 
   for (const name of CANONICAL_ENTITY_NAMES) {
-    const foldedName = foldProse(name);
-    const nameRe = new RegExp(`(?<![A-Za-z0-9_])${escapeName(foldedName)}(?![A-Za-z0-9_])`, 'g');
-    for (const match of folded.matchAll(nameRe)) {
-      const start = match.index!;
-      const end = start + match[0].length;
-      if (overlapsConsumed(start, end)) {
-        continue;
-      }
-      consumedNameSpans.push([start, end]);
-      // R5-IN-03: a digit- or numeral-bearing name read as a count.
-      if (
-        /[0-9]|(?<![A-Za-z])[IVX]+(?![A-Za-z])/.test(foldedName) &&
-        NAME_COUNT_FOLLOWER.test(folded.slice(end))
-      ) {
-        offense = true;
-      }
-      const isLicensed = licensedEntityNames.has(name);
-      if (isLicensed) {
-        continue;
-      }
-      if (AMBIGUOUS_ENTITY_SET.has(name)) {
-        const sentence = sentenceContaining(sentences, start);
-        const hasDigitSignal = /\d/.test(sentence.text);
-        const hasPercentSignal = percentPattern.test(sentence.text);
-        percentPattern.lastIndex = 0;
-        const hasMarkerSignal = hasTightAdjacentMatch(folded, start, end, markerPattern());
-        const hasAnotherEntitySignal =
-          anotherEntityPatternSource.length > 0 &&
-          hasTightAdjacentMatch(
-            folded,
-            start,
-            end,
-            new RegExp(`(?:${anotherEntityPatternSource})`, 'g'),
-          );
-        if (!hasDigitSignal && !hasPercentSignal && !hasMarkerSignal && !hasAnotherEntitySignal) {
+    const isLicensed = licensedEntityNames.has(name.normalize('NFC'));
+    for (const spelling of spellingsOf(name)) {
+      const nameRe = new RegExp(`(?<![A-Za-z0-9_])${escapeName(spelling)}(?![A-Za-z0-9_])`, 'g');
+      for (const match of connective.matchAll(nameRe)) {
+        const start = match.index!;
+        const end = start + match[0].length;
+        if (overlapsMatched(start, end)) {
           continue;
         }
+        matchedNameSpans.push([start, end]);
+        // R5-IN-03 / R6-WR-03: a digit- or numeral-bearing name read as a count.
+        if (countReadAfter(name, end)) {
+          offense = true;
+        }
+        if (isLicensed) {
+          consumedSpans.push([start, end]);
+          continue;
+        }
+        if (AMBIGUOUS_ENTITY_SET.has(name)) {
+          const sentence = sentenceContaining(sentences, start);
+          const hasDigitSignal = /\d/.test(sentence.text);
+          const hasPercentSignal = percentPattern.test(sentence.text);
+          percentPattern.lastIndex = 0;
+          const hasMarkerSignal = hasTightAdjacentMatch(connective, start, end, markerPattern());
+          const hasAnotherEntitySignal =
+            anotherEntityPatternSource.length > 0 &&
+            hasTightAdjacentMatch(
+              connective,
+              start,
+              end,
+              new RegExp(`(?:${anotherEntityPatternSource})`, 'g'),
+            );
+          if (!hasDigitSignal && !hasPercentSignal && !hasMarkerSignal && !hasAnotherEntitySignal) {
+            continue;
+          }
+        }
+        offense = true;
       }
-      offense = true;
     }
   }
 
-  // --- R4: opponent tags consume their spans (review R2-WR-03) ---
+  // --- R4: opponent tags ---
   //
-  // A known opponent tag is a NAME, like a canonical fighter or stage name:
-  // every token-bounded occurrence (longest tag first) consumes its span, so
-  // the digits and symbols inside it ("Sparg0", "Zer0Frame 2") are never read
-  // as figures by the D-24 rule below. Whether the tag itself is licensed is
-  // judged by the tag check further down; consuming never licenses anything.
-  // Review R3-IN-02 (iteration 3): only a tag that contains at least one
-  // LETTER is consumed. A digit-only tag ("7") is indistinguishable from a
-  // figure, so consuming it would exempt every equal figure in the section.
-  //
-  // Review R5-IN-03 (iteration 5), decided fail-closed: a tag that itself
-  // reads as a figure or a grade — its letters form a D-24 word ("High",
-  // "Twice", "ZeRo"), or it holds a W-L-like digit pair ("Leo 3-2") — is NOT
-  // consumed. Consuming it would exempt every equal word in the section
-  // ("You beat High, and confidence is High."), so every mention of such a
-  // tag withholds the section's prose instead. That costs commentary about
-  // an opponent with such a tag, never a claim, and never a refund (D-22).
-  const foldTag = (tag: string): string => foldProse(tag).trim();
+  // A LICENSED opponent tag is a name, like a licensed canonical name: every
+  // token-bounded occurrence of its exact spelling (longest tag first)
+  // consumes its span, so the digits and symbols inside it ("Sparg0",
+  // "Zer0Frame 2", "José") are never read as figures. Review R3-IN-02: only
+  // a tag that contains a LETTER is consumed — a digit-only tag ("7") is
+  // indistinguishable from a figure. Review R5-IN-03, decided fail-closed: a
+  // tag that itself reads as a figure or a grade ("High", "Twice", "Leo
+  // 3-2", "Leo 3 to 2", "Leo 70%", "Leo V", a tag holding a numeral glyph
+  // or an invisible character)
+  // is NOT consumed, so every mention of it withholds the
+  // section — that costs commentary, never a claim, and never a refund
+  // (D-22). R6-WR-03: a digit- or numeral-bearing tag followed by a count
+  // word ("Leo 2 times", "Sparg0 wins") is a count, exactly like a name.
+  const tagOf = (claim: ClaimAtom): string | null => claim.subject.opponentTag?.trim() ?? null;
   const licensedTags = new Set<string>();
   for (const claim of licensedClaims) {
-    if (claim.subject.opponentTag !== null) {
-      licensedTags.add(foldTag(claim.subject.opponentTag));
+    const tag = tagOf(claim);
+    if (tag !== null && tag.length > 0) {
+      licensedTags.add(tag.normalize('NFC'));
     }
   }
   const allKnownTags = new Set<string>();
   for (const claim of allIssuedClaims) {
-    if (claim.subject.opponentTag !== null) {
-      allKnownTags.add(foldTag(claim.subject.opponentTag));
+    const tag = tagOf(claim);
+    if (tag !== null && tag.length > 0) {
+      allKnownTags.add(tag.normalize('NFC'));
     }
   }
-  for (const tag of [...allKnownTags].sort((a, b) => b.length - a.length)) {
+  const tagPattern = (spelling: string, flags: string): RegExp =>
+    new RegExp(`(?<![\\p{L}\\p{N}_])${escapeName(spelling)}(?![\\p{L}\\p{N}_])`, flags);
+
+  for (const tag of [...licensedTags].sort((a, b) => b.length - a.length)) {
     if (
       !/\p{L}/u.test(tag) ||
-      FIGURE_WORD_PATTERN.test(tag) ||
-      TIER_WORD_PATTERN.test(tag) ||
-      ROMAN_NUMERAL_PATTERN.test(tag) ||
-      /(?<![A-Za-z0-9])[0-9]+\s*[-–—:/]\s*[0-9]+(?![A-Za-z0-9])/.test(tag)
+      /[^\P{N}0-9]|[\p{Cf}\p{Cc}]/u.test(tag) ||
+      /%|(?<![A-Za-z0-9])[0-9]+\s*(?:[-–—:/]|to|and)\s*[0-9]+(?![A-Za-z0-9])/i.test(tag) ||
+      hasFigureOrTierWord(tag.replace(/[^A-Za-z'’\s-]/g, ' '))
     ) {
       continue;
     }
-    const tagRe = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeName(tag)}(?![\\p{L}\\p{N}_])`, 'gu');
-    for (const match of folded.matchAll(tagRe)) {
-      const start = match.index!;
-      const end = start + match[0].length;
-      if (!overlapsConsumed(start, end)) {
-        consumedNameSpans.push([start, end]);
+    for (const spelling of spellingsOf(tag)) {
+      for (const match of connective.matchAll(tagPattern(spelling, 'gu'))) {
+        const start = match.index!;
+        const end = start + match[0].length;
+        if (countReadAfter(tag, end)) {
+          offense = true;
+        }
+        if (!consumedSpans.some(([s, e]) => start < e && end > s)) {
+          consumedSpans.push([start, end]);
+        }
       }
     }
   }
 
-  // --- R4: opponent tags (verbatim, case-sensitive, on token boundaries) ---
-  //
   // Review SH-WR-01: a tag known elsewhere in the job convicts only as a
   // whole token — "Tea" never convicts "Team".
   for (const tag of allKnownTags) {
-    if (licensedTags.has(tag) || tag.length === 0) {
+    if (licensedTags.has(tag)) {
       continue;
     }
-    if (new RegExp(`(?<![\\p{L}\\p{N}_])${escapeName(tag)}(?![\\p{L}\\p{N}_])`, 'u').test(folded)) {
+    if (spellingsOf(tag).some((spelling) => tagPattern(spelling, 'u').test(connective))) {
       offense = true;
     }
   }
 
   // --- D-24: commentary is qualitative only (R4 figures, R5 tier words) ---
   //
-  // Judged on the folded prose with every consumed name span blanked out, so
-  // a name's own digits, symbols and words are never figures. What remains
-  // must pass the ALLOWLIST (ASCII letters, whitespace and the listed
-  // punctuation — R5-CR-03 / R5-CR-04): a digit of any script, a percent
-  // sign, a letter of another script or an emoji withholds the section. The
-  // word lists then withhold a figure, a record or a grade spelled in
-  // allowed letters (R4, R5), whether or not a claim in the section carries
-  // that value or tier. A W-L pair, whatever its separator ("3—2", "3 to 2",
-  // "three and two", "III-II"), is made of these, so it needs no rule of its
-  // own.
+  // Judged on the DELIVERED text with every consumed span replaced by a
+  // plain placeholder word. What remains must pass the ALLOWLIST (ASCII
+  // letters, the space, the line feed and the listed punctuation): any other
+  // character withholds the section. The word rules then withhold a figure,
+  // a record or a grade spelled in letters (R4, R5), whether or not a claim
+  // in the section carries that value or tier. A W-L pair, whatever its
+  // separator ("3—2", "3 to 2", "three and two", "III-II", "V to I"), is made
+  // of these, so it needs no rule of its own.
   let residual = '';
   let cursor = 0;
-  for (const [start, end] of [...consumedNameSpans].sort((a, b) => a[0] - b[0])) {
+  for (const [start, end] of [...consumedSpans].sort((a, b) => a[0] - b[0])) {
     if (start < cursor) {
       continue;
     }
-    residual += folded.slice(cursor, start) + ' ';
+    residual += connective.slice(cursor, start) + CONSUMED_SPAN_PLACEHOLDER;
     cursor = end;
   }
-  residual += folded.slice(cursor);
+  residual += connective.slice(cursor);
   if (PROSE_DISALLOWED_CHARACTER.test(residual) || hasFigureOrTierWord(residual)) {
     offense = true;
   }
@@ -766,7 +1051,7 @@ function lintSectionProse(
       licensedConfidenceWords.add(word);
     }
   }
-  const tokens = folded.toLowerCase().match(/[a-z']+/g) ?? [];
+  const tokens = connective.toLowerCase().match(/[a-z']+/g) ?? [];
   for (const token of tokens) {
     if ((FORBIDDEN_CONFIDENCE_WORDS as readonly string[]).includes(token)) {
       offense = true;
