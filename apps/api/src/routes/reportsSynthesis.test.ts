@@ -2318,3 +2318,35 @@ describe('post-plan fix (39-10): wasCharged on the post_event_synthesis job', ()
     expect((await database.ref(`credits/${TEST_UID}/balance`).get()).exists()).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-02): the owner's locked "one model call per
+// job, no retries" rule holds on the synthesis call too — it goes through the
+// same bounded client as the scout path.
+// ---------------------------------------------------------------------------
+
+describe('code review R4-WR-02: the synthesis model call is one bounded attempt', () => {
+  it('reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
+    const modelSpy = vi.fn(async (_params: unknown, _options?: unknown) => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const options = modelSpy.mock.calls[0]![1] as
+      { maxRetries?: unknown; timeout?: unknown } | undefined;
+    expect(options).toBeDefined();
+    expect(options!.maxRetries).toBe(0);
+    expect(typeof options!.timeout).toBe('number');
+    expect(options!.timeout as number).toBeGreaterThan(0);
+    expect(options!.timeout as number).toBeLessThanOrEqual(8 * 60 * 1000);
+  });
+});

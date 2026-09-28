@@ -7459,3 +7459,148 @@ describe('code review R4-WR-01: a transient failure on the first settle write ne
     expect(await balanceOf(database)).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-02): the owner's locked rule is ONE model
+// call per job with no retries. The SDK defaults (two retries, a ten-minute
+// timeout per attempt) let one call run about thirty minutes, past the
+// fifteen-minute stale window, which is what made the pre-existing sweep
+// races (S1-S4) reachable on the legit path. The request must carry
+// `maxRetries: 0` and an explicit timeout of at most eight minutes, so a
+// live execution is always terminal before the sweep can see it as stale.
+// Model clients are stubs; money is read from the balance and the ledgers.
+// ---------------------------------------------------------------------------
+
+const EIGHT_MINUTES_MS = 8 * 60 * 1000;
+const SWEEP_STALE_WINDOW_MS = 15 * 60 * 1000;
+
+interface R4ModelCall {
+  options: { maxRetries?: unknown; timeout?: unknown; signal?: unknown } | undefined;
+  resolve: (value: { stop_reason: string; parsed_output: unknown }) => void;
+  reject: (err: unknown) => void;
+}
+
+/** A billable prep-single app whose model call blocks until the test settles it, recording the per-request options the SDK call received. */
+function r4BoundedModelApp() {
+  const calls: R4ModelCall[] = [];
+  const modelSpy = vi.fn(
+    (_params: unknown, options?: unknown) =>
+      new Promise<{ stop_reason: string; parsed_output: unknown }>((resolve, reject) => {
+        calls.push({ options: options as R4ModelCall['options'], resolve, reject });
+      }),
+  );
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(
+      modelSpy as (params: unknown) => Promise<{
+        stop_reason: string | null;
+        parsed_output: unknown;
+      }>,
+    ),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) }),
+  });
+  seedRivalPrepBrief(built.database);
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return { ...built, calls, modelSpy };
+}
+
+function expectBoundedSingleAttempt(options: R4ModelCall['options']): number {
+  expect(options).toBeDefined();
+  expect(options!.maxRetries).toBe(0);
+  expect(typeof options!.timeout).toBe('number');
+  const timeout = options!.timeout as number;
+  expect(timeout).toBeGreaterThan(0);
+  expect(timeout).toBeLessThanOrEqual(EIGHT_MINUTES_MS);
+  return timeout;
+}
+
+describe('code review R4-WR-02: one model call per job, no retries, bounded well inside the stale window', () => {
+  it('the legacy scout model call reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
+    const modelSpy = vi.fn(async (_params: unknown, _options?: unknown) => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r4-wr02-legacy');
+
+    expect(response.statusCode).toBe(200);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expectBoundedSingleAttempt(modelSpy.mock.calls[0]![1] as R4ModelCall['options']);
+  });
+
+  it('prep single: the attempt times out at its bound — the job settles and refunds once, and a sweep at the fifteen-minute mark finds nothing to sweep (S1/S4 unreachable)', async () => {
+    const { app, database, calls, modelSpy } = r4BoundedModelApp();
+    const execution = postPrepSingle(app, 'r4-wr02-timeout');
+    await vi.waitFor(() => expect(calls.length).toBe(1));
+    const timeout = expectBoundedSingleAttempt(calls[0]!.options);
+    const running = await jobRecord(database, 'r4-wr02-timeout');
+    expect(running).toMatchObject({ status: 'running' });
+    const runningAt = running.updatedAt as number;
+
+    // The latest a single attempt can end: its own timeout after the claim.
+    // With maxRetries 0 the SDK throws its timeout error instead of retrying.
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => runningAt + timeout);
+    try {
+      calls[0]!.reject(new Anthropic.APIConnectionTimeoutError());
+      const response = await execution;
+      expect(response.statusCode).toBe(502);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, 'r4-wr02-timeout')).toMatchObject({ status: 'refunded' });
+
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: runningAt + SWEEP_STALE_WINDOW_MS + 1,
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r4-wr02-timeout']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-wr02-timeout']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: a delivery at the attempt bound is terminal before the sweep window — the sweep neither fails nor refunds it (S2/S3 unreachable)', async () => {
+    const { app, database, calls } = r4BoundedModelApp();
+    const execution = postPrepSingle(app, 'r4-wr02-deliver');
+    await vi.waitFor(() => expect(calls.length).toBe(1));
+    const timeout = expectBoundedSingleAttempt(calls[0]!.options);
+    const runningAt = (await jobRecord(database, 'r4-wr02-deliver')).updatedAt as number;
+
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => runningAt + timeout);
+    try {
+      calls[0]!.resolve({ stop_reason: 'end_turn', parsed_output: VALID_REPORT });
+      expect((await execution).statusCode).toBe(200);
+    } finally {
+      clock.mockRestore();
+    }
+
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: runningAt + SWEEP_STALE_WINDOW_MS + 1,
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(await jobRecord(database, 'r4-wr02-deliver')).toMatchObject({ status: 'succeeded' });
+    expect(storedScoutReports(database)).toHaveLength(1);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('the bound leaves the fourteen-minute own-refund guard unreachable on a live execution: one attempt plus six minutes of slack still ends before the stale window minus its one-minute margin', () => {
+    // One attempt (maxRetries 0) at the largest allowed timeout, measured
+    // from the running claim, against the guard's own threshold.
+    const guardThresholdMs = SWEEP_STALE_WINDOW_MS - 60 * 1000;
+    const attempts = 1;
+    expect(attempts * EIGHT_MINUTES_MS).toBeLessThan(guardThresholdMs);
+    expect(guardThresholdMs - attempts * EIGHT_MINUTES_MS).toBeGreaterThanOrEqual(6 * 60 * 1000);
+  });
+});
