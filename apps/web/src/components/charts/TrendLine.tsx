@@ -786,17 +786,23 @@ function renderPeriodLockedInset(
       data-slot="trend-line-period-locked"
     >
       <p className="text-sm leading-5">{props.labels.lockedSentence(counts)}</p>
-      <div
-        role="img"
-        aria-label={countLabel}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-      >
+      {/* Plan 39.1-43 (sketch 001-C / 003 `.lock-row`): the meter and its
+          count share one wrapping row; the meter grows (`flex: 1 1 80px`). */}
+      <div data-slot="trend-locked-row" className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <div
-          className="h-full rounded-full"
-          style={{ width: `${fillPercent}%`, backgroundColor: CHART_TOKENS.steady }}
-        />
+          role="img"
+          aria-label={countLabel}
+          className="h-1.5 min-w-[60px] flex-[1_1_80px] overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${fillPercent}%`, backgroundColor: CHART_TOKENS.steady }}
+          />
+        </div>
+        <span className="text-xs leading-4 whitespace-nowrap text-muted-foreground tabular-nums">
+          {countLabel}
+        </span>
       </div>
-      <p className="text-xs leading-4 text-muted-foreground tabular-nums">{countLabel}</p>
     </div>
   );
 }
