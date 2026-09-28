@@ -201,8 +201,8 @@ interface RefundMarker {
  * job execution) are written in ONE transaction on `credits/{uid}` — the
  * node that holds the balance — so the refund either commits with its
  * marker or not at all. A retry after a throw (a transient error, or a
- * commit whose acknowledgement was lost) finds the marker and aborts: it can
- * never refund twice. The marker also carries the ledger entry's key and
+ * commit whose acknowledgement was lost) finds the marker and adds nothing:
+ * it can never refund twice. The marker also carries the ledger entry's key and
  * timestamp, so the ledger write is an idempotent `set` on a fixed key and
  * a retry rewrites the same entry instead of appending a second one.
  *
@@ -210,11 +210,27 @@ interface RefundMarker {
  * the marker already existed (an earlier attempt refunded). Code review
  * R6-IN-02: the same transaction drops every OTHER marker older than
  * `REFUND_MARKER_RETENTION_MS`, so the map cannot grow without bound; this
- * execution's own marker is checked first, so it aborts however old it is.
+ * execution's own marker is checked first, so it never refunds again however
+ * old that marker is.
  * A null first-run
  * input (the SDK's local cache on a listener-less server) is treated as an
  * empty node: the transaction's server compare re-runs it against the real
  * node, so it never overwrites an existing balance.
+ *
+ * Code review R7-CR-01 (iteration 7): an ABORT is not proof of an earlier
+ * refund. The client runs a transaction's first pass against its LOCAL state,
+ * which includes another pending attempt's unacknowledged marker. Had that
+ * pass aborted, the client would complete with `committed === false` and the
+ * local snapshot WITHOUT contacting the server — and if the pending attempt
+ * were then aborted (a dropped socket), its marker would be reverted and the
+ * balance would never move. (A `get()` does not help: it answers from the
+ * client's event cache, which holds the pending write too.) So the update
+ * never aborts: when the marker is already there it returns the node
+ * UNCHANGED, a no-op the server's hash compare confirms — or, when the marker
+ * was only a pending local write that got reverted, rejects as stale, so the
+ * update re-runs against the real node and refunds. Every outcome is thus a
+ * server-confirmed commit, and the committed marker's ledger key says whether
+ * THIS call's run placed it.
  */
 export async function refundCreditOnce(
   database: Database,
@@ -235,8 +251,9 @@ export async function refundCreditOnce(
         ? (node[REFUND_MARKERS_KEY] as Record<string, unknown>)
         : {};
     if (Object.prototype.hasOwnProperty.call(markers, markerKey)) {
-      // Already refunded by an earlier attempt: abort, nothing written.
-      return undefined;
+      // Already refunded by an earlier attempt: write nothing new, but commit
+      // the node unchanged so the server confirms the marker (R7-CR-01).
+      return current;
     }
     const retained = Object.fromEntries(
       Object.entries(markers).filter(([, marker]) => {
@@ -260,9 +277,9 @@ export async function refundCreditOnce(
   const settled = result.snapshot.val() as {
     [REFUND_MARKERS_KEY]?: Record<string, RefundMarker>;
   } | null;
-  const marker = settled?.[REFUND_MARKERS_KEY]?.[markerKey];
+  const marker = result.committed ? settled?.[REFUND_MARKERS_KEY]?.[markerKey] : undefined;
   if (!marker) {
-    throw new Error('refund marker missing after the refund transaction');
+    throw new Error('refund marker not confirmed by the server after the refund transaction');
   }
 
   await database.ref(`creditLedger/${uid}/${marker.ledgerKey}`).set(
@@ -287,7 +304,7 @@ export async function refundCreditOnce(
     }),
   );
 
-  return result.committed;
+  return marker.ledgerKey === ledgerKey;
 }
 
 /**

@@ -151,8 +151,10 @@ export const CLOUD_RUN_REQUEST_TIMEOUT_MS = 600 * 1000;
  * Code review R5-IN-04: the budget for everything a generation request does
  * besides the one model attempt — scout resolution and payload assembly
  * before it; the snapshot write, validation, the store and the terminal
- * writes around it (including `failJob`'s bounded retries). One attempt
- * plus this budget must fit inside `CLOUD_RUN_REQUEST_TIMEOUT_MS`.
+ * writes around it (including `failJob`'s retries of a write that rejected).
+ * One attempt plus this budget must fit inside `CLOUD_RUN_REQUEST_TIMEOUT_MS`.
+ * A settle write that never settles is awaited, not bounded (code review
+ * R7-CR-01 / R7-CR-02, `withSettleRetries`): the recorded residual.
  */
 export const REPORT_REQUEST_OVERHEAD_BUDGET_MS = 60 * 1000;
 
@@ -188,46 +190,31 @@ export const REPORT_SETTLE_WRITE_ATTEMPTS = 4;
 export const REPORT_SETTLE_WRITE_BACKOFF_MS = 100;
 
 /**
- * Code review R6-IN-03 (iteration 6): the bound on ONE settle-write attempt.
- * An RTDB write made while the connection is down queues and never settles
- * (it neither resolves nor throws), so without a bound a retry never
- * engaged and the write outlasted the request. An attempt that has not
- * settled in time counts as a failed attempt and is retried. Every write
- * `withSettleRetries` wraps is idempotent — a whole-node `set`, a
- * multi-path `update` of fixed values, or the create-once refund — so a
- * late landing of an abandoned attempt changes nothing a retry did not
- * already write, and the SDK applies one client's writes in order. The
- * worst case of `failJob`'s four settle writes, 4 x (4 x 2 s + 0.7 s) =
- * 34.8 s, fits inside `REPORT_REQUEST_OVERHEAD_BUDGET_MS`.
- */
-export const REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS = 2 * 1000;
-
-/** Rejects when `write` has not settled within `REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS`; the write itself is left to land or fail on its own. */
-function boundedAttempt<T>(write: () => Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          new Error(
-            `settle write did not settle within ${REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS} ms`,
-          ),
-        ),
-      REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS,
-    );
-  });
-  return Promise.race([write(), timeout]).finally(() => clearTimeout(timer));
-}
-
-/**
- * Runs one idempotent write, retrying a throw OR an attempt that does not
- * settle in time (R6-IN-03) with a doubling backoff; rethrows the last error
- * once every attempt has failed.
+ * Runs one idempotent write, retrying it with a doubling backoff only after
+ * the attempt has itself REJECTED; rethrows the last error once every attempt
+ * has failed.
+ *
+ * Code review R7-CR-01 / R7-CR-02 (iteration 7): an attempt that has not
+ * settled is AWAITED, never abandoned. Iteration 6 (R6-IN-03) bounded each
+ * attempt at 2 s and started the next one when the bound fired, but with the
+ * real RTDB client the abandoned attempt is still queued and may still land:
+ * - a refund transaction's unacknowledged marker is applied to the client's
+ *   local state, so the next attempt's first run saw it and reported the
+ *   refund done — then the socket dropped, the client aborted the first
+ *   transaction and reverted its marker, and the ledger and the job said
+ *   "refunded" while the balance never moved;
+ * - an abandoned terminal `set(failed)` landed after `failJob` had thrown to
+ *   leave an unsettled row to the stuck-job sweep, and the sweep skips a
+ *   `failed` row, so the spent credit was never refunded.
+ * A retry therefore never overlaps an attempt that may still commit. The
+ * residual, as before iteration 6: a write that never settles (a connection
+ * that never comes back) holds the request instead of being retried inside
+ * `REPORT_REQUEST_OVERHEAD_BUDGET_MS`.
  */
 export async function withSettleRetries<T>(write: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await boundedAttempt(write);
+      return await write();
     } catch (err) {
       if (attempt >= REPORT_SETTLE_WRITE_ATTEMPTS) {
         throw err;
