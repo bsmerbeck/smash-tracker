@@ -1356,3 +1356,47 @@ describe('TrendLine — the recent band reaches the plot edge (plan 39.1-41 fide
     expect(Number(band!.getAttribute('x'))).toBeGreaterThanOrEqual(65);
   });
 });
+
+describe('TrendLine — value labels placed like sketch 003 (plan 39.1-41 fidelity loop)', () => {
+  function labelFor(container: HTMLElement, key: string): Element {
+    const label = container.querySelector(
+      `[data-slot="trend-period-value-label"][data-point-key="${key}"]`,
+    );
+    expect(label, key).not.toBeNull();
+    return label!;
+  }
+
+  function dotFor(container: HTMLElement, key: string): Element {
+    return container.querySelector(`[data-slot="trend-period-dot"][data-point-key="${key}"]`)!;
+  }
+
+  it('the min label sits below its dot, a max at the top edge flips below, the last label stays above', () => {
+    // Max 100% (index 2) at the top edge; min 33% (index 5); last 60%.
+    const rates = [0.5, 0.7, 1, 0.6, 0.55, 1 / 3, 0.65, 0.6];
+    const points = makePeriodSeries(8, (i) => ({ rate: rates[i] }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={160} labels={PERIOD_LABELS} />,
+    );
+    const below = (key: string) =>
+      Number(labelFor(container, key).getAttribute('y')) >
+      Number(dotFor(container, key).getAttribute('cy'));
+    expect(below(points[5]!.key)).toBe(true);
+    expect(labelFor(container, points[5]!.key).getAttribute('data-placement')).toBe('below');
+    expect(below(points[2]!.key)).toBe(true);
+    expect(below(points[7]!.key)).toBe(false);
+    expect(labelFor(container, points[7]!.key).getAttribute('data-placement')).toBe('above');
+  });
+
+  it('the labels of the last two periods right-align to their dots', () => {
+    const points = makePeriodSeries(8, (i) => ({ rate: i === 7 ? 0.9 : 0.5 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={160} labels={PERIOD_LABELS} />,
+    );
+    const label = labelFor(container, points[7]!.key);
+    expect(label.getAttribute('text-anchor')).toBe('end');
+    expect(Number(label.getAttribute('x'))).toBeCloseTo(
+      Number(dotFor(container, points[7]!.key).getAttribute('cx')),
+      0,
+    );
+  });
+});

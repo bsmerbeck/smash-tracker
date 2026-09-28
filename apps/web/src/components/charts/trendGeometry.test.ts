@@ -212,3 +212,84 @@ describe('periodDotDiameterForTier — sketch 003 dotSize (plan 39.1-41)', () =>
     expect([2, 5, 8, 20].map((total) => periodDotDiameter(total))).toEqual([5, 5, 5, 5]);
   });
 });
+
+/**
+ * Plan 39.1-41 fidelity loop (sketch 003 `trend()` 797-800 and CSS `.val`,
+ * sketch 001-C `trend()` 475, "end labels flip left so nothing collides"):
+ * the min label sits BELOW its dot (unless it is also the max or the last),
+ * a label whose dot is within 14px of the value range's top flips below and
+ * one within 14px of its bottom flips above, and the labels of the last two
+ * periods right-align to their dots.
+ */
+describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)', () => {
+  const base = {
+    index: 3,
+    count: 21,
+    valueTopPx: 29,
+    valueBottomPx: 109,
+    isMin: false,
+    isMax: false,
+    isLast: false,
+  };
+
+  it('min below, max and last above', async () => {
+    const { periodValueLabelPlacement } = await loadGeometry();
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isMin: true })).toEqual({
+      below: true,
+      anchor: 'middle',
+    });
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isMax: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isLast: true }).below).toBe(false);
+    // A last min keeps sketch 001-C's rule (above); a min that is also the max stays above.
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isMin: true, isLast: true }).below).toBe(
+      false,
+    );
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isMin: true, isMax: true }).below).toBe(
+      false,
+    );
+  });
+
+  it('flips below within 14px of the value top and above within 14px of the value bottom', async () => {
+    const { periodValueLabelPlacement } = await loadGeometry();
+    expect(periodValueLabelPlacement({ ...base, yPx: 29, isMax: true }).below).toBe(true);
+    expect(periodValueLabelPlacement({ ...base, yPx: 42, isMax: true }).below).toBe(true);
+    expect(periodValueLabelPlacement({ ...base, yPx: 44, isMax: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 109, isMin: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 96, isMin: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 94, isMin: true }).below).toBe(true);
+  });
+
+  it('right-aligns the labels of the last two periods (sketch `i > N - 3`)', async () => {
+    const { periodValueLabelPlacement } = await loadGeometry();
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 20, isLast: true }).anchor).toBe(
+      'end',
+    );
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 19 }).anchor).toBe('end');
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 18 }).anchor).toBe('middle');
+  });
+
+  it('placeReferenceLabel models a below label under its dot and an end label left of its dot', async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    // Reference at y 49: its default slot (under, right-aligned) is y 54..70.
+    // A BELOW label whose dot sits at y 40 occupies y 44..60 — the slot is taken.
+    expect(
+      placeReferenceLabel({
+        referenceYPx: 49,
+        referenceLabelWidthPx: 21,
+        plotLeftPx: 65,
+        plotRightPx: 635,
+        labelledPoints: [{ xPx: 619, yPx: 40, labelWidthPx: 21, below: true }],
+      }),
+    ).not.toBe('insideTopRight');
+    // The same dot's label ABOVE it (y 12..28) leaves the slot free.
+    expect(
+      placeReferenceLabel({
+        referenceYPx: 49,
+        referenceLabelWidthPx: 21,
+        plotLeftPx: 65,
+        plotRightPx: 635,
+        labelledPoints: [{ xPx: 619, yPx: 40, labelWidthPx: 21 }],
+      }),
+    ).toBe('insideTopRight');
+  });
+});
