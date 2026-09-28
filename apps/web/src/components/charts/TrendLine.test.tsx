@@ -1739,3 +1739,28 @@ describe('TrendLine — the reference label clears every drawn dot (plan 39.1-43
     ).toBe('insideTopRight');
   });
 });
+
+// Plan 39.1-43 fidelity loop (M2 locked, thin 1440 / 390; sketch 001-C / 003
+// `.lock-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}`):
+// the meter and its "1 of 8" count share one wrapping row.
+describe('TrendLine — the locked meter and its count share one row (plan 39.1-43 fidelity loop, sketch .lock-row)', () => {
+  it('the meter (role img) and the count label sit in one flex-wrap row, the meter growing', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={makePeriodSeries(3)}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    const row = container.querySelector('[data-slot="trend-locked-row"]');
+    expect(row).not.toBeNull();
+    expect(row!.className).toMatch(/flex-wrap/);
+    expect(row!.className).toMatch(/items-center/);
+    const meter = row!.querySelector('[role="img"]');
+    expect(meter).not.toBeNull();
+    expect(meter!.className).toMatch(/flex-\[1_1_80px\]/);
+    expect(row!.textContent).toBe('3 of 8');
+  });
+});
