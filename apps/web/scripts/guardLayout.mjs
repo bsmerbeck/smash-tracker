@@ -145,7 +145,11 @@ export const LAYOUT_ORACLE_ROUTES = [
       'placement',
       'brand-red-text',
       'header-squeeze',
+      // Plan 39.1-43 (PD-43-3, fidelity F4): the hero trend draws sketch
+      // 001-C's 160px value range (plan 37 proved it drawn on this fixture).
+      'period-trend-marks',
     ],
+    periodTrendExpect: { state: 'drawn', valueRangePx: [158, 162] },
     headerSqueeze: {
       header: '[data-slot="insight-rail-header"]',
       parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
@@ -246,6 +250,8 @@ export const LAYOUT_ORACLE_ROUTES = [
       dotDiameters: [5, 7],
       valueLabels: ['100%', '33%', '60%'],
       referenceLabel: '63% all time',
+      // Plan 39.1-43 (PD-43-3): sketch 003's `trend(d, { height: 160 })` box.
+      valueRangePx: [158, 162],
     },
   },
   {
@@ -434,6 +440,16 @@ export const LAYOUT_ORACLE_ROUTES = [
     // scroll on a phone.
     narrowChecks: ['table-clip'],
     clipTargets: ['[data-slot="stage-by-character"]'],
+  },
+  {
+    // Plan 39.1-43 (OOS-6, 39.1-39 whole-page review): the Fighter hero on
+    // the harness's `recent` scale, in the MainLayout-geometry shell — where
+    // 39.1-39's capture showed the "NN% all time" reference label over the
+    // last period dots. axis-ticks carries reference-label-dot-collision.
+    id: 'fighter-analysis-recent',
+    loadedMarker: '[data-slot="fighter-hero-body"]',
+    scale: 'recent',
+    checks: ['axis-ticks'],
   },
   {
     // Plan 39.1-39 (deferred from 39.1-37): the SAME stage page on the
@@ -797,11 +813,15 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         };
       });
 
+      // Plan 39.1-43 (OOS-6): every drawn dot, filled or hollow, with its key —
+      // the reference-label-dot-collision check names the dot it hits.
       const dots = Array.from(surfaceEl.querySelectorAll('[data-slot="trend-period-dot"]')).map(
         (el) => {
           const r = el.getBoundingClientRect();
           return {
             selectorPath: describeElement(el),
+            key: el.getAttribute('data-point-key') ?? undefined,
+            subFloor: el.getAttribute('data-sub-floor') === 'true',
             left: r.left,
             right: r.right,
             top: r.top,
@@ -1580,6 +1600,26 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       // inside `.recharts-reference-line` — TrendLine tags it with its own
       // `trend-period-reference-label` class (the axis-ticks collector's rule).
       const referenceEl = root.querySelector('.trend-period-reference-label');
+      // Plan 39.1-43 (PD-43-3): the value range = the span between the
+      // fitted domain's lowest and highest HAIRLINES — the horizontal grid
+      // lines drawn at a y-axis tick. Recharts 3's CartesianGrid also draws
+      // the plot box's top and bottom edges, which are not domain hairlines,
+      // so only a line whose y (SVG user units = px) matches a rendered y
+      // tick counts. Should Recharts ever omit an edge hairline, the y ticks
+      // themselves still bound the range (the plan's stated fallback).
+      const tickYs = Array.from(
+        root.querySelectorAll('svg.recharts-surface .recharts-yAxis-tick-labels text'),
+      )
+        .map((tick) => Number(tick.getAttribute('y')))
+        .filter((y) => Number.isFinite(y));
+      const hairlineYs = Array.from(
+        root.querySelectorAll('svg.recharts-surface .recharts-cartesian-grid-horizontal line'),
+      )
+        .map((line) => Number(line.getAttribute('y1')))
+        .filter((y) => Number.isFinite(y) && tickYs.some((tickY) => Math.abs(tickY - y) < 0.5));
+      const rangeYs = hairlineYs.length >= 2 ? hairlineYs : tickYs;
+      const valueRangePx = rangeYs.length >= 2 ? Math.max(...rangeYs) - Math.min(...rangeYs) : null;
+      const valueRangeSource = hairlineYs.length >= 2 ? 'hairlines' : 'ticks';
       periodTrends.push({
         selectorPath: describeElement(root),
         state,
@@ -1590,6 +1630,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         strokedLineCount,
         yTickTexts,
         referenceLabel: referenceEl ? (referenceEl.textContent ?? '').trim() : null,
+        valueRangePx,
+        valueRangeSource,
       });
     }
   }

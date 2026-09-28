@@ -598,7 +598,11 @@ describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
     );
   }
 
-  it('the deep trend renders at CHART_H_COMPACT with tier dots (5 and 7 px only) and ONE stroked line', async () => {
+  // REWRITTEN by plan 39.1-43 (was: the surface is CHART_H_COMPACT = 160px
+  // tall): PD-43-3 — the trend draws sketch 003's 160px VALUE range, so its
+  // outer box is 240px (plan 37's 24 / 16px paddings and the 30px axis band
+  // outside it) and the root declares data-value-range-px="160".
+  it('the deep trend draws a 160px value range (240px outer box) with tier dots (5 and 7 px only) and ONE stroked line', async () => {
     const { build } = await loadBuilder();
     const deep = await pairing('deep');
     const { container } = renderScoped(deep, build(deep));
@@ -606,8 +610,9 @@ describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
     expect(root?.getAttribute('data-state')).toBe('drawn');
     expect(root?.getAttribute('data-dot-sizing')).toBe('tier');
     expect(root?.getAttribute('data-y-domain')).toBe('20,100');
+    expect(root?.getAttribute('data-value-range-px')).toBe('160');
     const surface = container.querySelector('svg.recharts-surface');
-    expect(surface?.getAttribute('height')).toBe('160');
+    expect(surface?.getAttribute('height')).toBe('240');
     const diameters = new Set(
       Array.from(container.querySelectorAll('[data-slot="trend-period-dot"]')).map(
         (c) => Number(c.getAttribute('r')) * 2,
@@ -641,6 +646,33 @@ describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
     const root = container.querySelector('[data-slot="trend-line-period"]');
     expect(root?.getAttribute('data-state')).toBe('locked');
     expect(container.querySelector('svg.recharts-surface')).toBeNull();
+  });
+
+  // Plan 39.1-43 (sketch 003 trendLegend / trendSection, PD-43-1 / PD-43-2).
+  it('trend head: the deep trend reads "Win rate by quarter" with the dot, hollow and "63% all time" legend items', async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const head = container.querySelector('[data-slot="trend-period-head"]');
+    expect(head?.firstElementChild?.textContent).toBe('Win rate by quarter');
+    const items = Array.from(container.querySelectorAll('[data-slot="trend-legend-item"]'));
+    const byKind = new Map(items.map((item) => [item.getAttribute('data-kind'), item.textContent]));
+    expect(byKind.get('dot')).toBe('size = games');
+    expect(byKind.get('hollow')).toBe('hollow = under 3 games');
+    expect(byKind.get('reference')).toBe('63% all time');
+  });
+
+  it('locked-at-floor: the thin pairing reads "7 more quarters with 3+ games unlock this chart." with a "1 of 8" meter', async () => {
+    const { build } = await loadBuilder();
+    const thin = await pairing('thin');
+    const { container } = renderScoped(thin, build(thin));
+    const locked = container.querySelector('[data-slot="trend-line-period-locked"]')!;
+    expect(locked.textContent).toContain('7 more quarters with 3+ games unlock this chart.');
+    expect(locked.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('1 of 8');
+    expect(locked.textContent).toContain('1 of 8');
+    expect(container.querySelector('[data-slot="trend-period-head"]')?.textContent).toBe(
+      'Win rate by quarter',
+    );
   });
 
   it('MatchupChart.tsx carries no cumulative context series', () => {

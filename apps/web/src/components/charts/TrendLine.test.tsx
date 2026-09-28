@@ -1403,3 +1403,310 @@ describe('TrendLine — value labels placed like sketch 003 (plan 39.1-41 fideli
     expect(x + estimateTickLabelWidthPx('90%') / 2).toBeLessThanOrEqual(635);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-43 Task 2 (trend-head-locked): the period trend's head, the honest
+// at-floor locked rule, the sketches' 160px value range and OOS-6.
+// ---------------------------------------------------------------------------
+
+/** The hero hosts' shape of the labels: formatters of `{ need, have }` plus the head. */
+const HEAD_LABELS = {
+  ...PERIOD_LABELS,
+  lockedSentence: ({ need }: { need: number; have: number }) =>
+    `${need} more weeks with 3+ games unlock this chart.`,
+  lockedCountLabel: ({ have }: { need: number; have: number }) => `${have} of 8`,
+  title: 'Win rate by week',
+  legend: {
+    dot: 'size = games',
+    hollow: 'hollow = under 3 games',
+    reference: '50% all time',
+    band: 'Last 30 games',
+  },
+  referenceLabel: '50% all time',
+} as unknown as TrendLinePeriodLabels;
+
+function legendKinds(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('[data-slot="trend-legend-item"]')).map(
+    (item) => item.getAttribute('data-kind') ?? '',
+  );
+}
+
+describe('TrendLine — period head: title + swatch legend (plan 39.1-43, sketch 001-C / 003 trendLegend)', () => {
+  it('with labels.title renders the head: the overline, then dot / hollow / reference / band items when each is drawn', () => {
+    const points = makePeriodSeries(10, (i) =>
+      i === 4 ? { subFloor: true, total: 2, rate: 0.5 } : { rate: 0.45 + i * 0.01 },
+    );
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={50}
+        emphasisStartMs={points[7]!.startMs}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    const head = container.querySelector('[data-slot="trend-period-head"]');
+    expect(head).not.toBeNull();
+    expect(head!.firstElementChild?.textContent).toBe('Win rate by week');
+    expect(head!.firstElementChild?.className).toMatch(/uppercase/);
+    expect(legendKinds(container)).toEqual(['dot', 'hollow', 'reference', 'band']);
+    const texts = Array.from(container.querySelectorAll('[data-slot="trend-legend-item"]')).map(
+      (item) => item.textContent,
+    );
+    expect(texts).toEqual([
+      'size = games',
+      'hollow = under 3 games',
+      '50% all time',
+      'Last 30 games',
+    ]);
+  });
+
+  it('hollow only when a drawn point is sub-floor; reference only with referenceRate; band only when the band is drawn', () => {
+    const points = makePeriodSeries(10, (i) => ({ rate: 0.45 + i * 0.01 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={HEAD_LABELS} />,
+    );
+    expect(legendKinds(container)).toEqual(['dot']);
+  });
+
+  it('no title -> no head', () => {
+    const points = makePeriodSeries(10, (i) => ({ rate: 0.45 + i * 0.01 }));
+    const labels = { ...HEAD_LABELS, title: undefined } as unknown as TrendLinePeriodLabels;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={labels}
+      />,
+    );
+    expect(container.querySelector('[data-slot="trend-period-head"]')).toBeNull();
+  });
+
+  it('the locked trend keeps its overline and draws no legend item (sketch trendSection locked branch)', () => {
+    const points = makePeriodSeries(3);
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={HEAD_LABELS} />,
+    );
+    expect(container.querySelector('[data-slot="trend-period-head"]')?.textContent).toBe(
+      'Win rate by week',
+    );
+    expect(legendKinds(container)).toEqual([]);
+  });
+});
+
+describe('TrendLine — the locked rule counts only periods at the 3-game floor (plan 39.1-43, PD-43-1, UI-SPEC 7.13)', () => {
+  function quarterPoints(totals: number[]): PeriodPoint[] {
+    return totals.map((total, i) =>
+      makePeriodPoint({
+        grain: 'quarter',
+        key: `quarter:2020-Q${i + 1}`,
+        label: `2020-Q${i + 1}`,
+        startMs: i * 1000,
+        endMs: i * 1000 + 999,
+        wins: Math.min(total, 1),
+        losses: total - Math.min(total, 1),
+        total,
+        rate: total > 0 ? Math.min(total, 1) / total : 0,
+        subFloor: total < 3,
+      }),
+    );
+  }
+
+  it('4 quarters with 1 at the floor -> locked, the formatters receive need 7 / have 1', () => {
+    const sentence = vi.fn(({ need }: { need: number; have: number }) => `${need} more`);
+    const meter = vi.fn(({ have }: { need: number; have: number }) => `${have} of 8`);
+    const labels = {
+      ...HEAD_LABELS,
+      lockedSentence: sentence,
+      lockedCountLabel: meter,
+    } as unknown as TrendLinePeriodLabels;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={quarterPoints([2, 6, 2, 1])}
+        width={640}
+        height={288}
+        labels={labels}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('locked');
+    expect(sentence).toHaveBeenCalledWith({ need: 7, have: 1 });
+    expect(meter).toHaveBeenCalledWith({ need: 7, have: 1 });
+    expect(screen.getByText('7 more')).toBeInTheDocument();
+    expect(container.querySelector('[role="img"]')).toHaveAttribute('aria-label', '1 of 8');
+  });
+
+  it('9 points with 8 at the floor -> drawn', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={quarterPoints([5, 5, 5, 2, 5, 5, 5, 5, 5])}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="trend-line-period"]')?.getAttribute('data-state'),
+    ).toBe('drawn');
+  });
+
+  it('8 emitted points with 5 at the floor -> locked with need 3 (the old all-points rule drew it)', () => {
+    const sentence = vi.fn(({ need }: { need: number; have: number }) => `${need} more`);
+    const labels = { ...HEAD_LABELS, lockedSentence: sentence } as unknown as TrendLinePeriodLabels;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={quarterPoints([5, 1, 5, 2, 5, 2, 5, 5])}
+        width={640}
+        height={288}
+        labels={labels}
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="trend-line-period"]')?.getAttribute('data-state'),
+    ).toBe('locked');
+    expect(sentence).toHaveBeenCalledWith({ need: 3, have: 5 });
+  });
+});
+
+/**
+ * The y of every horizontal grid hairline drawn AT a y-axis tick (px), sorted
+ * top to bottom. Recharts 3's CartesianGrid also draws the plot box's own top
+ * and bottom edge lines, which are not domain hairlines — only a line whose
+ * y matches a rendered y tick counts (the guard's collector uses the same rule).
+ */
+function hairlineYs(container: HTMLElement): number[] {
+  const tickYs = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text')).map(
+    (tick) => Number(tick.getAttribute('y')),
+  );
+  return Array.from(container.querySelectorAll('.recharts-cartesian-grid-horizontal line'))
+    .map((line) => Number(line.getAttribute('y1')))
+    .filter((y) => Number.isFinite(y) && tickYs.some((tickY) => Math.abs(tickY - y) < 0.5))
+    .sort((a, b) => a - b);
+}
+
+describe('TrendLine — the hero value range (plan 39.1-43, PD-43-3, sketch 001-C / 003 trend(): the 160px box is the value range)', () => {
+  const points = makePeriodSeries(10, (i) => ({ rate: 0.3 + i * 0.05 }));
+
+  it('valueRangePx={160}: the fitted domain lowest and highest hairlines are 160 ± 1 px apart and the root carries data-value-range-px', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        valueRangePx={160}
+        labels={HEAD_LABELS}
+        {...({} as object)}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-value-range-px')).toBe('160');
+    expect(container.querySelector('svg.recharts-surface')?.getAttribute('height')).toBe('240');
+    const ys = hairlineYs(container);
+    expect(ys.length).toBeGreaterThanOrEqual(2);
+    expect(Math.abs(ys[ys.length - 1]! - ys[0]! - 160)).toBeLessThanOrEqual(1);
+  });
+
+  it('without valueRangePx the chart keeps its height exactly (160 -> an 80px value range), no data-value-range-px', () => {
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={160} labels={HEAD_LABELS} />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.hasAttribute('data-value-range-px')).toBe(false);
+    expect(container.querySelector('svg.recharts-surface')?.getAttribute('height')).toBe('160');
+    const ys = hairlineYs(container);
+    expect(Math.abs(ys[ys.length - 1]! - ys[0]! - 80)).toBeLessThanOrEqual(1);
+  });
+
+  it('valueRangePx sets data-value-range-px on a locked trend too', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={makePeriodSeries(3)}
+        width={640}
+        valueRangePx={160}
+        labels={HEAD_LABELS}
+      />,
+    );
+    expect(
+      container
+        .querySelector('[data-slot="trend-line-period"]')
+        ?.getAttribute('data-value-range-px'),
+    ).toBe('160');
+  });
+});
+
+describe('TrendLine — the reference label clears every drawn dot (plan 39.1-43, OOS-6)', () => {
+  /**
+   * 20 weekly points, domain fitted to [30, 70] by a 38% min and a 62% max,
+   * the reference at 50%: on a 640 x 288 plot one rate point is 5.2px, so a
+   * dot at 47.7% sits ~12px under the reference line — inside the default
+   * (right, under the line) slot.
+   */
+  function series(rates: Record<number, number>): PeriodPoint[] {
+    return makePeriodSeries(20, (i) => ({
+      rate: rates[i] ?? (i === 5 ? 0.38 : i === 10 ? 0.62 : 0.44),
+    }));
+  }
+
+  it('last dots just under the reference line move the label off the default slot (was insideTopRight over the dots)', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={series({ 18: 0.477, 19: 0.477 })}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    const position = root?.getAttribute('data-reference-label-position');
+    expect(['insideBottomRight', 'insideTopLeft', 'insideBottomLeft']).toContain(position);
+    expect(container.querySelector('text.trend-period-reference-label')?.textContent).toBe(
+      '50% all time',
+    );
+  });
+
+  it('with every slot taken by a dot no direct reference label renders; the head legend reference item still states the rate', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={series({ 0: 0.477, 1: 0.523, 18: 0.477, 19: 0.523 })}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-reference-label-position')).toBe('none');
+    expect(container.querySelector('text.trend-period-reference-label')).toBeNull();
+    expect(container.querySelector('[data-kind="reference"]')?.textContent).toBe('50% all time');
+  });
+
+  it('a trend whose dots stay clear keeps the sketch slot (insideTopRight)', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={series({})}
+        referenceRate={50}
+        width={640}
+        height={288}
+        labels={HEAD_LABELS}
+      />,
+    );
+    expect(
+      container
+        .querySelector('[data-slot="trend-line-period"]')
+        ?.getAttribute('data-reference-label-position'),
+    ).toBe('insideTopRight');
+  });
+});

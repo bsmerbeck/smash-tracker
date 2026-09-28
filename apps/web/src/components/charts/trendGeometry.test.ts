@@ -298,3 +298,125 @@ describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)',
     ).toBe('insideTopRight');
   });
 });
+
+/**
+ * Plan 39.1-43 (PD-43-3, sketch 001-C `trend()` / sketch 003
+ * `trend(d, { height: 160 })`: the 160px trend box IS the value range, axis
+ * labels outside it): plan 37's plot model moves here from TrendLine.tsx.
+ */
+describe('periodPlotModel / periodChartHeightForValueRange — the hero value range (plan 39.1-43)', () => {
+  it('a chart sized for a 160px value range draws exactly 160px between the domain edges (240px outer box)', async () => {
+    const { periodPlotModel, periodChartHeightForValueRange, PERIOD_HERO_VALUE_RANGE_PX } =
+      await loadGeometry();
+    expect(PERIOD_HERO_VALUE_RANGE_PX).toBe(160);
+    expect(periodChartHeightForValueRange(160)).toBe(240);
+    expect(periodPlotModel(periodChartHeightForValueRange(160)).valueRangePx).toBe(160);
+  });
+
+  it("pins today's CHART_H_COMPACT (160px) value range at 80px — the owner-visible flat hero trend", async () => {
+    const { periodPlotModel } = await loadGeometry();
+    const { CHART_H_COMPACT } = await import('./tokens');
+    expect(periodPlotModel(CHART_H_COMPACT).valueRangePx).toBe(80);
+  });
+
+  it('equals the constants TrendLine used before the move for any height (top 5 + 24, bottom h - 5 - 30 - 16)', async () => {
+    const { periodPlotModel, periodChartHeightForValueRange } = await loadGeometry();
+    for (const height of [120, 160, 200, 240, 288, 400]) {
+      const model = periodPlotModel(height);
+      expect(model.valueTopPx).toBe(29);
+      expect(model.valueBottomPx).toBe(height - 51);
+      expect(model.valueRangePx).toBe(height - 80);
+      expect(periodChartHeightForValueRange(model.valueRangePx)).toBe(height);
+    }
+  });
+});
+
+/**
+ * Plan 39.1-43 (OOS-6, 39.1-39 whole-page review): the reference label must
+ * clear every DRAWN dot — its box (centre ± (diameter / 2 + the sketch's 2px
+ * `.pt` surface halo)) — as well as every value label; four slots are tried
+ * (under-right, above-right, under-left, above-left) and 'none' is returned
+ * when all four are taken (the head legend states the rate).
+ * Geometry: the 640 x 160 PLOT above, reference at y 49, label 72px wide
+ * ("48% all time"): the under-right slot is x 558..630, y 54..70; the
+ * above-right x 558..630, y 28..44; the under-left x 70..142, y 54..70; the
+ * above-left x 70..142, y 28..44.
+ */
+describe('placeReferenceLabel — dot-aware, four slots, legend fallback (plan 39.1-43, OOS-6)', () => {
+  const base = {
+    ...PLOT,
+    referenceYPx: 49,
+    referenceLabelWidthPx: 72,
+    labelledPoints: [],
+  };
+
+  it('a dot meeting the under-right slot with NO value label anywhere moves the label (was insideTopRight, the observed defect)', async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    const position = placeReferenceLabel({
+      ...base,
+      dots: [{ xPx: 619, yPx: 57, diameterPx: 5 }],
+    });
+    expect(position).not.toBe('insideTopRight');
+    expect(position).toBe('insideBottomRight');
+  });
+
+  it("the dot's 2px halo counts: a dot whose own box stops 1px short of the slot still blocks it", async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    // Dot 619, 50.5 (diameter 5): own box bottom 53 (the slot starts at 54), halo bottom 55.
+    expect(
+      placeReferenceLabel({ ...base, dots: [{ xPx: 619, yPx: 50.5, diameterPx: 5 }] }),
+    ).not.toBe('insideTopRight');
+    // 3px further up the halo clears it.
+    expect(placeReferenceLabel({ ...base, dots: [{ xPx: 619, yPx: 47.4, diameterPx: 5 }] })).toBe(
+      'insideTopRight',
+    );
+  });
+
+  it('tries the slots in order: under-right, above-right, under-left, then above-left', async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    const underRight = { xPx: 600, yPx: 60, diameterPx: 5 };
+    const aboveRight = { xPx: 600, yPx: 36, diameterPx: 5 };
+    const underLeft = { xPx: 100, yPx: 60, diameterPx: 5 };
+    expect(placeReferenceLabel({ ...base, dots: [underRight, aboveRight] })).toBe('insideTopLeft');
+    expect(placeReferenceLabel({ ...base, dots: [underRight, aboveRight, underLeft] })).toBe(
+      'insideBottomLeft',
+    );
+  });
+
+  it("dots blocking all four slots return 'none'", async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    expect(
+      placeReferenceLabel({
+        ...base,
+        dots: [
+          { xPx: 600, yPx: 60, diameterPx: 5 },
+          { xPx: 600, yPx: 36, diameterPx: 5 },
+          { xPx: 100, yPx: 60, diameterPx: 5 },
+          { xPx: 100, yPx: 36, diameterPx: 7 },
+        ],
+      }),
+    ).toBe('none');
+  });
+
+  it('a hollow sub-floor dot blocks like a filled one', async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    const filled = placeReferenceLabel({ ...base, dots: [{ xPx: 619, yPx: 57, diameterPx: 5 }] });
+    const hollow = placeReferenceLabel({
+      ...base,
+      dots: [{ xPx: 619, yPx: 57, diameterPx: 5, subFloor: true }],
+    });
+    expect(hollow).toBe(filled);
+    expect(hollow).not.toBe('insideTopRight');
+  });
+
+  it('value labels and dots combine: a value label above-right and a dot under-right leave the left slot', async () => {
+    const { placeReferenceLabel } = await loadGeometry();
+    expect(
+      placeReferenceLabel({
+        ...base,
+        labelledPoints: [{ xPx: 600, yPx: 50, labelWidthPx: 21 }],
+        dots: [{ xPx: 600, yPx: 60, diameterPx: 5 }],
+      }),
+    ).toBe('insideTopLeft');
+  });
+});

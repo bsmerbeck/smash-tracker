@@ -403,7 +403,10 @@ describe('FighterHero', () => {
     expect(document.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
   });
 
-  describe('plan 39.1-37 (VIZ-01, UI-SPEC §11, fitted-period-trend): the trend legend names the hollow rule', () => {
+  // REWRITTEN by plan 39.1-43 (was: plan 37's separate hollow-legend line,
+  // [data-slot="fighter-hero-trend-legend"]): the hollow rule is now a swatch
+  // item of the kit's trend head (sketch 001-C trendSection / 003 trendLegend).
+  describe('plan 39.1-37 (VIZ-01, UI-SPEC §11, fitted-period-trend) -> 39.1-43: the trend head legend names the hollow rule', () => {
     /** Weekly four-game sessions, one day apart per game block; `thinWeek` gets one game only. */
     function weeklySessions(thinWeek: number | null): Match[] {
       const now = Date.now();
@@ -424,14 +427,18 @@ describe('FighterHero', () => {
       return matches;
     }
 
-    it('shows "hollow = under 3 games" when a sub-floor period is drawn', () => {
+    it('shows the "hollow = under 3 games" head item when a sub-floor period is drawn', () => {
       const matches = weeklySessions(10);
       const series = buildPeriodSeries({ matches });
       expect(series.points.some((p) => p.subFloor)).toBe(true);
       renderHero({ fighterMatches: matches });
-      const legend = document.querySelector('[data-slot="fighter-hero-trend-legend"]');
-      expect(legend).not.toBeNull();
-      expect(legend!.textContent).toBe(i18n.t('analytics.trend.legendHollow'));
+      const hollow = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-legend-item"][data-kind="hollow"]',
+      );
+      expect(hollow).not.toBeNull();
+      expect(hollow!.textContent).toBe(i18n.t('analytics.trend.legendHollow'));
+      // Plan 37's separate line is gone.
+      expect(document.querySelector('[data-slot="fighter-hero-trend-legend"]')).toBeNull();
     });
 
     it('omits the hollow legend when every period is joined', () => {
@@ -440,8 +447,48 @@ describe('FighterHero', () => {
       expect(series.points.length).toBeGreaterThanOrEqual(8);
       expect(series.points.some((p) => p.subFloor)).toBe(false);
       renderHero({ fighterMatches: matches });
-      expect(document.querySelector('[data-slot="fighter-hero-trend-legend"]')).toBeNull();
+      expect(document.querySelector('[data-kind="hollow"]')).toBeNull();
+      expect(document.querySelector('[data-kind="dot"]')?.textContent).toBe('size = games');
       expect(screen.queryByText(i18n.t('analytics.trend.legendHollow'))).toBeNull();
+    });
+  });
+
+  describe('plan 39.1-43 (trend-head-locked, PD-43-1 / PD-43-2 / PD-43-3): the hero trend head, locked rule and value range', () => {
+    it('the trend root declares the sketch 160px value range (data-value-range-px="160")', () => {
+      renderHero({ fighterMatches: largeFixture() });
+      const root = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-line-period"]',
+      );
+      expect(root?.getAttribute('data-value-range-px')).toBe('160');
+    });
+
+    it('the head overline is analytics.trend.title.<grain> and the reference item reads "NN% all time"', () => {
+      const matches = largeFixture();
+      const series = buildPeriodSeries({ matches });
+      renderHero({ fighterMatches: matches });
+      const head = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-period-head"]',
+      );
+      expect(head?.firstElementChild?.textContent).toBe(
+        i18n.t(`analytics.trend.title.${series.grain}`),
+      );
+      expect(document.querySelector('[data-kind="reference"]')?.textContent).toMatch(
+        /^\d+% all time$/,
+      );
+      // One overline for the trend: plan 37's own overline paragraph is gone.
+      const section = document.querySelector('[data-slot="fighter-hero-trend"]')!;
+      expect(section.querySelectorAll(':scope > p')).toHaveLength(0);
+    });
+
+    it('the forty-game account (40 single-game periods, every one under the floor) now shows the locked trend — orchestrator Finding 6 / PD-43-1', () => {
+      renderHero({ fighterMatches: fortyGameFixture() });
+      const locked = document.querySelector('[data-slot="trend-line-period-locked"]');
+      expect(locked).not.toBeNull();
+      const series = buildPeriodSeries({ matches: fortyGameFixture() });
+      expect(locked!.textContent).toContain(
+        i18n.t(`analytics.trend.lockedPeriods.${series.grain}`, { count: 8 }),
+      );
+      expect(locked!.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('0 of 8');
     });
   });
 

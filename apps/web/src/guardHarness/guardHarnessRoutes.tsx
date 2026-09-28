@@ -55,8 +55,9 @@ export interface GuardHarnessRouteEntry {
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
    * `trends-casual`, (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
-   * capture-only `gsp`, (plan 39.1-51) the three `*-games` drill routes and
-   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin`.
+   * capture-only `gsp`, (plan 39.1-51) the three `*-games` drill routes,
+   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin` and (plan
+   * 39.1-43) `fighter-analysis-recent`.
    */
   shell?: 'app';
 }
@@ -227,6 +228,18 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/stages/1',
     element: <StageDetailPage />,
     loadedMarker: '[data-slot="stage-detail-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-43 (OOS-6, 39.1-39 whole-page review): the Fighter hero on
+    // the harness's `recent` scale (guardLayout sends `x-guard-layout-scale:
+    // recent`), in the MainLayout-geometry shell — where 39.1-39's capture
+    // showed the "NN% all time" reference label over the last period dots.
+    id: 'fighter-analysis-recent',
+    path: '/fighter-analysis',
+    initialEntry: '/fighter-analysis',
+    element: <FighterAnalysisPage />,
+    loadedMarker: '[data-slot="fighter-hero-body"]',
     shell: 'app',
   },
   // Plan 39.1-51 (OOS-8): the three hosts that mount the results list

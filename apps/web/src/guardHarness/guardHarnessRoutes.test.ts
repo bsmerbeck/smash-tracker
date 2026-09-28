@@ -14,13 +14,16 @@ import { GUARD_HARNESS_ROUTES, findGuardHarnessRoute } from './guardHarnessRoute
  * CONCRETE value in `initialEntry`, never the raw `:param` placeholder.
  */
 describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)', () => {
+  // REWRITTEN by plan 39.1-43 (was twenty-one): the fighter-analysis-recent
+  // oracle route (OOS-6, the reference label over the hero's last dots on the
+  // recent fixture) raises the count by exactly one.
   // REWRITTEN by plan 39.1-51 (was sixteen): the three `*-games` drill routes
   // (OOS-8) make the drill-only results-list hosts measurable — the count rises
   // by exactly three.
   // REWRITTEN by plan 39.1-41 (was nineteen): the two sketch-003 oracle routes
   // (matchups-sketch-deep / -thin) raise the count by exactly two.
-  it('has exactly twenty-one entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route, (plan 39.1-49) the scout route, (plan 39.1-51) the fighter-analysis-games, match-data-games and trends-games drill routes and (plan 39.1-41) the matchups-sketch-deep and matchups-sketch-thin routes', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(21);
+  it('has exactly twenty-two entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app, stage-detail-recent and (plan 39.1-43) fighter-analysis-recent oracle routes, the stretch and period-axis fixture routes, the gsp route, (plan 39.1-49) the scout route, (plan 39.1-51) the fighter-analysis-games, match-data-games and trends-games drill routes and (plan 39.1-41) the matchups-sketch-deep and matchups-sketch-thin routes', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(22);
   });
 
   // Plan 39.1-41 (sketch 003 tracer): the Matchups page at its real path on
@@ -76,6 +79,20 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(recent?.initialEntry).toBe('/stages/1');
     expect(recent?.shell).toBe('app');
     expect(recent?.loadedMarker).toBe('[data-slot="stage-detail-body"]');
+  });
+
+  // Plan 39.1-43 (OOS-6): the Fighter hero on the harness's recent scale, where
+  // 39.1-39's capture showed the reference label over the last period dots.
+  it('plan 39.1-43: fighter-analysis-recent mounts the Fighter Analysis page at its real path in the app shell with the hero loaded marker', () => {
+    const recent = findGuardHarnessRoute('fighter-analysis-recent');
+    const base = findGuardHarnessRoute('fighter-analysis');
+    expect(recent?.path).toBe('/fighter-analysis');
+    expect(recent?.initialEntry).toBe('/fighter-analysis');
+    expect(recent?.shell).toBe('app');
+    expect(recent?.loadedMarker).toBe('[data-slot="fighter-hero-body"]');
+    expect((recent?.element as { type?: unknown } | undefined)?.type).toBe(
+      (base?.element as { type?: unknown } | undefined)?.type,
+    );
   });
 
   // Plan 39.1-39 (record-fit): the Dashboard measured inside the production-
@@ -138,13 +155,15 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(findGuardHarnessRoute(null)).toBeUndefined();
   });
 
+  // REWRITTEN by plan 39.1-43: fighter-analysis-recent joins the shell.
   // REWRITTEN by plan 39.1-51: the three `*-games` drill routes join the shell.
   // REWRITTEN by plan 39.1-41: the two sketch-003 Matchups routes join it too.
-  it('plans 39.1-30/34/35/39/41/51: exactly the matchups, matchups-sketch-deep/-thin, trends-career, trends-casual, dashboard-app, stage-detail-recent, gsp and three *-games entries opt into the MainLayout-geometry app shell', () => {
+  it('plans 39.1-30/34/35/39/41/43/51: exactly the matchups, matchups-sketch-deep/-thin, trends-career, trends-casual, dashboard-app, stage-detail-recent, fighter-analysis-recent, gsp and three *-games entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
     expect(shelled.map((r) => r.id).sort()).toEqual([
       'dashboard-app',
       'fighter-analysis-games',
+      'fighter-analysis-recent',
       'gsp',
       'match-data-games',
       'matchups',

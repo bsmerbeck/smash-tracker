@@ -3110,10 +3110,21 @@ test('period-trend-marks: a tick outside the domain, 0 while lo > 0 or 100 while
   );
 });
 
-test('period-trend-marks: the PERIOD_TREND line prints state, domain, sorted distinct dots, labels, lines and ref', () => {
+// REWRITTEN by plan 39.1-43 (was: the line ended at `ref=`): the line now
+// appends ` range=<rounded px>` (the measured value range, PD-43-3), `none`
+// when the surface carries no measurable hairlines.
+test('period-trend-marks: the PERIOD_TREND line prints state, domain, sorted distinct dots, labels, lines, ref and range', () => {
   assert.equal(
     guardLayoutCoreNs.formatPeriodTrendLine('matchups-sketch-deep', '1440x900', deepSurface()),
-    'PERIOD_TREND route=matchups-sketch-deep viewport=1440x900 state=drawn domain=20,100 dots=5,7 labels=100%|33%|60% lines=1 ref=63%_all_time',
+    'PERIOD_TREND route=matchups-sketch-deep viewport=1440x900 state=drawn domain=20,100 dots=5,7 labels=100%|33%|60% lines=1 ref=63%_all_time range=none',
+  );
+  assert.equal(
+    guardLayoutCoreNs.formatPeriodTrendLine(
+      'fighter-analysis',
+      '390x844',
+      deepSurface({ valueRangePx: 159.6 }),
+    ),
+    'PERIOD_TREND route=fighter-analysis viewport=390x844 state=drawn domain=20,100 dots=5,7 labels=100%|33%|60% lines=1 ref=63%_all_time range=160',
   );
   assert.equal(
     guardLayoutCoreNs.formatPeriodTrendLine('matchups-sketch-thin', '390x844', {
@@ -3124,7 +3135,7 @@ test('period-trend-marks: the PERIOD_TREND line prints state, domain, sorted dis
       strokedLineCount: 0,
       referenceLabel: null,
     }),
-    'PERIOD_TREND route=matchups-sketch-thin viewport=390x844 state=locked domain=none dots=none labels=none lines=0 ref=none',
+    'PERIOD_TREND route=matchups-sketch-thin viewport=390x844 state=locked domain=none dots=none labels=none lines=0 ref=none range=none',
   );
 });
 
@@ -3263,4 +3274,141 @@ test('form-strip-labels: the FORM_STRIP line prints shown/count events, shown/to
     }),
     'FORM_STRIP route=matchups viewport=1440x900 events=1/unknown games=30/unknown labels=none width=900',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-43 (PD-43-3, sketch 001-C / 003 `trend()`: the 160px trend box is
+// the VALUE range): every periodTrendExpect field is optional, and
+// `valueRangePx: [min, max]` bounds the measured hairline span.
+// ---------------------------------------------------------------------------
+
+test('period-trend-marks: value range — a measured 160px span inside [158, 162] passes', () => {
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ valueRangePx: 160 })], { valueRangePx: [158, 162] }),
+    [],
+  );
+});
+
+test('period-trend-marks: value range — the shipped 80px compact span is one period-trend-value-range', () => {
+  const violations = guardLayoutCoreNs.evaluatePeriodTrendMarks(
+    [deepSurface({ valueRangePx: 80 })],
+    {
+      state: 'drawn',
+      valueRangePx: [158, 162],
+    },
+  );
+  assert.deepEqual(
+    violations.map((v) => v.type),
+    ['period-trend-value-range'],
+  );
+  assert.equal(violations[0].valueRangePx, 80);
+  assert.deepEqual(violations[0].expected, [158, 162]);
+});
+
+test('period-trend-marks: value range — a drawn surface with no measurable hairlines is period-trend-value-range-unmeasured', () => {
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ valueRangePx: null })], { valueRangePx: [158, 162] }),
+    ['period-trend-value-range-unmeasured'],
+  );
+  assert.deepEqual(periodTrendTypes([deepSurface()], { valueRangePx: [158, 162] }), [
+    'period-trend-value-range-unmeasured',
+  ]);
+});
+
+test('period-trend-marks: value range — a locked surface is never measured for its range; no expectation, no check', () => {
+  const locked = {
+    selectorPath: 'x',
+    state: 'locked',
+    dots: [],
+    valueLabels: [],
+    strokedLineCount: 0,
+  };
+  assert.deepEqual(periodTrendTypes([locked], { state: 'locked', valueRangePx: [158, 162] }), []);
+  assert.deepEqual(periodTrendTypes([deepSurface({ valueRangePx: 80 })], { state: 'drawn' }), []);
+});
+
+test('period-trend-marks: every expectation field is optional — an empty expectation checks only the kit invariants', () => {
+  assert.deepEqual(periodTrendTypes([deepSurface()], {}), []);
+  assert.deepEqual(periodTrendTypes([deepSurface({ strokedLineCount: 2 })], {}), [
+    'period-trend-context-series',
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-43 (OOS-6, 39.1-39 whole-page review): the all-time reference
+// label must clear every drawn period dot — its box plus sketch 001-C's 2px
+// `.pt` surface halo — not only the value labels.
+// ---------------------------------------------------------------------------
+
+test('axis-ticks: reference-label-dot-collision — a reference label meeting a dot expanded by the 2px halo is one violation naming the label and the dot', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      referenceLabels: [{ left: 560, right: 640, top: 100, bottom: 116, text: '48% all time' }],
+      // The dot's own box ends 1px above the label; its 2px halo reaches into it.
+      dots: [
+        {
+          selectorPath: '#dot-last',
+          key: 'week:2026-W30',
+          left: 600,
+          right: 605,
+          top: 94,
+          bottom: 99,
+        },
+      ],
+    }),
+  ]);
+  const hits = violations.filter((v) => v.type === 'reference-label-dot-collision');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reference, '48% all time');
+  assert.equal(hits[0].dot, '#dot-last');
+  assert.equal(hits[0].key, 'week:2026-W30');
+});
+
+test('axis-ticks: reference-label-dot-collision — a 2.5px gap between the label and the dot passes', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      referenceLabels: [{ left: 560, right: 640, top: 100, bottom: 116, text: '48% all time' }],
+      dots: [{ selectorPath: '#dot', left: 600, right: 605, top: 92.5, bottom: 97.5 }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'reference-label-dot-collision').length, 0);
+});
+
+test('axis-ticks: reference-label-dot-collision — a hollow sub-floor dot counts, and every overlapping pair is reported', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      referenceLabels: [{ left: 560, right: 640, top: 100, bottom: 116, text: '48% all time' }],
+      dots: [
+        { selectorPath: '#hollow', subFloor: true, left: 570, right: 575, top: 104, bottom: 109 },
+        { selectorPath: '#filled', left: 620, right: 627, top: 110, bottom: 117 },
+        { selectorPath: '#clear', left: 300, right: 305, top: 104, bottom: 109 },
+      ],
+    }),
+  ]);
+  const hits = violations.filter((v) => v.type === 'reference-label-dot-collision');
+  assert.deepEqual(
+    hits.map((v) => v.dot),
+    ['#hollow', '#filled'],
+  );
+});
+
+test('axis-ticks: reference-label-dot-collision — a surface with dots and no reference label is not a violation', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      dots: [{ selectorPath: '#dot', left: 600, right: 605, top: 100, bottom: 105 }],
+    }),
+  ]);
+  assert.equal(violations.filter((v) => v.type === 'reference-label-dot-collision').length, 0);
+});
+
+test('axis-ticks: reference-label-dot-collision — the value-label reference-label-collision check is kept beside it', () => {
+  const violations = evaluateAxisTicks([
+    makeSurface({
+      valueLabels: [{ left: 600, right: 621, top: 100, bottom: 112, text: '52%' }],
+      referenceLabels: [{ left: 560, right: 640, top: 104, bottom: 120, text: '48% all time' }],
+      dots: [{ selectorPath: '#dot', left: 610, right: 615, top: 112, bottom: 117 }],
+    }),
+  ]);
+  const types = violations.map((v) => v.type).sort();
+  assert.deepEqual(types, ['reference-label-collision', 'reference-label-dot-collision']);
 });

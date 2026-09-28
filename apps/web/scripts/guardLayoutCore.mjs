@@ -253,6 +253,13 @@ function rectsIntersect(a, b, expandPx = 0) {
   return aLeft < b.right && aRight > b.left && aTop < b.bottom && aBottom > b.top;
 }
 
+/**
+ * Plan 39.1-43 (OOS-6): sketch 001-C / 003 draw every period dot with a 2px
+ * card-surface halo (`.pt { box-shadow: 0 0 0 2px var(--color-surface) }`),
+ * so a reference label must clear the dot's box expanded by this much.
+ */
+export const REFERENCE_LABEL_DOT_HALO_PX = 2;
+
 export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
   const violations = [];
   for (const surface of surfaces) {
@@ -322,6 +329,23 @@ export function evaluateAxisTicks(surfaces, minGapPx = MIN_TICK_GAP_PX) {
             selectorPath,
             label: label.text,
             reference: reference.text,
+          });
+        }
+      }
+    }
+
+    // Plan 39.1-43 (OOS-6): the value-label loop above never saw a label over
+    // a DOT — the 39.1-39 capture's "NN% all time" sat on the last dots and
+    // passed. Every (reference label, drawn dot) pair is reported.
+    for (const reference of surface.referenceLabels ?? []) {
+      for (const dot of dots) {
+        if (rectsIntersect(dot, reference, REFERENCE_LABEL_DOT_HALO_PX)) {
+          violations.push({
+            type: 'reference-label-dot-collision',
+            selectorPath,
+            reference: reference.text,
+            dot: dot.selectorPath,
+            ...(dot.key ? { key: dot.key } : {}),
           });
         }
       }
@@ -1964,7 +1988,14 @@ function sameSortedStrings(a, b) {
  * - `period-trend-domain`: the declared y-domain differs from the expected one;
  * - `period-trend-reference-label`: the reference label text differs;
  * - `period-trend-axis-edge`: a y tick outside the declared domain, a 0 tick
- *   while the domain starts above 0, or a 100 tick while it ends below 100.
+ *   while the domain starts above 0, or a 100 tick while it ends below 100;
+ * - (plan 39.1-43, PD-43-3) `period-trend-value-range`: the measured
+ *   `valueRangePx` (the span between the fitted domain's lowest and highest
+ *   hairlines) lies outside `expect.valueRangePx` ([min, max]);
+ *   `period-trend-value-range-unmeasured`: a drawn surface expected to carry
+ *   a range has no measurable hairlines.
+ * Every expectation field is optional — an empty expectation checks only
+ * the kit invariants (one line, at most three labels, 5 / 7 / 9 dots).
  */
 export function evaluatePeriodTrendMarks(surfaces, expect = {}) {
   if (!Array.isArray(surfaces) || surfaces.length === 0) {
@@ -2064,6 +2095,21 @@ export function evaluatePeriodTrendMarks(surfaces, expect = {}) {
       });
     }
 
+    if (expect.valueRangePx) {
+      const [minPx, maxPx] = expect.valueRangePx;
+      const measured = surface.valueRangePx;
+      if (typeof measured !== 'number' || !Number.isFinite(measured)) {
+        violations.push({ type: 'period-trend-value-range-unmeasured', selectorPath });
+      } else if (measured < minPx || measured > maxPx) {
+        violations.push({
+          type: 'period-trend-value-range',
+          selectorPath,
+          valueRangePx: measured,
+          expected: expect.valueRangePx,
+        });
+      }
+    }
+
     if (domain) {
       const [lo, hi] = domain;
       for (const text of surface.yTickTexts ?? []) {
@@ -2089,7 +2135,8 @@ export function evaluatePeriodTrendMarks(surfaces, expect = {}) {
 /**
  * The one PERIOD_TREND line per measured surface (later plans append fields
  * after `ref=`). `dots` are the sorted distinct diameters; spaces in the
- * reference label print as `_`.
+ * reference label print as `_`. Plan 39.1-43 appends ` range=<rounded px>`
+ * (the measured value range) or ` range=none`.
  */
 export function formatPeriodTrendLine(routeId, viewportName, surface) {
   const domain = surface.yDomain ? `${surface.yDomain[0]},${surface.yDomain[1]}` : 'none';
@@ -2098,5 +2145,9 @@ export function formatPeriodTrendLine(routeId, viewportName, surface) {
     .join(',');
   const labels = (surface.valueLabels ?? []).map((label) => label.text).join('|');
   const ref = surface.referenceLabel ? surface.referenceLabel.replace(/\s+/g, '_') : 'none';
-  return `PERIOD_TREND route=${routeId} viewport=${viewportName} state=${surface.state ?? 'none'} domain=${domain} dots=${dots || 'none'} labels=${labels || 'none'} lines=${surface.strokedLineCount ?? 0} ref=${ref}`;
+  const range =
+    typeof surface.valueRangePx === 'number' && Number.isFinite(surface.valueRangePx)
+      ? String(Math.round(surface.valueRangePx))
+      : 'none';
+  return `PERIOD_TREND route=${routeId} viewport=${viewportName} state=${surface.state ?? 'none'} domain=${domain} dots=${dots || 'none'} labels=${labels || 'none'} lines=${surface.strokedLineCount ?? 0} ref=${ref} range=${range}`;
 }
