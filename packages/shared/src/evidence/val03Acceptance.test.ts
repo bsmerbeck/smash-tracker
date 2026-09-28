@@ -256,7 +256,7 @@ const JUDGE_RUBRIC_LISTS = {
   romanPairWords: rubricList('roman-pair-words'),
   countWords: rubricList('count-words'),
   countPhrases: rubricList('count-phrases', /\s*;\s*/),
-  countGapStop: rubricList('count-gap-stop'),
+  countGapWords: rubricList('count-gap-words'),
   loneOnePreceders: rubricList('lone-one-preceders'),
   loneOneCounts: rubricList('lone-one-counts'),
   glueWords: rubricList('glue-words'),
@@ -375,7 +375,7 @@ const JUDGE_SPELLED_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.spe
 const JUDGE_FIGURE_PHRASES: readonly (readonly string[])[] = JUDGE_RUBRIC_LISTS.figurePhrases
   .flatMap(expandRubricPhrase)
   .map((phrase) => phrase.split(' '));
-const JUDGE_COUNT_GAP_STOP: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.countGapStop);
+const JUDGE_COUNT_GAP_WORDS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.countGapWords);
 const JUDGE_LONE_ONE_PRECEDERS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOnePreceders);
 const JUDGE_LONE_ONE_COUNTS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOneCounts);
 const JUDGE_COUNT_SEQUENCES: readonly (readonly string[])[] = [
@@ -728,8 +728,8 @@ function judgeNumericName(name: string): boolean {
 /**
  * True when `after` opens with one of the rubric's count words or count
  * phrases — directly, or after one or two gap words (R7-WR-02): whitespace-
- * separated words of letters and inner hyphens, each optionally ending in a
- * comma, none a `count-gap-stop` word.
+ * separated words, each optionally ending in a comma, each a `count-gap-words`
+ * word (R8-WR-01: a closed list, so a pronoun or a verb never bridges).
  */
 function opensWithCount(after: string): boolean {
   const opensWith = (text: string): boolean => {
@@ -747,7 +747,7 @@ function opensWithCount(after: string): boolean {
       return false;
     }
     const word = /^([A-Za-z]+(?:-[A-Za-z]+)*),?(\s+)/.exec(rest);
-    if (!word || JUDGE_COUNT_GAP_STOP.has(word[1]!.toLowerCase())) {
+    if (!word || !JUDGE_COUNT_GAP_WORDS.has(word[1]!.toLowerCase())) {
       return false;
     }
     rest = rest.slice(word[0].length);
@@ -1797,6 +1797,26 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
       const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
       expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(true);
       expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).not.toBeNull();
+    }
+  });
+
+  it('R8-WR-01: every count-gap-words word bridges a digit-bearing tag and a count noun on both sides, and a pronoun or verb does not', () => {
+    expect(JUDGE_RUBRIC_LISTS.countGapWords.length).toBeGreaterThan(20);
+    for (const word of JUDGE_RUBRIC_LISTS.countGapWords) {
+      for (const prose of [
+        `You took ${R5_TAG} ${word} sets.`,
+        `You took ${R5_TAG} ${word}, close games.`,
+      ]) {
+        const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
+        expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(true);
+        expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).not.toBeNull();
+      }
+    }
+    for (const bridge of ['likes', 'plays', 'drags', 'favours', 'you', 'he', 'likes patient']) {
+      const prose = `${R5_TAG} ${bridge} long sets.`;
+      const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
+      expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(false);
+      expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).toBeNull();
     }
   });
 

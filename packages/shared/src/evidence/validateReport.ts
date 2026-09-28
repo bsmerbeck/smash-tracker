@@ -827,19 +827,24 @@ function hasFigureOrTierWord(text: string): boolean {
  * "Sparg0") read as a count — followed by a count word.
  *
  * R7-WR-02 (iteration 7): the count word may come directly, or after one or
- * two other words ("Leo 2 close sets", "Pokémon Stadium 2 hard-fought,
- * close games") — each a letter run, hyphenated or not, optionally ending in
- * a comma, separated by whitespace — none of them a determiner or a
- * possessive (`COUNT_GAP_STOP`), so "Pokémon Stadium 2 suits your game" and
- * "Leo 2 plays a patient game" ship. The count nouns now include "series",
- * "bouts", "encounters", "meetings", "exchanges", "matchups", "runbacks",
- * "brackets", "tournaments" and "events".
+ * two attributive words ("Leo 2 close sets", "Pokémon Stadium 2
+ * hard-fought, close games"), each optionally ending in a comma, separated by
+ * whitespace. The count nouns now include "series", "bouts", "encounters",
+ * "meetings", "exchanges", "matchups", "runbacks", "brackets", "tournaments"
+ * and "events".
+ *
+ * R8-WR-01 (iteration 8): those gap words are a CLOSED list of attributive
+ * words (`COUNT_GAP_WORD`, the rubric's `count-gap-words`). Iteration 7 let
+ * any word bridge the gap except a determiner or a possessive, so a pronoun or
+ * a verb read ordinary commentary as a count ("On Pokémon Stadium 2 you win
+ * neutral", "Sparg0 closes out games", "Leo 2 likes long sets").
  */
 const COUNT_NOUN_SOURCE =
   'wins?|loss(?:es)?|times?|sets?|games?|stocks?|match(?:es)?|rounds?|victor(?:y|ies)|defeats?|straight|series|bouts?|encounters?|meetings?|exchanges?|matchups?|runbacks?|brackets?|tournaments?|events?|in\\s+a\\s+row';
-const COUNT_GAP_STOP = 'your|his|her|their|my|our|its|the|a|an|this|that|these|those';
+const COUNT_GAP_WORD =
+  'close|tight|narrow|hard-fought|long|short|lopsided|decisive|straight|consecutive|back-to-back|recent|previous|past|last|total|ranked|unranked|official|online|offline|bracket|tournament|competitive|casual|friendly|money';
 const NAME_COUNT_FOLLOWER = new RegExp(
-  `^\\s*(?:(?!(?:${COUNT_GAP_STOP})(?![A-Za-z]))[A-Za-z]+(?:-[A-Za-z]+)*,?\\s+){0,2}(?:${COUNT_NOUN_SOURCE})(?![A-Za-z])`,
+  `^\\s*(?:(?:${COUNT_GAP_WORD}),?\\s+){0,2}(?:${COUNT_NOUN_SOURCE})(?![A-Za-z])`,
   'i',
 );
 

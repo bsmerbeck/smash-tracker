@@ -74,9 +74,11 @@ exactly the text that is delivered, in this order:
    ("Pokémon Stadium 2", "Mr. Game & Watch", "Sparg0", "José") are never figures. Nothing else
    consumes anything: the same accent, digit or symbol outside a licensed span is judged like any
    other character. A digit- or numeral-bearing name or tag followed by a count word (see the
-   lists) is a figure — directly, or after one or two other words ("Leo 2 close sets"), each a letter
-   run (hyphenated or not, optionally ending in a comma) separated by whitespace, none of them a
-   `count-gap-stop` word, so "Pokémon Stadium 2 suits your game" ships (R7-WR-02). A tag that itself reads as a figure or a grade ("High", "Twice", "Leo
+   lists) is a figure — directly, or after one or two `count-gap-words` words ("Leo 2 close sets",
+   "Leo 2 recent, ranked sets"), each optionally ending in a comma, separated by whitespace
+   (R7-WR-02). The gap words are a closed list of attributive words (R8-WR-01): a pronoun, a verb or
+   any other word ends the reading, so "Pokémon Stadium 2 suits your game", "On Pokémon Stadium 2
+   you win neutral" and "Sparg0 closes out games" ship. A tag that itself reads as a figure or a grade ("High", "Twice", "Leo
    3-2", "Leo 3 to 2", "Leo 70%", "Leo V", or a tag holding a numeral glyph) is NOT consumed (review R5-IN-03, decided
    fail-closed), so every mention of it withholds the section: that costs commentary, never a
    claim.
@@ -123,7 +125,7 @@ ordinal.
 - `roman-pair-words`: `to and`
 - `count-words`: `win wins loss losses time times set sets game games stock stocks match matches round rounds victory victories defeat defeats straight series bout bouts encounter encounters meeting meetings exchange exchanges matchup matchups runback runbacks bracket brackets tournament tournaments event events`
 - `count-phrases`: `in a row`
-- `count-gap-stop`: `your his her their my our its the a an this that these those`
+- `count-gap-words`: `close tight narrow hard-fought long short lopsided decisive straight consecutive back-to-back recent previous past last total ranked unranked official online offline bracket tournament competitive casual friendly money`
 - `lone-one-preceders`: `took won lost dropped in for of by`
 - `lone-one-counts`: `set game stock match round win loss`
 - `glue-words`: `and to time times set sets game games win wins loss losses stock stocks match matches round rounds confidence confident record records straight fold tier tiers percent`
