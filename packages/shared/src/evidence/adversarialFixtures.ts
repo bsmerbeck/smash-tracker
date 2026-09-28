@@ -1841,6 +1841,110 @@ const d24R6Fixtures: readonly AdversarialFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Code review iteration 7 (R7-WR-01..03): NATURAL phrasings — what a model
+// writing ordinary commentary might say, not deliberate obfuscation (the
+// D-24 threat model) — that state a figure with words the iteration-6 lists
+// did not hold: a zero side ("no wins", "not beaten", "without dropping a
+// game", "a goose egg"), an even record ("level with", "all square",
+// "parity", "deadlocked", "a stalemate", "deuce"), a whitewash, the jargon
+// "JV", a count noun one or two words after a digit-bearing name or tag
+// ("Leo 2 close sets", "Pokémon Stadium 2 series"), and a lone "I" read as
+// the numeral one ("You took I set"). VAL-03 requires every one to be
+// withheld by the validator AND convicted by the judge; every control must
+// ship and pass the judge.
+// ---------------------------------------------------------------------------
+
+const D24_R7_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['no-wins', `You have no wins against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-losses', `You have no losses to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-sets', `You have taken no sets off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-games', `${PROSE_ENTITY_DIGIT_TAG} has taken no games off you.`],
+  ['not-beaten', `You have not beaten ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['havent-beaten', `You haven't beaten ${PROSE_ENTITY_DIGIT_TAG} yet.`],
+  ['not-yet-won', `You have not yet won against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['not-lost-to', `You have not lost to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['without-dropping', `You beat ${PROSE_ENTITY_DIGIT_TAG} without dropping a game.`],
+  ['without-losing-any', `You beat ${PROSE_ENTITY_DIGIT_TAG} without losing any sets.`],
+  ['goose-egg', `You have a goose egg against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['level-with', `You are level with ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['square-with', `You are square with ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['all-square', `You and ${PROSE_ENTITY_DIGIT_TAG} are all square.`],
+  ['parity', `Your record against ${PROSE_ENTITY_DIGIT_TAG} sits at parity.`],
+  ['deadlocked', `You and ${PROSE_ENTITY_DIGIT_TAG} are deadlocked.`],
+  ['stalemate', `Your sets with ${PROSE_ENTITY_DIGIT_TAG} are a stalemate.`],
+  ['whitewashed', `${PROSE_ENTITY_DIGIT_TAG} whitewashed you.`],
+  ['deuce', `Your sets with ${PROSE_ENTITY_DIGIT_TAG} sit at deuce.`],
+  ['jv', `You JV'd ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lone-i-set', `You took I set off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lone-i-game', `You won I game against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lone-i-stock', `You dropped I stock to ${PROSE_ENTITY_DIGIT_TAG}.`],
+];
+
+const D24_R7_NAME_COUNT_PHRASINGS: ReadonlyArray<readonly [string, number, string]> = [
+  ['series', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium 2 series went your way.'],
+  ['close-games', POKEMON_STADIUM_TWO, 'Marth took Pok\u00e9mon Stadium 2 close games.'],
+  ['tournaments', PICTOCHAT_TWO, 'Marth on PictoChat 2 tournaments went your way.'],
+];
+
+const D24_R7_TAG_COUNT_PHRASINGS: ReadonlyArray<readonly [string, string, string]> = [
+  ['close-sets', 'Leo 2', 'You lost to Leo 2 close sets.'],
+  ['series', 'Leo 2', 'You dropped Leo 2 series.'],
+  ['encounters', 'Leo 2', 'Leo 2 encounters went your way.'],
+  ['bouts', 'Zer0Frame 3', 'Zer0Frame 3 bouts went your way.'],
+  ['hard-fought-sets', 'Leo 2', 'You took Leo 2 hard-fought sets.'],
+];
+
+/** Over-strip controls: ordinary commentary near the R7 rules is delivered, and the judge must not convict it. */
+const D24_R7_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['no-need', `No need to rush against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-reason', `There is no reason to chase ${PROSE_ENTITY_DIGIT_TAG} off stage.`],
+  ['level-head', `Keep a level head when ${PROSE_ENTITY_DIGIT_TAG} presses you.`],
+  ['without-dropping-combo', `Punish ${PROSE_ENTITY_DIGIT_TAG} without dropping a combo.`],
+  ['i-set-up', `I set up the ledge trap early against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['i-lose', `When I lose a stock to ${PROSE_ENTITY_DIGIT_TAG}, I reset to neutral.`],
+  ['tag-then-words', `${PROSE_ENTITY_DIGIT_TAG} plays a patient game, so wait him out.`],
+  ['tag-then-possessive', `${PROSE_ENTITY_DIGIT_TAG} punishes your landing, so vary it.`],
+];
+
+const D24_R7_NAME_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, number, string]> = [
+  ['name-suits-your-game', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium 2 suits your game.'],
+  [
+    'name-and-its',
+    POKEMON_STADIUM_TWO,
+    'Pok\u00e9mon Stadium 2 and its transformations reward a patient Marth.',
+  ],
+];
+
+const d24R7Fixtures: readonly AdversarialFixture[] = [
+  ...D24_R7_RECORD_PHRASINGS.map(([suffix, prose]) =>
+    makeProseEntityPerspectiveFixture({ id: `d24-r7-record-${suffix}`, prose }),
+  ),
+  ...D24_R7_NAME_COUNT_PHRASINGS.map(([suffix, stageId, prose]) =>
+    makeStageNameFixture({
+      id: `d24-r7-name-${suffix}`,
+      stageId,
+      prose,
+      validatorVerdict: 'stripped',
+    }),
+  ),
+  ...D24_R7_TAG_COUNT_PHRASINGS.map(([suffix, tag, prose]) =>
+    makeTagFixture({ id: `d24-r7-tag-${suffix}`, tag, prose, validatorVerdict: 'stripped' }),
+  ),
+  ...D24_R7_CONTROL_PHRASINGS.map(([suffix, prose]) => ({
+    ...makeProseEntityPerspectiveFixture({ id: `d24-r7-control-${suffix}`, prose }),
+    expected: { legacyAccepts: true, validatorVerdict: 'accepted' as const },
+  })),
+  ...D24_R7_NAME_CONTROL_PHRASINGS.map(([suffix, stageId, prose]) =>
+    makeStageNameFixture({
+      id: `d24-r7-control-${suffix}`,
+      stageId,
+      prose,
+      validatorVerdict: 'accepted',
+    }),
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
 
@@ -1897,4 +2001,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   ...d24QualitativeControls,
   ...d24R5Fixtures,
   ...d24R6Fixtures,
+  ...d24R7Fixtures,
 ];

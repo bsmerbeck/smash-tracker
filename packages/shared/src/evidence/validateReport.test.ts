@@ -2581,3 +2581,119 @@ describe('R6 (iteration 6): the D-24 check reads the delivered text, never a fol
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 7 (R7-WR-01..03): natural phrasings — the bar the
+// D-24 threat model sets is non-adversarial model output — that state a zero
+// side, an even record, a count after a digit-bearing name or tag, or "I" as
+// the numeral one, with words the iteration-6 lists did not hold.
+// ---------------------------------------------------------------------------
+
+const R7_NATURAL_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  ['no wins', 'You have no wins against MkLeo.'],
+  ['no losses', 'You have no losses to MkLeo.'],
+  ['no sets', 'You have taken no sets off MkLeo.'],
+  ['no stocks', 'MkLeo took no stocks off you.'],
+  ['not beaten', 'You have not beaten MkLeo.'],
+  ["haven't beaten", "You haven't beaten MkLeo yet."],
+  ['not yet won', 'You have not yet won against MkLeo.'],
+  ['not lost to', 'You have not lost to MkLeo.'],
+  ['without dropping a game', 'You beat MkLeo without dropping a game.'],
+  ['without losing any sets', 'You beat MkLeo without losing any sets.'],
+  ['goose egg', 'You have a goose egg against MkLeo.'],
+  ['level with', 'You are level with MkLeo.'],
+  ['square with', 'You are square with MkLeo.'],
+  ['all square', 'You and MkLeo are all square.'],
+  ['dead level', 'You and MkLeo are dead level.'],
+  ['parity', 'Your record against MkLeo sits at parity.'],
+  ['deadlocked', 'You and MkLeo are deadlocked.'],
+  ['stalemate', 'Your sets with MkLeo are a stalemate.'],
+  ['whitewashed', 'MkLeo whitewashed you.'],
+  ['deuce', 'Your sets with MkLeo sit at deuce.'],
+  ['JV', "You JV'd MkLeo."],
+  ['I set', 'You took I set off MkLeo.'],
+  ['I game', 'You won I game against MkLeo.'],
+  ['I stock', 'You lost I stock to MkLeo.'],
+];
+
+describe('R7 (iteration 7): natural phrasings of a zero side, an even record, a count after a numeric name, and "I" as one', () => {
+  it.each(R7_NATURAL_WITHHELD)('R7-WR-01/R7-WR-03 %s: %j', (_id, prose) => {
+    expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose)).toEqual({
+      stripped: ['main'],
+      dropped: 0,
+    });
+  });
+
+  it('R7-WR-02: a count noun one or two words after a digit-bearing name or tag withholds, and so do the new count nouns', () => {
+    for (const [stageId, prose] of [
+      [59, 'Fox on Pokémon Stadium 2 series went your way.'],
+      [59, 'Fox took Pokémon Stadium 2 close games.'],
+      [59, 'Fox took Pokémon Stadium 2 tight, close sets.'],
+      [99, 'Fox on PictoChat 2 tournaments went your way.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
+        ['main'],
+      );
+    }
+    for (const [tag, prose] of [
+      ['Leo 2', 'You lost to Leo 2 close sets.'],
+      ['Leo 2', 'You dropped Leo 2 series.'],
+      ['Leo 2', 'Leo 2 encounters went your way.'],
+      ['Leo 2', 'You took Leo 2 hard-fought sets.'],
+      ['Leo 2', 'Leo 2 meetings went your way.'],
+      ['Leo 2', 'You won Leo 2 runbacks.'],
+      ['Zer0Frame 3', 'Zer0Frame 3 bouts went your way.'],
+      ['Zer0Frame 3', 'Zer0Frame 3 brackets went your way.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+
+  it('over-strip controls: ordinary sentences near the R7 rules still ship', () => {
+    for (const prose of [
+      'No need to rush against MkLeo.',
+      'There is no reason to chase MkLeo off stage.',
+      'Keep a level head when MkLeo presses you.',
+      'Punish MkLeo without dropping a combo.',
+      'I set up the ledge trap early against MkLeo.',
+      'When I lose a stock to MkLeo, I reset to neutral.',
+      'Do not let a lost stock rattle you against MkLeo.',
+      'I think MkLeo leans on ledge traps.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+    for (const [tag, prose] of [
+      ['Leo 2', 'Leo 2 plays a patient game, so wait him out.'],
+      ['Leo 2', 'Leo 2 punishes your landing, so vary it.'],
+      ['Leo 2', 'Leo 2 camps the ledge; stay patient.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([]);
+    }
+    for (const prose of [
+      'Fox on Pokémon Stadium 2 suits your game.',
+      'Pokémon Stadium 2 and its transformations suit your patience.',
+    ]) {
+      expect(
+        validateStageRecords([{ stageId: 59, games: 5, wins: 3 }], prose).stripped,
+        prose,
+      ).toEqual([]);
+    }
+  });
+
+  it('the price, stated: everyday senses of the R7 phrases are withheld too', () => {
+    for (const prose of [
+      'You have no game plan for MkLeo yet.',
+      'You have not won the neutral against MkLeo yet, so slow down.',
+      'Stay level with the ledge and wait for MkLeo.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+});
