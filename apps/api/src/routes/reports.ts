@@ -418,8 +418,10 @@ type SynthesisGenerationOutcome =
  * latch. Its failure paths can chain — a resolver fails the job, then
  * rethrows into the post-spend guard — and since the guard can refund this
  * execution's own spend even when the job record is no longer its own, the
- * second attempt must be a no-op. `failOwnedJob` sets it on its first call
- * and returns immediately on any later one.
+ * second attempt must be a no-op. `failOwnedJob` sets it once its first
+ * settle has RESOLVED (review R4-WR-01) and returns immediately on any later
+ * call. A settle that throws leaves it open, so the post-spend guard can
+ * still settle the execution; the settle decision, once made, is final.
  */
 interface ExecutionSettlement {
   settled: boolean;
@@ -787,8 +789,14 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     if (settlement.settled) {
       return false;
     }
+    // Code review R4-WR-01: the latch closes only once the settle has
+    // RESOLVED. A settle that throws (a transient RTDB error) has written
+    // nothing and refunded nothing, so the latch stays open and the
+    // post-spend guard (`failOwnedJobThenRethrow`) can still settle this
+    // execution. Latching first stranded the spent credit on a `queued` job.
+    const owned = await settleOwnedJob({ jobRef, executionId, from });
     settlement.settled = true;
-    if (!(await settleOwnedJob({ jobRef, executionId, from }))) {
+    if (!owned) {
       await refundLostExecutionSpend({
         uid: failParams.uid,
         creditRef: failParams.creditRef,
@@ -2842,13 +2850,32 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // predates the spend, so the spend fact is recorded on it here.
         await recordSpendFact(jobRef, spent, request.log);
 
-        // Code review R3-WR-02 / R3-IN-04: the legacy resolver keeps its
-        // bare `failJob` (each legacy execution refunds its own spend), and
-        // sets this execution's settlement latch first, so the post-spend
-        // guard never refunds the same spend again after a fail-then-rethrow.
-        const failLegacyJob = async (params: Parameters<typeof failJob>[0]): Promise<void> => {
-          settlement.settled = true;
-          await failJob(params);
+        // Code review R4-WR-01 (closes R3-IN-04 and R4-IN-03): the legacy
+        // resolver settles through the same owned settle as every other
+        // failure path. The job is failed only while its queued row is still
+        // this execution's own, so a crafted duplicate can no longer clobber
+        // a delivered legacy record; a lost row still refunds this
+        // execution's OWN spend once (`refundLostExecutionSpend`). The latch
+        // closes only after the settle resolves, so a settle that throws
+        // leaves the post-spend guard free to retry it, and a settle that
+        // completed makes the guard's later call a no-op (never a second
+        // refund).
+        const failLegacyJob = async (): Promise<void> => {
+          await failOwnedJob({
+            uid: request.uid,
+            jobRef,
+            executionId,
+            from: ['queued'],
+            jobId,
+            creditRef: jobId,
+            spent,
+            createdAt: jobCreatedAt,
+            attempt: jobAttempt,
+            day: null,
+            perExecutionSpend: true,
+            claimedAt: null,
+            settlement,
+          });
         };
 
         if (combined) {
@@ -2865,15 +2892,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               },
             );
             if (!result.ok) {
-              await failLegacyJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               return {
                 ok: false,
                 failure:
@@ -2901,15 +2920,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               options.parryggClients,
             );
             if (!scout) {
-              await failLegacyJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               return {
                 ok: false,
                 failure: {
@@ -2931,15 +2942,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                 scoutCache,
               );
               if (!scout) {
-                await failLegacyJob({
-                  uid: request.uid,
-                  jobId,
-                  creditRef: jobId,
-                  spent,
-                  createdAt: jobCreatedAt,
-                  attempt: jobAttempt,
-                  day: null,
-                });
+                await failLegacyJob();
                 return {
                   ok: false,
                   failure: {
@@ -2952,15 +2955,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               return { ok: true, scout };
             } catch (err) {
               if (err instanceof StartggApiError && err.status === 429) {
-                await failLegacyJob({
-                  uid: request.uid,
-                  jobId,
-                  creditRef: jobId,
-                  spent,
-                  createdAt: jobCreatedAt,
-                  attempt: jobAttempt,
-                  day: null,
-                });
+                await failLegacyJob();
                 return {
                   ok: false,
                   failure: {
@@ -2970,15 +2965,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                   },
                 };
               }
-              await failLegacyJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               request.log.error({ err }, 'start.gg scout lookup failed during report generation');
               throw err;
             }
