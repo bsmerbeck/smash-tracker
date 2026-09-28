@@ -135,9 +135,6 @@ export const PERIOD_VALUE_LABEL_BELOW_OFFSET_PX = 16;
 export const PERIOD_VALUE_LABEL_EDGE_FLIP_SHARE = 14 / 160;
 
 export interface PeriodValueLabelPlacementInput {
-  /** The labelled period's index and the series length. */
-  index: number;
-  count: number;
   /** The dot's centre y and the value range's top / bottom (px, chart coordinates). */
   yPx: number;
   valueTopPx: number;
@@ -149,7 +146,6 @@ export interface PeriodValueLabelPlacementInput {
 
 export interface PeriodValueLabelPlacement {
   below: boolean;
-  anchor: 'middle' | 'end';
 }
 
 /**
@@ -157,8 +153,8 @@ export interface PeriodValueLabelPlacement {
  * labels flip left so nothing collides"): the min label sits BELOW its dot
  * unless it is also the max or the last period (sketch 001-C keeps a last
  * min above); a dot within `PERIOD_VALUE_LABEL_EDGE_FLIP_SHARE` of the value
- * range's top flips its label below, within that of the bottom above; the
- * last two periods' labels right-align to their dots.
+ * range's top flips its label below, within that of the bottom above.
+ * Labels stay centred on their dots (see the note in the body).
  */
 export function periodValueLabelPlacement(
   input: PeriodValueLabelPlacementInput,
@@ -167,7 +163,11 @@ export function periodValueLabelPlacement(
   let below = input.isMin && !input.isMax && !input.isLast;
   if (input.yPx - input.valueTopPx < flipPx) below = true;
   if (input.valueBottomPx - input.yPx < flipPx) below = false;
-  return { below, anchor: input.index > input.count - 3 ? 'end' : 'middle' };
+  // Sketch 003's `.val.end` right-aligns labels in its last two CALENDAR
+  // slots; on the app's categorical periods that flipped a label across the
+  // recent band's edge, and the 16px x-axis padding already keeps a centred
+  // last label inside the plot — so labels stay centred (fidelity loop).
+  return { below };
 }
 
 /** Recharts' default `Label` offset (px) — the gap between the reference line and its label. */
@@ -199,8 +199,6 @@ export interface LabelledPointPx {
   labelWidthPx: number;
   /** Plan 39.1-41: the label sits below its dot (default above). */
   below?: boolean;
-  /** Plan 39.1-41: the label right-aligns to its dot (default centred). */
-  anchor?: 'middle' | 'end';
 }
 
 export interface ReferenceLabelPlacementInput {
@@ -264,10 +262,9 @@ function valueLabelBox(point: LabelledPointPx): Box {
   const baseline = point.below
     ? point.yPx + PERIOD_VALUE_LABEL_BELOW_OFFSET_PX
     : point.yPx - PERIOD_VALUE_LABEL_OFFSET_PX;
-  const end = point.anchor === 'end';
   return {
-    left: end ? point.xPx - point.labelWidthPx : point.xPx - point.labelWidthPx / 2,
-    right: end ? point.xPx : point.xPx + point.labelWidthPx / 2,
+    left: point.xPx - point.labelWidthPx / 2,
+    right: point.xPx + point.labelWidthPx / 2,
     top: baseline - lineHeight * 0.75,
     bottom: baseline + lineHeight * 0.25,
   };

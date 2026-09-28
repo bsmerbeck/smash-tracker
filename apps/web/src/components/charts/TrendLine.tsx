@@ -618,7 +618,7 @@ function periodLabelRenderer(
     if (!point) {
       return <g />;
     }
-    const placement = placements.get(index) ?? { below: false, anchor: 'middle' };
+    const placement = placements.get(index) ?? { below: false };
     return (
       <text
         x={x}
@@ -627,7 +627,7 @@ function periodLabelRenderer(
             ? y + PERIOD_VALUE_LABEL_BELOW_OFFSET_PX
             : y - PERIOD_VALUE_LABEL_OFFSET_PX
         }
-        textAnchor={placement.anchor}
+        textAnchor="middle"
         data-placement={placement.below ? 'below' : 'above'}
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
@@ -975,8 +975,6 @@ function PeriodTrendChart({
     [...labeledIndices].map((i) => [
       i,
       periodValueLabelPlacement({
-        index: i,
-        count: points.length,
         yPx: modelY(model, domain, points[i]!.rate * 100),
         valueTopPx: model.valueTopPx,
         valueBottomPx: model.valueBottomPx,
@@ -1003,7 +1001,6 @@ function PeriodTrendChart({
               yPx: modelY(model, domain, point.rate * 100),
               labelWidthPx: estimateTickLabelWidthPx(`${Math.round(point.rate * 100)}%`),
               below: placement?.below,
-              anchor: placement?.anchor,
             };
           }),
         })

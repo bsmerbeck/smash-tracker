@@ -215,16 +215,14 @@ describe('periodDotDiameterForTier — sketch 003 dotSize (plan 39.1-41)', () =>
 
 /**
  * Plan 39.1-41 fidelity loop (sketch 003 `trend()` 797-800 and CSS `.val`,
- * sketch 001-C `trend()` 475, "end labels flip left so nothing collides"):
- * the min label sits BELOW its dot (unless it is also the max or the last),
- * a label whose dot is within 14/160 of the value range of its top flips
- * below and one that close to its bottom flips above, and the labels of the last two
- * periods right-align to their dots.
+ * sketch 001-C `trend()` 475): the min label sits BELOW its dot (unless it
+ * is also the max or the last), and a label whose dot is within 14/160 of
+ * the value range of its top flips below and one that close to its bottom
+ * flips above. Labels stay centred (the `.val.end` flip is not ported — see
+ * the rewritten case below).
  */
 describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)', () => {
   const base = {
-    index: 3,
-    count: 21,
     valueTopPx: 29,
     valueBottomPx: 109,
     isMin: false,
@@ -236,7 +234,6 @@ describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)',
     const { periodValueLabelPlacement } = await loadGeometry();
     expect(periodValueLabelPlacement({ ...base, yPx: 70, isMin: true })).toEqual({
       below: true,
-      anchor: 'middle',
     });
     expect(periodValueLabelPlacement({ ...base, yPx: 70, isMax: true }).below).toBe(false);
     expect(periodValueLabelPlacement({ ...base, yPx: 70, isLast: true }).below).toBe(false);
@@ -272,13 +269,11 @@ describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)',
   // centred on their dots.
   it('keeps every label centred on its dot — the last periods included', async () => {
     const { periodValueLabelPlacement } = await loadGeometry();
-    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 20, isLast: true }).anchor).toBe(
-      'middle',
-    );
-    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 19 }).anchor).toBe('middle');
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, isLast: true })).toEqual({ below: false });
+    expect(Object.keys(periodValueLabelPlacement({ ...base, yPx: 70 }))).toEqual(['below']);
   });
 
-  it('placeReferenceLabel models a below label under its dot and an end label left of its dot', async () => {
+  it('placeReferenceLabel models a below label under its dot', async () => {
     const { placeReferenceLabel } = await loadGeometry();
     // Reference at y 49: its default slot (under, right-aligned) is y 54..70.
     // A BELOW label whose dot sits at y 40 occupies y 44..60 — the slot is taken.
