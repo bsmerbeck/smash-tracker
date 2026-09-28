@@ -71,24 +71,33 @@ bad-shaped can be delivered", never as "the model never tries".
 
 Known limits of the PROSE licence (R4, R5), stated rather than hidden. Owner decision D-24
 (2026-09-28, code review R4-CR-01 / R4-CR-02) makes report commentary qualitative only: a section
-whose prose carries a digit of any script, a spelled-out English number word, a percentage, a
-W-L-like pair with any separator, or a confidence-tier word anywhere is withheld (disclosed, never
-refunded, D-22), true or false. Canonical names and letter-bearing opponent tags are consumed first,
-so "Pokémon Stadium 2" and "Sparg0" are names, not figures. This retires the limits recorded here
-before (code reviews SH-WR-04, SH-CR-01, R2-IN-02, R3-CR-01): a W-L pair judged from the player's
-side through a closed opponent-perspective marker list ("MkLeo has the upper hand, 3-2" shipped,
-and so did "MkLeo is 3—2 against you" with an em dash), a per-integer licence under which a licensed
-figure could be attributed to the wrong entity, the list-position and ordinal exemptions, and a
-confidence gate that needed the "confiden" stem ("Certainty: high." shipped). A figure or a
-confidence grade can no longer be written into prose at all. What remains: number words are
-English only, so a figure spelled out in another language's words (not digits) is not recognised
-(the prompts ask for English prose); the tier vocabulary is closed (`low`/`medium`/`high`/`moderate`/
-`strong`/`weak` and their comparative, superlative and adverb forms), so a strength adjective
-outside it with no figure ("This read is rock solid.") ships, as do vague quantifiers ("most", "a
-few", "rarely"); and a fighter or stage mention outside the canonical name table, or a tag outside
-the job's claims, is not recognised as an entity. The price is stated too: true commentary that
-restates a figure, or uses a tier word in its Smash sense ("keep your shield high"), is withheld as
-well. "Zero unsupported factual claims" is a statement about CLAIMS and about prose naming an
+whose prose carries a figure or a confidence grade of any form is withheld (disclosed, never
+refunded, D-22), true or false. Since code review iteration 5 (R5-CR-01..04) the check is an
+ALLOWLIST (`records/RPT-08-rubric.md`, "The D-24 allowlist"): the prose is folded (NFKC, format
+characters removed, NFD with combining marks removed, Markdown emphasis and code markers read as
+spaces), canonical names and letter-bearing opponent tags consume their spans, and what remains may
+hold only ASCII letters, whitespace and the listed punctuation. A digit of any script, a percent
+sign, a letter of another script (Japanese, Cyrillic look-alikes), an emoji or a symbol withholds
+the section; the word lists (number, record, quantifier and roman-numeral forms, tier synonyms and
+strength adjectives, and the number and tier words of the app's other locales) catch figures and
+grades spelled in allowed letters. This retires the limits recorded here before: Markdown emphasis,
+invisible characters, compatibility or look-alike letterforms, exact number words outside the list
+("once", "a pair", "both", "undefeated", "III-II"), exact tier synonyms ("mid", "top") and non-English
+prose in another script all used to ship. The VAL-03 judge (R5-WR-02) no longer shares the
+validator's vocabulary: it parses its charset from the rubric text, folds with NFKD, parses number
+words, stems tier words, and a metamorphic suite requires every R5 phrasing to be convicted by the
+judge and withheld by the validator under each meaning-preserving Unicode or Markdown transform.
+
+What remains: commentary is English-only, so non-English prose that folds to plain ASCII letters
+and carries none of the listed words is not recognised (the prompts ask for English, plain text);
+a phrasing with no figure and no listed word ships, including vague or degenerate forms ("every
+set", "dead even", "up a set", "your last set", "very confident", "hiiigh", "H-I-G-H"); and a
+fighter or stage mention outside the canonical name table, or a tag outside the job's claims, is not
+recognised as an entity. The price is stated too: true commentary that restates a figure, and the
+everyday sense of a listed word ("keep your shield high", "once he is offstage", "make sure", "the
+top platform", "most of his kills"), is withheld as well, and every mention of an opponent whose
+tag itself reads as a figure or a grade ("High", "Twice") withholds the section (R5-IN-03, decided
+fail-closed). "Zero unsupported factual claims" is a statement about CLAIMS and about prose naming an
 unlicensed entity, a figure or a confidence grade.
 
 The PREP-06 record's own `WHAT A CREDIT BUYS` section (plan 39-14) is where D-20 and D-21 are

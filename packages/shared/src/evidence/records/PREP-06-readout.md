@@ -156,25 +156,29 @@ API's pre-call fail-fast alike (owner decision D-23):
    `MIN_VIABLE_CLAIMS` evidenced claims survive does the job fail with `failureReason`
    `validation` and refund through `failJob`.
 5. **D-24 — the commentary is qualitative only.** Every figure a user sees comes from a checked
-   claim, shown beside the prose. A section whose prose carries any number character, any percent
-   sign, a spelled-out figure word, or a confidence-tier word (low, medium, high, moderate, strong,
-   weak and their forms) has that section's prose withheld — true or false, and whatever the
-   separator of a win-loss pair. Canonical fighter and stage names and known opponent tags are read
-   first, so the digits inside a name are never figures. A withheld section is handled exactly as
-   in item 2: delivered, charged, disclosed, never refunded, and it never touches claim survival.
-   The model prompts state the rule up front, so most commentary is written to survive it.
+   claim, shown beside the prose. A section whose prose carries a figure or a confidence grade has
+   that section's prose withheld — true or false, and whatever the separator of a win-loss pair.
+   Since code review iteration 5 the check is an allowlist: after folding and after canonical
+   fighter and stage names and known opponent tags are read (so the digits inside a name are never
+   figures), the prose may hold only English letters, whitespace and ordinary punctuation, and
+   none of the listed number, record, quantifier or confidence-tier words (low, medium, high,
+   moderate, strong, weak and their forms, and synonyms such as mid, top, solid or sure).
+   Commentary is English-only. A withheld section is handled exactly as in item 2: delivered,
+   charged, disclosed, never refunded, and it never touches claim survival. The model prompts
+   state the rule up front, so most commentary is written to survive it.
 
-Sources, as read at HEAD `2b332e6c` (line numbers pin to that commit):
+Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c`):
 
 - `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
   `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
-- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:820`;
+- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:882`;
   API pre-call fail-fast — `apps/api/src/routes/reports.ts:1266` (scout, prep) and
   `reports.ts:1602` (post-event synthesis).
-- The D-24 rule — doc comment `validateReport.ts:458-478`; patterns `NUMBER_CHARACTER_PATTERN`
-  `:481`, `PERCENT_SIGN_PATTERN` `:484`, `FIGURE_WORD_PATTERN` `:493`, `TIER_WORD_PATTERN` `:505`;
-  enforcement `validateReport.ts:666-691`. Prompt statement — `apps/api/src/reports/generate.ts:1102`
-  and `apps/api/src/reports/synthesis.ts:504`.
+- The D-24 rule — doc comment `validateReport.ts:449-472`; the allowlist
+  `PROSE_DISALLOWED_CHARACTER` `:479`, `FIGURE_WORD_PATTERN` `:492`, `ROMAN_NUMERAL_PATTERN` `:496`,
+  `TIER_WORD_PATTERN` `:508`, the fold `foldProse` `:527`; enforcement `validateReport.ts:730-754`.
+  Prompt statement — `apps/api/src/reports/generate.ts:1102-1104` and
+  `apps/api/src/reports/synthesis.ts:504-506`.
 - Events — `EVENT_CATALOG` at `packages/shared/src/events.ts:80`; `report_failed_validation`
   `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
 - Stored fields — `packages/shared/src/reports.ts`: `strippedSectionCount` `:232`,
