@@ -742,16 +742,24 @@ describe('FormStrip — legend, narrow tick geometry, and centred single-game se
     expect(legendRow.className).not.toMatch(/justify-between/);
   });
 
-  // REWRITTEN by plan 39.1-42: the shown-of-total token lives on the foot line.
-  it('foot-line: shownOfTotal renders as its own whitespace-nowrap token on the foot line', () => {
+  // REWRITTEN by plan 39.1-42: the shown-of-total token lives on the foot
+  // line and is now a sentence ("N of M games shown · older events drop
+  // first · oldest → newest") — it wraps like sketch 003's `.strip-foot`
+  // items (never whitespace-nowrap, which widened 390px pages; guard:layout
+  // horizontal-overflow on fighter-analysis / matchups / trends at 390).
+  it('foot-line: shownOfTotal renders as its own wrapping token on the foot line (never whitespace-nowrap)', () => {
     const { container } = render(
       <FormStrip events={ninetyGameFixture()} limit={60} labels={emptyLabels} />,
     );
     const token = container.querySelector('[data-slot="form-strip-shown-of-total"]');
     expect(token).not.toBeNull();
-    expect((token as HTMLElement).className).toMatch(/whitespace-nowrap/);
+    expect((token as HTMLElement).className).not.toMatch(/whitespace-nowrap/);
+    expect((token as HTMLElement).className).toMatch(/\bmin-w-0\b/);
     expect(token!.textContent).toBe('60 of 90 games shown');
-    expect(token!.closest('[data-slot="form-strip-foot"]')).not.toBeNull();
+    const foot = token!.closest('[data-slot="form-strip-foot"]') as HTMLElement;
+    expect(foot).not.toBeNull();
+    expect(foot.className).toMatch(/\bflex-wrap\b/);
+    expect(foot.className).toMatch(/\bmin-w-0\b/);
   });
 
   // REWRITTEN by plan 39.1-42: no title -> no head, so no legend at all (the
