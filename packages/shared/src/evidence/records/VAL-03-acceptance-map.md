@@ -49,7 +49,9 @@ added or removed:** row 1 (the stop-ship judge now re-judges every delivered sec
 a confidence-tier word, with its own word lists, so a validator gap shows up as a VAL-03 survivor),
 row 4 (any figure in prose withholds it) and row 5 (any tier word in prose withholds it). Code review
 iteration 6 extends rows 1, 4 and 5 again, still with no dimension added or removed: the check reads
-the delivered text, and the judge reads its word lists from the rubric (R6-WR-04).
+the delivered text, and the judge reads its word lists from the rubric (R6-WR-04). Iteration 7 adds
+the natural zero-side, even-record, count-after-name and "I"-as-one phrasings to the rubric's lists
+(R7-WR-01..03), again with no dimension added or removed.
 
 ## Owner-decision coverage (D-20 / D-21)
 
@@ -94,7 +96,7 @@ D-24 word lists"), reads the delivered text without folding, and implements ever
 own code: its own tokenizer, number-word parser, roman-numeral parser (a token is a numeral when it
 round-trips through a canonical roman spelling), tier-suffix stripping and segmenter. It therefore
 catches a rule the validator IMPLEMENTS wrongly, but it cannot catch a rule the rubric does not
-state: both sides implement the same rubric. The metamorphic suite requires every R5 and R6
+state: both sides implement the same rubric. The metamorphic suite requires every R5, R6 and R7
 phrasing, and every sentence under each transform that changes the delivered text (Markdown
 markers, format characters, combining marks, fullwidth and mathematical letterforms, ligatures,
 bidi overrides and isolates, tag characters, roman-numeral characters, intraword emphasis and
@@ -105,7 +107,12 @@ What remains: commentary is English-only, so non-English prose in plain ASCII le
 none of the listed words is not recognised (the prompts ask for English, plain text); a phrasing
 with no figure and no listed word ships, including vague grades outside the lists ("mediocre",
 "great", "so-so", "lopsided", "at the bottom", "very confident" — review R6-IN-01, an accepted
-class); and a fighter or stage mention outside the canonical name table, or a tag outside the job's
+class); deliberate obfuscation of a listed word — split into chunks ("tw o"), a doubled letter
+("twoo"), letters separated by apostrophes, an "x'" prefix, a suffix or a glued roman numeral
+("twoish", "IItimes") — which the iteration-7 threat model places outside D-24 (the model has no
+reason to obfuscate, the only user-controlled text reaches only that user's own report, and the
+structured claims remain the source of truth: R7-CR-04..08, R7-WR-05, recorded as INFO); and a
+fighter or stage mention outside the canonical name table, or a tag outside the job's
 claims, is not recognised as an entity. The price is stated too: true commentary that restates a
 figure, the everyday sense of a listed word ("keep your shield high", "once he is offstage", "make
 sure", "the top platform", "most of his kills", "always shield", "never chase", "only commit",
