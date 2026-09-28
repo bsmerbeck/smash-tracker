@@ -450,3 +450,70 @@ describe('design fidelity — one period data line, one reference-label key (pla
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * Plan 39.1-43 Task 1 (hero-idioms-kit, sketch 003 A "Hero port", brief §1
+ * "one idiom per job"): a hero host renders its horizon figures through
+ * `HorizonStatRow` and its by-match-type bar through `MatchTypeShareBar` —
+ * never its own window resolution (`resolveWindow` / `classify`), its own
+ * type grouping (`getMatchTypeRecords`) or a direct `ShareBar` / `StatFigure`.
+ * The hosts are the Fighter hero and, once plan 39.1-44 creates it, the
+ * pairing hero; the case fails when no host exists at all.
+ */
+const HERO_HOST_FILES: readonly string[] = [
+  'apps/web/src/pages/FighterAnalysis/components/FighterHero.tsx',
+  'apps/web/src/pages/Matchups/components/PairingHero.tsx',
+];
+const HERO_PRIVATE_IDIOM_PATTERNS: readonly { name: string; pattern: RegExp }[] = [
+  {
+    name: 'imports resolveWindow / classify / getMatchTypeRecords',
+    pattern:
+      /import\s*(?:type\s*)?\{[^}]*\b(resolveWindow|classify|getMatchTypeRecords)\b[^}]*\}\s*from/,
+  },
+  { name: 'renders ShareBar directly', pattern: /<ShareBar\b/ },
+  { name: 'renders StatFigure directly', pattern: /<StatFigure\b/ },
+];
+
+function heroIdiomOffences(source: string): string[] {
+  return HERO_PRIVATE_IDIOM_PATTERNS.filter(({ pattern }) => pattern.test(source)).map(
+    ({ name }) => name,
+  );
+}
+
+describe('design fidelity — hero hosts build no private horizon figures or share bar (plan 39.1-43)', () => {
+  it('each matcher detects its idiom and ignores the kit components (non-vacuity)', () => {
+    expect(
+      heroIdiomOffences("import {\n  classify,\n  toRateValue,\n} from '@smash-tracker/shared';"),
+    ).toEqual(['imports resolveWindow / classify / getMatchTypeRecords']);
+    expect(
+      heroIdiomOffences("import { resolveWindow } from '@smash-tracker/shared';"),
+    ).toHaveLength(1);
+    expect(heroIdiomOffences("import { getMatchTypeRecords } from '@/lib/stats';")).toHaveLength(1);
+    expect(heroIdiomOffences('        <ShareBar\n          segments={x}')).toEqual([
+      'renders ShareBar directly',
+    ]);
+    expect(heroIdiomOffences('  <StatFigure key="all-time" lead />')).toEqual([
+      'renders StatFigure directly',
+    ]);
+    expect(
+      heroIdiomOffences(
+        "import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';\n<HorizonStatRow matches={m} />\n<MatchTypeShareBar matches={m} />",
+      ),
+    ).toEqual([]);
+    expect(heroIdiomOffences("import { classifyTone } from './x';")).toEqual([]);
+  });
+
+  it('at least one hero host exists, and every existing host renders through HorizonStatRow and MatchTypeShareBar only', () => {
+    const hosts = HERO_HOST_FILES.filter((file) => fs.existsSync(path.join(REPO_ROOT, file)));
+    expect(hosts.length, 'no hero host file exists').toBeGreaterThan(0);
+    const offences = hosts.flatMap((file) =>
+      heroIdiomOffences(readRepoFile(file)).map((offence) => `${file}: ${offence}`),
+    );
+    expect(offences).toEqual([]);
+    for (const file of hosts) {
+      const source = readRepoFile(file);
+      expect(source, file).toMatch(/<HorizonStatRow\b/);
+      expect(source, file).toMatch(/<MatchTypeShareBar\b/);
+    }
+  });
+});
