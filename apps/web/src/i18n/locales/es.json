@@ -1006,9 +1006,6 @@
         "lastEvent": "FormNow · último evento frente a siempre",
         "last90": "FormNow · últimos 90 días frente a siempre"
       },
-      "formStrip": {
-        "title": "Forma · últimas 60 partidas, por evento"
-      },
       "trendTitle": {
         "game": "Tasa de victorias por partida · tamaño del punto = partidas",
         "set": "Tasa de victorias por set · tamaño del punto = partidas",
@@ -3426,12 +3423,19 @@
       "noGames": "Aún sin partidas"
     },
     "strip": {
-      "legend": "arriba = victoria · abajo = derrota · hueco = set nuevo · etiqueta = evento",
       "aria_one": "Franja de forma, {{shown}} de {{count}} partida",
       "aria_other": "Franja de forma, {{shown}} de {{count}} partidas",
+      "title_one": "Forma · última {{count}} partida, por evento",
+      "title_other": "Forma · últimas {{count}} partidas, por evento",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Sesión · {{date}}",
       "sessionRun": "Sesiones · {{span}}",
+      "legendItem": {
+        "win": "arriba = victoria",
+        "loss": "abajo = derrota",
+        "setGap": "hueco = set nuevo",
+        "eventLabel": "etiqueta = evento · V–D"
+      },
       "windowHighlighted": {
         "last30": "Últimas 30 partidas resaltadas",
         "lastEvent": "Último evento resaltado",
@@ -3439,6 +3443,9 @@
       },
       "windowAll": "Se muestra todo el historial",
       "shownOf": "{{shown}} de {{total}} partidas mostradas",
+      "footShownOf": "{{shown}} de {{total}} partidas mostradas · los eventos más antiguos salen primero · de la más antigua a la más reciente",
+      "allShown_one": "{{count}} partida · de la más antigua a la más reciente",
+      "allShown_other": "las {{count}} partidas · de la más antigua a la más reciente",
       "empty": "Aún no hay partidas que mostrar.",
       "windowEmpty": {
         "last30": "Sin partidas en las últimas 30 — se muestra el histórico.",

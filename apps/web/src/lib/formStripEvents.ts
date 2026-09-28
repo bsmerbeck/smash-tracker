@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import { parseExternalId, splitIntoSessions } from '@smash-tracker/shared';
-import type { FormStripEvent, FormStripSet } from '@/components/charts/FormStrip';
+import type { FormStripEvent, FormStripLabels, FormStripSet } from '@/components/charts/FormStrip';
 
 /**
  * WR-04 (39.1-REVIEW.md) / plan 39.1-42: the ONE host-side derivation of
@@ -275,4 +275,53 @@ export function buildFormStripEvents(
   }
   flushRun();
   return events;
+}
+
+/**
+ * Plan 39.1-42 (sketch 003 `stripLegend` / `fitStrips`): the labels every
+ * FormStrip host passes — the head's four legend items and the foot's two
+ * formatters (N of M shown with the drop rule, or all N). Hosts add their
+ * own row `summary` (each call site stays visible to the strip-aria caller
+ * oracle, `stripAriaCallers.test.ts`), `title`, `empty` node and window note.
+ */
+export function formStripLabels(
+  t: TFunction,
+): Pick<FormStripLabels, 'legend' | 'shownOfTotal' | 'allShown'> {
+  return {
+    legend: {
+      win: t('analytics.strip.legendItem.win'),
+      loss: t('analytics.strip.legendItem.loss'),
+      setGap: t('analytics.strip.legendItem.setGap'),
+      eventLabel: t('analytics.strip.legendItem.eventLabel'),
+    },
+    shownOfTotal: ({ shown, total }) => t('analytics.strip.footShownOf', { shown, total }),
+    allShown: ({ total }) => t('analytics.strip.allShown', { count: total }),
+  };
+}
+
+/**
+ * Plan 39.1-42 (sketch 003 `winNote`): the foot's window note from the
+ * host's `formNow` insight — "No games in … — showing all time." when the
+ * window is empty, "Whole record shown" when the horizons collapse (recent =
+ * all time, nothing dimmed), else the highlighted window.
+ */
+export function formStripWindowNote({
+  insight,
+  horizon,
+  t,
+}: {
+  insight: Insight | null | undefined;
+  horizon: HorizonKey;
+  t: TFunction;
+}): string | undefined {
+  if (!insight) {
+    return undefined;
+  }
+  if (insight.window.games === 0) {
+    return t(`analytics.strip.windowEmpty.${horizon}`);
+  }
+  if (insight.state === 'collapsed') {
+    return t('analytics.strip.windowAll');
+  }
+  return t(`analytics.strip.windowHighlighted.${horizon}`);
 }

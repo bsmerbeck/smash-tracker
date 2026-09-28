@@ -1006,9 +1006,6 @@
         "lastEvent": "FormNow · 直近イベント 対 通算",
         "last90": "FormNow · 直近90日 対 通算"
       },
-      "formStrip": {
-        "title": "フォーム · 直近60試合、イベント別"
-      },
       "trendTitle": {
         "game": "試合ごとの勝率 · 点の大きさ = 試合数",
         "set": "セットごとの勝率 · 点の大きさ = 試合数",
@@ -3426,12 +3423,19 @@
       "noGames": "まだ試合がありません"
     },
     "strip": {
-      "legend": "上 = 勝利 · 下 = 敗北 · 間隔 = 新しいセット · ラベル = イベント",
       "aria_one": "調子ストリップ、{{count}}試合中{{shown}}試合",
       "aria_other": "調子ストリップ、{{count}}試合中{{shown}}試合",
+      "title_one": "フォーム · 直近{{count}}試合、イベント別",
+      "title_other": "フォーム · 直近{{count}}試合、イベント別",
       "setAria": "vs {{opponent}}のセット、{{record}}",
       "sessionLabel": "セッション · {{date}}",
       "sessionRun": "セッション · {{span}}",
+      "legendItem": {
+        "win": "上 = 勝利",
+        "loss": "下 = 敗北",
+        "setGap": "間隔 = 新しいセット",
+        "eventLabel": "ラベル = イベント · 勝–敗"
+      },
       "windowHighlighted": {
         "last30": "直近30試合を強調表示",
         "lastEvent": "直近のイベントを強調表示",
@@ -3439,6 +3443,9 @@
       },
       "windowAll": "全期間を表示中",
       "shownOf": "{{total}}戦中{{shown}}戦を表示",
+      "footShownOf": "{{total}}試合中{{shown}}試合を表示 · 古いイベントから省略 · 古い順",
+      "allShown_one": "全{{count}}試合 · 古い順",
+      "allShown_other": "全{{count}}試合 · 古い順",
       "empty": "まだ表示できる試合がありません。",
       "windowEmpty": {
         "last30": "直近30試合に対戦がありません — 全期間のデータを表示しています。",

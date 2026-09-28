@@ -1006,9 +1006,6 @@
         "lastEvent": "FormNow · letztes Event gegen Gesamt",
         "last90": "FormNow · letzte 90 Tage gegen Gesamt"
       },
-      "formStrip": {
-        "title": "Form · letzte 60 Spiele, nach Event"
-      },
       "trendTitle": {
         "game": "Siegquote nach Spiel · Punktgröße = Spiele",
         "set": "Siegquote nach Satz · Punktgröße = Spiele",
@@ -3426,12 +3423,19 @@
       "noGames": "Noch keine Matches"
     },
     "strip": {
-      "legend": "oben = Sieg · unten = Niederlage · Lücke = neuer Satz · Label = Event",
       "aria_one": "Formleiste, {{shown}} von {{count}} Match",
       "aria_other": "Formleiste, {{shown}} von {{count}} Matches",
+      "title_one": "Form · letztes {{count}} Spiel, nach Event",
+      "title_other": "Form · letzte {{count}} Spiele, nach Event",
       "setAria": "Satz vs. {{opponent}}, {{record}}",
       "sessionLabel": "Sitzung · {{date}}",
       "sessionRun": "Sitzungen · {{span}}",
+      "legendItem": {
+        "win": "oben = Sieg",
+        "loss": "unten = Niederlage",
+        "setGap": "Lücke = neuer Satz",
+        "eventLabel": "Label = Event · S–N"
+      },
       "windowHighlighted": {
         "last30": "Letzte 30 Matches hervorgehoben",
         "lastEvent": "Letztes Event hervorgehoben",
@@ -3439,6 +3443,9 @@
       },
       "windowAll": "Gesamter Datensatz wird gezeigt",
       "shownOf": "{{shown}} von {{total}} Matches angezeigt",
+      "footShownOf": "{{shown}} von {{total}} Spielen angezeigt · ältere Events entfallen zuerst · von alt nach neu",
+      "allShown_one": "{{count}} Spiel · von alt nach neu",
+      "allShown_other": "alle {{count}} Spiele · von alt nach neu",
       "empty": "Noch keine Matches zum Anzeigen.",
       "windowEmpty": {
         "last30": "Keine Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",

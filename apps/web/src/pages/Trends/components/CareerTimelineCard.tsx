@@ -24,7 +24,7 @@ import {
 import { FormStrip } from '@/components/charts/FormStrip';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
 import { formatPercent } from '@/lib/formatPercent';
-import { buildFormStripEvents } from '@/lib/formStripEvents';
+import { buildFormStripEvents, formStripLabels } from '@/lib/formStripEvents';
 
 export interface CareerTimelineCardProps {
   /** The page's filtered, own-account matches (38 D-04) — never a coach subject. */
@@ -37,6 +37,12 @@ export interface CareerTimelineCardProps {
    * ResponsiveContainer). Omitted at runtime — the chart measures itself.
    */
   chartWidth?: number;
+  /**
+   * Plan 39.1-42 test affordance (the kit's `availableWidthPx`): an explicit
+   * thin-strip width in px, so the strip's width fit runs under jsdom.
+   * Omitted at runtime — the strip measures itself.
+   */
+  stripWidthPx?: number;
   /** A period / month was clicked, Entered or tapped twice — the page writes it as the `from` / `to` drill (UI-SPEC §10.3). */
   onSelectPeriod?: (selection: CareerTimelineSelection) => void;
   /** A thin account's form-strip set was clicked — the page writes it as the `event` drill axis. */
@@ -245,6 +251,7 @@ export function CareerTimelineCard({
   matches,
   horizon,
   chartWidth,
+  stripWidthPx,
   onSelectPeriod,
   onSelectSet,
 }: CareerTimelineCardProps) {
@@ -370,15 +377,19 @@ export function CareerTimelineCard({
         events={thinEvents}
         limit={THIN_STRIP_LIMIT}
         labels={{
+          ...formStripLabels(t),
+          // WR-03: names the games actually DRAWN of the total (kit-computed).
           summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-          legend: t('analytics.strip.legend'),
-          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
           empty: <span>{t('analytics.strip.empty')}</span>,
-          // Planner decision 7: "All N games" only when every game is drawn —
-          // otherwise the strip's own shown-of-total line says what is.
-          overline: ({ shown, total }) =>
+          // Planner decision 7 / plan 39.1-42: "All N games" is the kit head's
+          // title only when every game is drawn — otherwise no head, and the
+          // foot's shown-of-total line says what is.
+          title: ({ shown, total }) =>
             shown === total ? t('analytics.timeline.thin.overline', { count: total }) : undefined,
+          // The strip dims by the timeline's recent window; the note names it.
+          windowNote: recentWindow ? t(`analytics.strip.windowHighlighted.${horizon}`) : undefined,
         }}
+        availableWidthPx={stripWidthPx}
         onSelectSet={onSelectSet}
       />
     ) : undefined;

@@ -33,7 +33,11 @@ import {
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
-import { buildFormStripEvents, createFormStripSetKeyResolver } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  createFormStripSetKeyResolver,
+  formStripLabels,
+} from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -977,19 +981,15 @@ export function OpponentHubPage() {
                 <FormStrip
                   events={formStripEvents}
                   limit={20}
+                  // Plan 39.1-42: the kit's legend and foot formatters; the hub
+                  // passes no title (no head) and keeps its empty-window note.
                   labels={{
+                    ...formStripLabels(t),
                     // WR-03: names the games actually DRAWN of the total (kit-computed).
                     summary: ({ shown, total }) =>
                       t('analytics.strip.aria', { count: total, shown }),
-                    legend: t('analytics.strip.legend'),
-                    // Plan 39.1-33 (R1): a formatter — only the kit knows how
-                    // many games it actually drew after `limit` AND its own
-                    // measured-width fit, so the host no longer computes `shown`
-                    // itself.
-                    shownOfTotal: ({ shown, total }) =>
-                      t('analytics.strip.shownOf', { shown, total }),
                     empty: <span>{t('analytics.strip.empty')}</span>,
-                    windowEmpty:
+                    windowNote:
                       trendInsight && trendInsight.window.games === 0
                         ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
                         : undefined,

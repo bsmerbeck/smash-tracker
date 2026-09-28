@@ -1006,9 +1006,6 @@
         "lastEvent": "FormNow · last event vs all time",
         "last90": "FormNow · last 90 days vs all time"
       },
-      "formStrip": {
-        "title": "Form · last 60 games, by event"
-      },
       "trendTitle": {
         "game": "Win rate by game · dot size = games",
         "set": "Win rate by set · dot size = games",
@@ -3426,12 +3423,19 @@
       "noGames": "No games yet"
     },
     "strip": {
-      "legend": "up = win · down = loss · gap = new set · label = event",
       "aria_one": "Form strip, {{shown}} of {{count}} game",
       "aria_other": "Form strip, {{shown}} of {{count}} games",
+      "title_one": "Form · last {{count}} game, by event",
+      "title_other": "Form · last {{count}} games, by event",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Session · {{date}}",
       "sessionRun": "Sessions · {{span}}",
+      "legendItem": {
+        "win": "up = win",
+        "loss": "down = loss",
+        "setGap": "gap = new set",
+        "eventLabel": "label = event · W–L"
+      },
       "windowHighlighted": {
         "last30": "Last 30 games highlighted",
         "lastEvent": "Last event highlighted",
@@ -3439,6 +3443,9 @@
       },
       "windowAll": "Whole record shown",
       "shownOf": "{{shown}} of {{total}} games shown",
+      "footShownOf": "{{shown}} of {{total}} games shown · older events drop first · oldest → newest",
+      "allShown_one": "{{count}} game · oldest → newest",
+      "allShown_other": "all {{count}} games · oldest → newest",
       "empty": "No games to show yet.",
       "windowEmpty": {
         "last30": "No games in the last 30 — showing all time.",

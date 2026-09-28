@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { CHART_H_COMPACT } from '@/components/charts/tokens';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { buildFormStripEvents } from '@/lib/formStripEvents';
+import { buildFormStripEvents, formStripLabels, formStripWindowNote } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatPercent } from '@/lib/formatPercent';
@@ -37,6 +37,9 @@ const PERIOD_TREND_LOCKED_FLOOR = 8;
  * at module scope: the registry is a static, closed array.
  */
 const FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
+
+/** Plan 39.1-42 (PD-42-3, sketch 003 A `STRIP_CAP`): the Matchups strip draws at most 60 games. */
+const MATCHUP_STRIP_LIMIT = 60;
 
 /** UI-SPEC §7.8: `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated, not shared, in `MatchupOrPlayerCard.tsx` — mirrors this codebase's established "no shared file for one small mapping" convention (see `bestWorstMatchup.ts`'s doc comment on `groupByOpponentCharacter`). */
 export function claimChipKindFor(kind: InsightKind): ClaimChipKind {
@@ -325,24 +328,24 @@ export function MatchupChart({
     <div className="flex min-w-0 flex-col gap-4" data-slot="matchup-chart-body">
       <FormStrip
         events={formStripEvents}
-        limit={30}
+        // Plan 39.1-42 (PD-42-3, sketch 003 A): the last 60 games (was 30).
+        limit={MATCHUP_STRIP_LIMIT}
         labels={{
+          ...formStripLabels(t),
           // WR-03: names the games actually DRAWN of the total (kit-computed).
           summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-          legend: t('analytics.strip.legend'),
-          // Plan 39.1-33 (R1): a formatter — only the kit knows how many
-          // games it actually drew after `limit` AND its own measured-width
-          // fit, so the host no longer computes `shown` itself.
-          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+          // Plan 39.1-42 (sketch 003 `stripSection`): "Form · last N games, by event".
+          title: t('analytics.strip.title', {
+            count: Math.min(MATCHUP_STRIP_LIMIT, matchupMatches.length),
+          }),
           empty: <span>{t('analytics.strip.empty')}</span>,
-          // Plan 39.1-31 (item 7): suppressed exactly when the verdict head
-          // already states the scoped-empty window itself (D-15's "No games
-          // ... — showing lifetime." sentence) — printing both would be the
-          // same contradictory double-note this plan closes.
-          windowEmpty:
-            insight && insight.window.games === 0 && !headStatesScopedWindow(insight)
-              ? t(`analytics.strip.windowEmpty.${horizon}`)
-              : undefined,
+          // Plan 39.1-31 (item 7): the empty-window note is suppressed exactly
+          // when the verdict head already states the scoped-empty window
+          // itself (D-15's "No games ... — showing lifetime." sentence).
+          windowNote:
+            insight && insight.window.games === 0 && headStatesScopedWindow(insight)
+              ? undefined
+              : formStripWindowNote({ insight, horizon, t }),
         }}
         onSelectSet={handleSelectSet}
       />

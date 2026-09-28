@@ -29,7 +29,7 @@ import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { Record } from '@/components/analytics/Record';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
-import { buildFormStripEvents } from '@/lib/formStripEvents';
+import { buildFormStripEvents, formStripLabels, formStripWindowNote } from '@/lib/formStripEvents';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
@@ -42,6 +42,9 @@ import { formatPercent } from '@/lib/formatPercent';
  * owns (D-06). Order is fixed, matching UI-SPEC §8.1's stat row.
  */
 const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
+
+/** UI-SPEC §8.5 / sketch 001-C: the hero strip draws at most the last 60 games. */
+const HERO_STRIP_LIMIT = 60;
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention (see `MatchupChart.tsx`'s `claimChipKindFor`). */
 function claimChipKindFor(kind: InsightKind): ClaimChipKind {
@@ -481,25 +484,21 @@ export function FighterHero({
             unconstrained (every event on one line) max-content width — see
             FormStrip.tsx's own doc comment for the full mechanism. */}
         <div className="flex min-w-0 flex-col gap-2" data-slot="fighter-hero-strip">
-          <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-            {t('fighterAnalysis.hero.formStrip.title')}
-          </p>
+          {/* Plan 39.1-42 (sketch 001-C / 003): the kit's head carries the
+              overline ("Form · last N games, by event") and the swatch
+              legend — the hero no longer prints its own overline. */}
           <FormStrip
             events={formStripEvents}
-            limit={60}
+            limit={HERO_STRIP_LIMIT}
             labels={{
+              ...formStripLabels(t),
               // WR-03: names the games actually DRAWN of the total (kit-computed).
               summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-              legend: t('analytics.strip.legend'),
-              // Plan 39.1-33 (R1): a formatter — only the kit knows how many
-              // games it actually drew after `limit` AND its own measured-
-              // width fit, so the host no longer computes `shown` itself.
-              shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+              title: t('analytics.strip.title', {
+                count: Math.min(HERO_STRIP_LIMIT, fighterMatches.length),
+              }),
               empty: <span>{t('analytics.strip.empty')}</span>,
-              windowEmpty:
-                formNowInsight && formNowInsight.window.games === 0
-                  ? t(`analytics.strip.windowEmpty.${horizon}`)
-                  : undefined,
+              windowNote: formStripWindowNote({ insight: formNowInsight, horizon, t }),
             }}
             onSelectSet={(setKey) => onDrill({ eventKey: setKey })}
           />
