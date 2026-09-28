@@ -8064,23 +8064,42 @@ describe('code review R4-WR-02: one model call per job, no retries, bounded well
 // `runSynthesisGeneration` before it replies — so one model attempt plus the
 // work before it (scout resolution, payload assembly, the snapshot write)
 // and after it (validation, the store, the terminal writes) must fit inside
-// the Cloud Run request timeout. The live `smash-tracker-api` service's
-// `timeoutSeconds` is 300 (verified read-only by the orchestrator,
-// 2026-09-28). Past it the request is cut off and a request-billed
-// instance's CPU is throttled, which would stall the terminal writes.
+// the Cloud Run request timeout. Past it the request is cut off and a
+// request-billed instance's CPU is throttled, which would stall the terminal
+// writes. The live service's `timeoutSeconds` was 300 on 2026-09-28; the
+// owner decided ([HUMAN], 2026-09-28) to raise it to 600 at the Phase 39
+// deploy, applied before or together with this code, and to keep the
+// eight-minute attempt.
 // ---------------------------------------------------------------------------
 
+const OWNER_DECIDED_PLATFORM_TIMEOUT_MS = 600 * 1000;
+
 describe('code review R5-IN-04: one model attempt fits inside the Cloud Run request timeout', () => {
-  it('the attempt bound plus the documented request-overhead budget stays inside the verified 300-second platform timeout, and the attempt is at most 240 seconds', () => {
+  it('the platform constant is the owner-decided 600 seconds, and the attempt is eight minutes', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    expect(constants.CLOUD_RUN_REQUEST_TIMEOUT_MS).toBe(OWNER_DECIDED_PLATFORM_TIMEOUT_MS);
+    expect(REPORT_MODEL_TIMEOUT_MS).toBe(EIGHT_MINUTES_MS);
+  });
+
+  it('one attempt plus the documented request-overhead budget stays inside the platform timeout', () => {
     const constants = reportsRouteModule as unknown as Record<string, unknown>;
     const platformMs = constants.CLOUD_RUN_REQUEST_TIMEOUT_MS;
     const overheadMs = constants.REPORT_REQUEST_OVERHEAD_BUDGET_MS;
-    expect(platformMs).toBe(300 * 1000);
+    expect(typeof platformMs).toBe('number');
     expect(typeof overheadMs).toBe('number');
     expect(overheadMs as number).toBeGreaterThanOrEqual(60 * 1000);
-    expect(REPORT_MODEL_TIMEOUT_MS).toBeLessThanOrEqual(240 * 1000);
     expect(
       (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS + (overheadMs as number),
     ).toBeLessThanOrEqual(platformMs as number);
+  });
+
+  it('one attempt plus the overhead budget also ends before the fifteen-minute stale window minus its one-minute margin', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    const overheadMs = constants.REPORT_REQUEST_OVERHEAD_BUDGET_MS as number;
+    expect(REPORT_JOB_STALE_MS).toBe(SWEEP_STALE_WINDOW_MS);
+    expect(SWEEP_CLOCK_SKEW_MARGIN_MS).toBe(60 * 1000);
+    expect((REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS + overheadMs).toBeLessThan(
+      REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS,
+    );
   });
 });
