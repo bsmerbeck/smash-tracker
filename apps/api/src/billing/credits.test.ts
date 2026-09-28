@@ -13,6 +13,7 @@ import {
   spendCredit,
   spendCredits,
 } from './credits.js';
+import * as creditsModule from './credits.js';
 
 const UID = 'uid-1';
 
@@ -562,6 +563,195 @@ describe('R6-IN-02: refundCreditOnce prunes markers older than 24 hours in its o
     const committed = await refundCreditOnce(database as never, UID, 'job', 'job:exec');
 
     expect(committed).toBe(false);
+    expect(await getBalance(database as never, UID)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R7-CR-03 (iteration 7, LIVE MONEY): the grant committed the
+// Stripe dedup marker FIRST, then added the credits in a separate
+// transaction. When that transaction failed (with the real client: a socket
+// drop aborts a sent transaction with `disconnect`), the webhook returned 500
+// and Stripe's retry was deduped — the buyer paid and got nothing, with no
+// ledger row, day mirror or event for reconciliation to find. The grant is
+// now create-once and retry-safe, like `refundCreditOnce`: ONE transaction on
+// `credits/{uid}` adds the pack and writes a grant marker holding a fixed,
+// pre-allocated ledger key; the dedup marker, the day mirrors and the ledger
+// entry at that key follow in one idempotent root update. The wire-level
+// proofs against the real SDK live in `moneyPathWire.test.ts`.
+// ---------------------------------------------------------------------------
+
+describe('R7-CR-03: the purchase grant is create-once and retry-safe', () => {
+  const GRANT_MARKERS = 'grantMarkers';
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const grantExports = creditsModule as unknown as { GRANT_MARKER_RETENTION_MS?: number };
+
+  function grantMarkersOf(database: FakeDatabase): Record<string, Record<string, unknown>> {
+    const credits = database.dump().credits as Record<string, Record<string, unknown>> | undefined;
+    return (credits?.[UID]?.[GRANT_MARKERS] ?? {}) as Record<string, Record<string, unknown>>;
+  }
+
+  /** A view whose FIRST transaction touching `credits/{uid}` (or its balance) rejects, as a sent transaction does on a socket drop. */
+  function failingFirstCreditsTransaction(inner: FakeDatabase) {
+    let failed = false;
+    return {
+      failed: () => failed,
+      ref(path?: string): FakeReference {
+        const ref = inner.ref(path);
+        if (path !== `credits/${UID}/balance` && path !== `credits/${UID}`) {
+          return ref;
+        }
+        return {
+          ...ref,
+          transaction: async (updateFn: (current: unknown) => unknown) => {
+            if (!failed) {
+              failed = true;
+              throw new Error('disconnect');
+            }
+            return ref.transaction(updateFn);
+          },
+        };
+      },
+    };
+  }
+
+  it('the grant writes a create-once marker holding its fixed ledger key, and the purchase entry sits at exactly that key', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 1);
+
+    const result = await fulfillCheckoutSession(database as never, makeSession(), 'evt_marker');
+
+    expect(result).toEqual({ granted: true });
+    expect(await getBalance(database as never, UID)).toBe(6);
+    const marker = grantMarkersOf(database)['evt_marker'];
+    expect(marker).toMatchObject({ credits: 5 });
+    expect(typeof marker?.ledgerKey).toBe('string');
+    expect(typeof marker?.createdAt).toBe('number');
+    const ledger = (database.dump().creditLedger as Record<string, Record<string, unknown>>)[UID]!;
+    expect(Object.keys(ledger)).toEqual([marker!.ledgerKey]);
+    expect(ledger[marker!.ledgerKey as string]).toMatchObject({
+      type: 'purchase',
+      amount: 5,
+      ref: 'evt_marker',
+      createdAt: marker!.createdAt,
+    });
+  });
+
+  it('a failed grant commits no dedup marker, so the Stripe retry grants the pack once with its whole trail', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 3);
+    const view = failingFirstCreditsTransaction(database);
+
+    await expect(
+      fulfillCheckoutSession(view as never, makeSession(), 'evt_retry_after_fail'),
+    ).rejects.toThrow('disconnect');
+    expect(view.failed()).toBe(true);
+    expect(
+      (database.dump().processedStripeEvents as Record<string, unknown> | undefined)?.[
+        'evt_retry_after_fail'
+      ],
+    ).toBeUndefined();
+
+    const retry = await fulfillCheckoutSession(
+      view as never,
+      makeSession(),
+      'evt_retry_after_fail',
+    );
+    await flush();
+
+    expect(retry).toEqual({ granted: true });
+    expect(await getBalance(database as never, UID)).toBe(8);
+    const entries = creditLedgerEntries(database, UID);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: 'purchase', amount: 5, ref: 'evt_retry_after_fail' });
+    expect(3 + ledgerSum(database)).toBe(await getBalance(database as never, UID));
+    const day = dayShardKey(Date.now());
+    const dump = database.dump() as Record<string, Record<string, unknown>>;
+    expect(dump.processedStripeEvents!['evt_retry_after_fail']).toBeTypeOf('number');
+    expect(
+      (dump.processedStripeEventsByDay![day] as Record<string, unknown>)['evt_retry_after_fail'],
+    ).toBe(true);
+    expect(eventLedgerEntries(database, 'credits_granted')).toHaveLength(1);
+  });
+
+  it('a retry after the grant committed but before its trail writes the trail at the marker key and adds nothing more', async () => {
+    const database = new FakeDatabase();
+    const markerCreatedAt = Date.now() - 5_000;
+    database.seed(`credits/${UID}`, {
+      balance: 7,
+      [GRANT_MARKERS]: {
+        evt_partial: { ledgerKey: 'k-grant', createdAt: markerCreatedAt, credits: 5 },
+      },
+    });
+
+    const result = await fulfillCheckoutSession(database as never, makeSession(), 'evt_partial');
+    await flush();
+
+    expect(result).toEqual({ granted: true });
+    expect(await getBalance(database as never, UID)).toBe(7);
+    const ledger = (database.dump().creditLedger as Record<string, Record<string, unknown>>)[UID]!;
+    expect(Object.keys(ledger)).toEqual(['k-grant']);
+    expect(ledger['k-grant']).toMatchObject({
+      type: 'purchase',
+      amount: 5,
+      ref: 'evt_partial',
+      createdAt: markerCreatedAt,
+    });
+    const day = dayShardKey(markerCreatedAt);
+    const dump = database.dump() as Record<string, Record<string, unknown>>;
+    expect(dump.processedStripeEvents!['evt_partial']).toBe(markerCreatedAt);
+    expect((dump.processedStripeEventsByDay![day] as Record<string, unknown>)['evt_partial']).toBe(
+      true,
+    );
+    expect(
+      Object.keys((dump.creditLedgerByDay![day] as Record<string, Record<string, unknown>>)[UID]!),
+    ).toEqual(['k-grant']);
+    expect(eventLedgerEntries(database, 'credits_granted')).toHaveLength(1);
+  });
+
+  it('an event whose trail is already complete (or was granted before this deploy) grants nothing', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 2);
+    database.seed('processedStripeEvents/evt_done', 1_700_000_000_000);
+
+    const result = await fulfillCheckoutSession(database as never, makeSession(), 'evt_done');
+
+    expect(result).toEqual({ granted: false });
+    expect(await getBalance(database as never, UID)).toBe(2);
+    expect(grantMarkersOf(database)).toEqual({});
+    expect(creditLedgerEntries(database, UID)).toHaveLength(0);
+  });
+
+  it("keeps grant markers for at least Stripe's 3-day retry window: a later grant keeps a marker just over 3 days old and prunes one past retention", async () => {
+    const retentionMs = grantExports.GRANT_MARKER_RETENTION_MS;
+    expect(retentionMs).toBeGreaterThanOrEqual(3 * DAY_MS);
+    const database = new FakeDatabase();
+    const now = Date.now();
+    database.seed(`credits/${UID}`, {
+      balance: 0,
+      [GRANT_MARKERS]: {
+        evt_recent: { ledgerKey: 'k-recent', createdAt: now - 3 * DAY_MS - 60_000, credits: 5 },
+        evt_expired: { ledgerKey: 'k-expired', createdAt: now - retentionMs! - 60_000, credits: 5 },
+      },
+    });
+
+    await fulfillCheckoutSession(database as never, makeSession(), 'evt_new');
+
+    expect(Object.keys(grantMarkersOf(database)).sort()).toEqual(['evt_new', 'evt_recent']);
+    expect(await getBalance(database as never, UID)).toBe(5);
+  });
+
+  it('a refund leaves every grant marker in place, however old (the 24 h refund-marker prune never touches them)', async () => {
+    const database = new FakeDatabase();
+    const now = Date.now();
+    const grantMarkers = {
+      evt_two_days: { ledgerKey: 'k-2d', createdAt: now - 2 * DAY_MS, credits: 5 },
+    };
+    database.seed(`credits/${UID}`, { balance: 1, [GRANT_MARKERS]: grantMarkers });
+
+    await refundCreditOnce(database as never, UID, 'job-r', 'job-r:exec');
+
+    expect(grantMarkersOf(database)).toEqual(grantMarkers);
     expect(await getBalance(database as never, UID)).toBe(2);
   });
 });

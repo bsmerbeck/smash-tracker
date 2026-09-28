@@ -8138,89 +8138,83 @@ describe('code review R6-WR-05: a refund that keeps failing is logged with what 
 });
 
 // ---------------------------------------------------------------------------
-// Code review iteration 6 (R6-IN-03): the 60-second overhead budget was
-// declared but not enforced, and `withSettleRetries` only retried a THROW. An
-// offline RTDB write queues and never settles, so it outlasted the budget and
-// the request. Every post-settle write attempt is now bounded: an attempt
-// that does not settle in time counts as a failed attempt and is retried, and
-// the worst case of `failJob`'s settle writes fits inside the budget.
+// Code review iteration 7 (R7-CR-01 / R7-CR-02): iteration 6 (R6-IN-03)
+// bounded each settle-write ATTEMPT at 2 s and started a new attempt when the
+// bound fired. With the real RTDB client that abandoned attempt is still
+// queued: a refund transaction's optimistic marker let the retry report the
+// refund done before the server had it, and an abandoned `set(failed)` landed
+// after `failJob` had already given the row to the stuck-job sweep. A retry
+// now starts only after the previous attempt has itself REJECTED; a write that
+// has not settled is awaited (the wire-level proofs live in
+// `billing/moneyPathWire.test.ts`). A write that never settles holds the
+// request: the recorded residual, as before iteration 6.
 // ---------------------------------------------------------------------------
 
-describe('code review R6-IN-03: every post-settle write attempt is bounded, so a hanging write is retried within the overhead budget', () => {
+describe('code review R7-CR-01/R7-CR-02: a settle write is retried only after its attempt rejected, never while it may still land', () => {
   const settleExports = reportsRouteModule as unknown as {
     withSettleRetries?: <T>(write: () => Promise<T>) => Promise<T>;
     REPORT_SETTLE_WRITE_ATTEMPTS?: number;
-    REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS?: number;
-    REPORT_SETTLE_WRITE_BACKOFF_MS?: number;
-    REPORT_REQUEST_OVERHEAD_BUDGET_MS?: number;
   };
 
-  /** The worst case of one settle write: every attempt times out, with the doubling waits between them. */
-  function worstCaseSettleWriteMs(): number {
-    const attempts = settleExports.REPORT_SETTLE_WRITE_ATTEMPTS!;
-    const timeoutMs = settleExports.REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS!;
-    const backoffMs = settleExports.REPORT_SETTLE_WRITE_BACKOFF_MS!;
-    let waits = 0;
-    for (let attempt = 1; attempt < attempts; attempt += 1) {
-      waits += backoffMs * 2 ** (attempt - 1);
-    }
-    return attempts * timeoutMs + waits;
-  }
-
-  it('a write that never settles is abandoned after the last bounded attempt, having been tried every time', async () => {
+  it('an attempt that has not settled is never abandoned or re-started: the write runs once and the wrapper keeps waiting for it', async () => {
     expect(typeof settleExports.withSettleRetries).toBe('function');
     vi.useFakeTimers();
     try {
       let calls = 0;
-      const outcome = settleExports.withSettleRetries!(() => {
+      let outcome = 'pending';
+      void settleExports.withSettleRetries!(() => {
         calls += 1;
         return new Promise<never>(() => {});
       }).then(
-        () => 'settled',
-        (err: unknown) => (err as Error).message,
+        () => {
+          outcome = 'settled';
+        },
+        () => {
+          outcome = 'rejected';
+        },
       );
-      await vi.advanceTimersByTimeAsync(worstCaseSettleWriteMs());
-      await expect(outcome).resolves.toMatch(/did not settle/);
-      expect(calls).toBe(settleExports.REPORT_SETTLE_WRITE_ATTEMPTS);
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      expect(calls).toBe(1);
+      expect(outcome).toBe('pending');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("the worst case of failJob's four settle writes fits inside the request-overhead budget", () => {
-    expect(settleExports.REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(0);
-    const settleWrites = 4; // the failed set, the index/day update, the refund, the refunded set
-    expect(settleWrites * worstCaseSettleWriteMs()).toBeLessThanOrEqual(
-      settleExports.REPORT_REQUEST_OVERHEAD_BUDGET_MS!,
-    );
+  it('an attempt that settles late resolves the wrapper with its own result, with no second attempt started', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const outcome = settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return new Promise<string>((resolve) => setTimeout(() => resolve('landed'), 30_000));
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(outcome).resolves.toBe('landed');
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('prep single: the refund transaction never settles on its first attempt — the retry refunds exactly once and the job ends refunded', async () => {
-    const { app, database } = r5PrepModelErrorApp();
-    const isRefund = refundTransactionPredicate();
-    let hung = 0;
-    const originalRef = database.ref.bind(database);
-    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
-      const ref = originalRef(path);
-      return {
-        ...ref,
-        transaction: async (fn: (current: unknown) => unknown) => {
-          if (hung === 0 && isRefund(path ?? '', 'transaction')) {
-            hung += 1;
-            return new Promise<never>(() => {});
-          }
-          return ref.transaction(fn);
-        },
-      };
-    });
-
-    const response = await postPrepSingle(app, 'r6-hang-refund');
-
-    expect(hung).toBe(1);
-    expect(response.statusCode).toBe(502);
-    expect(await jobRecord(database, 'r6-hang-refund')).toMatchObject({ status: 'refunded' });
-    expect(spendLedgerRefs(database)).toEqual(['r6-hang-refund']);
-    expect(refundLedgerRefs(database)).toEqual(['r6-hang-refund']);
-    expect(await balanceOf(database)).toBe(1);
-  }, 20_000);
+  it('an attempt that rejects is retried after the backoff, up to REPORT_SETTLE_WRITE_ATTEMPTS, and the last error is rethrown', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const outcome = settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return Promise.reject(new Error(`attempt ${calls} rejected`));
+      }).then(
+        () => 'settled',
+        (err: unknown) => (err as Error).message,
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(outcome).resolves.toBe(
+        `attempt ${settleExports.REPORT_SETTLE_WRITE_ATTEMPTS} rejected`,
+      );
+      expect(calls).toBe(settleExports.REPORT_SETTLE_WRITE_ATTEMPTS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
