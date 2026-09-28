@@ -495,7 +495,10 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'fighter-analysis-recent',
     loadedMarker: '[data-slot="fighter-hero-body"]',
     scale: 'recent',
-    checks: ['axis-ticks'],
+    // Plan 39.1-43b: the recent fixture's hero trend fits [0, 100] — the
+    // same kit axis measured on a second domain (0..100 by 20).
+    checks: ['axis-ticks', 'period-trend-axis'],
+    periodTrendAxisExpect: periodTrendAxisExpectFor([0, 100]),
   },
   {
     // Plan 39.1-39 (deferred from 39.1-37): the SAME stage page on the
