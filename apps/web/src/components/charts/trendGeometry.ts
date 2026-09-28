@@ -110,7 +110,7 @@ export function periodChartHeightForValueRange(valueRangePx: number): number {
 export const MIN_RATE_TICK_GAP_PX = 14;
 
 /** The candidate hairline steps, finest first — UI-SPEC §7.13's "every 10 pts" is the first. */
-const RATE_TICK_STEPS = [10, 20, 25, 50] as const;
+const RATE_TICK_STEPS: readonly number[] = [10, 20, 25, 50];
 
 /**
  * UI-SPEC §7.13: a solid hairline every 10 rate points across a fitted
@@ -119,15 +119,49 @@ const RATE_TICK_STEPS = [10, 20, 25, 50] as const;
  * coarsens rather than overprinting the tick labels.
  */
 export function rateDomainTicks(domain: readonly [number, number], valueRangePx: number): number[] {
+  return ticksFromSteps(domain, valueRangePx, RATE_TICK_STEPS);
+}
+
+/**
+ * Plan 39.1-43b (sketch 003 A `trend()`, which reproduces sketch 001-C's
+ * sparg0 hero): the PERIOD trend's y ticks — `step = hi - lo > 50 ? 20 : 10`
+ * from `lo` up to `hi` (so [20, 100] ticks 20 / 40 / 60 / 80 / 100 and
+ * [20, 90] ticks 20 / 40 / 60 / 80, the top of the box without a hairline),
+ * coarsened further only when a short plot would put two ticks closer than
+ * `MIN_RATE_TICK_GAP_PX`. The event mode keeps `rateDomainTicks`.
+ */
+export function periodRateTicks(domain: readonly [number, number], valueRangePx: number): number[] {
+  const span = domain[1] - domain[0];
+  const firstStep = span > PERIOD_SKETCH_COARSE_SPAN_POINTS ? 20 : 10;
+  return ticksFromSteps(
+    domain,
+    valueRangePx,
+    RATE_TICK_STEPS.filter((candidate) => candidate >= firstStep),
+  );
+}
+
+/** Sketch 003 `trend()`: a fitted span wider than this many rate points steps its ticks by 20. */
+const PERIOD_SKETCH_COARSE_SPAN_POINTS = 50;
+
+/** Sketch 003 A / 001-C `.trend.gutter{margin-left:26px}`: the plot's left edge sits 26px in. */
+export const PERIOD_Y_GUTTER_PX = 26;
+/** Sketch `.ytick{left:-26px;width:20px;text-align:right}`: a tick's right edge sits 6px left of the plot. */
+export const PERIOD_Y_TICK_GAP_PX = 6;
+/** Sketch `.ytick`, `.xaxis`, `.val` and `.ref-label`: every period-trend axis label is 10px. */
+export const PERIOD_AXIS_FONT_SIZE_PX = 10;
+
+function ticksFromSteps(
+  domain: readonly [number, number],
+  valueRangePx: number,
+  steps: readonly number[],
+): number[] {
   const [lo, hi] = domain;
   const span = hi - lo;
   if (!(span > 0)) {
     return [lo];
   }
   const step =
-    RATE_TICK_STEPS.find(
-      (candidate) => (valueRangePx * candidate) / span >= MIN_RATE_TICK_GAP_PX,
-    ) ?? span;
+    steps.find((candidate) => (valueRangePx * candidate) / span >= MIN_RATE_TICK_GAP_PX) ?? span;
   // Never an off-step top tick: appending `hi` when the step does not divide
   // the span put it closer than the gap this function exists to keep (the
   // hero's "80" / "90" overprint in the design-audit captures).

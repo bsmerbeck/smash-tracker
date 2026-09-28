@@ -36,6 +36,12 @@ export const CHART_TOKENS = Object.freeze({
   grid: 'var(--border)',
   /** Axis tick / legend text color. */
   axisText: 'var(--muted-foreground)',
+  /**
+   * Plan 39.1-43b (sketch 003 A / 001-C `.trend .val`, which sets no colour
+   * of its own and so draws in the body's `--color-text`): a direct value
+   * label's ink.
+   */
+  text: 'var(--foreground)',
   /** The chart plot surface — the same surface every `Card` renders on. */
   surface: 'var(--card)',
   /** Border color shared with the rest of the `Card` family. */

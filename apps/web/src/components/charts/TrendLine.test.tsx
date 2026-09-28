@@ -717,15 +717,18 @@ describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', (
         rate: 0.5,
       });
     });
+    // REWRITTEN by plan 39.1-43b (sketch `.trend.gutter`): the period chart
+    // has no left margin and a 26px y-axis gutter (was a 5px margin + a 60px
+    // axis); the right margin stays 5px.
     const chartMargin = 5;
-    const yAxisWidth = 60;
+    const yAxisGutter = 26;
     const xPadding = 16;
     const plotWidthPx = 829;
     const { container } = render(
       <TrendLine
         mode="period"
         points={points}
-        width={plotWidthPx + chartMargin * 2 + yAxisWidth + xPadding * 2}
+        width={plotWidthPx + chartMargin + yAxisGutter + xPadding * 2}
         height={288}
         labels={PERIOD_LABELS}
       />,
@@ -742,7 +745,7 @@ describe('TrendLine — period mode axis (plan 39.1-30, UI-SPEC §7.13/§11)', (
       layout.map(({ label, anchor }) => ({ label, anchor })),
     );
     rendered.forEach((tick, j) => {
-      expect(tick.x).toBeCloseTo(layout[j]!.x + chartMargin + yAxisWidth + xPadding, 0);
+      expect(tick.x).toBeCloseTo(layout[j]!.x + yAxisGutter + xPadding, 0);
     });
   });
 
@@ -1339,7 +1342,10 @@ describe('TrendLine — period dot sizing, one data line, surface attributes (pl
  * period containing the window start to the right edge", "1px left edge"):
  * the recent band covers its first period's whole slot and runs to the
  * plot's right edge, with a 1px series-1 left edge. Geometry of a 640px
- * trend: plot 65..635, category centres 81 + i x (538 / 7).
+ * trend: plot 26..635, category centres 42 + i x (577 / 7).
+ * REWRITTEN by plan 39.1-43b (sketch `.trend.gutter`): was plot 65..635,
+ * centres 81 + i x (538 / 7) — the 60px axis and 5px left margin became the
+ * sketch's 26px gutter.
  */
 describe('TrendLine — the recent band reaches the plot edge (plan 39.1-41 fidelity loop)', () => {
   it("spans from the containing period's slot start to the plot's right edge, with a 1px series-1 left edge", () => {
@@ -1354,12 +1360,12 @@ describe('TrendLine — the recent band reaches the plot edge (plan 39.1-41 fide
         emphasisStartMs={points[5]!.startMs}
       />,
     );
-    const step = 538 / 7;
+    const step = 577 / 7;
     const band = container.querySelector('.recharts-reference-area-rect');
     expect(band).not.toBeNull();
     const x = Number(band!.getAttribute('x'));
     const width = Number(band!.getAttribute('width'));
-    expect(x).toBeCloseTo(81 + 5 * step - step / 2, 0);
+    expect(x).toBeCloseTo(42 + 5 * step - step / 2, 0);
     expect(x + width).toBeCloseTo(635, 0);
     const edge = container.querySelector('[data-slot="trend-period-band-edge"]');
     expect(edge).not.toBeNull();
@@ -1382,7 +1388,8 @@ describe('TrendLine — the recent band reaches the plot edge (plan 39.1-41 fide
       />,
     );
     const band = container.querySelector('.recharts-reference-area-rect');
-    expect(Number(band!.getAttribute('x'))).toBeGreaterThanOrEqual(65);
+    // REWRITTEN by plan 39.1-43b: the plot's left edge is the 26px gutter (was 65).
+    expect(Number(band!.getAttribute('x'))).toBeGreaterThanOrEqual(26);
   });
 });
 

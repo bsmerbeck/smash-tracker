@@ -39,13 +39,17 @@ import {
   PERIOD_DOT_DIAMETER_SMALL,
   PERIOD_VALUE_LABEL_BELOW_OFFSET_PX,
   PERIOD_VALUE_LABEL_OFFSET_PX,
+  PERIOD_AXIS_FONT_SIZE_PX,
   PERIOD_Y_AXIS_PADDING_BOTTOM_PX,
   PERIOD_Y_AXIS_PADDING_TOP_PX,
+  PERIOD_Y_GUTTER_PX,
+  PERIOD_Y_TICK_GAP_PX,
   fitRateDomain,
   periodChartHeightForValueRange,
   periodDotDiameter,
   periodDotDiameterForTier,
   periodPlotModel,
+  periodRateTicks,
   periodValueLabelPlacement,
   placeReferenceLabel,
   rateDomainTicks,
@@ -683,8 +687,8 @@ function periodLabelRenderer(
         }
         textAnchor="middle"
         data-placement={placement.below ? 'below' : 'above'}
-        fill={CHART_TOKENS.axisText}
-        fontSize={CHART_AXIS_FONT_SIZE}
+        fill={CHART_TOKENS.text}
+        fontSize={PERIOD_AXIS_FONT_SIZE_PX}
         fontWeight={600}
         {...VALUE_LABEL_HALO}
         data-slot="trend-period-value-label"
@@ -710,7 +714,13 @@ function periodLabelRenderer(
  * first/last key, which disagreed with what the selector had assumed and
  * overlapped labels).
  */
-function periodTickRenderer(layout: PeriodTickLayout[]) {
+/** The event mode's x tick text size (the kit's 12px axis size). */
+const EVENT_TICK_TEXT = { fontSize: CHART_AXIS_FONT_SIZE } as const;
+/** Plan 39.1-43b (sketch 003 A / 001-C `.xaxis{font-size:10px}`): the period trend's x labels. */
+const PERIOD_TICK_TEXT = { fontSize: PERIOD_AXIS_FONT_SIZE_PX } as const;
+type TickTextSize = typeof EVENT_TICK_TEXT | typeof PERIOD_TICK_TEXT;
+
+function periodTickRenderer(layout: PeriodTickLayout[], textSize: TickTextSize = EVENT_TICK_TEXT) {
   const byKey = new Map(layout.map((tick) => [tick.key, tick]));
   return function renderTick(tickProps: unknown): ReactElement {
     const { x, y, payload, className } = tickProps as {
@@ -735,7 +745,7 @@ function periodTickRenderer(layout: PeriodTickLayout[]) {
         textAnchor={tick.anchor}
         className={className}
         fill={CHART_TOKENS.axisText}
-        fontSize={CHART_AXIS_FONT_SIZE}
+        {...textSize}
       >
         {tick.label}
       </text>
@@ -875,6 +885,13 @@ const PERIOD_CHART_MARGIN = {
   left: PERIOD_CHART_MARGIN_PX,
 };
 /**
+ * Plan 39.1-43b (sketch 003 A / 001-C `.trend.gutter{margin-left:26px}`):
+ * the PERIOD chart has no left margin — its y-axis IS the sketch's 26px
+ * gutter, so the plot starts 26px right of the head. The event mode keeps
+ * `PERIOD_CHART_MARGIN` and its 60px axis.
+ */
+const PERIOD_TREND_MARGIN = { ...PERIOD_CHART_MARGIN, left: 0 };
+/**
  * The period plot's modelled pixel geometry — the same model
  * `selectPeriodTickLayout` receives (container width minus margins, axis
  * width and edge padding), extended vertically by `trendGeometry`'s ONE
@@ -893,8 +910,11 @@ interface PeriodPlotModel {
   valueRangePx: number;
 }
 
-function periodPlotGeometry(containerWidth: number, height: number): PeriodPlotModel {
-  const plotLeftPx = PERIOD_CHART_MARGIN_PX + PERIOD_Y_AXIS_WIDTH_PX;
+function periodPlotGeometry(
+  containerWidth: number,
+  height: number,
+  plotLeftPx: number = PERIOD_CHART_MARGIN_PX + PERIOD_Y_AXIS_WIDTH_PX,
+): PeriodPlotModel {
   const plotRightPx = containerWidth - PERIOD_CHART_MARGIN_PX;
   return {
     plotLeftPx,
@@ -1031,12 +1051,13 @@ function PeriodTrendChart({
   }
 
   const containerWidth = typeof width === 'number' ? width : measuredWidth;
-  const model = periodPlotGeometry(containerWidth, height);
+  const model = periodPlotGeometry(containerWidth, height, PERIOD_Y_GUTTER_PX);
   const { plotWidthPx } = model;
 
   const domain = computePeriodYDomain(points, props.referenceRate);
   const [yMin, yMax] = domain;
-  const yTicks = rateDomainTicks(domain, model.valueRangePx);
+  // Plan 39.1-43b: sketch 003 A's tick step (20 over a span above 50).
+  const yTicks = periodRateTicks(domain, model.valueRangePx);
   const data = buildPeriodChartData(points, domain);
   const labeledIndices = findPeriodLabeledIndices(points);
   const labelRoles = findPeriodLabelRoles(points);
@@ -1094,11 +1115,13 @@ function PeriodTrendChart({
     <LineChart
       {...(typeof width === 'number' ? { width, height } : {})}
       data={data}
-      margin={PERIOD_CHART_MARGIN}
+      margin={PERIOD_TREND_MARGIN}
       onClick={onClick}
       accessibilityLayer
     >
-      <CartesianGrid stroke={CHART_TOKENS.grid} />
+      {/* Plan 39.1-43b (sketch `.trend .grid-y`): horizontal hairlines only,
+          each at a y tick — no vertical grid, no plot-box edge lines. */}
+      <CartesianGrid stroke={CHART_TOKENS.grid} vertical={false} syncWithTicks />
       <XAxis
         dataKey="key"
         type="category"
@@ -1106,18 +1129,27 @@ function PeriodTrendChart({
         ticks={tickLayout.map((tick) => tick.key)}
         interval={0}
         padding={{ left: PERIOD_X_AXIS_PADDING_PX, right: PERIOD_X_AXIS_PADDING_PX }}
-        tick={periodTickRenderer(tickLayout)}
+        axisLine={false}
+        tickLine={false}
+        tick={periodTickRenderer(tickLayout, PERIOD_TICK_TEXT)}
       />
       {/* The primary axis carries nothing outside the fitted domain (joined
           periods are fitted, sub-floor dots are clamped to it), so it needs no
           allowDataOverflow — whose clip would cut an edge dot in half. */}
+      {/* Plan 39.1-43b (sketch `.ytick{left:-26px;width:20px;text-align:right;
+          font-size:10px}`): the axis is the 26px gutter, each tick right-aligned
+          6px left of the plot, no axis line or tick mark. */}
       <YAxis
         domain={[yMin, yMax]}
         ticks={yTicks}
         interval={0}
-        width={PERIOD_Y_AXIS_WIDTH_PX}
+        width={PERIOD_Y_GUTTER_PX}
         padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
-        tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+        axisLine={false}
+        tickLine={false}
+        tickSize={0}
+        tickMargin={PERIOD_Y_TICK_GAP_PX}
+        tick={{ fill: CHART_TOKENS.axisText, fontSize: PERIOD_AXIS_FONT_SIZE_PX }}
       />
       {props.tooltip && (
         <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
@@ -1132,7 +1164,7 @@ function PeriodTrendChart({
                   value: referenceLabel,
                   position: referenceLabelPosition,
                   fill: CHART_TOKENS.axisText,
-                  fontSize: CHART_AXIS_FONT_SIZE,
+                  fontSize: PERIOD_AXIS_FONT_SIZE_PX,
                   // Sketch 001-C draws the label on the card surface.
                   ...VALUE_LABEL_HALO,
                   // Recharts replaces its own `recharts-label` class with a custom one — keep both.
