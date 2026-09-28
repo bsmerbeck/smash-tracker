@@ -181,6 +181,96 @@ export async function refundCredit(database: Database, uid: string, ref: string)
   );
 }
 
+/** The child of `credits/{uid}` holding `refundCreditOnce`'s create-once markers, one per refunded execution. */
+export const REFUND_MARKERS_KEY = 'refundMarkers';
+
+interface RefundMarker {
+  ledgerKey: string;
+  createdAt: number;
+}
+
+/**
+ * Code review R5-WR-01 (iteration 5): `refundCredit` made SAFE TO RETRY. The
+ * balance increment and a create-once marker keyed on `markerKey` (one per
+ * job execution) are written in ONE transaction on `credits/{uid}` — the
+ * node that holds the balance — so the refund either commits with its
+ * marker or not at all. A retry after a throw (a transient error, or a
+ * commit whose acknowledgement was lost) finds the marker and aborts: it can
+ * never refund twice. The marker also carries the ledger entry's key and
+ * timestamp, so the ledger write is an idempotent `set` on a fixed key and
+ * a retry rewrites the same entry instead of appending a second one.
+ *
+ * Returns true when this call committed the balance increment, false when
+ * the marker already existed (an earlier attempt refunded). A null first-run
+ * input (the SDK's local cache on a listener-less server) is treated as an
+ * empty node: the transaction's server compare re-runs it against the real
+ * node, so it never overwrites an existing balance.
+ */
+export async function refundCreditOnce(
+  database: Database,
+  uid: string,
+  ref: string,
+  markerKey: string,
+): Promise<boolean> {
+  const ledgerKey = ledgerRef(database, uid).push().key;
+  if (!ledgerKey) {
+    throw new Error('Failed to allocate a creditLedger push key');
+  }
+  const createdAt = Date.now();
+  const result = await database.ref(`credits/${uid}`).transaction((current) => {
+    const node =
+      current !== null && typeof current === 'object' ? (current as Record<string, unknown>) : {};
+    const markers =
+      node[REFUND_MARKERS_KEY] !== null && typeof node[REFUND_MARKERS_KEY] === 'object'
+        ? (node[REFUND_MARKERS_KEY] as Record<string, unknown>)
+        : {};
+    if (Object.prototype.hasOwnProperty.call(markers, markerKey)) {
+      // Already refunded by an earlier attempt: abort, nothing written.
+      return undefined;
+    }
+    const balance = typeof node.balance === 'number' ? node.balance : 0;
+    return {
+      ...node,
+      balance: balance + 1,
+      [REFUND_MARKERS_KEY]: {
+        ...markers,
+        [markerKey]: { ledgerKey, createdAt } satisfies RefundMarker,
+      },
+    };
+  });
+  const settled = result.snapshot.val() as {
+    [REFUND_MARKERS_KEY]?: Record<string, RefundMarker>;
+  } | null;
+  const marker = settled?.[REFUND_MARKERS_KEY]?.[markerKey];
+  if (!marker) {
+    throw new Error('refund marker missing after the refund transaction');
+  }
+
+  await database.ref(`creditLedger/${uid}/${marker.ledgerKey}`).set(
+    creditLedgerEntrySchema.parse({
+      type: 'refund',
+      amount: 1,
+      createdAt: marker.createdAt,
+      ref,
+    }),
+  );
+
+  void createEvent(
+    database,
+    buildBillingEnvelope({
+      eventName: 'credit_refunded',
+      source: 'job',
+      actorId: uid,
+      sessionId: uid,
+      causationId: `${ref}:credit_refunded`,
+      consentState: 'unknown',
+      payload: { amount: 1 },
+    }),
+  );
+
+  return result.committed;
+}
+
 /**
  * Idempotency guard for Stripe webhook deliveries: Stripe retries delivery
  * on any non-2xx/timeout response, so the same fulfilling event can arrive

@@ -440,7 +440,7 @@ describe("PREP-06 record: WHAT A CREDIT BUYS answers the requirement's second cl
 
   it('FAILS when the stated model bound drifts from the API source', () => {
     const broken = RECORD.replace(
-      '`REPORT_MODEL_TIMEOUT_MS` (8 minutes)',
+      '`REPORT_MODEL_TIMEOUT_MS` (4 minutes)',
       '`REPORT_MODEL_TIMEOUT_MS` (10 minutes)',
     );
     expect(broken).not.toBe(RECORD);

@@ -7673,7 +7673,7 @@ describe('code review R5-WR-01: a transient failure AFTER the owned settle commi
     });
 
     expect(injected.thrown()).toBe(true);
-    expect(response.statusCode).not.toBe(500);
+    expect(response.statusCode).toBe(404);
     expect(modelSpy).not.toHaveBeenCalled();
     expect(await jobRecord(database, 'r5-l2b')).toMatchObject({
       status: 'refunded',

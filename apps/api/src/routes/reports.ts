@@ -84,6 +84,7 @@ import {
   bundleSlotRef,
   readBundleSpendFact,
   refundCredit,
+  refundCreditOnce,
   spendCredit,
   spendCredits,
 } from '../billing/credits.js';
@@ -119,7 +120,8 @@ import { isDemoAccountSubject } from '../research/demoAccount.js';
  * `REPORT_MODEL_TIMEOUT_MS`. Before that bound the SDK defaults (two
  * retries, ten minutes per attempt) let one call run about thirty minutes,
  * so a live execution could be swept mid-flight. The bound leaves at least
- * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
+ * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`
+ * (ten, since review R5-IN-04 cut the attempt to four minutes).
  */
 export const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
 
@@ -132,12 +134,39 @@ export const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
 export const REPORT_MODEL_MAX_RETRIES = 0;
 
 /**
+ * Code review R5-IN-04 (iteration 5): the Cloud Run request timeout of the
+ * live `smash-tracker-api` service — `timeoutSeconds: 300`, verified
+ * read-only by the orchestrator on 2026-09-28 (the README deploy commands
+ * pin it with `--timeout=300`). Report generation runs INSIDE the request:
+ * `POST /reports` awaits `runReportGeneration`/`runSynthesisGeneration`
+ * before it replies. Past this timeout Cloud Run cuts the request off and a
+ * request-billed instance's CPU is throttled, so the model response and the
+ * terminal writes could stall past the stale window. Raising the service
+ * timeout is an owner infrastructure decision; this constant documents the
+ * value the bound below is sized against.
+ */
+export const CLOUD_RUN_REQUEST_TIMEOUT_MS = 300 * 1000;
+
+/**
+ * Code review R5-IN-04: the budget for everything a generation request does
+ * besides the one model attempt — scout resolution and payload assembly
+ * before it; the snapshot write, validation, the store and the terminal
+ * writes around it (including `failJob`'s bounded retries). One attempt
+ * plus this budget must fit inside `CLOUD_RUN_REQUEST_TIMEOUT_MS`.
+ */
+export const REPORT_REQUEST_OVERHEAD_BUDGET_MS = 60 * 1000;
+
+/**
  * Code review R4-WR-02: the explicit per-attempt bound on a model call, well
  * inside `REPORT_JOB_STALE_MS`. The SDK arms its own timer only until the
  * response headers arrive, so the same bound is also applied as an abort
  * signal that covers reading the body (`reportModelRequestOptions`).
+ *
+ * Code review R5-IN-04: four minutes, so one attempt plus
+ * `REPORT_REQUEST_OVERHEAD_BUDGET_MS` fits inside the 300-second Cloud Run
+ * request timeout (`CLOUD_RUN_REQUEST_TIMEOUT_MS`).
  */
-export const REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000;
+export const REPORT_MODEL_TIMEOUT_MS = 4 * 60 * 1000;
 
 /**
  * Code review R3-WR-02: the clock-skew allowance between this process and
@@ -146,6 +175,43 @@ export const REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000;
  * AND refunded by the sweep, so it never refunds its own spend again.
  */
 export const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
+
+/**
+ * Code review R5-WR-01 (iteration 5): how many times each of `failJob`'s
+ * writes after the owned settle is attempted — the terminal `set`s, the
+ * index/day update and the (create-once, so retry-safe) refund — before a
+ * persistent failure is logged for reconciliation. The waits double from
+ * `REPORT_SETTLE_WRITE_BACKOFF_MS` (100, 200 and 400 ms).
+ */
+const REPORT_SETTLE_WRITE_ATTEMPTS = 4;
+const REPORT_SETTLE_WRITE_BACKOFF_MS = 100;
+
+/** Runs one idempotent write, retrying a throw with a doubling backoff; rethrows the last error once every attempt has failed. */
+async function withSettleRetries<T>(write: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await write();
+    } catch (err) {
+      if (attempt >= REPORT_SETTLE_WRITE_ATTEMPTS) {
+        throw err;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, REPORT_SETTLE_WRITE_BACKOFF_MS * 2 ** (attempt - 1)),
+      );
+    }
+  }
+}
+
+/**
+ * Code review R5-IN-01 (iteration 5): true for the bare `DOMException` the
+ * fetch raises when `AbortSignal.timeout` fires after the response headers
+ * arrived (`AbortError`, or `TimeoutError`) — not an `Anthropic.APIError`,
+ * so it needs its own branch to reach the same 502 as the SDK's timeout.
+ */
+function isModelAbort(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return typeof err === 'object' && (name === 'AbortError' || name === 'TimeoutError');
+}
 
 /**
  * Code review R4-WR-02: the per-request options every model call this plugin
@@ -642,32 +708,94 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
      * job KIND (a prep enum) and must never carry a failure cause.
      */
     failureReason?: ReportFailureReason;
+    /** R5-WR-01: the execution whose failure this is; with the job id it keys the refund's create-once marker. */
+    executionId?: string;
+    /**
+     * R5-WR-01: true when an owned settle (`settleOwnedJob`) has ALREADY
+     * committed the `failed` status. The row is then terminal and the sweep
+     * will never refund it, so the refund must happen even if the terminal
+     * `set` below keeps failing. False (synthesis) means the row is still
+     * `running` until that `set` lands; a `set` that keeps failing leaves the
+     * refund to the stuck-job sweep, which reads the running row.
+     */
+    rowSettled?: boolean;
   }): Promise<void> {
-    const { uid, jobId, creditRef, spent, reason, createdAt, attempt, day, failureReason } = params;
+    const {
+      uid,
+      jobId,
+      creditRef,
+      spent,
+      reason,
+      createdAt,
+      attempt,
+      day,
+      failureReason,
+      executionId,
+      rowSettled = false,
+    } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${uid}/${jobId}`);
     const now = Date.now();
-    await jobRef.set(
-      reportJobSchema.parse({
-        status: 'failed',
-        createdAt,
-        updatedAt: now,
-        attempt,
-        creditRef,
-        ...(reason ? { reason } : {}),
-        ...(failureReason ? { failureReason } : {}),
-        // Post-plan fix (39-10): the spend fact rides BOTH terminal writes
-        // (C1-H1 — the second `.set()` below replaces the node). A boolean,
-        // never null, so it is always a safe RTDB value.
-        wasCharged: spent,
-      }),
-    );
+    // Code review R5-WR-01 (iteration 5): every write below is retried
+    // (`withSettleRetries`) — a transient RTDB error after an owned settle
+    // used to strand the spent credit on a `failed` row the sweep never
+    // visits. A write that keeps failing is logged (uid redacted) and the
+    // money path carries on, so reconciliation can find it.
+    const logPersistentFailure = (err: unknown, message: string): void => {
+      app.log.error({ err: redactUid(err, uid) }, message);
+    };
+    try {
+      await withSettleRetries(() =>
+        jobRef.set(
+          reportJobSchema.parse({
+            status: 'failed',
+            createdAt,
+            updatedAt: now,
+            attempt,
+            creditRef,
+            ...(reason ? { reason } : {}),
+            ...(failureReason ? { failureReason } : {}),
+            // Post-plan fix (39-10): the spend fact rides BOTH terminal writes
+            // (C1-H1 — the second `.set()` below replaces the node). A boolean,
+            // never null, so it is always a safe RTDB value.
+            wasCharged: spent,
+          }),
+        ),
+      );
+    } catch (err) {
+      if (!rowSettled) {
+        throw err;
+      }
+      logPersistentFailure(
+        err,
+        'could not rewrite a settled report job as failed; its refund still proceeds',
+      );
+    }
     const resolvedDay = day ?? dayShardKey(now);
-    await app.firebase.database.ref().update({
-      [`reportJobsByStatus/running/${uid}/${jobId}`]: null,
-      [`reportJobsByDay/${resolvedDay}/${jobId}`]: { uid, status: 'failed' },
-    });
+    try {
+      await withSettleRetries(() =>
+        app.firebase.database.ref().update({
+          [`reportJobsByStatus/running/${uid}/${jobId}`]: null,
+          [`reportJobsByDay/${resolvedDay}/${jobId}`]: { uid, status: 'failed' },
+        }),
+      );
+    } catch (err) {
+      logPersistentFailure(err, 'could not clear a failed report job from the running index');
+    }
+    // R5-WR-01: `refundCredit` is not idempotent, so the retried refund is
+    // `refundCreditOnce` — the balance and a create-once marker for THIS
+    // execution commit in one transaction, and a retry after a commit whose
+    // acknowledgement was lost finds the marker instead of refunding again.
+    let refunded = false;
     if (spent) {
-      await refundCredit(app.firebase.database, uid, creditRef);
+      const markerKey = executionId ? `${jobId}:${executionId}` : jobId;
+      try {
+        await withSettleRetries(() =>
+          refundCreditOnce(app.firebase.database, uid, creditRef, markerKey),
+        );
+        refunded = true;
+      } catch (err) {
+        logPersistentFailure(err, 'could not refund a failed report job; left for reconciliation');
+      }
     }
     // Phase 27 (RPT-03): the `refunded` terminal is written strictly AFTER
     // `refundCredit` commits when a credit was actually spent, so a player
@@ -685,23 +813,31 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // zero-spend failures keep their Phase 27 `failed` terminal
     // byte-identically (their retry contracts mint fresh jobIds and never
     // gate on `refunded`).
-    if (reason && (spent || reason === 'post_event_synthesis')) {
+    // R5-WR-01: never while the credit is still owed — a refund that kept
+    // failing leaves the job `failed`, not claiming `refunded`.
+    if (reason && (spent || reason === 'post_event_synthesis') && (refunded || !spent)) {
       // Phase 39 (review C1-H1): `.set()` REPLACES the whole node, so this
       // second terminal write is AUTHORITATIVE and erases any field the
       // `failed` write above carried but this one omits — every field added
       // to the terminal record must be carried on BOTH writes.
-      await jobRef.set(
-        reportJobSchema.parse({
-          status: 'refunded',
-          createdAt,
-          updatedAt: Date.now(),
-          attempt,
-          creditRef,
-          reason,
-          ...(failureReason ? { failureReason } : {}),
-          wasCharged: spent,
-        }),
-      );
+      try {
+        await withSettleRetries(() =>
+          jobRef.set(
+            reportJobSchema.parse({
+              status: 'refunded',
+              createdAt,
+              updatedAt: Date.now(),
+              attempt,
+              creditRef,
+              reason,
+              ...(failureReason ? { failureReason } : {}),
+              wasCharged: spent,
+            }),
+          ),
+        );
+      } catch (err) {
+        logPersistentFailure(err, 'could not mark a refunded report job as refunded');
+      }
     }
     void createEvent(
       app.firebase.database,
@@ -856,7 +992,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       });
       return false;
     }
-    await failJob(failParams);
+    // R5-WR-01: the settle has committed `failed`, so `failJob` refunds even
+    // if its own terminal write keeps failing, and keys the refund's
+    // create-once marker on this execution.
+    await failJob({ ...failParams, executionId, rowSettled: true });
     return true;
   }
 
@@ -1315,6 +1454,21 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           },
         };
       }
+      // Code review R5-IN-01: the attempt bound's abort signal fired while the
+      // body was being read — the same owned failure and 502 as the SDK's own
+      // timeout error, never a 500 through the generic handler.
+      if (isModelAbort(err)) {
+        await failOwnedJob(ownedRunningFailure);
+        request.log.error({ err }, 'Claude report generation timed out');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model took too long to respond — try again',
+          },
+        };
+      }
       return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
@@ -1648,6 +1802,19 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             status: 502,
             error: 'Bad Gateway',
             message: 'The model provider returned an error — try again shortly',
+          },
+        };
+      }
+      // Code review R5-IN-01: a body-read abort, as on the scout path.
+      if (isModelAbort(err)) {
+        await failCurrentJob(jobDay);
+        request.log.error({ err }, 'Claude practice-plan generation timed out');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model took too long to respond — try again',
           },
         };
       }
