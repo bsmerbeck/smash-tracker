@@ -3127,3 +3127,140 @@ test('period-trend-marks: the PERIOD_TREND line prints state, domain, sorted dis
     'PERIOD_TREND route=matchups-sketch-thin viewport=390x844 state=locked domain=none dots=none labels=none lines=0 ref=none',
   );
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-42 (sketch 003 `formStrip` / `fitStrips`, UI-SPEC §7.10 as amended
+// 2026-09-25): the form-strip-labels family. One strip per
+// `[data-slot="form-strip-root"]`: its `data-event-count`, and per shown
+// `[data-slot="form-strip-event"]` its `data-event-order` plus the
+// `[data-slot="form-strip-event-label"]` text and rect. Every case reads the
+// module through the namespace so a missing export fails that case alone.
+// ---------------------------------------------------------------------------
+
+/** Sketch 003 at 390: three newest events, 76px minimum columns, 12px gaps. */
+function sketchStrip(overrides = {}) {
+  const column = (left, order, text) => ({
+    order,
+    labelText: text,
+    labelRect: { left, right: left + 76, top: 400, bottom: 416, width: 76, height: 16 },
+  });
+  return {
+    selectorPath: 'div[data-slot="form-strip-root"]',
+    eventCount: 20,
+    gameCount: 102,
+    shownGames: 9,
+    rootWidth: 326,
+    events: [
+      column(0, 17, 'Genesis 9 3–0'),
+      column(88, 18, 'Battle of BC 8 0–2'),
+      column(176, 19, 'Sessions · Jul 3 – Sep 20, 2026 2–2'),
+    ],
+    ...overrides,
+  };
+}
+
+function formStripLabelTypes(strips) {
+  return guardLayoutCoreNs.evaluateFormStripLabels(strips).map((v) => v.type);
+}
+
+test('form-strip-labels: the minimum label box is 72px', () => {
+  assert.equal(guardLayoutCoreNs.FORM_STRIP_LABEL_MIN_WIDTH_PX, 72);
+});
+
+test('form-strip-labels: a sketch-shaped strip (three labelled newest events at 390 widths) passes', () => {
+  assert.deepEqual(formStripLabelTypes([sketchStrip()]), []);
+});
+
+test('form-strip-labels: an opted route with no strip is exactly form-strip-labels-unmeasured', () => {
+  assert.deepEqual(formStripLabelTypes([]), ['form-strip-labels-unmeasured']);
+});
+
+test('form-strip-labels: an event without label text, or whose label has no W–L token, is form-strip-label-missing', () => {
+  const base = sketchStrip();
+  const noText = { ...base.events[0], labelText: null, labelRect: null };
+  const noRecord = { ...base.events[1], labelText: 'Battle of BC 8' };
+  assert.deepEqual(
+    formStripLabelTypes([sketchStrip({ events: [noText, noRecord, base.events[2]] })]),
+    ['form-strip-label-missing', 'form-strip-label-missing'],
+  );
+});
+
+test('form-strip-labels: a shipped caption-only root (no data-event-count, no label nodes) reports label-missing per event, never not-newest or unmeasured', () => {
+  const legacy = {
+    selectorPath: 'div[data-slot="form-strip-root"]',
+    eventCount: null,
+    gameCount: null,
+    shownGames: 30,
+    rootWidth: 900,
+    events: [
+      { order: null, labelText: null, labelRect: null },
+      { order: null, labelText: null, labelRect: null },
+    ],
+  };
+  assert.deepEqual(formStripLabelTypes([legacy]), [
+    'form-strip-label-missing',
+    'form-strip-label-missing',
+  ]);
+});
+
+test('form-strip-labels: two intersecting label rects are form-strip-label-overlap', () => {
+  const base = sketchStrip();
+  const shifted = {
+    ...base.events[1],
+    labelRect: { left: 60, right: 136, top: 400, bottom: 416, width: 76, height: 16 },
+  };
+  assert.deepEqual(
+    formStripLabelTypes([sketchStrip({ events: [base.events[0], shifted, base.events[2]] })]),
+    ['form-strip-label-overlap'],
+  );
+});
+
+test('form-strip-labels: shown orders that are not the contiguous run ending at data-event-count - 1 are form-strip-not-newest', () => {
+  const base = sketchStrip();
+  const gap = [base.events[0], { ...base.events[1], order: 16 }, base.events[2]];
+  assert.deepEqual(formStripLabelTypes([sketchStrip({ events: gap })]), ['form-strip-not-newest']);
+  assert.deepEqual(formStripLabelTypes([sketchStrip({ eventCount: 21 })]), [
+    'form-strip-not-newest',
+  ]);
+  const missingOrder = [base.events[0], base.events[1], { ...base.events[2], order: null }];
+  assert.deepEqual(formStripLabelTypes([sketchStrip({ events: missingOrder })]), [
+    'form-strip-not-newest',
+  ]);
+});
+
+test('form-strip-labels: a label box narrower than 72px is form-strip-label-squeezed; exactly 72px passes', () => {
+  const base = sketchStrip();
+  const squeezed = {
+    ...base.events[2],
+    labelRect: { left: 176, right: 247.5, top: 400, bottom: 416, width: 71.5, height: 16 },
+  };
+  assert.deepEqual(
+    formStripLabelTypes([sketchStrip({ events: [base.events[0], base.events[1], squeezed] })]),
+    ['form-strip-label-squeezed'],
+  );
+  const exact = {
+    ...base.events[2],
+    labelRect: { left: 176, right: 248, top: 400, bottom: 416, width: 72, height: 16 },
+  };
+  assert.deepEqual(
+    formStripLabelTypes([sketchStrip({ events: [base.events[0], base.events[1], exact] })]),
+    [],
+  );
+});
+
+test('form-strip-labels: the FORM_STRIP line prints shown/count events, shown/total games and the labels', () => {
+  assert.equal(
+    guardLayoutCoreNs.formatFormStripLine('matchups-sketch-deep', '390x844', sketchStrip()),
+    'FORM_STRIP route=matchups-sketch-deep viewport=390x844 events=3/20 games=9/102 labels=Genesis 9 3–0|Battle of BC 8 0–2|Sessions · Jul 3 – Sep 20, 2026 2–2 width=326',
+  );
+  assert.equal(
+    guardLayoutCoreNs.formatFormStripLine('matchups', '1440x900', {
+      eventCount: null,
+      gameCount: null,
+      shownGames: 30,
+      rootWidth: 900,
+      events: [{ order: null, labelText: null, labelRect: null }],
+    }),
+    'FORM_STRIP route=matchups viewport=1440x900 events=1/unknown games=30/unknown labels=none width=900',
+  );
+});
