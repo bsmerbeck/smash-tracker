@@ -313,35 +313,6 @@ export async function refundCreditOnce(
   return marker.ledgerKey === ledgerKey;
 }
 
-/**
- * Idempotency guard for Stripe webhook deliveries: Stripe retries delivery
- * on any non-2xx/timeout response, so the same fulfilling event can arrive
- * more than once. Returns `true` (and marks the event processed) the first
- * time `eventId` is seen; `false` for a replay, which the caller treats as a
- * no-op success.
- *
- * Code review R7-CR-03 (iteration 7): NOT the grant's gate any more, and it
- * must never become one again. Committed BEFORE the grant, it let a grant
- * that then failed (a socket drop aborts a sent transaction) be deduped on
- * Stripe's retry, so the buyer paid and received nothing.
- * `fulfillCheckoutSession` dedups on its create-once grant marker instead
- * and writes `processedStripeEvents/{id}` only after the grant committed.
- */
-export async function markStripeEventProcessed(
-  database: Database,
-  eventId: string,
-): Promise<boolean> {
-  const ref = database.ref(`processedStripeEvents/${eventId}`);
-  const result = await ref.transaction((current) => {
-    if (current !== null && current !== undefined) {
-      // Already processed — abort, no write.
-      return undefined;
-    }
-    return Date.now();
-  });
-  return result.committed;
-}
-
 /** Minimal structural seam over the fields `fulfillCheckoutSession` needs from a Stripe Checkout Session. */
 export interface FulfillableCheckoutSession {
   id: string;
@@ -606,7 +577,8 @@ interface CreditBundleOpMarker {
  * Two-phase design:
  *
  * **Phase 1 — claim.** A transaction on `creditBundleOps/{uid}/{bundleId}`
- * mirrors `markStripeEventProcessed`'s polarity (credits.ts:189-202), NOT
+ * mirrors the write-on-empty polarity of `createEvent`'s `eventDedup`
+ * transaction (`events/ledger.ts`), NOT
  * `spendCredit`'s null-handling (credits.ts:96-107): for a balance, "node
  * does not exist" means "zero credits, do nothing"; for a claim marker it
  * means "nobody has attempted this bundle yet, proceed and claim." Reusing

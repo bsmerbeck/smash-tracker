@@ -26,7 +26,7 @@ export function dayShardKey(occurredAt: number): string {
  * duplicate emission of the same logical event. CR-01 discipline applies —
  * `current === true` means "already emitted, abort"; `null`/`undefined`
  * means "not yet seen," never an abort condition (see `credits.ts`'s
- * `markStripeEventProcessed`/`spendCredit` for the exact same shape).
+ * `spendCredits` claim transaction on `creditBundleOps` for the same shape).
  *
  * Atomicity: once the dedup transaction commits, the ledger row and its
  * paired outbox row are written together in ONE root-level multi-path

@@ -202,7 +202,7 @@ const CLASSIFICATION_TABLE: ClassificationEntry[] = [
     file: 'src/billing/credits.ts',
     disposition: 'unreachable-by-construction',
     reason:
-      'Every function (spendCredit/spendCredits/addCredits/refundCredit/markStripeEventProcessed) takes a caller uid directly, with no tenant/subject parameter of any kind — personal billing has no coaching-mode surface, and a research tenant has no auth principal to hold a personal credit balance under (RTEN-07).',
+      'Every function (spendCredit/spendCredits/addCredits/refundCredit) takes a caller uid directly, with no tenant/subject parameter of any kind — personal billing has no coaching-mode surface, and a research tenant has no auth principal to hold a personal credit balance under (RTEN-07).',
   },
   {
     file: 'src/claims/delegation.ts',
