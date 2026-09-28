@@ -2278,16 +2278,16 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
 
 const R6_HEAD_TO_HEAD_WITHHELD: ReadonlyArray<readonly [string, string]> = [
   // R6-CR-01: roman-numeral characters (Nl), then ASCII roman numerals.
-  ['nl-V', 'You took Ⅴ games off MkLeo.'],
-  ['nl-I', 'You took Ⅰ set off MkLeo.'],
-  ['nl-X', 'You won Ⅹ games against MkLeo.'],
-  ['nl-XL', 'You won ⅩⅬ games against MkLeo.'],
-  ['nl-L', 'You won Ⅼ games against MkLeo.'],
-  ['nl-C', 'You won Ⅽ games against MkLeo.'],
-  ['nl-small-iii', 'You won ⅲ sets against MkLeo.'],
-  ['nl-small-ii', 'You lost ⅱ sets to MkLeo.'],
-  ['nl-small-pair', 'You are ⅲ-ⅱ against MkLeo.'],
-  ['nl-V-and-I', 'You are Ⅴ and Ⅰ against MkLeo.'],
+  ['nl-V', 'You took \u2164 games off MkLeo.'],
+  ['nl-I', 'You took \u2160 set off MkLeo.'],
+  ['nl-X', 'You won \u2169 games against MkLeo.'],
+  ['nl-XL', 'You won \u2169\u216c games against MkLeo.'],
+  ['nl-L', 'You won \u216c games against MkLeo.'],
+  ['nl-C', 'You won \u216d games against MkLeo.'],
+  ['nl-small-iii', 'You won \u2172 sets against MkLeo.'],
+  ['nl-small-ii', 'You lost \u2171 sets to MkLeo.'],
+  ['nl-small-pair', 'You are \u2172-\u2171 against MkLeo.'],
+  ['nl-V-and-I', 'You are \u2164 and \u2160 against MkLeo.'],
   ['ascii-iii', 'You won iii sets against MkLeo.'],
   ['ascii-iii-ii', 'You are iii-ii against MkLeo.'],
   ['ascii-V-and-I', 'You are V and I against MkLeo.'],
@@ -2300,13 +2300,13 @@ const R6_HEAD_TO_HEAD_WITHHELD: ReadonlyArray<readonly [string, string]> = [
   ['ascii-I-dash-I', 'You and MkLeo sit at I - I.'],
   ["ascii-X's", "X's worth of sets went to MkLeo."],
   // R6-CR-02: bidi controls and tag characters are delivered, so they withhold.
-  ['rlo-owt', 'You beat MkLeo ‮owt‬ times.'],
-  ['rli-owt', 'You beat MkLeo ⁧owt⁩ times.'],
-  ['rlo-pair', 'You are ‮eerht‬ and ‮owt‬ against MkLeo.'],
-  ['lro', 'You beat MkLeo ‭two‬ times.'],
-  ['rlm', 'You beat MkLeo‏ often.'],
-  ['tag-digit', 'You beat MkLeo 󠀳 times.'],
-  ['tag-letters', 'You beat MkLeo 󠁴󠁷󠁯 times.'],
+  ['rlo-owt', 'You beat MkLeo \u202eowt\u202c times.'],
+  ['rli-owt', 'You beat MkLeo \u2067owt\u2069 times.'],
+  ['rlo-pair', 'You are \u202eeerht\u202c and \u202eowt\u202c against MkLeo.'],
+  ['lro', 'You beat MkLeo \u202dtwo\u202c times.'],
+  ['rlm', 'You beat MkLeo\u200f often.'],
+  ['tag-digit', 'You beat MkLeo \udb40\udc33 times.'],
+  ['tag-letters', 'You beat MkLeo \udb40\udc74\udb40\udc77\udb40\udc6f times.'],
   // R6-CR-03: a Markdown marker anywhere, inside a word or around one.
   ['md-t**w**o', 'You beat MkLeo t**w**o times.'],
   ['md-th**ree**', 'You are th**ree** and t**wo** against MkLeo.'],
@@ -2375,7 +2375,7 @@ const R6_HEAD_TO_HEAD_WITHHELD: ReadonlyArray<readonly [string, string]> = [
 
 const R6_STAGE_WITHHELD: ReadonlyArray<readonly [string, string]> = [
   // R6-CR-02.
-  ['rlo-hgih', 'Fox on Battlefield. Confidence here is ‮hgih‬.'],
+  ['rlo-hgih', 'Fox on Battlefield. Confidence here is \u202ehgih\u202c.'],
   // R6-CR-03.
   ['md-h*igh*', 'Fox on Battlefield. Confidence here is h*igh*.'],
   ['md-h_ig_h', 'Fox on Battlefield. Confidence is h_ig_h.'],
@@ -2402,16 +2402,19 @@ const R6_STAGE_WITHHELD: ReadonlyArray<readonly [string, string]> = [
 const R6_UNFOLDED_WITHHELD: ReadonlyArray<readonly [string, string]> = [
   ['md-underscore-word', 'Stay _patient_ against MkLeo and punish the landing.'],
   ['md-bold-word', 'Stay patient against MkLeo and **punish** the landing.'],
-  ['soft-hyphen', 'Stay pa­tient against MkLeo.'],
-  ['zero-width-space', 'Stay pa​tient against MkLeo.'],
-  ['word-joiner', 'Stay pa⁠tient against MkLeo.'],
-  ['zero-width-joiner', 'Stay pa‍tient against MkLeo.'],
-  ['no-break-space', 'Stay patient against MkLeo.'],
-  ['combining-mark', 'Stay pa̲tient against MkLeo.'],
-  ['fullwidth', 'Stay ｐａｔｉｅｎｔ against MkLeo.'],
-  ['ligature', 'Stay ﬁrm against MkLeo.'],
-  ['accent-outside-name', 'MkLeo loves a café-style slow neutral, so stay patient.'],
-  ['decomposed-accent-outside-name', 'MkLeo loves a café-style slow neutral, so stay patient.'],
+  ['soft-hyphen', 'Stay pa\u00adtient against MkLeo.'],
+  ['zero-width-space', 'Stay pa\u200btient against MkLeo.'],
+  ['word-joiner', 'Stay pa\u2060tient against MkLeo.'],
+  ['zero-width-joiner', 'Stay pa\u200dtient against MkLeo.'],
+  ['no-break-space', 'Stay\u00a0patient against MkLeo.'],
+  ['combining-mark', 'Stay pa\u0332tient against MkLeo.'],
+  ['fullwidth', 'Stay \uff50\uff41\uff54\uff49\uff45\uff4e\uff54 against MkLeo.'],
+  ['ligature', 'Stay \ufb01rm against MkLeo.'],
+  ['accent-outside-name', 'MkLeo loves a caf\u00e9-style slow neutral, so stay patient.'],
+  [
+    'decomposed-accent-outside-name',
+    'MkLeo loves a cafe\u0301-style slow neutral, so stay patient.',
+  ],
   ['carriage-return', 'MkLeo camps the ledge.\r\nTake the centre.'],
   ['tab', 'MkLeo camps the ledge.\tTake the centre.'],
   ['curly-brace', 'Watch his {ledge} options.'],
@@ -2448,44 +2451,46 @@ describe('R6 (iteration 6): the D-24 check reads the delivered text, never a fol
     expect(
       validateStageRecords(
         [{ stageId: 59, games: 10, wins: 6 }],
-        'Pokémon Stadium 2 rewards your patience.',
+        'Poke\u0301mon Stadium 2 rewards your patience.',
       ).stripped,
     ).toEqual([]);
     expect(
       validateStageRecords(
         [{ stageId: 1, games: 10, wins: 6 }],
-        'Your Pokémon knowledge helps on Battlefield.',
+        'Your Pok\u00e9mon knowledge helps on Battlefield.',
       ).stripped,
     ).toEqual(['main']);
     expect(
-      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'Stay patient against José.').stripped,
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'Stay patient against Jos\u00e9.')
+        .stripped,
     ).toEqual(['main']);
   });
 
   it('R6-IN-04: a licensed name written with a numeral glyph is not the licensed name, so the glyph withholds', () => {
     for (const [stageId, prose] of [
-      [59, 'Fox on Pokémon Stadium ②, keep it up.'],
-      [31, 'Fox on ⁷⁵m, keep it up.'],
-      [75, 'Fox on Flat Zone Ⅹ, keep it up.'],
-      [15, 'Fox on Mushroom Kingdom ⅱ, keep it up.'],
+      [59, 'Fox on Pok\u00e9mon Stadium \u2461, keep it up.'],
+      [31, 'Fox on \u2077\u2075m, keep it up.'],
+      [75, 'Fox on Flat Zone \u2169, keep it up.'],
+      [15, 'Fox on Mushroom Kingdom \u2171, keep it up.'],
     ] as const) {
       expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
         ['main'],
       );
     }
     expect(
-      validateHeadToHead('Leo Ⅴ', { wins: 3, losses: 2 }, 'You beat Leo Ⅴ, keep it up.').stripped,
+      validateHeadToHead('Leo \u2164', { wins: 3, losses: 2 }, 'You beat Leo \u2164, keep it up.')
+        .stripped,
     ).toEqual(['main']);
   });
 
   it('R6-WR-03: a digit- or numeral-bearing name or tag followed by any count word withholds', () => {
     for (const [stageId, prose] of [
-      [59, 'Fox on Pokémon Stadium 2 matches went your way.'],
-      [59, 'You took Pokémon Stadium 2 straight.'],
-      [59, 'You won Pokémon Stadium 2 in a row.'],
-      [59, 'Fox on Pokémon Stadium 2 victories keep coming.'],
-      [59, 'Fox on Pokémon Stadium 2 rounds went your way.'],
-      [59, 'Fox on Pokémon Stadium 2 defeats pile up.'],
+      [59, 'Fox on Pok\u00e9mon Stadium 2 matches went your way.'],
+      [59, 'You took Pok\u00e9mon Stadium 2 straight.'],
+      [59, 'You won Pok\u00e9mon Stadium 2 in a row.'],
+      [59, 'Fox on Pok\u00e9mon Stadium 2 victories keep coming.'],
+      [59, 'Fox on Pok\u00e9mon Stadium 2 rounds went your way.'],
+      [59, 'Fox on Pok\u00e9mon Stadium 2 defeats pile up.'],
       [99, 'Fox on PictoChat 2 matches.'],
       [15, 'Fox on Mushroom Kingdom II matches.'],
       [75, 'Fox on Flat Zone X matches.'],
@@ -2509,7 +2514,7 @@ describe('R6 (iteration 6): the D-24 check reads the delivered text, never a fol
 
   it('R6-WR-03 controls: the same digit-bearing names and tags in qualitative commentary ship', () => {
     for (const [stageId, prose] of [
-      [59, 'Pokémon Stadium 2 and its transformations suit your patience.'],
+      [59, 'Pok\u00e9mon Stadium 2 and its transformations suit your patience.'],
       [15, 'Fox on Mushroom Kingdom II.'],
       [75, 'Fox on Flat Zone X.'],
       [31, 'Fox on 75m likes the upper girders.'],

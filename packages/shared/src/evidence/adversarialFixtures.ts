@@ -1650,17 +1650,17 @@ const d24R5Fixtures: readonly AdversarialFixture[] = [
 // ---------------------------------------------------------------------------
 
 const D24_R6_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
-  ['nl-v', `You took Ⅴ games off ${PROSE_ENTITY_DIGIT_TAG}.`],
-  ['nl-xl', `You won ⅩⅬ games against ${PROSE_ENTITY_DIGIT_TAG}.`],
-  ['nl-small-pair', `You are ⅲ-ⅱ against ${PROSE_ENTITY_DIGIT_TAG}.`],
-  ['nl-v-and-i', `You are Ⅴ and Ⅰ against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-v', `You took \u2164 games off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-xl', `You won \u2169\u216c games against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-small-pair', `You are \u2172-\u2171 against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-v-and-i', `You are \u2164 and \u2160 against ${PROSE_ENTITY_DIGIT_TAG}.`],
   ['roman-lower-pair', `You are iii-ii against ${PROSE_ENTITY_DIGIT_TAG}.`],
   ['roman-xl', `You won XL games against ${PROSE_ENTITY_DIGIT_TAG}.`],
   ['roman-v-to-i', `You lead ${PROSE_ENTITY_DIGIT_TAG} V to I.`],
   ['roman-x', `You took X games off ${PROSE_ENTITY_DIGIT_TAG}.`],
-  ['rlo-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} ‮owt‬ times.`],
-  ['rli-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} ⁧owt⁩ times.`],
-  ['tag-digit', `You beat ${PROSE_ENTITY_DIGIT_TAG} 󠀳 times.`],
+  ['rlo-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} \u202eowt\u202c times.`],
+  ['rli-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} \u2067owt\u2069 times.`],
+  ['tag-digit', `You beat ${PROSE_ENTITY_DIGIT_TAG} \udb40\udc33 times.`],
   ['md-intraword-bold', `You beat ${PROSE_ENTITY_DIGIT_TAG} t**w**o times.`],
   ['md-intraword-code', `You are t\`w\`o up on ${PROSE_ENTITY_DIGIT_TAG}.`],
   ['sep-hyphen', `You beat ${PROSE_ENTITY_DIGIT_TAG} t-w-o times.`],
@@ -1702,7 +1702,7 @@ const D24_R6_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const D24_R6_TIER_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
-  ['rlo-hgih', 'Our confidence here is ‮hgih‬.'],
+  ['rlo-hgih', 'Our confidence here is \u202ehgih\u202c.'],
   ['md-intraword-star', 'Our confidence here is h*igh*.'],
   ['md-intraword-underscore', 'Our confidence here is h_ig_h.'],
   ['sep-caps', 'Our confidence here is H-I-G-H.'],
@@ -1776,17 +1776,17 @@ const FLAT_ZONE_TEN = 75;
 const SEVENTY_FIVE_M = 31;
 
 const D24_R6_NAME_COUNT_PHRASINGS: ReadonlyArray<readonly [string, number, string]> = [
-  ['matches', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 matches went your way.'],
-  ['straight', POKEMON_STADIUM_TWO, 'You took Pokémon Stadium 2 straight.'],
-  ['in-a-row', POKEMON_STADIUM_TWO, 'You won Pokémon Stadium 2 in a row.'],
-  ['victories', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 victories keep coming.'],
-  ['rounds', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 rounds went your way.'],
+  ['matches', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium 2 matches went your way.'],
+  ['straight', POKEMON_STADIUM_TWO, 'You took Pok\u00e9mon Stadium 2 straight.'],
+  ['in-a-row', POKEMON_STADIUM_TWO, 'You won Pok\u00e9mon Stadium 2 in a row.'],
+  ['victories', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium 2 victories keep coming.'],
+  ['rounds', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium 2 rounds went your way.'],
   ['pictochat', PICTOCHAT_TWO, 'Marth on PictoChat 2 matches.'],
   ['roman-name', MUSHROOM_KINGDOM_TWO, 'Marth on Mushroom Kingdom II matches.'],
   ['flat-zone', FLAT_ZONE_TEN, 'Marth on Flat Zone X matches.'],
   ['seventy-five-m', SEVENTY_FIVE_M, 'Marth on 75m matches.'],
-  ['circled-glyph', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium ②, keep it up.'],
-  ['nl-glyph', FLAT_ZONE_TEN, 'Marth on Flat Zone Ⅹ, keep it up.'],
+  ['circled-glyph', POKEMON_STADIUM_TWO, 'Marth on Pok\u00e9mon Stadium \u2461, keep it up.'],
+  ['nl-glyph', FLAT_ZONE_TEN, 'Marth on Flat Zone \u2169, keep it up.'],
 ];
 
 const D24_R6_TAG_COUNT_PHRASINGS: ReadonlyArray<readonly [string, string, string]> = [
