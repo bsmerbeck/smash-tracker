@@ -52,14 +52,23 @@ day       method        reconcile%    duplicate%    numerator   denominator
 20260928  approximate   n/a           n/a           0           0
   note: partial day — 20260928 is the current UTC day of this readout; the nightly reconcile covers yesterday, so this day is excluded from every percentage.
 20260927  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 20260926  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 20260925  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 20260924  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 20260923  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 20260922  approximate   n/a           n/a           0           0
-  (each non-partial day note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed.)
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
 methodMix: exact=0 approximate=7
-footnotes: reference bar >=98% reconcile and <0.5% duplicates (not enforced); approximate/exact method definitions; 20260928 partial; 7 of 7 days approximate (pre-deploy of the reconcileSummaries writer).
+footnote: Reference, not an enforced threshold: v2.5's flip rule reads >=98% reconcile and <0.5% duplicates as the bar the owner compares these numbers against at the 39-14 checkpoint before deciding PREP_PAID_REPORTS_ENABLED — this script does not compute a pass/fail verdict.
+footnote: Approximate method: eventCounts (raw ledger rows for RECONCILED_EVENT_NAMES) as the denominator, minus exceptionCounts over RECONCILE_EXCEPTION_KINDS as the numerator's subtraction — an approximation because eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped. A day with no exception rows and no persisted summary reads n/a, never 100% — it cannot be told apart from a day the reconcile never ran.
+footnote: Exact method: the persisted reconcile run's reconciledUnits + phantom + duplicate as the denominator and reconciledUnits - missing (never below 0) as the numerator; the outbox-pending rows its checked count also includes are left out of both.
+footnote: 20260928 is the current UTC day of this readout — a partial day the nightly reconcile has not covered yet, so it carries no percentage.
+footnote: 7 of 7 day(s) in this window are approximate — a day has no persisted summary because it is from before this plan's reconcileSummaries writer took effect (the owner's next deploy), or the shard predates that deploy.
 ```
 
 **Denominators (code review API-WR-05/06):** an `exact` row's denominator is the persisted reconcile
@@ -72,23 +81,9 @@ own current UTC day (partial). No numerator is ever negative.
 
 ### FOOTNOTES
 
-As supplied, the output carries its footnotes on one condensed `footnotes:` line (last line of the
-block above), and the six non-partial days share one condensed note line rather than one `note:`
-line each. That condensed text is transcribed above exactly as supplied and is not reworded here.
-The script's own full footnote wording is fixed in source, in this order:
-`FLIP_RULE_FOOTNOTE`, `APPROXIMATE_METHOD_FOOTNOTE` and `EXACT_METHOD_FOOTNOTE`
-(`apps/api/scripts/prep06ReadoutCore.ts:233-249`), then the partial-day sentence and the
-approximate-day-count sentence (`prep06ReadoutCore.ts:289-302`). Each item of the condensed line
-maps onto one of those, in the same order:
-
-1. `reference bar >=98% reconcile and <0.5% duplicates (not enforced)` — `FLIP_RULE_FOOTNOTE`.
-2. `approximate/exact method definitions` — `APPROXIMATE_METHOD_FOOTNOTE` and
-   `EXACT_METHOD_FOOTNOTE`.
-3. `20260928 partial` — the partial-day sentence: 20260928 was the readout's current UTC day and
-   carries no percentage.
-4. `7 of 7 days approximate (pre-deploy of the reconcileSummaries writer)` — the approximate-day
-   sentence: no day in the window has a persisted reconcile summary, because the writer that
-   produces one ships with Phase 39 and has not been deployed.
+The output above is the owner's paste, verbatim: one `note:` line per day and one `footnote:`
+line per footnote, exactly as the script printed them. The script's footnote wording is fixed in
+source (`apps/api/scripts/prep06ReadoutCore.ts:233-249` and `:289-302`).
 
 **REFERENCE:** v2.5's flip rule — `>=98% reconcile` and `<0.5% duplicates` — is the reference the
 numbers above are read AGAINST. It is not a threshold any code enforces: the readout computes no
