@@ -255,6 +255,30 @@ describe('formStripEvents (plan 39.1-42) — one set-key and label derivation', 
     ]);
   });
 
+  it('no-window: without a recent window (collapsed horizons / no insight) nothing is dimmed — every set is inRecentWindow', async () => {
+    const { buildFormStripEvents } = await load();
+    const events = buildFormStripEvents(
+      [manual('a1', BASE_MS), manual('b1', BASE_MS + 5 * DAY_MS)],
+      NO_WINDOW,
+      i18n.t,
+      'en',
+    );
+    expect(events.flatMap((event) => event.sets.map((set) => set.inRecentWindow))).toEqual([
+      true,
+      true,
+    ]);
+    const windowed = buildFormStripEvents(
+      [manual('a1', BASE_MS), manual('b1', BASE_MS + 5 * DAY_MS)],
+      { fromMs: BASE_MS + DAY_MS, toMs: BASE_MS + 9 * DAY_MS },
+      i18n.t,
+      'en',
+    );
+    expect(windowed.flatMap((event) => event.sets.map((set) => set.inRecentWindow))).toEqual([
+      false,
+      true,
+    ]);
+  });
+
   it('casual-41: the 41-game casual fixture yields one group of session-sets with 41 ticks in total', async () => {
     const { buildFormStripEvents } = await load();
     // guard:layout's `casual` scale / CareerTimelineCard.test.tsx's CASUAL_MATCHES.

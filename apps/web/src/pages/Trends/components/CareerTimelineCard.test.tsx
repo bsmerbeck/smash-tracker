@@ -448,6 +448,17 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
     }
   });
 
+  it('no-window (fidelity T1): the casual account at last 30 has no recent window (collapsed horizons), so no tick is dimmed — sketch 002-C draws the strip at full strength', () => {
+    const { container } = renderThin(CASUAL_MATCHES);
+    const ticks = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-slot="career-timeline-thin-strip"] [data-slot="form-strip-tick"]',
+      ),
+    );
+    expect(ticks).toHaveLength(41);
+    expect(ticks.filter((tick) => tick.style.opacity === '0.32')).toHaveLength(0);
+  });
+
   it('conditional title: the overline becomes the kit head title (with the swatch legend) exactly when every game is drawn, and no head otherwise', () => {
     const { container: casual } = renderThin(CASUAL_MATCHES);
     const head = casual.querySelector(

@@ -453,6 +453,18 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     );
   });
 
+  it('no-window (UI-SPEC 7.10 "collapsed: no dimming"): with collapsed horizons (30 of 40 games) no strip tick is dimmed and the foot says "Whole record shown"', () => {
+    const { container } = renderChart(recentSequence(40));
+    const ticks = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="form-strip-tick"]'),
+    );
+    expect(ticks).toHaveLength(40);
+    expect(ticks.filter((tick) => tick.style.opacity === '0.32')).toHaveLength(0);
+    expect(container.querySelector('[data-slot="form-strip-window-note"]')?.textContent).toBe(
+      'Whole record shown',
+    );
+  });
+
   it('foot-line: the foot states what is drawn and the window note — highlighted window (70 games) and collapsed horizons (12 games, the whole record)', () => {
     const footParts = (count: number) =>
       Array.from(

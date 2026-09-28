@@ -735,11 +735,17 @@ describe('FormStrip — legend, narrow tick geometry, and centred single-game se
     const loss = items[1]!.querySelector('[data-slot="form-strip-legend-swatch"]') as HTMLElement;
     expect(win.style.alignItems).toBe('flex-start');
     expect(loss.style.alignItems).toBe('flex-end');
+    // Fidelity M1 (after-39.1-42 captures): a baseline-aligned row set the
+    // swatch items' text lower / higher than the text-only items — the row
+    // centres its items like sketch 003's `.legend{align-items:center}`.
     const legendRow = items[0]!.parentElement as HTMLElement;
-    for (const cls of ['flex', 'flex-wrap', 'items-baseline', 'gap-x-3.5', 'gap-y-0.5']) {
+    for (const cls of ['flex', 'flex-wrap', 'items-center', 'gap-x-3.5', 'gap-y-0.5']) {
       expect(legendRow.className.split(/\s+/)).toContain(cls);
     }
-    expect(legendRow.className).not.toMatch(/justify-between/);
+    expect(legendRow.className).not.toMatch(/items-baseline|justify-between/);
+    for (const item of items) {
+      expect((item as HTMLElement).className.split(/\s+/)).toContain('items-center');
+    }
   });
 
   // REWRITTEN by plan 39.1-42: the shown-of-total token lives on the foot
