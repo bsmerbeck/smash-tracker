@@ -690,6 +690,31 @@ describe('generatePracticePlan', () => {
     }
     expect(capturedSystem).not.toMatch(/\d/);
   });
+
+  it('R6-IN-05 / R6-WR-01 / R6-CR-04 (iteration 6): the synthesis prompt permits round or square brackets, and names the all-or-nothing words, letter spelling and lone letters as withheld', async () => {
+    let capturedSystem = '';
+    const client: SynthesisAnthropicClient = {
+      messages: {
+        parse: async (params) => {
+          capturedSystem = params.system;
+          return { stop_reason: 'end_turn', parsed_output: VALID_PLAN };
+        },
+      },
+    };
+
+    await generatePracticePlan(client, PAYLOAD);
+
+    for (const form of [
+      'round or square brackets',
+      'every, all, each, never, always, only, even, split, tied, double, triple, lone, sole, solo or perfect',
+      'spell a word out letter by letter',
+      'a lone letter or a roman numeral as a label',
+    ]) {
+      expect(capturedSystem, form).toContain(form);
+    }
+    expect(capturedSystem).not.toContain('marks, brackets,');
+    expect(capturedSystem).not.toMatch(/\d/);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -378,6 +378,19 @@ describe('EVID-10 engine parity — SYSTEM_PROMPT reads claim fields, not a pros
       expect(prompt, form).toContain(form);
     }
   });
+
+  it('R6-IN-05 / R6-WR-01 / R6-CR-04 (iteration 6): permits round or square brackets, and names the all-or-nothing words, letter spelling and lone letters as withheld', () => {
+    const prompt = extractSystemPrompt();
+    for (const form of [
+      'round or square brackets',
+      'every, all, each, never, always, only, even, split, tied, double, triple, lone, sole, solo or perfect',
+      'spell a word out letter by letter',
+      'a lone letter or a roman numeral as a label',
+    ]) {
+      expect(prompt, form).toContain(form);
+    }
+    expect(prompt).not.toContain('marks, brackets,');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -8103,3 +8103,124 @@ describe('code review R5-IN-04: one model attempt fits inside the Cloud Run requ
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 6 (R6-WR-05): when `refundCreditOnce` keeps failing,
+// the credit is stranded on a `failed` row the sweep never visits, and the
+// error line is all reconciliation has. It must name the job, the credit ref,
+// the refund's marker key and the request, and never the uid or a token.
+// ---------------------------------------------------------------------------
+
+const REFUND_FAILURE_MESSAGE = 'could not refund a failed report job; left for reconciliation';
+
+describe('code review R6-WR-05: a refund that keeps failing is logged with what reconciliation needs, never the uid', () => {
+  it('the refund-failure line names the jobId, the creditRef, the marker key and the request id', async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const isRefund = refundTransactionPredicate();
+    failEveryWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postPrepSingle(app, 'r6-log-refund');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r6-log-refund')).toMatchObject({ status: 'failed' });
+    const logged = lines.filter((line) => line[1] === REFUND_FAILURE_MESSAGE);
+    expect(logged).toHaveLength(1);
+    const fields = logged[0]![0] as Record<string, unknown>;
+    expect(fields).toMatchObject({ jobId: 'r6-log-refund', creditRef: 'r6-log-refund' });
+    expect(fields.markerKey).toMatch(/^r6-log-refund:.+$/);
+    expect(typeof fields.requestId).toBe('string');
+    expect((fields.requestId as string).length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 6 (R6-IN-03): the 60-second overhead budget was
+// declared but not enforced, and `withSettleRetries` only retried a THROW. An
+// offline RTDB write queues and never settles, so it outlasted the budget and
+// the request. Every post-settle write attempt is now bounded: an attempt
+// that does not settle in time counts as a failed attempt and is retried, and
+// the worst case of `failJob`'s settle writes fits inside the budget.
+// ---------------------------------------------------------------------------
+
+describe('code review R6-IN-03: every post-settle write attempt is bounded, so a hanging write is retried within the overhead budget', () => {
+  const settleExports = reportsRouteModule as unknown as {
+    withSettleRetries?: <T>(write: () => Promise<T>) => Promise<T>;
+    REPORT_SETTLE_WRITE_ATTEMPTS?: number;
+    REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS?: number;
+    REPORT_SETTLE_WRITE_BACKOFF_MS?: number;
+    REPORT_REQUEST_OVERHEAD_BUDGET_MS?: number;
+  };
+
+  /** The worst case of one settle write: every attempt times out, with the doubling waits between them. */
+  function worstCaseSettleWriteMs(): number {
+    const attempts = settleExports.REPORT_SETTLE_WRITE_ATTEMPTS!;
+    const timeoutMs = settleExports.REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS!;
+    const backoffMs = settleExports.REPORT_SETTLE_WRITE_BACKOFF_MS!;
+    let waits = 0;
+    for (let attempt = 1; attempt < attempts; attempt += 1) {
+      waits += backoffMs * 2 ** (attempt - 1);
+    }
+    return attempts * timeoutMs + waits;
+  }
+
+  it('a write that never settles is abandoned after the last bounded attempt, having been tried every time', async () => {
+    expect(typeof settleExports.withSettleRetries).toBe('function');
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const outcome = settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return new Promise<never>(() => {});
+      }).then(
+        () => 'settled',
+        (err: unknown) => (err as Error).message,
+      );
+      await vi.advanceTimersByTimeAsync(worstCaseSettleWriteMs());
+      await expect(outcome).resolves.toMatch(/did not settle/);
+      expect(calls).toBe(settleExports.REPORT_SETTLE_WRITE_ATTEMPTS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the worst case of failJob's four settle writes fits inside the request-overhead budget", () => {
+    expect(settleExports.REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(0);
+    const settleWrites = 4; // the failed set, the index/day update, the refund, the refunded set
+    expect(settleWrites * worstCaseSettleWriteMs()).toBeLessThanOrEqual(
+      settleExports.REPORT_REQUEST_OVERHEAD_BUDGET_MS!,
+    );
+  });
+
+  it('prep single: the refund transaction never settles on its first attempt — the retry refunds exactly once and the job ends refunded', async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const isRefund = refundTransactionPredicate();
+    let hung = 0;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        transaction: async (fn: (current: unknown) => unknown) => {
+          if (hung === 0 && isRefund(path ?? '', 'transaction')) {
+            hung += 1;
+            return new Promise<never>(() => {});
+          }
+          return ref.transaction(fn);
+        },
+      };
+    });
+
+    const response = await postPrepSingle(app, 'r6-hang-refund');
+
+    expect(hung).toBe(1);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r6-hang-refund')).toMatchObject({ status: 'refunded' });
+    expect(spendLedgerRefs(database)).toEqual(['r6-hang-refund']);
+    expect(refundLedgerRefs(database)).toEqual(['r6-hang-refund']);
+    expect(await balanceOf(database)).toBe(1);
+  }, 20_000);
+});

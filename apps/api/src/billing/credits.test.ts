@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { dayShardKey } from '../events/ledger.js';
+import type { FakeReference } from '../test-support/fakeDatabase.js';
 import {
+  REFUND_MARKERS_KEY,
   addCredits,
   bundleSlotRef,
   fulfillCheckoutSession,
   getBalance,
   refundCredit,
+  refundCreditOnce,
   spendCredit,
   spendCredits,
 } from './credits.js';
@@ -363,5 +366,202 @@ describe('spendCredits (RPT-02 bundle atomicity)', () => {
 
     const balance = await getBalance(database as never, UID);
     expect(balance).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R6-WR-06 (iteration 6, LIVE MONEY — already in production):
+// `fulfillCheckoutSession` read the balance with `getBalance` and then wrote
+// the ABSOLUTE value `current + pack.credits` in a root multi-path update. A
+// refund (`refundCreditOnce`, a transaction on `credits/{uid}`) or a spend
+// (`spendCredit`, a transaction on `credits/{uid}/balance`) that committed
+// between the read and the write was overwritten: the refund's +1 was lost
+// for good (its create-once marker makes a retry abort), and a spend in the
+// same window minted a free credit. The grant must ADD the pack's credits
+// atomically. Each case below lets the competing write land exactly between
+// the grant's read of the balance and its write — at the read for a
+// read-then-write, or as the competing commit a transaction is retried
+// against (the Admin SDK's hash compare) — and proves the outcome through
+// the balance AND the ledger: the opening balance plus every ledger amount
+// equals the final balance.
+// ---------------------------------------------------------------------------
+
+/**
+ * A `FakeDatabase` view on which the FIRST read or transaction that touches
+ * `credits/{uid}` (the balance node or its parent) lets `competing` commit on
+ * the INNER database in between: a `get()` returns the value it read BEFORE
+ * the competing write; a `transaction()` first runs its update against that
+ * stale value (discarded), then the competing write commits, then the real
+ * transaction re-runs against the committed value — the SDK's retry.
+ */
+function interleavedCredits(inner: FakeDatabase, competing: () => Promise<unknown>) {
+  let fired = false;
+  const fireOnce = async (): Promise<void> => {
+    if (!fired) {
+      fired = true;
+      await competing();
+    }
+  };
+  return {
+    fired: () => fired,
+    ref(path?: string): FakeReference {
+      const ref = inner.ref(path);
+      if (path !== `credits/${UID}/balance` && path !== `credits/${UID}`) {
+        return ref;
+      }
+      return {
+        ...ref,
+        get: async () => {
+          const stale = await ref.get();
+          await fireOnce();
+          return stale;
+        },
+        transaction: async (updateFn: (current: unknown) => unknown) => {
+          if (!fired) {
+            void updateFn((await ref.get()).val());
+            await fireOnce();
+          }
+          return ref.transaction(updateFn);
+        },
+      };
+    },
+  };
+}
+
+function ledgerSum(database: FakeDatabase): number {
+  return creditLedgerEntries(database, UID).reduce((sum, entry) => sum + entry.amount, 0);
+}
+
+describe('R6-WR-06: a purchase grant ADDS the pack credits, so a refund or a spend that lands mid-grant is never lost or undone', () => {
+  it('a refund that commits between the grant reading and writing the balance survives: 0 + 1 (refund) + 5 (pack) = 6', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 0);
+    const view = interleavedCredits(database, () =>
+      refundCreditOnce(database as never, UID, 'job-refund', 'job-refund:exec-1'),
+    );
+
+    const result = await fulfillCheckoutSession(view as never, makeSession(), 'evt_refund_race');
+
+    expect(result).toEqual({ granted: true });
+    expect(view.fired()).toBe(true);
+    expect(await getBalance(database as never, UID)).toBe(6);
+    const entries = creditLedgerEntries(database, UID);
+    expect(entries.map((entry) => `${entry.type}:${entry.amount}:${entry.ref}`).sort()).toEqual([
+      'purchase:5:evt_refund_race',
+      'refund:1:job-refund',
+    ]);
+    expect(0 + ledgerSum(database)).toBe(await getBalance(database as never, UID));
+  });
+
+  it('a spend that commits between the grant reading and writing the balance is not undone: 1 - 1 (spend) + 5 (pack) = 5, no free credit', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 1);
+    const view = interleavedCredits(database, () =>
+      spendCredit(database as never, UID, 'job-spend'),
+    );
+
+    const result = await fulfillCheckoutSession(view as never, makeSession(), 'evt_spend_race');
+
+    expect(result).toEqual({ granted: true });
+    expect(view.fired()).toBe(true);
+    expect(await getBalance(database as never, UID)).toBe(5);
+    const entries = creditLedgerEntries(database, UID);
+    expect(entries.map((entry) => `${entry.type}:${entry.amount}:${entry.ref}`).sort()).toEqual([
+      'purchase:5:evt_spend_race',
+      'spend:-1:job-spend',
+    ]);
+    expect(1 + ledgerSum(database)).toBe(await getBalance(database as never, UID));
+  });
+
+  it('a refund marker the grant raced keeps working: a retry of the same refund still finds its marker and refunds nothing more', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 0);
+    const view = interleavedCredits(database, () =>
+      refundCreditOnce(database as never, UID, 'job-refund', 'job-refund:exec-1'),
+    );
+
+    await fulfillCheckoutSession(view as never, makeSession(), 'evt_refund_retry');
+    const again = await refundCreditOnce(database as never, UID, 'job-refund', 'job-refund:exec-1');
+
+    expect(again).toBe(false);
+    expect(await getBalance(database as never, UID)).toBe(6);
+    expect(
+      creditLedgerEntries(database, UID).filter((entry) => entry.type === 'refund'),
+    ).toHaveLength(1);
+  });
+
+  it('unchanged purchase trail: the processed marker, its day mirror, one purchase ledger entry, its day mirror and one credits_granted event', async () => {
+    const database = new FakeDatabase();
+    database.seed(`credits/${UID}/balance`, 2);
+
+    const first = await fulfillCheckoutSession(database as never, makeSession(), 'evt_trail');
+    const replay = await fulfillCheckoutSession(database as never, makeSession(), 'evt_trail');
+    await flush();
+
+    expect(first).toEqual({ granted: true });
+    expect(replay).toEqual({ granted: false });
+    expect(await getBalance(database as never, UID)).toBe(7);
+    const day = dayShardKey(Date.now());
+    const dump = database.dump() as Record<string, Record<string, unknown>>;
+    expect(dump.processedStripeEvents!['evt_trail']).toBeTypeOf('number');
+    expect((dump.processedStripeEventsByDay![day] as Record<string, unknown>)['evt_trail']).toBe(
+      true,
+    );
+    const entries = creditLedgerEntries(database, UID);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: 'purchase', amount: 5, ref: 'evt_trail' });
+    const byDay = (dump.creditLedgerByDay![day] as Record<string, Record<string, unknown>>)[UID]!;
+    expect(Object.values(byDay)).toEqual(entries);
+    expect(eventLedgerEntries(database, 'credits_granted')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R6-IN-02 (iteration 6): `credits/{uid}/refundMarkers` gained
+// one entry per refunded execution and was never pruned, and a user can drive
+// the growth (the thin-evidence fail-fast spends and refunds at no net cost).
+// A marker only needs to outlive its own request's retries and a reconnect
+// replay, so `refundCreditOnce` drops every OTHER marker older than 24 hours
+// inside its own transaction.
+// ---------------------------------------------------------------------------
+
+describe('R6-IN-02: refundCreditOnce prunes markers older than 24 hours in its own transaction', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('drops markers older than 24 h, keeps younger ones, and writes its own', async () => {
+    const database = new FakeDatabase();
+    const now = Date.now();
+    database.seed(`credits/${UID}`, {
+      balance: 2,
+      [REFUND_MARKERS_KEY]: {
+        'old-job:exec': { ledgerKey: 'k-old', createdAt: now - DAY_MS - 60_000 },
+        'young-job:exec': { ledgerKey: 'k-young', createdAt: now - 60 * 60 * 1000 },
+      },
+    });
+
+    const committed = await refundCreditOnce(database as never, UID, 'new-job', 'new-job:exec');
+
+    expect(committed).toBe(true);
+    expect(await getBalance(database as never, UID)).toBe(3);
+    const markers = (database.dump().credits as Record<string, Record<string, unknown>>)[UID]![
+      REFUND_MARKERS_KEY
+    ] as Record<string, unknown>;
+    expect(Object.keys(markers).sort()).toEqual(['new-job:exec', 'young-job:exec']);
+  });
+
+  it("never refunds twice: this execution's own marker aborts the refund however old it is", async () => {
+    const database = new FakeDatabase();
+    const now = Date.now();
+    database.seed(`credits/${UID}`, {
+      balance: 2,
+      [REFUND_MARKERS_KEY]: {
+        'job:exec': { ledgerKey: 'k-own', createdAt: now - 2 * DAY_MS },
+      },
+    });
+
+    const committed = await refundCreditOnce(database as never, UID, 'job', 'job:exec');
+
+    expect(committed).toBe(false);
+    expect(await getBalance(database as never, UID)).toBe(2);
   });
 });
