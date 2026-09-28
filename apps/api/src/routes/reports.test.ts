@@ -7364,3 +7364,98 @@ describe('code review R3-IN-03: an absent or stranded bundle-op marker means a p
     expect(await balanceOf(database)).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-01): the settlement latch must be set only
+// AFTER the owned settle resolves. Latching first meant a transient RTDB
+// error on the resolver's first failure write left the latch closed, so the
+// post-spend guard became a no-op and the spent credit stayed stranded on a
+// `queued` job the sweep never reads (it reads only the running index).
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+describe('code review R4-WR-01: a transient failure on the first settle write never strands a spent credit', () => {
+  it('R4-L1 legacy: start.gg answers 500 and the first failure write on the job throws once — the job settles and refunds exactly once', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r4-l1`;
+    // The first write that would move the job to `failed`: a whole-node
+    // `failed` set (the old bare `failJob`) or the owned settle transaction.
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        (op === 'transaction' ||
+          (op === 'set' && (value as { status?: string } | null)?.status === 'failed')),
+    );
+
+    const response = await postLegacy(app, 'r4-l1');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r4-l1')).toMatchObject({ status: 'failed' });
+    expect(spendLedgerRefs(database)).toEqual(['r4-l1']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-l1']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('R4-L2 prep single: the provider answers not found and the settle transaction throws once — the job settles and refunds exactly once', async () => {
+    const { app, database, lookupGates, modelSpy } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r4-l2`;
+    let armed = false;
+    const injected = failOneWrite(
+      database,
+      (path, op) => armed && path === jobPath && op === 'transaction',
+    );
+
+    const execution = postPrepSingle(app, 'r4-l2');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    // The queued compare-and-set has committed; arm the injection for the
+    // resolver's own settle.
+    armed = true;
+    lookupGates[0]!.resolve('missing');
+    const response = await execution;
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r4-l2')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+    });
+    expect(spendLedgerRefs(database)).toEqual(['r4-l2']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-l2']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('control: with no injected failure the legacy resolver still refunds exactly once (the latch still stops a second refund on the rethrow)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'end_turn', parsed_output: null })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r4-l1-control');
+
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r4-l1-control')).toMatchObject({ status: 'failed' });
+    expect(refundLedgerRefs(database)).toEqual(['r4-l1-control']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
