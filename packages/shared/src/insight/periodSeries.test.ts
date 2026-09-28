@@ -616,3 +616,69 @@ describe('calendarBucketBounds (plan 39.1-34) — the ONE UTC calendar bucket ru
     }
   });
 });
+
+/**
+ * Plan 39.1-41 (sketch 003 A, MANIFEST 2026-09-25 "quarterly trend", PD-41-1):
+ * `minGrain` — the finest grain the ladder may choose. Scoped (Matchups)
+ * trends start the walk at `quarter`; the Fighter hero keeps the full ladder.
+ */
+describe('buildPeriodSeries — minGrain (plan 39.1-41)', () => {
+  // Typed wide on purpose: `minGrain` is the option under test.
+  const build = buildPeriodSeries as (
+    options: Parameters<typeof buildPeriodSeries>[0] & { minGrain?: PeriodGrain },
+  ) => ReturnType<typeof buildPeriodSeries>;
+
+  it("minGrain 'quarter' returns grain 'quarter' where the unconstrained ladder picks a finer grain", () => {
+    const matches = buildQuarterBoundaryFixture(5);
+    const unconstrained = build({ matches });
+    expect(unconstrained.grain).toBe('game');
+    const scoped = build({ matches, minGrain: 'quarter' });
+    expect(scoped.grain).toBe('quarter');
+    expect(scoped.points.map((point) => point.key)).toEqual([
+      'quarter:2021-Q1',
+      'quarter:2021-Q2',
+      'quarter:2021-Q3',
+      'quarter:2021-Q4',
+      'quarter:2022-Q1',
+    ]);
+    expect(scoped.boundReached).toBe(true);
+  });
+
+  it("minGrain 'year' returns grain 'year'", () => {
+    const matches = buildQuarterBoundaryFixture(5);
+    const series = build({ matches, minGrain: 'year' });
+    expect(series.grain).toBe('year');
+    expect(series.points.map((point) => point.key)).toEqual(['year:2021', 'year:2022']);
+  });
+
+  it('a minGrain whose point count exceeds the target still climbs the ladder', () => {
+    const matches = buildQuarterBoundaryFixture(5);
+    // Under the target the walk stops AT minGrain, where the full ladder stops finer...
+    expect(build({ matches, target: 20 }).grain).not.toBe('quarter');
+    expect(build({ matches, minGrain: 'quarter', target: 20 }).grain).toBe('quarter');
+    // ...and over it the walk keeps climbing past minGrain (never clamped there).
+    const series = build({ matches, minGrain: 'quarter', target: 2 });
+    expect(series.grain).toBe('year');
+    expect(series.points).toHaveLength(2);
+  });
+
+  it("every quarter key resolves through periodPointMatchIdsForKey to exactly that point's games", () => {
+    const matches = buildQuarterBoundaryFixture(5);
+    const series = build({ matches, minGrain: 'quarter' });
+    expect(series.grain).toBe('quarter');
+    expect(series.points.length).toBeGreaterThan(1);
+    for (const point of series.points) {
+      expect([...(periodPointMatchIdsForKey(point.key, matches) ?? [])].sort()).toEqual(
+        [...point.matchIds].sort(),
+      );
+    }
+  });
+
+  it("omitting minGrain changes nothing (identical to minGrain 'game', the ladder's first rung)", () => {
+    const matches = buildQuarterBoundaryFixture(5);
+    expect(build({ matches })).toEqual(build({ matches, minGrain: 'game' }));
+    expect(build({ matches, target: 10 })).toEqual(
+      build({ matches, target: 10, minGrain: 'game' }),
+    );
+  });
+});

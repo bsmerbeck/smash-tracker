@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useTranslation } from 'react-i18next';
@@ -439,5 +439,130 @@ describe('formStripEventKeyForMatch (event axis <-> form-strip set identity)', (
     expect(formStripEventKeyForMatch(makeMatch({ id: 'manual-1', externalId: undefined }))).toBe(
       'game:manual-1',
     );
+  });
+});
+
+/**
+ * Plan 39.1-41 (sketch 003 A tracer; PD-41-1/2/3): the scoped Matchups trend
+ * on the sketch's own two pairings. The fixture (`scripts/sketch003Fixture.mjs`)
+ * and the new builder are loaded inside each test body so a missing export
+ * fails the test, not the file.
+ */
+describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
+  type Sketch003Fixture = {
+    buildSketch003Scale: () => { matches: Match[] };
+    SKETCH_003_PAIRINGS: { deep: readonly [number, number]; thin: readonly [number, number] };
+  };
+
+  async function loadFixture(): Promise<Sketch003Fixture> {
+    const url = pathToFileURL(path.resolve(__dirname, '../../../../scripts/sketch003Fixture.mjs'));
+    return (await import(/* @vite-ignore */ url.href)) as Sketch003Fixture;
+  }
+
+  async function pairing(which: 'deep' | 'thin'): Promise<Match[]> {
+    const { buildSketch003Scale, SKETCH_003_PAIRINGS } = await loadFixture();
+    const [fighterId, opponentId] = SKETCH_003_PAIRINGS[which];
+    return buildSketch003Scale().matches.filter(
+      (m) => m.fighter_id === fighterId && m.opponent_id === opponentId,
+    );
+  }
+
+  type ScopedBuilder = (matches: Match[]) => ReturnType<typeof buildPeriodSeries>;
+
+  async function loadBuilder(): Promise<{ build: ScopedBuilder; minGrain: unknown }> {
+    const mod = (await import('./MatchupChart')) as Record<string, unknown>;
+    expect(typeof mod.buildMatchupPeriodSeries, 'buildMatchupPeriodSeries is exported').toBe(
+      'function',
+    );
+    return {
+      build: mod.buildMatchupPeriodSeries as ScopedBuilder,
+      minGrain: mod.MATCHUP_TREND_MIN_GRAIN,
+    };
+  }
+
+  it("buildMatchupPeriodSeries bins quarterly (MATCHUP_TREND_MIN_GRAIN = 'quarter'): deep 21 points, 18 at the floor", async () => {
+    const { build, minGrain } = await loadBuilder();
+    expect(minGrain).toBe('quarter');
+    const series = build(await pairing('deep'));
+    expect(series.grain).toBe('quarter');
+    expect(series.points).toHaveLength(21);
+    expect(series.points.filter((p) => !p.subFloor)).toHaveLength(18);
+  });
+
+  it('buildMatchupPeriodSeries on the thin pairing: 4 quarters, 1 at the floor', async () => {
+    const { build } = await loadBuilder();
+    const series = build(await pairing('thin'));
+    expect(series.grain).toBe('quarter');
+    expect(series.points).toHaveLength(4);
+    expect(series.points.filter((p) => !p.subFloor)).toHaveLength(1);
+  });
+
+  function renderScoped(matches: Match[], series: ReturnType<typeof buildPeriodSeries>) {
+    const contextValue: MatchupsContextValue = {
+      fighterSprites: [],
+      fighter: undefined,
+      setFighter: vi.fn(),
+      opponent: undefined,
+      setOpponent: vi.fn(),
+      fighterUsageById: new Map(),
+      opponentUsage: [],
+      drillDownAxes: {},
+      setDrillDown: vi.fn(),
+    };
+    return render(
+      <MatchupsContext.Provider value={contextValue}>
+        <MatchupChart matchupMatches={matches} horizon="last30" periodSeries={series} width={640} />
+      </MatchupsContext.Provider>,
+    );
+  }
+
+  it('the deep trend renders at CHART_H_COMPACT with tier dots (5 and 7 px only) and ONE stroked line', async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('drawn');
+    expect(root?.getAttribute('data-dot-sizing')).toBe('tier');
+    expect(root?.getAttribute('data-y-domain')).toBe('20,100');
+    const surface = container.querySelector('svg.recharts-surface');
+    expect(surface?.getAttribute('height')).toBe('160');
+    const diameters = new Set(
+      Array.from(container.querySelectorAll('[data-slot="trend-period-dot"]')).map(
+        (c) => Number(c.getAttribute('r')) * 2,
+      ),
+    );
+    expect([...diameters].sort()).toEqual([5, 7]);
+    const stroked = Array.from(container.querySelectorAll('path.recharts-line-curve')).filter(
+      (p) => (p.getAttribute('stroke') ?? 'none') !== 'none',
+    );
+    expect(stroked).toHaveLength(1);
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1);
+    const labels = Array.from(
+      container.querySelectorAll('[data-slot="trend-period-value-label"]'),
+    ).map((el) => el.textContent);
+    expect([...labels].sort()).toEqual(['100%', '33%', '60%']);
+  });
+
+  it("the reference label reads t('analytics.trend.referenceLabel') — '63% all time' on the deep pairing (was a bare '63%')", async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const label = container.querySelector('.trend-period-reference-label');
+    expect(label?.textContent).toBe(i18n.t('analytics.trend.referenceLabel', { rate: '63%' }));
+    expect(label?.textContent).toBe('63% all time');
+  });
+
+  it('the thin pairing shows the locked trend', async () => {
+    const { build } = await loadBuilder();
+    const thin = await pairing('thin');
+    const { container } = renderScoped(thin, build(thin));
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('locked');
+    expect(container.querySelector('svg.recharts-surface')).toBeNull();
+  });
+
+  it('MatchupChart.tsx carries no cumulative context series', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'MatchupChart.tsx'), 'utf8');
+    expect(source).not.toMatch(/contextRatePercents|computeCumulativeContextPercents/);
   });
 });

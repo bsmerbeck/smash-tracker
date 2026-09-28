@@ -2952,3 +2952,178 @@ test('terminus-budget: a 5500 px page with one 3200 px table flow passes 1440x90
   assert.equal(Math.round(without[0].ratio * 100) / 100, 6.11);
   assert.equal(without[0].budget, 5);
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-41: period-trend-marks (sketch 003 A — quarterly, tier dots, one
+// data line, labels on the last / max / min joined quarters, fitted domain,
+// "NN% all time"). The expected values are sketch 003's own derivation for
+// the deep pairing (brief section 4), never re-derived here.
+// ---------------------------------------------------------------------------
+
+const DEEP_EXPECT = {
+  state: 'drawn',
+  yDomain: [20, 100],
+  dotDiameters: [5, 7],
+  valueLabels: ['100%', '33%', '60%'],
+  referenceLabel: '63% all time',
+};
+
+function deepSurface(overrides = {}) {
+  return {
+    selectorPath: 'div[data-slot="trend-line-period"]',
+    state: 'drawn',
+    yDomain: [20, 100],
+    dots: [
+      { key: 'quarter:2021-Q1', diameter: 5, subFloor: true },
+      { key: 'quarter:2023-Q1', diameter: 7, subFloor: false },
+      { key: 'quarter:2024-Q1', diameter: 5, subFloor: false },
+      { key: 'quarter:2024-Q2', diameter: 5, subFloor: false },
+      { key: 'quarter:2026-Q1', diameter: 5, subFloor: false },
+    ],
+    valueLabels: [
+      { key: 'quarter:2024-Q1', text: '100%' },
+      { key: 'quarter:2024-Q2', text: '33%' },
+      { key: 'quarter:2026-Q1', text: '60%' },
+    ],
+    strokedLineCount: 1,
+    yTickTexts: ['20', '40', '60', '80', '100'],
+    referenceLabel: '63% all time',
+    ...overrides,
+  };
+}
+
+function periodTrendTypes(surfaces, expect = DEEP_EXPECT) {
+  return guardLayoutCoreNs.evaluatePeriodTrendMarks(surfaces, expect).map((v) => v.type);
+}
+
+test('period-trend-marks: the exact expected deep surface passes', () => {
+  assert.deepEqual(periodTrendTypes([deepSurface()]), []);
+});
+
+test('period-trend-marks: no surface is exactly one period-trend-unmeasured', () => {
+  assert.deepEqual(periodTrendTypes([]), ['period-trend-unmeasured']);
+});
+
+test('period-trend-marks: a locked surface expecting locked passes; a drawn one expecting locked fails', () => {
+  const locked = {
+    selectorPath: 'x',
+    state: 'locked',
+    dots: [],
+    valueLabels: [],
+    strokedLineCount: 0,
+  };
+  assert.deepEqual(periodTrendTypes([locked], { state: 'locked' }), []);
+  assert.deepEqual(periodTrendTypes([deepSurface()], { state: 'locked' }), ['period-trend-state']);
+  assert.deepEqual(periodTrendTypes([locked]), ['period-trend-state']);
+});
+
+test('period-trend-marks: two stroked lines (a context step series) is period-trend-context-series', () => {
+  assert.deepEqual(periodTrendTypes([deepSurface({ strokedLineCount: 2 })]), [
+    'period-trend-context-series',
+  ]);
+  assert.deepEqual(periodTrendTypes([deepSurface({ strokedLineCount: 0 })]), [
+    'period-trend-context-series',
+  ]);
+});
+
+test('period-trend-marks: a value label on a sub-floor dot is period-trend-subfloor-label', () => {
+  const surface = deepSurface({
+    valueLabels: [
+      { key: 'quarter:2021-Q1', text: '100%' },
+      { key: 'quarter:2024-Q2', text: '33%' },
+      { key: 'quarter:2026-Q1', text: '60%' },
+    ],
+  });
+  assert.deepEqual(periodTrendTypes([surface]), ['period-trend-subfloor-label']);
+});
+
+test('period-trend-marks: four value labels is period-trend-label-count (and the set differs)', () => {
+  const surface = deepSurface({
+    valueLabels: [...deepSurface().valueLabels, { key: 'quarter:2023-Q1', text: '63%' }],
+  });
+  assert.deepEqual(periodTrendTypes([surface]), [
+    'period-trend-label-count',
+    'period-trend-labels',
+  ]);
+});
+
+test('period-trend-marks: label texts that differ from the expected set are period-trend-labels', () => {
+  const surface = deepSurface({
+    valueLabels: [
+      { key: 'quarter:2024-Q1', text: '100%' },
+      { key: 'quarter:2024-Q2', text: '0%' },
+      { key: 'quarter:2026-Q1', text: '60%' },
+    ],
+  });
+  assert.deepEqual(periodTrendTypes([surface]), ['period-trend-labels']);
+});
+
+test('period-trend-marks: distinct diameters other than the expected set, or outside {5,7,9}, are period-trend-dot-size', () => {
+  const allFive = deepSurface({ dots: deepSurface().dots.map((d) => ({ ...d, diameter: 5 })) });
+  assert.deepEqual(periodTrendTypes([allFive]), ['period-trend-dot-size']);
+  const radiiAsDiameters = deepSurface({
+    dots: deepSurface().dots.map((d) => ({ ...d, diameter: d.diameter * 2 })),
+  });
+  assert.deepEqual(periodTrendTypes([radiiAsDiameters]), ['period-trend-dot-size']);
+  assert.deepEqual(
+    periodTrendTypes([radiiAsDiameters], { state: 'drawn' }),
+    ['period-trend-dot-size'],
+    'outside {5,7,9} fails even without an expected set',
+  );
+});
+
+test('period-trend-marks: a declared domain other than the expected one is period-trend-domain', () => {
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ yDomain: [0, 100], yTickTexts: ['0', '50', '100'] })]),
+    ['period-trend-domain'],
+  );
+  assert.deepEqual(periodTrendTypes([deepSurface({ yDomain: null, yTickTexts: [] })]), [
+    'period-trend-domain',
+  ]);
+});
+
+test('period-trend-marks: a reference label other than the expected text is period-trend-reference-label', () => {
+  assert.deepEqual(periodTrendTypes([deepSurface({ referenceLabel: '63%' })]), [
+    'period-trend-reference-label',
+  ]);
+  assert.deepEqual(periodTrendTypes([deepSurface({ referenceLabel: null })]), [
+    'period-trend-reference-label',
+  ]);
+});
+
+test('period-trend-marks: a tick outside the domain, 0 while lo > 0 or 100 while hi < 100 is period-trend-axis-edge', () => {
+  assert.deepEqual(periodTrendTypes([deepSurface({ yTickTexts: ['10', '20', '100'] })]), [
+    'period-trend-axis-edge',
+  ]);
+  const fitted = { state: 'drawn' };
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ yDomain: [40, 70], yTickTexts: ['0', '40', '70'] })], fitted),
+    ['period-trend-axis-edge'],
+  );
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ yDomain: [40, 70], yTickTexts: ['40', '70', '100'] })], fitted),
+    ['period-trend-axis-edge'],
+  );
+  assert.deepEqual(
+    periodTrendTypes([deepSurface({ yDomain: [0, 100], yTickTexts: ['0', '50', '100'] })], fitted),
+    [],
+  );
+});
+
+test('period-trend-marks: the PERIOD_TREND line prints state, domain, sorted distinct dots, labels, lines and ref', () => {
+  assert.equal(
+    guardLayoutCoreNs.formatPeriodTrendLine('matchups-sketch-deep', '1440x900', deepSurface()),
+    'PERIOD_TREND route=matchups-sketch-deep viewport=1440x900 state=drawn domain=20,100 dots=5,7 labels=100%|33%|60% lines=1 ref=63%_all_time',
+  );
+  assert.equal(
+    guardLayoutCoreNs.formatPeriodTrendLine('matchups-sketch-thin', '390x844', {
+      state: 'locked',
+      yDomain: null,
+      dots: [],
+      valueLabels: [],
+      strokedLineCount: 0,
+      referenceLabel: null,
+    }),
+    'PERIOD_TREND route=matchups-sketch-thin viewport=390x844 state=locked domain=none dots=none labels=none lines=0 ref=none',
+  );
+});

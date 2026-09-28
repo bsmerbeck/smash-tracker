@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { twoGameWorkspace } from '@smash-tracker/shared/testUtils';
 import { createGuardLayoutFixturePlugin } from './guardLayoutFixturePlugin.mjs';
+import { buildSketch003Scale } from './sketch003Fixture.mjs';
 
 const WEB_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const VITE_CONFIG_PATH = fileURLToPath(new URL('../vite.config.ts', import.meta.url));
@@ -297,6 +298,11 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     casual: buildCasualScale(),
     recent: buildRecentScale(),
     gsp: buildGspScale(),
+    // Plan 39.1-41: sketch 003's own two pairings (Cloud vs Pyra/Mythra,
+    // Pikachu vs Joker) + its matrix, ported set for set — guard:layout's
+    // matchups-sketch-deep / -thin routes and capture:matchups-fidelity
+    // select it per page with `x-guard-layout-scale: sketch003`.
+    sketch003: buildSketch003Scale(),
     ...extraScales,
   };
   const server = await createViteServer({

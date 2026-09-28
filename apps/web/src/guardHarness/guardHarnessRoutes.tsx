@@ -55,7 +55,8 @@ export interface GuardHarnessRouteEntry {
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
    * `trends-casual`, (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
-   * capture-only `gsp`, and (plan 39.1-51) the three `*-games` drill routes.
+   * capture-only `gsp`, (plan 39.1-51) the three `*-games` drill routes and
+   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin`.
    */
   shell?: 'app';
 }
@@ -133,6 +134,27 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     id: 'matchups',
     path: '/matchups',
     initialEntry: '/matchups',
+    element: <MatchupsPage />,
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-41 (sketch 003 tracer): the Matchups page on sketch 003's own
+    // data (guardLayout / capture:matchups-fidelity send
+    // `x-guard-layout-scale: sketch003`) — the deep pairing, Cloud vs
+    // Pyra/Mythra (102 games) ...
+    id: 'matchups-sketch-deep',
+    path: '/matchups',
+    initialEntry: '/matchups?fighter=65&vs=84',
+    element: <MatchupsPage />,
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
+  },
+  {
+    // ... and the thin pairing, Pikachu vs Joker (11 games).
+    id: 'matchups-sketch-thin',
+    path: '/matchups',
+    initialEntry: '/matchups?fighter=9&vs=76',
     element: <MatchupsPage />,
     loadedMarker: '[data-slot="matchup-chart-body"]',
     shell: 'app',

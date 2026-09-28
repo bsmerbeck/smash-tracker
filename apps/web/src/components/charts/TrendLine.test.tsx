@@ -1016,19 +1016,27 @@ describe('TrendLine — design-fidelity loop (plan 39.1-37 Task 3): marks at the
     }
   });
 
-  it('period mode: a context series outside the fitted domain never re-extends it (y ticks stay 40-70)', () => {
+  // REWRITTEN by plan 39.1-41 (PD-41-3): this case pinned plan 37's hidden
+  // second y-axis carrying Matchups' cumulative context step series (the
+  // series could leave the fitted domain without re-extending it). The kit no
+  // longer has a context series at all: a caller that still passes the old
+  // prop gets ONE stroked data line and ONE y-axis, and the fitted ticks.
+  it('period mode: a legacy context-series prop draws nothing — one stroked data line, one y-axis, y ticks stay 40-70 (PD-41-3)', () => {
     const joined = [0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58, 0.5];
     const points = makePeriodSeries(8, (i) => ({ rate: joined[i] }));
+    const legacyContextProp = { contextRatePercents: [0, 100, 0, 100, 0, 100, 0, 100] } as object;
     const { container } = render(
       <TrendLine
         mode="period"
         points={points}
-        contextRatePercents={[0, 100, 0, 100, 0, 100, 0, 100]}
+        {...legacyContextProp}
         width={640}
         height={288}
         labels={PERIOD_LABELS}
       />,
     );
+    expect(strokedLineCurves(container)).toHaveLength(1);
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1);
     const ticks = renderedYTickValues(container);
     expect(ticks.length).toBeGreaterThan(0);
     for (const tick of ticks) {
@@ -1160,5 +1168,139 @@ describe('TrendLine table-twin toggle link tone (plan 39.1-39, UI-SPEC §4.3)', 
     expect(classes).toContain('text-muted-foreground');
     expect(classes).toContain('hover:text-foreground');
     expect(classes).not.toContain('text-primary');
+  });
+});
+
+/** Recharts line curves that actually draw a stroke (the dot-carrier series is stroke="none"). */
+function strokedLineCurves(container: HTMLElement): Element[] {
+  return Array.from(container.querySelectorAll('path.recharts-line-curve')).filter((path) => {
+    const stroke = path.getAttribute('stroke');
+    const width = Number(path.getAttribute('stroke-width') ?? '1');
+    return stroke !== null && stroke !== 'none' && width > 0;
+  });
+}
+
+describe('TrendLine — period dot sizing, one data line, surface attributes (plan 39.1-41, sketch 003 A)', () => {
+  const TIER_TOTALS = [2, 5, 8, 20, 20, 20, 20, 20];
+
+  function tierSeries(): PeriodPoint[] {
+    return makePeriodSeries(8, (i) =>
+      i === 0
+        ? { total: 2, wins: 1, losses: 1, rate: 0.5, subFloor: true }
+        : { total: TIER_TOTALS[i], rate: 0.5 },
+    );
+  }
+
+  function dotRadii(container: HTMLElement): number[] {
+    return Array.from(container.querySelectorAll('[data-slot="trend-period-dot"]')).map((c) =>
+      Number(c.getAttribute('r')),
+    );
+  }
+
+  it('dotSizing="tier" draws 5 / 5 / 7 / 9 px diameters for totals 2 / 5 / 8 / 20 (confidence tiers)', () => {
+    const tierProps = { dotSizing: 'tier' } as object;
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={tierSeries()}
+        {...tierProps}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    expect(
+      dotRadii(container)
+        .slice(0, 4)
+        .map((r) => r * 2),
+    ).toEqual([5, 5, 7, 9]);
+  });
+
+  it("the default dot sizing keeps plan 37's games thresholds (every total under 50 games is 5 px)", () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={tierSeries()}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    expect(dotRadii(container).map((r) => r * 2)).toEqual([5, 5, 5, 5, 5, 5, 5, 5]);
+  });
+
+  it('draws exactly ONE stroked line path and exactly ONE y-axis', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={tierSeries()}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    expect(strokedLineCurves(container)).toHaveLength(1);
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1);
+  });
+
+  it('the drawn root carries data-state="drawn", data-dot-sizing and data-y-domain "lo,hi"', () => {
+    const tierProps = { dotSizing: 'tier' } as object;
+    const joined = [0.45, 0.5, 0.55, 0.6, 0.52, 0.48, 0.58, 0.5];
+    const points = makePeriodSeries(8, (i) => ({ rate: joined[i] }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        referenceRate={50}
+        {...tierProps}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root).not.toBeNull();
+    expect(root?.getAttribute('data-state')).toBe('drawn');
+    expect(root?.getAttribute('data-dot-sizing')).toBe('tier');
+    expect(root?.getAttribute('data-y-domain')).toBe('40,70');
+    // The attributes are metadata only: the root is layout-neutral.
+    expect(root?.className).toContain('contents');
+    expect(root?.querySelector('svg.recharts-surface')).not.toBeNull();
+    expect(root?.querySelector('[data-slot="trend-line-period-table"]')).not.toBeNull();
+  });
+
+  it('the locked root carries data-state="locked" and the default data-dot-sizing "games"', () => {
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={makePeriodSeries(3)}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+      />,
+    );
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('locked');
+    expect(root?.getAttribute('data-dot-sizing')).toBe('games');
+    expect(root?.hasAttribute('data-y-domain')).toBe(false);
+    expect(root?.querySelector('[data-slot="trend-line-period-locked"]')).not.toBeNull();
+  });
+
+  it('every dot carries data-sub-floor and data-point-key; every value label carries data-point-key', () => {
+    const points = tierSeries();
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={160} labels={PERIOD_LABELS} />,
+    );
+    const dots = Array.from(container.querySelectorAll('[data-slot="trend-period-dot"]'));
+    expect(dots.map((d) => d.getAttribute('data-point-key'))).toEqual(points.map((p) => p.key));
+    expect(dots.map((d) => d.getAttribute('data-sub-floor'))).toEqual(
+      points.map((p) => String(p.subFloor)),
+    );
+    const labels = Array.from(container.querySelectorAll('[data-slot="trend-period-value-label"]'));
+    expect(labels.length).toBeGreaterThan(0);
+    const keys = new Set(points.map((p) => p.key));
+    for (const label of labels) {
+      expect(keys.has(label.getAttribute('data-point-key') ?? '')).toBe(true);
+    }
   });
 });

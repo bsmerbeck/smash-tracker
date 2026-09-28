@@ -63,6 +63,8 @@ import {
   evaluateRailCards,
   evaluateInsightLineDash,
   evaluateLastRowVisible,
+  evaluatePeriodTrendMarks,
+  formatPeriodTrendLine,
   terminusBudgetExcessPx,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
@@ -207,6 +209,42 @@ export const LAYOUT_ORACLE_ROUTES = [
         maxViewportHeights: WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
       },
     ],
+  },
+  {
+    // Plan 39.1-41 (sketch 003 tracer, PD-41-1): the Matchups page on sketch
+    // 003's OWN deep pairing (Cloud vs Pyra/Mythra, 102 games; harness scale
+    // `sketch003`). The period-trend-marks family pins the approved trend —
+    // quarterly, 5 / 7 px tier dots, one data line, the fitted [20, 100]
+    // domain, labels on the last / max / min joined quarters and the
+    // "63% all time" hairline label (brief section 4) — and axis-ticks moves
+    // here from `matchups`, whose realistic one-week pairing now shows the
+    // locked quarterly state.
+    id: 'matchups-sketch-deep',
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    scale: 'sketch003',
+    checks: [
+      'period-trend-marks',
+      'form-strip-fit',
+      'brand-red-text',
+      'content-overflow',
+      'axis-ticks',
+    ],
+    periodTrendExpect: {
+      state: 'drawn',
+      yDomain: [20, 100],
+      dotDiameters: [5, 7],
+      valueLabels: ['100%', '33%', '60%'],
+      referenceLabel: '63% all time',
+    },
+  },
+  {
+    // Plan 39.1-41: the thin pairing (Pikachu vs Joker, 11 games, one quarter
+    // at the floor) honestly locks the trend.
+    id: 'matchups-sketch-thin',
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    scale: 'sketch003',
+    checks: ['period-trend-marks', 'form-strip-fit', 'brand-red-text', 'content-overflow'],
+    periodTrendExpect: { state: 'locked' },
   },
   {
     id: 'match-data',
@@ -517,6 +555,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantInsightLineDash = checks.includes('insight-line-dash');
   // Plan 39.1-51 (OOS-8): the results list's last row.
   const wantLastRowVisible = checks.includes('last-row-visible');
+  // Plan 39.1-41: the period trend's marks (sketch 003 A).
+  const wantPeriodTrendMarks = checks.includes('period-trend-marks');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1399,7 +1439,85 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     terminusLists.push(record);
   }
 
+  // -------------------------------------------------------------------
+  // Plan 39.1-41 (sketch 003 A): one record per period trend root. The root
+  // (`[data-slot="trend-line-period"]`, layout-neutral) declares its state,
+  // fitted y-domain and dot-sizing rule; before that root existed (the RED
+  // run) the record falls back to the plot surface's parent and reads what
+  // it can, so the family still reports the shipped trend instead of only
+  // `-unmeasured`. Attribute and rect reads, plus one getComputedStyle per
+  // line curve.
+  // -------------------------------------------------------------------
+  const periodTrends = [];
+  if (wantPeriodTrendMarks) {
+    let roots = Array.from(document.querySelectorAll('[data-slot="trend-line-period"]'));
+    if (roots.length === 0) {
+      const fallback = new Set();
+      for (const el of document.querySelectorAll(
+        '[data-slot="trend-period-dot"], [data-slot="trend-line-period-locked"]',
+      )) {
+        const surfaceEl = el.closest('svg.recharts-surface');
+        const host = surfaceEl
+          ? surfaceEl.closest('.recharts-wrapper')?.parentElement
+          : el.parentElement;
+        if (host) fallback.add(host);
+      }
+      roots = [...fallback];
+    }
+    for (const root of roots) {
+      const declaredState = root.getAttribute('data-state');
+      const state =
+        declaredState ??
+        (root.querySelector('[data-slot="trend-line-period-locked"]')
+          ? 'locked'
+          : root.querySelector('svg.recharts-surface')
+            ? 'drawn'
+            : null);
+      const domainAttr = root.getAttribute('data-y-domain');
+      const yDomain = domainAttr ? domainAttr.split(',').map(Number) : null;
+      const dots = Array.from(root.querySelectorAll('[data-slot="trend-period-dot"]')).map(
+        (dot, i) => ({
+          key: dot.getAttribute('data-point-key') ?? `index:${i}`,
+          diameter: Math.round(2 * Number(dot.getAttribute('r') ?? '0')),
+          subFloor: dot.getAttribute('data-sub-floor') === 'true',
+        }),
+      );
+      const valueLabels = Array.from(
+        root.querySelectorAll('[data-slot="trend-period-value-label"]'),
+      ).map((label, i) => ({
+        key: label.getAttribute('data-point-key') ?? `label:${i}`,
+        text: (label.textContent ?? '').trim(),
+      }));
+      let strokedLineCount = 0;
+      for (const curve of root.querySelectorAll('svg.recharts-surface path.recharts-line-curve')) {
+        const style = window.getComputedStyle(curve);
+        if (style.stroke && style.stroke !== 'none' && parseFloat(style.strokeWidth) > 0) {
+          strokedLineCount += 1;
+        }
+      }
+      const yTickTexts = Array.from(root.querySelectorAll('.recharts-yAxis-tick-labels text')).map(
+        (tick) => (tick.textContent ?? '').trim(),
+      );
+      // Recharts 3 draws a ReferenceLine's label in a z-index layer, not
+      // inside `.recharts-reference-line` — TrendLine tags it with its own
+      // `trend-period-reference-label` class (the axis-ticks collector's rule).
+      const referenceEl = root.querySelector('.trend-period-reference-label');
+      periodTrends.push({
+        selectorPath: describeElement(root),
+        state,
+        yDomain,
+        dotSizing: root.getAttribute('data-dot-sizing'),
+        dots,
+        valueLabels,
+        strokedLineCount,
+        yTickTexts,
+        referenceLabel: referenceEl ? (referenceEl.textContent ?? '').trim() : null,
+      });
+    }
+  }
+
   return {
+    periodTrends,
     terminusFlowsPx,
     terminusLists,
     insightLineDashes,
@@ -1977,6 +2095,13 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         ...evaluateFamilyPresence('insight-line-dash', measurements.insightLineDashes),
       );
     }
+    // Plan 39.1-41: period-trend-marks against the route's own expectation;
+    // the PERIOD_TREND lines print whether or not it passed.
+    if (checks.includes('period-trend-marks')) {
+      violations.push(
+        ...evaluatePeriodTrendMarks(measurements.periodTrends, route.periodTrendExpect ?? {}),
+      );
+    }
     // Plan 39.1-51 (OOS-8): one LAST_ROW record per list root.
     const lastRows = [];
     if (checks.includes('last-row-visible')) {
@@ -2027,6 +2152,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
       railCards: checks.includes('rail-cards') ? measurements.railCards : [],
+      periodTrends: checks.includes('period-trend-marks') ? measurements.periodTrends : [],
     };
   } finally {
     await page.close();
@@ -2328,6 +2454,10 @@ async function main() {
               console.log(
                 `LAST_ROW route=${route.id} viewport=${viewport.name} layout=${row.layout} mounted=${row.mounted} total=${row.total} contentPx=${row.contentPx.toFixed(1)} lastRowVisible=${row.lastRowVisible} innerScrollers=${row.innerScrollers}`,
               );
+            }
+            // Plan 39.1-41: one PERIOD_TREND line per measured period trend.
+            for (const surface of result.periodTrends ?? []) {
+              console.log(formatPeriodTrendLine(route.id, viewport.name, surface));
             }
             // Plan 39.1-40: one RAILCARDS line per measured reads rail,
             // right after the MEASUREMENT line, whether or not it passed.

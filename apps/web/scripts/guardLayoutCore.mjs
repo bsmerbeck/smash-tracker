@@ -1813,3 +1813,175 @@ export function evaluateLastRowVisible(lists, { tolerancePx = LAST_ROW_TOLERANCE
   }
   return violations;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-41 (sketch 003 A, PD-41-1/2/3): the period-trend-marks family.
+// ---------------------------------------------------------------------------
+
+/** The only dot diameters (px) a period trend may draw (plan 37's 5 / 7 / 9). */
+export const PERIOD_TREND_DOT_DIAMETERS = [5, 7, 9];
+
+/** Direct value labels: the last, highest and lowest joined periods — never more than three. */
+export const PERIOD_TREND_MAX_VALUE_LABELS = 3;
+
+function sameSortedStrings(a, b) {
+  const x = [...a].map(String).sort();
+  const y = [...b].map(String).sort();
+  return x.length === y.length && x.every((value, i) => value === y[i]);
+}
+
+/**
+ * `surfaces`: one entry per `[data-slot="trend-line-period"]` root —
+ * `{ selectorPath, state: 'drawn' | 'locked' | null, yDomain: [lo, hi] | null,
+ * dots: [{ key, diameter, subFloor }], valueLabels: [{ key, text }],
+ * strokedLineCount, yTickTexts: string[], referenceLabel: string | null }`.
+ * `expect`: the route's `periodTrendExpect` — `{ state, yDomain?,
+ * dotDiameters?, valueLabels?, referenceLabel? }`. Every offender is returned:
+ * - `period-trend-unmeasured`: no surface at all (non-vacuity);
+ * - `period-trend-state`: the surface's state is not the expected one (a
+ *   locked surface expected locked passes with no further check);
+ * - `period-trend-context-series`: stroked line paths other than exactly one;
+ * - `period-trend-subfloor-label`: a value label on a sub-floor dot;
+ * - `period-trend-label-count`: more than three value labels;
+ * - `period-trend-labels`: the label texts differ from the expected set;
+ * - `period-trend-dot-size`: a diameter outside {5, 7, 9}, or the distinct
+ *   diameters differ from the expected set;
+ * - `period-trend-domain`: the declared y-domain differs from the expected one;
+ * - `period-trend-reference-label`: the reference label text differs;
+ * - `period-trend-axis-edge`: a y tick outside the declared domain, a 0 tick
+ *   while the domain starts above 0, or a 100 tick while it ends below 100.
+ */
+export function evaluatePeriodTrendMarks(surfaces, expect = {}) {
+  if (!Array.isArray(surfaces) || surfaces.length === 0) {
+    return [{ type: 'period-trend-unmeasured' }];
+  }
+  const violations = [];
+  for (const surface of surfaces) {
+    const { selectorPath } = surface;
+    if (expect.state && surface.state !== expect.state) {
+      violations.push({
+        type: 'period-trend-state',
+        selectorPath,
+        state: surface.state ?? null,
+        expected: expect.state,
+      });
+      continue;
+    }
+    if (surface.state === 'locked') continue;
+
+    const dots = surface.dots ?? [];
+    const valueLabels = surface.valueLabels ?? [];
+
+    if (surface.strokedLineCount !== 1) {
+      violations.push({
+        type: 'period-trend-context-series',
+        selectorPath,
+        strokedLineCount: surface.strokedLineCount,
+      });
+    }
+
+    const subFloorKeys = new Set(dots.filter((dot) => dot.subFloor).map((dot) => dot.key));
+    for (const label of valueLabels) {
+      if (subFloorKeys.has(label.key)) {
+        violations.push({
+          type: 'period-trend-subfloor-label',
+          selectorPath,
+          key: label.key,
+          text: label.text,
+        });
+      }
+    }
+
+    if (valueLabels.length > PERIOD_TREND_MAX_VALUE_LABELS) {
+      violations.push({
+        type: 'period-trend-label-count',
+        selectorPath,
+        count: valueLabels.length,
+      });
+    }
+
+    const texts = valueLabels.map((label) => label.text);
+    if (expect.valueLabels && !sameSortedStrings(texts, expect.valueLabels)) {
+      violations.push({
+        type: 'period-trend-labels',
+        selectorPath,
+        labels: texts,
+        expected: expect.valueLabels,
+      });
+    }
+
+    const diameters = [...new Set(dots.map((dot) => dot.diameter))].sort((a, b) => a - b);
+    const outside = diameters.filter((d) => !PERIOD_TREND_DOT_DIAMETERS.includes(d));
+    if (
+      outside.length > 0 ||
+      (expect.dotDiameters && !sameSortedStrings(diameters, expect.dotDiameters))
+    ) {
+      violations.push({
+        type: 'period-trend-dot-size',
+        selectorPath,
+        diameters,
+        expected: expect.dotDiameters ?? PERIOD_TREND_DOT_DIAMETERS,
+      });
+    }
+
+    const domain = surface.yDomain;
+    if (
+      expect.yDomain &&
+      (!domain || domain[0] !== expect.yDomain[0] || domain[1] !== expect.yDomain[1])
+    ) {
+      violations.push({
+        type: 'period-trend-domain',
+        selectorPath,
+        yDomain: domain ?? null,
+        expected: expect.yDomain,
+      });
+    }
+
+    if (
+      expect.referenceLabel !== undefined &&
+      (surface.referenceLabel ?? null) !== expect.referenceLabel
+    ) {
+      violations.push({
+        type: 'period-trend-reference-label',
+        selectorPath,
+        referenceLabel: surface.referenceLabel ?? null,
+        expected: expect.referenceLabel,
+      });
+    }
+
+    if (domain) {
+      const [lo, hi] = domain;
+      for (const text of surface.yTickTexts ?? []) {
+        const value = Number(String(text).replace(/[^\d.-]/g, ''));
+        if (!Number.isFinite(value)) continue;
+        const offDomain = value < lo || value > hi;
+        const zeroEdge = value === 0 && lo > 0;
+        const hundredEdge = value === 100 && hi < 100;
+        if (offDomain || zeroEdge || hundredEdge) {
+          violations.push({
+            type: 'period-trend-axis-edge',
+            selectorPath,
+            tick: text,
+            yDomain: domain,
+          });
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * The one PERIOD_TREND line per measured surface (later plans append fields
+ * after `ref=`). `dots` are the sorted distinct diameters; spaces in the
+ * reference label print as `_`.
+ */
+export function formatPeriodTrendLine(routeId, viewportName, surface) {
+  const domain = surface.yDomain ? `${surface.yDomain[0]},${surface.yDomain[1]}` : 'none';
+  const dots = [...new Set((surface.dots ?? []).map((dot) => dot.diameter))]
+    .sort((a, b) => a - b)
+    .join(',');
+  const labels = (surface.valueLabels ?? []).map((label) => label.text).join('|');
+  const ref = surface.referenceLabel ? surface.referenceLabel.replace(/\s+/g, '_') : 'none';
+  return `PERIOD_TREND route=${routeId} viewport=${viewportName} state=${surface.state ?? 'none'} domain=${domain} dots=${dots || 'none'} labels=${labels || 'none'} lines=${surface.strokedLineCount ?? 0} ref=${ref}`;
+}

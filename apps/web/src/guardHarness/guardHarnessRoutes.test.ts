@@ -17,8 +17,23 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
   // REWRITTEN by plan 39.1-51 (was sixteen): the three `*-games` drill routes
   // (OOS-8) make the drill-only results-list hosts measurable — the count rises
   // by exactly three.
-  it('has exactly nineteen entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route, (plan 39.1-49) the scout route and (plan 39.1-51) the fighter-analysis-games, match-data-games and trends-games drill routes', () => {
-    expect(GUARD_HARNESS_ROUTES).toHaveLength(19);
+  // REWRITTEN by plan 39.1-41 (was nineteen): the two sketch-003 oracle routes
+  // (matchups-sketch-deep / -thin) raise the count by exactly two.
+  it('has exactly twenty-one entries: the eight real analytics routes, the trends-career, trends-casual, dashboard-app and stage-detail-recent oracle routes, the stretch and period-axis fixture routes, the gsp route, (plan 39.1-49) the scout route, (plan 39.1-51) the fighter-analysis-games, match-data-games and trends-games drill routes and (plan 39.1-41) the matchups-sketch-deep and matchups-sketch-thin routes', () => {
+    expect(GUARD_HARNESS_ROUTES).toHaveLength(21);
+  });
+
+  // Plan 39.1-41 (sketch 003 tracer): the Matchups page at its real path on
+  // the sketch's two pairings, in the app shell, with the chart loaded marker.
+  it.each([
+    ['matchups-sketch-deep', '/matchups?fighter=65&vs=84'],
+    ['matchups-sketch-thin', '/matchups?fighter=9&vs=76'],
+  ])('plan 39.1-41: %s mounts MatchupsPage at %s in the app shell', (id, initialEntry) => {
+    const route = findGuardHarnessRoute(id);
+    expect(route?.path).toBe('/matchups');
+    expect(route?.initialEntry).toBe(initialEntry);
+    expect(route?.shell).toBe('app');
+    expect(route?.loadedMarker).toBe('[data-slot="matchup-chart-body"]');
   });
 
   // Plan 39.1-51 (OOS-8): the drill-only results-list hosts, drilled with
@@ -124,7 +139,8 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
   });
 
   // REWRITTEN by plan 39.1-51: the three `*-games` drill routes join the shell.
-  it('plans 39.1-30/34/35/39/51: exactly the matchups, trends-career, trends-casual, dashboard-app, stage-detail-recent, gsp and three *-games entries opt into the MainLayout-geometry app shell', () => {
+  // REWRITTEN by plan 39.1-41: the two sketch-003 Matchups routes join it too.
+  it('plans 39.1-30/34/35/39/41/51: exactly the matchups, matchups-sketch-deep/-thin, trends-career, trends-casual, dashboard-app, stage-detail-recent, gsp and three *-games entries opt into the MainLayout-geometry app shell', () => {
     const shelled = GUARD_HARNESS_ROUTES.filter((r) => r.shell === 'app');
     expect(shelled.map((r) => r.id).sort()).toEqual([
       'dashboard-app',
@@ -132,6 +148,8 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
       'gsp',
       'match-data-games',
       'matchups',
+      'matchups-sketch-deep',
+      'matchups-sketch-thin',
       'stage-detail-recent',
       'trends-career',
       'trends-casual',

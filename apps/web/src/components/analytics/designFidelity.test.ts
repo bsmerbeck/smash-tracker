@@ -368,3 +368,85 @@ describe('design fidelity — no brand-red text classes, one link tone (plan 39.
     expect([...LINK_TONE_ALLOWLIST]).toEqual([]);
   });
 });
+
+/**
+ * Plan 39.1-41 (PD-41-3, sketch 003 A / 001-C): the period trend is ONE data
+ * line plus ONE all-time hairline. No non-test file may declare or pass a
+ * cumulative context-series prop to TrendLine, or declare a second period
+ * y-axis; every period-trend host builds its reference label from the shared
+ * `analytics.trend.referenceLabel` key ("NN% all time"), never a bare rate.
+ */
+const CONTEXT_SERIES_PATTERN = /\bcontextRatePercents\b|\bcontextPercent\b/;
+const SECOND_PERIOD_AXIS_PATTERN = /\b[A-Z_]*CONTEXT_Y_AXIS_ID\b|\byAxisId\s*=/;
+/** Every `referenceLabel:` object key in a host (`labels={{ … referenceLabel: … }}`). */
+const REFERENCE_LABEL_KEY_PATTERN = /\breferenceLabel:\s*/g;
+const SHARED_REFERENCE_LABEL_CALL = /^t\(\s*['"]analytics\.trend\.referenceLabel['"]/;
+
+/** The `referenceLabel:` values in `source` that are NOT a `t('analytics.trend.referenceLabel', …)` call. */
+function offendingReferenceLabels(source: string): string[] {
+  const offenders: string[] = [];
+  for (const match of source.matchAll(REFERENCE_LABEL_KEY_PATTERN)) {
+    const value = source.slice((match.index ?? 0) + match[0].length).split('\n')[0] ?? '';
+    if (!SHARED_REFERENCE_LABEL_CALL.test(value)) offenders.push(value.trim());
+  }
+  return offenders;
+}
+
+describe('design fidelity — one period data line, one reference-label key (plan 39.1-41)', () => {
+  it('the matchers detect a context-series prop, a second period axis and a bare reference label (non-vacuity)', () => {
+    expect(CONTEXT_SERIES_PATTERN.test('        contextRatePercents={contextRatePercents}')).toBe(
+      true,
+    );
+    expect(CONTEXT_SERIES_PATTERN.test('  contextPercent?: number;')).toBe(true);
+    expect(CONTEXT_SERIES_PATTERN.test('const contextLabel = 1;')).toBe(false);
+    expect(SECOND_PERIOD_AXIS_PATTERN.test("const PERIOD_CONTEXT_Y_AXIS_ID = 'context';")).toBe(
+      true,
+    );
+    expect(SECOND_PERIOD_AXIS_PATTERN.test('          yAxisId={PERIOD_CONTEXT_Y_AXIS_ID}')).toBe(
+      true,
+    );
+    expect(SECOND_PERIOD_AXIS_PATTERN.test('<YAxis domain={[yMin, yMax]} />')).toBe(false);
+    expect(
+      offendingReferenceLabels('          referenceLabel: `${Math.round(overallRate)}%`,'),
+    ).toEqual(['`${Math.round(overallRate)}%`,']);
+    expect(
+      offendingReferenceLabels(
+        "              referenceLabel: t('analytics.trend.referenceLabel', {\n                rate: `${x}%`,",
+      ),
+    ).toEqual([]);
+    expect(
+      offendingReferenceLabels("  referenceLabel: t('analytics.trend.refLabel'),"),
+    ).toHaveLength(1);
+    // An interface member (`referenceLabel?: string;`) is not a host value.
+    expect(offendingReferenceLabels('  referenceLabel?: string;')).toEqual([]);
+  });
+
+  it('no non-test file declares or passes a cumulative context series', () => {
+    const offenders = NON_TEST_FILES.filter((file) =>
+      CONTEXT_SERIES_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('no non-test file declares a second period y-axis', () => {
+    const offenders = NON_TEST_FILES.filter((file) =>
+      SECOND_PERIOD_AXIS_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('every period-trend host builds its reference label from analytics.trend.referenceLabel', () => {
+    const hosts = NON_TEST_FILES.filter((file) => /\breferenceLabel:/.test(readRepoFile(file)));
+    // Non-vacuity: both period-trend heroes are scanned.
+    expect(hosts).toEqual(
+      expect.arrayContaining([
+        'apps/web/src/pages/FighterAnalysis/components/FighterHero.tsx',
+        'apps/web/src/pages/Matchups/components/MatchupChart.tsx',
+      ]),
+    );
+    const offenders = hosts.flatMap((file) =>
+      offendingReferenceLabels(readRepoFile(file)).map((value) => `${file}: ${value}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+});

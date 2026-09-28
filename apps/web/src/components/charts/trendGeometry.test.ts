@@ -179,3 +179,36 @@ describe('rateDomainTicks — design-fidelity loop (plan 39.1-37 Task 3)', () =>
     expect(rateDomainTicks([20, 90], 80)).toEqual([20, 40, 60, 80]);
   });
 });
+
+/**
+ * Plan 39.1-41 (PD-41-2, sketch 003 `dotSize`): scoped trends size a period
+ * dot by its CONFIDENCE TIER (3-7 / 8-19 / 20+ games, the shared
+ * `confidenceTierFor`) onto the module's own three diameters; the games rule
+ * above (`periodDotDiameter`, the Fighter hero's) is unchanged.
+ */
+describe('periodDotDiameterForTier — sketch 003 dotSize (plan 39.1-41)', () => {
+  it('returns 5 / 5 / 7 / 9 for totals 2 / 5 / 8 / 20, from the module diameter constants', async () => {
+    const geometry = await loadGeometry();
+    const {
+      periodDotDiameterForTier,
+      PERIOD_DOT_DIAMETER_SMALL,
+      PERIOD_DOT_DIAMETER_MEDIUM,
+      PERIOD_DOT_DIAMETER_LARGE,
+    } = geometry;
+    expect(typeof periodDotDiameterForTier).toBe('function');
+    expect([2, 5, 8, 20].map((total) => periodDotDiameterForTier(total))).toEqual([
+      PERIOD_DOT_DIAMETER_SMALL,
+      PERIOD_DOT_DIAMETER_SMALL,
+      PERIOD_DOT_DIAMETER_MEDIUM,
+      PERIOD_DOT_DIAMETER_LARGE,
+    ]);
+    expect([2, 5, 8, 20].map((total) => periodDotDiameterForTier(total))).toEqual([5, 5, 7, 9]);
+    expect(periodDotDiameterForTier(7)).toBe(5);
+    expect(periodDotDiameterForTier(19)).toBe(7);
+  });
+
+  it('leaves periodDotDiameter (games thresholds) unchanged: 5 / 5 / 5 / 5 for the same totals', async () => {
+    const { periodDotDiameter } = await loadGeometry();
+    expect([2, 5, 8, 20].map((total) => periodDotDiameter(total))).toEqual([5, 5, 5, 5]);
+  });
+});
