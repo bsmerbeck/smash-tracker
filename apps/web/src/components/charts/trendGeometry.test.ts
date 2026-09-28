@@ -263,13 +263,19 @@ describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)',
     expect(periodValueLabelPlacement({ ...tall, yPx: 44, isMax: true }).below).toBe(false);
   });
 
-  it('right-aligns the labels of the last two periods (sketch `i > N - 3`)', async () => {
+  // REWRITTEN by plan 39.1-41's own fidelity loop (after 540912a0): the
+  // sketch's `.val.end` flips labels in the last two CALENDAR slots, which on
+  // sketch 003's deep data (two empty quarters at the end) leaves the 60%
+  // label centred. Ported to the app's categorical periods it right-aligned
+  // the 60% label across the recent band's left edge. The x-axis padding
+  // already keeps a centred last label inside the plot, so labels stay
+  // centred on their dots.
+  it('keeps every label centred on its dot — the last periods included', async () => {
     const { periodValueLabelPlacement } = await loadGeometry();
     expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 20, isLast: true }).anchor).toBe(
-      'end',
+      'middle',
     );
-    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 19 }).anchor).toBe('end');
-    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 18 }).anchor).toBe('middle');
+    expect(periodValueLabelPlacement({ ...base, yPx: 70, index: 19 }).anchor).toBe('middle');
   });
 
   it('placeReferenceLabel models a below label under its dot and an end label left of its dot', async () => {

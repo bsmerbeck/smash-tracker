@@ -1387,16 +1387,19 @@ describe('TrendLine — value labels placed like sketch 003 (plan 39.1-41 fideli
     expect(labelFor(container, points[7]!.key).getAttribute('data-placement')).toBe('above');
   });
 
-  it('the labels of the last two periods right-align to their dots', () => {
+  // REWRITTEN by plan 39.1-41's own fidelity loop (after 540912a0): see
+  // trendGeometry.test.ts — a last-periods label right-aligned across the
+  // recent band's left edge; the 16px x-axis padding keeps it inside the plot
+  // centred.
+  it('the last label stays centred on its dot and inside the plot', () => {
     const points = makePeriodSeries(8, (i) => ({ rate: i === 7 ? 0.9 : 0.5 }));
     const { container } = render(
       <TrendLine mode="period" points={points} width={640} height={160} labels={PERIOD_LABELS} />,
     );
     const label = labelFor(container, points[7]!.key);
-    expect(label.getAttribute('text-anchor')).toBe('end');
-    expect(Number(label.getAttribute('x'))).toBeCloseTo(
-      Number(dotFor(container, points[7]!.key).getAttribute('cx')),
-      0,
-    );
+    expect(label.getAttribute('text-anchor')).toBe('middle');
+    const x = Number(label.getAttribute('x'));
+    expect(x).toBeCloseTo(Number(dotFor(container, points[7]!.key).getAttribute('cx')), 0);
+    expect(x + estimateTickLabelWidthPx('90%') / 2).toBeLessThanOrEqual(635);
   });
 });
