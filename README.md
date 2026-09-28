@@ -238,23 +238,25 @@ provides ADC automatically, and that service account needs Realtime Database acc
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com
 ```
 
 The service name (`smash-tracker-api`) and region (`us-central1`) must match `firebase.json`'s
 `hosting.rewrites` entry for `/api/**`.
 
-**Request timeout (`--timeout=300`).** AI report generation runs inside the `POST /api/reports`
+**Request timeout (`--timeout=600`).** AI report generation runs inside the `POST /api/reports`
 request: the handler awaits the model call and the job's terminal writes before it replies. The
-live service's request timeout is 300 seconds (`timeoutSeconds: 300`, verified 2026-09-28), and
-the API is sized against it: one model attempt is bounded by `REPORT_MODEL_TIMEOUT_MS` (4 minutes,
-no retries) plus a 60-second budget for the work around it (`REPORT_REQUEST_OVERHEAD_BUDGET_MS`),
-both in `apps/api/src/routes/reports.ts` next to `CLOUD_RUN_REQUEST_TIMEOUT_MS`. Past the request
-timeout Cloud Run cuts the request off and, with request-based CPU allocation, throttles the
-instance, so an in-flight model response and the job's terminal writes could stall. Every deploy
-command here pins `--timeout=300`; changing it means changing those constants (and their test)
-with it.
+owner set the service's request timeout to 600 seconds at the Phase 39 deploy (it was 300 seconds
+on 2026-09-28), and the API is sized against it: one model attempt is bounded by
+`REPORT_MODEL_TIMEOUT_MS` (8 minutes, no retries) plus a 60-second budget for the work around it
+(`REPORT_REQUEST_OVERHEAD_BUDGET_MS`), both in `apps/api/src/routes/reports.ts` next to
+`CLOUD_RUN_REQUEST_TIMEOUT_MS`. Past the request timeout Cloud Run cuts the request off and, with
+request-based CPU allocation, throttles the instance, so an in-flight model response and the job's
+terminal writes could stall. Every deploy command here pins `--timeout=600`; changing it means
+changing those constants (and their test) with it.
+
+Apply the 600-second timeout before or together with this code, never after.
 
 **Running `scripts/` locally (e.g. the `seed:demo` seeder)** needs RTDB admin access beyond a
 plain `gcloud auth application-default login` — Application Default Credentials must be scoped for
@@ -275,7 +277,7 @@ gated behind two env vars, both required together:
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2
 ```
 
@@ -299,7 +301,7 @@ together:
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2,STRIPE_SECRET_KEY=sk_live_...,STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
@@ -332,7 +334,7 @@ A second tournament-site integration alongside start.gg, gated behind one env va
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,PARRYGG_API_KEY=...
 ```
 
@@ -358,7 +360,7 @@ A managed client taking ownership of their coach-managed workspace needs one mor
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,CLAIM_CODE_HMAC_SECRET=...
 ```
 
@@ -381,7 +383,7 @@ an exactly-three-opponent bundle — gated behind one env var:
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,PREP_PAID_REPORTS_ENABLED=true
 ```
 
@@ -404,7 +406,7 @@ never blocks Stripe fulfillment, refunds, job-status reads, or viewing already-g
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --timeout=300 \
+  --timeout=600 \
   --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,RESEARCH_ADMIN_UIDS=uid1
 ```
 

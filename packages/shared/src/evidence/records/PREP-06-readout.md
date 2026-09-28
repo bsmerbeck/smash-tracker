@@ -112,10 +112,12 @@ stored `wasCharged` field, and a failed job is refunded only through the one exi
 path. It applies once the owner deploys this phase's code (D-17); nothing here is live today.
 
 A generation is ONE model attempt. `REPORT_MODEL_MAX_RETRIES` is `0` and each attempt is bounded by
-`REPORT_MODEL_TIMEOUT_MS` (4 minutes), on the built client and on every request; a failed attempt
+`REPORT_MODEL_TIMEOUT_MS` (8 minutes), on the built client and on every request; a failed attempt
 fails the job and refunds it, and the user retries. A credit never pays for a silent retry. The
-attempt runs inside the request, so the bound is sized to fit the service's 300-second Cloud Run
-request timeout with a 60-second budget for the work around it (code review R5-IN-04). A refund is
+attempt runs inside the request, so the bound is sized to fit the service's Cloud Run request
+timeout — 600 seconds, the owner's decision for the Phase 39 deploy, applied before or with this
+code (it was 300 seconds on 2026-09-28) — with a 60-second budget for the work around it (code
+review R5-IN-04). A refund is
 written once per failed execution: the balance and a create-once marker commit in one transaction,
 and the job's terminal writes and the refund are retried on a transient database error, so a retry
 can never refund twice and a transient error can no longer strand the credit (code review R5-WR-01).
@@ -177,8 +179,8 @@ Sources (line numbers pin to the commit that last edited this list — `git log 
 - `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
   `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
 - Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:882`;
-  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1405` (scout, prep) and
-  `reports.ts:1756` (post-event synthesis).
+  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1406` (scout, prep) and
+  `reports.ts:1757` (post-event synthesis).
 - The D-24 rule — doc comment `validateReport.ts:449-472`; the allowlist
   `PROSE_DISALLOWED_CHARACTER` `:479`, `FIGURE_WORD_PATTERN` `:492`, `ROMAN_NUMERAL_PATTERN` `:496`,
   `TIER_WORD_PATTERN` `:508`, the fold `foldProse` `:527`; enforcement `validateReport.ts:730-754`.
@@ -188,12 +190,12 @@ Sources (line numbers pin to the commit that last edited this list — `git log 
   `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
 - Stored fields — `packages/shared/src/reports.ts`: `strippedSectionCount` `:232`,
   `droppedClaimCount` `:284`, `failureReason` `:606`, `wasCharged` `:620`.
-- Model bound — `REPORT_MODEL_MAX_RETRIES = 0` at `apps/api/src/routes/reports.ts:134`,
-  `REPORT_MODEL_TIMEOUT_MS = 4 * 60 * 1000` at `reports.ts:169`, sized against
+- Model bound — `REPORT_MODEL_MAX_RETRIES = 0` at `apps/api/src/routes/reports.ts:133`,
+  `REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000` at `reports.ts:170`, sized against
   `CLOUD_RUN_REQUEST_TIMEOUT_MS` (`:148`) and `REPORT_REQUEST_OVERHEAD_BUDGET_MS` (`:157`), applied on
-  the built client at `reports.ts:633-634` and per request at `reports.ts:222-224`.
+  the built client at `reports.ts:634-635` and per request at `reports.ts:223-225`.
 - Refund once — `refundCreditOnce` at `apps/api/src/billing/credits.ts:209`, called from `failJob`
-  (`reports.ts:695`) at `reports.ts:793` inside the bounded retry `withSettleRetries` (`:190`).
+  (`reports.ts:696`) at `reports.ts:794` inside the bounded retry `withSettleRetries` (`:191`).
 
 ## BOUNDARY
 

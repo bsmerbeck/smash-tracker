@@ -120,8 +120,7 @@ import { isDemoAccountSubject } from '../research/demoAccount.js';
  * `REPORT_MODEL_TIMEOUT_MS`. Before that bound the SDK defaults (two
  * retries, ten minutes per attempt) let one call run about thirty minutes,
  * so a live execution could be swept mid-flight. The bound leaves at least
- * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`
- * (ten, since review R5-IN-04 cut the attempt to four minutes).
+ * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
  */
 export const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
 
@@ -135,17 +134,18 @@ export const REPORT_MODEL_MAX_RETRIES = 0;
 
 /**
  * Code review R5-IN-04 (iteration 5): the Cloud Run request timeout of the
- * live `smash-tracker-api` service — `timeoutSeconds: 300`, verified
- * read-only by the orchestrator on 2026-09-28 (the README deploy commands
- * pin it with `--timeout=300`). Report generation runs INSIDE the request:
- * `POST /reports` awaits `runReportGeneration`/`runSynthesisGeneration`
- * before it replies. Past this timeout Cloud Run cuts the request off and a
- * request-billed instance's CPU is throttled, so the model response and the
- * terminal writes could stall past the stale window. Raising the service
- * timeout is an owner infrastructure decision; this constant documents the
- * value the bound below is sized against.
+ * `smash-tracker-api` service. 600 seconds is the OWNER-DECIDED value
+ * ([HUMAN], 2026-09-28), applied at the Phase 39 deploy (`--timeout=600` in
+ * the README deploy commands); it must be applied before or together with
+ * this code, never after. The live value was 300 seconds on 2026-09-28
+ * (`timeoutSeconds: 300`, verified read-only by the orchestrator). Report
+ * generation runs INSIDE the request: `POST /reports` awaits
+ * `runReportGeneration`/`runSynthesisGeneration` before it replies. Past this
+ * timeout Cloud Run cuts the request off and a request-billed instance's CPU
+ * is throttled, so the model response and the terminal writes could stall
+ * past the stale window.
  */
-export const CLOUD_RUN_REQUEST_TIMEOUT_MS = 300 * 1000;
+export const CLOUD_RUN_REQUEST_TIMEOUT_MS = 600 * 1000;
 
 /**
  * Code review R5-IN-04: the budget for everything a generation request does
@@ -162,11 +162,12 @@ export const REPORT_REQUEST_OVERHEAD_BUDGET_MS = 60 * 1000;
  * response headers arrive, so the same bound is also applied as an abort
  * signal that covers reading the body (`reportModelRequestOptions`).
  *
- * Code review R5-IN-04: four minutes, so one attempt plus
- * `REPORT_REQUEST_OVERHEAD_BUDGET_MS` fits inside the 300-second Cloud Run
- * request timeout (`CLOUD_RUN_REQUEST_TIMEOUT_MS`).
+ * Code review R5-IN-04: eight minutes, so one attempt plus
+ * `REPORT_REQUEST_OVERHEAD_BUDGET_MS` fits inside the owner-decided 600-second
+ * Cloud Run request timeout (`CLOUD_RUN_REQUEST_TIMEOUT_MS`) and ends before
+ * the stale window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
  */
-export const REPORT_MODEL_TIMEOUT_MS = 4 * 60 * 1000;
+export const REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000;
 
 /**
  * Code review R3-WR-02: the clock-skew allowance between this process and
