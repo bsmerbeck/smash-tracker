@@ -669,18 +669,24 @@ export function FormStrip({
       {/* Sketch 003 `.strip-foot`: what the strip drew, then the window note. */}
       <div
         data-slot="form-strip-foot"
-        className="flex flex-wrap items-center justify-between gap-x-3.5 gap-y-1 text-xs leading-4 text-muted-foreground"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-x-3.5 gap-y-1 text-xs leading-4 text-muted-foreground"
       >
+        {/* A sentence, not a token: it wraps (never whitespace-nowrap) so it
+            can never widen a phone page (guard:layout horizontal-overflow). */}
         {shownGames < totalGames ? (
-          <span data-slot="form-strip-shown-of-total" className="whitespace-nowrap tabular-nums">
+          <span data-slot="form-strip-shown-of-total" className="min-w-0 tabular-nums">
             {labels.shownOfTotal(counts)}
           </span>
         ) : (
-          <span data-slot="form-strip-all-shown" className="tabular-nums">
+          <span data-slot="form-strip-all-shown" className="min-w-0 tabular-nums">
             {labels.allShown({ total: totalGames })}
           </span>
         )}
-        {labels.windowNote && <span data-slot="form-strip-window-note">{labels.windowNote}</span>}
+        {labels.windowNote && (
+          <span data-slot="form-strip-window-note" className="min-w-0">
+            {labels.windowNote}
+          </span>
+        )}
       </div>
     </div>
   );
