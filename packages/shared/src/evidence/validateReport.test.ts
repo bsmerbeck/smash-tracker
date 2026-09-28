@@ -2779,6 +2779,28 @@ describe('R8 (iteration 8): the R7 rules no longer withhold ordinary commentary'
     }
   });
 
+  it('R8-WR-02, the price stated both ways: a non-attributive singular or a non-possessive object still withholds, and a zero side hidden behind an exemption ships', () => {
+    for (const prose of [
+      'MkLeo has no win, so reset.',
+      'You have no set against MkLeo.',
+      'You have not lost to the ledge trap against MkLeo.',
+      'MkLeo is not beaten by you.',
+      'You are not beaten by MkLeo.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+    for (const prose of [
+      'Against MkLeo, you have not lost to his main.',
+      'You are not beaten by that player; MkLeo respects your shield.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual(
+        [],
+      );
+    }
+  });
+
   it('R8-WR-02: the zero-side forms still withhold', () => {
     for (const prose of [
       'You have no wins against MkLeo.',

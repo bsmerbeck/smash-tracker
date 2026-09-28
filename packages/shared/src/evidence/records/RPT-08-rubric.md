@@ -91,6 +91,15 @@ exactly the text that is delivered, in this order:
 4. **Word rules.** On what is left (plain ASCII by then), any casing:
    - a listed figure word or phrase, or a tier stem alone or with a listed suffix (with the
      e-final "surer", y-final "shakier"/"shakily" and "-ble" "reliably" spellings);
+   - "no" and a `no-singular-counts` noun, separated by whitespace, when the noun is not
+     attributive (R8-WR-02): a `no-singular-followers` word follows it after whitespace, or a
+     punctuation mark or the end of the text does ("no win against him", "no set wins", "you have
+     no win."). "No set pattern", "no win condition", "no game plan" and "no set-ups" (a hyphen or
+     apostrophe attached to the noun) ship. The plurals are listed phrases and withhold anywhere;
+   - the listed phrases have two exemptions (R8-WR-02): a phrase ending in a `passive-verbs` word
+     followed by "by" is the passive and ships ("Neutral is not won by rushing in"), unless "by" is
+     followed by a name, a tag or a `passive-persons` word ("not beaten by him"); and "not lost to"
+     followed by a `lost-to-exempt` word names a habit and ships ("not lost to his ledge trap");
    - a standalone token that is a well-formed roman numeral of value two or more ("ii", "iv", "XL",
      "V", "X"), unless it is an exempt word; "I" alone is the pronoun;
    - a lone "I" or "V" beside a pair word or a hyphen or en dash ("V to I", "I-I"); "I-frame" is the
@@ -118,7 +127,7 @@ figure: an ordinal may take a plural "-s" ("thirds", "seconds"), and a cardinal 
 ordinal.
 
 - `figure-words`: `zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred hundreds thousand thousands million millions billion billions dozen dozens score scores half halves quarter quarters thirds twice thrice once single pair pairs couple duo trio both none nil nought naught first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth sixteenth seventeenth eighteenth nineteenth twentieth thirtieth fortieth fiftieth sixtieth seventieth eightieth ninetieth hundredth thousandth millionth billionth undefeated unbeaten winless sweep sweeps swept flawless percentage pct percentile most several few fewer fewest many majority minority every all each never always nothing zilch zip nada tied even evenly split lone only sole solo double triple treble brace perfect shutout blank blanked spotless unblemished parity deadlock deadlocked deadlocks stalemate stalemated stalemates whitewash whitewashed whitewashes deuce jv uno una dos tres cuatro cinco seis siete ocho nueve diez une deux trois quatre cinq huit neuf dix eins zwei drei vier funf sechs sieben acht neun zehn dois duas quatro sete oito nove dez mitad moitie metade`
-- `figure-phrases`: `by/up/down a/an set/game/stock/match ; a/an win/loss/set/game and a/an win/loss/set/game ; hat trick ; coin flip ; shut out ; shut you/them/him/her out ; clean record/records ; perfect record/records ; yet to beat/lose/win ; last set/game/match ; no win/wins/losses/set/sets/game/games/stock/stocks ; not/t yet? beaten/won ; not/t yet? lost to ; without dropping/losing/winning a/an/any single? set/sets/game/games/stock/stocks/match/matches/round/rounds ; goose egg/eggs ; level/square with ; all/dead level/square`
+- `figure-phrases`: `by/up/down a/an set/game/stock/match ; a/an win/loss/set/game and a/an win/loss/set/game ; hat trick ; coin flip ; shut out ; shut you/them/him/her out ; clean record/records ; perfect record/records ; yet to beat/lose/win ; last set/game/match ; no wins/losses/sets/games/stocks ; not/t yet? beaten/won ; not/t yet? lost to ; without dropping/losing/winning a/an/any single? set/sets/game/games/stock/stocks/match/matches/round/rounds ; goose egg/eggs ; level/square with ; all/dead level/square`
 - `tier-stems`: `low medium high moderate strong weak mid middling hi lo top max min poor limited elevated solid reliable shaky certain sure iffy minimal maximal alta alto baja bajo haute basse elevee faible moyenne hoch hohe niedrig mittel schwach baixa baixo`
 - `tier-suffixes`: `er est ly ish`
 - `roman-exempt`: `mix mid dim civil vivid did mild lid mill ill di`
@@ -126,6 +135,11 @@ ordinal.
 - `count-words`: `win wins loss losses time times set sets game games stock stocks match matches round rounds victory victories defeat defeats straight series bout bouts encounter encounters meeting meetings exchange exchanges matchup matchups runback runbacks bracket brackets tournament tournaments event events`
 - `count-phrases`: `in a row`
 - `count-gap-words`: `close tight narrow hard-fought long short lopsided decisive straight consecutive back-to-back recent previous past last total ranked unranked official online offline bracket tournament competitive casual friendly money`
+- `no-singular-counts`: `win set game stock`
+- `no-singular-followers`: `against to off from over versus vs with yet so wins losses sets games stocks`
+- `passive-verbs`: `beaten won`
+- `passive-persons`: `him her them you me us`
+- `lost-to-exempt`: `his her their its your my our`
 - `lone-one-preceders`: `took won lost dropped in for of by`
 - `lone-one-counts`: `set game stock match round win loss`
 - `glue-words`: `and to time times set sets game games win wins loss losses stock stocks match matches round rounds confidence confident record records straight fold tier tiers percent`
@@ -136,10 +150,12 @@ ordinal.
 The price, stated: ordinary words on these lists are withheld in their everyday sense too ("once
 he is offstage", "make sure", "the top platform", "most of his kills", "solid ledge options", "keep
 your shield high", "always shield", "never chase", "only commit", "even so", "double jump", "a
-perfect shield", "you and I", a lone letter used as a label, "no game plan", "you have not won the
-neutral", "stay level with the ledge"), and so is any accent, invisible
-character or Markdown marker outside a licensed name. The prompts name them, so most commentary is
-written around them.
+perfect shield", "you and I", a lone letter used as a label, "you have not won the neutral",
+"stay level with the ledge", "no win, so reset", "not lost to the ledge trap"), and so is any accent, invisible character or Markdown marker outside a licensed name.
+The prompts name them, so most commentary is written around them. The R8-WR-02 exemptions have a
+price in the other direction, stated too: "you have not lost to his main" and "you are not beaten by
+that player" ship, although they may state a zero side; the structured claims remain the source of
+truth (D-24).
 
 ## The verdict model
 

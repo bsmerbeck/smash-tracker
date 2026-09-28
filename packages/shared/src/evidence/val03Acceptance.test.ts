@@ -257,6 +257,11 @@ const JUDGE_RUBRIC_LISTS = {
   countWords: rubricList('count-words'),
   countPhrases: rubricList('count-phrases', /\s*;\s*/),
   countGapWords: rubricList('count-gap-words'),
+  noSingularCounts: rubricList('no-singular-counts'),
+  noSingularFollowers: rubricList('no-singular-followers'),
+  passiveVerbs: rubricList('passive-verbs'),
+  passivePersons: rubricList('passive-persons'),
+  lostToExempt: rubricList('lost-to-exempt'),
   loneOnePreceders: rubricList('lone-one-preceders'),
   loneOneCounts: rubricList('lone-one-counts'),
   glueWords: rubricList('glue-words'),
@@ -376,6 +381,13 @@ const JUDGE_FIGURE_PHRASES: readonly (readonly string[])[] = JUDGE_RUBRIC_LISTS.
   .flatMap(expandRubricPhrase)
   .map((phrase) => phrase.split(' '));
 const JUDGE_COUNT_GAP_WORDS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.countGapWords);
+const JUDGE_NO_SINGULAR_COUNTS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.noSingularCounts);
+const JUDGE_NO_SINGULAR_FOLLOWERS: ReadonlySet<string> = new Set(
+  JUDGE_RUBRIC_LISTS.noSingularFollowers,
+);
+const JUDGE_PASSIVE_VERBS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.passiveVerbs);
+const JUDGE_PASSIVE_PERSONS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.passivePersons);
+const JUDGE_LOST_TO_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.lostToExempt);
 const JUDGE_LONE_ONE_PRECEDERS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOnePreceders);
 const JUDGE_LONE_ONE_COUNTS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOneCounts);
 const JUDGE_COUNT_SEQUENCES: readonly (readonly string[])[] = [
@@ -649,6 +661,30 @@ function judgeFindsLoneNumeralLetter(text: string): boolean {
   return false;
 }
 
+/**
+ * R8-WR-02: the rubric's exemptions for a phrase that ends at `words[next - 1]`:
+ * a `passive-verbs` word followed by "by" is the passive unless "by" is
+ * followed by a name or tag (the judge's "entity" placeholder) or a
+ * `passive-persons` word; "lost to" followed by a `lost-to-exempt` word names
+ * a habit, not an opponent.
+ */
+function judgePhraseExempt(
+  phrase: readonly string[],
+  words: readonly string[],
+  next: number,
+): boolean {
+  const last = phrase[phrase.length - 1]!;
+  if (JUDGE_PASSIVE_VERBS.has(last) && words[next] === 'by') {
+    const agent = words[next + 1];
+    return !(agent !== undefined && (agent === 'entity' || JUDGE_PASSIVE_PERSONS.has(agent)));
+  }
+  if (phrase.length >= 2 && phrase[phrase.length - 2] === 'lost' && last === 'to') {
+    const object = words[next];
+    return object !== undefined && JUDGE_LOST_TO_EXEMPT.has(object);
+  }
+  return false;
+}
+
 /** The rubric's phrases, matched as consecutive words separated only by whitespace. */
 function judgeFindsFigurePhrase(text: string): boolean {
   for (const chunk of text.split(/[^A-Za-z\s]+/)) {
@@ -658,12 +694,52 @@ function judgeFindsFigurePhrase(text: string): boolean {
       .filter((word) => word.length > 0);
     for (let at = 0; at < words.length; at += 1) {
       if (
-        JUDGE_FIGURE_PHRASES.some((phrase) =>
-          phrase.every((word, offset) => words[at + offset] === word),
+        JUDGE_FIGURE_PHRASES.some(
+          (phrase) =>
+            phrase.every((word, offset) => words[at + offset] === word) &&
+            !judgePhraseExempt(phrase, words, at + phrase.length),
         )
       ) {
         return true;
       }
+    }
+  }
+  return judgeFindsNoSingular(text);
+}
+
+/**
+ * R8-WR-02: "no" and a `no-singular-counts` noun, separated by whitespace, is
+ * a figure only when the noun is not attributive: a `no-singular-followers`
+ * word follows it after whitespace, or a punctuation mark or the end of the
+ * text does. A hyphen or an apostrophe attached to the noun ("no set-ups")
+ * makes it part of another word.
+ */
+function judgeFindsNoSingular(text: string): boolean {
+  const tokens = judgeTokens(text);
+  for (let index = 0; index + 1 < tokens.length; index += 1) {
+    const no = tokens[index]!;
+    const count = tokens[index + 1]!;
+    if (
+      no.text.toLowerCase() !== 'no' ||
+      !/^\s+$/.test(text.slice(no.end, count.start)) ||
+      !JUDGE_NO_SINGULAR_COUNTS.has(count.text.toLowerCase())
+    ) {
+      continue;
+    }
+    const after = text.slice(count.end);
+    if (/^[-'’]/.test(after)) {
+      continue;
+    }
+    if (/^\s*(?:[^\sA-Za-z]|$)/.test(after)) {
+      return true;
+    }
+    const next = tokens[index + 2];
+    if (
+      next &&
+      /^\s+$/.test(text.slice(count.end, next.start)) &&
+      JUDGE_NO_SINGULAR_FOLLOWERS.has(next.text.toLowerCase())
+    ) {
+      return true;
     }
   }
   return false;
@@ -1817,6 +1893,38 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
       const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
       expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(false);
       expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).toBeNull();
+    }
+  });
+
+  it('R8-WR-02: every no-singular, passive and lost-to list entry is judged the same way by the validator and the judge, both ways', () => {
+    const cases: Array<readonly [string, boolean]> = [];
+    for (const count of JUDGE_RUBRIC_LISTS.noSingularCounts) {
+      cases.push([`Against ${R5_TAG}, remember this: no ${count}.`, true]);
+      cases.push([`Against ${R5_TAG}, remember this: no ${count}`, true]);
+      for (const follower of JUDGE_RUBRIC_LISTS.noSingularFollowers) {
+        cases.push([`Against ${R5_TAG}, remember this: no ${count} ${follower} him.`, true]);
+      }
+      cases.push([`${R5_TAG} has no ${count} pattern on ledge.`, false]);
+      cases.push([`${R5_TAG} has no ${count}-ups from ledge.`, false]);
+    }
+    for (const verb of JUDGE_RUBRIC_LISTS.passiveVerbs) {
+      cases.push([`Neutral against ${R5_TAG} is not ${verb} by rushing in.`, false]);
+      cases.push([`Neutral against ${R5_TAG} is not ${verb} by.`, false]);
+      cases.push([`You are not ${verb} by ${R5_TAG}.`, true]);
+      cases.push([`You are not ${verb}, by the way, ${R5_TAG}.`, true]);
+      for (const person of JUDGE_RUBRIC_LISTS.passivePersons) {
+        cases.push([`Against ${R5_TAG} it is not ${verb} by ${person}.`, true]);
+      }
+    }
+    for (const word of JUDGE_RUBRIC_LISTS.lostToExempt) {
+      cases.push([`Against ${R5_TAG} you have not lost to ${word} ledge trap.`, false]);
+    }
+    cases.push([`You have not lost to ${R5_TAG}.`, true]);
+    cases.push([`You have not lost to him, ${R5_TAG}.`, true]);
+    for (const [prose, convicted] of cases) {
+      const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
+      expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(convicted);
+      expect(verdicts.judge !== null, `judge on ${JSON.stringify(prose)}`).toBe(convicted);
     }
   });
 

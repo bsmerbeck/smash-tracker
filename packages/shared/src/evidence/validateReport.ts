@@ -531,9 +531,33 @@ const FIGURE_TOKEN = new RegExp(`^(?:${FIGURE_WORD_SOURCE})$`, 'i');
  * follow, so "without dropping a combo" ships), "a goose egg", "level with",
  * "square with", "all square" and "dead level". "No need to" and "a level
  * head" ship.
+ *
+ * R8-WR-02 (iteration 8) narrows three of them, because they withheld common
+ * coaching prose that shipped before iteration 7:
+ * - "no" + a SINGULAR count noun (`NO_SINGULAR_COUNT`) is a figure only when
+ *   the noun is not attributive: when a `NO_SINGULAR_FOLLOWER` word, a
+ *   punctuation mark or the end of the text follows it ("no win against",
+ *   "no set wins", "you have no win."). "No set pattern", "no set answer",
+ *   "no win condition", "no game plan" and "no set-ups" (a hyphen or an
+ *   apostrophe attached to the noun) ship. The plural stays a figure anywhere.
+ * - "not beaten/won by" is the passive and ships ("Neutral is not won by
+ *   rushing in"), unless "by" is followed by a name or tag (consumed to
+ *   `CONSUMED_SPAN_WORD`) or an object pronoun (`PASSIVE_PERSON`), which is
+ *   the zero side again ("not beaten by him").
+ * - "not lost to" followed by a possessive (`LOST_TO_EXEMPT`) names a habit,
+ *   not an opponent ("not lost to his ledge trap"), and ships.
  */
-const FIGURE_PHRASE_PATTERN =
-  /(?<![A-Za-z])(?:(?:by|up|down)\s+an?\s+(?:set|game|stock|match)|an?\s+(?:win|loss|set|game)\s+and\s+an?\s+(?:win|loss|set|game)|hat\s+trick|coin\s+flip|shut\s+(?:\w+\s+)?out|clean\s+records?|perfect\s+records?|yet\s+to\s+(?:beat|lose|win)|last\s+(?:set|game|match)|no\s+(?:wins?|losses|sets?|games?|stocks?)|(?:not|t)\s+(?:yet\s+)?(?:beaten|won|lost\s+to)|without\s+(?:dropping|losing|winning)\s+(?:an?|any)\s+(?:single\s+)?(?:sets?|games?|stocks?|match(?:es)?|rounds?)|goose\s+eggs?|(?:level|square)\s+with|(?:all|dead)\s+(?:level|square))(?![A-Za-z])/i;
+const NO_SINGULAR_COUNT = 'win|set|game|stock';
+const NO_SINGULAR_FOLLOWER =
+  'against|to|off|from|over|versus|vs|with|yet|so|wins|losses|sets|games|stocks';
+const PASSIVE_PERSON = 'him|her|them|you|me|us';
+const LOST_TO_EXEMPT = 'his|her|their|its|your|my|our';
+/** The plain word a consumed name or tag span becomes in the residual (see `CONSUMED_SPAN_PLACEHOLDER`). */
+const CONSUMED_SPAN_WORD = 'Name';
+const FIGURE_PHRASE_PATTERN = new RegExp(
+  String.raw`(?<![A-Za-z])(?:(?:by|up|down)\s+an?\s+(?:set|game|stock|match)|an?\s+(?:win|loss|set|game)\s+and\s+an?\s+(?:win|loss|set|game)|hat\s+trick|coin\s+flip|shut\s+(?:\w+\s+)?out|clean\s+records?|perfect\s+records?|yet\s+to\s+(?:beat|lose|win)|last\s+(?:set|game|match)|no\s+(?:wins|losses|sets|games|stocks)|no\s+(?:${NO_SINGULAR_COUNT})(?![-'’])(?=\s*(?:[^\sA-Za-z]|$)|\s+(?:${NO_SINGULAR_FOLLOWER})(?![A-Za-z]))|(?:not|t)\s+(?:yet\s+)?(?:beaten|won)(?!\s+by(?![A-Za-z])(?!\s+(?:${PASSIVE_PERSON}|${CONSUMED_SPAN_WORD})(?![A-Za-z])))|(?:not|t)\s+(?:yet\s+)?lost\s+to(?!\s+(?:${LOST_TO_EXEMPT})(?![A-Za-z]))|without\s+(?:dropping|losing|winning)\s+(?:an?|any)\s+(?:single\s+)?(?:sets?|games?|stocks?|match(?:es)?|rounds?)|goose\s+eggs?|(?:level|square)\s+with|(?:all|dead)\s+(?:level|square))(?![A-Za-z])`,
+  'i',
+);
 
 /**
  * A confidence-tier word: a STEM below, alone or with a comparative,
@@ -859,7 +883,7 @@ function spellingsOf(name: string): string[] {
 }
 
 /** What a consumed name or tag span becomes in the residual: a plain, unlisted word, so it neither joins nor splits the words around it. */
-const CONSUMED_SPAN_PLACEHOLDER = ' Name';
+const CONSUMED_SPAN_PLACEHOLDER = ` ${CONSUMED_SPAN_WORD}`;
 
 /** The noun every shipped confidence sentence pairs a tier word with (`LICENSED_CONFIDENCE_WORDS`). */
 const CONFIDENCE_NOUN = 'confidence';
