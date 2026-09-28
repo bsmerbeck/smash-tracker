@@ -65,6 +65,8 @@ import {
   evaluateLastRowVisible,
   evaluatePeriodTrendMarks,
   formatPeriodTrendLine,
+  evaluateFormStripLabels,
+  formatFormStripLine,
   terminusBudgetExcessPx,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
@@ -136,6 +138,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the insight-rail header's overline.
     checks: [
       'form-strip-fit',
+      // Plan 39.1-42: labelled events, older events drop first (sketch 003).
+      'form-strip-labels',
       'axis-ticks',
       'filter-row',
       'placement',
@@ -187,6 +191,8 @@ export const LAYOUT_ORACLE_ROUTES = [
       'row-cohesion',
       // Plan 39.1-33: the single-row form-strip family.
       'form-strip-fit',
+      // Plan 39.1-42: labelled events, older events drop first (sketch 003).
+      'form-strip-labels',
       // Plan 39.1-39: no brand-red text (UI-SPEC §4.3).
       'brand-red-text',
       // Plan 39.1-51 (OOS-8): the results list's last row is whole, inside no
@@ -228,6 +234,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     checks: [
       'period-trend-marks',
       'form-strip-fit',
+      // Plan 39.1-42: labelled events, older events drop first (sketch 003).
+      'form-strip-labels',
       'brand-red-text',
       'content-overflow',
       'axis-ticks',
@@ -246,7 +254,14 @@ export const LAYOUT_ORACLE_ROUTES = [
     id: 'matchups-sketch-thin',
     loadedMarker: '[data-slot="matchup-chart-body"]',
     scale: 'sketch003',
-    checks: ['period-trend-marks', 'form-strip-fit', 'brand-red-text', 'content-overflow'],
+    // Plan 39.1-42: form-strip-labels (labelled events, sketch 003).
+    checks: [
+      'period-trend-marks',
+      'form-strip-fit',
+      'form-strip-labels',
+      'brand-red-text',
+      'content-overflow',
+    ],
     periodTrendExpect: { state: 'locked' },
   },
   {
@@ -363,7 +378,10 @@ export const LAYOUT_ORACLE_ROUTES = [
     loadedMarker: '[data-slot="trends-hero-body"]',
     scale: 'casual',
     // Plan 39.1-40: a thin account keeps its lead card (UI-SPEC §8.2).
-    checks: ['career-timeline', 'rail-cards'],
+    // Plan 39.1-42: the thin FormStrip joins the strip families — one row
+    // (form-strip-fit) and labelled events (form-strip-labels); T1 reads its
+    // FORM_STRIP games=<drawn>/<total> (all 41 at every viewport).
+    checks: ['career-timeline', 'rail-cards', 'form-strip-fit', 'form-strip-labels'],
     railCards: { selector: '[data-slot="trends-reads-rail"]', minCards: 1 },
     timelineExpect: { state: 'thin', formStrip: true },
     // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
@@ -387,6 +405,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     // points) and matrix-hug (audit 7.4, the cross-tab at its card edge).
     checks: [
       'form-strip-fit',
+      // Plan 39.1-42: labelled events, older events drop first (sketch 003).
+      'form-strip-labels',
       'axis-ticks',
       'plot-aspect',
       'filter-row',
@@ -560,6 +580,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantLastRowVisible = checks.includes('last-row-visible');
   // Plan 39.1-41: the period trend's marks (sketch 003 A).
   const wantPeriodTrendMarks = checks.includes('period-trend-marks');
+  // Plan 39.1-42: the strip's labelled events (sketch 003 `formStrip`).
+  const wantFormStripLabels = checks.includes('form-strip-labels');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1013,6 +1035,59 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         setTops,
         rowScrollWidth: rowEl.scrollWidth,
         rowClientWidth: rowEl.clientWidth,
+      });
+    }
+  }
+
+  // Plan 39.1-42: form-strip-labels — per strip root its data-event-count /
+  // data-game-count, the drawn tick count and, per shown event, its
+  // data-event-order and label (text + rect). A shipped caption-only root
+  // (no data-event-count, no label nodes) is still collected as its event
+  // list, so the family reports label-missing on it, never unmeasured.
+  const formStripLabelStrips = [];
+  if (wantFormStripLabels) {
+    const numberAttr = (el, name) => {
+      const raw = el.getAttribute(name);
+      return raw === null || raw === '' ? null : Number(raw);
+    };
+    for (const rootEl of document.querySelectorAll('[data-slot="form-strip-root"]')) {
+      const rootRect = rootEl.getBoundingClientRect();
+      const events = Array.from(rootEl.querySelectorAll('[data-slot="form-strip-event"]')).map(
+        (eventEl) => {
+          const labelEl = eventEl.querySelector('[data-slot="form-strip-event-label"]');
+          const r = labelEl ? labelEl.getBoundingClientRect() : null;
+          const parts = labelEl
+            ? Array.from(labelEl.children)
+                .map((child) => (child.textContent ?? '').trim())
+                .filter((text) => text.length > 0)
+            : [];
+          return {
+            order: numberAttr(eventEl, 'data-event-order'),
+            labelText: labelEl
+              ? parts.length > 0
+                ? parts.join(' ')
+                : (labelEl.textContent ?? '').trim()
+              : null,
+            labelRect: r
+              ? {
+                  left: r.left,
+                  right: r.right,
+                  top: r.top,
+                  bottom: r.bottom,
+                  width: r.width,
+                  height: r.height,
+                }
+              : null,
+          };
+        },
+      );
+      formStripLabelStrips.push({
+        selectorPath: describeElement(rootEl),
+        eventCount: numberAttr(rootEl, 'data-event-count'),
+        gameCount: numberAttr(rootEl, 'data-game-count'),
+        shownGames: rootEl.querySelectorAll('[data-slot="form-strip-tick"]').length,
+        rootWidth: rootRect.width,
+        events,
       });
     }
   }
@@ -1551,6 +1626,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     nestedScrollPresenceList: nestedScrollPresenceList.length,
     cardHeightCards,
     formStrips,
+    formStripLabelStrips,
     scrollHeight: document.documentElement.scrollHeight,
     scrollWidth: document.documentElement.scrollWidth,
     innerHeight: window.innerHeight,
@@ -2032,6 +2108,11 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       violations.push(...evaluateFormStripFit(measurements.formStrips));
       violations.push(...evaluateFamilyPresence('form-strip-fit', measurements.formStrips));
     }
+    // Plan 39.1-42: form-strip-labels (its own presence check is inside the
+    // evaluator: an empty list is `form-strip-labels-unmeasured`).
+    if (checks.includes('form-strip-labels')) {
+      violations.push(...evaluateFormStripLabels(measurements.formStripLabelStrips));
+    }
     // Plan 39.1-34: the career-timeline family (its own presence check is
     // inside the evaluator: an empty list is `career-timeline-unmeasured`).
     if (checks.includes('career-timeline')) {
@@ -2156,6 +2237,9 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
       railCards: checks.includes('rail-cards') ? measurements.railCards : [],
       periodTrends: checks.includes('period-trend-marks') ? measurements.periodTrends : [],
+      formStripLabelStrips: checks.includes('form-strip-labels')
+        ? measurements.formStripLabelStrips
+        : [],
     };
   } finally {
     await page.close();
@@ -2461,6 +2545,10 @@ async function main() {
             // Plan 39.1-41: one PERIOD_TREND line per measured period trend.
             for (const surface of result.periodTrends ?? []) {
               console.log(formatPeriodTrendLine(route.id, viewport.name, surface));
+            }
+            // Plan 39.1-42: one FORM_STRIP line per measured strip root.
+            for (const strip of result.formStripLabelStrips ?? []) {
+              console.log(formatFormStripLine(route.id, viewport.name, strip));
             }
             // Plan 39.1-40: one RAILCARDS line per measured reads rail,
             // right after the MEASUREMENT line, whether or not it passed.

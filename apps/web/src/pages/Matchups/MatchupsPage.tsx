@@ -44,10 +44,10 @@ import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { buildMatchupPeriodSeries } from './lib/matchupPeriodSeries';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import {
   MatchupChart,
   buildFormNowVerdict,
-  formStripEventKeyForMatch,
   renderFormNowHead,
   useMatchupFormNow,
 } from './components/MatchupChart';
@@ -310,14 +310,21 @@ export function MatchupsPage() {
     const ids = periodPointMatchIdsForKey(drillEventKey, matchupMatches);
     return ids ? new Set(ids) : undefined;
   }, [drillEventKey, matchupMatches]);
+  // Plan 39.1-42 (PD-42-4): the strip's set keys over the SAME
+  // `matchupMatches` MatchupChart builds its strip from — a manual play
+  // session is one set, a legacy `game:<id>` key still resolves.
+  const stripSetKeysForMatch = useMemo(
+    () => createFormStripSetKeyResolver(matchupMatches),
+    [matchupMatches],
+  );
   const eventKeysForMatch = useCallback(
     (match: Match): string[] => {
-      const setKey = formStripEventKeyForMatch(match);
+      const setKeys = stripSetKeysForMatch(match);
       return drillEventKey != null && periodEventMatchIds?.has(match.id)
-        ? [setKey, drillEventKey]
-        : [setKey];
+        ? [...setKeys, drillEventKey]
+        : setKeys;
     },
-    [drillEventKey, periodEventMatchIds],
+    [drillEventKey, periodEventMatchIds, stripSetKeysForMatch],
   );
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE

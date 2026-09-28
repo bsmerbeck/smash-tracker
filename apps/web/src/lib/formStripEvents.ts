@@ -1,27 +1,96 @@
 import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
-import { parseExternalId, splitIntoSessions, trimmedEventKey } from '@smash-tracker/shared';
+import { parseExternalId, splitIntoSessions } from '@smash-tracker/shared';
 import type { FormStripEvent, FormStripSet } from '@/components/charts/FormStrip';
 
 /**
- * WR-04 (39.1-REVIEW.md): the ONE host-side builder of `FormStrip` events
- * for a flat match list — shared by Matchups (`MatchupChart.tsx`) and the
- * Fighter Analysis hero (`FighterHero.tsx`), which used to carry a second
- * derivation that still bucketed every manual game into one `__manual__`
- * group captioned "Unknown". (The opponent hub builds its strip from
- * `groupEncounters`' own event/session groups instead.)
+ * WR-04 (39.1-REVIEW.md) / plan 39.1-42: the ONE host-side derivation of
+ * `FormStrip` events AND of the set key every strip host's drill terminus
+ * resolves — Matchups (`MatchupChart.tsx`), the Fighter Analysis hero
+ * (`FighterHero.tsx`), the opponent hub and Trends' thin career timeline.
  */
 
 /**
- * The form-strip's set key: a real parsed `externalId` set id when one
- * exists, else a synthetic `game:<matchId>` key for a single manually-
- * entered game. Each host's `FilteredMatchList` `eventKeyForMatch`
- * resolver uses this EXACT rule, so a set click's `eventKey` axis always
- * narrows to precisely the games the strip drew that set from.
+ * Plan 39.1-42 (PD-42-2): a strip group's display name — the trimmed
+ * TOURNAMENT name first (start.gg writes the same bracket name, "Ultimate
+ * Singles", at every tournament, so the bracket name alone would merge
+ * unrelated events), then the trimmed event name, else null (a manual game
+ * with no named event, which the session rule below groups).
  */
-export function formStripSetKeyForMatch(match: Match): string {
-  const parsed = parseExternalId(match.externalId);
-  return parsed ? parsed.setId : `game:${match.id}`;
+export function formStripEventLabel(match: Match): string | null {
+  for (const raw of [match.tournamentName, match.eventName]) {
+    const trimmed = raw?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+/**
+ * Plan 39.1-42 (owner decision [HUMAN] 2026-09-25, sketch 002-C; PD-42-4):
+ * every game's strip SET key. A start.gg / parry.gg game keeps its parsed
+ * set id. A game with no parsed set id belongs to its PLAY SESSION —
+ * `splitIntoSessions`' default 3-hour gap, the same rule behind the
+ * "Session · date" labels — keyed `manual-session:<id of the session's first
+ * game>`. Sessions are split within one display name (`formStripEventLabel`,
+ * null for unnamed games), so a set never spans two strip groups. Pure and
+ * independent of input order (sessions sort by time; ties break by id).
+ */
+export function buildFormStripSetKeys(matches: Match[]): Map<string, string> {
+  const keys = new Map<string, string>();
+  const keylessByLabel = new Map<string, Match[]>();
+  for (const match of matches) {
+    const parsed = parseExternalId(match.externalId);
+    if (parsed) {
+      keys.set(match.id, parsed.setId);
+      continue;
+    }
+    const bucketKey = formStripEventLabel(match) ?? '';
+    const bucket = keylessByLabel.get(bucketKey);
+    if (bucket) {
+      bucket.push(match);
+    } else {
+      keylessByLabel.set(bucketKey, [match]);
+    }
+  }
+  for (const bucket of keylessByLabel.values()) {
+    const ordered = [...bucket].sort((a, b) => a.time - b.time || compareIds(a.id, b.id));
+    for (const session of splitIntoSessions(ordered)) {
+      const key = `${MANUAL_SESSION_KEY_PREFIX}${session[0]!.id}`;
+      for (const match of session) {
+        keys.set(match.id, key);
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * Plan 39.1-42: the terminus resolver every strip host passes (through its
+ * `FilteredMatchList` `eventKeyForMatch`), built over the SAME match base the
+ * host's strip is built from. A manual game resolves to its session set key
+ * AND its legacy per-game `game:<id>` key, so a link shared before this plan
+ * still lands on its one game; a parsed game resolves to its set id.
+ */
+export function createFormStripSetKeyResolver(matches: Match[]): (match: Match) => string[] {
+  const keys = buildFormStripSetKeys(matches);
+  return (match) => {
+    const parsed = parseExternalId(match.externalId);
+    if (parsed) {
+      return [parsed.setId];
+    }
+    const legacy = `${LEGACY_GAME_KEY_PREFIX}${match.id}`;
+    const setKey = keys.get(match.id);
+    return setKey ? [setKey, legacy] : [legacy];
+  };
+}
+
+const MANUAL_SESSION_KEY_PREFIX = 'manual-session:';
+const LEGACY_GAME_KEY_PREFIX = 'game:';
+
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
@@ -50,30 +119,51 @@ export function formStripSessionLabel({
 }
 
 /**
- * UI-SPEC §7.10: event -> set -> game, oldest first, grouped only (never
- * binned/windowed — `FormStrip` itself trims to `limit`). A match with no
- * parseable `externalId` becomes its own single-game set (see
- * `formStripSetKeyForMatch`) — unaffected by the session grouping below, which only
- * changes how the manual REMAINDER is bucketed at the event level, never
- * the per-set key `formStripSetKeyForMatch` resolves. `recentWindow` marks
- * each set `inRecentWindow` from the SAME `Insight.window` `formNow` already
- * resolved — one source of truth for "recent," never re-derived.
+ * Plan 39.1-42 (PD-42-4, planner part): the label of a RUN of consecutive
+ * manual sessions — `analytics.strip.sessionRun` with the run's date span
+ * (first game to last game, host-local zone, UI locale; `formatRange`
+ * collapses a shared month / year). Sketch 002-C draws this group
+ * unlabelled; every shown strip event now carries a label (sketch 003).
+ */
+function formStripSessionRunLabel({
+  firstGameMs,
+  lastGameMs,
+  t,
+  locale,
+}: {
+  firstGameMs: number;
+  lastGameMs: number;
+  t: TFunction;
+  locale: string;
+}): string {
+  const span = new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).formatRange(new Date(firstGameMs), new Date(lastGameMs));
+  return t('analytics.strip.sessionRun', { span });
+}
+
+/**
+ * UI-SPEC §7.10 (as amended by plan 39.1-42): event -> set -> game, oldest
+ * first, grouped only (never binned / windowed — `FormStrip` itself trims to
+ * `limit` and drops older EVENTS to fit).
  *
- * Plan 39.1-31 (item 7, UI-SPEC §7.10/§8.6): a manual game (no event or
- * tournament name) used to fall into one flat `__manual__` bucket labelled
- * `common.unknown` ("Unknown") — untrue (there is no "unknown" here, only
- * "no named event") and, on an account with a long manual-only history, one
- * gigantic unbroken tick row. The manual remainder is now split by the
- * shared `splitIntoSessions` (the SAME 3-hour-gap session model
- * `OpponentHubPage.tsx`'s `buildOpponentFormStripEvents` and
- * `encounterGrouping.ts`'s `groupEncounters` already use for their own
- * manual remainders), one `FormStripEvent` per session, labelled
- * `analytics.strip.sessionLabel` with that session's first game's date.
- * Every event (named or session) is ordered by its own first game's time.
- * WR-01 (39.1-REVIEW.md): that group order alone is NOT chronological — a
- * recurring event name (start.gg's "Ultimate Singles" at every tournament)
- * spans years — so each set also carries `lastGameMs` and `FormStrip`
- * reorders sets by it across groups before trimming and fitting.
+ * - Set keys come from `buildFormStripSetKeys` over the SAME `matches`, so
+ *   the strip and every host's terminus agree: a start.gg / parry.gg set is
+ *   its parsed set, a manual play session is ONE set (owner, 2026-09-25).
+ * - A game with a display name (`formStripEventLabel`: tournament, then
+ *   event) groups under that name (PD-42-2) — two tournaments that share a
+ *   bracket name are two groups.
+ * - Unnamed games are split into play sessions; each run of CONSECUTIVE
+ *   sessions (no named group between them in time order) is ONE group whose
+ *   sets are its sessions, labelled with the run's date span
+ *   (`analytics.strip.sessionRun`); a one-session run keeps the
+ *   `formStripSessionLabel` form.
+ * - `recentWindow` marks each set `inRecentWindow` from the SAME
+ *   `Insight.window` `formNow` already resolved — one source of truth for
+ *   "recent". Each set carries `lastGameMs` (WR-01) so the kit orders sets
+ *   across groups before its trim and fit.
  */
 export function buildFormStripEvents(
   matches: Match[],
@@ -81,20 +171,21 @@ export function buildFormStripEvents(
   t: TFunction,
   locale: string,
 ): FormStripEvent[] {
-  const sorted = [...matches].sort((a, b) => a.time - b.time);
-  const byEvent = new Map<string, Match[]>();
-  const manual: Match[] = [];
+  const sorted = [...matches].sort((a, b) => a.time - b.time || compareIds(a.id, b.id));
+  const setKeys = buildFormStripSetKeys(sorted);
+  const byName = new Map<string, Match[]>();
+  const unnamed: Match[] = [];
   for (const match of sorted) {
-    const eventKey = trimmedEventKey(match);
-    if (eventKey !== null) {
-      const group = byEvent.get(eventKey);
-      if (group) {
-        group.push(match);
-      } else {
-        byEvent.set(eventKey, [match]);
-      }
+    const name = formStripEventLabel(match);
+    if (name === null) {
+      unnamed.push(match);
+      continue;
+    }
+    const group = byName.get(name);
+    if (group) {
+      group.push(match);
     } else {
-      manual.push(match);
+      byName.set(name, [match]);
     }
   }
 
@@ -107,7 +198,7 @@ export function buildFormStripEvents(
   function toFormStripEvent(key: string, label: string, eventMatches: Match[]): FormStripEvent {
     const bySet = new Map<string, Match[]>();
     for (const match of eventMatches) {
-      const setKey = formStripSetKeyForMatch(match);
+      const setKey = setKeys.get(match.id)!;
       const group = bySet.get(setKey);
       if (group) {
         group.push(match);
@@ -140,22 +231,48 @@ export function buildFormStripEvents(
     return { key, label, sets };
   }
 
-  const groups: { firstMs: number; event: FormStripEvent }[] = [];
-  for (const [key, eventMatches] of byEvent) {
-    groups.push({
-      firstMs: eventMatches[0]!.time,
-      event: toFormStripEvent(key, key, eventMatches),
-    });
+  type Unit =
+    | { kind: 'named'; firstMs: number; name: string; matches: Match[] }
+    | { kind: 'session'; firstMs: number; matches: Match[] };
+  const units: Unit[] = [];
+  for (const [name, eventMatches] of byName) {
+    units.push({ kind: 'named', firstMs: eventMatches[0]!.time, name, matches: eventMatches });
   }
-  for (const session of splitIntoSessions(manual)) {
-    const first = session[0]!;
-    const label = formStripSessionLabel({ firstGameMs: first.time, t, locale });
-    groups.push({
-      firstMs: first.time,
-      event: toFormStripEvent(`session:${first.id}`, label, session),
-    });
+  for (const session of splitIntoSessions(unnamed)) {
+    units.push({ kind: 'session', firstMs: session[0]!.time, matches: session });
   }
+  units.sort((a, b) => a.firstMs - b.firstMs || compareIds(a.matches[0]!.id, b.matches[0]!.id));
 
-  groups.sort((a, b) => a.firstMs - b.firstMs);
-  return groups.map((g) => g.event);
+  const events: FormStripEvent[] = [];
+  let run: Match[][] = [];
+  const flushRun = () => {
+    if (run.length === 0) {
+      return;
+    }
+    const first = run[0]![0]!;
+    const runMatches = run.flat();
+    const last = runMatches[runMatches.length - 1]!;
+    const label =
+      run.length === 1
+        ? formStripSessionLabel({ firstGameMs: first.time, t, locale })
+        : formStripSessionRunLabel({ firstGameMs: first.time, lastGameMs: last.time, t, locale });
+    events.push(
+      toFormStripEvent(
+        `${run.length === 1 ? 'session' : 'sessions'}:${first.id}`,
+        label,
+        runMatches,
+      ),
+    );
+    run = [];
+  };
+  for (const unit of units) {
+    if (unit.kind === 'session') {
+      run.push(unit.matches);
+      continue;
+    }
+    flushRun();
+    events.push(toFormStripEvent(`event:${unit.name}`, unit.name, unit.matches));
+  }
+  flushRun();
+  return events;
 }

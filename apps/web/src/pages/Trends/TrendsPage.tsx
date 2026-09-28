@@ -31,7 +31,7 @@ import {
   sortMatchesNewestFirst,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
-import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { TrendsHero } from './components/TrendsHero';
 import {
   TrendsReadsRail,
@@ -137,6 +137,10 @@ export function TrendsPage() {
     ],
   );
   const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  // Plan 39.1-42 (PD-42-4): the thin strip's set keys over the SAME
+  // `matches` CareerTimelineCard builds its strip from — a manual play
+  // session is one set, a legacy `game:<id>` key still resolves.
+  const stripSetKeysForMatch = useMemo(() => createFormStripSetKeyResolver(matches), [matches]);
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
   // computation this page shares with `TrendsReadsRail` (which takes the
@@ -254,8 +258,8 @@ export function TrendsPage() {
   // Plan 39.1-35 (UI-SPEC §10.1 FormStrip set → `event=<key>`): a thin
   // account's per-game strip set drills like every other FormStrip host's —
   // the terminus below resolves the key through the SAME
-  // `formStripEventKeyForMatch` FighterAnalysisPage passes, so the list is
-  // exactly that set's games.
+  // `createFormStripSetKeyResolver` rule over the strip's own base, so the
+  // list is exactly that set's games (plan 39.1-42: a session set too).
   function handleTimelineSetDrill(setKey: string): void {
     const params = searchWithoutDrillAxes();
     for (const [key, value] of buildDrillDownSearch({ eventKey: setKey })) {
@@ -401,7 +405,7 @@ export function TrendsPage() {
                 <FilteredMatchList
                   matches={sortedMatches}
                   axes={terminusAxes}
-                  eventKeyForMatch={formStripEventKeyForMatch}
+                  eventKeyForMatch={stripSetKeysForMatch}
                   resolveClaim={resolveClaimForTerminus}
                   claimSummary={claimSummary}
                   onClearFilters={handleClearFilters}

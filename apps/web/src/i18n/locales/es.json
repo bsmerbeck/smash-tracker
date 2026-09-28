@@ -3431,6 +3431,7 @@
       "aria_other": "Franja de forma, {{shown}} de {{count}} partidas",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Sesión · {{date}}",
+      "sessionRun": "Sesiones · {{span}}",
       "windowHighlighted": {
         "last30": "Últimas 30 partidas resaltadas",
         "lastEvent": "Último evento resaltado",

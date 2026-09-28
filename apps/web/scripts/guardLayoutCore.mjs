@@ -728,6 +728,121 @@ export function evaluateFormStripFit(strips) {
   return violations;
 }
 
+/**
+ * Plan 39.1-42 (sketch 003 `.strip-ev{min-width:80px}` / 76px below 640px,
+ * UI-SPEC §7.10 as amended 2026-09-25): a shown event's label box is never
+ * squeezed below this width — the kit's own minimum event column (76 / 80px)
+ * less a 4px allowance for sub-pixel layout.
+ */
+export const FORM_STRIP_LABEL_MIN_WIDTH_PX = 72;
+
+/** A label states the W–L actually drawn: two counts joined by an en dash (or a hyphen). */
+const FORM_STRIP_RECORD_TOKEN = /\d+\s*[–-]\s*\d+/u;
+
+/** Sub-pixel tolerance for two label boxes that merely touch. */
+const FORM_STRIP_LABEL_OVERLAP_TOLERANCE_PX = 0.5;
+
+/**
+ * Plan 39.1-42: the form-strip-labels family (sketch 003 `formStrip` /
+ * `fitStrips` — one row, older EVENTS drop first, `label + W–L` under every
+ * shown event). `strips`: one entry per `[data-slot="form-strip-root"]` —
+ * `{ selectorPath, eventCount: number | null (data-event-count), events:
+ * [{ order: number | null (data-event-order), labelText: string | null,
+ * labelRect: { left, right, top, bottom, width, height } | null }] }`.
+ * Every offender is returned:
+ * - `form-strip-labels-unmeasured`: an opted route rendered no strip;
+ * - `form-strip-label-missing`: a shown event with no label text or no W–L
+ *   token (a root with no event at all counts once);
+ * - `form-strip-label-overlap`: two label boxes intersect;
+ * - `form-strip-not-newest`: the shown orders are not the contiguous run
+ *   ending at `eventCount - 1` — checked only when the root declares
+ *   `data-event-count` (a shipped caption-only root has no orders, and
+ *   reports its missing labels instead);
+ * - `form-strip-label-squeezed`: a label box narrower than
+ *   `FORM_STRIP_LABEL_MIN_WIDTH_PX`.
+ */
+export function evaluateFormStripLabels(strips) {
+  if (strips.length === 0) {
+    return [{ type: 'form-strip-labels-unmeasured' }];
+  }
+  const violations = [];
+  for (const strip of strips) {
+    const { selectorPath, eventCount, events } = strip;
+    if (events.length === 0) {
+      violations.push({ type: 'form-strip-label-missing', selectorPath, detail: 'no event' });
+      continue;
+    }
+    events.forEach((event, index) => {
+      const text = (event.labelText ?? '').trim();
+      if (!text || !FORM_STRIP_RECORD_TOKEN.test(text)) {
+        violations.push({
+          type: 'form-strip-label-missing',
+          selectorPath,
+          detail: `event ${index} label=${text || 'none'}`,
+        });
+      }
+    });
+    for (let i = 0; i < events.length; i += 1) {
+      for (let j = i + 1; j < events.length; j += 1) {
+        const a = events[i].labelRect;
+        const b = events[j].labelRect;
+        // A negative expansion: boxes that merely touch (sub-pixel) never count.
+        if (a && b && rectsIntersect(a, b, -FORM_STRIP_LABEL_OVERLAP_TOLERANCE_PX)) {
+          violations.push({
+            type: 'form-strip-label-overlap',
+            selectorPath,
+            detail: `events ${i} and ${j}`,
+          });
+        }
+      }
+    }
+    if (eventCount != null) {
+      const orders = events.map((event) => event.order);
+      const sorted = orders.every((order) => Number.isInteger(order))
+        ? [...orders].sort((a, b) => a - b)
+        : null;
+      const contiguous =
+        sorted !== null &&
+        sorted[sorted.length - 1] === eventCount - 1 &&
+        sorted.every((order, index) => index === 0 || order === sorted[index - 1] + 1);
+      if (!contiguous) {
+        violations.push({
+          type: 'form-strip-not-newest',
+          selectorPath,
+          detail: `orders=${orders.map((order) => order ?? 'none').join(',')} count=${eventCount}`,
+        });
+      }
+    }
+    events.forEach((event, index) => {
+      if (event.labelRect && event.labelRect.width < FORM_STRIP_LABEL_MIN_WIDTH_PX) {
+        violations.push({
+          type: 'form-strip-label-squeezed',
+          selectorPath,
+          detail: `event ${index} width=${event.labelRect.width}`,
+        });
+      }
+    });
+  }
+  return violations;
+}
+
+/**
+ * The one FORM_STRIP line per measured strip root: shown / declared events,
+ * drawn / total games, the shown labels (label text + W–L as rendered,
+ * joined by `|`) and the root's measured width.
+ */
+export function formatFormStripLine(routeId, viewportName, strip) {
+  const events = strip.events ?? [];
+  const labels = events
+    .map((event) => (event.labelText ?? '').replace(/\s+/g, ' ').trim())
+    .filter((text) => text.length > 0)
+    .join('|');
+  const count = strip.eventCount ?? 'unknown';
+  const total = strip.gameCount ?? 'unknown';
+  const width = Number.isFinite(strip.rootWidth) ? Math.round(strip.rootWidth) : 'unknown';
+  return `FORM_STRIP route=${routeId} viewport=${viewportName} events=${events.length}/${count} games=${strip.shownGames}/${total} labels=${labels || 'none'} width=${width}`;
+}
+
 // ---------------------------------------------------------------------------
 // Plan 39.1-34: the career-timeline family (UI-SPEC §11 mark bounds, §12.1
 // the shared time axis, §13.1 real-Chrome oracle). This plain-Node module

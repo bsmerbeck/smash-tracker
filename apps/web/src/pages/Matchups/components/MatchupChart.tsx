@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { CHART_H_COMPACT } from '@/components/charts/tokens';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { buildFormStripEvents, formStripSetKeyForMatch } from '@/lib/formStripEvents';
+import { buildFormStripEvents } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatPercent } from '@/lib/formatPercent';
@@ -246,11 +246,6 @@ export function renderFormNowHead(
       )}
     </div>
   );
-}
-
-/** The resolver `MatchupsPage` passes to `FilteredMatchList` so a form-strip set click's `event=` axis actually narrows the results list — the shared `formStripSetKeyForMatch` rule. */
-export function formStripEventKeyForMatch(match: Match): string {
-  return formStripSetKeyForMatch(match);
 }
 
 /**

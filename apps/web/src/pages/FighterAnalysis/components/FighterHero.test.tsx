@@ -502,7 +502,10 @@ describe('FighterHero', () => {
   });
 
   describe('WR-04 (39.1-REVIEW.md): manual games are named as sessions, never "Unknown"', () => {
-    it('a manual-only history captions and names every group "Session · <date>" (Matchups\' naming), split into 3-hour sessions', () => {
+    // REWRITTEN by plan 39.1-42 (PD-42-4): two consecutive manual sessions
+    // are ONE run group labelled "Sessions · <span>" whose two sets are the
+    // sessions (was two "Session · <date>" groups of per-game sets).
+    it('a manual-only history is one run group "Sessions · <span>" (Matchups\' naming) whose sets are its 3-hour sessions', () => {
       const hourMs = 60 * 60 * 1000;
       const base = Date.now() - 3 * 24 * hourMs;
       const matches: Match[] = [
@@ -513,18 +516,18 @@ describe('FighterHero', () => {
       ];
       renderHero({ fighterMatches: matches });
 
-      const expectedDate = new Intl.DateTimeFormat('en', {
+      const expectedSpan = new Intl.DateTimeFormat('en', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-      }).format(new Date(base));
+      }).formatRange(new Date(base), new Date(base + 10.5 * hourMs));
       const groups = Array.from(document.querySelectorAll('[data-slot="form-strip-event"]'));
-      expect(groups).toHaveLength(2);
-      for (const group of groups) {
-        expect(group.getAttribute('aria-label')).toMatch(/^Session · /);
-      }
+      expect(groups).toHaveLength(1);
+      expect(groups[0]!.getAttribute('aria-label')).toMatch(/^Sessions · /);
+      expect(groups[0]!.querySelectorAll('[data-slot="form-strip-set"]')).toHaveLength(2);
       const captionFirst = document.querySelector('[data-slot="form-strip-caption-first"]');
-      expect(captionFirst).toHaveTextContent(`Session · ${expectedDate}`);
+      // `formatRange` may use thin spaces around its dash: compare raw text.
+      expect(captionFirst?.textContent).toBe(`Sessions · ${expectedSpan}`);
       const captions = Array.from(
         document.querySelectorAll('[data-slot^="form-strip-caption-"]'),
       ).map((el) => el.textContent);

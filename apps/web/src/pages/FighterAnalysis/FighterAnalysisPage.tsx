@@ -40,7 +40,7 @@ import {
   DRILL_DOWN_CLAIM_PARAM,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
-import { formStripEventKeyForMatch } from '@/pages/Matchups/components/MatchupChart';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { SelectFighter } from './components/SelectFighter';
 import { FighterHero, type FighterHeroDrillAxes } from './components/FighterHero';
 import {
@@ -204,14 +204,21 @@ export function FighterAnalysisPage() {
     const ids = periodPointMatchIdsForKey(drillEventKey, fighterMatches);
     return ids ? new Set(ids) : undefined;
   }, [drillEventKey, fighterMatches]);
+  // Plan 39.1-42 (PD-42-4): the strip's set keys over the SAME
+  // `fighterMatches` FighterHero builds its strip from — a manual play
+  // session is one set, a legacy `game:<id>` key still resolves.
+  const stripSetKeysForMatch = useMemo(
+    () => createFormStripSetKeyResolver(fighterMatches),
+    [fighterMatches],
+  );
   const eventKeysForMatch = useCallback(
     (match: Match): string[] => {
-      const setKey = formStripEventKeyForMatch(match);
+      const setKeys = stripSetKeysForMatch(match);
       return drillEventKey != null && periodEventMatchIds?.has(match.id)
-        ? [setKey, drillEventKey]
-        : [setKey];
+        ? [...setKeys, drillEventKey]
+        : setKeys;
     },
-    [drillEventKey, periodEventMatchIds],
+    [drillEventKey, periodEventMatchIds, stripSetKeysForMatch],
   );
 
   // Plan 39.1-24 (gap closure, orchestrator Finding 8, DD-09 reachability):

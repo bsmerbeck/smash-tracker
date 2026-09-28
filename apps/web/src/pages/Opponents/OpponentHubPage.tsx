@@ -33,7 +33,7 @@ import {
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
-import { formStripSessionLabel } from '@/lib/formStripEvents';
+import { buildFormStripEvents, createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -83,7 +83,6 @@ import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
 import { RecentEncounters } from './components/RecentEncounters';
-import { groupEncounters, type EncounterGroup } from './components/encounterGrouping';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
@@ -209,64 +208,6 @@ function renderOpponentFormNowHead(
       )}
     </div>
   );
-}
-
-/**
- * Converts Task 1's `groupEncounters()` output (newest-first groups of
- * newest-first sets) into `FormStrip`'s oldest-first `FormStripEvent[]` —
- * reusing the SAME event/session grouping `RecentEncounters.tsx` renders
- * rather than writing a second grouping algorithm for this strip.
- */
-function buildOpponentFormStripEvents(
-  groups: EncounterGroup[],
-  recentWindow: { fromMs: number | null; toMs: number | null },
-  opponentTag: string,
-  t: TFunction,
-  locale: string,
-): FormStripEvent[] {
-  const inWindow = (m: Match): boolean =>
-    recentWindow.fromMs != null &&
-    recentWindow.toMs != null &&
-    m.time >= recentWindow.fromMs &&
-    m.time <= recentWindow.toMs;
-
-  const oldestFirst = [...groups].reverse();
-
-  return oldestFirst.map((group) => {
-    // WR-02 (review iteration 2): a session group is labelled by the SAME
-    // helper the other two strip hosts use — date only. The kit appends the
-    // record of the games it draws, so a session the limit trim or width fit
-    // cuts never states the whole session's record.
-    const label =
-      group.kind === 'event'
-        ? group.label
-        : formStripSessionLabel({
-            firstGameMs: Math.min(
-              ...group.sets.flatMap((set) => set.games.map((game) => game.match.time)),
-            ),
-            t,
-            locale,
-          });
-    return {
-      key: group.key,
-      label,
-      sets: [...group.sets].reverse().map((set) => ({
-        key: set.key,
-        label: t('analytics.strip.setAria', {
-          opponent: opponentTag,
-          record: `${set.gamesWon}–${set.gamesLost}`,
-        }),
-        inRecentWindow: set.games.some((game) => inWindow(game.match)),
-        // WR-01: the kit orders sets by this across events before its trim/fit.
-        lastGameMs: Math.max(...set.games.map((game) => game.match.time)),
-        games: set.games.map((game) => ({
-          key: game.match.id,
-          won: game.match.win,
-          label: `${game.match.win ? t('common.win') : t('common.loss')} · ${new Date(game.match.time).toLocaleDateString()}`,
-        })),
-      })),
-    };
-  });
 }
 
 /**
@@ -581,7 +522,19 @@ export function OpponentHubPage() {
   // matches nor the axes actually changed. Plan 39.1-39: a game resolves to
   // its anchor key AND its bin key at every grain, so a bin click and a
   // tournament set row's anchor key each list exactly their own games.
-  const eventKeyForMatch = useMemo(() => buildEventKeysForMatch(eventSeries), [eventSeries]);
+  //
+  // Plan 39.1-42 (PD-42-4): plus the form strip's set keys over the SAME
+  // `trendSourceMatches` the strip below is built from — a manual play
+  // session is one set, a start.gg set its parsed id, and a legacy
+  // `game:<id>` key still lands on its one game.
+  const eventKeyForMatch = useMemo(() => {
+    const anchorKeysForMatch = buildEventKeysForMatch(eventSeries);
+    const stripSetKeysForMatch = createFormStripSetKeyResolver(trendSourceMatches);
+    return (match: Match): string[] => [
+      ...anchorKeysForMatch(match),
+      ...stripSetKeysForMatch(match),
+    ];
+  }, [eventSeries, trendSourceMatches]);
 
   // Plan 39.1-39 (VIZ-01, UI-SPEC §11 / §10.2): the PLOTTED series is binned
   // by the engine to at most 60 points (identity at or under the bound), and
@@ -666,14 +619,11 @@ export function OpponentHubPage() {
     ready: !isLoading && profile != null,
   });
 
-  // The twenty-tick set-grouped form strip above the trend plot, replacing
-  // the header's ten-pip indicator (`ScoutingHeader.tsx`). Reuses Task 1's
-  // `groupEncounters()` — the SAME event/session grouping `RecentEncounters`
-  // renders — rather than a second grouping algorithm for this strip.
-  const encounterGroupsForStrip = useMemo(
-    () => groupEncounters({ matches: trendSourceMatches }),
-    [trendSourceMatches],
-  );
+  // The set-grouped form strip above the trend plot, replacing the header's
+  // ten-pip indicator (`ScoutingHeader.tsx`). Plan 39.1-42: built by the ONE
+  // strip derivation every FormStrip host uses (`buildFormStripEvents` over
+  // `trendSourceMatches`) instead of `groupEncounters`' one-pseudo-set-per-
+  // manual-game rows — Recent Encounters keeps its own grouping (UIX-08).
   const trendRecentWindow = useMemo(
     () => ({
       fromMs: trendInsight?.window.fromMs ?? null,
@@ -682,15 +632,8 @@ export function OpponentHubPage() {
     [trendInsight],
   );
   const formStripEvents: FormStripEvent[] = useMemo(
-    () =>
-      buildOpponentFormStripEvents(
-        encounterGroupsForStrip,
-        trendRecentWindow,
-        profile?.opponent ?? pathTag ?? '',
-        t,
-        i18n.language,
-      ),
-    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t, i18n.language],
+    () => buildFormStripEvents(trendSourceMatches, trendRecentWindow, t, i18n.language),
+    [trendSourceMatches, trendRecentWindow, t, i18n.language],
   );
 
   const headToHeadSample: SampleMeta | null = useMemo(() => {

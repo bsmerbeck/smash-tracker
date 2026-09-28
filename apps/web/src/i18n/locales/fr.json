@@ -3431,6 +3431,7 @@
       "aria_other": "Frise de forme, {{shown}} sur {{count}} matchs",
       "setAria": "Set vs {{opponent}}, {{record}}",
       "sessionLabel": "Session · {{date}}",
+      "sessionRun": "Sessions · {{span}}",
       "windowHighlighted": {
         "last30": "30 derniers matchs surlignés",
         "lastEvent": "Dernier événement surligné",

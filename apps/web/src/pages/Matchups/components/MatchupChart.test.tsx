@@ -11,12 +11,8 @@ import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { buildMatchupPeriodSeries } from '../lib/matchupPeriodSeries';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
-import {
-  MatchupChart,
-  formStripEventKeyForMatch,
-  renderFormNowHead,
-  useMatchupFormNow,
-} from './MatchupChart';
+import { MatchupChart, renderFormNowHead, useMatchupFormNow } from './MatchupChart';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 
 /**
  * `MatchupChart.tsx` never imports `ChartCard` (the Phase 37 structural
@@ -396,9 +392,11 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     const { container } = renderChart([...olderTournament, ...manualSession, ...newerTournament]);
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[sets.length - 1]!.getAttribute('aria-label')).toMatch(/newest-rival/);
+    // REWRITTEN by plan 39.1-42 (PD-42-2): the group is named by its
+    // TOURNAMENT ("Evo"), never the shared bracket name "Ultimate Singles".
     expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveAttribute(
       'title',
-      'Ultimate Singles',
+      'Evo',
     );
     const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(groups).toHaveLength(3);
@@ -462,12 +460,17 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
   });
 });
 
-describe('formStripEventKeyForMatch (event axis <-> form-strip set identity)', () => {
-  it('resolves a parseable externalId to its set id, and a manual match to a synthetic per-match key', () => {
-    expect(formStripEventKeyForMatch(makeMatch({ externalId: 'sgg:abc123:g2' }))).toBe('abc123');
-    expect(formStripEventKeyForMatch(makeMatch({ id: 'manual-1', externalId: undefined }))).toBe(
-      'game:manual-1',
-    );
+// REWRITTEN by plan 39.1-42 (PD-42-4): the per-game `formStripEventKeyForMatch`
+// wrapper is retired — the terminus resolves through the ONE strip derivation,
+// where a manual game belongs to its play-session set and keeps its legacy
+// per-game key for links shared before the change.
+describe('createFormStripSetKeyResolver (event axis <-> form-strip set identity)', () => {
+  it('resolves a parseable externalId to its set id, and a manual match to its session set key plus its legacy per-match key', () => {
+    const parsed = makeMatch({ externalId: 'sgg:abc123:g2' });
+    const manual = makeMatch({ id: 'manual-1', externalId: undefined });
+    const resolve = createFormStripSetKeyResolver([parsed, manual]);
+    expect(resolve(parsed)).toEqual(['abc123']);
+    expect(resolve(manual)).toEqual(['manual-session:manual-1', 'game:manual-1']);
   });
 });
 

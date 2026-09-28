@@ -3431,6 +3431,7 @@
       "aria_other": "Formleiste, {{shown}} von {{count}} Matches",
       "setAria": "Satz vs. {{opponent}}, {{record}}",
       "sessionLabel": "Sitzung · {{date}}",
+      "sessionRun": "Sitzungen · {{span}}",
       "windowHighlighted": {
         "last30": "Letzte 30 Matches hervorgehoben",
         "lastEvent": "Letztes Event hervorgehoben",

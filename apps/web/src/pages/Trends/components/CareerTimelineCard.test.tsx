@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { buildCareerTimeline, type Match } from '@smash-tracker/shared';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { formatPercent } from '@/lib/formatPercent';
-import { formStripSetKeyForMatch } from '@/lib/formStripEvents';
+import { buildFormStripSetKeys } from '@/lib/formStripEvents';
 import { CareerTimelineCard } from './CareerTimelineCard';
 
 /**
@@ -405,7 +405,10 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
     fireEvent.click(set!);
     expect(onSelectSet).toHaveBeenCalledTimes(1);
     const key = onSelectSet.mock.calls[0]![0] as string;
-    expect(CASUAL_MATCHES.some((m) => formStripSetKeyForMatch(m) === key)).toBe(true);
+    // REWRITTEN by plan 39.1-42 (PD-42-4): the key is a play-session set key
+    // from the ONE strip derivation (was a per-game `game:<id>` key).
+    expect([...buildFormStripSetKeys(CASUAL_MATCHES).values()]).toContain(key);
+    expect(key).toMatch(/^manual-session:/);
   });
 
   it('locked (3 games): the inset names how many games unlock the chart, with a 3-of-5 meter and no chart', () => {
