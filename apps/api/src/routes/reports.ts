@@ -184,14 +184,50 @@ export const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
  * persistent failure is logged for reconciliation. The waits double from
  * `REPORT_SETTLE_WRITE_BACKOFF_MS` (100, 200 and 400 ms).
  */
-const REPORT_SETTLE_WRITE_ATTEMPTS = 4;
-const REPORT_SETTLE_WRITE_BACKOFF_MS = 100;
+export const REPORT_SETTLE_WRITE_ATTEMPTS = 4;
+export const REPORT_SETTLE_WRITE_BACKOFF_MS = 100;
 
-/** Runs one idempotent write, retrying a throw with a doubling backoff; rethrows the last error once every attempt has failed. */
-async function withSettleRetries<T>(write: () => Promise<T>): Promise<T> {
+/**
+ * Code review R6-IN-03 (iteration 6): the bound on ONE settle-write attempt.
+ * An RTDB write made while the connection is down queues and never settles
+ * (it neither resolves nor throws), so without a bound a retry never
+ * engaged and the write outlasted the request. An attempt that has not
+ * settled in time counts as a failed attempt and is retried. Every write
+ * `withSettleRetries` wraps is idempotent — a whole-node `set`, a
+ * multi-path `update` of fixed values, or the create-once refund — so a
+ * late landing of an abandoned attempt changes nothing a retry did not
+ * already write, and the SDK applies one client's writes in order. The
+ * worst case of `failJob`'s four settle writes, 4 x (4 x 2 s + 0.7 s) =
+ * 34.8 s, fits inside `REPORT_REQUEST_OVERHEAD_BUDGET_MS`.
+ */
+export const REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS = 2 * 1000;
+
+/** Rejects when `write` has not settled within `REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS`; the write itself is left to land or fail on its own. */
+function boundedAttempt<T>(write: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `settle write did not settle within ${REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS} ms`,
+          ),
+        ),
+      REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS,
+    );
+  });
+  return Promise.race([write(), timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Runs one idempotent write, retrying a throw OR an attempt that does not
+ * settle in time (R6-IN-03) with a doubling backoff; rethrows the last error
+ * once every attempt has failed.
+ */
+export async function withSettleRetries<T>(write: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      return await write();
+      return await boundedAttempt(write);
     } catch (err) {
       if (attempt >= REPORT_SETTLE_WRITE_ATTEMPTS) {
         throw err;
@@ -534,6 +570,8 @@ interface ExecutionSettlement {
 /** The minimal request surface `failJob`/`runReportGeneration` need — deliberately narrow so it's obvious neither depends on Fastify's full request type. */
 interface ReportRequestContext {
   uid: string;
+  /** R6-WR-05: Fastify's request id, carried onto the settle's failure log lines (never the uid). */
+  id?: string;
   log: { error(obj: Record<string, unknown>, msg: string): void };
 }
 
@@ -720,6 +758,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
      * refund to the stuck-job sweep, which reads the running row.
      */
     rowSettled?: boolean;
+    /** R6-WR-05: the request this execution runs in, for the failure log lines. */
+    requestId?: string;
   }): Promise<void> {
     const {
       uid,
@@ -733,6 +773,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       failureReason,
       executionId,
       rowSettled = false,
+      requestId,
     } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${uid}/${jobId}`);
     const now = Date.now();
@@ -740,9 +781,27 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // (`withSettleRetries`) — a transient RTDB error after an owned settle
     // used to strand the spent credit on a `failed` row the sweep never
     // visits. A write that keeps failing is logged (uid redacted) and the
-    // money path carries on, so reconciliation can find it.
-    const logPersistentFailure = (err: unknown, message: string): void => {
-      app.log.error({ err: redactUid(err, uid) }, message);
+    // money path carries on, so reconciliation can find it. Code review
+    // R6-WR-05: the line names what reconciliation needs — the job, its
+    // credit ref, the refund's marker key and the request — and never the
+    // uid or a token (a job id is a client-generated UUID, a credit ref is
+    // the job id or a bundle slot ref).
+    const markerKey = executionId ? `${jobId}:${executionId}` : jobId;
+    const logPersistentFailure = (
+      err: unknown,
+      message: string,
+      extra: Record<string, unknown> = {},
+    ): void => {
+      app.log.error(
+        {
+          err: redactUid(err, uid),
+          jobId,
+          creditRef,
+          ...(requestId ? { requestId } : {}),
+          ...extra,
+        },
+        message,
+      );
     };
     try {
       await withSettleRetries(() =>
@@ -788,14 +847,15 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // acknowledgement was lost finds the marker instead of refunding again.
     let refunded = false;
     if (spent) {
-      const markerKey = executionId ? `${jobId}:${executionId}` : jobId;
       try {
         await withSettleRetries(() =>
           refundCreditOnce(app.firebase.database, uid, creditRef, markerKey),
         );
         refunded = true;
       } catch (err) {
-        logPersistentFailure(err, 'could not refund a failed report job; left for reconciliation');
+        logPersistentFailure(err, 'could not refund a failed report job; left for reconciliation', {
+          markerKey,
+        });
       }
     }
     // Phase 27 (RPT-03): the `refunded` terminal is written strictly AFTER
@@ -970,6 +1030,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     claimedAt: number | null;
     /** R3-WR-02: this execution's latch — the first call settles, any later call is a no-op. */
     settlement: ExecutionSettlement;
+    /** R6-WR-05: the request this execution runs in, passed through to `failJob`'s log lines. */
+    requestId?: string;
   }): Promise<boolean> {
     const { jobRef, executionId, from, perExecutionSpend, claimedAt, settlement, ...failParams } =
       params;
@@ -1176,6 +1238,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         {
           log: request.log,
           uid: request.uid,
+          requestId: request.id,
           jobRef,
           executionId,
           from: ['queued'],
@@ -1283,6 +1346,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         {
           log: request.log,
           uid: request.uid,
+          requestId: request.id,
           jobRef,
           executionId,
           jobId,
@@ -1310,6 +1374,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         {
           log: request.log,
           uid: request.uid,
+          requestId: request.id,
           jobRef,
           executionId,
           jobId,
@@ -1361,6 +1426,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // settle.
     const ownedRunningFailure = {
       uid: request.uid,
+      requestId: request.id,
       jobRef,
       executionId,
       from: ['running'] as const,
@@ -1654,6 +1720,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     ): Promise<void> =>
       failJob({
         uid: request.uid,
+        requestId: request.id,
         jobId,
         creditRef,
         spent,
@@ -1969,6 +2036,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       perExecutionSpend: boolean;
       /** R3-WR-02: the execution's settlement latch, shared with `runReportGeneration`. */
       settlement: ExecutionSettlement;
+      /** R6-WR-05: the request this execution runs in. */
+      requestId?: string;
     },
   ): () => Promise<ScoutResolutionOutcome> {
     // Code review R2-CR-01: a prep job (a pre-paid bundle child above all)
@@ -1981,6 +2050,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     const failCurrentJob = async (): Promise<void> => {
       await failOwnedJob({
         uid: ctx.uid,
+        requestId: ctx.requestId,
         jobRef: app.firebase.database.ref(`reportJobs/${ctx.uid}/${ctx.jobId}`),
         executionId: ctx.executionId,
         from: ['queued'],
@@ -2958,6 +3028,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
         resolveScout = buildPrepResolveScout(binding, {
           uid: request.uid,
+          requestId: request.id,
           jobId,
           spent,
           jobCreatedAt,
@@ -3049,6 +3120,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           if (!spent) {
             await failJob({
               uid: request.uid,
+              requestId: request.id,
               jobId,
               creditRef: jobId,
               spent,
@@ -3081,6 +3153,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         const failLegacyJob = async (): Promise<void> => {
           await failOwnedJob({
             uid: request.uid,
+            requestId: request.id,
             jobRef,
             executionId,
             from: ['queued'],
