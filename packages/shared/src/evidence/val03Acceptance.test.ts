@@ -1759,6 +1759,26 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
     }
   });
 
+  it('R8-WR-01/02 (iteration 8): every d24-r8 zero-side or count probe is withheld AND convicted, and every d24-r8 over-strip control ships AND passes the judge', () => {
+    const r8 = ADVERSARIAL_FIXTURES.filter((fixture) => fixture.id.startsWith('d24-r8-'));
+    const controls = r8.filter((fixture) => fixture.id.startsWith('d24-r8-control-'));
+    expect(r8.length - controls.length).toBeGreaterThan(7);
+    expect(controls.length).toBeGreaterThan(14);
+    for (const fixture of r8) {
+      const run = runAdversarial(fixture);
+      const prose = fixture.sections![0]!.prose;
+      const withheld = run.outcome.strippedSectionIds.includes('section-0');
+      const judge = judgeDeliveredProse(
+        prose,
+        CANONICAL_NAMES,
+        tagsFor(run.snapshot, run.issuedClaims),
+      );
+      const convicted = !controls.includes(fixture);
+      expect(withheld, `${fixture.id}: validator`).toBe(convicted);
+      expect(judge !== null, `${fixture.id}: judge`).toBe(convicted);
+    }
+  });
+
   it('R6-WR-04: the judge reads its word lists from the rubric text, and every listed word or phrase is withheld by the validator AND convicted by the judge', () => {
     expect(JUDGE_RUBRIC_LISTS.figureWords.length).toBeGreaterThan(100);
     expect(JUDGE_RUBRIC_LISTS.tierStems.length).toBeGreaterThan(30);

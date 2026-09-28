@@ -2686,10 +2686,115 @@ describe('R7 (iteration 7): natural phrasings of a zero side, an even record, a 
   });
 
   it('the price, stated: everyday senses of the R7 phrases are withheld too', () => {
+    // R8-WR-02 (iteration 8): "no game plan" left this list — an attributive
+    // singular after "no" ships (see the R8 describe below).
     for (const prose of [
-      'You have no game plan for MkLeo yet.',
       'You have not won the neutral against MkLeo yet, so slow down.',
       'Stay level with the ledge and wait for MkLeo.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 8 (R8-WR-01, R8-WR-02): iteration 7's two new rules
+// over-stripped ordinary commentary that shipped at 6689763c. After a
+// digit-bearing name or tag, only a closed list of attributive words may sit
+// before a count noun (R8-WR-01): a pronoun or a verb never bridges them. The
+// singular "no win/set/game/stock" is a figure only when it is not attributive,
+// "not beaten/won by" is the passive, and "not lost to his ..." names a habit,
+// not an opponent (R8-WR-02).
+// ---------------------------------------------------------------------------
+
+describe('R8 (iteration 8): the R7 rules no longer withhold ordinary commentary', () => {
+  it('R8-WR-01: a pronoun, verb or unlisted word between a digit-bearing name or tag and a count noun ships', () => {
+    for (const prose of [
+      'On Pokémon Stadium 2 you win neutral with patient spacing.',
+      'On Pokémon Stadium 2 you trade stocks too early.',
+      'Pokémon Stadium 2 rewards patient games.',
+      'Pokémon Stadium 2 favours long, patient sets.',
+    ]) {
+      expect(
+        validateStageRecords([{ stageId: 59, games: 5, wins: 3 }], prose).stripped,
+        prose,
+      ).toEqual([]);
+    }
+    for (const [tag, prose] of [
+      ['Sparg0', 'Sparg0 plays patient games, so bait his shield.'],
+      ['Sparg0', 'Sparg0 closes out games with ledge traps.'],
+      ['Sparg0', 'Sparg0 tends to win exchanges near ledge.'],
+      ['Sparg0', 'Against Sparg0 you lose stocks to his up air.'],
+      ['Leo 2', 'Leo 2 likes long sets and slows the pace.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([]);
+    }
+  });
+
+  it('R8-WR-01: a count noun directly after, or after one or two listed attributive words, still withholds', () => {
+    for (const prose of [
+      'Fox took Pokémon Stadium 2 close games.',
+      'Fox took Pokémon Stadium 2 tight, close sets.',
+      'Fox on Pokémon Stadium 2 recent games went your way.',
+    ]) {
+      expect(
+        validateStageRecords([{ stageId: 59, games: 5, wins: 3 }], prose).stripped,
+        prose,
+      ).toEqual(['main']);
+    }
+    for (const [tag, prose] of [
+      ['Leo 2', 'You lost to Leo 2 close sets.'],
+      ['Leo 2', 'You dropped Leo 2 series.'],
+      ['Leo 2', 'Leo 2 encounters went your way.'],
+      ['Leo 2', 'You took Leo 2 hard-fought sets.'],
+      ['Leo 2', 'You took Leo 2 consecutive games.'],
+      ['Leo 2', 'You lost Leo 2 recent, ranked sets.'],
+      ['Sparg0', 'Sparg0 wins neutral with dash attack.'],
+      ['Sparg0', 'You took Sparg0 straight.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+
+  it('R8-WR-02: attributive "no set/win/game", "no set-ups", "not lost to his ...", and the passive "not won/beaten by" ship', () => {
+    for (const prose of [
+      'MkLeo has no set pattern on ledge, so stay patient.',
+      'There is no set answer to his ledge options; mix it up against MkLeo.',
+      'Offstage MkLeo has no win condition, so edgeguard with confidence.',
+      'MkLeo has no set-ups from a missed tech chase.',
+      'You have not lost to his ledge trap when you mix up getups against MkLeo.',
+      'Neutral against MkLeo is not won by rushing in.',
+      "MkLeo's shield is not beaten by pressure alone.",
+      'You have no game plan for MkLeo yet.',
+      'Without a clear read you have no game plan against his shield, MkLeo.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('R8-WR-02: the zero-side forms still withhold', () => {
+    for (const prose of [
+      'You have no wins against MkLeo.',
+      'You have no losses to MkLeo.',
+      'You have not beaten MkLeo.',
+      "You haven't beaten MkLeo yet.",
+      'You have not lost to MkLeo.',
+      "You haven't lost to him.",
+      'You beat MkLeo without dropping a game.',
+      'You have no win against MkLeo.',
+      'You have taken no set off MkLeo.',
+      'You have no set wins against MkLeo.',
+      'MkLeo has no set over you.',
+      'Against MkLeo you have no win.',
+      'You have no set yet against MkLeo.',
+      'MkLeo is not beaten.',
     ]) {
       expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
         'main',

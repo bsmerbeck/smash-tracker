@@ -1945,6 +1945,96 @@ const d24R7Fixtures: readonly AdversarialFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Code review iteration 8 (R8-WR-01, R8-WR-02): iteration 7's rules withheld
+// ordinary commentary that shipped before them. After a digit-bearing name or
+// tag, a pronoun or verb no longer bridges to a count noun — only a closed list
+// of attributive words does ("close", "recent", "ranked"); and the singular
+// "no set/win/game/stock" is a figure only when it is not attributive ("no set
+// pattern", "no win condition" and "no set-ups" ship), "not won/beaten by" is
+// the passive, and "not lost to his ..." names a habit. The probes keep the
+// zero-side and count readings withheld; the controls are the reviewer's
+// over-strip sentences, which must ship and pass the judge.
+// ---------------------------------------------------------------------------
+
+const D24_R8_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['no-win-against', `You have no win against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-set-off', `You have taken no set off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-set-wins', `You have no set wins against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['no-win-end', `Against ${PROSE_ENTITY_DIGIT_TAG} you have no win.`],
+  ['not-lost-to-you', `${PROSE_ENTITY_DIGIT_TAG} has not lost to you.`],
+  ['not-beaten-end', `${PROSE_ENTITY_DIGIT_TAG} is not beaten.`],
+];
+
+const D24_R8_TAG_COUNT_PHRASINGS: ReadonlyArray<readonly [string, string, string]> = [
+  ['consecutive-games', 'Leo 2', 'You took Leo 2 consecutive games.'],
+  ['recent-ranked-sets', 'Leo 2', 'You lost Leo 2 recent, ranked sets.'],
+];
+
+/** Over-strip controls: the reviewer's R8-WR-02 sentences. */
+const D24_R8_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['no-set-pattern', `${PROSE_ENTITY_DIGIT_TAG} has no set pattern on ledge, so stay patient.`],
+  [
+    'no-set-answer',
+    `There is no set answer to ${PROSE_ENTITY_DIGIT_TAG}'s ledge options; mix it up.`,
+  ],
+  [
+    'no-win-condition',
+    `Offstage ${PROSE_ENTITY_DIGIT_TAG} has no win condition, so edgeguard with confidence.`,
+  ],
+  ['no-set-ups', `${PROSE_ENTITY_DIGIT_TAG} has no set-ups from a missed tech chase.`],
+  [
+    'not-lost-to-his',
+    `You have not lost to his ledge trap when you mix up getups against ${PROSE_ENTITY_DIGIT_TAG}.`,
+  ],
+  ['not-won-by', `Neutral against ${PROSE_ENTITY_DIGIT_TAG} is not won by rushing in.`],
+  ['not-beaten-by', `${PROSE_ENTITY_DIGIT_TAG}'s shield is not beaten by pressure alone.`],
+];
+
+/** Over-strip controls: the reviewer's R8-WR-01 sentences after a digit-bearing tag ("Vex0" is made up and stands in for a tag such as the reviewer's; the corpus never carries a real account's). */
+const D24_R8_TAG_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, string, string]> = [
+  ['plays-patient-games', 'Vex0', 'Vex0 plays patient games, so bait his shield.'],
+  ['closes-out-games', 'Vex0', 'Vex0 closes out games with ledge traps.'],
+  ['tends-to-win', 'Vex0', 'Vex0 tends to win exchanges near ledge.'],
+  ['you-lose-stocks', 'Vex0', 'Against Vex0 you lose stocks to his up air.'],
+  ['likes-long-sets', 'Leo 2', 'Leo 2 likes long sets and slows the pace.'],
+];
+
+/** Over-strip controls: the reviewer's R8-WR-01 sentences after the starter stage. */
+const D24_R8_NAME_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, number, string]> = [
+  [
+    'you-win-neutral',
+    POKEMON_STADIUM_TWO,
+    'On Pokémon Stadium 2 you win neutral with patient spacing.',
+  ],
+  ['you-trade-stocks', POKEMON_STADIUM_TWO, 'On Pokémon Stadium 2 you trade stocks too early.'],
+  ['rewards-patient-games', POKEMON_STADIUM_TWO, 'Pokémon Stadium 2 rewards patient games.'],
+];
+
+const d24R8Fixtures: readonly AdversarialFixture[] = [
+  ...D24_R8_RECORD_PHRASINGS.map(([suffix, prose]) =>
+    makeProseEntityPerspectiveFixture({ id: `d24-r8-record-${suffix}`, prose }),
+  ),
+  ...D24_R8_TAG_COUNT_PHRASINGS.map(([suffix, tag, prose]) =>
+    makeTagFixture({ id: `d24-r8-tag-${suffix}`, tag, prose, validatorVerdict: 'stripped' }),
+  ),
+  ...D24_R8_CONTROL_PHRASINGS.map(([suffix, prose]) => ({
+    ...makeProseEntityPerspectiveFixture({ id: `d24-r8-control-${suffix}`, prose }),
+    expected: { legacyAccepts: true, validatorVerdict: 'accepted' as const },
+  })),
+  ...D24_R8_TAG_CONTROL_PHRASINGS.map(([suffix, tag, prose]) =>
+    makeTagFixture({ id: `d24-r8-control-${suffix}`, tag, prose, validatorVerdict: 'accepted' }),
+  ),
+  ...D24_R8_NAME_CONTROL_PHRASINGS.map(([suffix, stageId, prose]) =>
+    makeStageNameFixture({
+      id: `d24-r8-control-${suffix}`,
+      stageId,
+      prose,
+      validatorVerdict: 'accepted',
+    }),
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
 
@@ -2002,4 +2092,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   ...d24R5Fixtures,
   ...d24R6Fixtures,
   ...d24R7Fixtures,
+  ...d24R8Fixtures,
 ];
