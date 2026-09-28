@@ -121,6 +121,10 @@ review R5-IN-04). A refund is
 written once per failed execution: the balance and a create-once marker commit in one transaction,
 and the job's terminal writes and the refund are retried on a transient database error, so a retry
 can never refund twice and a transient error can no longer strand the credit (code review R5-WR-01).
+Each of those write attempts is bounded at two seconds, so a write that never settles (an offline
+database) counts as a failed attempt and is retried inside the 60-second budget (code review
+R6-IN-03). A refund that still fails every attempt is logged for reconciliation with the job id,
+its credit ref, the refund's marker key and the request id, never the uid (code review R6-WR-05).
 
 Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` constant
 (`packages/shared/src/evidence/claims.ts`). Only EVIDENCED claims count toward them — every
@@ -165,27 +169,32 @@ API's pre-call fail-fast alike (owner decision D-23):
 5. **D-24 — the commentary is qualitative only.** Every figure a user sees comes from a checked
    claim, shown beside the prose. A section whose prose carries a figure or a confidence grade has
    that section's prose withheld — true or false, and whatever the separator of a win-loss pair.
-   Since code review iteration 5 the check is an allowlist: after folding and after canonical
-   fighter and stage names and known opponent tags are read (so the digits inside a name are never
-   figures), the prose may hold only English letters, whitespace and ordinary punctuation, and
-   none of the listed number, record, quantifier or confidence-tier words (low, medium, high,
-   moderate, strong, weak and their forms, and synonyms such as mid, top, solid or sure).
+   Since code review iteration 5 the check is an allowlist, and since iteration 6 it reads exactly
+   the text the user is shown, never a folded copy: once the licensed fighter and stage names and
+   the licensed opponent tags are read (so the digits and accents inside a name are never
+   figures), the prose may hold only English letters, spaces, line breaks and ordinary
+   punctuation, no Markdown marks, and none of the listed number, record, quantifier,
+   all-or-nothing or confidence-tier words and forms (low, medium, high, moderate, strong, weak
+   and their forms; synonyms such as mid, top, solid or sure; every, never, always, only, even,
+   double or perfect; roman numerals; letters spelled out one by one; glued or stretched words).
    Commentary is English-only. A withheld section is handled exactly as in item 2: delivered,
    charged, disclosed, never refunded, and it never touches claim survival. The model prompts
    state the rule up front, so most commentary is written to survive it.
 
-Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c`):
+Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c` and re-pinned for code review iteration 6):
 
 - `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
   `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
-- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:882`;
-  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1406` (scout, prep) and
-  `reports.ts:1757` (post-event synthesis).
-- The D-24 rule — doc comment `validateReport.ts:449-472`; the allowlist
-  `PROSE_DISALLOWED_CHARACTER` `:479`, `FIGURE_WORD_PATTERN` `:492`, `ROMAN_NUMERAL_PATTERN` `:496`,
-  `TIER_WORD_PATTERN` `:508`, the fold `foldProse` `:527`; enforcement `validateReport.ts:730-754`.
-  Prompt statement — `apps/api/src/reports/generate.ts:1102-1104` and
-  `apps/api/src/reports/synthesis.ts:504-506`.
+- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:1167`;
+  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1472` (scout, prep) and
+  `reports.ts:1824` (post-event synthesis).
+- The D-24 rule — doc comment `validateReport.ts:449-470`; the allowlist
+  `PROSE_DISALLOWED_CHARACTER` `:482`, `MARKDOWN_MARKER` `:489`, `FIGURE_WORD_SOURCE` `:508`,
+  `FIGURE_PHRASE_PATTERN` `:524`, `TIER_STEMS` `:538` and `TIER_FORMS` `:582`, `ROMAN_TOKEN`
+  `:605`, `SPELLED_LETTER_RUN` `:649`, `isGluedFigure` `:707`, `hasFigureOrTierWord` `:765`,
+  `NAME_COUNT_FOLLOWER` `:807`; enforcement in `lintSectionProse` (`:839`) at
+  `validateReport.ts:1017-1039`. Prompt statement — `apps/api/src/reports/generate.ts:1102-1104`
+  and `apps/api/src/reports/synthesis.ts:504-506`.
 - Events — `EVENT_CATALOG` at `packages/shared/src/events.ts:80`; `report_failed_validation`
   `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
 - Stored fields — `packages/shared/src/reports.ts`: `strippedSectionCount` `:232`,
@@ -193,9 +202,11 @@ Sources (line numbers pin to the commit that last edited this list — `git log 
 - Model bound — `REPORT_MODEL_MAX_RETRIES = 0` at `apps/api/src/routes/reports.ts:133`,
   `REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000` at `reports.ts:170`, sized against
   `CLOUD_RUN_REQUEST_TIMEOUT_MS` (`:148`) and `REPORT_REQUEST_OVERHEAD_BUDGET_MS` (`:157`), applied on
-  the built client at `reports.ts:634-635` and per request at `reports.ts:223-225`.
-- Refund once — `refundCreditOnce` at `apps/api/src/billing/credits.ts:209`, called from `failJob`
-  (`reports.ts:696`) at `reports.ts:794` inside the bounded retry `withSettleRetries` (`:191`).
+  the built client at `reports.ts:672-673` and per request at `reports.ts:259-261`.
+- Refund once — `refundCreditOnce` at `apps/api/src/billing/credits.ts:219`, called from `failJob`
+  (`reports.ts:734`) at `reports.ts:852` inside the bounded retry `withSettleRetries` (`:227`), each
+  attempt bounded by `REPORT_SETTLE_WRITE_ATTEMPT_TIMEOUT_MS` (`:203`); the failure log line
+  `logPersistentFailure` at `reports.ts:790`.
 
 ## BOUNDARY
 
