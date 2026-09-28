@@ -2136,7 +2136,7 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
     for (const prose of [
       'MkLeo camps the ledge & you should take the centre.',
       'Stay patient + punish his landing.',
-      'Watch his [ledge] options.',
+      'Watch his {ledge} options.',
       'MkLeo loves ledge traps → take the centre.',
       'MkLeo wins the neutral @ the ledge.',
       'Take the centre #patience.',
@@ -2149,15 +2149,14 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
     }
   });
 
-  it('controls: every allowed punctuation mark, Markdown emphasis on qualitative words, line breaks and folded accents ship', () => {
+  it('controls: every allowed punctuation mark, square brackets and line breaks ship (R6-IN-05: the prompts permit brackets)', () => {
     for (const prose of [
       'MkLeo tends to camp the ledge; take the centre — and stay patient.',
       'Don’t chase “reads” off stage (be patient), and/or reset to neutral!',
       "Is MkLeo rushing? Stay calm: reset. MkLeo's recovery is predictable - punish it.",
       'MkLeo likes ‘safe’ options – so "call" them.',
-      'Stay _patient_ against MkLeo and **punish** the landing.',
-      'MkLeo camps the ledge.\nTake the centre.\r\nStay calm.',
-      'MkLeo loves a café-style slow neutral, so stay patient.',
+      'Watch his [ledge] options.',
+      'MkLeo camps the ledge.\nTake the centre.\nStay calm.',
     ]) {
       expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
         stripped: [],
@@ -2166,7 +2165,7 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
     }
   });
 
-  it('names still consume their symbols and digits first: "Mr. Game & Watch", "Pokémon Stadium 2" and a folded tag ship', () => {
+  it('licensed names consume their symbols, digits and accented letters first: "Pokémon Stadium 2" and an accented tag (decomposed in the prose) ship', () => {
     expect(
       validateStageRecords(
         [{ stageId: 59, games: 10, wins: 6 }],
@@ -2174,10 +2173,7 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
       ).stripped,
     ).toEqual([]);
     expect(
-      validateHeadToHead('José', { wins: 3, losses: 2 }, 'Stay patient against José.'),
-    ).toEqual({ stripped: [], dropped: 0 });
-    expect(
-      validateHeadToHead('Light_', { wins: 3, losses: 2 }, 'Stay patient against Light_.'),
+      validateHeadToHead('José', { wins: 3, losses: 2 }, 'Stay patient against Jose\u0301.'),
     ).toEqual({ stripped: [], dropped: 0 });
   });
 
@@ -2245,18 +2241,332 @@ describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade 
     }
   });
 
-  it('known limits (recorded in the rubric): English-only commentary, and phrasings with no figure or listed word, still ship', () => {
+  it('known limit (recorded in the rubric): English-only commentary, so non-English prose in plain ASCII letters with no listed word ships', () => {
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'Juega con paciencia contra MkLeo.')
+        .stripped,
+    ).toEqual([]);
+  });
+
+  it('R6-WR-01 (iteration 6): the degenerate forms this test used to pin as shipping are withheld now', () => {
     for (const prose of [
-      // Non-English prose that folds to ASCII with no listed word.
-      'Juega con paciencia contra MkLeo.',
-      // The recorded vague and degenerate forms (R5-IN-02).
       'MkLeo has won every set you have played.',
       'Your head-to-head with MkLeo is dead even.',
       'You won your last set against MkLeo.',
     ]) {
-      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual(
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 6 (R6-CR-01..04, R6-WR-01..03, R6-IN-04, R6-IN-05):
+// the iteration-5 check folded the prose and ran the allowlist on the FOLDED
+// copy, but the product delivers the ORIGINAL text. Roman-numeral characters
+// folded into letters, bidi overrides and tag characters were deleted, and
+// Markdown markers inside a word became spaces, so the delivered text said
+// "two" while the checked text did not. The check now reads exactly the text
+// that is delivered: no fold, only a licensed name's or tag's exact span is
+// consumed, and every other character outside the allowlist withholds the
+// section. Each row below is the iteration-6 review's probe
+// (`r6v/d24.test.ts`), against a licensed 3-2 (the player won 3) or one
+// LOW-tier stage claim (Fox on Battlefield, 3-2 over five games). Invisible
+// and bidi characters are written as escapes. Every row shipped at 04ab0064.
+// ---------------------------------------------------------------------------
+
+const R6_HEAD_TO_HEAD_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  // R6-CR-01: roman-numeral characters (Nl), then ASCII roman numerals.
+  ['nl-V', 'You took Ⅴ games off MkLeo.'],
+  ['nl-I', 'You took Ⅰ set off MkLeo.'],
+  ['nl-X', 'You won Ⅹ games against MkLeo.'],
+  ['nl-XL', 'You won ⅩⅬ games against MkLeo.'],
+  ['nl-L', 'You won Ⅼ games against MkLeo.'],
+  ['nl-C', 'You won Ⅽ games against MkLeo.'],
+  ['nl-small-iii', 'You won ⅲ sets against MkLeo.'],
+  ['nl-small-ii', 'You lost ⅱ sets to MkLeo.'],
+  ['nl-small-pair', 'You are ⅲ-ⅱ against MkLeo.'],
+  ['nl-V-and-I', 'You are Ⅴ and Ⅰ against MkLeo.'],
+  ['ascii-iii', 'You won iii sets against MkLeo.'],
+  ['ascii-iii-ii', 'You are iii-ii against MkLeo.'],
+  ['ascii-V-and-I', 'You are V and I against MkLeo.'],
+  ['ascii-XL', 'You won XL games against MkLeo.'],
+  ['ascii-V-to-I', 'You lead MkLeo V to I.'],
+  ['ascii-X', 'You took X games off MkLeo.'],
+  ['ascii-xiv', 'You won xiv sets against MkLeo.'],
+  ['ascii-XC', 'You have played MkLeo XC times.'],
+  ['ascii-I-to-I', 'You and MkLeo are I to I.'],
+  ['ascii-I-dash-I', 'You and MkLeo sit at I - I.'],
+  ["ascii-X's", "X's worth of sets went to MkLeo."],
+  // R6-CR-02: bidi controls and tag characters are delivered, so they withhold.
+  ['rlo-owt', 'You beat MkLeo ‮owt‬ times.'],
+  ['rli-owt', 'You beat MkLeo ⁧owt⁩ times.'],
+  ['rlo-pair', 'You are ‮eerht‬ and ‮owt‬ against MkLeo.'],
+  ['lro', 'You beat MkLeo ‭two‬ times.'],
+  ['rlm', 'You beat MkLeo‏ often.'],
+  ['tag-digit', 'You beat MkLeo 󠀳 times.'],
+  ['tag-letters', 'You beat MkLeo 󠁴󠁷󠁯 times.'],
+  // R6-CR-03: a Markdown marker anywhere, inside a word or around one.
+  ['md-t**w**o', 'You beat MkLeo t**w**o times.'],
+  ['md-th**ree**', 'You are th**ree** and t**wo** against MkLeo.'],
+  ['md-code', 'You are t`w`o up on MkLeo.'],
+  ['md-strike', 'You are t~~w~~o up on MkLeo.'],
+  // R6-CR-04: a listed word spelled out letter by letter.
+  ['sep-t-w-o', 'You beat MkLeo t-w-o times.'],
+  ['sep-t.w.o', 'You beat MkLeo t.w.o times.'],
+  ['sep-t w o', 'You beat MkLeo t w o times.'],
+  ['sep-t/w/o', 'You beat MkLeo t/w/o times.'],
+  ['sep-t–w–o', 'You beat MkLeo t–w–o times.'],
+  ["sep-t'w'o", "You beat MkLeo t'w'o times."],
+  ['sep-T, W, O', 'You beat MkLeo T, W, O times.'],
+  // R6-WR-01: all-or-nothing, even records, margins, multiples, single
+  // results and zero sides.
+  ['every', 'You won every set against MkLeo.'],
+  ['all', 'You won all your sets against MkLeo.'],
+  ['never-lost', 'You have never lost to MkLeo.'],
+  ['never-beaten', 'You have never beaten MkLeo.'],
+  ['never', 'You never beat MkLeo.'],
+  ['always', 'You always beat MkLeo.'],
+  ['yet-to-beat', 'You are yet to beat MkLeo.'],
+  ['perfect', 'You are perfect against MkLeo.'],
+  ['nothing', 'You have won nothing against MkLeo.'],
+  ['zilch', 'You have zilch wins against MkLeo.'],
+  ['zip', 'You have won zip against MkLeo.'],
+  ['nada', 'You have won nada against MkLeo.'],
+  ['dead-even', 'You are dead even with MkLeo.'],
+  ['tied', 'You are tied with MkLeo.'],
+  ['split', 'You split your sets with MkLeo.'],
+  ['evenly', 'Your sets with MkLeo are split evenly.'],
+  ['even-record', 'Your record against MkLeo is even.'],
+  ['coin-flip', 'Your sets with MkLeo are a coin flip.'],
+  ['a-set-each', 'You and MkLeo have taken a set each.'],
+  ['a-win-and-a-loss', 'You have a win and a loss against MkLeo.'],
+  ['up-a-set', 'You are up a set on MkLeo.'],
+  ['down-a-game', 'You are down a game to MkLeo.'],
+  ['lead-by-a-set', 'You lead MkLeo by a set.'],
+  ['lead-by-a-game', 'You lead MkLeo by a game.'],
+  ['trail-by-a-set', 'You trail MkLeo by a set.'],
+  ['double', 'You have double the wins MkLeo has.'],
+  ['triple', 'You have triple the wins against MkLeo.'],
+  ['treble', 'You have treble the wins against MkLeo.'],
+  ['double-digit', 'You have double-digit wins against MkLeo.'],
+  ['hat-trick', 'You scored a hat trick of wins over MkLeo.'],
+  ['brace', 'You took a brace of sets from MkLeo.'],
+  ['lone', 'Your lone win against MkLeo came last year.'],
+  ['only', 'Your only win against MkLeo was close.'],
+  ['sole', 'Your sole loss to MkLeo was close.'],
+  ['solo', 'You have a solo win over MkLeo.'],
+  ['last-set', 'You lost your last set to MkLeo.'],
+  ['shut-out', 'MkLeo has shut you out.'],
+  ['shutout', 'MkLeo has a shutout over you.'],
+  ['blanked', 'MkLeo has blanked you.'],
+  ['clean-record', 'You have a clean record against MkLeo.'],
+  ['spotless', 'Your record against MkLeo is spotless.'],
+  ['unblemished', 'Your record against MkLeo is unblemished.'],
+  // R6-WR-02: glued and stretched listed words.
+  ['glue-twotimes', 'You beat MkLeo twotimes.'],
+  ['glue-threeandtwo', 'You are threeandtwo against MkLeo.'],
+  ['glue-twofold', 'Your lead over MkLeo is twofold.'],
+  ['stretch-twooo', 'You beat MkLeo twooo times.'],
+  ['stretch-alll', 'You took alll the sets from MkLeo.'],
+  ['stretch-IIII', 'You won IIII sets against MkLeo.'],
+];
+
+const R6_STAGE_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  // R6-CR-02.
+  ['rlo-hgih', 'Fox on Battlefield. Confidence here is ‮hgih‬.'],
+  // R6-CR-03.
+  ['md-h*igh*', 'Fox on Battlefield. Confidence here is h*igh*.'],
+  ['md-h_ig_h', 'Fox on Battlefield. Confidence is h_ig_h.'],
+  // R6-CR-04.
+  ['sep-H-I-G-H', 'Fox on Battlefield. Confidence here is H-I-G-H.'],
+  ['sep-h i g h', 'Fox on Battlefield. Confidence here is h i g h.'],
+  ['sep-l.o.w', 'Fox on Battlefield. Confidence here is l.o.w.'],
+  // R6-WR-01: tier derivatives.
+  ['tier-lowish', 'Fox on Battlefield. Confidence is lowish.'],
+  ['tier-highish', 'Fox on Battlefield. Confidence is highish.'],
+  ['tier-minimal', 'Fox on Battlefield. Confidence is minimal.'],
+  ['tier-maximal', 'Fox on Battlefield. Confidence is maximal.'],
+  ['tier-solidly', 'Fox on Battlefield. This read holds solidly.'],
+  ['tier-shakier', 'Fox on Battlefield. This read is shakier.'],
+  // R6-WR-02.
+  ['glue-highconfidence', 'Fox on Battlefield, highconfidence.'],
+  ['glue-lowconfidence', 'Fox on Battlefield, lowconfidence.'],
+  ['glue-toptier', 'Fox on Battlefield is a toptier pick.'],
+  ['stretch-hiiigh', 'Fox on Battlefield. Confidence here is hiiigh.'],
+  ['stretch-looow', 'Fox on Battlefield. Confidence here is looow.'],
+];
+
+/** Text that is now outside the allowlist although it states no figure: the delivered bytes are what is checked. */
+const R6_UNFOLDED_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  ['md-underscore-word', 'Stay _patient_ against MkLeo and punish the landing.'],
+  ['md-bold-word', 'Stay patient against MkLeo and **punish** the landing.'],
+  ['soft-hyphen', 'Stay pa­tient against MkLeo.'],
+  ['zero-width-space', 'Stay pa​tient against MkLeo.'],
+  ['word-joiner', 'Stay pa⁠tient against MkLeo.'],
+  ['zero-width-joiner', 'Stay pa‍tient against MkLeo.'],
+  ['no-break-space', 'Stay patient against MkLeo.'],
+  ['combining-mark', 'Stay pa̲tient against MkLeo.'],
+  ['fullwidth', 'Stay ｐａｔｉｅｎｔ against MkLeo.'],
+  ['ligature', 'Stay ﬁrm against MkLeo.'],
+  ['accent-outside-name', 'MkLeo loves a café-style slow neutral, so stay patient.'],
+  ['decomposed-accent-outside-name', 'MkLeo loves a café-style slow neutral, so stay patient.'],
+  ['carriage-return', 'MkLeo camps the ledge.\r\nTake the centre.'],
+  ['tab', 'MkLeo camps the ledge.\tTake the centre.'],
+  ['curly-brace', 'Watch his {ledge} options.'],
+];
+
+describe('R6 (iteration 6): the D-24 check reads the delivered text, never a folded copy', () => {
+  it.each(R6_HEAD_TO_HEAD_WITHHELD)('head-to-head %s: %j', (_id, prose) => {
+    expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose)).toEqual({
+      stripped: ['main'],
+      dropped: 0,
+    });
+  });
+
+  it.each(R6_STAGE_WITHHELD)('stage %s: %j', (_id, prose) => {
+    const result = validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], prose);
+    expect(result.tiers).toBe('low');
+    expect(result).toMatchObject({ stripped: ['main'], dropped: 0 });
+  });
+
+  it.each(R6_UNFOLDED_WITHHELD)('unfolded %s: %j', (_id, prose) => {
+    expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose)).toEqual({
+      stripped: ['main'],
+      dropped: 0,
+    });
+  });
+
+  it('R6-CR-03: a Markdown marker inside a licensed tag withholds the section too, since the renderer reads it', () => {
+    expect(
+      validateHeadToHead('Light_', { wins: 3, losses: 2 }, 'Stay patient against Light_.').stripped,
+    ).toEqual(['main']);
+  });
+
+  it('only a LICENSED name or tag consumes non-ASCII letters: the same accent elsewhere withholds', () => {
+    expect(
+      validateStageRecords(
+        [{ stageId: 59, games: 10, wins: 6 }],
+        'Pokémon Stadium 2 rewards your patience.',
+      ).stripped,
+    ).toEqual([]);
+    expect(
+      validateStageRecords(
+        [{ stageId: 1, games: 10, wins: 6 }],
+        'Your Pokémon knowledge helps on Battlefield.',
+      ).stripped,
+    ).toEqual(['main']);
+    expect(
+      validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, 'Stay patient against José.').stripped,
+    ).toEqual(['main']);
+  });
+
+  it('R6-IN-04: a licensed name written with a numeral glyph is not the licensed name, so the glyph withholds', () => {
+    for (const [stageId, prose] of [
+      [59, 'Fox on Pokémon Stadium ②, keep it up.'],
+      [31, 'Fox on ⁷⁵m, keep it up.'],
+      [75, 'Fox on Flat Zone Ⅹ, keep it up.'],
+      [15, 'Fox on Mushroom Kingdom ⅱ, keep it up.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
+        ['main'],
+      );
+    }
+    expect(
+      validateHeadToHead('Leo Ⅴ', { wins: 3, losses: 2 }, 'You beat Leo Ⅴ, keep it up.').stripped,
+    ).toEqual(['main']);
+  });
+
+  it('R6-WR-03: a digit- or numeral-bearing name or tag followed by any count word withholds', () => {
+    for (const [stageId, prose] of [
+      [59, 'Fox on Pokémon Stadium 2 matches went your way.'],
+      [59, 'You took Pokémon Stadium 2 straight.'],
+      [59, 'You won Pokémon Stadium 2 in a row.'],
+      [59, 'Fox on Pokémon Stadium 2 victories keep coming.'],
+      [59, 'Fox on Pokémon Stadium 2 rounds went your way.'],
+      [59, 'Fox on Pokémon Stadium 2 defeats pile up.'],
+      [99, 'Fox on PictoChat 2 matches.'],
+      [15, 'Fox on Mushroom Kingdom II matches.'],
+      [75, 'Fox on Flat Zone X matches.'],
+      [31, 'Fox on 75m matches.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
+        ['main'],
+      );
+    }
+    for (const [tag, prose] of [
+      ['Leo 2', 'You have beaten Leo 2 times.'],
+      ['Leo 2', 'You took Leo 2 sets in a row.'],
+      ['Zer0Frame 3', 'You beat Zer0Frame 3 games straight.'],
+      ['Sparg0', 'Sparg0 wins keep piling up.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+
+  it('R6-WR-03 controls: the same digit-bearing names and tags in qualitative commentary ship', () => {
+    for (const [stageId, prose] of [
+      [59, 'Pokémon Stadium 2 and its transformations suit your patience.'],
+      [15, 'Fox on Mushroom Kingdom II.'],
+      [75, 'Fox on Flat Zone X.'],
+      [31, 'Fox on 75m likes the upper girders.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
         [],
       );
+    }
+    for (const [tag, prose] of [
+      ['Leo 2', 'Leo 2 camps the ledge; stay patient.'],
+      ['Zer0Frame 3', 'Zer0Frame 3 rushes the landing, so wait him out.'],
+      ['Sparg0', 'Sparg0 punishes a rushed approach.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([]);
+    }
+  });
+
+  it('over-strip controls: ordinary sentences near the new rules still ship', () => {
+    for (const prose of [
+      // R6-CR-04: "a" and "I" alone, contractions, and "e.g."/"i.e.".
+      'I think a read on MkLeo’s ledge habits will pay off.',
+      "It's a good idea to reset when MkLeo presses you, and I'd take the centre.",
+      "I'm going to say it plainly: wait for MkLeo to commit.",
+      'Take the centre, e.g. when MkLeo lands, and punish; i.e. make him come to you.',
+      // R6-CR-01: English words that are valid roman numerals, and "I" alone.
+      'Mix up your options and improve your DI when MkLeo combos you.',
+      'MkLeo did not adapt; stay civil, keep a vivid picture of his mild habits and an ill-timed roll will come.',
+      'Use your i-frames on the ledge when MkLeo presses you.',
+      // R6-WR-02: words that contain a listed word but are not glued figures.
+      'The tone of the set often shifts when MkLeo is alone at the ledge.',
+      'Shift your weight, highlight the punish, and shout it out in review against MkLeo.',
+      'Someone who panics against MkLeo drops the lead; anyone calm can wait him out.',
+      'Overall, stay patient in the neutral and let MkLeo come to you.',
+      'Remember to take the centre against MkLeo; toward the ledge he gets predictable.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('the price, stated: everyday senses of the R6 words and of a lone letter are withheld too', () => {
+    for (const prose of [
+      'Always shield when MkLeo lands.',
+      'Never chase MkLeo off stage.',
+      'Only commit when MkLeo is in the air.',
+      'Even so, stay patient against MkLeo.',
+      'Double jump sparingly against MkLeo.',
+      'Keep a perfect shield ready for MkLeo.',
+      'Everyone struggles with MkLeo’s ledge game.',
+      'MkLeo and I like the ledge.',
+      'Label his habit X and punish it.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
     }
   });
 });

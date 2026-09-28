@@ -1636,6 +1636,208 @@ const d24R5Fixtures: readonly AdversarialFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Code review iteration 6 (R6-CR-01..04, R6-WR-01..03): the phrasings the
+// iteration-5 check missed because it read a FOLDED copy of the prose while
+// the product delivers the original — roman-numeral characters folded into
+// letters, bidi overrides and tag characters deleted, Markdown markers inside
+// a word read as spaces — and the forms the word lists missed: a listed word
+// spelled out letter by letter, glued or stretched, ASCII roman numerals in
+// any case, the unlisted all-or-nothing, even-record, margin and multiple
+// words, and a count word after a digit-bearing name or tag. The D-24 check
+// now reads the delivered text. VAL-03 requires every one of these to be
+// withheld by the validator AND convicted by its own judge
+// (`val03Acceptance.test.ts`). Invisible and bidi characters are escapes.
+// ---------------------------------------------------------------------------
+
+const D24_R6_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['nl-v', `You took Ⅴ games off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-xl', `You won ⅩⅬ games against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-small-pair', `You are ⅲ-ⅱ against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nl-v-and-i', `You are Ⅴ and Ⅰ against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['roman-lower-pair', `You are iii-ii against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['roman-xl', `You won XL games against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['roman-v-to-i', `You lead ${PROSE_ENTITY_DIGIT_TAG} V to I.`],
+  ['roman-x', `You took X games off ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['rlo-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} ‮owt‬ times.`],
+  ['rli-owt', `You beat ${PROSE_ENTITY_DIGIT_TAG} ⁧owt⁩ times.`],
+  ['tag-digit', `You beat ${PROSE_ENTITY_DIGIT_TAG} 󠀳 times.`],
+  ['md-intraword-bold', `You beat ${PROSE_ENTITY_DIGIT_TAG} t**w**o times.`],
+  ['md-intraword-code', `You are t\`w\`o up on ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['sep-hyphen', `You beat ${PROSE_ENTITY_DIGIT_TAG} t-w-o times.`],
+  ['sep-dot', `You beat ${PROSE_ENTITY_DIGIT_TAG} t.w.o times.`],
+  ['sep-space', `You beat ${PROSE_ENTITY_DIGIT_TAG} t w o times.`],
+  ['sep-slash', `You beat ${PROSE_ENTITY_DIGIT_TAG} t/w/o times.`],
+  ['every', `You won every set against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['all', `You won all your sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['never', `You never beat ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['always', `You always beat ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['yet-to-beat', `You are yet to beat ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['perfect', `You are perfect against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['nothing', `You have won nothing against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['zilch', `You have zilch wins against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['dead-even', `You are dead even with ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['tied', `You are tied with ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['split', `You split your sets with ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['coin-flip', `Your sets with ${PROSE_ENTITY_DIGIT_TAG} are a coin flip.`],
+  ['a-set-each', `You and ${PROSE_ENTITY_DIGIT_TAG} have taken a set each.`],
+  ['a-win-and-a-loss', `You have a win and a loss against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['up-a-set', `You are up a set on ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lead-by-a-game', `You lead ${PROSE_ENTITY_DIGIT_TAG} by a game.`],
+  ['double', `You have double the wins ${PROSE_ENTITY_DIGIT_TAG} has.`],
+  ['hat-trick', `You scored a hat trick of wins over ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['brace', `You took a brace of sets from ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lone', `Your lone win against ${PROSE_ENTITY_DIGIT_TAG} came late.`],
+  ['only', `Your only win against ${PROSE_ENTITY_DIGIT_TAG} was close.`],
+  ['sole', `Your sole loss to ${PROSE_ENTITY_DIGIT_TAG} was close.`],
+  ['last-set', `You lost your last set to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['shut-out', `${PROSE_ENTITY_DIGIT_TAG} has shut you out.`],
+  ['blanked', `${PROSE_ENTITY_DIGIT_TAG} has blanked you.`],
+  ['clean-record', `You have a clean record against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['spotless', `Your record against ${PROSE_ENTITY_DIGIT_TAG} is spotless.`],
+  ['unblemished', `Your record against ${PROSE_ENTITY_DIGIT_TAG} is unblemished.`],
+  ['glue-twotimes', `You beat ${PROSE_ENTITY_DIGIT_TAG} twotimes.`],
+  ['glue-threeandtwo', `You are threeandtwo against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['stretch-twooo', `You beat ${PROSE_ENTITY_DIGIT_TAG} twooo times.`],
+  ['tag-count', `${PROSE_ENTITY_DIGIT_TAG} wins keep piling up.`],
+];
+
+const D24_R6_TIER_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['rlo-hgih', 'Our confidence here is ‮hgih‬.'],
+  ['md-intraword-star', 'Our confidence here is h*igh*.'],
+  ['md-intraword-underscore', 'Our confidence here is h_ig_h.'],
+  ['sep-caps', 'Our confidence here is H-I-G-H.'],
+  ['lowish', 'Our confidence here is lowish.'],
+  ['minimal', 'Our confidence here is minimal.'],
+  ['maximal', 'Our confidence here is maximal.'],
+  ['glue-highconfidence', 'This is a highconfidence read.'],
+  ['stretch-hiiigh', 'Our confidence here is hiiigh.'],
+];
+
+/** One stage_record claim for Marth on `stageId`, with `prose` in its own section. */
+function makeStageNameFixture(input: {
+  id: string;
+  stageId: number;
+  prose: string;
+  validatorVerdict: AdversarialFixture['expected']['validatorVerdict'];
+}): AdversarialFixture {
+  const subject: ClaimSubject = { ...NULL_SUBJECT, myFighterId: 23, stageId: input.stageId };
+  const rowId = evidenceIdFor({ predicate: 'stage_record', subject, opponentOrder: [] });
+  const games = CONFIDENCE_TIER_BOUNDS.low;
+  const value: ClaimValue = { kind: 'record', wins: games - 1, losses: 1, games };
+  return {
+    id: input.id,
+    family: 'prose_entity',
+    rubricRuleIds: ['R4'],
+    snapshot: makeSnapshot(
+      { [rowId]: makeRow('stage_record', subject, value, games) },
+      { matchIdDigest: { count: games, hash: `fixture-${input.id}-hash` } },
+    ),
+    issuedClaimIds: ['c01'],
+    output: { claims: [makeClaim('c01', [rowId], value)] },
+    sections: [{ prose: input.prose, licensedClaimIds: ['c01'] }],
+    expected: { legacyAccepts: true, validatorVerdict: input.validatorVerdict },
+  };
+}
+
+/** One head_to_head_record claim against `tag`, with `prose` in its own section. */
+function makeTagFixture(input: {
+  id: string;
+  tag: string;
+  prose: string;
+  validatorVerdict: AdversarialFixture['expected']['validatorVerdict'];
+}): AdversarialFixture {
+  const subject: ClaimSubject = { ...NULL_SUBJECT, opponentTag: input.tag };
+  const rowId = evidenceIdFor({
+    predicate: 'head_to_head_record',
+    subject,
+    opponentOrder: [input.tag],
+  });
+  const games = CONFIDENCE_TIER_BOUNDS.low;
+  const value: ClaimValue = { kind: 'record', wins: games - 1, losses: 1, games };
+  return {
+    id: input.id,
+    family: 'prose_entity',
+    rubricRuleIds: ['R4'],
+    snapshot: makeSnapshot(
+      { [rowId]: makeRow('head_to_head_record', subject, value, games) },
+      { matchIdDigest: { count: games, hash: `fixture-${input.id}-hash` } },
+    ),
+    issuedClaimIds: ['c01'],
+    output: { claims: [makeClaim('c01', [rowId], value)] },
+    sections: [{ prose: input.prose, licensedClaimIds: ['c01'] }],
+    expected: { legacyAccepts: true, validatorVerdict: input.validatorVerdict },
+  };
+}
+
+const POKEMON_STADIUM_TWO = 59;
+const PICTOCHAT_TWO = 99;
+const MUSHROOM_KINGDOM_TWO = 15;
+const FLAT_ZONE_TEN = 75;
+const SEVENTY_FIVE_M = 31;
+
+const D24_R6_NAME_COUNT_PHRASINGS: ReadonlyArray<readonly [string, number, string]> = [
+  ['matches', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 matches went your way.'],
+  ['straight', POKEMON_STADIUM_TWO, 'You took Pokémon Stadium 2 straight.'],
+  ['in-a-row', POKEMON_STADIUM_TWO, 'You won Pokémon Stadium 2 in a row.'],
+  ['victories', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 victories keep coming.'],
+  ['rounds', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium 2 rounds went your way.'],
+  ['pictochat', PICTOCHAT_TWO, 'Marth on PictoChat 2 matches.'],
+  ['roman-name', MUSHROOM_KINGDOM_TWO, 'Marth on Mushroom Kingdom II matches.'],
+  ['flat-zone', FLAT_ZONE_TEN, 'Marth on Flat Zone X matches.'],
+  ['seventy-five-m', SEVENTY_FIVE_M, 'Marth on 75m matches.'],
+  ['circled-glyph', POKEMON_STADIUM_TWO, 'Marth on Pokémon Stadium ②, keep it up.'],
+  ['nl-glyph', FLAT_ZONE_TEN, 'Marth on Flat Zone Ⅹ, keep it up.'],
+];
+
+const D24_R6_TAG_COUNT_PHRASINGS: ReadonlyArray<readonly [string, string, string]> = [
+  ['times', 'Leo 2', 'You have beaten Leo 2 times.'],
+  ['sets-in-a-row', 'Leo 2', 'You took Leo 2 sets in a row.'],
+  ['games-straight', 'Zer0Frame 7', 'You beat Zer0Frame 7 games straight.'],
+];
+
+/** Over-strip controls: ordinary commentary near the new rules is delivered, and the judge must not convict it. */
+const D24_R6_CONTROL_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['a-and-i', `I think a read on ${PROSE_ENTITY_DIGIT_TAG}'s landing will pay off.`],
+  ['contractions', `It's a good idea to reset when ${PROSE_ENTITY_DIGIT_TAG} presses you.`],
+  ['mix-and-di', `Mix up your options and improve your DI against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['i-frames', `Use your i-frames on the ledge when ${PROSE_ENTITY_DIGIT_TAG} presses you.`],
+  [
+    'contained-words',
+    `The tone of the set often shifts when ${PROSE_ENTITY_DIGIT_TAG} is alone at the ledge; shift your weight and highlight the punish.`,
+  ],
+  ['brackets', `Watch the ledge [roll, jump, getup] when ${PROSE_ENTITY_DIGIT_TAG} is below you.`],
+];
+
+const d24R6Fixtures: readonly AdversarialFixture[] = [
+  ...D24_R6_RECORD_PHRASINGS.map(([suffix, prose]) =>
+    makeProseEntityPerspectiveFixture({ id: `d24-r6-record-${suffix}`, prose }),
+  ),
+  ...D24_R6_TIER_PHRASINGS.map(([suffix, prose]) =>
+    makeConfidenceWordFixture({
+      id: `d24-r6-tier-${suffix}`,
+      games: CONFIDENCE_TIER_BOUNDS.low,
+      prose,
+      validatorVerdict: 'stripped',
+    }),
+  ),
+  ...D24_R6_NAME_COUNT_PHRASINGS.map(([suffix, stageId, prose]) =>
+    makeStageNameFixture({
+      id: `d24-r6-name-${suffix}`,
+      stageId,
+      prose,
+      validatorVerdict: 'stripped',
+    }),
+  ),
+  ...D24_R6_TAG_COUNT_PHRASINGS.map(([suffix, tag, prose]) =>
+    makeTagFixture({ id: `d24-r6-tag-${suffix}`, tag, prose, validatorVerdict: 'stripped' }),
+  ),
+  ...D24_R6_CONTROL_PHRASINGS.map(([suffix, prose]) => ({
+    ...makeProseEntityPerspectiveFixture({ id: `d24-r6-control-${suffix}`, prose }),
+    expected: { legacyAccepts: true, validatorVerdict: 'accepted' as const },
+  })),
+];
+
+// ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
 
@@ -1691,4 +1893,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   d24MixedTierUnion,
   ...d24QualitativeControls,
   ...d24R5Fixtures,
+  ...d24R6Fixtures,
 ];

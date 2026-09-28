@@ -227,6 +227,65 @@ const JUDGE_ALLOWED_PUNCTUATION: ReadonlySet<string> = (() => {
   return new Set(match[1].split(/\s+/).filter((mark) => mark.length > 0));
 })();
 
+/**
+ * Code review R6-WR-04 (iteration 6): the judge's word lists, parsed from the
+ * rubric's "The D-24 word lists" section — lines of the form
+ * "- `key`: `items`". Items are separated by whitespace, or by " ; " for the
+ * phrase lists. The judge is independent of the validator in IMPLEMENTATION
+ * (its own tokenizer, number-word parser, roman-numeral parser and segmenter),
+ * not in its choice of rules: both implement the rubric's rules.
+ */
+function rubricList(key: string, separator: RegExp = /\s+/): readonly string[] {
+  const match = new RegExp(`^- \`${key}\`: \`([^\`]*)\``, 'm').exec(RUBRIC_TEXT);
+  return match?.[1]
+    ? match[1]
+        .split(separator)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+    : [];
+}
+
+const JUDGE_RUBRIC_LISTS = {
+  figureWords: rubricList('figure-words'),
+  figurePhrases: rubricList('figure-phrases', /\s*;\s*/),
+  tierStems: rubricList('tier-stems'),
+  tierSuffixes: rubricList('tier-suffixes'),
+  romanExempt: rubricList('roman-exempt'),
+  romanPairWords: rubricList('roman-pair-words'),
+  countWords: rubricList('count-words'),
+  countPhrases: rubricList('count-phrases', /\s*;\s*/),
+  glueWords: rubricList('glue-words'),
+  glueExempt: rubricList('glue-exempt'),
+  spelledExempt: rubricList('spelled-exempt'),
+  markdownMarkers: rubricList('markdown-markers').map((codePoint) =>
+    String.fromCodePoint(Number.parseInt(codePoint.replace(/^U\+/, ''), 16)),
+  ),
+};
+
+/**
+ * Expands one rubric phrase into every word sequence it stands for: slots are
+ * separated by spaces, a slot's alternatives by "/", and a slot ending in "?"
+ * may be left out ("by a/an set/game" is "by a set", "by an set", ...).
+ */
+function expandRubricPhrase(phrase: string): string[] {
+  let sequences: string[][] = [[]];
+  for (const slot of phrase.split(/\s+/)) {
+    const optional = slot.endsWith('?');
+    const alternatives = (optional ? slot.slice(0, -1) : slot).split('/');
+    const next: string[][] = [];
+    for (const sequence of sequences) {
+      if (optional) {
+        next.push(sequence);
+      }
+      for (const alternative of alternatives) {
+        next.push([...sequence, alternative]);
+      }
+    }
+    sequences = next;
+  }
+  return sequences.map((sequence) => sequence.join(' '));
+}
+
 /** The judge's fold: NFKD, then default-ignorable code points and marks removed, then Markdown emphasis read as spaces. */
 function judgeFold(text: string): string {
   return text
@@ -1246,9 +1305,15 @@ const fromCodePoints = (prose: string, offset: (ch: string) => number | null): s
     })
     .join('');
 
-/** Meaning-preserving transforms the fold must undo: the verdict of any sentence is unchanged by each one. */
-const FOLD_INVARIANT_TRANSFORMS: ReadonlyArray<readonly [string, (prose: string) => string]> = [
-  ['identity', (prose) => prose],
+/**
+ * Code review R6-WR-04 (iteration 6): transforms that change the DELIVERED
+ * text. The iteration-5 check folded most of these away before it looked, so
+ * it judged a text the user never saw; the check now reads the delivered
+ * text, so each one moves every sentence, qualitative or not, to withheld on
+ * the validator side AND convicted on the judge side. The last six are the
+ * forms the old fold erased while the renderer kept them (review R6-CR-01..04).
+ */
+const RENDERED_TRANSFORMS: ReadonlyArray<readonly [string, (prose: string) => string]> = [
   ['underscore emphasis', (prose) => eachWord(prose, (word) => `_${word}_`)],
   ['double underscore emphasis', (prose) => eachWord(prose, (word) => `__${word}__`)],
   ['asterisk emphasis', (prose) => eachWord(prose, (word) => `*${word}*`)],
@@ -1275,7 +1340,35 @@ const FOLD_INVARIANT_TRANSFORMS: ReadonlyArray<readonly [string, (prose: string)
               : null,
       ),
   ],
-  ['ligatures', (prose) => prose.replace(/fi/g, 'ﬁ').replace(/fl/g, 'ﬂ')],
+  ['ligatures', (prose) => prose.replace(/fi/g, '\ufb01').replace(/fl/g, '\ufb02')],
+  [
+    'right-to-left override',
+    (prose) => eachWord(prose, (word) => `\u202e${[...word].reverse().join('')}\u202c`),
+  ],
+  [
+    'right-to-left isolate',
+    (prose) => eachWord(prose, (word) => `\u2067${[...word].reverse().join('')}\u2069`),
+  ],
+  ['tag characters', (prose) => eachWord(prose, (word) => `${word}\udb40\udc20`)],
+  [
+    'roman-numeral characters',
+    (prose) =>
+      fromCodePoints(prose, (ch) => {
+        const at = 'ivxlcdm'.indexOf(ch);
+        return at === -1 ? null : [0x2170, 0x2174, 0x2179, 0x217c, 0x217d, 0x217e, 0x217f][at]!;
+      }),
+  ],
+  [
+    'intraword bold',
+    (prose) =>
+      eachWord(prose, (word) =>
+        word.length >= 3 ? `${word[0]}**${word.slice(1, -1)}**${word.slice(-1)}` : `**${word}**`,
+      ),
+  ],
+  [
+    'letter separation',
+    (prose) => eachWord(prose, (word) => (word.length >= 2 ? [...word].join('-') : word)),
+  ],
 ];
 
 /** A look-alike transform: the verdict can only move toward withheld (the letters leave the allowlist). */
@@ -1324,6 +1417,8 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
         '?',
         '(',
         ')',
+        '[',
+        ']',
         '-',
         '–',
         '—',
@@ -1366,6 +1461,47 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
     }
   });
 
+  it('R6-WR-04 (iteration 6): every d24-r6 fixture is withheld by the validator AND convicted by the judge, and every d24-r6 control ships AND passes the judge', () => {
+    const r6 = ADVERSARIAL_FIXTURES.filter((fixture) => fixture.id.startsWith('d24-r6-'));
+    const controls = r6.filter((fixture) => fixture.id.startsWith('d24-r6-control-'));
+    expect(r6.length - controls.length).toBeGreaterThan(70);
+    expect(controls.length).toBeGreaterThan(4);
+    for (const fixture of r6) {
+      const run = runAdversarial(fixture);
+      const prose = fixture.sections![0]!.prose;
+      const withheld = run.outcome.strippedSectionIds.includes('section-0');
+      const judge = judgeDeliveredProse(
+        prose,
+        CANONICAL_NAMES,
+        tagsFor(run.snapshot, run.issuedClaims),
+      );
+      const convicted = !controls.includes(fixture);
+      expect(withheld, `${fixture.id}: validator`).toBe(convicted);
+      expect(judge !== null, `${fixture.id}: judge`).toBe(convicted);
+    }
+  });
+
+  it('R6-WR-04: the judge reads its word lists from the rubric text, and every listed word or phrase is withheld by the validator AND convicted by the judge', () => {
+    expect(JUDGE_RUBRIC_LISTS.figureWords.length).toBeGreaterThan(100);
+    expect(JUDGE_RUBRIC_LISTS.tierStems.length).toBeGreaterThan(30);
+    const carriers: string[] = [
+      ...JUDGE_RUBRIC_LISTS.figureWords.map((word) => `Against ${R5_TAG}, remember this: ${word}.`),
+      ...JUDGE_RUBRIC_LISTS.figurePhrases
+        .flatMap(expandRubricPhrase)
+        .map((phrase) => `Against ${R5_TAG}, remember this: ${phrase}.`),
+      ...JUDGE_RUBRIC_LISTS.tierStems.flatMap((stem) =>
+        ['', ...JUDGE_RUBRIC_LISTS.tierSuffixes].map(
+          (suffix) => `Against ${R5_TAG}, remember this: ${stem}${suffix}.`,
+        ),
+      ),
+    ];
+    for (const prose of carriers) {
+      const verdicts = bothVerdicts(R5_RECORD_BASE, prose);
+      expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(true);
+      expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).not.toBeNull();
+    }
+  });
+
   it('R5-IN-03: a tag that reads as a figure or a grade is not a name to the judge either', () => {
     expect(judgeDeliveredProse('You beat High, and confidence is High.', [], ['High'])).toBe('R5');
     expect(judgeDeliveredProse('You are Leo 3-2 against, keep it up.', [], ['Leo 3-2'])).toBe('R4');
@@ -1378,22 +1514,44 @@ describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds
     ).toBeNull();
   });
 
-  it.each(FOLD_INVARIANT_TRANSFORMS)(
-    'metamorphic (%s): every figure and tier sentence stays withheld AND convicted, and every qualitative sentence still ships AND passes the judge',
+  it('metamorphic (identity): every figure and tier sentence is withheld AND convicted, and every qualitative sentence ships AND passes the judge', () => {
+    for (const [fixture, sentences, convicted] of [
+      [R5_RECORD_BASE, R5_FIGURE_SENTENCES, true],
+      [R5_TIER_BASE, R5_TIER_SENTENCES, true],
+      [R5_RECORD_BASE, R5_QUALITATIVE_RECORD, false],
+      [R5_TIER_BASE, R5_QUALITATIVE_TIER, false],
+    ] as const) {
+      for (const prose of sentences) {
+        const verdicts = bothVerdicts(fixture, prose);
+        expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(convicted);
+        expect(verdicts.judge !== null, `judge on ${JSON.stringify(prose)}`).toBe(convicted);
+      }
+    }
+  });
+
+  it.each(RENDERED_TRANSFORMS)(
+    'R6-WR-04 metamorphic (%s): the transform changes the delivered text, so every sentence, qualitative included, is withheld AND convicted',
     (_name, transform) => {
-      for (const [fixture, sentences, convicted] of [
-        [R5_RECORD_BASE, R5_FIGURE_SENTENCES, true],
-        [R5_TIER_BASE, R5_TIER_SENTENCES, true],
-        [R5_RECORD_BASE, R5_QUALITATIVE_RECORD, false],
-        [R5_TIER_BASE, R5_QUALITATIVE_TIER, false],
+      let changed = 0;
+      for (const [fixture, sentences] of [
+        [R5_RECORD_BASE, R5_FIGURE_SENTENCES],
+        [R5_TIER_BASE, R5_TIER_SENTENCES],
+        [R5_RECORD_BASE, R5_QUALITATIVE_RECORD],
+        [R5_TIER_BASE, R5_QUALITATIVE_TIER],
       ] as const) {
         for (const sentence of sentences) {
           const prose = transform(sentence);
+          if (prose === sentence) {
+            // A ligature transform leaves a sentence with no "fi" or "fl" as it was.
+            continue;
+          }
+          changed += 1;
           const verdicts = bothVerdicts(fixture, prose);
-          expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(convicted);
-          expect(verdicts.judge !== null, `judge on ${JSON.stringify(prose)}`).toBe(convicted);
+          expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(true);
+          expect(verdicts.judge, `judge on ${JSON.stringify(prose)}`).not.toBeNull();
         }
       }
+      expect(changed).toBeGreaterThan(0);
     },
   );
 
