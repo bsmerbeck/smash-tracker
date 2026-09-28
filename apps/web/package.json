@@ -22,6 +22,7 @@
     "verify:built-chunks": "node scripts/evaluateBuiltChunks.mjs",
     "capture:timeline-fidelity": "node scripts/captureTimelineFidelity.mjs",
     "capture:design": "node scripts/captureDesignScreens.mjs",
+    "capture:matchups-fidelity": "node scripts/captureMatchupsFidelity.mjs",
     "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {
