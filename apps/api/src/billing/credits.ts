@@ -26,12 +26,10 @@ import { buildBillingEnvelope } from '../events/envelope.js';
  * initialized," never a permanent-abort condition (a fresh uid's first-ever
  * grant/refund is a legitimate null start). `fulfillCheckoutSession()` is
  * the converged Stripe-fulfillment entry point: it dedups via
- * `markStripeEventProcessed`'s transaction, then performs ONE root-level
- * multi-path `update()` that atomically closes the mark+grant+ledger+
- * day-mirror write together — the specific gap this replaces (a separate
- * `markStripeEventProcessed()` call followed by a non-atomic `addCredits()`)
- * could otherwise leave an event marked-processed with no credit ever
- * granted if the process crashed between the two calls.
+ * `markStripeEventProcessed`'s transaction, ADDS the pack's credits in a
+ * transaction on the balance (code review R6-WR-06), then writes the
+ * processed marker's day mirror and the ledger entry with its day mirror in
+ * ONE root-level multi-path `update()`.
  */
 
 function balanceRef(database: Database, uid: string) {
@@ -184,6 +182,14 @@ export async function refundCredit(database: Database, uid: string, ref: string)
 /** The child of `credits/{uid}` holding `refundCreditOnce`'s create-once markers, one per refunded execution. */
 export const REFUND_MARKERS_KEY = 'refundMarkers';
 
+/**
+ * Code review R6-IN-02 (iteration 6): how long a refund marker is kept. A
+ * marker only has to outlive its own request's bounded retries and a
+ * reconnect replay; nothing else reads the map, and every refund
+ * transaction downloads and rewrites all of it.
+ */
+const REFUND_MARKER_RETENTION_MS = 24 * 60 * 60 * 1000;
+
 interface RefundMarker {
   ledgerKey: string;
   createdAt: number;
@@ -201,7 +207,11 @@ interface RefundMarker {
  * a retry rewrites the same entry instead of appending a second one.
  *
  * Returns true when this call committed the balance increment, false when
- * the marker already existed (an earlier attempt refunded). A null first-run
+ * the marker already existed (an earlier attempt refunded). Code review
+ * R6-IN-02: the same transaction drops every OTHER marker older than
+ * `REFUND_MARKER_RETENTION_MS`, so the map cannot grow without bound; this
+ * execution's own marker is checked first, so it aborts however old it is.
+ * A null first-run
  * input (the SDK's local cache on a listener-less server) is treated as an
  * empty node: the transaction's server compare re-runs it against the real
  * node, so it never overwrites an existing balance.
@@ -228,12 +238,21 @@ export async function refundCreditOnce(
       // Already refunded by an earlier attempt: abort, nothing written.
       return undefined;
     }
+    const retained = Object.fromEntries(
+      Object.entries(markers).filter(([, marker]) => {
+        const markerCreatedAt = (marker as Partial<RefundMarker> | null)?.createdAt;
+        return !(
+          typeof markerCreatedAt === 'number' &&
+          markerCreatedAt < createdAt - REFUND_MARKER_RETENTION_MS
+        );
+      }),
+    );
     const balance = typeof node.balance === 'number' ? node.balance : 0;
     return {
       ...node,
       balance: balance + 1,
       [REFUND_MARKERS_KEY]: {
-        ...markers,
+        ...retained,
         [markerKey]: { ledgerKey, createdAt } satisfies RefundMarker,
       },
     };
@@ -312,12 +331,26 @@ export interface FulfillableCheckoutSession {
  * 2. Dedups via `markStripeEventProcessed`'s transaction on
  *    `processedStripeEvents/{stripeEventId}` — a replayed/duplicate-delivered
  *    event returns `{ granted: false }` with no second grant.
- * 3. On a fresh event, issues ONE root-level multi-path `update()` writing
- *    the `processedStripeEvents` marker, its day-mirror, the balance
- *    increment, the `creditLedger` entry, and its day-mirror together — so
- *    the grant and its ledger trail commit as a single atomic unit (the day
- *    mirrors feed the nightly reconciliation job from a later plan).
- * 4. Emits one `credits_granted` B event, deduped on
+ * 3. On a fresh event, ADDS `pack.credits` to the balance in a transaction
+ *    on `credits/{uid}/balance` (code review R6-WR-06, iteration 6). The
+ *    grant used to read the balance and then write the ABSOLUTE value
+ *    `current + pack.credits` in the root update below: a refund
+ *    (`refundCreditOnce`, a transaction on `credits/{uid}`) or a spend that
+ *    committed in between was overwritten — the refund lost for good (its
+ *    create-once marker makes a retry abort), the spend undone (a free
+ *    credit) — and the root write also aborted any in-flight transaction
+ *    under `credits/{uid}`. A transaction's server hash compare re-runs the
+ *    increment against whatever committed first, so every writer's change
+ *    survives. A null first run is the SDK's local cache, not an empty
+ *    balance: its `pack.credits` guess is re-run against the real value.
+ * 4. Then ONE root-level multi-path `update()` writes the
+ *    `processedStripeEvents` marker, its day-mirror, the `creditLedger`
+ *    entry and its day-mirror together (the day mirrors feed the nightly
+ *    reconciliation job). The balance is credited FIRST, so a crash between
+ *    the two leaves the buyer holding the credits with the ledger trail
+ *    missing (a gap reconciliation can find), never a ledger claiming
+ *    credits the balance lacks.
+ * 5. Emits one `credits_granted` B event, deduped on
  *    `${stripeEventId}:credits_granted`.
  */
 export async function fulfillCheckoutSession(
@@ -337,7 +370,10 @@ export async function fulfillCheckoutSession(
     return { granted: false };
   }
 
-  const current = await getBalance(database, uid);
+  await balanceRef(database, uid).transaction((current) =>
+    typeof current === 'number' ? current + pack.credits : pack.credits,
+  );
+
   const day = dayShardKey(Date.now());
   const key = ledgerRef(database, uid).push().key;
   if (!key) {
@@ -355,7 +391,6 @@ export async function fulfillCheckoutSession(
   await database.ref().update({
     [`processedStripeEvents/${stripeEventId}`]: now,
     [`processedStripeEventsByDay/${day}/${stripeEventId}`]: true,
-    [`credits/${uid}/balance`]: current + pack.credits,
     [`creditLedger/${uid}/${key}`]: ledgerEntry,
     [`creditLedgerByDay/${day}/${uid}/${key}`]: ledgerEntry,
   });
