@@ -50,6 +50,7 @@ import {
   toModelFacingClaim,
   type ModelFacingActionCandidate,
   type ModelFacingClaim,
+  type ReportModelRequestOptions,
 } from './generate.js';
 
 // ---------------------------------------------------------------------------
@@ -475,16 +476,20 @@ function buildVodAnnotationRows(input: {
  */
 export interface SynthesisAnthropicClient {
   messages: {
-    parse: (params: {
-      model: string;
-      max_tokens: number;
-      thinking: { type: 'adaptive' };
-      system: string;
-      messages: Array<{ role: 'user'; content: string }>;
-      output_config: {
-        format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
-      };
-    }) => Promise<{
+    parse: (
+      params: {
+        model: string;
+        max_tokens: number;
+        thinking: { type: 'adaptive' };
+        system: string;
+        messages: Array<{ role: 'user'; content: string }>;
+        output_config: {
+          format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
+        };
+      },
+      /** Code review R4-WR-02: the route's one-attempt bound (`ReportModelRequestOptions`). */
+      options?: ReportModelRequestOptions,
+    ) => Promise<{
       stop_reason: string | null;
       parsed_output: ClaimSelection | null;
     }>;

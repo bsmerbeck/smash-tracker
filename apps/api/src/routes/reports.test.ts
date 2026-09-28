@@ -36,6 +36,12 @@ import {
   type ScoutReportData,
 } from '@smash-tracker/shared';
 import { buildApp } from '../app.js';
+import {
+  REPORT_JOB_STALE_MS,
+  REPORT_MODEL_MAX_RETRIES,
+  REPORT_MODEL_TIMEOUT_MS,
+  SWEEP_CLOCK_SKEW_MARGIN_MS,
+} from './reports.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 import { assembleReportPayload, REPORT_MODEL } from '../reports/generate.js';
 import { projectScoutSelection } from '../reports/claimSelection.js';
@@ -7514,6 +7520,8 @@ function expectBoundedSingleAttempt(options: R4ModelCall['options']): number {
   const timeout = options!.timeout as number;
   expect(timeout).toBeGreaterThan(0);
   expect(timeout).toBeLessThanOrEqual(EIGHT_MINUTES_MS);
+  // The same bound as an abort signal, which also covers reading the body.
+  expect(options!.signal).toBeInstanceOf(AbortSignal);
   return timeout;
 }
 
@@ -7596,11 +7604,15 @@ describe('code review R4-WR-02: one model call per job, no retries, bounded well
   });
 
   it('the bound leaves the fourteen-minute own-refund guard unreachable on a live execution: one attempt plus six minutes of slack still ends before the stale window minus its one-minute margin', () => {
-    // One attempt (maxRetries 0) at the largest allowed timeout, measured
-    // from the running claim, against the guard's own threshold.
-    const guardThresholdMs = SWEEP_STALE_WINDOW_MS - 60 * 1000;
-    const attempts = 1;
-    expect(attempts * EIGHT_MINUTES_MS).toBeLessThan(guardThresholdMs);
-    expect(guardThresholdMs - attempts * EIGHT_MINUTES_MS).toBeGreaterThanOrEqual(6 * 60 * 1000);
+    // Read from the route's own constants: one attempt (no retries) at the
+    // configured timeout, measured from the running claim, against the
+    // guard's threshold (the stale window minus the clock-skew margin).
+    expect(REPORT_MODEL_MAX_RETRIES).toBe(0);
+    expect(REPORT_MODEL_TIMEOUT_MS).toBeLessThanOrEqual(EIGHT_MINUTES_MS);
+    expect(REPORT_JOB_STALE_MS).toBe(SWEEP_STALE_WINDOW_MS);
+    const guardThresholdMs = REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS;
+    const worstCaseModelMs = (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS;
+    expect(worstCaseModelMs).toBeLessThan(guardThresholdMs);
+    expect(guardThresholdMs - worstCaseModelMs).toBeGreaterThanOrEqual(6 * 60 * 1000);
   });
 });

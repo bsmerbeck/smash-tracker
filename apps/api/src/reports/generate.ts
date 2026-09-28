@@ -1058,22 +1058,36 @@ export async function assembleReportPayload(
 // ---------------------------------------------------------------------------
 
 /**
+ * Code review R4-WR-02: the per-request SDK options the route attaches to
+ * every model call (`routes/reports.ts`'s `reportModelRequestOptions`): no
+ * retries, an explicit timeout, and an abort signal carrying the same bound.
+ */
+export interface ReportModelRequestOptions {
+  maxRetries: number;
+  timeout: number;
+  signal?: AbortSignal;
+}
+
+/**
  * Minimal structural interface for the Anthropic client — just the one
  * method this module calls. Lets tests pass a plain stub with a mocked
  * `messages.parse` instead of constructing a real `Anthropic` instance.
  */
 export interface AnthropicLikeClient {
   messages: {
-    parse: (params: {
-      model: string;
-      max_tokens: number;
-      thinking: { type: 'adaptive' };
-      system: string;
-      messages: Array<{ role: 'user'; content: string }>;
-      output_config: {
-        format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
-      };
-    }) => Promise<{
+    parse: (
+      params: {
+        model: string;
+        max_tokens: number;
+        thinking: { type: 'adaptive' };
+        system: string;
+        messages: Array<{ role: 'user'; content: string }>;
+        output_config: {
+          format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
+        };
+      },
+      options?: ReportModelRequestOptions,
+    ) => Promise<{
       stop_reason: string | null;
       parsed_output: ClaimSelection | null;
     }>;

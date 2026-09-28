@@ -59,6 +59,7 @@ import {
   ReportGenerationError,
   REPORT_MODEL,
   type AnthropicLikeClient,
+  type ReportModelRequestOptions,
   type ReportPayload,
 } from '../reports/generate.js';
 import { projectScoutSelection, type ClaimSelection } from '../reports/claimSelection.js';
@@ -108,11 +109,35 @@ import { isDemoAccountSubject } from '../research/demoAccount.js';
  * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
  * considered abandoned (crashed mid-generation, never reached a terminal
  * state) rather than genuinely in-flight — a retry with the same jobId is
- * allowed to proceed instead of 409ing forever. Comfortably beyond any real
- * Anthropic call; the stuck-job sweep (a later plan) uses the same window to
- * find and recover jobs that were never retried by their own client.
+ * allowed to proceed instead of 409ing forever. The stuck-job sweep uses the
+ * same window (`sweepStuckReportJobs.ts` mirrors this value) to find and
+ * recover jobs that were never retried by their own client.
+ *
+ * Code review R4-WR-02: this window is safe only because the one long step
+ * between the running claim and a terminal write — the model call — is
+ * BOUNDED: one attempt (`REPORT_MODEL_MAX_RETRIES`) of at most
+ * `REPORT_MODEL_TIMEOUT_MS`. Before that bound the SDK defaults (two
+ * retries, ten minutes per attempt) let one call run about thirty minutes,
+ * so a live execution could be swept mid-flight. The bound leaves at least
+ * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
  */
-const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
+export const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Code review R4-WR-02: the owner's locked rule — ONE model call per job, no
+ * retries. Passed on every model request (and set on the built client), so
+ * the SDK's default of two retries (on timeouts, 408/409/429 and 5xx) never
+ * applies. A failed attempt fails the job and refunds it; the user retries.
+ */
+export const REPORT_MODEL_MAX_RETRIES = 0;
+
+/**
+ * Code review R4-WR-02: the explicit per-attempt bound on a model call, well
+ * inside `REPORT_JOB_STALE_MS`. The SDK arms its own timer only until the
+ * response headers arrive, so the same bound is also applied as an abort
+ * signal that covers reading the body (`reportModelRequestOptions`).
+ */
+export const REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000;
 
 /**
  * Code review R3-WR-02: the clock-skew allowance between this process and
@@ -120,7 +145,19 @@ const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
  * older than `REPORT_JOB_STALE_MS` minus this may already have been failed
  * AND refunded by the sweep, so it never refunds its own spend again.
  */
-const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
+export const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
+
+/**
+ * Code review R4-WR-02: the per-request options every model call this plugin
+ * makes carries. Built per call because an abort signal is single-use.
+ */
+function reportModelRequestOptions(): ReportModelRequestOptions {
+  return {
+    maxRetries: REPORT_MODEL_MAX_RETRIES,
+    timeout: REPORT_MODEL_TIMEOUT_MS,
+    signal: AbortSignal.timeout(REPORT_MODEL_TIMEOUT_MS),
+  };
+}
 
 export interface ReportsRoutesOptions {
   config: ReportsConfig | null;
@@ -523,8 +560,21 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   const fetchImpl = options.fetchImpl ?? fetch;
   const scoutCache = new ScoutCache();
   const parryScoutCache = new ParryScoutCache();
-  const client: AnthropicLikeClient =
-    options.client ?? new Anthropic({ apiKey: config.anthropicApiKey });
+  const sdkClient: AnthropicLikeClient =
+    options.client ??
+    new Anthropic({
+      apiKey: config.anthropicApiKey,
+      maxRetries: REPORT_MODEL_MAX_RETRIES,
+      timeout: REPORT_MODEL_TIMEOUT_MS,
+    });
+  // Code review R4-WR-02: every model call — scout, prep and synthesis — goes
+  // through this one wrapper, so each request carries the one-attempt bound
+  // whichever client (built or injected) sits behind it.
+  const client: AnthropicLikeClient = {
+    messages: {
+      parse: (params) => sdkClient.messages.parse(params, reportModelRequestOptions()),
+    },
+  };
 
   /**
    * Phase 30.3 (Gate 6): the ONE free-access predicate every branch in this
