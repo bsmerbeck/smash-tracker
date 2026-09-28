@@ -83,13 +83,13 @@ export function citationTokens(text) {
 /** True when `token` resolves against the registry texts (see brief section 6 step 6). */
 export function resolveCitation(token, registry) {
   let m;
-  if ((m = /^PD-\d+-\d+$/.exec(token))) {
+  if (/^PD-\d+-\d+$/.test(token)) {
     return new RegExp(`^\\| ${escapeRegExp(token)} \\|`, 'm').test(briefSection8(registry.brief));
   }
-  if ((m = /^DD-\d+$/.exec(token))) {
+  if (/^DD-\d+$/.test(token)) {
     return new RegExp(`^\\| ${escapeRegExp(token)} \\|`, 'm').test(registry.uiSpec);
   }
-  if ((m = /^D-\d+$/.exec(token))) {
+  if (/^D-\d+$/.test(token)) {
     return new RegExp(`\\*\\*${escapeRegExp(token)}\\b`).test(registry.context);
   }
   if ((m = /^UI-SPEC (?:section |§)(\d+)(?:\.(\d+))?$/.exec(token))) {
