@@ -1600,6 +1600,20 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       // inside `.recharts-reference-line` — TrendLine tags it with its own
       // `trend-period-reference-label` class (the axis-ticks collector's rule).
       const referenceEl = root.querySelector('.trend-period-reference-label');
+      // Plan 39.1-43 (OOS-6, UI-SPEC 7.13 as amended): when the kit declares
+      // no free slot (`data-reference-label-position="none"`) it draws no
+      // direct label and the head's reference legend item states the rate —
+      // only then is the legend item the surface's reference text.
+      const legendReferenceEl =
+        root.getAttribute('data-reference-label-position') === 'none'
+          ? root.querySelector('[data-slot="trend-legend-item"][data-kind="reference"]')
+          : null;
+      const referenceLabel = referenceEl
+        ? (referenceEl.textContent ?? '').trim()
+        : legendReferenceEl
+          ? (legendReferenceEl.textContent ?? '').trim()
+          : null;
+      const referenceLabelSource = referenceEl ? 'direct' : legendReferenceEl ? 'legend' : null;
       // Plan 39.1-43 (PD-43-3): the value range = the span between the
       // fitted domain's lowest and highest HAIRLINES — the horizontal grid
       // lines drawn at a y-axis tick. Recharts 3's CartesianGrid also draws
@@ -1629,7 +1643,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         valueLabels,
         strokedLineCount,
         yTickTexts,
-        referenceLabel: referenceEl ? (referenceEl.textContent ?? '').trim() : null,
+        referenceLabel,
+        referenceLabelSource,
         valueRangePx,
         valueRangeSource,
       });

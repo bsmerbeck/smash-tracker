@@ -2144,7 +2144,13 @@ export function formatPeriodTrendLine(routeId, viewportName, surface) {
     .sort((a, b) => a - b)
     .join(',');
   const labels = (surface.valueLabels ?? []).map((label) => label.text).join('|');
-  const ref = surface.referenceLabel ? surface.referenceLabel.replace(/\s+/g, '_') : 'none';
+  // Plan 39.1-43 (OOS-6 fallback): a rate stated by the head's reference
+  // legend item (no direct label — every slot was taken) prints as legend:<text>.
+  const refText = surface.referenceLabel ? surface.referenceLabel.replace(/\s+/g, '_') : 'none';
+  const ref =
+    surface.referenceLabel && surface.referenceLabelSource === 'legend'
+      ? `legend:${refText}`
+      : refText;
   const range =
     typeof surface.valueRangePx === 'number' && Number.isFinite(surface.valueRangePx)
       ? String(Math.round(surface.valueRangePx))
