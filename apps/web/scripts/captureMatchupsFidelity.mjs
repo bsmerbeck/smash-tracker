@@ -171,10 +171,12 @@ function collectFidelityMetrics(side, regions) {
     );
     strip = {
       shownEvents: events.length,
-      labels: Array.from(document.querySelectorAll('[data-slot^="form-strip-caption"]'))
+      // Plan 39.1-42: every shown event carries its own label row (the plan-33
+      // caption is gone) and the foot's first item states what is drawn.
+      labels: Array.from(document.querySelectorAll('[data-slot="form-strip-event-label"]'))
         .filter(visible)
         .map(text),
-      foot: text(document.querySelector('[data-slot="form-strip-shown-of-total"]')),
+      foot: text(document.querySelector('[data-slot="form-strip-foot"] > :first-child')),
     };
     const root = document.querySelector('[data-slot="trend-line-period"]');
     trend = root
