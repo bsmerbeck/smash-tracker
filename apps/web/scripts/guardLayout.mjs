@@ -175,10 +175,13 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-30: the only route opted into the four new oracle families
     // and the two extra viewports — every other route's measurement stays
     // byte-unchanged (three viewports, zero new checks).
+    // Plan 39.1-41 (PD-41-1): 'axis-ticks' MOVED to matchups-sketch-deep —
+    // this realistic pairing (one week of games) now shows the locked
+    // quarterly trend, so it has no period axis to measure. Moved, never
+    // dropped.
     checks: [
       'content-overflow',
       'header-squeeze',
-      'axis-ticks',
       'grid-balance',
       'picker-alignment',
       'row-cohesion',

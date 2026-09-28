@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   CartesianGrid,
@@ -39,6 +39,7 @@ import {
   PERIOD_VALUE_LABEL_OFFSET_PX,
   fitRateDomain,
   periodDotDiameter,
+  periodDotDiameterForTier,
   placeReferenceLabel,
   rateDomainTicks,
 } from './trendGeometry';
@@ -133,10 +134,17 @@ export interface TrendLinePeriodProps extends TrendLineSharedProps {
   referenceRate?: number;
   /** The recent window's start (ms) for the emphasis band; omitted renders no band. */
   emphasisStartMs?: number;
-  /** An optional cumulative-rate context step series (Matchups only, UI-SPEC §7.13's Phase-38 D-11 semantic demoted to context), 0-100, same length/order as `points`. */
-  contextRatePercents?: number[];
+  /**
+   * Plan 39.1-41 (PD-41-2): how a period dot is sized — `'games'` (default,
+   * the Fighter hero: plan 37's 50 / 150-game steps) or `'tier'` (scoped
+   * trends, sketch 003 `dotSize`: the confidence tier of the period's games).
+   */
+  dotSizing?: PeriodDotSizing;
   labels: TrendLinePeriodLabels;
 }
+
+/** Plan 39.1-41: the period dot-size rule — see `TrendLinePeriodProps.dotSizing`. */
+export type PeriodDotSizing = 'games' | 'tier';
 
 interface TrendLineSharedProps {
   /** D-04: explicit numeric size for tests; omitted at runtime for the responsive wrapper. */
@@ -456,8 +464,8 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
 // `packages/shared/src/insight/periodSeries.ts`.
 // ---------------------------------------------------------------------------
 
-function periodDotRadius(total: number): number {
-  return periodDotDiameter(total) / 2;
+function periodDotRadius(total: number, dotSizing: PeriodDotSizing): number {
+  return (dotSizing === 'tier' ? periodDotDiameterForTier(total) : periodDotDiameter(total)) / 2;
 }
 
 /** UI-SPEC §7.13: 2px at `CHART_H_DEFAULT`, 1.5px at `CHART_H_COMPACT`. */
@@ -492,7 +500,7 @@ function findPeriodLabeledIndices(points: PeriodPoint[]): Set<number> {
  * UI-SPEC §7.13 / sketch 001-C: the domain is fitted to the JOINED periods
  * and the all-time reference rate — never to a sub-floor period (owner
  * decision 2026-09-25: an off-domain sub-floor dot is pinned to the edge
- * instead) and never to the demoted context step series, which may clip.
+ * instead).
  */
 function computePeriodYDomain(points: PeriodPoint[], referenceRate?: number): [number, number] {
   const fitted = points.filter((point) => !point.subFloor).map((point) => point.rate * 100);
@@ -523,7 +531,11 @@ function findEmphasisStartKey(points: PeriodPoint[], emphasisStartMs: number): s
   return (after ?? points[points.length - 1])?.key;
 }
 
-function periodDotRenderer(points: PeriodPoint[], domain: [number, number]) {
+function periodDotRenderer(
+  points: PeriodPoint[],
+  domain: [number, number],
+  dotSizing: PeriodDotSizing,
+) {
   return function renderDot(dotProps: unknown): ReactElement {
     const { cx, cy, index } = dotProps as { cx?: number; cy?: number; index?: number };
     if (typeof cx !== 'number' || typeof cy !== 'number' || typeof index !== 'number') {
@@ -533,7 +545,7 @@ function periodDotRenderer(points: PeriodPoint[], domain: [number, number]) {
     if (!point) {
       return <g />;
     }
-    const radius = periodDotRadius(point.total);
+    const radius = periodDotRadius(point.total, dotSizing);
     if (point.subFloor) {
       // Owner decision 2026-09-25: an off-domain sub-floor dot is drawn at
       // the nearest domain edge (never dropped, never widening the axis) and
@@ -550,6 +562,8 @@ function periodDotRenderer(points: PeriodPoint[], domain: [number, number]) {
           stroke={CHART_TOKENS.deemphasis}
           strokeWidth={1.5}
           data-slot="trend-period-dot"
+          data-point-key={point.key}
+          data-sub-floor="true"
           {...(pinned ? { 'data-pinned': pinned } : {})}
         >
           {pinned && <title>{`${Math.round(point.rate * 100)}%`}</title>}
@@ -566,6 +580,8 @@ function periodDotRenderer(points: PeriodPoint[], domain: [number, number]) {
         stroke={CHART_TOKENS.surface}
         strokeWidth={2}
         data-slot="trend-period-dot"
+        data-point-key={point.key}
+        data-sub-floor="false"
       />
     );
   };
@@ -594,6 +610,7 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
         fontWeight={600}
         {...VALUE_LABEL_HALO}
         data-slot="trend-period-value-label"
+        data-point-key={point.key}
       >
         {`${Math.round(point.rate * 100)}%`}
       </text>
@@ -655,23 +672,17 @@ interface PeriodChartRow {
   ratePercent: number;
   /** Where the dot is drawn: the true rate, or the nearest domain edge for a pinned sub-floor dot. */
   dotRatePercent: number;
-  contextPercent?: number;
 }
 
-function buildPeriodChartData(
-  points: PeriodPoint[],
-  domain: [number, number],
-  contextRatePercents?: number[],
-): PeriodChartRow[] {
+function buildPeriodChartData(points: PeriodPoint[], domain: [number, number]): PeriodChartRow[] {
   const [lo, hi] = domain;
-  return points.map((point, i) => {
+  return points.map((point) => {
     const ratePercent = point.rate * 100;
     return {
       key: point.key,
       lineRatePercent: point.subFloor ? null : ratePercent,
       ratePercent,
       dotRatePercent: point.subFloor ? Math.min(hi, Math.max(lo, ratePercent)) : ratePercent,
-      contextPercent: contextRatePercents?.[i],
     };
   });
 }
@@ -774,8 +785,6 @@ const PERIOD_Y_AXIS_PADDING_TOP_PX = 24;
 const PERIOD_Y_AXIS_PADDING_BOTTOM_PX = 16;
 /** Recharts' default XAxis height (px) — the band below the plot the tick labels occupy. */
 const PERIOD_X_AXIS_HEIGHT_PX = 30;
-/** The hidden twin y-axis the Matchups context step series is drawn on. */
-const PERIOD_CONTEXT_Y_AXIS_ID = 'context';
 
 /**
  * The period plot's modelled pixel geometry — the same model
@@ -854,13 +863,14 @@ function PeriodTrendChart({
   // branch below still needs this component to have called exactly the same
   // hooks on every render regardless of `points.length`.
   const [measuredWidth, setMeasuredWidth] = useState(PERIOD_TICKS_RESPONSIVE_FALLBACK_WIDTH);
+  const dotSizing: PeriodDotSizing = props.dotSizing ?? 'games';
 
   if (points.length < PERIOD_TREND_MIN_PERIODS) {
     return (
-      <>
+      <PeriodTrendRoot state="locked" dotSizing={dotSizing}>
         {renderPeriodLockedInset(props)}
         <PeriodTableTwin props={props} />
-      </>
+      </PeriodTrendRoot>
     );
   }
 
@@ -871,7 +881,7 @@ function PeriodTrendChart({
   const domain = computePeriodYDomain(points, props.referenceRate);
   const [yMin, yMax] = domain;
   const yTicks = rateDomainTicks(domain, model.valueBottomPx - model.valueTopPx);
-  const data = buildPeriodChartData(points, domain, props.contextRatePercents);
+  const data = buildPeriodChartData(points, domain);
   const labeledIndices = findPeriodLabeledIndices(points);
   const tickLayout = selectPeriodTickLayout(points, { plotWidthPx, locale });
   const referenceLabel = props.labels.referenceLabel;
@@ -928,19 +938,6 @@ function PeriodTrendChart({
         padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
       />
-      {/* The demoted context step series (Matchups) is the one series that may
-          leave the fitted domain: it lives on a hidden twin axis whose
-          allowDataOverflow clips it at the edge instead of letting Recharts
-          re-extend the domain the dots are drawn on. */}
-      {props.contextRatePercents && (
-        <YAxis
-          yAxisId={PERIOD_CONTEXT_Y_AXIS_ID}
-          hide
-          domain={[yMin, yMax]}
-          allowDataOverflow
-          padding={{ top: PERIOD_Y_AXIS_PADDING_TOP_PX, bottom: PERIOD_Y_AXIS_PADDING_BOTTOM_PX }}
-        />
-      )}
       {props.tooltip && (
         <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
       )}
@@ -973,17 +970,6 @@ function PeriodTrendChart({
           ifOverflow="visible"
         />
       )}
-      {props.contextRatePercents && (
-        <Line
-          yAxisId={PERIOD_CONTEXT_Y_AXIS_ID}
-          type="stepAfter"
-          dataKey="contextPercent"
-          stroke={CHART_TOKENS.deemphasis}
-          strokeWidth={1}
-          dot={false}
-          isAnimationActive={false}
-        />
-      )}
       <Line
         className="trend-line-period-line"
         type="linear"
@@ -998,7 +984,7 @@ function PeriodTrendChart({
         type="linear"
         dataKey="dotRatePercent"
         stroke="none"
-        dot={periodDotRenderer(points, domain)}
+        dot={periodDotRenderer(points, domain, dotSizing)}
         label={periodLabelRenderer(points, labeledIndices)}
         isAnimationActive={false}
       />
@@ -1015,9 +1001,41 @@ function PeriodTrendChart({
     );
 
   return (
-    <>
+    <PeriodTrendRoot state="drawn" dotSizing={dotSizing} yDomain={domain}>
       {plot}
       <PeriodTableTwin props={props} />
-    </>
+    </PeriodTrendRoot>
+  );
+}
+
+/**
+ * Plan 39.1-41: the period trend's root — layout-neutral (`display:
+ * contents`, so the plot and its table twin stay direct flex/grid items of
+ * the host) — declaring what the chart drew for guard:layout's
+ * period-trend-marks family and the fidelity captures: `data-state`
+ * (drawn | locked), `data-dot-sizing` and, when drawn, `data-y-domain`
+ * ("lo,hi", the fitted domain).
+ */
+function PeriodTrendRoot({
+  state,
+  dotSizing,
+  yDomain,
+  children,
+}: {
+  state: 'drawn' | 'locked';
+  dotSizing: PeriodDotSizing;
+  yDomain?: [number, number];
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <div
+      className="contents"
+      data-slot="trend-line-period"
+      data-state={state}
+      data-dot-sizing={dotSizing}
+      {...(yDomain ? { 'data-y-domain': `${yDomain[0]},${yDomain[1]}` } : {})}
+    >
+      {children}
+    </div>
   );
 }

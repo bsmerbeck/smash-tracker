@@ -1,3 +1,5 @@
+import { confidenceTierFor } from '@smash-tracker/shared';
+
 /**
  * Plan 39.1-37 (VIZ-01, UI-SPEC §7.13, sketch 001-C `trend()`): the pure
  * geometry behind the trend plots — the fitted rate domain, its hairline
@@ -98,6 +100,20 @@ export const PERIOD_DOT_LARGE_MIN_GAMES = 150;
 export function periodDotDiameter(total: number): number {
   if (total >= PERIOD_DOT_LARGE_MIN_GAMES) return PERIOD_DOT_DIAMETER_LARGE;
   if (total >= PERIOD_DOT_MEDIUM_MIN_GAMES) return PERIOD_DOT_DIAMETER_MEDIUM;
+  return PERIOD_DOT_DIAMETER_SMALL;
+}
+
+/**
+ * Plan 39.1-41 (PD-41-2, sketch 003 `dotSize`): a SCOPED trend's dot
+ * diameter (px) by the period's confidence tier — the shared
+ * `confidenceTierFor` thresholds (3-7 / 8-19 / 20+ games), never a second
+ * threshold table: high -> large, medium -> medium, low or below the floor ->
+ * small. The Fighter hero keeps `periodDotDiameter` (games) above.
+ */
+export function periodDotDiameterForTier(total: number): number {
+  const tier = confidenceTierFor(total);
+  if (tier === 'high') return PERIOD_DOT_DIAMETER_LARGE;
+  if (tier === 'medium') return PERIOD_DOT_DIAMETER_MEDIUM;
   return PERIOD_DOT_DIAMETER_SMALL;
 }
 

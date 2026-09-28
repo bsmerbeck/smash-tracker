@@ -14,6 +14,7 @@ import type {
 import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
+import { CHART_H_COMPACT } from '@/components/charts/tokens';
 import { FormStrip } from '@/components/charts/FormStrip';
 import { buildFormStripEvents, formStripSetKeyForMatch } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
@@ -252,17 +253,6 @@ export function formStripEventKeyForMatch(match: Match): string {
   return formStripSetKeyForMatch(match);
 }
 
-/** UI-SPEC §7.13: the cumulative rate at (and through) each period point, as a context series parallel to `points` — never a second binning pass, just a running reduction over the SAME already-binned points. */
-function computeCumulativeContextPercents(points: { wins: number; total: number }[]): number[] {
-  let wins = 0;
-  let total = 0;
-  return points.map((point) => {
-    wins += point.wins;
-    total += point.total;
-    return total > 0 ? (wins / total) * 100 : 0;
-  });
-}
-
 /**
  * Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over
  * time for the specific matchup. Phase 39.1 (VIZ-03, INS-05, UI-SPEC §8.3):
@@ -296,9 +286,10 @@ export function MatchupChart({
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
-  /** CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over `matchupMatches` — plotted here, resolved by the host's terminus. */
+  /** CR-02 (39.1-REVIEW): the host's ONE `buildMatchupPeriodSeries` (`../lib/matchupPeriodSeries`) result over `matchupMatches` — plotted here, resolved by the host's terminus. */
   periodSeries: PeriodSeries;
   width?: number;
+  /** Tests only; the page draws the trend at `CHART_H_COMPACT` (sketch 003's compact trend). */
   height?: number;
 }) {
   const { t, i18n } = useTranslation();
@@ -307,11 +298,6 @@ export function MatchupChart({
   const insight = useMatchupFormNow({ matchupMatches, horizon });
 
   const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
-
-  const contextRatePercents = useMemo(
-    () => computeCumulativeContextPercents(periodSeries.points),
-    [periodSeries.points],
-  );
 
   const recentWindow = useMemo(
     () => ({ fromMs: insight?.window.fromMs ?? null, toMs: insight?.window.toMs ?? null }),
@@ -372,9 +358,10 @@ export function MatchupChart({
         onSelectPoint={handleSelectPeriodPoint}
         referenceRate={overallRate}
         emphasisStartMs={recentWindow.fromMs ?? undefined}
-        contextRatePercents={contextRatePercents}
+        // Plan 39.1-41 (PD-41-2, sketch 003 `dotSize`): dots by confidence tier.
+        dotSizing="tier"
         width={width}
-        height={height}
+        height={height ?? CHART_H_COMPACT}
         labels={{
           lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
             count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
@@ -390,7 +377,11 @@ export function MatchupChart({
             rate: t('analytics.trend.tableHeaders.rate'),
             sample: t('analytics.trend.tableHeaders.sample'),
           },
-          referenceLabel: `${Math.round(overallRate)}%`,
+          // Plan 39.1-41 (sketch 003 / 001-C): "63% all time" — the exact call
+          // FighterHero makes (plan 37), never a bare rate.
+          referenceLabel: t('analytics.trend.referenceLabel', {
+            rate: `${Math.round(overallRate)}%`,
+          }),
         }}
       />
     </div>

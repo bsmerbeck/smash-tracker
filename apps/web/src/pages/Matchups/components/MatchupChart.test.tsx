@@ -9,6 +9,7 @@ import { ABSTENTION_FLOOR_GAMES, buildPeriodSeries } from '@smash-tracker/shared
 import i18n from '@/i18n';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
+import { buildMatchupPeriodSeries } from '../lib/matchupPeriodSeries';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import {
   MatchupChart,
@@ -56,7 +57,7 @@ function ChartCardWrapper({
       <MatchupChart
         matchupMatches={matchupMatches}
         horizon={horizon}
-        periodSeries={buildPeriodSeries({ matches: matchupMatches })}
+        periodSeries={buildMatchupPeriodSeries(matchupMatches)}
         width={width}
         height={height}
       />
@@ -105,6 +106,27 @@ function oldSequence(count: number, wins: number, opponentId = 1): Match[] {
   return Array.from({ length: count }, (_, i) =>
     makeMatch({ id: `o${i}`, opponent_id: opponentId, time: base + i * dayMs, win: i < wins }),
   );
+}
+
+/**
+ * Plan 39.1-41: `perQuarter` games in each of the `quarters` calendar quarters
+ * BEFORE the current one (5 days into the quarter, an hour apart) — the scoped
+ * trend's quarterly grain draws one point per quarter whatever today's date
+ * is, and the newest quarters stay inside D-15's 12-month bound.
+ */
+function quarterlySequence(quarters: number, perQuarter: number): Match[] {
+  const now = new Date();
+  const currentQuarterFirstMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+  const matches: Match[] = [];
+  for (let k = quarters; k >= 1; k--) {
+    const start = Date.UTC(now.getUTCFullYear(), currentQuarterFirstMonth - 3 * k, 5, 12);
+    for (let i = 0; i < perQuarter; i++) {
+      matches.push(
+        makeMatch({ id: `q${k}-${i}`, time: start + i * 60 * 60 * 1000, win: (k + i) % 3 !== 0 }),
+      );
+    }
+  }
+  return matches;
 }
 
 /** Two games inside both D-15's 12-month scoped bound and the `last30` window. */
@@ -167,7 +189,9 @@ describe('MatchupChart', () => {
   });
 
   it('renders the card body in order: verdict, evidence, form strip, plot, caption', () => {
-    const { container } = renderChart(recentSequence(10));
+    // REWRITTEN by plan 39.1-41 (PD-41-1): 10 daily games are one quarter —
+    // the scoped trend locks there — so the fixture is 9 quarters of 3 games.
+    const { container } = renderChart(quarterlySequence(9, 3));
 
     // `[data-slot]` covers the verdict/evidence/form-strip/caption markers;
     // the plot itself is a plain Recharts `<path class="trend-line-period-line">`
@@ -183,8 +207,7 @@ describe('MatchupChart', () => {
     );
 
     // The plot only renders once the trend is unlocked (>=8 periods) — the
-    // 10-game fixture above is at 'game' grain, 10 points, satisfying that
-    // floor.
+    // fixture above is at 'quarter' grain, 9 points, satisfying that floor.
     expect(order).toEqual([
       'matchup-form-now-verdict',
       'matchup-form-now-evidence',
@@ -194,10 +217,13 @@ describe('MatchupChart', () => {
     ]);
   });
 
-  it('at "game" grain every point is sub-floor (n=1 < the 3-game floor): renders only hollow dots and draws no connecting line segment', () => {
-    const { container } = renderChart(recentSequence(10));
+  // REWRITTEN by plan 39.1-41 (PD-41-1): the scoped trend never bins finer
+  // than a quarter, so the all-sub-floor case is 8 quarters of 2 games (was
+  // 10 single-game 'game' points).
+  it('at "quarter" grain with every quarter sub-floor (n=2 < the 3-game floor): renders only hollow dots and draws no connecting line segment', () => {
+    const { container } = renderChart(quarterlySequence(8, 2));
     const circles = container.querySelectorAll('circle');
-    expect(circles.length).toBe(10);
+    expect(circles.length).toBe(8);
     for (const circle of Array.from(circles)) {
       expect(circle.getAttribute('stroke')).toBe('var(--viz-context)');
     }
@@ -410,7 +436,9 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
     const scrollIntoView = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
-    const matches = recentSequence(10);
+    // REWRITTEN by plan 39.1-41 (PD-41-1): the clicked point is the oldest
+    // QUARTER (was the oldest 'game' point of 10 daily games).
+    const matches = quarterlySequence(9, 3);
     const { container, setDrillDown } = renderChart(matches);
 
     const svg = container.querySelector('svg.recharts-surface');
@@ -421,12 +449,13 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
 
     // jsdom's zero-size layout resolves every click to activeTooltipIndex 0
     // (see TrendLine.test.tsx and the 37-01 SUMMARY) — the clicked point is
-    // therefore always the oldest ('game' grain) point. CR-02 (39.1-REVIEW):
+    // therefore always the oldest (quarter) point. CR-02 (39.1-REVIEW):
     // the drill names that point by its key — a `[startMs, endMs]` window
     // over-counts on tied timestamps and non-contiguous grains.
     expect(setDrillDown).toHaveBeenCalledTimes(1);
     const call = setDrillDown.mock.calls[0]?.[0];
-    expect(call).toEqual({ eventKey: `game:${matches[0]?.id}` });
+    expect(call).toEqual({ eventKey: buildMatchupPeriodSeries(matches).points[0]?.key });
+    expect(call.eventKey).toMatch(/^quarter:\d{4}-Q[1-4]$/);
     expect(scrollIntoView).toHaveBeenCalledWith(
       expect.objectContaining({ behavior: 'smooth', block: 'start' }),
     );
@@ -470,7 +499,7 @@ describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
   type ScopedBuilder = (matches: Match[]) => ReturnType<typeof buildPeriodSeries>;
 
   async function loadBuilder(): Promise<{ build: ScopedBuilder; minGrain: unknown }> {
-    const mod = (await import('./MatchupChart')) as Record<string, unknown>;
+    const mod = (await import('../lib/matchupPeriodSeries')) as Record<string, unknown>;
     expect(typeof mod.buildMatchupPeriodSeries, 'buildMatchupPeriodSeries is exported').toBe(
       'function',
     );

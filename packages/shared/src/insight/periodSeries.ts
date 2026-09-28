@@ -116,6 +116,15 @@ export interface BuildPeriodSeriesOptions {
   target?: number;
   /** Reserved for API-shape parity with `computeInsights(matches, horizon, nowMs)`; the ladder needs no "now" reference — a period is defined entirely by its own games' timestamps. */
   nowMs?: number;
+  /**
+   * Plan 39.1-41 (sketch 003 A, MANIFEST 2026-09-25 "quarterly trend", PD-41-1):
+   * the FINEST grain the ladder may choose. The walk starts at this rung and
+   * still climbs past it while its point count exceeds `target` — never
+   * clamped. Scoped (Matchups) trends start at `quarter`; omitted, the whole
+   * ladder is walked from `game`. Point keys and `periodPointMatchIdsForKey`
+   * are unchanged: a key still names its own grain.
+   */
+  minGrain?: PeriodGrain;
 }
 
 function toPeriodPoint(input: {
@@ -423,24 +432,26 @@ function sortPoints(points: PeriodPoint[]): PeriodPoint[] {
 
 /**
  * VIZ-01: picks the FINEST grain of `game → set → eventSession → week →
- * month → quarter → year` whose emitted point count is at or below `target`.
+ * month → quarter → year` (starting at `minGrain` when given) whose emitted
+ * point count is at or below `target`.
  * Only periods containing at least one countable game are ever emitted —
  * an empty period is absent, not zero-valued. Over zero matches, returns an
- * empty series at the finest grain (`game`) with `boundReached: true` — a
+ * empty series at the finest grain (`game`, or `minGrain`) with `boundReached: true` — a
  * named grain and no synthetic period, never a throw.
  */
 export function buildPeriodSeries(options: BuildPeriodSeriesOptions): PeriodSeries {
-  const { matches, target = MARK_BOUND_LINE_POINTS } = options;
+  const { matches, target = MARK_BOUND_LINE_POINTS, minGrain } = options;
   void options.domain; // bookkeeping only — see `BuildPeriodSeriesOptions.domain`'s doc comment.
   void options.nowMs; // reserved for call-shape parity; unused by the ladder itself.
 
   const countable = matches.filter(isCountableGame);
 
-  let chosenGrain: PeriodGrain = 'game';
+  const ladder = PERIOD_GRAIN_LADDER.slice(minGrain ? PERIOD_GRAIN_LADDER.indexOf(minGrain) : 0);
+  let chosenGrain: PeriodGrain = ladder[0]!;
   let chosenPoints: PeriodPoint[] = [];
   let boundReached = false;
 
-  for (const grain of PERIOD_GRAIN_LADDER) {
+  for (const grain of ladder) {
     const points = sortPoints(buildPointsForGrain(grain, countable));
     chosenGrain = grain;
     chosenPoints = points;
@@ -484,6 +495,7 @@ export function periodPointKeyByMatchId(series: PeriodSeries): Map<string, strin
  * request rather than an unlabeled second call to `buildPeriodSeries`.
  * Delegates to the exact same ladder — there is only ONE binning algorithm
  * in this module, never a second, divergent one for the narrow-plot case.
+ * A caller's `minGrain` (plan 39.1-41) passes straight through.
  */
 export function regrainFor(options: BuildPeriodSeriesOptions & { target: number }): PeriodSeries {
   return buildPeriodSeries(options);
