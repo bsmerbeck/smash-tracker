@@ -36,12 +36,15 @@ import {
   PERIOD_DOT_DIAMETER_LARGE,
   PERIOD_DOT_DIAMETER_MEDIUM,
   PERIOD_DOT_DIAMETER_SMALL,
+  PERIOD_VALUE_LABEL_BELOW_OFFSET_PX,
   PERIOD_VALUE_LABEL_OFFSET_PX,
   fitRateDomain,
   periodDotDiameter,
   periodDotDiameterForTier,
+  periodValueLabelPlacement,
   placeReferenceLabel,
   rateDomainTicks,
+  type PeriodValueLabelPlacement,
 } from './trendGeometry';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
@@ -481,19 +484,30 @@ function periodLineStrokeWidth(height: number): number {
  * updating on a STRICT `>`/`<` means a later point tying the current
  * max/min never displaces it.
  */
-function findPeriodLabeledIndices(points: PeriodPoint[]): Set<number> {
+interface PeriodLabelRoles {
+  last: number;
+  max: number;
+  min: number;
+}
+
+function findPeriodLabelRoles(points: PeriodPoint[]): PeriodLabelRoles | null {
   const joined = points.flatMap((point, i) => (point.subFloor ? [] : [i]));
   if (joined.length === 0) {
-    return new Set();
+    return null;
   }
-  const lastIndex = joined[joined.length - 1]!;
-  let maxIndex = joined[0]!;
-  let minIndex = joined[0]!;
+  const last = joined[joined.length - 1]!;
+  let max = joined[0]!;
+  let min = joined[0]!;
   for (const i of joined) {
-    if (points[i]!.rate > points[maxIndex]!.rate) maxIndex = i;
-    if (points[i]!.rate < points[minIndex]!.rate) minIndex = i;
+    if (points[i]!.rate > points[max]!.rate) max = i;
+    if (points[i]!.rate < points[min]!.rate) min = i;
   }
-  return new Set([lastIndex, maxIndex, minIndex]);
+  return { last, max, min };
+}
+
+function findPeriodLabeledIndices(points: PeriodPoint[]): Set<number> {
+  const roles = findPeriodLabelRoles(points);
+  return roles ? new Set([roles.last, roles.max, roles.min]) : new Set();
 }
 
 /**
@@ -587,7 +601,11 @@ function periodDotRenderer(
   };
 }
 
-function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>) {
+function periodLabelRenderer(
+  points: PeriodPoint[],
+  labeledIndices: Set<number>,
+  placements: Map<number, PeriodValueLabelPlacement>,
+) {
   return function renderLabel(labelProps: unknown): ReactElement {
     const { x, y, index } = labelProps as { x?: number; y?: number; index?: number };
     if (typeof x !== 'number' || typeof y !== 'number' || typeof index !== 'number') {
@@ -600,11 +618,17 @@ function periodLabelRenderer(points: PeriodPoint[], labeledIndices: Set<number>)
     if (!point) {
       return <g />;
     }
+    const placement = placements.get(index) ?? { below: false, anchor: 'middle' };
     return (
       <text
         x={x}
-        y={y - PERIOD_VALUE_LABEL_OFFSET_PX}
-        textAnchor="middle"
+        y={
+          placement.below
+            ? y + PERIOD_VALUE_LABEL_BELOW_OFFSET_PX
+            : y - PERIOD_VALUE_LABEL_OFFSET_PX
+        }
+        textAnchor={placement.anchor}
+        data-placement={placement.below ? 'below' : 'above'}
         fill={CHART_TOKENS.axisText}
         fontSize={CHART_AXIS_FONT_SIZE}
         fontWeight={600}
@@ -946,6 +970,22 @@ function PeriodTrendChart({
   const yTicks = rateDomainTicks(domain, model.valueBottomPx - model.valueTopPx);
   const data = buildPeriodChartData(points, domain);
   const labeledIndices = findPeriodLabeledIndices(points);
+  const labelRoles = findPeriodLabelRoles(points);
+  const labelPlacements = new Map<number, PeriodValueLabelPlacement>(
+    [...labeledIndices].map((i) => [
+      i,
+      periodValueLabelPlacement({
+        index: i,
+        count: points.length,
+        yPx: modelY(model, domain, points[i]!.rate * 100),
+        valueTopPx: model.valueTopPx,
+        valueBottomPx: model.valueBottomPx,
+        isMin: labelRoles?.min === i,
+        isMax: labelRoles?.max === i,
+        isLast: labelRoles?.last === i,
+      }),
+    ]),
+  );
   const tickLayout = selectPeriodTickLayout(points, { plotWidthPx, locale });
   const referenceLabel = props.labels.referenceLabel;
   const referenceLabelPosition =
@@ -957,10 +997,13 @@ function PeriodTrendChart({
           plotRightPx: model.plotRightPx,
           labelledPoints: [...labeledIndices].map((i) => {
             const point = points[i]!;
+            const placement = labelPlacements.get(i);
             return {
               xPx: modelX(model, i, points.length),
               yPx: modelY(model, domain, point.rate * 100),
               labelWidthPx: estimateTickLabelWidthPx(`${Math.round(point.rate * 100)}%`),
+              below: placement?.below,
+              anchor: placement?.anchor,
             };
           }),
         })
@@ -1049,7 +1092,7 @@ function PeriodTrendChart({
         dataKey="dotRatePercent"
         stroke="none"
         dot={periodDotRenderer(points, domain, dotSizing)}
-        label={periodLabelRenderer(points, labeledIndices)}
+        label={periodLabelRenderer(points, labeledIndices, labelPlacements)}
         isAnimationActive={false}
       />
     </LineChart>

@@ -123,6 +123,53 @@ export const PERIOD_REFERENCE_LABEL_CLEARANCE_PX = 16;
 /** How far (px) above its dot a period value label's baseline is drawn. */
 export const PERIOD_VALUE_LABEL_OFFSET_PX = 12;
 
+/** Plan 39.1-41: how far (px) BELOW its dot a below-placed value label's baseline is drawn (sketch 003 `.val.below`). */
+export const PERIOD_VALUE_LABEL_BELOW_OFFSET_PX = 16;
+
+/**
+ * Plan 39.1-41 (sketch 003 `trend()`: `y < 14` / `y > h - 14` on its 160px
+ * box): a dot within this SHARE of the value range of its top or bottom flips
+ * its label inward — 14px of the sketch's 160px, scaled to the plot's own
+ * value range so the rule reads the same on an 80px or a 160px plot.
+ */
+export const PERIOD_VALUE_LABEL_EDGE_FLIP_SHARE = 14 / 160;
+
+export interface PeriodValueLabelPlacementInput {
+  /** The labelled period's index and the series length. */
+  index: number;
+  count: number;
+  /** The dot's centre y and the value range's top / bottom (px, chart coordinates). */
+  yPx: number;
+  valueTopPx: number;
+  valueBottomPx: number;
+  isMin: boolean;
+  isMax: boolean;
+  isLast: boolean;
+}
+
+export interface PeriodValueLabelPlacement {
+  below: boolean;
+  anchor: 'middle' | 'end';
+}
+
+/**
+ * Plan 39.1-41 (sketch 003 `trend()` / `.val`, sketch 001-C `trend()`: "end
+ * labels flip left so nothing collides"): the min label sits BELOW its dot
+ * unless it is also the max or the last period (sketch 001-C keeps a last
+ * min above); a dot within `PERIOD_VALUE_LABEL_EDGE_FLIP_SHARE` of the value
+ * range's top flips its label below, within that of the bottom above; the
+ * last two periods' labels right-align to their dots.
+ */
+export function periodValueLabelPlacement(
+  input: PeriodValueLabelPlacementInput,
+): PeriodValueLabelPlacement {
+  const flipPx = PERIOD_VALUE_LABEL_EDGE_FLIP_SHARE * (input.valueBottomPx - input.valueTopPx);
+  let below = input.isMin && !input.isMax && !input.isLast;
+  if (input.yPx - input.valueTopPx < flipPx) below = true;
+  if (input.valueBottomPx - input.yPx < flipPx) below = false;
+  return { below, anchor: input.index > input.count - 3 ? 'end' : 'middle' };
+}
+
 /** Recharts' default `Label` offset (px) — the gap between the reference line and its label. */
 export const REFERENCE_LABEL_OFFSET_PX = 5;
 
@@ -150,6 +197,10 @@ export interface LabelledPointPx {
   yPx: number;
   /** The value label's estimated width (px) — `estimateTickLabelWidthPx` of its text. */
   labelWidthPx: number;
+  /** Plan 39.1-41: the label sits below its dot (default above). */
+  below?: boolean;
+  /** Plan 39.1-41: the label right-aligns to its dot (default centred). */
+  anchor?: 'middle' | 'end';
 }
 
 export interface ReferenceLabelPlacementInput {
@@ -203,13 +254,20 @@ function referenceLabelBox(
   return position === 'insideBottomRight' ? { ...right, ...above } : { ...right, ...below };
 }
 
-/** A value label's box: centred on its dot, baseline `PERIOD_VALUE_LABEL_OFFSET_PX` above it. */
+/**
+ * A value label's box: centred on its dot (or right-aligned to it), its
+ * baseline `PERIOD_VALUE_LABEL_OFFSET_PX` above the dot (or
+ * `PERIOD_VALUE_LABEL_BELOW_OFFSET_PX` below it).
+ */
 function valueLabelBox(point: LabelledPointPx): Box {
   const lineHeight = PERIOD_REFERENCE_LABEL_CLEARANCE_PX;
-  const baseline = point.yPx - PERIOD_VALUE_LABEL_OFFSET_PX;
+  const baseline = point.below
+    ? point.yPx + PERIOD_VALUE_LABEL_BELOW_OFFSET_PX
+    : point.yPx - PERIOD_VALUE_LABEL_OFFSET_PX;
+  const end = point.anchor === 'end';
   return {
-    left: point.xPx - point.labelWidthPx / 2,
-    right: point.xPx + point.labelWidthPx / 2,
+    left: end ? point.xPx - point.labelWidthPx : point.xPx - point.labelWidthPx / 2,
+    right: end ? point.xPx : point.xPx + point.labelWidthPx / 2,
     top: baseline - lineHeight * 0.75,
     bottom: baseline + lineHeight * 0.25,
   };

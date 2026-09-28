@@ -217,8 +217,8 @@ describe('periodDotDiameterForTier — sketch 003 dotSize (plan 39.1-41)', () =>
  * Plan 39.1-41 fidelity loop (sketch 003 `trend()` 797-800 and CSS `.val`,
  * sketch 001-C `trend()` 475, "end labels flip left so nothing collides"):
  * the min label sits BELOW its dot (unless it is also the max or the last),
- * a label whose dot is within 14px of the value range's top flips below and
- * one within 14px of its bottom flips above, and the labels of the last two
+ * a label whose dot is within 14/160 of the value range of its top flips
+ * below and one that close to its bottom flips above, and the labels of the last two
  * periods right-align to their dots.
  */
 describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)', () => {
@@ -249,14 +249,18 @@ describe('periodValueLabelPlacement — sketch 003 value labels (plan 39.1-41)',
     );
   });
 
-  it('flips below within 14px of the value top and above within 14px of the value bottom', async () => {
+  // The sketch's 14px of its 160px box, scaled: 7px on this 80px value range, 14px on 160px.
+  it('flips below near the value top and above near the value bottom (14/160 of the value range)', async () => {
     const { periodValueLabelPlacement } = await loadGeometry();
     expect(periodValueLabelPlacement({ ...base, yPx: 29, isMax: true }).below).toBe(true);
-    expect(periodValueLabelPlacement({ ...base, yPx: 42, isMax: true }).below).toBe(true);
-    expect(periodValueLabelPlacement({ ...base, yPx: 44, isMax: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 35, isMax: true }).below).toBe(true);
+    expect(periodValueLabelPlacement({ ...base, yPx: 37, isMax: true }).below).toBe(false);
     expect(periodValueLabelPlacement({ ...base, yPx: 109, isMin: true }).below).toBe(false);
-    expect(periodValueLabelPlacement({ ...base, yPx: 96, isMin: true }).below).toBe(false);
-    expect(periodValueLabelPlacement({ ...base, yPx: 94, isMin: true }).below).toBe(true);
+    expect(periodValueLabelPlacement({ ...base, yPx: 103, isMin: true }).below).toBe(false);
+    expect(periodValueLabelPlacement({ ...base, yPx: 101, isMin: true }).below).toBe(true);
+    const tall = { ...base, valueTopPx: 29, valueBottomPx: 189 };
+    expect(periodValueLabelPlacement({ ...tall, yPx: 42, isMax: true }).below).toBe(true);
+    expect(periodValueLabelPlacement({ ...tall, yPx: 44, isMax: true }).below).toBe(false);
   });
 
   it('right-aligns the labels of the last two periods (sketch `i > N - 3`)', async () => {
