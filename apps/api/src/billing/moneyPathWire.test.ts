@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
+import type { Auth } from 'firebase-admin/auth';
 import { getDatabase, type Database } from 'firebase-admin/database';
-import { reportJobSchema } from '@smash-tracker/shared';
 import { startFakeRtdbServer, type FakeRtdbServer } from '../test-support/fakeRtdbServer.js';
+import { FakeAuth } from '../test-support/fakeAuth.js';
+import { buildApp } from '../app.js';
+import type { AnthropicLikeClient } from '../reports/generate.js';
 import { fulfillCheckoutSession, refundCreditOnce } from './credits.js';
 import { withSettleRetries } from '../routes/reports.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
-import { dayShardKey } from '../events/ledger.js';
 
 // ---------------------------------------------------------------------------
 // Code review R7-IN-06 (iteration 7): the money path against the REAL
@@ -234,11 +236,12 @@ describe('R7-CR-01 (wire): a settle-write retry never starts while the previous 
     const outcomes = await Promise.all([first, second]);
     await sleep(1_500);
 
-    // Whatever each attempt returned, an attempt that reported the refund done
-    // must be backed by the server: the balance moved and the ledger agrees.
-    if (outcomes.some((outcome) => outcome.ok)) {
-      expect(balanceOf(fake), fake.log.join('\n')).toBe(1);
-    }
+    // Code review R8-IN-05: asserted whichever way the attempts ended. An
+    // attempt that reported the refund done must be backed by the server (the
+    // balance moved), and when both rejected nothing may have moved it either
+    // — the ledger agrees in both cases.
+    const reportedDone = outcomes.some((outcome) => outcome.ok);
+    expect(balanceOf(fake), fake.log.join('\n')).toBe(reportedDone ? 1 : 0);
     expect(0 + ledgerSum(fake), fake.log.join('\n')).toBe(balanceOf(fake));
 
     // The route's retry then completes the refund exactly once.
@@ -251,59 +254,114 @@ describe('R7-CR-01 (wire): a settle-write retry never starts while the previous 
 });
 
 describe('R7-CR-02 (wire): an unsettled row whose terminal write stalls is still refunded exactly once', () => {
-  it("failJob's rowSettled=false order under a 9.5 s stall: the write is awaited, the index cleared, the credit refunded, and the sweep refunds nothing more", async () => {
-    const createdAt = Date.now() - 60_000;
-    const runningRow = {
-      status: 'running',
-      createdAt,
-      updatedAt: createdAt,
-      attempt: 1,
-      creditRef: 'job1',
-      reason: 'post_event_synthesis',
-      wasCharged: true,
-    };
-    const fake = await startServer({
-      credits: { [UID]: { balance: 0 } },
-      reportJobs: { [UID]: { job1: runningRow } },
-      reportJobsByStatus: { running: { [UID]: { job1: true } } },
+  // Code review R8-IN-05: driven through the route's REAL `failJob`, not a
+  // copy of its body, so a bound or throw re-added inside `failJob` itself is
+  // caught too. The synthesis arm's `failJob` runs with `rowSettled=false`:
+  // its row is still `running` until the terminal `set` lands. The stubbed
+  // model stalls every write, schedules the drop, and refuses — which takes
+  // the `ReportGenerationError` branch into `failJob`.
+  it("the synthesis arm's failJob under a 9.5 s stall: the write is awaited, the index cleared, the credit refunded, and the sweep refunds nothing more", async () => {
+    const entryKey = 'wire-event';
+    const firstSetAt = 1_700_000_000_000;
+    const annotated = (seconds: number, note: string) => ({
+      fighter_id: 1,
+      opponent_id: 2,
+      time: firstSetAt,
+      win: true,
+      eventName: 'Wire Open',
+      source: 'startgg',
+      vodTimestamps: [{ seconds, note }],
     });
-    const { database } = await connectClient();
-
-    // failJob's body for rowSettled=false and a spent credit, in order: the
-    // terminal set (a persistent failure here leaves the row to the sweep),
-    // the index/day update, then the create-once refund.
-    const failJobUnsettled = async (): Promise<void> => {
-      const now = Date.now();
-      await withSettleRetries(() =>
-        database
-          .ref(`reportJobs/${UID}/job1`)
-          .set(reportJobSchema.parse({ ...runningRow, status: 'failed', updatedAt: now })),
-      );
-      await withSettleRetries(() =>
-        database.ref().update({
-          [`reportJobsByStatus/running/${UID}/job1`]: null,
-          [`reportJobsByDay/${dayShardKey(createdAt)}/job1`]: { uid: UID, status: 'failed' },
-        }),
-      );
-      await withSettleRetries(() => refundCreditOnce(database, UID, 'job1', 'job1:exec1'));
+    const fake = await startServer({
+      credits: { [UID]: { balance: 1 } },
+      tournamentEntries: {
+        [UID]: {
+          [entryKey]: {
+            eventName: 'Wire Open',
+            firstSetAt,
+            lastSetAt: firstSetAt,
+            setsPlayed: 2,
+            source: 'manual',
+          },
+        },
+      },
+      prepBriefs: {
+        [UID]: {
+          [entryKey]: {
+            eventDate: firstSetAt,
+            activatedAt: firstSetAt,
+            lastOpenedAt: firstSetAt,
+            reviewAt: firstSetAt,
+          },
+        },
+      },
+      // Three annotated games clear the abstention floor, so the evidence is
+      // viable and the job reaches the model call.
+      matches: {
+        [UID]: {
+          m1: annotated(42, 'clean punish'),
+          m2: annotated(10, 'late shield'),
+          m3: annotated(20, 'missed the ledge trap'),
+        },
+      },
+    });
+    const { app: sdkApp, database } = await connectClient();
+    const auth = new FakeAuth();
+    auth.registerToken('wire-token', { uid: UID, email: 'wire@example.test' });
+    let modelCalls = 0;
+    const stallingRefusal: AnthropicLikeClient = {
+      messages: {
+        parse: (async () => {
+          modelCalls += 1;
+          fake.hold = () => true;
+          setTimeout(() => {
+            fake.hold = null;
+            fake.dropAll();
+          }, 9_500);
+          return { stop_reason: 'refusal', parsed_output: null };
+        }) as AnthropicLikeClient['messages']['parse'],
+      },
     };
+    const api = buildApp({
+      firebase: { app: sdkApp, auth: auth as unknown as Auth, database },
+      logger: false,
+      reports: { anthropicApiKey: 'sk-test-key', allowedUids: new Set(['someone-else']) },
+      stripe: { secretKey: 'sk-test-123', webhookSecret: 'whsec-test-456' },
+      prepPaid: { enabled: true },
+      parrygg: { apiKey: 'parry-key' },
+      reportsClient: stallingRefusal,
+    });
 
-    fake.hold = () => true;
-    setTimeout(() => {
-      fake.hold = null;
-      fake.dropAll();
-    }, 9_500);
-    const outcome = await settle(failJobUnsettled());
-    await sleep(1_500);
+    try {
+      const response = await api.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: { authorization: 'Bearer wire-token' },
+        payload: { reason: 'post_event_synthesis', entryKey },
+      });
+      await sleep(1_500);
 
-    expect(outcome.ok, outcome.ok ? '' : outcome.error.message).toBe(true);
-    expect(fake.get(`reportJobs/${UID}/job1/status`)).toBe('failed');
-    expect(fake.get(`reportJobsByStatus/running/${UID}/job1`)).toBeNull();
-    const sweep = await runSweepStuckReportJobs(database, { now: Date.now() + 60 * 60 * 1000 });
-    await sleep(500);
-    expect(sweep.refunded).toBe(0);
-    expect(balanceOf(fake), fake.log.join('\n')).toBe(1);
-    expect(0 + ledgerSum(fake)).toBe(balanceOf(fake));
+      expect(modelCalls).toBe(1);
+      expect(response.statusCode, response.body).toBe(502);
+      const jobs = (fake.get(`reportJobs/${UID}`) ?? {}) as Record<string, { status?: string }>;
+      const jobIds = Object.keys(jobs);
+      expect(jobIds, fake.log.join('\n')).toHaveLength(1);
+      const jobId = jobIds[0]!;
+      // failJob's refunded terminal is written only after its refund resolved.
+      expect(fake.get(`reportJobs/${UID}/${jobId}/status`), fake.log.join('\n')).toBe('refunded');
+      expect(fake.get(`reportJobsByStatus/running/${UID}/${jobId}`)).toBeNull();
+      expect(balanceOf(fake), fake.log.join('\n')).toBe(1);
+      expect(Object.values(ledgerOf(fake)).filter((row) => row.type === 'refund')).toHaveLength(1);
+      expect(1 + ledgerSum(fake)).toBe(balanceOf(fake));
+
+      const sweep = await runSweepStuckReportJobs(database, { now: Date.now() + 60 * 60 * 1000 });
+      await sleep(500);
+      expect(sweep.refunded).toBe(0);
+      expect(balanceOf(fake), fake.log.join('\n')).toBe(1);
+      expect(1 + ledgerSum(fake)).toBe(balanceOf(fake));
+    } finally {
+      await api.close();
+    }
   }, 40_000);
 });
 
