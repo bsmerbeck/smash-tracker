@@ -1304,3 +1304,55 @@ describe('TrendLine — period dot sizing, one data line, surface attributes (pl
     }
   });
 });
+
+/**
+ * Plan 39.1-41 fidelity loop (sketch 003 `.band`, UI-SPEC §7.13 "from the
+ * period containing the window start to the right edge", "1px left edge"):
+ * the recent band covers its first period's whole slot and runs to the
+ * plot's right edge, with a 1px series-1 left edge. Geometry of a 640px
+ * trend: plot 65..635, category centres 81 + i x (538 / 7).
+ */
+describe('TrendLine — the recent band reaches the plot edge (plan 39.1-41 fidelity loop)', () => {
+  it("spans from the containing period's slot start to the plot's right edge, with a 1px series-1 left edge", () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.5 }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+        emphasisStartMs={points[5]!.startMs}
+      />,
+    );
+    const step = 538 / 7;
+    const band = container.querySelector('.recharts-reference-area-rect');
+    expect(band).not.toBeNull();
+    const x = Number(band!.getAttribute('x'));
+    const width = Number(band!.getAttribute('width'));
+    expect(x).toBeCloseTo(81 + 5 * step - step / 2, 0);
+    expect(x + width).toBeCloseTo(635, 0);
+    const edge = container.querySelector('[data-slot="trend-period-band-edge"]');
+    expect(edge).not.toBeNull();
+    expect(Number(edge!.getAttribute('x1'))).toBeCloseTo(x, 1);
+    expect(Number(edge!.getAttribute('x2'))).toBeCloseTo(x, 1);
+    expect(edge!.getAttribute('stroke')).toBe('var(--viz-series-1)');
+    expect(edge!.getAttribute('stroke-width')).toBe('1');
+  });
+
+  it('a band starting at the first period never extends left of the plot', () => {
+    const points = makePeriodSeries(8, () => ({ rate: 0.5 }));
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        height={160}
+        labels={PERIOD_LABELS}
+        emphasisStartMs={points[0]!.startMs}
+      />,
+    );
+    const band = container.querySelector('.recharts-reference-area-rect');
+    expect(Number(band!.getAttribute('x'))).toBeGreaterThanOrEqual(65);
+  });
+});
