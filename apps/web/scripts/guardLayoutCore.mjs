@@ -2157,3 +2157,234 @@ export function formatPeriodTrendLine(routeId, viewportName, surface) {
       : 'none';
   return `PERIOD_TREND route=${routeId} viewport=${viewportName} state=${surface.state ?? 'none'} domain=${domain} dots=${dots || 'none'} labels=${labels || 'none'} lines=${surface.strokedLineCount ?? 0} ref=${ref} range=${range}`;
 }
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-43b (fidelity follow-up to 39.1-43): the period trend's AXIS
+// against sketch 003 A's `trend()` CSS (the same rules sketch 001-C draws):
+//   .trend.gutter{margin-left:26px}                        -> gutterPx 26
+//   .trend .ytick{left:-26px;width:20px;text-align:right;   -> tickGapPx 6
+//     font-size:10px;color:var(--color-text-muted)}        -> tick 10px, muted
+//   .xaxis{font-size:10px;color:var(--color-text-muted)}    -> x labels 10px, muted
+//   .trend .val{font-size:10px;font-weight:600}            -> value labels 10px / 600,
+//     no colour of their own (the body's --color-text)     -> foreground
+//   .trend .ref-label{font-size:10px;color:...-muted}      -> reference label 10px
+//   step = hi - lo > 50 ? 20 : 10; for (g = lo; g <= hi; g += step)
+//   .trend .grid-y only — no vertical grid, no axis line, no tick mark.
+// ---------------------------------------------------------------------------
+
+/**
+ * Plan 39.1-43b: the value range (px) a period trend draws its fitted domain
+ * across, from the hairlines drawn at y ticks. A sketch-stepped axis need not
+ * put a hairline on the domain's top ([20, 90] ticks 20 / 40 / 60 / 80, the
+ * top of the box is 90), so the span is the hairlines' px-per-point scale
+ * times the declared domain's span. With no declared domain, or a domain the
+ * hairlines already bound, it is the plain hairline span.
+ * `ticks`: `[{ value, y }]` (the hairline-matched ticks). Returns null when
+ * fewer than two distinct ticks were measured.
+ */
+export function periodValueRangeFromTicks(ticks, yDomain) {
+  const usable = (ticks ?? []).filter(
+    (tick) => Number.isFinite(tick?.value) && Number.isFinite(tick?.y),
+  );
+  if (usable.length < 2) return null;
+  const low = usable.reduce((a, b) => (b.value < a.value ? b : a));
+  const high = usable.reduce((a, b) => (b.value > a.value ? b : a));
+  if (!(high.value > low.value)) return null;
+  const spanPx = Math.abs(low.y - high.y);
+  if (!Array.isArray(yDomain) || !(yDomain[1] > yDomain[0])) return spanPx;
+  return (spanPx / (high.value - low.value)) * (yDomain[1] - yDomain[0]);
+}
+
+/** Sketch 003 A / 001-C: every axis label (y tick, x label, value label, reference label) is 10px. */
+export const PERIOD_TREND_AXIS_FONT_PX = 10;
+/** Sketch `.trend .val{font-weight:600}`. */
+export const PERIOD_TREND_VALUE_LABEL_WEIGHT = 600;
+/** Sketch `.trend.gutter{margin-left:26px}`: the plot's left edge sits 26px right of the head's. */
+export const PERIOD_TREND_GUTTER_PX = 26;
+/** Sketch `.ytick{left:-26px;width:20px;text-align:right}`: 6px from a tick's right edge to the plot. */
+export const PERIOD_TREND_TICK_GAP_PX = 6;
+/** Tolerance (px) on the gutter and the tick gap — sub-pixel text metrics. */
+export const PERIOD_TREND_AXIS_TOLERANCE_PX = 1;
+
+/**
+ * The sketch 003 `trend()` y tick step for a fitted [lo, hi] domain:
+ * `hi - lo > 50 ? 20 : 10`, ticks `lo, lo + step, ... <= hi`.
+ */
+export function sketchPeriodTickValues(yDomain) {
+  const [lo, hi] = yDomain;
+  const step = hi - lo > 50 ? 20 : 10;
+  const values = [];
+  for (let g = lo; g <= hi; g += step) values.push(g);
+  return values;
+}
+
+function distinctNumbers(values) {
+  return [...new Set((values ?? []).filter((v) => Number.isFinite(v)))].sort((a, b) => a - b);
+}
+
+function distinctStrings(values) {
+  return [...new Set((values ?? []).filter((v) => typeof v === 'string' && v.length > 0))].sort();
+}
+
+/**
+ * `surfaces`: the period-trend records (the same roots period-trend-marks
+ * reads), each carrying `axis`:
+ * `{ yTickValues: number[], yTickFontPx: number[], yTickColorTokens: string[],
+ *    xTickFontPx: number[], xTickColorTokens: string[],
+ *    valueLabelFontPx: number[], valueLabelWeights: number[], valueLabelColorTokens: string[],
+ *    referenceLabelFontPx: number[], gutterPx: number | null, tickGapPx: number | null,
+ *    verticalGridLines: number, axisLines: number, strayHairlines: number }`.
+ * `expect`: the route's `periodTrendAxisExpect` — every field optional:
+ * `{ tickValues?, tickFontPx?, tickColorToken?, xFontPx?, xColorToken?,
+ *    valueLabelFontPx?, valueLabelWeight?, valueLabelColorToken?,
+ *    referenceLabelFontPx?, gutterPx?, tickGapPx?, verticalGridLines?,
+ *    axisLines?, strayHairlines? }`. A locked surface is skipped. Every
+ * offender is returned:
+ * - `period-trend-axis-unmeasured`: no drawn surface, or a drawn surface with
+ *   no `axis` record, or an expected field whose elements were not found;
+ * - `period-trend-axis-ticks`: the y tick values differ (step and count);
+ * - `period-trend-axis-tick-font` / `-tick-color`;
+ * - `period-trend-axis-x-font` / `-x-color`;
+ * - `period-trend-axis-value-label-font` / `-value-label-weight` / `-value-label-color`;
+ * - `period-trend-axis-reference-label-font` (only a DIRECT label is measured);
+ * - `period-trend-axis-gutter` / `-tick-gap`: outside ± PERIOD_TREND_AXIS_TOLERANCE_PX;
+ * - `period-trend-axis-vertical-grid` / `-axis-line` / `-stray-hairline`: a count that differs.
+ */
+export function evaluatePeriodTrendAxis(surfaces, expect = {}) {
+  const drawn = (surfaces ?? []).filter((surface) => surface?.state !== 'locked');
+  if (drawn.length === 0) {
+    return [{ type: 'period-trend-axis-unmeasured', field: 'surface' }];
+  }
+  const violations = [];
+  for (const surface of drawn) {
+    const { selectorPath } = surface;
+    const axis = surface.axis;
+    if (!axis) {
+      violations.push({ type: 'period-trend-axis-unmeasured', selectorPath, field: 'axis' });
+      continue;
+    }
+    if (expect.tickValues) {
+      const values = distinctNumbers(axis.yTickValues);
+      if (values.length === 0) {
+        violations.push({ type: 'period-trend-axis-unmeasured', selectorPath, field: 'ticks' });
+      } else if (
+        values.length !== expect.tickValues.length ||
+        values.some((value, i) => value !== expect.tickValues[i])
+      ) {
+        violations.push({
+          type: 'period-trend-axis-ticks',
+          selectorPath,
+          ticks: values,
+          expected: expect.tickValues,
+        });
+      }
+    }
+    const numberField = (field, measuredList, expected, type) => {
+      if (expected === undefined) return;
+      const measured = distinctNumbers(measuredList);
+      if (measured.length === 0) {
+        violations.push({ type: 'period-trend-axis-unmeasured', selectorPath, field });
+      } else if (measured.length !== 1 || measured[0] !== expected) {
+        violations.push({ type, selectorPath, measured, expected });
+      }
+    };
+    const tokenField = (field, measuredList, expected, type) => {
+      if (expected === undefined) return;
+      const measured = distinctStrings(measuredList);
+      if (measured.length === 0) {
+        violations.push({ type: 'period-trend-axis-unmeasured', selectorPath, field });
+      } else if (measured.length !== 1 || measured[0] !== expected) {
+        violations.push({ type, selectorPath, measured, expected });
+      }
+    };
+    numberField('tickFont', axis.yTickFontPx, expect.tickFontPx, 'period-trend-axis-tick-font');
+    tokenField(
+      'tickColor',
+      axis.yTickColorTokens,
+      expect.tickColorToken,
+      'period-trend-axis-tick-color',
+    );
+    numberField('xFont', axis.xTickFontPx, expect.xFontPx, 'period-trend-axis-x-font');
+    tokenField('xColor', axis.xTickColorTokens, expect.xColorToken, 'period-trend-axis-x-color');
+    numberField(
+      'valueLabelFont',
+      axis.valueLabelFontPx,
+      expect.valueLabelFontPx,
+      'period-trend-axis-value-label-font',
+    );
+    numberField(
+      'valueLabelWeight',
+      axis.valueLabelWeights,
+      expect.valueLabelWeight,
+      'period-trend-axis-value-label-weight',
+    );
+    tokenField(
+      'valueLabelColor',
+      axis.valueLabelColorTokens,
+      expect.valueLabelColorToken,
+      'period-trend-axis-value-label-color',
+    );
+    // The OOS-6 fallback draws no direct reference label: nothing to measure.
+    if (expect.referenceLabelFontPx !== undefined && (axis.referenceLabelFontPx ?? []).length > 0) {
+      numberField(
+        'referenceLabelFont',
+        axis.referenceLabelFontPx,
+        expect.referenceLabelFontPx,
+        'period-trend-axis-reference-label-font',
+      );
+    }
+    const pxField = (field, measured, expected, type) => {
+      if (expected === undefined) return;
+      if (typeof measured !== 'number' || !Number.isFinite(measured)) {
+        violations.push({ type: 'period-trend-axis-unmeasured', selectorPath, field });
+      } else if (Math.abs(measured - expected) > PERIOD_TREND_AXIS_TOLERANCE_PX) {
+        violations.push({ type, selectorPath, measured, expected });
+      }
+    };
+    pxField('gutter', axis.gutterPx, expect.gutterPx, 'period-trend-axis-gutter');
+    pxField('tickGap', axis.tickGapPx, expect.tickGapPx, 'period-trend-axis-tick-gap');
+    const countField = (measured, expected, type) => {
+      if (expected === undefined) return;
+      if ((measured ?? 0) !== expected) {
+        violations.push({ type, selectorPath, measured: measured ?? 0, expected });
+      }
+    };
+    countField(axis.verticalGridLines, expect.verticalGridLines, 'period-trend-axis-vertical-grid');
+    countField(axis.axisLines, expect.axisLines, 'period-trend-axis-axis-line');
+    countField(axis.strayHairlines, expect.strayHairlines, 'period-trend-axis-stray-hairline');
+  }
+  return violations;
+}
+
+function formatList(values) {
+  return values.length > 0 ? values.join(',') : 'none';
+}
+
+/** One PERIOD_TREND_AXIS line per measured drawn surface (printed whether or not it passed). */
+export function formatPeriodTrendAxisLine(routeId, viewportName, surface) {
+  const axis = surface.axis ?? {};
+  const px = (value) =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) : 'none';
+  const ticks = distinctNumbers(axis.yTickValues);
+  const steps = distinctNumbers(ticks.slice(1).map((value, i) => value - ticks[i]));
+  return [
+    `PERIOD_TREND_AXIS route=${routeId} viewport=${viewportName}`,
+    `state=${surface.state ?? 'none'}`,
+    `step=${formatList(steps)}`,
+    `ticks=${formatList(ticks)}`,
+    `count=${ticks.length}`,
+    `tickFont=${formatList(distinctNumbers(axis.yTickFontPx))}`,
+    `tickColor=${formatList(distinctStrings(axis.yTickColorTokens))}`,
+    `xFont=${formatList(distinctNumbers(axis.xTickFontPx))}`,
+    `xColor=${formatList(distinctStrings(axis.xTickColorTokens))}`,
+    `valueFont=${formatList(distinctNumbers(axis.valueLabelFontPx))}`,
+    `valueWeight=${formatList(distinctNumbers(axis.valueLabelWeights))}`,
+    `valueColor=${formatList(distinctStrings(axis.valueLabelColorTokens))}`,
+    `refFont=${formatList(distinctNumbers(axis.referenceLabelFontPx))}`,
+    `gutter=${px(axis.gutterPx)}`,
+    `tickGap=${px(axis.tickGapPx)}`,
+    `vgrid=${axis.verticalGridLines ?? 0}`,
+    `axisLines=${axis.axisLines ?? 0}`,
+    `strayHairlines=${axis.strayHairlines ?? 0}`,
+  ].join(' ');
+}

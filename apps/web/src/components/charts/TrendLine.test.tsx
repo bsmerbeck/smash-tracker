@@ -1764,3 +1764,96 @@ describe('TrendLine — the locked meter and its count share one row (plan 39.1-
     expect(row!.textContent).toBe('3 of 8');
   });
 });
+
+/**
+ * Plan 39.1-43b (fidelity follow-up to 39.1-43): the period trend's axis is
+ * sketch 003 A's `trend()` CSS — `.ytick{font-size:10px;color:muted;
+ * left:-26px;width:20px;text-align:right}`, `.xaxis{font-size:10px}`,
+ * `.val{font-size:10px;font-weight:600}` in the body text colour,
+ * `.ref-label{font-size:10px}`, `.trend.gutter{margin-left:26px}`, and
+ * `.grid-y` horizontal hairlines only (no vertical grid, no axis line, no
+ * tick mark). The guard:layout family period-trend-axis measures the same
+ * rules in real Chrome.
+ */
+describe('TrendLine — period axis matches sketch 003 A / 001-C (plan 39.1-43b)', () => {
+  // Rates 25%..95%: the fitted domain is [20, 100] (span 80 -> sketch step 20).
+  const points = makePeriodSeries(10, (i) => ({ rate: 0.25 + i * (0.7 / 9) }));
+
+  function renderAxis() {
+    return render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        valueRangePx={160}
+        referenceRate={50}
+        labels={HEAD_LABELS}
+      />,
+    );
+  }
+
+  it('y ticks step by 20 over a span above 50: 20 / 40 / 60 / 80 / 100', () => {
+    const { container } = renderAxis();
+    const ticks = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text')).map(
+      (tick) => (tick.textContent ?? '').trim(),
+    );
+    expect(ticks).toEqual(['20', '40', '60', '80', '100']);
+  });
+
+  it('y ticks and x labels are 10px in the muted token; value labels 10px / 600 in the foreground token; the reference label 10px', () => {
+    const { container } = renderAxis();
+    const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text'));
+    const xTicks = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'));
+    expect(yTicks.length).toBeGreaterThan(0);
+    expect(xTicks.length).toBeGreaterThan(0);
+    for (const tick of [...yTicks, ...xTicks]) {
+      expect(tick.getAttribute('font-size')).toBe('10');
+      expect(tick.getAttribute('fill')).toBe('var(--muted-foreground)');
+    }
+    const valueLabels = Array.from(
+      container.querySelectorAll('[data-slot="trend-period-value-label"]'),
+    );
+    expect(valueLabels.length).toBeGreaterThan(0);
+    for (const label of valueLabels) {
+      expect(label.getAttribute('font-size')).toBe('10');
+      expect(label.getAttribute('font-weight')).toBe('600');
+      expect(label.getAttribute('fill')).toBe('var(--foreground)');
+    }
+    const reference = container.querySelector('.trend-period-reference-label');
+    if (reference) {
+      const text =
+        reference.tagName.toLowerCase() === 'text' ? reference : reference.querySelector('text');
+      expect(text?.getAttribute('font-size') ?? reference.getAttribute('font-size')).toBe('10');
+    }
+  });
+
+  it('the plot starts 26px from the chart edge and a tick ends 6px before it (right-aligned)', () => {
+    const { container } = renderAxis();
+    const lines = Array.from(
+      container.querySelectorAll('.recharts-cartesian-grid-horizontal line'),
+    ).map((line) => Number(line.getAttribute('x1')));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(Math.min(...lines)).toBe(26);
+    for (const tick of Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text'))) {
+      expect(Number(tick.getAttribute('x'))).toBe(20);
+      expect(tick.getAttribute('text-anchor')).toBe('end');
+    }
+  });
+
+  it('horizontal hairlines only, each at a y tick: no vertical grid, no axis line, no tick mark', () => {
+    const { container } = renderAxis();
+    expect(container.querySelectorAll('.recharts-cartesian-grid-vertical line')).toHaveLength(0);
+    expect(
+      container.querySelectorAll(
+        '.recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line',
+      ),
+    ).toHaveLength(0);
+    const tickYs = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels text')).map(
+      (tick) => Number(tick.getAttribute('y')),
+    );
+    const stray = Array.from(container.querySelectorAll('.recharts-cartesian-grid-horizontal line'))
+      .map((line) => Number(line.getAttribute('y1')))
+      .filter((y) => !tickYs.some((tickY) => Math.abs(tickY - y) < 0.5));
+    expect(stray).toEqual([]);
+  });
+});

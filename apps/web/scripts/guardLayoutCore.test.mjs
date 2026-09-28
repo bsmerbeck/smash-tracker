@@ -3431,3 +3431,203 @@ test('period-trend-marks: a legend-sourced reference label (OOS-6 fallback) prin
     ['period-trend-reference-label'],
   );
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-43b (fidelity follow-up): period-trend-axis — the period trend's
+// axis against sketch 003 A / 001-C's `trend()` CSS: 10px muted ticks on the
+// sketch's 20-step (span > 50) grid, 10px x labels, 10px / 600 foreground
+// value labels, a 26px gutter with a 6px tick gap, horizontal hairlines only.
+// ---------------------------------------------------------------------------
+
+const SKETCH_AXIS_EXPECT = {
+  tickValues: [20, 40, 60, 80, 100],
+  tickFontPx: 10,
+  tickColorToken: 'muted-foreground',
+  xFontPx: 10,
+  xColorToken: 'muted-foreground',
+  valueLabelFontPx: 10,
+  valueLabelWeight: 600,
+  valueLabelColorToken: 'foreground',
+  referenceLabelFontPx: 10,
+  gutterPx: 26,
+  tickGapPx: 6,
+  verticalGridLines: 0,
+  axisLines: 0,
+  strayHairlines: 0,
+};
+
+function sketchAxisSurface(axisOverrides = {}, overrides = {}) {
+  return {
+    selectorPath: 'div > div',
+    state: 'drawn',
+    axis: {
+      yTickValues: [20, 40, 60, 80, 100],
+      yTickFontPx: [10, 10, 10, 10, 10],
+      yTickColorTokens: ['muted-foreground'],
+      xTickFontPx: [10, 10],
+      xTickColorTokens: ['muted-foreground'],
+      valueLabelFontPx: [10, 10, 10],
+      valueLabelWeights: [600, 600, 600],
+      valueLabelColorTokens: ['foreground'],
+      referenceLabelFontPx: [10],
+      gutterPx: 26,
+      tickGapPx: 6,
+      verticalGridLines: 0,
+      axisLines: 0,
+      strayHairlines: 0,
+      ...axisOverrides,
+    },
+    ...overrides,
+  };
+}
+
+/** The shipped 39.1-43 axis (dbc886ab): 10-step ticks, 12px everywhere, a 65px gutter. */
+function shippedAxisSurface() {
+  return sketchAxisSurface({
+    yTickValues: [20, 30, 40, 50, 60, 70, 80, 90, 100],
+    yTickFontPx: [12],
+    xTickFontPx: [12],
+    valueLabelFontPx: [12],
+    valueLabelColorTokens: ['muted-foreground'],
+    referenceLabelFontPx: [12],
+    gutterPx: 65,
+    tickGapPx: 8,
+    verticalGridLines: 8,
+    axisLines: 4,
+    strayHairlines: 2,
+  });
+}
+
+function axisTypes(surfaces, expect = SKETCH_AXIS_EXPECT) {
+  const fn = guardLayoutCoreNs.evaluatePeriodTrendAxis;
+  assert.equal(typeof fn, 'function', 'evaluatePeriodTrendAxis is exported');
+  return fn(surfaces, expect).map((v) => v.type);
+}
+
+test('period-trend-axis: a surface drawn exactly to the sketch CSS passes', () => {
+  assert.deepEqual(axisTypes([sketchAxisSurface()]), []);
+});
+
+test('period-trend-axis: the shipped 39.1-43 axis fails every sketch rule it breaks', () => {
+  assert.deepEqual(axisTypes([shippedAxisSurface()]).sort(), [
+    'period-trend-axis-axis-line',
+    'period-trend-axis-gutter',
+    'period-trend-axis-reference-label-font',
+    'period-trend-axis-stray-hairline',
+    'period-trend-axis-tick-font',
+    'period-trend-axis-tick-gap',
+    'period-trend-axis-ticks',
+    'period-trend-axis-value-label-color',
+    'period-trend-axis-value-label-font',
+    'period-trend-axis-vertical-grid',
+    'period-trend-axis-x-font',
+  ]);
+});
+
+test('period-trend-axis: each rule fails alone (one proven failing case per assertion)', () => {
+  const cases = [
+    [{ yTickValues: [20, 30, 40, 50, 60, 70, 80, 90, 100] }, 'period-trend-axis-ticks'],
+    [{ yTickValues: [20, 40, 60, 80] }, 'period-trend-axis-ticks'],
+    [{ yTickFontPx: [12] }, 'period-trend-axis-tick-font'],
+    [{ yTickFontPx: [10, 12] }, 'period-trend-axis-tick-font'],
+    [{ yTickColorTokens: ['foreground'] }, 'period-trend-axis-tick-color'],
+    [{ xTickFontPx: [12] }, 'period-trend-axis-x-font'],
+    [{ xTickColorTokens: ['oklch(1 0 0)'] }, 'period-trend-axis-x-color'],
+    [{ valueLabelFontPx: [12] }, 'period-trend-axis-value-label-font'],
+    [{ valueLabelWeights: [700] }, 'period-trend-axis-value-label-weight'],
+    [{ valueLabelColorTokens: ['muted-foreground'] }, 'period-trend-axis-value-label-color'],
+    [{ referenceLabelFontPx: [12] }, 'period-trend-axis-reference-label-font'],
+    [{ gutterPx: 65 }, 'period-trend-axis-gutter'],
+    [{ gutterPx: 27.5 }, 'period-trend-axis-gutter'],
+    [{ tickGapPx: 8 }, 'period-trend-axis-tick-gap'],
+    [{ verticalGridLines: 1 }, 'period-trend-axis-vertical-grid'],
+    [{ axisLines: 1 }, 'period-trend-axis-axis-line'],
+    [{ strayHairlines: 1 }, 'period-trend-axis-stray-hairline'],
+  ];
+  for (const [override, type] of cases) {
+    assert.deepEqual(axisTypes([sketchAxisSurface(override)]), [type], JSON.stringify(override));
+  }
+  // Inside the 1px tolerance passes.
+  assert.deepEqual(axisTypes([sketchAxisSurface({ gutterPx: 26.8, tickGapPx: 5.2 })]), []);
+});
+
+test('period-trend-axis: non-vacuity — no drawn surface, no axis record, or missing elements are unmeasured', () => {
+  assert.deepEqual(axisTypes([]), ['period-trend-axis-unmeasured']);
+  assert.deepEqual(axisTypes([{ selectorPath: 'x', state: 'locked' }]), [
+    'period-trend-axis-unmeasured',
+  ]);
+  assert.deepEqual(axisTypes([{ selectorPath: 'x', state: 'drawn' }]), [
+    'period-trend-axis-unmeasured',
+  ]);
+  const fn = guardLayoutCoreNs.evaluatePeriodTrendAxis;
+  const missing = fn(
+    [
+      sketchAxisSurface({
+        yTickValues: [],
+        yTickFontPx: [],
+        valueLabelFontPx: [],
+        gutterPx: null,
+      }),
+    ],
+    SKETCH_AXIS_EXPECT,
+  );
+  assert.deepEqual(
+    missing.map((v) => `${v.type}:${v.field}`),
+    [
+      'period-trend-axis-unmeasured:ticks',
+      'period-trend-axis-unmeasured:tickFont',
+      'period-trend-axis-unmeasured:valueLabelFont',
+      'period-trend-axis-unmeasured:gutter',
+    ],
+  );
+});
+
+test('period-trend-axis: a locked surface beside a drawn one is skipped; the OOS-6 fallback (no direct reference label) skips only the reference font', () => {
+  assert.deepEqual(axisTypes([{ selectorPath: 'x', state: 'locked' }, sketchAxisSurface()]), []);
+  assert.deepEqual(axisTypes([sketchAxisSurface({ referenceLabelFontPx: [] })]), []);
+});
+
+test('period-trend-axis: every expectation field is optional', () => {
+  assert.deepEqual(axisTypes([shippedAxisSurface()], {}), []);
+});
+
+test('period-trend-axis: sketchPeriodTickValues is sketch 003 `trend()` — step 20 over a span above 50, else 10', () => {
+  const fn = guardLayoutCoreNs.sketchPeriodTickValues;
+  assert.equal(typeof fn, 'function');
+  assert.deepEqual(fn([20, 100]), [20, 40, 60, 80, 100]);
+  assert.deepEqual(fn([20, 90]), [20, 40, 60, 80]);
+  assert.deepEqual(fn([50, 90]), [50, 60, 70, 80, 90]);
+  assert.deepEqual(fn([40, 90]), [40, 50, 60, 70, 80, 90]);
+});
+
+test('period-trend-axis: periodValueRangeFromTicks scales the hairline span to the declared domain', () => {
+  const fn = guardLayoutCoreNs.periodValueRangeFromTicks;
+  assert.equal(typeof fn, 'function');
+  // [20, 90] drawn over 160px with 20-step hairlines (top hairline at 80).
+  const y = (v) => 29 + (1 - (v - 20) / 70) * 160;
+  const ticks = [20, 40, 60, 80].map((value) => ({ value, y: y(value) }));
+  assert.ok(Math.abs(fn(ticks, [20, 90]) - 160) < 1e-9);
+  // The shipped 80px compact span still measures 80 (the RED case stays red).
+  const y80 = (v) => 29 + (1 - (v - 20) / 80) * 80;
+  assert.ok(
+    Math.abs(
+      fn(
+        [20, 40, 60, 80, 100].map((v) => ({ value: v, y: y80(v) })),
+        [20, 100],
+      ) - 80,
+    ) < 1e-9,
+  );
+  // No declared domain: the plain hairline span.
+  assert.ok(Math.abs(fn(ticks, null) - (y(20) - y(80))) < 1e-9);
+  assert.equal(fn([{ value: 20, y: 10 }], [20, 90]), null);
+  assert.equal(fn([], [20, 90]), null);
+});
+
+test('period-trend-axis: the PERIOD_TREND_AXIS line prints every measured value', () => {
+  const fn = guardLayoutCoreNs.formatPeriodTrendAxisLine;
+  assert.equal(typeof fn, 'function');
+  assert.equal(
+    fn('matchups-sketch-deep', '1440x900', sketchAxisSurface()),
+    'PERIOD_TREND_AXIS route=matchups-sketch-deep viewport=1440x900 state=drawn step=20 ticks=20,40,60,80,100 count=5 tickFont=10 tickColor=muted-foreground xFont=10 xColor=muted-foreground valueFont=10 valueWeight=600 valueColor=foreground refFont=10 gutter=26.0 tickGap=6.0 vgrid=0 axisLines=0 strayHairlines=0',
+  );
+});

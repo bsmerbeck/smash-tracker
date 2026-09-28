@@ -420,3 +420,51 @@ describe('placeReferenceLabel — dot-aware, four slots, legend fallback (plan 3
     ).toBe('insideTopLeft');
   });
 });
+
+/**
+ * Plan 39.1-43b (fidelity follow-up to 39.1-43): the period trend's y ticks
+ * follow sketch 003 A's `trend()` exactly — `step = hi - lo > 50 ? 20 : 10`,
+ * ticks `lo, lo + step, ... <= hi` — and coarsen further only when a short
+ * plot would crowd them. Sketch 001-C's own sparg0 hero ([50, 90]) draws the
+ * same 10-step ticks under this rule.
+ */
+describe('periodRateTicks — sketch 003 `trend()` tick step (plan 39.1-43b)', () => {
+  it('[20, 100] on the 160px hero range ticks 20 / 40 / 60 / 80 / 100 (sketch 003 deep)', async () => {
+    const geometry = await loadGeometry();
+    const fn = (geometry as unknown as Record<string, unknown>).periodRateTicks as
+      ((domain: [number, number], valueRangePx: number) => number[]) | undefined;
+    expect(typeof fn).toBe('function');
+    expect(fn!([20, 100], 160)).toEqual([20, 40, 60, 80, 100]);
+  });
+
+  it('[20, 90] ticks 20 / 40 / 60 / 80 — no off-step top tick', async () => {
+    const geometry = await loadGeometry();
+    const fn = (geometry as unknown as Record<string, unknown>).periodRateTicks as
+      ((domain: [number, number], valueRangePx: number) => number[]) | undefined;
+    expect(fn?.([20, 90], 160)).toEqual([20, 40, 60, 80]);
+  });
+
+  it('a span of 50 or less keeps 10-point steps ([50, 90] -> 50..90, sketch 001-C sparg0)', async () => {
+    const geometry = await loadGeometry();
+    const fn = (geometry as unknown as Record<string, unknown>).periodRateTicks as
+      ((domain: [number, number], valueRangePx: number) => number[]) | undefined;
+    expect(fn?.([50, 90], 160)).toEqual([50, 60, 70, 80, 90]);
+    expect(fn?.([40, 90], 160)).toEqual([40, 50, 60, 70, 80, 90]);
+  });
+
+  it('still coarsens a short plot so no two ticks sit closer than 14px ([0, 100] on 40px)', async () => {
+    const geometry = await loadGeometry();
+    const fn = (geometry as unknown as Record<string, unknown>).periodRateTicks as
+      ((domain: [number, number], valueRangePx: number) => number[]) | undefined;
+    const ticks = fn?.([0, 100], 40) ?? [];
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    expect((40 * (ticks[1]! - ticks[0]!)) / 100).toBeGreaterThanOrEqual(14);
+  });
+
+  it('exports the sketch gutter (26px), the tick gap (6px) and the axis font size (10px)', async () => {
+    const geometry = (await loadGeometry()) as unknown as Record<string, unknown>;
+    expect(geometry.PERIOD_Y_GUTTER_PX).toBe(26);
+    expect(geometry.PERIOD_Y_TICK_GAP_PX).toBe(6);
+    expect(geometry.PERIOD_AXIS_FONT_SIZE_PX).toBe(10);
+  });
+});

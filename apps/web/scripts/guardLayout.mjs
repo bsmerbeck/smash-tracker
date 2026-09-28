@@ -65,6 +65,14 @@ import {
   evaluateLastRowVisible,
   evaluatePeriodTrendMarks,
   formatPeriodTrendLine,
+  evaluatePeriodTrendAxis,
+  formatPeriodTrendAxisLine,
+  periodValueRangeFromTicks,
+  sketchPeriodTickValues,
+  PERIOD_TREND_AXIS_FONT_PX,
+  PERIOD_TREND_VALUE_LABEL_WEIGHT,
+  PERIOD_TREND_GUTTER_PX,
+  PERIOD_TREND_TICK_GAP_PX,
   evaluateFormStripLabels,
   formatFormStripLine,
   terminusBudgetExcessPx,
@@ -91,6 +99,35 @@ import {
  * directly. Plan 39.1-20 adds one entry here per real analytics route,
  * copied from the same route table entries it adds there.
  */
+
+/**
+ * Plan 39.1-43b: a period trend's axis expectation, every value taken from
+ * sketch 003 A's `trend()` CSS (sketch 001-C draws the same rules): the
+ * y ticks `sketchPeriodTickValues(domain)`; 10px muted ticks and x labels;
+ * 10px / 600 value labels in the body text colour (`.val` sets none of its
+ * own); a 10px reference label; the plot 26px right of the head
+ * (`.trend.gutter`) with 6px between a tick's right edge and the plot
+ * (`.ytick{left:-26px;width:20px}`); horizontal hairlines only, at ticks.
+ */
+function periodTrendAxisExpectFor(domain) {
+  return {
+    tickValues: sketchPeriodTickValues(domain),
+    tickFontPx: PERIOD_TREND_AXIS_FONT_PX,
+    tickColorToken: 'muted-foreground',
+    xFontPx: PERIOD_TREND_AXIS_FONT_PX,
+    xColorToken: 'muted-foreground',
+    valueLabelFontPx: PERIOD_TREND_AXIS_FONT_PX,
+    valueLabelWeight: PERIOD_TREND_VALUE_LABEL_WEIGHT,
+    valueLabelColorToken: 'foreground',
+    referenceLabelFontPx: PERIOD_TREND_AXIS_FONT_PX,
+    gutterPx: PERIOD_TREND_GUTTER_PX,
+    tickGapPx: PERIOD_TREND_TICK_GAP_PX,
+    verticalGridLines: 0,
+    axisLines: 0,
+    strayHairlines: 0,
+  };
+}
+
 export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'stretched-card-fixture',
@@ -148,8 +185,13 @@ export const LAYOUT_ORACLE_ROUTES = [
       // Plan 39.1-43 (PD-43-3, fidelity F4): the hero trend draws sketch
       // 001-C's 160px value range (plan 37 proved it drawn on this fixture).
       'period-trend-marks',
+      // Plan 39.1-43b: the trend's axis against sketch 001-C / 003 A's CSS.
+      'period-trend-axis',
     ],
     periodTrendExpect: { state: 'drawn', valueRangePx: [158, 162] },
+    // Plan 39.1-43b: the realistic fixture fits [20, 90] — sketch 003's
+    // `trend()` steps a span above 50 by 20 from lo: 20 / 40 / 60 / 80.
+    periodTrendAxisExpect: periodTrendAxisExpectFor([20, 90]),
     headerSqueeze: {
       header: '[data-slot="insight-rail-header"]',
       parts: [{ role: 'overline', selector: '[data-slot="insight-rail-overline"]' }],
@@ -243,7 +285,11 @@ export const LAYOUT_ORACLE_ROUTES = [
       'brand-red-text',
       'content-overflow',
       'axis-ticks',
+      // Plan 39.1-43b: the trend's axis against sketch 003 A's CSS.
+      'period-trend-axis',
     ],
+    // Plan 39.1-43b: sketch 003 A deep draws 20 / 40 / 60 / 80 / 100.
+    periodTrendAxisExpect: periodTrendAxisExpectFor([20, 100]),
     periodTrendExpect: {
       state: 'drawn',
       yDomain: [20, 100],
@@ -596,6 +642,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantLastRowVisible = checks.includes('last-row-visible');
   // Plan 39.1-41: the period trend's marks (sketch 003 A).
   const wantPeriodTrendMarks = checks.includes('period-trend-marks');
+  // Plan 39.1-43b: the period trend's axis against the sketch CSS.
+  const wantPeriodTrendAxis = checks.includes('period-trend-axis');
   // Plan 39.1-42: the strip's labelled events (sketch 003 `formStrip`).
   const wantFormStripLabels = checks.includes('form-strip-labels');
 
@@ -1547,7 +1595,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   // line curve.
   // -------------------------------------------------------------------
   const periodTrends = [];
-  if (wantPeriodTrendMarks) {
+  if (wantPeriodTrendMarks || wantPeriodTrendAxis) {
     let roots = Array.from(document.querySelectorAll('[data-slot="trend-line-period"]'));
     if (roots.length === 0) {
       const fallback = new Set();
@@ -1634,6 +1682,103 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       const rangeYs = hairlineYs.length >= 2 ? hairlineYs : tickYs;
       const valueRangePx = rangeYs.length >= 2 ? Math.max(...rangeYs) - Math.min(...rangeYs) : null;
       const valueRangeSource = hairlineYs.length >= 2 ? 'hairlines' : 'ticks';
+      // Plan 39.1-43b: the ticks the range is read from, with their values —
+      // the runner scales their px-per-point span to the declared domain
+      // (`periodValueRangeFromTicks`), since a sketch-stepped axis need not
+      // put a hairline on the domain's top ([20, 90] ticks 20..80).
+      const rangeTicks = Array.from(
+        root.querySelectorAll('svg.recharts-surface .recharts-yAxis-tick-labels text'),
+      )
+        .map((tick) => ({
+          value: Number((tick.textContent ?? '').replace(/[^\d.-]/g, '')),
+          y: Number(tick.getAttribute('y')),
+        }))
+        .filter(
+          (tick) =>
+            Number.isFinite(tick.value) &&
+            Number.isFinite(tick.y) &&
+            (hairlineYs.length < 2 || hairlineYs.some((y) => Math.abs(tick.y - y) < 0.5)),
+        );
+      // Plan 39.1-43b: the axis against sketch 003 A / 001-C's `trend()` CSS
+      // (guardLayoutCore `evaluatePeriodTrendAxis`). Colours are reported as
+      // the design token whose resolved value they equal (a probe span per
+      // token, inside the root so any scoped override applies).
+      let axis = null;
+      const surfaceSvg = root.querySelector('svg.recharts-surface');
+      if (wantPeriodTrendAxis && state === 'drawn' && surfaceSvg) {
+        const tokenNames = ['muted-foreground', 'foreground', 'card', 'border', 'viz-context'];
+        const probeHost = surfaceSvg.parentElement ?? root;
+        const tokenColors = tokenNames.map((name) => {
+          const probe = document.createElement('span');
+          probe.style.color = `var(--${name})`;
+          probeHost.appendChild(probe);
+          const color = window.getComputedStyle(probe).color;
+          probe.remove();
+          return { name, color };
+        });
+        const tokenOf = (color) =>
+          tokenColors.find((token) => token.color === color)?.name ?? color;
+        const fontPx = (el) => parseFloat(window.getComputedStyle(el).fontSize);
+        const fillToken = (el) => tokenOf(window.getComputedStyle(el).fill);
+        const yTickEls = Array.from(
+          surfaceSvg.querySelectorAll('.recharts-yAxis-tick-labels text'),
+        );
+        const xTickEls = Array.from(
+          surfaceSvg.querySelectorAll('.recharts-xAxis-tick-labels text'),
+        );
+        const valueLabelEls = Array.from(
+          root.querySelectorAll('[data-slot="trend-period-value-label"]'),
+        );
+        const referenceEls = Array.from(root.querySelectorAll('.trend-period-reference-label'));
+        const horizontalLines = Array.from(
+          surfaceSvg.querySelectorAll('.recharts-cartesian-grid-horizontal line'),
+        );
+        const svgRect = surfaceSvg.getBoundingClientRect();
+        const plotLeftSvgPx = horizontalLines.length
+          ? Math.min(...horizontalLines.map((line) => Number(line.getAttribute('x1'))))
+          : null;
+        const plotLeftClientPx =
+          plotLeftSvgPx !== null && Number.isFinite(plotLeftSvgPx)
+            ? svgRect.left + plotLeftSvgPx
+            : null;
+        // The sketch's gutter is measured from the content edge the trend's
+        // head (overline + legend) starts at; with no head, the svg's own left.
+        const headEl = root.querySelector('[data-slot="trend-period-head"]');
+        const contentLeftPx = headEl ? headEl.getBoundingClientRect().left : svgRect.left;
+        const tickRights = yTickEls.map((el) => el.getBoundingClientRect().right);
+        const tickValueYs = yTickEls
+          .map((el) => Number(el.getAttribute('y')))
+          .filter((y) => Number.isFinite(y));
+        axis = {
+          yTickValues: yTickEls
+            .map((el) => Number((el.textContent ?? '').replace(/[^\d.-]/g, '')))
+            .filter((value) => Number.isFinite(value)),
+          yTickFontPx: yTickEls.map(fontPx),
+          yTickColorTokens: yTickEls.map(fillToken),
+          xTickFontPx: xTickEls.map(fontPx),
+          xTickColorTokens: xTickEls.map(fillToken),
+          valueLabelFontPx: valueLabelEls.map(fontPx),
+          valueLabelWeights: valueLabelEls.map((el) =>
+            Number(window.getComputedStyle(el).fontWeight),
+          ),
+          valueLabelColorTokens: valueLabelEls.map(fillToken),
+          referenceLabelFontPx: referenceEls.map(fontPx),
+          gutterPx: plotLeftClientPx !== null ? plotLeftClientPx - contentLeftPx : null,
+          tickGapPx:
+            plotLeftClientPx !== null && tickRights.length
+              ? plotLeftClientPx - Math.max(...tickRights)
+              : null,
+          verticalGridLines: surfaceSvg.querySelectorAll('.recharts-cartesian-grid-vertical line')
+            .length,
+          axisLines: surfaceSvg.querySelectorAll(
+            '.recharts-cartesian-axis-line, .recharts-cartesian-axis-tick-line',
+          ).length,
+          strayHairlines: horizontalLines.filter((line) => {
+            const y = Number(line.getAttribute('y1'));
+            return !tickValueYs.some((tickY) => Math.abs(tickY - y) < 0.5);
+          }).length,
+        };
+      }
       periodTrends.push({
         selectorPath: describeElement(root),
         state,
@@ -1647,6 +1792,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         referenceLabelSource,
         valueRangePx,
         valueRangeSource,
+        rangeTicks,
+        axis,
       });
     }
   }
@@ -2238,9 +2385,22 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     }
     // Plan 39.1-41: period-trend-marks against the route's own expectation;
     // the PERIOD_TREND lines print whether or not it passed.
+    // Plan 39.1-43b: the value range is the hairlines' px-per-point scale
+    // times the declared domain (a sketch-stepped axis may leave the
+    // domain's top without a hairline); the raw span is kept when no tick
+    // values were read.
+    for (const surface of measurements.periodTrends ?? []) {
+      const scaled = periodValueRangeFromTicks(surface.rangeTicks, surface.yDomain);
+      if (scaled !== null) surface.valueRangePx = scaled;
+    }
     if (checks.includes('period-trend-marks')) {
       violations.push(
         ...evaluatePeriodTrendMarks(measurements.periodTrends, route.periodTrendExpect ?? {}),
+      );
+    }
+    if (checks.includes('period-trend-axis')) {
+      violations.push(
+        ...evaluatePeriodTrendAxis(measurements.periodTrends, route.periodTrendAxisExpect ?? {}),
       );
     }
     // Plan 39.1-51 (OOS-8): one LAST_ROW record per list root.
@@ -2294,6 +2454,9 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
       railCards: checks.includes('rail-cards') ? measurements.railCards : [],
       periodTrends: checks.includes('period-trend-marks') ? measurements.periodTrends : [],
+      periodTrendAxes: checks.includes('period-trend-axis')
+        ? measurements.periodTrends.filter((surface) => surface.state !== 'locked')
+        : [],
       formStripLabelStrips: checks.includes('form-strip-labels')
         ? measurements.formStripLabelStrips
         : [],
@@ -2602,6 +2765,10 @@ async function main() {
             // Plan 39.1-41: one PERIOD_TREND line per measured period trend.
             for (const surface of result.periodTrends ?? []) {
               console.log(formatPeriodTrendLine(route.id, viewport.name, surface));
+            }
+            // Plan 39.1-43b: one PERIOD_TREND_AXIS line per drawn period trend.
+            for (const surface of result.periodTrendAxes ?? []) {
+              console.log(formatPeriodTrendAxisLine(route.id, viewport.name, surface));
             }
             // Plan 39.1-42: one FORM_STRIP line per measured strip root.
             for (const strip of result.formStripLabelStrips ?? []) {
