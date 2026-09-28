@@ -42,6 +42,7 @@ import {
   REPORT_MODEL_TIMEOUT_MS,
   SWEEP_CLOCK_SKEW_MARGIN_MS,
 } from './reports.js';
+import * as reportsRouteModule from './reports.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 import { assembleReportPayload, REPORT_MODEL } from '../reports/generate.js';
 import { projectScoutSelection } from '../reports/claimSelection.js';
@@ -2086,7 +2087,10 @@ describe('report job terminal states (RPT-03)', () => {
     // spend).
     const refundTransactionIndex = writes.findIndex(
       (entry, index) =>
-        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+        // The refund's balance transaction: on the balance node, or (code
+        // review R5-WR-01) on the credits node it shares with the refund's
+        // create-once marker.
+        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}`),
     );
     expect(failedIndex).toBeGreaterThan(-1);
     expect(refundedIndex).toBeGreaterThan(-1);
@@ -6696,7 +6700,9 @@ describe('code review R2-IN-04: a throw inside the settle never replaces the ori
     const originalRef = database.ref.bind(database);
     vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
       const ref = originalRef(path);
-      if (path === `credits/${TEST_UID}/balance`) {
+      // The refund's balance write: the balance node itself, or (code review
+      // R5-WR-01) the credits node the create-once refund marker shares.
+      if (path === `credits/${TEST_UID}/balance` || path === `credits/${TEST_UID}`) {
         return {
           ...ref,
           transaction: async () => {
@@ -7381,7 +7387,7 @@ describe('code review R3-IN-03: an absent or stranded bundle-op marker means a p
 // ---------------------------------------------------------------------------
 
 describe('code review R4-WR-01: a transient failure on the first settle write never strands a spent credit', () => {
-  it('R4-L1 legacy: start.gg answers 500 and the first failure write on the job throws once — the job settles and refunds exactly once', async () => {
+  it("R4-L1 legacy: start.gg answers 500 and failJob's failed set throws once after the settle commits — the job settles and refunds exactly once", async () => {
     const modelSpy = vi.fn(async () => ({
       stop_reason: 'end_turn' as const,
       parsed_output: VALID_REPORT,
@@ -7395,14 +7401,16 @@ describe('code review R4-WR-01: a transient failure on the first settle write ne
     });
     database.seed(`credits/${TEST_UID}/balance`, 1);
     const jobPath = `reportJobs/${TEST_UID}/r4-l1`;
-    // The first write that would move the job to `failed`: a whole-node
-    // `failed` set (the old bare `failJob`) or the owned settle transaction.
+    // Code review R5-WR-01: the injection names the write the iteration-4
+    // probe named — `failJob`'s whole-node `failed` set, AFTER the owned
+    // settle transaction has committed — and nothing else, so the settle
+    // transaction itself is never the write that throws.
     const injected = failOneWrite(
       database,
       (path, op, value) =>
         path === jobPath &&
-        (op === 'transaction' ||
-          (op === 'set' && (value as { status?: string } | null)?.status === 'failed')),
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
     );
 
     const response = await postLegacy(app, 'r4-l1');
@@ -7462,6 +7470,432 @@ describe('code review R4-WR-01: a transient failure on the first settle write ne
     expect(response.statusCode).toBe(500);
     expect(await jobRecord(database, 'r4-l1-control')).toMatchObject({ status: 'failed' });
     expect(refundLedgerRefs(database)).toEqual(['r4-l1-control']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-WR-01): R4-WR-01 closed the latch only after
+// the owned settle resolves, but `failJob`'s own writes after that settle —
+// the whole-node `failed` set, the index/day update and the refund's balance
+// transaction — could still throw once and strand the spent credit: the row
+// is already `failed` (so the sweep, which reads only `running` rows, skips
+// it) and the latch is closed. Every one of those writes is now retried a
+// bounded number of times; the refund is made idempotent by a create-once
+// marker written in the SAME transaction as the balance, so a retry after a
+// committed-but-unacknowledged refund never refunds twice. These are the
+// reviewer's five reproductions (R4-L1 above, L1b, L1c, L2b, L3b) plus the
+// index write, the lost acknowledgement and the persistent failures.
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+/** Makes EVERY write on `database` for which `shouldThrow(path, op, value)` is true throw. */
+function failEveryWrite(
+  database: FakeDatabase,
+  shouldThrow: (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => boolean,
+): { count: () => number } {
+  let count = 0;
+  const originalRef = database.ref.bind(database);
+  const maybeThrow = (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => {
+    if (shouldThrow(path, op, value)) {
+      count += 1;
+      throw new Error(`injected persistent ${op} failure`);
+    }
+  };
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        maybeThrow(path ?? '', 'set', value);
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        maybeThrow(path ?? '', 'update', values);
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        maybeThrow(path ?? '', 'transaction', undefined);
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { count: () => count };
+}
+
+/**
+ * The refund's balance transaction: the SECOND transaction on the balance
+ * node (the first is the spend), or any transaction on the credits node the
+ * create-once refund marker shares with the balance.
+ */
+function refundTransactionPredicate(): (path: string, op: string) => boolean {
+  let balanceTransactions = 0;
+  return (path, op) => {
+    if (op !== 'transaction') {
+      return false;
+    }
+    if (path === `credits/${TEST_UID}`) {
+      return true;
+    }
+    if (path === `credits/${TEST_UID}/balance`) {
+      balanceTransactions += 1;
+      return balanceTransactions >= 2;
+    }
+    return false;
+  };
+}
+
+/** A logger that records every call, at every level, for the no-uid log assertions. */
+function r5CapturingLogger() {
+  const lines: unknown[][] = [];
+  const record = (...args: unknown[]) => {
+    lines.push(args);
+  };
+  const logger = {
+    level: 'info',
+    fatal: record,
+    error: record,
+    warn: record,
+    info: record,
+    debug: record,
+    trace: record,
+    silent: record,
+    child: (): unknown => logger,
+  };
+  return { logger, lines };
+}
+
+const errorMessageOf = (line: unknown[]): string | undefined =>
+  (line[0] as { err?: { message?: string } } | undefined)?.err?.message;
+
+/** A billable legacy app whose start.gg lookup answers 500, so the resolver fails the job. */
+function r5LegacyFailureApp(logger?: unknown) {
+  const built = buildTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    reportsClient: stubClient(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    })),
+    ...(logger ? { logger: logger as never } : {}),
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+/** A billable prep-single app over the viable workspace whose model call throws `err` (default: a provider 500). */
+function r5PrepModelErrorApp(options: { err?: () => unknown; logger?: unknown } = {}) {
+  const err = options.err ?? (() => new Anthropic.APIError(500, undefined, 'boom', new Headers()));
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(async () => {
+      throw err();
+    }),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) }),
+    ...(options.logger ? { logger: options.logger as never } : {}),
+  });
+  seedRivalPrepBrief(built.database);
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+const R5_SWEEP_LATER_MS = 60 * 60 * 1000;
+
+describe('code review R5-WR-01: a transient failure AFTER the owned settle commits never strands a spent credit', () => {
+  it("R5-L1b legacy: the settle commits, failJob's failed set throws once — refunded once, and a later sweep finds nothing", async () => {
+    const { app, database } = r5LegacyFailureApp();
+    const jobPath = `reportJobs/${TEST_UID}/r5-l1b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postLegacy(app, 'r5-l1b');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r5-l1b')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l1b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l1b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L1c legacy: the settle commits, the refund's balance transaction throws once — refunded exactly once", async () => {
+    const { app, database } = r5LegacyFailureApp();
+    const isRefund = refundTransactionPredicate();
+    const injected = failOneWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postLegacy(app, 'r5-l1c');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r5-l1c')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l1c']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l1c']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L2b prep single: not found, the settle commits, failJob's failed set throws once — refunded once, job refunded", async () => {
+    const { app, database, lookupGates, modelSpy } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r5-l2b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const execution = postPrepSingle(app, 'r5-l2b');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    lookupGates[0]!.resolve('missing');
+    const response = await execution;
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).not.toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r5-l2b')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l2b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l2b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L3b prep single: the model answers a provider error, the running settle commits, failJob's failed set throws once — 502, refunded once, index cleared", async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const jobPath = `reportJobs/${TEST_UID}/r5-l3b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postPrepSingle(app, 'r5-l3b');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-l3b')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-l3b')).toBeNull();
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l3b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l3b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: the index/day update after the settle throws once — 502, refunded once, index cleared', async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        (path === '' || path === '/') &&
+        op === 'update' &&
+        Object.prototype.hasOwnProperty.call(
+          value as Record<string, unknown>,
+          `reportJobsByStatus/running/${TEST_UID}/r5-index`,
+        ) &&
+        (value as Record<string, unknown>)[`reportJobsByStatus/running/${TEST_UID}/r5-index`] ===
+          null,
+    );
+
+    const response = await postPrepSingle(app, 'r5-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-index')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['r5-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('never twice: the refund COMMITS but its acknowledgement is lost (the call throws after committing) — the retry finds the marker, balance 1, one refund entry', async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const isRefund = refundTransactionPredicate();
+    let lost = false;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        transaction: async (fn: (current: unknown) => unknown) => {
+          const result = await ref.transaction(fn);
+          if (!lost && isRefund(path ?? '', 'transaction')) {
+            lost = true;
+            throw new Error('connection dropped before the commit was acknowledged');
+          }
+          return result;
+        },
+      };
+    });
+
+    const response = await postPrepSingle(app, 'r5-lost-ack');
+
+    expect(lost).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-lost-ack')).toMatchObject({ status: 'refunded' });
+    expect(spendLedgerRefs(database)).toEqual(['r5-lost-ack']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-lost-ack']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("persistent: failJob's failed set fails on every attempt — the settled row is already failed, so the refund still happens exactly once, and the failure is logged without uid or token", async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const jobPath = `reportJobs/${TEST_UID}/r5-persist-set`;
+    const injected = failEveryWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postPrepSingle(app, 'r5-persist-set');
+
+    expect(injected.count()).toBeGreaterThan(1);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-persist-set')).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual(['r5-persist-set']);
+    expect(await balanceOf(database)).toBe(1);
+    const logged = lines.filter(
+      (line) => errorMessageOf(line) === 'injected persistent set failure',
+    );
+    expect(logged).toHaveLength(1);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+
+  it('persistent: the refund fails on every attempt — no second path refunds it, the job never claims "refunded", and one error is logged for reconciliation without uid or token', async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const isRefund = refundTransactionPredicate();
+    const injected = failEveryWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postPrepSingle(app, 'r5-persist-refund');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.count()).toBeGreaterThan(1);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-persist-refund')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    const logged = lines.filter(
+      (line) => errorMessageOf(line) === 'injected persistent transaction failure',
+    );
+    expect(logged).toHaveLength(1);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-01): the abort signal R4-WR-02 added fires
+// AFTER the response headers as a bare `DOMException` (`AbortError`, or
+// `TimeoutError` from `AbortSignal.timeout`), not an `Anthropic.APIError`.
+// It takes the same owned failure and the same 502 as the SDK's own timeout
+// error, instead of a 500 through the generic handler.
+// ---------------------------------------------------------------------------
+
+describe('code review R5-IN-01: a body-read abort is a 502 with one owned refund, like the SDK timeout', () => {
+  it('prep single: a DOMException AbortError — 502, refunded once, and a later sweep finds nothing', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('This operation was aborted', 'AbortError'),
+    });
+
+    const response = await postPrepSingle(app, 'r5-a1');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a1')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-a1')).toBeNull();
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(refundLedgerRefs(database)).toEqual(['r5-a1']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: the TimeoutError DOMException AbortSignal.timeout raises is handled the same way', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('The operation timed out.', 'TimeoutError'),
+    });
+
+    const response = await postPrepSingle(app, 'r5-a1-timeout');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a1-timeout')).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual(['r5-a1-timeout']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy: a DOMException AbortError — 502, failed, refunded once', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r5-a2');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a2')).toMatchObject({ status: 'failed' });
+    expect(spendLedgerRefs(database)).toEqual(['r5-a2']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-a2']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('bundle child: a DOMException AbortError — 502, the child refunded once (its one slot credit)', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('This operation was aborted', 'AbortError'),
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r5-a3'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual([`r5-a3:${child.slot}`]);
     expect(await balanceOf(database)).toBe(1);
   });
 });
@@ -7621,5 +8055,32 @@ describe('code review R4-WR-02: one model call per job, no retries, bounded well
     const worstCaseModelMs = (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS;
     expect(worstCaseModelMs).toBeLessThan(guardThresholdMs);
     expect(guardThresholdMs - worstCaseModelMs).toBeGreaterThanOrEqual(6 * 60 * 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-04): report generation runs INSIDE the
+// request — `POST /reports` awaits `runReportGeneration` /
+// `runSynthesisGeneration` before it replies — so one model attempt plus the
+// work before it (scout resolution, payload assembly, the snapshot write)
+// and after it (validation, the store, the terminal writes) must fit inside
+// the Cloud Run request timeout. The live `smash-tracker-api` service's
+// `timeoutSeconds` is 300 (verified read-only by the orchestrator,
+// 2026-09-28). Past it the request is cut off and a request-billed
+// instance's CPU is throttled, which would stall the terminal writes.
+// ---------------------------------------------------------------------------
+
+describe('code review R5-IN-04: one model attempt fits inside the Cloud Run request timeout', () => {
+  it('the attempt bound plus the documented request-overhead budget stays inside the verified 300-second platform timeout, and the attempt is at most 240 seconds', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    const platformMs = constants.CLOUD_RUN_REQUEST_TIMEOUT_MS;
+    const overheadMs = constants.REPORT_REQUEST_OVERHEAD_BUDGET_MS;
+    expect(platformMs).toBe(300 * 1000);
+    expect(typeof overheadMs).toBe('number');
+    expect(overheadMs as number).toBeGreaterThanOrEqual(60 * 1000);
+    expect(REPORT_MODEL_TIMEOUT_MS).toBeLessThanOrEqual(240 * 1000);
+    expect(
+      (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS + (overheadMs as number),
+    ).toBeLessThanOrEqual(platformMs as number);
   });
 });

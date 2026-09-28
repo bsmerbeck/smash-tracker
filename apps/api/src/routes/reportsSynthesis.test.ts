@@ -895,7 +895,10 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     const refundedIndex = writes.indexOf(`set:reportJobs/${TEST_UID}/${jobId}#refunded`);
     const refundTransactionIndex = writes.findIndex(
       (entry, index) =>
-        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+        // The refund's balance transaction: on the balance node, or (code
+        // review R5-WR-01) on the credits node it shares with the refund's
+        // create-once marker.
+        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}`),
     );
     expect(failedIndex).toBeGreaterThan(-1);
     expect(refundedIndex).toBeGreaterThan(-1);
@@ -2357,5 +2360,40 @@ describe('code review R4-WR-02: the synthesis model call is one bounded attempt'
     expect(typeof options!.timeout).toBe('number');
     expect(options!.timeout as number).toBeGreaterThan(0);
     expect(options!.timeout as number).toBeLessThanOrEqual(8 * 60 * 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-01): a body-read abort (a bare DOMException,
+// not an `Anthropic.APIError`) takes the same failure path and the same 502
+// as the SDK's own timeout error on the synthesis call too.
+// ---------------------------------------------------------------------------
+
+describe('code review R5-IN-01: a synthesis body-read abort is a 502 with one refund', () => {
+  it('a DOMException AbortError from the model call — 502, the job refunded once, balance restored', async () => {
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const dump = database.dump() as {
+      reportJobs?: Record<string, Record<string, { status?: string }>>;
+      creditLedger?: Record<string, Record<string, { type: string }>>;
+    };
+    const jobs = Object.values(dump.reportJobs?.[TEST_UID] ?? {});
+    expect(jobs.map((job) => job.status)).toEqual(['refunded']);
+    const refunds = Object.values(dump.creditLedger?.[TEST_UID] ?? {}).filter(
+      (entry) => entry.type === 'refund',
+    );
+    expect(refunds).toHaveLength(1);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
   });
 });
