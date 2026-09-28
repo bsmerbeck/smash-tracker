@@ -459,6 +459,19 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
     expect(ticks.filter((tick) => tick.style.opacity === '0.32')).toHaveLength(0);
   });
 
+  it('empty-window (UI-SPEC 7.10): on a horizon with no games in the thin account (last event, manual-only games) every tick is dimmed and the foot names the empty window', () => {
+    const { container } = render(
+      <CareerTimelineCard matches={CASUAL_MATCHES} horizon="lastEvent" chartWidth={1000} />,
+    );
+    const slot = container.querySelector('[data-slot="career-timeline-thin-strip"]')!;
+    const ticks = Array.from(slot.querySelectorAll<HTMLElement>('[data-slot="form-strip-tick"]'));
+    expect(ticks).toHaveLength(41);
+    expect(ticks.every((tick) => tick.style.opacity === '0.32')).toBe(true);
+    expect(slot.querySelector('[data-slot="form-strip-window-note"]')?.textContent).toBe(
+      'No games at the last event — showing all time.',
+    );
+  });
+
   it('conditional title: the overline becomes the kit head title (with the swatch legend) exactly when every game is drawn, and no head otherwise', () => {
     const { container: casual } = renderThin(CASUAL_MATCHES);
     const head = casual.querySelector(

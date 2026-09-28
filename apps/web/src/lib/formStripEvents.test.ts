@@ -279,6 +279,23 @@ describe('formStripEvents (plan 39.1-42) — one set-key and label derivation', 
     ]);
   });
 
+  it('empty-window: an insight whose recent window holds no games dims EVERY set (UI-SPEC 7.10 zero-data rule); collapsed horizons and no insight dim none', async () => {
+    const mod = (await load()) as FormStripEventsModule & {
+      formStripRecentWindow?: (insight: unknown) => { fromMs: number | null; toMs: number | null };
+    };
+    const games = [manual('a1', BASE_MS), manual('b1', BASE_MS + 5 * DAY_MS)];
+    const dims = (insight: unknown) =>
+      mod
+        .buildFormStripEvents(games, mod.formStripRecentWindow!(insight), i18n.t, 'en')
+        .flatMap((event) => event.sets.map((set) => set.inRecentWindow));
+    const window = (games: number) => ({ games, fromMs: games ? BASE_MS : null, toMs: null });
+    expect(dims({ state: 'fact', window: window(0) })).toEqual([false, false]);
+    expect(
+      dims({ state: 'collapsed', window: { games: 2, fromMs: BASE_MS, toMs: BASE_MS } }),
+    ).toEqual([true, true]);
+    expect(dims(null)).toEqual([true, true]);
+  });
+
   it('casual-41: the 41-game casual fixture yields one group of session-sets with 41 ticks in total', async () => {
     const { buildFormStripEvents } = await load();
     // guard:layout's `casual` scale / CareerTimelineCard.test.tsx's CASUAL_MATCHES.
