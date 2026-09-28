@@ -189,6 +189,31 @@ describe('FighterHero', () => {
     expect(ticks.length).toBeGreaterThan(0);
   });
 
+  it('head (plan 39.1-42, sketch 001-C / 003): the strip head is the kit title "Form · last 60 games, by event" with the four swatch-legend items — no second overline paragraph of the hero', () => {
+    renderHero({ fighterMatches: largeFixture() });
+    const section = document.querySelector('[data-slot="fighter-hero-strip"]')!;
+    const head = section.querySelector('[data-slot="form-strip-head"]');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 60 games, by event',
+    );
+    expect(head!.querySelectorAll('[data-slot="form-strip-legend-item"]')).toHaveLength(4);
+    expect(section.textContent?.match(/Form · last 60 games, by event/g)).toHaveLength(1);
+    expect(section.firstElementChild?.getAttribute('data-slot')).toBe('form-strip-root');
+  });
+
+  it('foot-line (plan 39.1-42): the strip foot states the drawn count and the window note', () => {
+    renderHero({ fighterMatches: largeFixture() });
+    const foot = document.querySelector(
+      '[data-slot="fighter-hero-strip"] [data-slot="form-strip-foot"]',
+    );
+    expect(foot).not.toBeNull();
+    expect(foot!.children[0]!.textContent).toMatch(
+      /^60 of \d+ games shown · older events drop first · oldest → newest$/,
+    );
+    expect(foot!.children).toHaveLength(2);
+  });
+
   it('renders localised by-match-type labels — no raw enum value reaches the DOM', () => {
     renderHero({ fighterMatches: largeFixture() });
     expect(screen.getByText('Quickplay')).toBeInTheDocument();
@@ -525,13 +550,14 @@ describe('FighterHero', () => {
       expect(groups).toHaveLength(1);
       expect(groups[0]!.getAttribute('aria-label')).toMatch(/^Sessions · /);
       expect(groups[0]!.querySelectorAll('[data-slot="form-strip-set"]')).toHaveLength(2);
-      const captionFirst = document.querySelector('[data-slot="form-strip-caption-first"]');
-      // `formatRange` may use thin spaces around its dash: compare raw text.
-      expect(captionFirst?.textContent).toBe(`Sessions · ${expectedSpan}`);
-      const captions = Array.from(
-        document.querySelectorAll('[data-slot^="form-strip-caption-"]'),
-      ).map((el) => el.textContent);
-      expect(captions.some((text) => text?.includes('Unknown'))).toBe(false);
+      // REWRITTEN by plan 39.1-42: the run group's own label row (the
+      // first / last caption is gone). `formatRange` may use thin spaces
+      // around its dash: compare raw text.
+      const labelRow = document.querySelector('[data-slot="form-strip-event-label"]');
+      expect(labelRow?.firstElementChild?.textContent).toBe(`Sessions · ${expectedSpan}`);
+      expect(labelRow?.lastElementChild?.textContent).toBe('3–1');
+      expect(document.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
+      expect(labelRow?.textContent?.includes('Unknown')).toBe(false);
     });
   });
 

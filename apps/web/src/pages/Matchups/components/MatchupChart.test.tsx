@@ -231,12 +231,12 @@ describe('MatchupChart', () => {
     expect(d.trim()).toBe('');
   });
 
-  it('on a 200-game fixture the rendered period-point count is at most 60 and the strip-tick count is at most 30', () => {
+  // REWRITTEN by plan 39.1-42 (PD-42-3, sketch A): the Matchups strip limit
+  // is 60 (was 30) — 200 games draw exactly 60 ticks under jsdom (no fit).
+  it('on a 200-game fixture the rendered period-point count is at most 60 and the strip draws exactly its 60-game limit', () => {
     const { container } = renderChart(recentSequence(200));
     expect(container.querySelectorAll('circle').length).toBeLessThanOrEqual(60);
-    expect(container.querySelectorAll('[data-slot="form-strip-tick"]').length).toBeLessThanOrEqual(
-      30,
-    );
+    expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(60);
   });
 
   it('mounts no brand/primary-colour MARK on the surface (data ink only — a `text-primary` link-styled chrome button, e.g. TrendLine\'s own pre-existing "view as table" toggle, is not a mark and is out of scope)', () => {
@@ -357,11 +357,15 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     expect(labels[2]).toMatch(/^Session · /);
     expect(labels.some((l) => l?.startsWith('Unknown'))).toBe(false);
 
-    // The caption's first (oldest shown) span carries the same event's
-    // label as its title — no width-fit prop is given in this render, so
-    // every group is shown and the oldest is session A.
-    const captionFirst = container.querySelector('[data-slot="form-strip-caption-first"]');
-    expect(captionFirst).toHaveAttribute('title', `Session · ${expectedDate}`);
+    // REWRITTEN by plan 39.1-42: the caption is gone — every shown group's
+    // label row carries its label (title = full label); no width-fit prop is
+    // given, so every group is shown and the oldest is session A.
+    const labelRows = Array.from(
+      container.querySelectorAll('[data-slot="form-strip-event-label"]'),
+    );
+    expect(labelRows).toHaveLength(3);
+    expect(labelRows[0]!.firstElementChild).toHaveAttribute('title', `Session · ${expectedDate}`);
+    expect(container.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
   });
 
   it("WR-01: a recurring start.gg event name at two tournaments is ordered by its sets' own games — the newest tournament's sets end the strip, not an older manual session", () => {
@@ -393,19 +397,19 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[sets.length - 1]!.getAttribute('aria-label')).toMatch(/newest-rival/);
     // REWRITTEN by plan 39.1-42 (PD-42-2): the group is named by its
-    // TOURNAMENT ("Evo"), never the shared bracket name "Ultimate Singles".
-    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveAttribute(
-      'title',
-      'Evo',
-    );
+    // TOURNAMENT ("Evo"), never the shared bracket name "Ultimate Singles",
+    // on the newest shown event's own label row (the caption is gone).
+    const labelRows = container.querySelectorAll('[data-slot="form-strip-event-label"]');
+    expect(labelRows[labelRows.length - 1]!.firstElementChild).toHaveAttribute('title', 'Evo');
     const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(groups).toHaveLength(3);
   });
 
-  it('WR-03: the strip row is named for the games DRAWN of the total ("Form strip, 30 of 35 games"), and the key pluralises on the total', () => {
-    const { container } = renderChart(recentSequence(35));
+  // REWRITTEN by plan 39.1-42 (PD-42-3): limit 60, so 70 games -> 60 of 70.
+  it('WR-03: the strip row is named for the games DRAWN of the total ("Form strip, 60 of 70 games"), and the key pluralises on the total', () => {
+    const { container } = renderChart(recentSequence(70));
     const row = container.querySelector('[data-slot="form-strip-root"] [role="group"]');
-    expect(row).toHaveAttribute('aria-label', 'Form strip, 30 of 35 games');
+    expect(row).toHaveAttribute('aria-label', 'Form strip, 60 of 70 games');
     const t = i18n.getFixedT('en');
     expect(t('analytics.strip.aria', { count: 1, shown: 1 })).toBe('Form strip, 1 of 1 game');
     expect(t('analytics.strip.aria', { count: 77, shown: 11 })).toBe('Form strip, 11 of 77 games');
@@ -422,10 +426,44 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     }
   });
 
-  it('a pairing of 35 games renders "30 of 35 games shown" — the host formatter wiring, jsdom applies only the 30-game limit (no measured width)', () => {
-    const { container } = renderChart(recentSequence(35));
+  // REWRITTEN by plan 39.1-42 (PD-42-3 limit 60; sketch 003 foot wording).
+  it('a pairing of 70 games renders "60 of 70 games shown · older events drop first · oldest → newest" — the host formatter wiring, jsdom applies only the 60-game limit (no measured width)', () => {
+    const { container } = renderChart(recentSequence(70));
     const shownOfTotal = container.querySelector('[data-slot="form-strip-shown-of-total"]');
-    expect(shownOfTotal).toHaveTextContent('30 of 35 games shown');
+    expect(shownOfTotal?.textContent).toBe(
+      '60 of 70 games shown · older events drop first · oldest → newest',
+    );
+  });
+
+  it('head: the strip head reads "Form · last 60 games, by event" (count = min(limit, games)) with the four swatch-legend items', () => {
+    const { container } = renderChart(recentSequence(70));
+    const head = container.querySelector('[data-slot="form-strip-head"]');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 60 games, by event',
+    );
+    expect(
+      Array.from(head!.querySelectorAll('[data-slot="form-strip-legend-item"]')).map(
+        (el) => el.textContent,
+      ),
+    ).toEqual(['up = win', 'down = loss', 'gap = new set', 'label = event · W–L']);
+    const { container: small } = renderChart(recentSequence(12));
+    expect(small.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 12 games, by event',
+    );
+  });
+
+  it('foot-line: the foot states what is drawn and the window note — highlighted window (70 games) and collapsed horizons (12 games, the whole record)', () => {
+    const footParts = (count: number) =>
+      Array.from(
+        renderChart(recentSequence(count)).container.querySelector('[data-slot="form-strip-foot"]')
+          ?.children ?? [],
+      ).map((child) => child.textContent);
+    expect(footParts(70)).toEqual([
+      '60 of 70 games shown · older events drop first · oldest → newest',
+      'Last 30 games highlighted',
+    ]);
+    expect(footParts(12)).toEqual(['all 12 games · oldest → newest', 'Whole record shown']);
   });
 });
 

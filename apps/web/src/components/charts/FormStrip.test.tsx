@@ -107,9 +107,24 @@ function summaryFormatter({ shown, total }: { shown: number; total: number }): s
   return `summary ${shown} of ${total}`;
 }
 
+/** Plan 39.1-42: the structured legend (sketch 003 `stripLegend`) — was one ' · '-joined string. */
+const LEGEND = {
+  win: 'up = win',
+  loss: 'down = loss',
+  setGap: 'gap = new set',
+  eventLabel: 'label = event · W–L',
+};
+
+/** Plan 39.1-42: the foot's all-shown formatter (sketch 003 `fitStrips` note). */
+function allShownFormatter({ total }: { total: number }): string {
+  return `all ${total} games · oldest → newest`;
+}
+
 const emptyLabels = {
   summary: summaryFormatter,
-  legend: 'legend',
+  legend: LEGEND,
+  shownOfTotal: shownOfTotalFormatter,
+  allShown: allShownFormatter,
   empty: <p>No games in this view yet.</p>,
 };
 
@@ -161,10 +176,15 @@ describe('FormStrip', () => {
     // No assertion in this suite depends on a colour value.
   });
 
+  // REWRITTEN by plan 39.1-42: the legend is a structured head (only with a
+  // title); at 0 games neither the head nor a legend item renders.
   it('renders the empty node, zero ticks, no legend and no group role at 0 games', () => {
-    const { container } = render(<FormStrip events={[]} limit={60} labels={emptyLabels} />);
+    const { container } = render(
+      <FormStrip events={[]} limit={60} labels={{ ...emptyLabels, title: 'Form' }} />,
+    );
     expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(0);
-    expect(screen.queryByText('legend')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="form-strip-head"]')).toBeNull();
+    expect(container.querySelector('[data-slot="form-strip-legend-item"]')).toBeNull();
     expect(screen.queryByRole('group')).not.toBeInTheDocument();
     expect(screen.getByText('No games in this view yet.')).toBeInTheDocument();
   });
@@ -202,12 +222,14 @@ describe('FormStrip', () => {
     expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(2);
   });
 
+  // REWRITTEN by plan 39.1-42: `windowEmpty` is replaced by the foot's
+  // `windowNote` (any window state), printed on the foot line.
   it('dims every tick and highlights nothing when games exist but none are in the recent window', () => {
     const { container } = render(
       <FormStrip
         events={twoEventFixture(false)}
         limit={60}
-        labels={{ ...emptyLabels, windowEmpty: 'No games in the last 90 days — all games shown.' }}
+        labels={{ ...emptyLabels, windowNote: 'No games in the last 90 days — all games shown.' }}
       />,
     );
     const ticks = Array.from(container.querySelectorAll('[data-slot="form-strip-tick"]'));
@@ -215,7 +237,8 @@ describe('FormStrip', () => {
     for (const tick of ticks) {
       expect((tick as HTMLElement).style.opacity).toBe('0.32');
     }
-    expect(screen.getByText('No games in the last 90 days — all games shown.')).toBeInTheDocument();
+    const note = screen.getByText('No games in the last 90 days — all games shown.');
+    expect(note.closest('[data-slot="form-strip-foot"]')).not.toBeNull();
   });
 
   it('makes a set a tab stop and a tick not a tab stop', () => {
@@ -274,16 +297,28 @@ describe('FormStrip — single row, group names, caption (plan 39.1-33, R1)', ()
     expect(row.className).not.toMatch(/overflow-x-auto|overflow-x-scroll/);
   });
 
-  it('no form-strip-event carries an inline min-width, and every element child of a form-strip-event is a form-strip-set', () => {
+  // REWRITTEN by plan 39.1-42 (sketch 003 `.strip-ev`): an event column is
+  // its tick row (sets only) then its label row; the 80 / 76px minimum
+  // lives in CSS classes, never an inline style.
+  it('every form-strip-event is a column of a set-only tick row then its label row, with the 80 / 76px minimum in CSS classes (no inline min-width)', () => {
     const { container } = render(
       <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
     );
     const eventEls = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(eventEls.length).toBeGreaterThan(0);
     for (const eventEl of eventEls) {
-      expect((eventEl as HTMLElement).style.minWidth).toBe('');
-      for (const child of Array.from(eventEl.children)) {
-        expect((child as HTMLElement).dataset.slot).toBe('form-strip-set');
+      const el = eventEl as HTMLElement;
+      expect(el.style.minWidth).toBe('');
+      expect(el.className).toMatch(/\bflex-col\b/);
+      expect(el.className).toContain('min-w-20');
+      expect(el.className).toContain('max-sm:min-w-[76px]');
+      const children = Array.from(el.children) as HTMLElement[];
+      expect(children.map((child) => child.dataset.slot)).toEqual([
+        'form-strip-event-ticks',
+        'form-strip-event-label',
+      ]);
+      for (const set of Array.from(children[0]!.children)) {
+        expect((set as HTMLElement).dataset.slot).toBe('form-strip-set');
       }
     }
   });
@@ -304,40 +339,51 @@ describe('FormStrip — single row, group names, caption (plan 39.1-33, R1)', ()
     ]);
   });
 
-  it('renders form-strip-caption-first (oldest shown) and form-strip-caption-last (newest shown), both truncate + data-truncate-guard, for a two-event fixture', () => {
+  // REWRITTEN by plan 39.1-42 (sketch 003 `.strip-label`, PD-42-1): plan
+  // 33's first / last caption is gone — EVERY shown event carries its own
+  // label row: the label (truncating, title = full label) and the drawn W–L.
+  it('per-event-label: every shown event renders a label row with its truncating label (title = full label) and the drawn W–L; no caption slot renders', () => {
     const { container } = render(
       <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
     );
-    const first = container.querySelector('[data-slot="form-strip-caption-first"]');
-    const last = container.querySelector('[data-slot="form-strip-caption-last"]');
-    expect(first).not.toBeNull();
-    expect(last).not.toBeNull();
-    expect(first!.textContent).toBe('Genesis 10');
-    expect(first).toHaveAttribute('title', 'Genesis 10');
-    expect(last!.textContent).toBe('Weekly #12');
-    expect(last).toHaveAttribute('title', 'Weekly #12');
-    for (const span of [first, last]) {
-      expect((span as HTMLElement).className).toMatch(/\btruncate\b/);
-      expect((span as HTMLElement).hasAttribute('data-truncate-guard')).toBe(true);
+    const rows = Array.from(container.querySelectorAll('[data-slot="form-strip-event-label"]'));
+    expect(rows).toHaveLength(2);
+    const texts = rows.map((row) => Array.from(row.children).map((child) => child.textContent));
+    expect(texts).toEqual([
+      ['Genesis 10', '2–1'],
+      ['Weekly #12', '1–0'],
+    ]);
+    for (const row of rows) {
+      const [name, record] = Array.from(row.children) as HTMLElement[];
+      expect(name!.className).toMatch(/\bmin-w-0\b/);
+      expect(name!.className).toMatch(/\btruncate\b/);
+      expect(name!.hasAttribute('data-truncate-guard')).toBe(true);
+      expect(name).toHaveAttribute('title', name!.textContent ?? '');
+      expect(record!.className).toMatch(/\btabular-nums\b/);
+      expect(record!.className).toMatch(/\bwhitespace-nowrap\b/);
     }
-    // The caption is the ONLY place "Genesis 10" renders as visible text —
-    // the per-group label/record line this plan removes used to also print
-    // it under the group itself.
-    expect(screen.getAllByText('Genesis 10')).toHaveLength(1);
+    expect(container.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
   });
 
-  it('a one-event fixture renders caption-first only — no form-strip-caption-last', () => {
+  it('per-event-label: a one-event fixture renders exactly one label row and no caption slot', () => {
     const events: FormStripEvent[] = [
       { key: 'evt-1', label: 'Solo Event', sets: [singleGameSet('g1', true)] },
     ];
     const { container } = render(<FormStrip events={events} limit={30} labels={emptyLabels} />);
-    expect(container.querySelector('[data-slot="form-strip-caption-first"]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toBeNull();
+    expect(container.querySelectorAll('[data-slot="form-strip-event-label"]')).toHaveLength(1);
+    expect(container.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
   });
 });
 
-describe('FormStrip — width fit via availableWidthPx (plan 39.1-33, R1)', () => {
-  it('at 240px, three events x four single-game sets (12 games, limit 30) keeps 8 ticks in 2 events, drops the oldest event, keeps the newest set as the LAST form-strip-set, and captions the middle (now-oldest-shown) event first', () => {
+/**
+ * Plan 39.1-42 (sketch 003 `fitStrips`, PD-42-1): the fit is EVENT-level —
+ * an event costs max(80px, its tick run), events are 16px apart, older
+ * events drop first and the newest is always kept. Under jsdom the fallback
+ * tick is 8px; each event of `threeEventFourSetFixture` costs
+ * 4 x 24 + 3 x 4 = 108px.
+ */
+describe('FormStrip — width fit via availableWidthPx (plan 39.1-33 R1, event-level since 39.1-42)', () => {
+  it('at 240px, three events x four single-game sets (12 games, limit 30) keeps 8 ticks in 2 events, drops the oldest event, keeps the newest set as the LAST form-strip-set, and labels the middle (now-oldest-shown) event first', () => {
     const { container } = render(
       <FormStrip
         events={threeEventFourSetFixture()}
@@ -355,12 +401,18 @@ describe('FormStrip — width fit via availableWidthPx (plan 39.1-33, R1)', () =
     ]);
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[sets.length - 1]!.getAttribute('aria-label')).toBe('C4 set');
-    const captionFirst = container.querySelector('[data-slot="form-strip-caption-first"]');
-    expect(captionFirst!.textContent).toBe('Event B');
+    // REWRITTEN by plan 39.1-42: the caption is gone — the label row of the
+    // oldest shown event reads "Event B".
+    const firstLabel = container.querySelector('[data-slot="form-strip-event-label"]');
+    expect(firstLabel!.firstElementChild!.textContent).toBe('Event B');
     expect(screen.getByText('8 of 12 games shown')).toBeInTheDocument();
   });
 
-  it('at 280px, the same fixture keeps 9 ticks in 3 events — the oldest event keeps only its newest set — and captions the oldest shown event first', () => {
+  // REWRITTEN by plan 39.1-42 (oldest-dropped): the set-level fit used to
+  // squeeze the oldest event's newest set in at 280px (9 ticks, 3 events).
+  // Events now drop WHOLE: 108 + 16 + 108 = 232px fit, a third event needs
+  // 356px, so 280px still shows 8 ticks in the two newest events.
+  it('oldest-dropped: at 280px the same fixture still keeps 8 ticks in the 2 newest events — an older event drops whole, never as a partial group', () => {
     const { container } = render(
       <FormStrip
         events={threeEventFourSetFixture()}
@@ -369,14 +421,94 @@ describe('FormStrip — width fit via availableWidthPx (plan 39.1-33, R1)', () =
         availableWidthPx={280}
       />,
     );
-    expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(9);
+    expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(8);
     const eventEls = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
-    expect(eventEls).toHaveLength(3);
-    const oldestEventSets = eventEls[0]!.querySelectorAll('[data-slot="form-strip-set"]');
-    expect(oldestEventSets).toHaveLength(1);
-    expect(oldestEventSets[0]!.getAttribute('aria-label')).toBe('A4 set');
-    const captionFirst = container.querySelector('[data-slot="form-strip-caption-first"]');
-    expect(captionFirst!.textContent).toBe('Event A');
+    expect(eventEls.map((el) => el.getAttribute('aria-label'))).toEqual([
+      'Event B · 2–2',
+      'Event C · 2–2',
+    ]);
+  });
+
+  it('oldest-dropped: the root declares data-event-count and data-game-count, and the shown events carry the newest contiguous data-event-order run', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={240}
+      />,
+    );
+    const root = container.querySelector('[data-slot="form-strip-root"]')!;
+    expect(root.getAttribute('data-event-count')).toBe('3');
+    expect(root.getAttribute('data-game-count')).toBe('12');
+    const orders = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]')).map(
+      (el) => el.getAttribute('data-event-order'),
+    );
+    expect(orders).toEqual(['1', '2']);
+  });
+
+  it('min-event-width: an event narrower than 80px still costs 80px — three one-tick events keep 2 at 177px (80 + 16 + 80, plus the 1px safety) and only the newest at 176px', () => {
+    const events: FormStripEvent[] = ['A', 'B', 'C'].map((label) => ({
+      key: `evt-${label}`,
+      label: `Event ${label}`,
+      sets: [singleGameSet(`${label}1`, true)],
+    }));
+    const at = (width: number) =>
+      render(
+        <FormStrip events={events} limit={30} labels={emptyLabels} availableWidthPx={width} />,
+      ).container.querySelectorAll('[data-slot="form-strip-event"]').length;
+    expect(at(177)).toBe(2);
+    expect(at(176)).toBe(1);
+  });
+
+  it('newest-kept: the newest event is always kept, whatever the width', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={90}
+      />,
+    );
+    const eventEls = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
+    expect(eventEls).toHaveLength(1);
+    expect(eventEls[0]!.getAttribute('data-event-order')).toBe('2');
+  });
+
+  it('wide-newest-fallback: when the newest event alone is wider than the row, its newest sets that fit are kept and its label states the W–L drawn', () => {
+    const { container } = render(
+      <FormStrip
+        events={oneEventFiveThreeGameSetsFixture()}
+        limit={30}
+        labels={emptyLabels}
+        availableWidthPx={100}
+      />,
+    );
+    // 5 x 28 + 4 x 4 = 156px > 99: the newest three sets (28 + 32 + 32 = 92px) stay.
+    expect(container.querySelectorAll('[data-slot="form-strip-set"]')).toHaveLength(3);
+    const record = container.querySelector(
+      '[data-slot="form-strip-event-label"]',
+    )!.lastElementChild!;
+    expect(record.textContent).toBe('6–3');
+  });
+
+  it('session-set-width: a session-set of N games is N ticks + (N - 1) 2px gaps (no 24px per game) — a 6-game set costs 58px, so its event (80px) fits beside an older one at 177px', () => {
+    const sixGameSession: FormStripSet = {
+      key: 'manual-session:s1',
+      label: 'session set',
+      inRecentWindow: true,
+      games: Array.from({ length: 6 }, (_, i) => game(`s${i}`, i % 2 === 0)),
+    };
+    const events: FormStripEvent[] = [
+      { key: 'evt-old', label: 'Old Event', sets: [singleGameSet('o1', true)] },
+      { key: 'sessions:s1', label: 'Sessions · Jul 3 – 9', sets: [sixGameSession] },
+    ];
+    const { container } = render(
+      <FormStrip events={events} limit={30} labels={emptyLabels} availableWidthPx={177} />,
+    );
+    // 6 x 24 + 5 x 2 = 154px per-game minimums would leave room for the newest only.
+    expect(container.querySelectorAll('[data-slot="form-strip-event"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(7);
   });
 
   it('at 10px, the newest set is always kept — exactly 1 tick', () => {
@@ -450,9 +582,11 @@ describe('FormStrip — chronological set order across events (WR-01)', () => {
       el.getAttribute('aria-label'),
     );
     expect(sets).toEqual(['singles-2026a set', 'singles-2026b set']);
-    expect(container.querySelector('[data-slot="form-strip-caption-first"]')).toHaveTextContent(
-      'Ultimate Singles',
-    );
+    // REWRITTEN by plan 39.1-42: the caption is gone — the one shown event's
+    // label row names it.
+    const labels = container.querySelectorAll('[data-slot="form-strip-event-label"]');
+    expect(labels).toHaveLength(1);
+    expect(labels[0]!.firstElementChild!.textContent).toBe('Ultimate Singles');
   });
 
   it('with every set drawn, renders the reused name as two groups around the session, oldest first', () => {
@@ -463,12 +597,13 @@ describe('FormStrip — chronological set order across events (WR-01)', () => {
     expect(groups.map((g) => g.querySelectorAll('[data-slot="form-strip-set"]').length)).toEqual([
       1, 1, 2,
     ]);
-    expect(container.querySelector('[data-slot="form-strip-caption-first"]')).toHaveTextContent(
-      'Ultimate Singles',
-    );
-    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveTextContent(
-      'Ultimate Singles',
-    );
+    // REWRITTEN by plan 39.1-42: every shown event is labelled (was a first /
+    // last caption pair).
+    expect(
+      Array.from(container.querySelectorAll('[data-slot="form-strip-event-label"]')).map(
+        (row) => row.firstElementChild!.textContent,
+      ),
+    ).toEqual(['Ultimate Singles', 'Session · Jun 1, 2025', 'Ultimate Singles']);
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[1]!.getAttribute('aria-label')).toBe('manual-2025 set');
   });
@@ -515,19 +650,21 @@ describe('FormStrip — accessible names state what is drawn (WR-03)', () => {
     expect(screen.getByRole('group', { name: 'summary 8 of 12' })).toBeInTheDocument();
   });
 
+  // REWRITTEN by plan 39.1-42: older events now drop whole, so the only
+  // partially drawn event is the wide newest one (the set-fit fallback).
   it("a partially shown event's group name and title state the record of ONLY its drawn sets", () => {
     const { container } = render(
       <FormStrip
-        events={threeEventFourSetFixture()}
+        events={oneEventFiveThreeGameSetsFixture()}
         limit={30}
         labels={emptyLabels}
-        availableWidthPx={280}
+        availableWidthPx={100}
       />,
     );
-    const oldest = container.querySelector('[data-slot="form-strip-event"]')!;
-    // Event A keeps only A4 (a loss): 0–1, never the whole event's 2–2.
-    expect(oldest.getAttribute('aria-label')).toBe('Event A · 0–1');
-    expect(oldest.getAttribute('title')).toBe('Event A · 0–1');
+    const only = container.querySelector('[data-slot="form-strip-event"]')!;
+    // Three of five 2–1 sets drawn: 6–3, never the whole event's 10–5.
+    expect(only.getAttribute('aria-label')).toBe('Solo Long Event · 6–3');
+    expect(only.getAttribute('title')).toBe('Solo Long Event · 6–3');
   });
 
   it('a limit trim that cuts into a set counts only the drawn games of that set', () => {
@@ -563,72 +700,105 @@ describe('FormStrip — hooks stay above the 0-games early return (guard)', () =
 });
 
 describe('FormStrip — legend, narrow tick geometry, and centred single-game sets (plan 39.1-32, item 11)', () => {
-  it("legend 'a · b · c' renders three whole-token legend items in a flex-wrap row (never justify-between)", () => {
+  // REWRITTEN by plan 39.1-42 (sketch 003 `stripLegend`): the legend is the
+  // structured four-item swatch legend in the head, not a ' · '-split string.
+  it('head-legend: with a title the head renders the overline then four whole-token legend items (win / loss with a swatch tick) on one wrapping line (never justify-between)', () => {
     const { container } = render(
       <FormStrip
         events={twoEventFixture()}
         limit={60}
-        labels={{ ...emptyLabels, legend: 'a · b · c' }}
+        labels={{ ...emptyLabels, title: 'Form · last 4 games, by event' }}
       />,
     );
-    const items = container.querySelectorAll('[data-slot="form-strip-legend-item"]');
-    expect(items).toHaveLength(3);
-    for (const item of Array.from(items)) {
+    const root = container.querySelector('[data-slot="form-strip-root"]')!;
+    const head = container.querySelector('[data-slot="form-strip-head"]') as HTMLElement;
+    expect(head).not.toBeNull();
+    expect(root.firstElementChild).toBe(head);
+    expect(head.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 4 games, by event',
+    );
+    const items = Array.from(head.querySelectorAll('[data-slot="form-strip-legend-item"]'));
+    expect(items.map((el) => el.textContent)).toEqual([
+      'up = win',
+      'down = loss',
+      'gap = new set',
+      'label = event · W–L',
+    ]);
+    for (const item of items) {
       expect((item as HTMLElement).className).toMatch(/whitespace-nowrap/);
     }
-    expect(['a', 'b', 'c']).toEqual(Array.from(items).map((el) => el.textContent));
+    const swatches = items.map(
+      (item) => item.querySelectorAll('[data-slot="form-strip-legend-swatch"]').length,
+    );
+    expect(swatches).toEqual([1, 1, 0, 0]);
+    const win = items[0]!.querySelector('[data-slot="form-strip-legend-swatch"]') as HTMLElement;
+    const loss = items[1]!.querySelector('[data-slot="form-strip-legend-swatch"]') as HTMLElement;
+    expect(win.style.alignItems).toBe('flex-start');
+    expect(loss.style.alignItems).toBe('flex-end');
     const legendRow = items[0]!.parentElement as HTMLElement;
-    expect(legendRow.className).toMatch(/\bflex-wrap\b/);
+    for (const cls of ['flex', 'flex-wrap', 'items-baseline', 'gap-x-3.5', 'gap-y-0.5']) {
+      expect(legendRow.className.split(/\s+/)).toContain(cls);
+    }
     expect(legendRow.className).not.toMatch(/justify-between/);
   });
 
-  it('shownOfTotal renders as its own whitespace-nowrap token', () => {
+  // REWRITTEN by plan 39.1-42: the shown-of-total token lives on the foot line.
+  it('foot-line: shownOfTotal renders as its own whitespace-nowrap token on the foot line', () => {
     const { container } = render(
-      <FormStrip
-        events={ninetyGameFixture()}
-        limit={60}
-        labels={{ ...emptyLabels, shownOfTotal: shownOfTotalFormatter }}
-      />,
+      <FormStrip events={ninetyGameFixture()} limit={60} labels={emptyLabels} />,
     );
     const token = container.querySelector('[data-slot="form-strip-shown-of-total"]');
     expect(token).not.toBeNull();
     expect((token as HTMLElement).className).toMatch(/whitespace-nowrap/);
     expect(token!.textContent).toBe('60 of 90 games shown');
+    expect(token!.closest('[data-slot="form-strip-foot"]')).not.toBeNull();
   });
 
-  it("a legend with no separator ('legend') renders one legend item WITHOUT whitespace-nowrap", () => {
+  // REWRITTEN by plan 39.1-42: no title -> no head, so no legend at all (the
+  // opponent hub passes none); was one unsplit legend item.
+  it('head-legend: without a title no head and no legend item render', () => {
     const { container } = render(
       <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
     );
-    const items = container.querySelectorAll('[data-slot="form-strip-legend-item"]');
-    expect(items).toHaveLength(1);
-    expect((items[0] as HTMLElement).className).not.toMatch(/whitespace-nowrap/);
-    expect(items[0]!.textContent).toBe('legend');
+    expect(container.querySelector('[data-slot="form-strip-head"]')).toBeNull();
+    expect(container.querySelector('[data-slot="form-strip-legend-item"]')).toBeNull();
   });
 
+  // REWRITTEN by plan 39.1-42: `analytics.strip.legend` (one ' · '-joined
+  // string) is replaced by the four `analytics.strip.legendItem.*` keys.
   it.each(['en', 'es', 'fr', 'de', 'pt', 'ja'] as const)(
-    "each locale's analytics.strip.legend renders exactly four legend items (%s)",
+    "each locale's analytics.strip.legendItem keys render exactly four legend items (%s)",
     (locale) => {
       const json = JSON.parse(
         fs.readFileSync(resolve(process.cwd(), `src/i18n/locales/${locale}.json`), 'utf8'),
-      ) as { analytics: { strip: { legend: string } } };
+      ) as {
+        analytics: {
+          strip: { legendItem: { win: string; loss: string; setGap: string; eventLabel: string } };
+        };
+      };
       const { container } = render(
         <FormStrip
           events={twoEventFixture()}
           limit={60}
-          labels={{ ...emptyLabels, legend: json.analytics.strip.legend }}
+          labels={{ ...emptyLabels, title: 'Form', legend: json.analytics.strip.legendItem }}
         />,
       );
-      expect(container.querySelectorAll('[data-slot="form-strip-legend-item"]')).toHaveLength(4);
+      const items = Array.from(container.querySelectorAll('[data-slot="form-strip-legend-item"]'));
+      expect(items).toHaveLength(4);
+      for (const item of items) {
+        expect((item.textContent ?? '').trim().length).toBeGreaterThan(0);
+      }
     },
   );
 
-  it('every tick carries the narrow-geometry classes and no inline width/height', () => {
+  // REWRITTEN by plan 39.1-42 (PD-42-5, sketch 002-C `.strip-set i`): phone
+  // ticks are 5px wide (was max-sm:w-1.5, 6px).
+  it('every tick carries the narrow-geometry classes (5x28px below 640px) and no inline width/height', () => {
     const { container } = render(
       <FormStrip events={twoEventFixture()} limit={60} labels={emptyLabels} />,
     );
     const tick = container.querySelector('[data-slot="form-strip-tick"]') as HTMLElement;
-    for (const cls of ['w-2', 'h-8', 'max-sm:w-1.5', 'max-sm:h-7']) {
+    for (const cls of ['w-2', 'h-8', 'max-sm:w-[5px]', 'max-sm:h-7']) {
       expect(tick.className).toContain(cls);
     }
     expect(tick.style.width).toBe('');
@@ -729,40 +899,86 @@ describe('FormStrip source-tree guards (UIX-05, VIZ-02)', () => {
  * session" line names every game only when every game is actually drawn
  * (the `limit` trim or the width fit may draw fewer).
  */
-describe('FormStrip overline (plan 39.1-35)', () => {
-  const overline = ({ shown, total }: { shown: number; total: number }) =>
+// REWRITTEN by plan 39.1-42: plan 35's `overline` formatter is the kit's
+// `title` (which may be a formatter of the DRAWN vs total counts); the title
+// renders the head (overline + legend) — only when it returns text.
+describe('FormStrip title as a formatter (plan 39.1-35 overline, the kit head since 39.1-42)', () => {
+  const title = ({ shown, total }: { shown: number; total: number }) =>
     shown === total ? `All ${total} games` : undefined;
 
-  it('renders the overline above the row when every game is drawn', () => {
+  it('renders the head with the overline above the row when every game is drawn', () => {
     const { container } = render(
       <FormStrip
         events={threeEventFourSetFixture()}
         limit={30}
-        labels={{ ...emptyLabels, overline }}
+        labels={{ ...emptyLabels, title }}
       />,
     );
     const el = container.querySelector('[data-slot="form-strip-overline"]');
     expect(el?.textContent).toBe('All 12 games');
     const root = container.querySelector('[data-slot="form-strip-root"]')!;
-    expect(root.firstElementChild).toBe(el);
+    expect(root.firstElementChild).toBe(container.querySelector('[data-slot="form-strip-head"]'));
   });
 
-  it('renders no overline when the limit trims games (90 games at limit 60)', () => {
+  it('renders no head when the limit trims games (90 games at limit 60)', () => {
     const { container } = render(
-      <FormStrip events={ninetyGameFixture()} limit={60} labels={{ ...emptyLabels, overline }} />,
+      <FormStrip events={ninetyGameFixture()} limit={60} labels={{ ...emptyLabels, title }} />,
     );
-    expect(container.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
+    expect(container.querySelector('[data-slot="form-strip-head"]')).toBeNull();
   });
 
-  it('renders no overline when the width fit draws fewer than every game', () => {
+  it('renders no head when the width fit draws fewer than every game', () => {
     const { container } = render(
       <FormStrip
         events={threeEventFourSetFixture()}
         limit={30}
         availableWidthPx={100}
-        labels={{ ...emptyLabels, overline }}
+        labels={{ ...emptyLabels, title }}
       />,
     );
-    expect(container.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
+    expect(container.querySelector('[data-slot="form-strip-head"]')).toBeNull();
+  });
+});
+
+/**
+ * Plan 39.1-42 (sketch 003 `.strip-foot`, `fitStrips`' note): the foot line
+ * states what the strip drew — the shown-of-total formatter when games were
+ * dropped, the all-shown formatter otherwise — and the window note on the
+ * same line.
+ */
+describe('FormStrip foot (plan 39.1-42)', () => {
+  it('foot-line: every game drawn -> the all-shown formatter and the window note on one foot line; no shown-of-total token', () => {
+    const { container } = render(
+      <FormStrip
+        events={twoEventFixture()}
+        limit={60}
+        labels={{ ...emptyLabels, windowNote: 'Last 30 games highlighted' }}
+      />,
+    );
+    const foot = container.querySelector('[data-slot="form-strip-foot"]')!;
+    expect(foot).not.toBeNull();
+    expect(Array.from(foot.children).map((child) => child.textContent)).toEqual([
+      'all 4 games · oldest → newest',
+      'Last 30 games highlighted',
+    ]);
+    expect(container.querySelector('[data-slot="form-strip-shown-of-total"]')).toBeNull();
+    const root = container.querySelector('[data-slot="form-strip-root"]')!;
+    expect(root.lastElementChild).toBe(foot);
+  });
+
+  it('foot-line: games dropped by the fit -> the shown-of-total formatter of the DRAWN games on the foot line', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        availableWidthPx={240}
+        labels={{ ...emptyLabels, windowNote: 'Whole record shown' }}
+      />,
+    );
+    const foot = container.querySelector('[data-slot="form-strip-foot"]')!;
+    expect(Array.from(foot.children).map((child) => child.textContent)).toEqual([
+      '8 of 12 games shown',
+      'Whole record shown',
+    ]);
   });
 });

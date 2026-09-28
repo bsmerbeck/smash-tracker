@@ -391,9 +391,77 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
     expect(slot).not.toBeNull();
     expect(slot!.querySelector('[data-slot="form-strip-overline"]')).toBeNull();
     expect(slot!.textContent).not.toMatch(/All \d+ games/);
+    // REWRITTEN by plan 39.1-42 (sketch 003 foot wording).
     expect(slot!.querySelector('[data-slot="form-strip-shown-of-total"]')?.textContent).toMatch(
-      /of 150 games shown$/,
+      /^\d+ of 150 games shown · older events drop first · oldest → newest$/,
     );
+  });
+
+  // Plan 39.1-42 (PD-42-4 / PD-42-5, sketch 002-C: a play session is ONE set,
+  // 5px phone ticks): the casual strip draws ALL 41 games at the strip
+  // widths guard:layout measured on trends-casual (1094px at 1440; 324px at
+  // 390, the phone class).
+  it('casual-41-at-1440: at the 1094px strip width every one of the 41 games is drawn; no shown-of-total, the foot reads "all 41 games · oldest → newest"', () => {
+    const { container } = render(
+      <CareerTimelineCard
+        matches={CASUAL_MATCHES}
+        horizon="last30"
+        chartWidth={1000}
+        stripWidthPx={1094}
+      />,
+    );
+    const slot = container.querySelector('[data-slot="career-timeline-thin-strip"]')!;
+    expect(slot.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(41);
+    expect(slot.querySelector('[data-slot="form-strip-shown-of-total"]')).toBeNull();
+    expect(
+      slot.querySelector('[data-slot="form-strip-foot"]')?.firstElementChild?.textContent,
+    ).toBe('all 41 games · oldest → newest');
+  });
+
+  it('casual-41-at-324px: on a phone (5px ticks, 76px events) the 324px strip still draws every one of the 41 games', () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: /max-width:\s*639/.test(query),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    try {
+      const { container } = render(
+        <CareerTimelineCard
+          matches={CASUAL_MATCHES}
+          horizon="last30"
+          chartWidth={320}
+          stripWidthPx={324}
+        />,
+      );
+      const slot = container.querySelector('[data-slot="career-timeline-thin-strip"]')!;
+      expect(slot.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(41);
+      expect(slot.querySelectorAll('[data-slot="form-strip-set"]')).toHaveLength(10);
+      expect(slot.querySelector('[data-slot="form-strip-shown-of-total"]')).toBeNull();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('conditional title: the overline becomes the kit head title (with the swatch legend) exactly when every game is drawn, and no head otherwise', () => {
+    const { container: casual } = renderThin(CASUAL_MATCHES);
+    const head = casual.querySelector(
+      '[data-slot="career-timeline-thin-strip"] [data-slot="form-strip-head"]',
+    );
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'All 41 games · by session — per-game grain replaces the month strips',
+    );
+    expect(head!.querySelectorAll('[data-slot="form-strip-legend-item"]')).toHaveLength(4);
+    const { container: many } = renderThin(THIN_150);
+    expect(
+      many.querySelector('[data-slot="career-timeline-thin-strip"] [data-slot="form-strip-head"]'),
+    ).toBeNull();
   });
 
   it("a form-strip set click calls onSelectSet with that set's key", () => {

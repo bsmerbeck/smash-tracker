@@ -707,15 +707,60 @@ describe('OpponentHubPage', () => {
         expect(groups).toHaveLength(1);
         expect(document.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(20);
 
-        const caption = document.querySelector('[data-slot="form-strip-caption-first"]');
-        const captionText = caption?.textContent ?? '';
-        // Date only (the other two hosts' `analytics.strip.sessionLabel`) — no record at all.
-        expect(captionText).toMatch(/^Session · /);
-        expect(captionText).not.toMatch(/\d+–\d+/);
+        // REWRITTEN by plan 39.1-42: the caption is gone — the group's own
+        // label row carries the date-only label and, separately, the DRAWN
+        // W–L (20–0), never the whole session's 20–5.
+        const labelRow = groups[0]!.querySelector('[data-slot="form-strip-event-label"]');
+        const labelText = labelRow?.firstElementChild?.textContent ?? '';
+        // Date only (the other hosts' `analytics.strip.sessionLabel`) — no record in the label.
+        expect(labelText).toMatch(/^Session · /);
+        expect(labelText).not.toMatch(/\d+–\d+/);
+        expect(labelRow?.lastElementChild?.textContent).toBe('20–0');
 
         const groupName = groups[0]!.getAttribute('aria-label') ?? '';
-        expect(groupName).toBe(`${captionText} · 20–0`);
+        expect(groupName).toBe(`${labelText} · 20–0`);
         expect(groupName).not.toMatch(/20–5/);
+      });
+
+      it('plan 39.1-42: the hub strip has no head (no title), a foot with the drawn count, and one labelled event per tournament', async () => {
+        const start = Date.UTC(2024, 2, 10, 12, 0, 0);
+        const day = 24 * 60 * 60 * 1000;
+        listMatches.mockResolvedValue([
+          ...[0, 1].map((g) =>
+            makeMatch({
+              id: `a${g}`,
+              time: start + g * 60_000,
+              opponent: 'rival',
+              externalId: `sgg:set-a:g${g + 1}`,
+              tournamentName: 'Genesis 9',
+              eventName: 'Ultimate Singles',
+            }),
+          ),
+          ...[0, 1].map((g) =>
+            makeMatch({
+              id: `b${g}`,
+              time: start + 30 * day + g * 60_000,
+              opponent: 'rival',
+              win: false,
+              externalId: `sgg:set-b:g${g + 1}`,
+              tournamentName: 'Battle of BC 8',
+              eventName: 'Ultimate Singles',
+            }),
+          ),
+        ]);
+        renderHub('/opponents/rival');
+
+        await findRecordText('2-2');
+        expect(document.querySelector('[data-slot="form-strip-head"]')).toBeNull();
+        const labels = Array.from(
+          document.querySelectorAll('[data-slot="form-strip-event-label"]'),
+        ).map((row) => Array.from(row.children).map((child) => child.textContent));
+        expect(labels).toEqual([
+          ['Genesis 9', '2–0'],
+          ['Battle of BC 8', '0–2'],
+        ]);
+        const foot = document.querySelector('[data-slot="form-strip-foot"]');
+        expect(foot?.firstElementChild?.textContent).toBe('all 4 games · oldest → newest');
       });
     });
   });
