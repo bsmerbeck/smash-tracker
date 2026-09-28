@@ -502,11 +502,14 @@ const MARKDOWN_MARKER = /[*_~`]/;
  * "-s" ("thirds", "seconds"), and a cardinal with "-th" is an ordinal, as the
  * VAL-03 judge's number parser reads them. R6-WR-01 added the
  * all-or-nothing, even-record, multiple, single-result and zero-side words.
+ * R7-WR-01 added the even-record and zero-side words a model writes
+ * naturally: "parity", "deadlock(ed)", "stalemate", "whitewash(ed)", "deuce"
+ * and the jargon "JV".
  * "twenty-one" matches on "twenty"; "someone" and "often" do not, because a
  * letter on either side ends the match.
  */
 const FIGURE_WORD_SOURCE =
-  'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|(?:hundred|thousand|million|billion|dozen|score)s?|half|halves|quarters?|twice|thrice|once|single|pairs?|couple|duo|trio|both|none|nil|nought|naught|(?:first|second|third|fifth|eighth|ninth|twelfth|(?:twen|thir|for|fif|six|seven|eigh|nine)tieth|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|hundred|thousand|million|billion|dozen|score)th)s?|undefeated|unbeaten|winless|sweeps?|swept|flawless|percentage|pct|percentile|most|several|few|fewer|fewest|many|majority|minority|every|all|each|never|always|nothing|zilch|zip|nada|tied|even|evenly|split|lone|only|sole|solo|double|triple|treble|brace|perfect|shutout|blank|blanked|spotless|unblemished|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|une|deux|trois|quatre|cinq|huit|neuf|dix|eins|zwei|drei|vier|funf|sechs|sieben|acht|neun|zehn|dois|duas|quatro|sete|oito|nove|dez|mitad|moitie|metade';
+  'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|(?:hundred|thousand|million|billion|dozen|score)s?|half|halves|quarters?|twice|thrice|once|single|pairs?|couple|duo|trio|both|none|nil|nought|naught|(?:first|second|third|fifth|eighth|ninth|twelfth|(?:twen|thir|for|fif|six|seven|eigh|nine)tieth|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty|hundred|thousand|million|billion|dozen|score)th)s?|undefeated|unbeaten|winless|sweeps?|swept|flawless|percentage|pct|percentile|most|several|few|fewer|fewest|many|majority|minority|every|all|each|never|always|nothing|zilch|zip|nada|tied|even|evenly|split|lone|only|sole|solo|double|triple|treble|brace|perfect|shutout|blank|blanked|spotless|unblemished|parity|deadlock|deadlocked|deadlocks|stalemate|stalemated|stalemates|whitewash|whitewashed|whitewashes|deuce|jv|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|une|deux|trois|quatre|cinq|huit|neuf|dix|eins|zwei|drei|vier|funf|sechs|sieben|acht|neun|zehn|dois|duas|quatro|sete|oito|nove|dez|mitad|moitie|metade';
 
 /** `FIGURE_WORD_SOURCE` as whole words anywhere in a text. */
 const FIGURE_WORD_PATTERN = new RegExp(`(?<![A-Za-z])(?:${FIGURE_WORD_SOURCE})(?![A-Za-z])`, 'i');
@@ -520,9 +523,17 @@ const FIGURE_TOKEN = new RegExp(`^(?:${FIGURE_WORD_SOURCE})$`, 'i');
  * coin flip"), a multiple ("a hat trick"), a zero side ("shut you out",
  * "a clean record", "yet to beat"), and "your last set". Whitespace between
  * the words may be any run of spaces or line breaks.
+ *
+ * R7-WR-01 (iteration 7): the natural zero-side and even-record phrasings —
+ * "no wins" / "no sets" / "no stocks", "not beaten" / "haven't beaten" /
+ * "not yet won" / "not lost to" (the "t" of a contraction counts as "not"),
+ * "without dropping a game" / "without losing any sets" (a count noun must
+ * follow, so "without dropping a combo" ships), "a goose egg", "level with",
+ * "square with", "all square" and "dead level". "No need to" and "a level
+ * head" ship.
  */
 const FIGURE_PHRASE_PATTERN =
-  /(?<![A-Za-z])(?:(?:by|up|down)\s+an?\s+(?:set|game|stock|match)|an?\s+(?:win|loss|set|game)\s+and\s+an?\s+(?:win|loss|set|game)|hat\s+trick|coin\s+flip|shut\s+(?:\w+\s+)?out|clean\s+records?|perfect\s+records?|yet\s+to\s+(?:beat|lose|win)|last\s+(?:set|game|match))(?![A-Za-z])/i;
+  /(?<![A-Za-z])(?:(?:by|up|down)\s+an?\s+(?:set|game|stock|match)|an?\s+(?:win|loss|set|game)\s+and\s+an?\s+(?:win|loss|set|game)|hat\s+trick|coin\s+flip|shut\s+(?:\w+\s+)?out|clean\s+records?|perfect\s+records?|yet\s+to\s+(?:beat|lose|win)|last\s+(?:set|game|match)|no\s+(?:wins?|losses|sets?|games?|stocks?)|(?:not|t)\s+(?:yet\s+)?(?:beaten|won|lost\s+to)|without\s+(?:dropping|losing|winning)\s+(?:an?|any)\s+(?:single\s+)?(?:sets?|games?|stocks?|match(?:es)?|rounds?)|goose\s+eggs?|(?:level|square)\s+with|(?:all|dead)\s+(?:level|square))(?![A-Za-z])/i;
 
 /**
  * A confidence-tier word: a STEM below, alone or with a comparative,
@@ -637,6 +648,16 @@ function isRomanNumeralToken(token: string): boolean {
  */
 const LONE_NUMERAL_LETTER_IN_PAIR =
   /(?<![A-Za-z])(?:to|and)\s+[IiVv](?![A-Za-z'’])|[-–]\s*[IiVv](?![A-Za-z'’])|(?<![A-Za-z]|[A-Za-z]['’])[IiVv]\s+(?:to|and)(?![A-Za-z])|(?<![A-Za-z]|[A-Za-z]['’])[IiVv]\s*[-–](?!\s*frames?(?![A-Za-z]))/;
+
+/**
+ * R7-WR-03 (iteration 7): a lone "I" read as the numeral one — after a verb
+ * or preposition that takes a count ("took", "won", "lost", "dropped", "in",
+ * "for", "of", "by") and before a singular count noun ("You took I set").
+ * The pronoun is never followed by a singular count noun used as an object;
+ * "I set up the trap" starts a clause and ships.
+ */
+const LONE_ONE_BEFORE_COUNT =
+  /(?<![A-Za-z])(?:took|won|lost|dropped|in|for|of|by)\s+I\s+(?:set|game|stock|match|round|win|loss)(?![A-Za-z])/i;
 
 /**
  * R6-CR-04: two or more single letters joined by spaces or punctuation
@@ -767,7 +788,8 @@ function hasFigureOrTierWord(text: string): boolean {
     /[0-9]/.test(text) ||
     FIGURE_WORD_PATTERN.test(text) ||
     FIGURE_PHRASE_PATTERN.test(text) ||
-    LONE_NUMERAL_LETTER_IN_PAIR.test(text)
+    LONE_NUMERAL_LETTER_IN_PAIR.test(text) ||
+    LONE_ONE_BEFORE_COUNT.test(text)
   ) {
     return true;
   }
@@ -802,10 +824,24 @@ function hasFigureOrTierWord(text: string): boolean {
 /**
  * Code review R5-IN-03 / R6-WR-03: a digit- or numeral-bearing name or tag
  * ("Pokémon Stadium 2", "PictoChat 2", "75m", "Flat Zone X", "Leo 2",
- * "Sparg0") read as a count — directly followed by a count word.
+ * "Sparg0") read as a count — followed by a count word.
+ *
+ * R7-WR-02 (iteration 7): the count word may come directly, or after one or
+ * two other words ("Leo 2 close sets", "Pokémon Stadium 2 hard-fought,
+ * close games") — each a letter run, hyphenated or not, optionally ending in
+ * a comma, separated by whitespace — none of them a determiner or a
+ * possessive (`COUNT_GAP_STOP`), so "Pokémon Stadium 2 suits your game" and
+ * "Leo 2 plays a patient game" ship. The count nouns now include "series",
+ * "bouts", "encounters", "meetings", "exchanges", "matchups", "runbacks",
+ * "brackets", "tournaments" and "events".
  */
-const NAME_COUNT_FOLLOWER =
-  /^\s*(?:wins?|loss(?:es)?|times?|sets?|games?|stocks?|match(?:es)?|rounds?|victor(?:y|ies)|defeats?|straight|in\s+a\s+row)(?![A-Za-z])/i;
+const COUNT_NOUN_SOURCE =
+  'wins?|loss(?:es)?|times?|sets?|games?|stocks?|match(?:es)?|rounds?|victor(?:y|ies)|defeats?|straight|series|bouts?|encounters?|meetings?|exchanges?|matchups?|runbacks?|brackets?|tournaments?|events?|in\\s+a\\s+row';
+const COUNT_GAP_STOP = 'your|his|her|their|my|our|its|the|a|an|this|that|these|those';
+const NAME_COUNT_FOLLOWER = new RegExp(
+  `^\\s*(?:(?!(?:${COUNT_GAP_STOP})(?![A-Za-z]))[A-Za-z]+(?:-[A-Za-z]+)*,?\\s+){0,2}(?:${COUNT_NOUN_SOURCE})(?![A-Za-z])`,
+  'i',
+);
 
 /** True when a name or tag carries a digit or a standalone upper-case roman numeral, so a count word after it reads as a count. */
 function isNumericName(name: string): boolean {

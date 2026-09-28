@@ -256,6 +256,9 @@ const JUDGE_RUBRIC_LISTS = {
   romanPairWords: rubricList('roman-pair-words'),
   countWords: rubricList('count-words'),
   countPhrases: rubricList('count-phrases', /\s*;\s*/),
+  countGapStop: rubricList('count-gap-stop'),
+  loneOnePreceders: rubricList('lone-one-preceders'),
+  loneOneCounts: rubricList('lone-one-counts'),
   glueWords: rubricList('glue-words'),
   glueExempt: rubricList('glue-exempt'),
   spelledExempt: rubricList('spelled-exempt'),
@@ -372,6 +375,9 @@ const JUDGE_SPELLED_EXEMPT: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.spe
 const JUDGE_FIGURE_PHRASES: readonly (readonly string[])[] = JUDGE_RUBRIC_LISTS.figurePhrases
   .flatMap(expandRubricPhrase)
   .map((phrase) => phrase.split(' '));
+const JUDGE_COUNT_GAP_STOP: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.countGapStop);
+const JUDGE_LONE_ONE_PRECEDERS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOnePreceders);
+const JUDGE_LONE_ONE_COUNTS: ReadonlySet<string> = new Set(JUDGE_RUBRIC_LISTS.loneOneCounts);
 const JUDGE_COUNT_SEQUENCES: readonly (readonly string[])[] = [
   ...JUDGE_RUBRIC_LISTS.countWords.map((word) => [word]),
   ...JUDGE_RUBRIC_LISTS.countPhrases.map((phrase) => phrase.split(/\s+/)),
@@ -592,7 +598,7 @@ function judgeFindsSpelledLetters(text: string): boolean {
   return false;
 }
 
-/** R6-CR-01, the judge's reading: a lone "I" or "V" beside a rubric pair word, or beside a hyphen or en dash ("I-frame" excepted). */
+/** R6-CR-01, the judge's reading: a lone "I" or "V" beside a rubric pair word, or beside a hyphen or en dash ("I-frame" excepted); R7-WR-03: a lone "I" between a rubric preceder and a singular count noun. */
 function judgeFindsLoneNumeralLetter(text: string): boolean {
   const tokens = judgeTokens(text);
   for (let index = 0; index < tokens.length; index += 1) {
@@ -608,6 +614,18 @@ function judgeFindsLoneNumeralLetter(text: string): boolean {
     const next = tokens[index + 1];
     const gapBefore = previous ? text.slice(previous.end, token.start) : '';
     const gapAfter = next ? text.slice(token.end, next.start) : '';
+    // R7-WR-03: "I" as the numeral one, between a rubric preceder and a singular count noun.
+    if (
+      /^[Ii]$/.test(token.text) &&
+      previous &&
+      next &&
+      /^\s+$/.test(gapBefore) &&
+      /^\s+$/.test(gapAfter) &&
+      JUDGE_LONE_ONE_PRECEDERS.has(previous.text.toLowerCase()) &&
+      JUDGE_LONE_ONE_COUNTS.has(next.text.toLowerCase())
+    ) {
+      return true;
+    }
     if (
       previous &&
       /^\s+$/.test(gapBefore) &&
@@ -707,15 +725,33 @@ function judgeNumericName(name: string): boolean {
   return /[0-9]/.test(name) || judgeTokens(name).some((token) => /^[IVXLCDM]+$/.test(token.text));
 }
 
-/** True when `after` opens with one of the rubric's count words or count phrases. */
+/**
+ * True when `after` opens with one of the rubric's count words or count
+ * phrases — directly, or after one or two gap words (R7-WR-02): whitespace-
+ * separated words of letters and inner hyphens, each optionally ending in a
+ * comma, none a `count-gap-stop` word.
+ */
 function opensWithCount(after: string): boolean {
-  const words = after
-    .trimStart()
-    .split(/[^A-Za-z]+/)
-    .map((word) => word.toLowerCase());
-  return JUDGE_COUNT_SEQUENCES.some((sequence) =>
-    sequence.every((word, offset) => words[offset] === word),
-  );
+  const opensWith = (text: string): boolean => {
+    const words = text.split(/[^A-Za-z]+/).map((word) => word.toLowerCase());
+    return JUDGE_COUNT_SEQUENCES.some((sequence) =>
+      sequence.every((word, offset) => words[offset] === word),
+    );
+  };
+  let rest = after.trimStart();
+  for (let gap = 0; ; gap += 1) {
+    if (opensWith(rest)) {
+      return true;
+    }
+    if (gap === 2) {
+      return false;
+    }
+    const word = /^([A-Za-z]+(?:-[A-Za-z]+)*),?(\s+)/.exec(rest);
+    if (!word || JUDGE_COUNT_GAP_STOP.has(word[1]!.toLowerCase())) {
+      return false;
+    }
+    rest = rest.slice(word[0].length);
+  }
 }
 
 /** Removes every token-bounded occurrence of `name` (as written, composed or decomposed), reporting whether a numeric name was read as a count. */
