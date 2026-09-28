@@ -1531,6 +1531,111 @@ const d24QualitativeControls: readonly AdversarialFixture[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-CR-01..04, R5-IN-02): the phrasings the
+// iteration-4 word lists missed — Markdown emphasis, exact number, record and
+// quantifier words, ASCII roman numerals, exact tier synonyms and strength
+// adjectives, non-English prose, and Unicode obfuscation (invisible
+// characters, compatibility letterforms, Cyrillic homoglyphs, emoji). The
+// D-24 check is now an allowlist over folded prose, so every one of these is
+// withheld. Head-to-head fixtures license 3-2 against the made-up tag; tier
+// fixtures sit on a LOW-tier claim. VAL-03 re-judges every one of them with
+// its own procedure (`val03Acceptance.test.ts`).
+// ---------------------------------------------------------------------------
+
+const D24_R5_RECORD_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['md-underscore-pair', `You are _three and two_ against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['md-underscore-words', `You are _three_ and _two_ against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  [
+    'md-underscore-ordinals',
+    `You took the _first_ set off ${PROSE_ENTITY_DIGIT_TAG} and lost the _second_.`,
+  ],
+  ['md-underscore-half', `${PROSE_ENTITY_DIGIT_TAG} wins about _half_ your sets.`],
+  ['md-underscore-strong', `${PROSE_ENTITY_DIGIT_TAG} is _strong_ against you.`],
+  ['once', `You have beaten ${PROSE_ENTITY_DIGIT_TAG} once and never lost to them.`],
+  [
+    'pair-single',
+    `You took a pair of sets from ${PROSE_ENTITY_DIGIT_TAG} and dropped a single set.`,
+  ],
+  ['couple', `You won a couple of sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['single', `${PROSE_ENTITY_DIGIT_TAG} has taken just a single set off you.`],
+  ['both', `${PROSE_ENTITY_DIGIT_TAG} won both of your sets.`],
+  ['none', `You have won none of your sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['trio-duo', `You took a trio of sets and lost a duo against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['quarter', `You win a quarter of your sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['eleventh', `This is your eleventh set against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['twentieth', `This is your twentieth set against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['undefeated', `You are undefeated against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['unbeaten', `You are unbeaten against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['winless', `You are winless against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['swept', `You swept ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['sweep', `Your history with ${PROSE_ENTITY_DIGIT_TAG} is a clean sweep.`],
+  ['perfect-record', `You have a perfect record against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['roman-pair', `You are III-II against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['several', `You have lost several sets to ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['most', `You win most of your sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['few', `${PROSE_ENTITY_DIGIT_TAG} has taken few sets off you.`],
+  ['many', `${PROSE_ENTITY_DIGIT_TAG} has taken many sets off you.`],
+  ['majority', `You win the majority of your sets against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['minority', `${PROSE_ENTITY_DIGIT_TAG} wins only a minority of your sets.`],
+  ['lang-es', `Estás tres a dos contra ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lang-fr', `Tu es à trois contre deux face à ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lang-de', `Du stehst drei zu zwei gegen ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['lang-ja', `${PROSE_ENTITY_DIGIT_TAG}に三勝二敗。`],
+  ['uni-cyrillic', `You are thr\u0435\u0435 and tw\u043e against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['uni-soft-hyphen', `You are thr\u00adee and tw\u00ado against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['uni-zero-width', `You are thr\u200bee and tw\u200bo against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  [
+    'uni-fullwidth',
+    `You are \uff54\uff48\uff52\uff45\uff45 and \uff54\uff57\uff4f against ${PROSE_ENTITY_DIGIT_TAG}.`,
+  ],
+  [
+    'uni-math-bold',
+    `You are \u{1d42d}\u{1d421}\u{1d42b}\u{1d41e}\u{1d41e} and \u{1d42d}\u{1d430}\u{1d428} against ${PROSE_ENTITY_DIGIT_TAG}.`,
+  ],
+  ['uni-ligature', `You won the \ufb01rst set against ${PROSE_ENTITY_DIGIT_TAG}.`],
+  ['uni-emoji', `You have beaten ${PROSE_ENTITY_DIGIT_TAG} \u{1f51f} times.`],
+  ['uni-dice', `You are \u2682-\u2681 against ${PROSE_ENTITY_DIGIT_TAG}.`],
+];
+
+const D24_R5_TIER_PHRASINGS: ReadonlyArray<readonly [string, string]> = [
+  ['md-underscore', 'Our confidence here is _high_.'],
+  ['md-double-underscore', 'Our confidence here is __high__.'],
+  ['mid', 'Confidence: mid.'],
+  ['hi', 'Confidence: hi.'],
+  ['lo', 'Confidence: lo.'],
+  ['middling', 'Confidence here is middling.'],
+  ['top', 'Confidence: top.'],
+  ['max', 'Confidence: max.'],
+  ['poor', 'Confidence: poor.'],
+  ['solid', 'Confidence: solid.'],
+  ['reliable', 'This is a reliable read.'],
+  ['shaky', 'This read is shaky.'],
+  ['certain', 'This read is certain.'],
+  ['sure', 'We are sure of this read.'],
+  ['iffy', 'This read is iffy.'],
+  ['lang-es', 'La confianza es alta.'],
+  ['lang-de', 'Vertrauen hoch.'],
+  ['uni-cyrillic', 'Our confidence here is h\u0456gh.'],
+  ['uni-soft-hyphen', 'Our confidence here is hi\u00adgh.'],
+  ['uni-combining', 'Our confidence here is h\u0332igh.'],
+  ['uni-fullwidth', 'Our confidence here is \uff48\uff49\uff47\uff48.'],
+];
+
+const d24R5Fixtures: readonly AdversarialFixture[] = [
+  ...D24_R5_RECORD_PHRASINGS.map(([suffix, prose]) =>
+    makeProseEntityPerspectiveFixture({ id: `d24-r5-record-${suffix}`, prose }),
+  ),
+  ...D24_R5_TIER_PHRASINGS.map(([suffix, prose]) =>
+    makeConfidenceWordFixture({
+      id: `d24-r5-tier-${suffix}`,
+      games: CONFIDENCE_TIER_BOUNDS.low,
+      prose,
+      validatorVerdict: 'stripped',
+    }),
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // The corpus
 // ---------------------------------------------------------------------------
 
@@ -1585,4 +1690,5 @@ export const ADVERSARIAL_FIXTURES: readonly AdversarialFixture[] = [
   ...d24TierFixtures,
   d24MixedTierUnion,
   ...d24QualitativeControls,
+  ...d24R5Fixtures,
 ];

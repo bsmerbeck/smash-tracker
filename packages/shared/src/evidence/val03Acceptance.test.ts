@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   ADVERSARIAL_FAMILIES,
@@ -195,55 +197,328 @@ export function judgeUnsupported(
 const UNKNOWN_BUCKET_NAMING = /\bunknown\s+(?:stage|character)s?\b/iu;
 
 /**
- * The judge's OWN copy of owner decision D-24's figure vocabulary (English
- * number words zero to twenty, the tens, "hundred", "dozen", "half", and the
- * ordinals first to tenth). Deliberately written here rather than imported:
- * the judge must never read the validator's decisions, so a word the
- * validator forgot shows up as a VAL-03 conviction instead of agreeing with
- * itself.
+ * Code review R5-WR-02 (iteration 5): the judge's D-24 check is its OWN
+ * decision procedure, built from the rubric's text rather than from the
+ * validator's lists, so a word or a character the validator forgets shows up
+ * here as a VAL-03 conviction instead of agreeing with itself:
+ *
+ * - its CHARSET is parsed at load from `records/RPT-08-rubric.md` ("The
+ *   D-24 allowlist", step 3), never copied from `validateReport.ts`;
+ * - its fold is NFKD with every default-ignorable code point and every mark
+ *   removed (the validator uses NFKC, Cf and NFD);
+ * - it TOKENISES the residual and classifies each token: a number word is
+ *   PARSED (units, teens, tens and scale words, with ordinals derived by
+ *   suffix: "-th", "-ieth", and the irregular first/second/third/fifth/
+ *   eighth/ninth/twelfth), a tier word is reduced to its stem (a
+ *   comparative, superlative or adverb suffix removed) before lookup, and a
+ *   roman numeral is any token of two or more of I, V and X.
  */
-const JUDGE_FIGURE_WORD =
-  /(?<![\p{L}\p{N}_])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)(?![\p{L}\p{N}_])/iu;
+const RUBRIC_TEXT = readFileSync(
+  fileURLToPath(new URL('./records/RPT-08-rubric.md', import.meta.url)),
+  'utf8',
+);
 
-/** The judge's own copy of D-24's confidence-tier words: the owner's list. */
-const JUDGE_TIER_WORD =
-  /(?<![\p{L}\p{N}_])(?:low|medium|high|moderate|strong|weak)(?![\p{L}\p{N}_])/iu;
+/** The punctuation the rubric allows, parsed from its own sentence: "these punctuation marks: `…`". */
+const JUDGE_ALLOWED_PUNCTUATION: ReadonlySet<string> = (() => {
+  const match = /these\s+punctuation\s+marks:\s+`([^`]+)`/.exec(RUBRIC_TEXT);
+  if (!match?.[1]) {
+    throw new Error('RPT-08-rubric.md no longer states the D-24 allowlist punctuation');
+  }
+  return new Set(match[1].split(/\s+/).filter((mark) => mark.length > 0));
+})();
+
+/** The judge's fold: NFKD, then default-ignorable code points and marks removed, then Markdown emphasis read as spaces. */
+function judgeFold(text: string): string {
+  return text
+    .normalize('NFKD')
+    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+    .replace(/\p{M}/gu, '')
+    .replace(/[_*~`]/g, ' ');
+}
+
+/** True when `ch` is outside the rubric's allowlist: not an ASCII letter, not whitespace, not a listed mark. */
+function outsideJudgeCharset(ch: string): boolean {
+  return !/^[A-Za-z]$/.test(ch) && !/^[ \t\r\n]$/.test(ch) && !JUDGE_ALLOWED_PUNCTUATION.has(ch);
+}
+
+const JUDGE_UNITS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+];
+const JUDGE_TEENS = [
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+];
+const JUDGE_TENS = ['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+const JUDGE_SCALES = ['hundred', 'thousand', 'million', 'billion', 'dozen', 'score'];
+const JUDGE_IRREGULAR_ORDINALS = [
+  'first',
+  'second',
+  'third',
+  'fifth',
+  'eighth',
+  'ninth',
+  'twelfth',
+];
+
+/** A cardinal number word: a unit, a teen, a ten, or a scale word (plural allowed). */
+function isCardinalWord(token: string): boolean {
+  if ([...JUDGE_UNITS, ...JUDGE_TEENS, ...JUDGE_TENS, ...JUDGE_SCALES].includes(token)) {
+    return true;
+  }
+  return token.endsWith('s') && JUDGE_SCALES.includes(token.slice(0, -1));
+}
+
+/** An ordinal (or a plural ordinal fraction such as "thirds"): irregular, "-ieth" from a ten, or "-th" on a cardinal. */
+function isOrdinalWord(token: string): boolean {
+  const singular = token.endsWith('s') ? token.slice(0, -1) : token;
+  for (const candidate of new Set([token, singular])) {
+    if (JUDGE_IRREGULAR_ORDINALS.includes(candidate)) {
+      return true;
+    }
+    if (candidate.endsWith('ieth') && isCardinalWord(`${candidate.slice(0, -4)}y`)) {
+      return true;
+    }
+    if (candidate.endsWith('th') && isCardinalWord(candidate.slice(0, -2))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The rubric's other figure categories (R4): fractions, collective and
+ * multiplicative counts, record words stating a zero side of a W-L record,
+ * percentage words and vague quantifiers — and the number words of the
+ * app's other locales, one table per locale.
+ */
+const JUDGE_FIGURE_LEXICON: ReadonlySet<string> = new Set([
+  'half',
+  'halves',
+  'quarter',
+  'quarters',
+  'once',
+  'twice',
+  'thrice',
+  'single',
+  'pair',
+  'pairs',
+  'couple',
+  'duo',
+  'trio',
+  'both',
+  'none',
+  'nil',
+  'nought',
+  'naught',
+  'undefeated',
+  'unbeaten',
+  'winless',
+  'swept',
+  'sweep',
+  'sweeps',
+  'flawless',
+  'percentage',
+  'pct',
+  'percentile',
+  'most',
+  'several',
+  'few',
+  'fewer',
+  'fewest',
+  'many',
+  'majority',
+  'minority',
+]);
+
+const JUDGE_LOCALE_NUMBER_WORDS: Readonly<Record<string, readonly string[]>> = {
+  es: ['uno', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'],
+  fr: ['une', 'deux', 'trois', 'quatre', 'cinq', 'huit', 'neuf', 'dix'],
+  de: ['eins', 'zwei', 'drei', 'vier', 'funf', 'sechs', 'sieben', 'acht', 'neun', 'zehn'],
+  pt: ['dois', 'duas', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez'],
+};
+
+/** The rubric's tier and strength vocabulary (R5), each word a STEM: suffixed forms reduce to it. */
+const JUDGE_TIER_STEMS: ReadonlySet<string> = new Set([
+  'low',
+  'medium',
+  'high',
+  'moderate',
+  'strong',
+  'weak',
+  'mid',
+  'middling',
+  'hi',
+  'lo',
+  'top',
+  'max',
+  'min',
+  'poor',
+  'limited',
+  'elevated',
+  'solid',
+  'reliable',
+  'shaky',
+  'certain',
+  'sure',
+  'iffy',
+  // The app's other locales.
+  'alta',
+  'alto',
+  'baja',
+  'bajo',
+  'haute',
+  'basse',
+  'elevee',
+  'faible',
+  'moyenne',
+  'hoch',
+  'hohe',
+  'niedrig',
+  'mittel',
+  'schwach',
+  'baixa',
+  'baixo',
+]);
+
+/** True when `token` (lower case) is a tier stem, or a stem with a comparative, superlative or adverb suffix. */
+function isTierToken(token: string): boolean {
+  if (JUDGE_TIER_STEMS.has(token)) {
+    return true;
+  }
+  for (const suffix of ['est', 'er', 'ly']) {
+    if (token.endsWith(suffix) && JUDGE_TIER_STEMS.has(token.slice(0, -suffix.length))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The judge's figure test on already-folded text: R4 when it finds a figure. */
+function judgeFindsFigure(text: string): boolean {
+  if (/\p{N}/u.test(text)) {
+    return true;
+  }
+  // ASCII roman numerals: a token of two or more of I/V/X, or a separated pair of them.
+  if (
+    /(?<![A-Za-z])[IVX]{2,}(?![A-Za-z])|(?<![A-Za-z])[IVX]+\s*[-–—:/]\s*[IVX]+(?![A-Za-z])/.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  if (/\bperfect\s+records?\b/i.test(text)) {
+    return true;
+  }
+  const localeWords = Object.values(JUDGE_LOCALE_NUMBER_WORDS).flat();
+  for (const raw of text.split(/[^A-Za-z]+/)) {
+    const token = raw.toLowerCase();
+    if (token.length === 0) {
+      continue;
+    }
+    if (
+      isCardinalWord(token) ||
+      isOrdinalWord(token) ||
+      JUDGE_FIGURE_LEXICON.has(token) ||
+      localeWords.includes(token)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The judge's grade test on already-folded text: R5 when it finds a tier word. */
+function judgeFindsTier(text: string): boolean {
+  return text.split(/[^A-Za-z]+/).some((raw) => isTierToken(raw.toLowerCase()));
+}
+
+/** The rubric's count nouns: a digit- or numeral-bearing name directly followed by one reads as a count. */
+const JUDGE_COUNT_NOUN =
+  /^\s*(?:win|wins|loss|losses|times|set|sets|game|games|stock|stocks)(?![A-Za-z])/i;
+
+/** Removes every occurrence of `name` from `text`, reporting whether a digit- or numeral-bearing name was read as a count. */
+function removeName(text: string, name: string): { text: string; countRead: boolean } {
+  const numeric = /[0-9]|(?<![A-Za-z])[IVX]+(?![A-Za-z])/.test(name);
+  let out = '';
+  let countRead = false;
+  let from = 0;
+  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, from)) {
+    out += `${text.slice(from, at)} `;
+    from = at + name.length;
+    if (numeric && JUDGE_COUNT_NOUN.test(text.slice(from))) {
+      countRead = true;
+    }
+  }
+  return { text: out + text.slice(from), countRead };
+}
+
+/** The rubric's R5-IN-03 rule: a tag reads as a figure or a grade when it holds a digit pair, or when its letter words do. */
+function tagReadsAsFigure(tag: string): boolean {
+  return (
+    /[0-9]+\s*[-–—:/]\s*[0-9]+/.test(tag) ||
+    judgeFindsFigure(tag.replace(/[0-9]/g, ' ')) ||
+    judgeFindsTier(tag)
+  );
+}
 
 /**
  * Re-judges DELIVERED prose (a section the validator did not strip) from the
  * text alone:
  * - R7: it must not name the unknown stage/character bucket as if it were a
  *   real, pickable entity.
- * - D-24 (owner decision, 2026-09-28): commentary is qualitative only. It
- *   must carry no digit (any Unicode number character), no percent sign and
- *   no spelled-out figure (convicted under R4), and no confidence-tier word
- *   (convicted under R5). A W-L pair of any shape is made of digits or
- *   number words, so it is covered by the same test.
+ * - D-24 (owner decision, 2026-09-28): commentary is qualitative only. After
+ *   the fold and the name removal, a character outside the rubric's charset
+ *   or a figure (a digit, a parsed number word, a listed figure word, a
+ *   roman numeral) convicts under R4, and a tier word convicts under R5.
  *
- * `names` are the entity names the prose may legitimately contain (canonical
- * fighter/stage names and the job's opponent tags). Only a name with at least
- * one letter is removed before the figure test, so "Sparg0" or "Pokémon
- * Stadium 2" is a name while a digit-only tag stays a figure.
+ * `names` are the canonical fighter/stage names the prose may legitimately
+ * contain, and `tags` the job's opponent tags. Only a name with at least one
+ * letter is removed, so "Sparg0" or "Pokémon Stadium 2" is a name while a
+ * digit-only tag stays a figure; and a TAG that itself reads as a figure or a
+ * grade ("High", "Leo 3-2") is not removed (the rubric's R5-IN-03 rule).
  */
 export function judgeDeliveredProse(
   prose: string,
   names: readonly string[] = [],
+  tags: readonly string[] = [],
 ): RubricRuleId | null {
   const nfc = prose.normalize('NFC');
-  if (UNKNOWN_BUCKET_NAMING.test(nfc)) {
+  const folded = judgeFold(prose);
+  if (UNKNOWN_BUCKET_NAMING.test(nfc) || UNKNOWN_BUCKET_NAMING.test(folded)) {
     return 'R7';
   }
-  let residual = nfc;
-  for (const name of [...names].sort((a, b) => b.length - a.length)) {
-    const normalized = name.normalize('NFC');
-    if (/\p{L}/u.test(normalized)) {
-      residual = residual.split(normalized).join(' ');
-    }
+  let residual = folded;
+  let countRead = false;
+  const removable = [
+    ...names.map((name) => judgeFold(name)),
+    ...tags.map((tag) => judgeFold(tag).trim()).filter((tag) => !tagReadsAsFigure(tag)),
+  ].filter((name) => /\p{L}/u.test(name));
+  for (const name of [...removable].sort((a, b) => b.length - a.length)) {
+    const removed = removeName(residual, name);
+    residual = removed.text;
+    countRead ||= removed.countRead;
   }
-  if (/\p{N}/u.test(residual) || /[%％﹪]/u.test(residual) || JUDGE_FIGURE_WORD.test(residual)) {
+  if (countRead || [...residual].some(outsideJudgeCharset) || judgeFindsFigure(residual)) {
     return 'R4';
   }
-  if (JUDGE_TIER_WORD.test(residual)) {
+  if (judgeFindsTier(residual)) {
     return 'R5';
   }
   return null;
@@ -255,13 +530,12 @@ const CANONICAL_NAMES: readonly string[] = [
   ...StageList.map((stage) => stage.name),
 ];
 
-/** Every name a run's delivered prose may carry: the canonical names plus the opponent tags in the snapshot's own rows and the issued claims. */
-function namesFor(snapshot: EvidenceSnapshot, issuedClaims: readonly ClaimAtom[]): string[] {
-  const tags = [
+/** The opponent tags a run's delivered prose may carry: those in the snapshot's own rows and the issued claims. */
+function tagsFor(snapshot: EvidenceSnapshot, issuedClaims: readonly ClaimAtom[]): string[] {
+  return [
     ...Object.values(snapshot.rows).map((row) => row.subject.opponentTag),
     ...issuedClaims.map((claim) => claim.subject.opponentTag),
   ].filter((tag): tag is string => tag !== null);
-  return [...CANONICAL_NAMES, ...tags];
 }
 
 // ---------------------------------------------------------------------------
@@ -432,12 +706,12 @@ function convictionsOf(run: PipelineRun): Conviction[] {
     }
   }
   const stripped = new Set(run.outcome.strippedSectionIds);
-  const names = namesFor(run.snapshot, run.issuedClaims);
+  const tags = tagsFor(run.snapshot, run.issuedClaims);
   for (const [sectionId, section] of Object.entries(run.selection.sections)) {
     if (stripped.has(sectionId)) {
       continue;
     }
-    const rule = judgeDeliveredProse(section.connective, names);
+    const rule = judgeDeliveredProse(section.connective, CANONICAL_NAMES, tags);
     if (rule !== null) {
       convictions.push({
         fixtureId: run.fixtureId,
@@ -928,5 +1202,213 @@ describe('judgeDeliveredProse: R7 lexical on delivered prose', () => {
     expect(judgeDeliveredProse('Unknown matchups are rare for this opponent.')).toBeNull();
     expect(judgeDeliveredProse('unknown is not the same as unsafe')).toBeNull();
     expect(judgeDeliveredProse('')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R5-WR-02 (iteration 5): the judge is independent in COVERAGE,
+// not only in code. Every R5 phrasing the iteration-4 validator shipped is
+// convicted by the judge AND withheld by the validator, and a meaning-
+// preserving Unicode or Markdown transform never changes either verdict.
+// ---------------------------------------------------------------------------
+
+function fixtureById(id: string): AdversarialFixture {
+  const fixture = ADVERSARIAL_FIXTURES.find((candidate) => candidate.id === id);
+  if (!fixture) {
+    throw new Error(`fixture ${id} is not in the corpus`);
+  }
+  return fixture;
+}
+
+/** One prose section over `fixture`'s claims: the validator's verdict and the judge's, side by side. */
+function bothVerdicts(
+  fixture: AdversarialFixture,
+  prose: string,
+): { withheld: boolean; judge: RubricRuleId | null } {
+  const run = runAdversarial({ ...fixture, sections: [{ prose, licensedClaimIds: ['c01'] }] });
+  return {
+    withheld: run.outcome.strippedSectionIds.includes('section-0'),
+    judge: judgeDeliveredProse(prose, CANONICAL_NAMES, tagsFor(run.snapshot, run.issuedClaims)),
+  };
+}
+
+const R5_RECORD_BASE = fixtureById('d24-qualitative-control-tag');
+const R5_TIER_BASE = fixtureById('d24-r5-tier-mid');
+const R5_TAG = tagsFor(R5_RECORD_BASE.snapshot, [])[0]!;
+
+const eachWord = (prose: string, map: (word: string) => string): string =>
+  prose.replace(/[A-Za-z0-9]+/g, map);
+const fromCodePoints = (prose: string, offset: (ch: string) => number | null): string =>
+  [...prose]
+    .map((ch) => {
+      const cp = offset(ch);
+      return cp === null ? ch : String.fromCodePoint(cp);
+    })
+    .join('');
+
+/** Meaning-preserving transforms the fold must undo: the verdict of any sentence is unchanged by each one. */
+const FOLD_INVARIANT_TRANSFORMS: ReadonlyArray<readonly [string, (prose: string) => string]> = [
+  ['identity', (prose) => prose],
+  ['underscore emphasis', (prose) => eachWord(prose, (word) => `_${word}_`)],
+  ['double underscore emphasis', (prose) => eachWord(prose, (word) => `__${word}__`)],
+  ['asterisk emphasis', (prose) => eachWord(prose, (word) => `*${word}*`)],
+  ['code markers', (prose) => eachWord(prose, (word) => `\`${word}\``)],
+  ['soft hyphen', (prose) => eachWord(prose, (word) => `${word[0]}\u00ad${word.slice(1)}`)],
+  ['zero-width space', (prose) => eachWord(prose, (word) => `${word[0]}\u200b${word.slice(1)}`)],
+  ['word joiner', (prose) => eachWord(prose, (word) => `${word[0]}\u2060${word.slice(1)}`)],
+  ['combining mark', (prose) => eachWord(prose, (word) => `${word[0]}\u0332${word.slice(1)}`)],
+  [
+    'fullwidth',
+    (prose) =>
+      fromCodePoints(prose, (ch) => (ch >= '!' && ch <= '~' ? ch.codePointAt(0)! + 0xfee0 : null)),
+  ],
+  [
+    'mathematical bold',
+    (prose) =>
+      fromCodePoints(prose, (ch) =>
+        /[a-z]/.test(ch)
+          ? 0x1d41a + ch.charCodeAt(0) - 97
+          : /[A-Z]/.test(ch)
+            ? 0x1d400 + ch.charCodeAt(0) - 65
+            : /[0-9]/.test(ch)
+              ? 0x1d7ce + ch.charCodeAt(0) - 48
+              : null,
+      ),
+  ],
+  ['ligatures', (prose) => prose.replace(/fi/g, 'ﬁ').replace(/fl/g, 'ﬂ')],
+];
+
+/** A look-alike transform: the verdict can only move toward withheld (the letters leave the allowlist). */
+const HOMOGLYPHS: Readonly<Record<string, string>> = {
+  a: 'а',
+  e: 'е',
+  o: 'о',
+  i: 'і',
+  c: 'с',
+  p: 'р',
+};
+const homoglyph = (prose: string): string =>
+  prose.replace(/[aeoicp]/g, (ch) => HOMOGLYPHS[ch] ?? ch);
+
+const R5_FIGURE_SENTENCES = [
+  `You are three and two against ${R5_TAG}.`,
+  `You took the first set off ${R5_TAG}.`,
+  `You have beaten ${R5_TAG} once.`,
+  `You swept ${R5_TAG}.`,
+  `You win most of your sets against ${R5_TAG}.`,
+  `You are III-II against ${R5_TAG}.`,
+];
+const R5_TIER_SENTENCES = [
+  'Our confidence here is high.',
+  'Confidence: mid.',
+  'This read is shaky.',
+  'We are sure of this read.',
+];
+const R5_QUALITATIVE_RECORD = [
+  `${R5_TAG} likes to camp the ledge; take the centre and make them come to you.`,
+  'Stay patient and punish the landing.',
+];
+const R5_QUALITATIVE_TIER = ['Play this stage with confidence.', 'Stay patient on this stage.'];
+
+describe('R5-WR-02: the judge convicts every R5 phrasing the validator withholds, by its own procedure', () => {
+  it('the judge parses its charset from the rubric text, and it is exactly the stated list', () => {
+    expect([...JUDGE_ALLOWED_PUNCTUATION].sort()).toEqual(
+      [
+        '.',
+        ',',
+        ';',
+        ':',
+        "'",
+        '"',
+        '!',
+        '?',
+        '(',
+        ')',
+        '-',
+        '–',
+        '—',
+        '’',
+        '‘',
+        '“',
+        '”',
+        '/',
+      ].sort(),
+    );
+  });
+
+  it('the twelve phrasings the iteration-4 judge returned null on are all convicted now', () => {
+    for (const prose of [
+      'You are _three and two_ against MkLeo.',
+      'Fox on Battlefield. _Confidence here is high_.',
+      'You have beaten MkLeo once and never lost to him.',
+      'You took a pair of sets from MkLeo and dropped a single set.',
+      'You win a quarter of your sets against MkLeo.',
+      'You are III-II against MkLeo.',
+      'You are undefeated against MkLeo.',
+      'Fox on Battlefield. Confidence: mid.',
+      'MkLeoに三勝二敗。',
+      'Estás tres a dos contra MkLeo.',
+      'You are thr­ee and tw­o against MkLeo.',
+      'You are ｔｈｒｅｅ and ｔｗｏ against MkLeo.',
+    ]) {
+      expect(judgeDeliveredProse(prose, ['Fox', 'Battlefield'], ['MkLeo']), prose).not.toBeNull();
+    }
+  });
+
+  it('every d24-r5 fixture in the corpus is withheld by the validator AND convicted by the judge', () => {
+    const r5 = ADVERSARIAL_FIXTURES.filter((fixture) => fixture.id.startsWith('d24-r5-'));
+    expect(r5.length).toBeGreaterThan(50);
+    for (const fixture of r5) {
+      const prose = fixture.sections![0]!.prose;
+      const verdicts = bothVerdicts(fixture, prose);
+      expect(verdicts.withheld, `${fixture.id}: validator`).toBe(true);
+      expect(verdicts.judge, `${fixture.id}: judge`).not.toBeNull();
+    }
+  });
+
+  it('R5-IN-03: a tag that reads as a figure or a grade is not a name to the judge either', () => {
+    expect(judgeDeliveredProse('You beat High, and confidence is High.', [], ['High'])).toBe('R5');
+    expect(judgeDeliveredProse('You are Leo 3-2 against, keep it up.', [], ['Leo 3-2'])).toBe('R4');
+    expect(judgeDeliveredProse('Sparg0 punishes a rushed approach.', [], ['Sparg0'])).toBeNull();
+    expect(judgeDeliveredProse('Fox on Pokémon Stadium 2 wins for you.', CANONICAL_NAMES, [])).toBe(
+      'R4',
+    );
+    expect(
+      judgeDeliveredProse('Pokémon Stadium 2 rewards your patience.', CANONICAL_NAMES, []),
+    ).toBeNull();
+  });
+
+  it.each(FOLD_INVARIANT_TRANSFORMS)(
+    'metamorphic (%s): every figure and tier sentence stays withheld AND convicted, and every qualitative sentence still ships AND passes the judge',
+    (_name, transform) => {
+      for (const [fixture, sentences, convicted] of [
+        [R5_RECORD_BASE, R5_FIGURE_SENTENCES, true],
+        [R5_TIER_BASE, R5_TIER_SENTENCES, true],
+        [R5_RECORD_BASE, R5_QUALITATIVE_RECORD, false],
+        [R5_TIER_BASE, R5_QUALITATIVE_TIER, false],
+      ] as const) {
+        for (const sentence of sentences) {
+          const prose = transform(sentence);
+          const verdicts = bothVerdicts(fixture, prose);
+          expect(verdicts.withheld, `validator on ${JSON.stringify(prose)}`).toBe(convicted);
+          expect(verdicts.judge !== null, `judge on ${JSON.stringify(prose)}`).toBe(convicted);
+        }
+      }
+    },
+  );
+
+  it('metamorphic (Cyrillic look-alikes): the transform only moves a verdict toward withheld, on both sides', () => {
+    for (const [fixture, sentence] of [
+      ...R5_FIGURE_SENTENCES.map((s) => [R5_RECORD_BASE, s] as const),
+      ...R5_TIER_SENTENCES.map((s) => [R5_TIER_BASE, s] as const),
+      ...R5_QUALITATIVE_RECORD.map((s) => [R5_RECORD_BASE, s] as const),
+      ...R5_QUALITATIVE_TIER.map((s) => [R5_TIER_BASE, s] as const),
+    ]) {
+      const prose = homoglyph(sentence);
+      expect(prose).not.toBe(sentence);
+      const verdicts = bothVerdicts(fixture, prose);
+      expect(verdicts.withheld, prose).toBe(true);
+      expect(verdicts.judge, prose).not.toBeNull();
+    }
   });
 });

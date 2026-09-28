@@ -362,6 +362,22 @@ describe('EVID-10 engine parity — SYSTEM_PROMPT reads claim fields, not a pros
       expect(prompt, form).toContain(form);
     }
   });
+
+  it('R5-CR-01 / R5-CR-03 (iteration 5): states English only and plain text with no Markdown emphasis, and names the extended withheld words, before the job', () => {
+    const prompt = extractSystemPrompt();
+    const rule = prompt.indexOf('Write in English only, in plain text');
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(prompt.indexOf('Your job is'));
+    for (const form of [
+      'no Markdown emphasis or code marks (no asterisks, underscores, tildes or backticks)',
+      'no emoji',
+      'an ampersand, a plus sign or any other symbol withholds the section too',
+      'once, both, single, pair, couple, few, several, many, most, top, mid, max, poor, solid, sure, certain, reliable, shaky, undefeated, unbeaten, winless, swept or perfect record',
+      '"remember to" rather than "make sure"',
+    ]) {
+      expect(prompt, form).toContain(form);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

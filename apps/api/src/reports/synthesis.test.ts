@@ -662,6 +662,34 @@ describe('generatePracticePlan', () => {
       expect(capturedSystem, form).toContain(form);
     }
   });
+
+  it('R5-CR-01 / R5-CR-03 (iteration 5): the synthesis prompt states English only and plain text, names the extended withheld words, and forbids copying the user notes into the prose', async () => {
+    let capturedSystem = '';
+    const client: SynthesisAnthropicClient = {
+      messages: {
+        parse: async (params) => {
+          capturedSystem = params.system;
+          return { stop_reason: 'end_turn', parsed_output: VALID_PLAN };
+        },
+      },
+    };
+
+    await generatePracticePlan(client, PAYLOAD);
+
+    const rule = capturedSystem.indexOf('Write in English only, in plain text');
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(capturedSystem.indexOf('Your job is'));
+    for (const form of [
+      'no Markdown emphasis or code marks (no asterisks, underscores, tildes or backticks)',
+      'an ampersand, a plus sign or any other symbol withholds the section too',
+      'once, both, single, pair, couple, few, several, many, most, top, mid, max, poor, solid, sure, certain, reliable, shaky, undefeated, unbeaten, winless, swept or perfect record',
+      "The user's notes may be written in another language or contain numbers",
+      'never copy their wording, numbers or language into your prose',
+    ]) {
+      expect(capturedSystem, form).toContain(form);
+    }
+    expect(capturedSystem).not.toMatch(/\d/);
+  });
 });
 
 // ---------------------------------------------------------------------------

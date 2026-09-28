@@ -663,7 +663,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
     it('UNKNOWN_STAGE.name and NO_SELECTION_STAGE.name are absent from the recognized-entity table, and ordinary "unknown" produces no R4 fault', () => {
       expect(AMBIGUOUS_ENTITY_NAMES).not.toContain('unknown');
       expect(AMBIGUOUS_ENTITY_NAMES).not.toContain('no selection');
-      const outcome = scanFor('This matchup is largely unknown territory for both players.');
+      const outcome = scanFor('This matchup is largely unknown territory for you.');
       expect(outcome.strippedSectionIds).toEqual([]);
     });
   });
@@ -697,7 +697,7 @@ describe('validateReportOutput: the D-04 prose lint (Task 2)', () => {
       issuedClaims: claims,
       output: {
         sections: {
-          s1: { claimIds: ['c01'], connective: 'Solid record on this stage.' },
+          s1: { claimIds: ['c01'], connective: 'Steady results on this stage.' },
           s2: {
             claimIds: ['c02'],
             connective: 'Fox vs Marth is a common opener here — worth studying.',
@@ -1895,7 +1895,7 @@ describe('D-24 / R4-CR-01: every W-L restatement is withheld, whatever its separ
     for (const prose of [
       'MkLeo tends to camp ledge against you, so take the center.',
       'Someone who panics against MkLeo drops the lead; stay calm and highlight his landing habits.',
-      'The tone of the set often shifts once MkLeo is behind.',
+      'The tone of the set often shifts when MkLeo is behind.',
       'Play this matchup with confidence and patience.',
     ]) {
       expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
@@ -1990,10 +1990,273 @@ describe('D-24 / R4-CR-02: a confidence-tier word withholds the prose anywhere i
     }
   });
 
-  it('known limit (recorded in the rubric): a strength adjective outside the closed tier vocabulary, with no figure, is not recognised', () => {
+  it('R5-IN-02 (iteration 5): the strength adjective the rubric used to record as a limit ("rock solid") is now withheld', () => {
     expect(
       validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], 'This read is rock solid.')
         .stripped,
+    ).toEqual(['main']);
+  });
+
+  it('known limit (recorded in the rubric): a strength adjective outside the closed tier vocabulary, with no figure, is not recognised', () => {
+    expect(
+      validateStageRecords(
+        [{ stageId: 1, games: 5, wins: 3 }],
+        'We are very confident in this read.',
+      ).stripped,
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-CR-01..04, R5-IN-02, R5-IN-03): the D-24 prose
+// check is an ALLOWLIST. The prose is folded (NFKC, format characters
+// removed, NFD with combining marks removed, Markdown emphasis and code
+// markers read as spaces), names and known tags consume their spans, and
+// what remains may hold only ASCII letters, whitespace and the rubric's
+// listed punctuation. The word lists stay as defence in depth. Every row
+// below is the iteration-5 review's probe (`r5v/d24.test.ts`), verbatim,
+// against a licensed 3-2 (the player won 3) or one LOW-tier stage claim
+// (Fox on Battlefield, 3-2 over five games). Each one shipped at 2b332e6c.
+// ---------------------------------------------------------------------------
+
+const R5_HEAD_TO_HEAD_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  // R5-CR-01: Markdown emphasis around a figure or a tier word.
+  ['md-underscore-pair', 'You are _three and two_ against MkLeo.'],
+  ['md-underscore-words', 'You are _three_ and _two_ against MkLeo.'],
+  ['md-underscore-ordinals', 'You took the _first_ set off MkLeo and lost the _second_.'],
+  ['md-underscore-half', 'MkLeo wins about _half_ your sets.'],
+  ['md-underscore-strong', 'MkLeo is _strong_ against you.'],
+  // R5-CR-02: exact number and record words outside the old list.
+  ['word-once', 'You have beaten MkLeo once and never lost to him.'],
+  ['word-once-only', 'You have only lost to MkLeo once.'],
+  ['word-pair', 'You took a pair of sets from MkLeo and dropped a single set.'],
+  ['word-couple', 'You won a couple of sets against MkLeo and lost a trio of them.'],
+  ['word-single', 'MkLeo has taken just a single set off you.'],
+  ['word-both', 'MkLeo won both of your sets.'],
+  ['word-none', 'You have won none of your sets against MkLeo.'],
+  ['word-nil', 'Your record against MkLeo is nil and nought.'],
+  ['word-quarter', 'You win a quarter of your sets against MkLeo.'],
+  ['word-eleventh', 'This is your eleventh set against MkLeo.'],
+  ['word-twelfth', 'This is your twelfth set against MkLeo.'],
+  ['word-twentieth', 'This is your twentieth set against MkLeo.'],
+  ['word-hundredth', 'This is your hundredth game against MkLeo.'],
+  ['word-million', 'You have lost to MkLeo a million times.'],
+  ['word-sweep', 'You swept MkLeo.'],
+  ['word-clean-sweep', 'Your history with MkLeo is a clean sweep.'],
+  ['word-perfect-record', 'You have a perfect record against MkLeo.'],
+  ['word-undefeated', 'You are undefeated against MkLeo.'],
+  ['word-winless', 'You are winless against MkLeo.'],
+  ['word-unbeaten', 'You are unbeaten against MkLeo.'],
+  ['word-flawless', 'Your run against MkLeo is flawless.'],
+  ['word-all-but-single', 'MkLeo has won all but a single set.'],
+  ['word-trio-duo', 'You took a trio of sets and lost a duo against MkLeo.'],
+  ['word-score', 'You have played MkLeo a score of times.'],
+  ['word-percentage', 'You win a large percentage of sets against MkLeo.'],
+  ['roman-pair', 'You are III-II against MkLeo.'],
+  ['roman-words', 'Against MkLeo you sit at III and II.'],
+  // R5-IN-02: vague quantifiers.
+  ['quantifier-several', 'You have lost several sets to MkLeo.'],
+  ['quantifier-most', 'You win most of your sets against MkLeo.'],
+  ['quantifier-majority', 'You win the majority of your sets against MkLeo.'],
+  ['quantifier-minority', 'MkLeo wins only a minority of your sets.'],
+  ['quantifier-few', 'MkLeo has taken few sets off you.'],
+  ['quantifier-many', 'MkLeo has taken many sets off you.'],
+  ['quantifier-pct', 'You win most sets (pct) against MkLeo.'],
+  // R5-CR-03: non-English prose.
+  ['lang-es', 'Estás tres a dos contra MkLeo; la confianza es alta.'],
+  ['lang-fr', 'Tu es à trois contre deux face à MkLeo.'],
+  ['lang-de', 'Du stehst drei zu zwei gegen MkLeo, Vertrauen hoch.'],
+  ['lang-ja', 'MkLeoに三勝二敗、信頼度は高い。'],
+  ['lang-ja-daiji', 'MkLeoに参勝弐敗。'],
+  ['lang-ja-rate', 'MkLeoに対して六割の勝率。'],
+  // R5-CR-04: invisible characters, compatibility letterforms, homoglyphs.
+  ['uni-cyrillic', 'You are thrее and twо against MkLeo.'],
+  ['uni-zwsp', 'You are thr​ee and tw​o against MkLeo.'],
+  ['uni-shy-three', 'You beat MkLeo th­ree times.'],
+  ['uni-wj-three', 'You beat MkLeo th⁠ree times.'],
+  ['uni-fullwidth', 'You are ｔｈｒｅｅ and ｔｗｏ against MkLeo.'],
+  [
+    'uni-math-bold',
+    'You are \u{1d42d}\u{1d421}\u{1d42b}\u{1d41e}\u{1d41e} and \u{1d42d}\u{1d430}\u{1d428} against MkLeo.',
+  ],
+  ['uni-ligature', 'You won the ﬁrst set against MkLeo.'],
+  ['uni-keycap-ten', 'You have beaten MkLeo \u{1f51f} times.'],
+  ['uni-hundred', 'You win \u{1f4af} against MkLeo.'],
+  ['uni-dice', 'You are ⚂-⚁ against MkLeo.'],
+];
+
+const R5_STAGE_WITHHELD: ReadonlyArray<readonly [string, string]> = [
+  // R5-CR-01.
+  ['md-underscore-sentence', 'Fox on Battlefield. _Confidence here is high_.'],
+  ['md-double-underscore', 'Fox on Battlefield. Confidence here is __high__.'],
+  ['md-underscore-word', 'Fox on Battlefield. Confidence: _high_.'],
+  ['md-trailing-underscore', 'Fox on Battlefield. Confidence: high_.'],
+  ['md-strike', 'Fox on Battlefield. Confidence here is ~~high~~.'],
+  ['md-code', 'Fox on Battlefield. Confidence here is `high`.'],
+  // R5-CR-02: exact tier synonyms.
+  ['tier-mid', 'Fox on Battlefield. Confidence: mid.'],
+  ['tier-hi', 'Fox on Battlefield. Confidence: hi.'],
+  ['tier-lo', 'Fox on Battlefield. Confidence: lo.'],
+  ['tier-middling', 'Fox on Battlefield. Confidence here is middling.'],
+  ['tier-top', 'Fox on Battlefield. Confidence: top.'],
+  ['tier-max', 'Fox on Battlefield. Confidence: max.'],
+  ['tier-poor', 'Fox on Battlefield. Confidence: poor.'],
+  ['tier-limited', 'Fox on Battlefield. Confidence: limited.'],
+  ['tier-elevated', 'Fox on Battlefield. Confidence: elevated.'],
+  // R5-IN-02: strength adjectives.
+  ['tier-solid', 'Fox on Battlefield. Confidence: solid.'],
+  ['tier-reliable', 'Fox on Battlefield. This is a reliable read.'],
+  ['tier-shaky', 'Fox on Battlefield. This read is shaky.'],
+  ['tier-certain', 'Fox on Battlefield. This read is certain.'],
+  ['tier-sure', 'Fox on Battlefield. We are sure of this read.'],
+  ['tier-iffy', 'Fox on Battlefield. This read is iffy.'],
+  // R5-CR-04.
+  ['uni-cyrillic-high', 'Fox on Battlefield. Confidence here is hіgh.'],
+  ['uni-zwj-high', 'Fox on Battlefield. Confidence here is hi‍gh.'],
+  ['uni-shy-high', 'Fox on Battlefield. Confidence here is hi­gh.'],
+  ['uni-combining-high', 'Fox on Battlefield. Confidence here is h̲igh.'],
+  ['uni-fullwidth-high', 'Fox on Battlefield. Confidence here is ｈｉｇｈ.'],
+];
+
+describe('R5 (iteration 5): the D-24 allowlist withholds every figure and grade the word lists missed', () => {
+  it.each(R5_HEAD_TO_HEAD_WITHHELD)('head-to-head %s: %j', (_id, prose) => {
+    expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose)).toEqual({
+      stripped: ['main'],
+      dropped: 0,
+    });
+  });
+
+  it.each(R5_STAGE_WITHHELD)('stage %s: %j', (_id, prose) => {
+    const result = validateStageRecords([{ stageId: 1, games: 5, wins: 3 }], prose);
+    expect(result.tiers).toBe('low');
+    expect(result).toMatchObject({ stripped: ['main'], dropped: 0 });
+  });
+
+  it('any character outside the allowlist withholds the section, even with no figure in it', () => {
+    for (const prose of [
+      'MkLeo camps the ledge & you should take the centre.',
+      'Stay patient + punish his landing.',
+      'Watch his [ledge] options.',
+      'MkLeo loves ledge traps → take the centre.',
+      'MkLeo wins the neutral @ the ledge.',
+      'Take the centre #patience.',
+      'MkLeo camps the ledge 🙂 so stay patient.',
+      'MkLeo camps the ledge so stay patient.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+
+  it('controls: every allowed punctuation mark, Markdown emphasis on qualitative words, line breaks and folded accents ship', () => {
+    for (const prose of [
+      'MkLeo tends to camp the ledge; take the centre — and stay patient.',
+      'Don’t chase “reads” off stage (be patient), and/or reset to neutral!',
+      "Is MkLeo rushing? Stay calm: reset. MkLeo's recovery is predictable - punish it.",
+      'MkLeo likes ‘safe’ options – so "call" them.',
+      'Stay _patient_ against MkLeo and **punish** the landing.',
+      'MkLeo camps the ledge.\nTake the centre.\r\nStay calm.',
+      'MkLeo loves a café-style slow neutral, so stay patient.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose), prose).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('names still consume their symbols and digits first: "Mr. Game & Watch", "Pokémon Stadium 2" and a folded tag ship', () => {
+    expect(
+      validateStageRecords(
+        [{ stageId: 59, games: 10, wins: 6 }],
+        'Fox on Pokémon Stadium 2 rewards your patience.',
+      ).stripped,
+    ).toEqual([]);
+    expect(
+      validateHeadToHead('José', { wins: 3, losses: 2 }, 'Stay patient against José.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+    expect(
+      validateHeadToHead('Light_', { wins: 3, losses: 2 }, 'Stay patient against Light_.'),
+    ).toEqual({ stripped: [], dropped: 0 });
+  });
+
+  it('R5-IN-03 (decided fail-closed): a tag that reads as a figure or a grade is not consumed, so its mentions withhold the prose', () => {
+    for (const [tag, prose] of [
+      ['High', 'You beat High, and confidence is High.'],
+      ['High', 'You beat High, keep it up.'],
+      ['Twice', 'You beat Twice, keep it up.'],
+      ['Leo 3-2', 'You are Leo 3-2 against, keep it up.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose), `${tag}: ${prose}`).toEqual({
+        stripped: ['main'],
+        dropped: 0,
+      });
+    }
+    // Controls: a digit-bearing letter tag is still a name.
+    for (const [tag, prose] of [
+      ['Sparg0', 'Sparg0 punishes a rushed approach.'],
+      ['2GG Tweek', 'You keep losing to 2GG Tweek.'],
+      ['Mew2King', 'Mew2King has your number.'],
+    ] as const) {
+      expect(validateHeadToHead(tag, { wins: 3, losses: 2 }, prose), `${tag}: ${prose}`).toEqual({
+        stripped: [],
+        dropped: 0,
+      });
+    }
+  });
+
+  it('R5-IN-03: a digit- or numeral-bearing canonical name read as a count withholds the prose', () => {
+    for (const [stageId, prose] of [
+      [59, 'Fox on Pokémon Stadium 2 wins for you.'],
+      [59, 'On Pokémon Stadium 2 sets have gone your way.'],
+      [99, 'Fox on PictoChat 2 times has beaten you.'],
+      [31, 'Fox on 75m wins.'],
+      [21, 'Fox on 3D Land losses pile up.'],
+      [15, 'Fox on Mushroom Kingdom II to III.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
+        ['main'],
+      );
+    }
+    // Controls: the same names in qualitative commentary.
+    for (const [stageId, prose] of [
+      [15, 'Fox on Mushroom Kingdom II.'],
+      [75, 'Fox on Flat Zone X.'],
+      [59, 'Pokémon Stadium 2 and its transformations suit your patience.'],
+    ] as const) {
+      expect(validateStageRecords([{ stageId, games: 5, wins: 3 }], prose).stripped, prose).toEqual(
+        [],
+      );
+    }
+  });
+
+  it('the price, stated: ordinary words on the extended lists are withheld in their everyday sense too', () => {
+    for (const prose of [
+      'The tone of the set often shifts once MkLeo is behind.',
+      'Make sure you take the centre against MkLeo.',
+      'Watch for MkLeo on the top platform.',
+      'MkLeo has solid ledge options.',
+      'Most of MkLeo’s kills come off the ledge.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual([
+        'main',
+      ]);
+    }
+  });
+
+  it('known limits (recorded in the rubric): English-only commentary, and phrasings with no figure or listed word, still ship', () => {
+    for (const prose of [
+      // Non-English prose that folds to ASCII with no listed word.
+      'Juega con paciencia contra MkLeo.',
+      // The recorded vague and degenerate forms (R5-IN-02).
+      'MkLeo has won every set you have played.',
+      'Your head-to-head with MkLeo is dead even.',
+      'You won your last set against MkLeo.',
+    ]) {
+      expect(validateHeadToHead('MkLeo', { wins: 3, losses: 2 }, prose).stripped, prose).toEqual(
+        [],
+      );
+    }
   });
 });
