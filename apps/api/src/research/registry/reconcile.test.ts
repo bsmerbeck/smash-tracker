@@ -396,7 +396,11 @@ describe('per-event override carry-forward (39.2 F1)', () => {
 
   function storedRow(database: FakeDatabase, entryId: string): Record<string, unknown> {
     const entries = entriesDump(database)[UID] as Record<string, Record<string, unknown>>;
-    return entries[entryId];
+    const row = entries[entryId];
+    if (row === undefined) {
+      throw new Error(`No stored row for ${entryId}`);
+    }
+    return row;
   }
 
   /** The user's PATCH: adds the override members to the stored child, nothing else. */
