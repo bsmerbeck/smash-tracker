@@ -10,6 +10,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { api } from '@/lib/api';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -572,6 +573,54 @@ describe('DashboardPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  // Plan 39.2-11 (TRK-02, DD-10): the Tracked section is the row directly
+  // above the hero stat row, owns its own loading state, and the hero never
+  // waits for the watchlist.
+  describe('Tracked section (plan 39.2-11)', () => {
+    it('renders the #tracked section before the first hero stat cell in DOM order', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const tracked = container.querySelector('#tracked');
+      const firstHeroCell = container.querySelector('[data-span="3"]');
+      expect(tracked).not.toBeNull();
+      expect(firstHeroCell).not.toBeNull();
+      expect(
+        tracked!.compareDocumentPosition(firstHeroCell!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(tracked!.closest('[data-span="12"]')).not.toBeNull();
+    });
+
+    it('renders the hero while the watchlist GET is still pending, with the section in its own skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      vi.mocked(api.watchlist.list).mockImplementationOnce(() => new Promise(() => {}));
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const tracked = container.querySelector('#tracked')!;
+      expect(tracked.querySelector('[role="status"][aria-busy="true"]')).not.toBeNull();
+      expect(tracked.querySelector('[data-slot="tracked-row"]')).toBeNull();
+      // The rest of the Dashboard is on screen and unblocked.
+      expect(screen.getByText('Form Curve')).toBeInTheDocument();
+    });
+
+    it('a watchlist load failure is one line inside the section and leaves the Dashboard alone', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      vi.mocked(api.watchlist.list).mockRejectedValueOnce(new Error('boom'));
+
+      renderDashboard();
+
+      expect(await screen.findByText(/Tracked items couldn't be loaded/)).toBeInTheDocument();
+      expect(screen.getByText('Form Curve')).toBeInTheDocument();
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
       getFighters.mockReturnValue(new Promise(() => {}));

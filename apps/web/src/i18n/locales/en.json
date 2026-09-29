@@ -3840,6 +3840,22 @@
     "untrackedToast": "No longer tracking {{name}}.",
     "full": "Tracked list is full — 25 of 25. Untrack something first.",
     "manage": "Manage tracked",
-    "error": "Couldn't update the tracked list. Try again."
+    "error": "Couldn't update the tracked list. Try again.",
+    "loadError": "Tracked items couldn't be loaded. Reload to try again.",
+    "section": {
+      "title": "Tracked",
+      "count_one": "{{count}} of 25",
+      "count_other": "{{count}} of 25",
+      "empty": "Nothing tracked yet — Track an opponent, matchup or stage from its page."
+    },
+    "kind": {
+      "opponent": "Opponent",
+      "matchup": "Matchup",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} game; {{state}}; opens details",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} games; {{state}}; opens details"
+    }
   }
 }

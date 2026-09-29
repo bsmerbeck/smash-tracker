@@ -3840,6 +3840,22 @@
     "untrackedToast": "{{name}} n'est plus suivi.",
     "full": "La liste de suivi est pleine : 25 sur 25. Il faut d'abord retirer un élément.",
     "manage": "Gérer les suivis",
-    "error": "Impossible de mettre à jour la liste de suivi. Réessayer."
+    "error": "Impossible de mettre à jour la liste de suivi. Réessayer.",
+    "loadError": "Les éléments suivis n'ont pas pu être chargés. Recharger la page pour réessayer.",
+    "section": {
+      "title": "Suivis",
+      "count_one": "{{count}} sur 25",
+      "count_other": "{{count}} sur 25",
+      "empty": "Rien de suivi pour l'instant — un adversaire, un affrontement ou un stage se suit depuis sa page."
+    },
+    "kind": {
+      "opponent": "Adversaire",
+      "matchup": "Affrontement",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}} : {{record}}, {{count}} match ; {{state}} ; ouvre les détails",
+      "aria_other": "{{kind}} {{name}} : {{record}}, {{count}} matchs ; {{state}} ; ouvre les détails"
+    }
   }
 }

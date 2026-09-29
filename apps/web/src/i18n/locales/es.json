@@ -3840,6 +3840,22 @@
     "untrackedToast": "Ya no se sigue {{name}}.",
     "full": "La lista de seguidos está llena: 25 de 25. Primero hay que dejar de seguir algo.",
     "manage": "Gestionar seguidos",
-    "error": "No se pudo actualizar la lista de seguidos. Inténtalo de nuevo."
+    "error": "No se pudo actualizar la lista de seguidos. Inténtalo de nuevo.",
+    "loadError": "No se pudieron cargar los elementos seguidos. Recargar para reintentar.",
+    "section": {
+      "title": "Seguidos",
+      "count_one": "{{count}} de 25",
+      "count_other": "{{count}} de 25",
+      "empty": "Nada en seguimiento todavía — un rival, un enfrentamiento o un escenario se puede seguir desde su página."
+    },
+    "kind": {
+      "opponent": "Rival",
+      "matchup": "Enfrentamiento",
+      "stage": "Escenario"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} partida; {{state}}; abre los detalles",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} partidas; {{state}}; abre los detalles"
+    }
   }
 }

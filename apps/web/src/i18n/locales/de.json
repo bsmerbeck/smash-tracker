@@ -3840,6 +3840,22 @@
     "untrackedToast": "{{name}} wird nicht mehr verfolgt.",
     "full": "Die Liste ist voll – 25 von 25. Zuerst muss ein Eintrag entfernt werden.",
     "manage": "Verfolgte verwalten",
-    "error": "Die Liste konnte nicht aktualisiert werden. Bitte erneut versuchen."
+    "error": "Die Liste konnte nicht aktualisiert werden. Bitte erneut versuchen.",
+    "loadError": "Verfolgte Einträge konnten nicht geladen werden. Zum erneuten Versuch neu laden.",
+    "section": {
+      "title": "Verfolgt",
+      "count_one": "{{count}} von 25",
+      "count_other": "{{count}} von 25",
+      "empty": "Noch nichts verfolgt — Gegner, Matchups und Stages lassen sich auf der jeweiligen Seite verfolgen."
+    },
+    "kind": {
+      "opponent": "Gegner",
+      "matchup": "Matchup",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} Match; {{state}}; öffnet Details",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} Matches; {{state}}; öffnet Details"
+    }
   }
 }

@@ -29,6 +29,7 @@ import { LastMatchesChart } from './components/LastMatchesChart';
 import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
+import { TrackedSection } from '@/components/analytics/track/TrackedSection';
 import { SelfDataCoveragePanel } from '@/pages/Coaching/components/SelfDataCoveragePanel';
 
 type NextBestAction =
@@ -204,6 +205,10 @@ export function DashboardPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('dashboard.loading')}</span>
           <PageGrid>
+            {/* Plan 39.2-11: the Tracked section's cell, so nothing shifts when it lands. */}
+            <GridCell span={12}>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />
+            </GridCell>
             {/* Plan 39.1-50: six hero tiles (the fighter record is the sixth). */}
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <GridCell span={3} key={i}>
@@ -288,6 +293,12 @@ export function DashboardPage() {
                 'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
             )}
           >
+            {/* Plan 39.2-11 (TRK-02, DD-10): the Tracked section sits directly above the
+                hero stat row. It reads the subject's watchlist and games only (D-17) and
+                owns its own loading and error states, so the hero never waits for it. */}
+            <GridCell span={12}>
+              <TrackedSection matches={allMatches} horizon={horizon} />
+            </GridCell>
             <HeroStats
               matches={matches}
               timeFilteredMatches={timeFilteredMatches}

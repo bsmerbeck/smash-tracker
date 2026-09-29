@@ -3840,6 +3840,22 @@
     "untrackedToast": "{{name}} não é mais acompanhado.",
     "full": "A lista de acompanhamento está cheia — 25 de 25. É preciso remover algo primeiro.",
     "manage": "Gerenciar acompanhados",
-    "error": "Não foi possível atualizar a lista de acompanhamento. Tente novamente."
+    "error": "Não foi possível atualizar a lista de acompanhamento. Tente novamente.",
+    "loadError": "Não foi possível carregar os itens acompanhados. Recarregar para tentar de novo.",
+    "section": {
+      "title": "Acompanhados",
+      "count_one": "{{count}} de 25",
+      "count_other": "{{count}} de 25",
+      "empty": "Nada acompanhado ainda — um adversário, um confronto ou um stage pode ser acompanhado na própria página."
+    },
+    "kind": {
+      "opponent": "Adversário",
+      "matchup": "Confronto",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} partida; {{state}}; abre os detalhes",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} partidas; {{state}}; abre os detalhes"
+    }
   }
 }
