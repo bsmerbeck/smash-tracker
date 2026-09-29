@@ -3709,5 +3709,40 @@
         "ratingAfter": "Classement après l'événement · {{rating}}"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "Supermajor",
+      "major": "Major",
+      "minor": "Minor",
+      "regional": "Régional",
+      "local": "Local",
+      "unknown": "Niveau inconnu"
+    },
+    "setting": {
+      "online": "En ligne",
+      "offline": "En présentiel",
+      "unknown": "Cadre inconnu"
+    },
+    "kind": {
+      "sideEvent": "Événement annexe"
+    },
+    "provenance": {
+      "estimated_one": "Estimé d'après {{entrants}} participant",
+      "estimated_other": "Estimé d'après {{entrants}} participants",
+      "manual": "Défini manuellement",
+      "recorded": {
+        "liquipedia": "Enregistré sur Liquipedia"
+      }
+    },
+    "unknownReason": {
+      "online": "Les événements en ligne ne sont pas estimés",
+      "sideEvent": "Les événements annexes n'héritent pas d'un niveau",
+      "noEntrants": "Aucun nombre de participants enregistré",
+      "manual": "Défini manuellement sur inconnu"
+    },
+    "tooltip": {
+      "estimateCaveat": "Estimation d'après le nombre de participants : elle peut sous-évaluer un événement, jamais l'inverse."
+    }
   }
 }

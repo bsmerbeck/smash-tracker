@@ -3709,5 +3709,40 @@
         "ratingAfter": "大会後のレーティング · {{rating}}"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "スーパーメジャー",
+      "major": "メジャー",
+      "minor": "マイナー",
+      "regional": "リージョナル",
+      "local": "ローカル",
+      "unknown": "ティア不明"
+    },
+    "setting": {
+      "online": "オンライン",
+      "offline": "オフライン",
+      "unknown": "開催形式不明"
+    },
+    "kind": {
+      "sideEvent": "サイドイベント"
+    },
+    "provenance": {
+      "estimated_one": "参加者{{entrants}}名から推定",
+      "estimated_other": "参加者{{entrants}}名から推定",
+      "manual": "手動設定",
+      "recorded": {
+        "liquipedia": "Liquipediaに記録済み"
+      }
+    },
+    "unknownReason": {
+      "online": "オンライン大会は推定しません",
+      "sideEvent": "サイドイベントはティアを継承しません",
+      "noEntrants": "参加者数の記録なし",
+      "manual": "手動で不明に設定"
+    },
+    "tooltip": {
+      "estimateCaveat": "参加者数からの推定です。大会を低く見積もることはあっても、高く見積もることはありません。"
+    }
   }
 }

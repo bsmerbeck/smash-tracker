@@ -5,6 +5,7 @@ import type { Match } from '@smash-tracker/shared';
 import {
   anchorKey,
   matchesForEntry,
+  resolveEntryTiers,
   buildSetTimeline,
   splitTournamentBlocks,
   stageBucketId,
@@ -121,6 +122,17 @@ export function TournamentDetailPage() {
   }, [allMatches, entry]);
 
   const timeline = useMemo(() => buildSetTimeline(entryMatches), [entryMatches]);
+
+  // Phase 39.2 (TIER-02): the tier resolves ONCE here, through the shared
+  // resolver, from ALL of the subject's matches — never the range-filtered
+  // set, because the evidence for an event's setting must not move with the
+  // date filter. It is read-time only and never persisted.
+  const tierResolution = useMemo(() => {
+    if (!entry) {
+      return null;
+    }
+    return resolveEntryTiers([entry], allMatches)[0]?.resolution ?? null;
+  }, [allMatches, entry]);
 
   /**
    * CR-03/WR-04 (38-REVIEW-FIX): a per-STAGE, per-PROXIMITY-BLOCK
@@ -338,7 +350,7 @@ export function TournamentDetailPage() {
         </div>
       )}
       <ImportedSnapshotNotice entry={entry} />
-      <TournamentHeader entry={entry} />
+      <TournamentHeader entry={entry} tierResolution={tierResolution ?? undefined} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
       <CharactersAndStages

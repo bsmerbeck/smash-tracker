@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -274,6 +274,95 @@ describe('TournamentDetailPage', () => {
     expect(screen.queryByText(/Outperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Underperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Matched seed/)).not.toBeInTheDocument();
+  });
+
+  describe('tier badge and provenance line (TIER-02, T-05, DD-02, DD-03)', () => {
+    it('shows an OUTLINED estimated Supermajor and its provenance sentence for an offline 1,581-entrant entry', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          tournamentName: 'Supernova 2026',
+          numEntrants: 1581,
+          isOnline: false,
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      expect(block).not.toBeNull();
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveTextContent('Supermajor');
+      expect(badge).toHaveAttribute('data-tier', 'supermajor');
+      expect(badge).toHaveAttribute('data-basis', 'estimated');
+      expect(badge).toHaveAttribute('data-variant', 'outline');
+      expect(within(block).getByText('Estimated from 1,581 entrants')).toBeInTheDocument();
+      // An offline main event shows neither the setting nor the kind badge (DD-03).
+      expect(within(block).queryByText('Online')).not.toBeInTheDocument();
+      expect(within(block).queryByText('Side event')).not.toBeInTheDocument();
+    });
+
+    it('shows "Tier unknown" with the Online badge and its reason for an online entry, never an estimate', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          tournamentName: 'Online Weekly',
+          numEntrants: 5605,
+          isOnline: true,
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveTextContent('Tier unknown');
+      expect(badge).toHaveAttribute('data-basis', 'unknown');
+      expect(badge).toHaveAttribute('data-variant', 'outline');
+      expect(badge.querySelector('[data-slot="tier-glyph"]')).toBeNull();
+      expect(within(block).getByText('Online')).toBeInTheDocument();
+      expect(within(block).getByText("Online events aren't estimated")).toBeInTheDocument();
+    });
+
+    it('shows a solid manual badge naming its source when an override is stored', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          numEntrants: 412,
+          isOnline: false,
+          tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveAttribute('data-tier', 'major');
+      expect(badge).toHaveAttribute('data-basis', 'manual');
+      expect(badge).toHaveAttribute('data-variant', 'secondary');
+      expect(within(block).getByText('Set manually')).toBeInTheDocument();
+    });
+
+    it('states an unknown setting on the provenance line and labels a side event', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 42, eventName: 'Squad Strike', numEntrants: 100 }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      expect(within(block).getByText('Side event')).toBeInTheDocument();
+      expect(within(block).getByText("Side events don't inherit a tier")).toBeInTheDocument();
+    });
   });
 
   it('renders Event Results with a winner callout and start.gg deep link when synced', async () => {

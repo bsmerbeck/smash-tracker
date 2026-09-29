@@ -44,8 +44,31 @@ const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/Concatenat
  * on a given locale module, so this file needs no further edits when Task 2
  * adds `analytics`.
  */
-const NEW_NAMESPACE_KEYS = ['insights', 'analytics'] as const;
-type NewNamespaceKey = (typeof NEW_NAMESPACE_KEYS)[number];
+const NEW_NAMESPACE_KEYS = ['insights', 'analytics', 'tiers', 'watchlist', 'digest'] as const;
+
+/**
+ * Phase 39.2 plan 06 (UI-SPEC §13 G5): the guard's scope is widened to the
+ * three namespaces 39.2 adds (`tiers`, `watchlist`, `digest`, each scanned
+ * present-when-present like the two above — the later plans add
+ * `watchlist`/`digest`) and to ONE nested path, `tournaments.table`. The
+ * rest of `tournaments.*` stays out of the second-person scan (D-05: the
+ * app's existing second-person copy elsewhere is left alone), so the scanner
+ * takes a dotted path rather than a top-level key.
+ */
+const NESTED_NAMESPACE_PATHS = ['tournaments.table'] as const;
+
+/** Every namespace path this guard's locale scan reads. */
+const SCANNED_NAMESPACES: readonly string[] = [...NEW_NAMESPACE_KEYS, ...NESTED_NAMESPACE_PATHS];
+
+/**
+ * Phase 39.2 plan 06: no string in `tiers.*` or `tournaments.*` says "unlock"
+ * in any sense ("needed" instead). The two trees hold copy that renders under
+ * `pages/Tournaments/`, whose source is scanned for monetization vocabulary,
+ * so the copy stays clear of it in case a string ever moves into a scanned
+ * directory.
+ */
+const UNLOCK_PATTERN = /unlock/i;
+const UNLOCK_FREE_TOP_LEVEL_KEYS = ['tiers', 'tournaments'] as const;
 
 /** The six shipped locales — module scope so both the (b)/(c)/(d) describe block and the Task 2 registry-coverage describe block below can reuse it. */
 const REAL_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
@@ -136,17 +159,56 @@ function collectLeaves(
   });
 }
 
-/** Every leaf under a locale's `insights`/`analytics` namespaces only — never the rest of the document (D-05 scoping). */
-function collectNewNamespaceLeaves(locale: string): LocaleLeaf[] {
-  const tree = INSIGHT_COPY_LOCALE_SOURCE[locale];
+/** Reads a dotted path off a nested object; `undefined` when any segment is missing or not an object. */
+function readNamespacePath(
+  tree: Record<string, unknown>,
+  dottedPath: string,
+): Record<string, unknown> | undefined {
+  let node: unknown = tree;
+  for (const segment of dottedPath.split('.')) {
+    if (node === null || typeof node !== 'object') {
+      return undefined;
+    }
+    node = (node as Record<string, unknown>)[segment];
+  }
+  return node !== null && typeof node === 'object' ? (node as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Every leaf under a locale's scanned namespaces only (`SCANNED_NAMESPACES`:
+ * the top-level keys plus the nested `tournaments.table` path) — never the
+ * rest of the document (D-05 scoping). `source` defaults to the six real
+ * locale files; the permanent positive controls pass a synthetic one.
+ */
+function collectNewNamespaceLeaves(
+  locale: string,
+  source: Record<string, Record<string, unknown>> = INSIGHT_COPY_LOCALE_SOURCE,
+): LocaleLeaf[] {
+  const tree = source[locale];
   if (!tree) {
     throw new Error(`No locale module resolved for ${locale}`);
   }
-  return NEW_NAMESPACE_KEYS.filter(
-    (namespace): namespace is NewNamespaceKey => tree[namespace] !== undefined,
-  ).flatMap((namespace) =>
-    collectLeaves(locale, namespace, tree[namespace] as Record<string, unknown>),
-  );
+  return SCANNED_NAMESPACES.flatMap((namespace) => {
+    const branch = readNamespacePath(tree, namespace);
+    return branch ? collectLeaves(locale, namespace, branch) : [];
+  });
+}
+
+/** Every leaf, in any locale, under `tiers` or `tournaments` whose value says "unlock" (case-insensitive). */
+function collectUnlockViolations(
+  locale: string,
+  source: Record<string, Record<string, unknown>> = INSIGHT_COPY_LOCALE_SOURCE,
+): LocaleLeaf[] {
+  const tree = source[locale];
+  if (!tree) {
+    throw new Error(`No locale module resolved for ${locale}`);
+  }
+  return UNLOCK_FREE_TOP_LEVEL_KEYS.flatMap((namespace) => {
+    const branch = readNamespacePath(tree, namespace);
+    return branch
+      ? collectLeaves(locale, namespace, branch).filter((leaf) => UNLOCK_PATTERN.test(leaf.value))
+      : [];
+  });
 }
 
 /**
@@ -449,9 +511,65 @@ describe('insight copy — no concatenation, no second person, no probability (I
       const scannedLeaves = collectNewNamespaceLeaves('en');
       expect(scannedLeaves.some((leaf) => leaf.value === existingOutsideString)).toBe(false);
       const scannedNamespaces = [...new Set(scannedLeaves.map((leaf) => leaf.namespace))].sort();
-      expect(
-        scannedNamespaces.every((ns) => (NEW_NAMESPACE_KEYS as readonly string[]).includes(ns)),
-      ).toBe(true);
+      expect(scannedNamespaces.every((ns) => SCANNED_NAMESPACES.includes(ns))).toBe(true);
+    });
+
+    describe('Phase 39.2 plan 06 (G5) — the widened scope: tiers, watchlist, digest, tournaments.table', () => {
+      it('scans the tiers namespace and the nested tournaments.table path when present (non-vacuity: tiers is shipped in every locale)', () => {
+        for (const locale of REAL_LOCALES) {
+          const namespaces = new Set(
+            collectNewNamespaceLeaves(locale).map((leaf) => leaf.namespace),
+          );
+          expect(namespaces.has('tiers'), `locale ${locale} scans tiers`).toBe(true);
+        }
+        expect((NEW_NAMESPACE_KEYS as readonly string[]).includes('watchlist')).toBe(true);
+        expect((NEW_NAMESPACE_KEYS as readonly string[]).includes('digest')).toBe(true);
+        expect(NESTED_NAMESPACE_PATHS).toContain('tournaments.table');
+      });
+
+      it('PROVEN FAILING CASE: a synthetic locale whose watchlist value reads "your tracked list" is flagged', () => {
+        const synthetic = {
+          en: { watchlist: { section: { title: 'your tracked list' } } },
+        } as Record<string, Record<string, unknown>>;
+        const offenders = collectNewNamespaceLeaves('en', synthetic).filter((leaf) =>
+          SECOND_PERSON_PATTERNS.en!.test(leaf.value),
+        );
+        expect(offenders.map((leaf) => leaf.keyPath)).toEqual(['section.title']);
+        expect(offenders[0]!.namespace).toBe('watchlist');
+      });
+
+      it('PROVEN FAILING CASE: a second-person value under the nested tournaments.table path is flagged, while one under a sibling tournaments key is out of scope (D-05)', () => {
+        const inScope = {
+          en: { tournaments: { table: { tier: 'your tier' } } },
+        } as Record<string, Record<string, unknown>>;
+        const outOfScope = {
+          en: { tournaments: { header: { entrants: 'your entrants' } } },
+        } as Record<string, Record<string, unknown>>;
+        const flagged = (source: Record<string, Record<string, unknown>>) =>
+          collectNewNamespaceLeaves('en', source).filter((leaf) =>
+            SECOND_PERSON_PATTERNS.en!.test(leaf.value),
+          );
+        expect(flagged(inScope).map((leaf) => leaf.namespace)).toEqual(['tournaments.table']);
+        expect(flagged(outOfScope)).toEqual([]);
+      });
+
+      for (const locale of REAL_LOCALES) {
+        it(`${locale}: no string under tiers.* or tournaments.* says "unlock"`, () => {
+          const offenders = collectUnlockViolations(locale);
+          expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+        });
+      }
+
+      it('PROVEN FAILING CASE: a tiers value or a tournaments value containing "unlock" is flagged', () => {
+        const synthetic = {
+          en: {
+            tiers: { byTier: { hint: 'Unlocks next at 3 more games' } },
+            tournaments: { header: { hint: 'unlock a report' } },
+          },
+        } as Record<string, Record<string, unknown>>;
+        const offenders = collectUnlockViolations('en', synthetic);
+        expect(offenders.map((leaf) => leaf.namespace).sort()).toEqual(['tiers', 'tournaments']);
+      });
     });
 
     it('the guard never scans apps/web/src/pages/ for second-person strings (D-05)', () => {

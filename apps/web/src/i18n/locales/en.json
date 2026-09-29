@@ -3709,5 +3709,40 @@
         "ratingAfter": "Rating after the event · {{rating}}"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "Supermajor",
+      "major": "Major",
+      "minor": "Minor",
+      "regional": "Regional",
+      "local": "Local",
+      "unknown": "Tier unknown"
+    },
+    "setting": {
+      "online": "Online",
+      "offline": "Offline",
+      "unknown": "Setting unknown"
+    },
+    "kind": {
+      "sideEvent": "Side event"
+    },
+    "provenance": {
+      "estimated_one": "Estimated from {{entrants}} entrant",
+      "estimated_other": "Estimated from {{entrants}} entrants",
+      "manual": "Set manually",
+      "recorded": {
+        "liquipedia": "Recorded on Liquipedia"
+      }
+    },
+    "unknownReason": {
+      "online": "Online events aren't estimated",
+      "sideEvent": "Side events don't inherit a tier",
+      "noEntrants": "No entrant count recorded",
+      "manual": "Set manually to unknown"
+    },
+    "tooltip": {
+      "estimateCaveat": "An estimate from entrant count — it may under-rate an event, never the reverse."
+    }
   }
 }
