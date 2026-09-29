@@ -216,7 +216,7 @@ describe('per-entry mint refusal (D-08: one test per writer, never a group test)
       win: true,
       vodUrl: 'https://youtube.com/watch?v=abc',
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
     const rtdb = new RtdbService(database as never);
 
     await expect(
@@ -241,7 +241,7 @@ describe('per-entry mint refusal (D-08: one test per writer, never a group test)
       sections: [{ id: 'summary', kind: 'summary', title: null, body: 'text' }],
       publishedAt: 1,
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createReviewDelivery(database as never, TENANT, 'review-1', 1, WEB_BASE_URL),
@@ -257,7 +257,7 @@ describe('per-entry mint refusal (D-08: one test per writer, never a group test)
       summary: 'a session',
       createdAt: 1,
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createSessionDelivery(database as never, TENANT, 'session-1', WEB_BASE_URL),

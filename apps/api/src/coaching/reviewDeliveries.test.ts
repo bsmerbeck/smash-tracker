@@ -139,7 +139,7 @@ describe('createReviewDelivery', () => {
       sessionId: SESSION_ID,
     });
     database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createReviewDelivery(asDatabase(database), RESEARCH_TENANT, 'review-1', 1, WEB_BASE_URL),
@@ -157,7 +157,7 @@ describe('createReviewDelivery', () => {
       sessionId: SESSION_ID,
     });
     database.seed(`clientTenants/${UNRESOLVABLE_TENANT}/kind`, 'not-a-real-kind');
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createReviewDelivery(asDatabase(database), UNRESOLVABLE_TENANT, 'review-1', 1, WEB_BASE_URL),

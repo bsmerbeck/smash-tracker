@@ -201,7 +201,7 @@ describe('upsertSupplement', () => {
       expect(result.outcome).toBe('created');
     }
 
-    const beforeDump = database.dump();
+    const beforeDump = structuredClone(database.dump());
     const rejected = await upsertSupplement(asDatabase(database), TENANT_ID, {
       targetSetId: TARGET_SET_ID,
       field: 'oneTooMany',
@@ -227,7 +227,9 @@ describe('upsertSupplement', () => {
   it('never reads or writes anything under the source tier — the source subtree stays byte-identical', async () => {
     const database = new FakeDatabase();
     database.seed(`researchSource/${TENANT_ID}/sets/${TARGET_SET_ID}`, makeSourceRecord());
-    const beforeSource = (database.dump() as Record<string, unknown>).researchSource;
+    const beforeSource = structuredClone(
+      (database.dump() as Record<string, unknown>).researchSource,
+    );
 
     await upsertSupplement(asDatabase(database), TENANT_ID, {
       targetSetId: TARGET_SET_ID,

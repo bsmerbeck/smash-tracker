@@ -660,7 +660,7 @@ describe('RTEN-03 (D-05): every anonymous coach route refuses a research-subject
   it('POST /api/vod-shares/:token/notes refuses the anonymous WRITE attempt against a research subject, and matches is byte-unchanged before and after', async () => {
     const { app, database } = buildTestApp();
     seedEditShareForResearchTenant(database, 'research-tenant-cn-2');
-    const beforeMatches = (database.dump() as Record<string, unknown>).matches;
+    const beforeMatches = structuredClone((database.dump() as Record<string, unknown>).matches);
 
     const response = await app.inject({
       method: 'POST',
