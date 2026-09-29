@@ -142,6 +142,57 @@ describe('InsightCard', () => {
     expect(names).toEqual(['A', 'Dismiss this read']);
   });
 
+  it('plan 39.2-11 (DD-09): the action renders right-aligned after the doors and before dismiss in tab order', () => {
+    const doors: InsightCardDoors = [
+      <a key="1" href="/a">
+        A
+      </a>,
+      <a key="2" href="/b">
+        B
+      </a>,
+    ];
+    const { container } = render(
+      <InsightCard
+        chip={<span>chip</span>}
+        name="n"
+        verdict="v"
+        evidence="e"
+        doors={doors}
+        action={<button type="button">Act</button>}
+        onDismiss={vi.fn()}
+        dismissLabel="Dismiss this read"
+      />,
+    );
+    const focusable = Array.from(document.querySelectorAll('a[href], button'));
+    const names = focusable.map((el) => el.textContent || el.getAttribute('aria-label'));
+    expect(names).toEqual(['A', 'B', 'Act', 'Dismiss this read']);
+    const slot = container.querySelector('[data-slot="insight-card-action"]')!;
+    expect(slot.className).toMatch(/\bml-auto\b/);
+    expect(slot.parentElement).toBe(container.querySelector('[data-slot="insight-card-doors"]'));
+  });
+
+  it('renders the action row even when the card has no doors', () => {
+    const { container } = render(
+      <InsightCard
+        chip={<span>chip</span>}
+        name="n"
+        verdict="v"
+        evidence="e"
+        action={<button type="button">Act</button>}
+      />,
+    );
+    expect(container.querySelector('[data-slot="insight-card-doors"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Act' })).toBeInTheDocument();
+  });
+
+  it('without an action the DOM is unchanged: no action slot, and no doors row for a doorless card', () => {
+    const { container } = render(
+      <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,
+    );
+    expect(container.querySelector('[data-slot="insight-card-action"]')).toBeNull();
+    expect(container.querySelector('[data-slot="insight-card-doors"]')).toBeNull();
+  });
+
   it('the verdict element carries no truncation utility and no line-clamp below three lines', () => {
     const { container } = render(
       <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,

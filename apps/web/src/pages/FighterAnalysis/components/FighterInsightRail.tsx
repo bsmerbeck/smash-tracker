@@ -18,6 +18,8 @@ import { InsightCard, type InsightCardDoors } from '@/components/analytics/Insig
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
+import { InsightTrackAction } from '@/components/analytics/track/InsightTrackAction';
+import { trackRefForInsight } from '@/components/analytics/track/trackRef';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
@@ -170,6 +172,8 @@ function insightToRailCard(
   const evidence = buildEvidenceLine(insight, t, locale);
   const span = buildSpan(insight, t);
   const doors = buildDoorNodes(insight, t, subjectPath);
+  // DD-09: only a card whose scope names an opponent, matchup or stage carries Track.
+  const trackable = trackRefForInsight(insight) !== null;
   return {
     id: insight.id,
     render: ({ onDismiss }) => (
@@ -181,6 +185,7 @@ function insightToRailCard(
         evidence={evidence}
         span={span}
         doors={doors}
+        action={trackable ? <InsightTrackAction insight={insight} /> : undefined}
         onDismiss={onDismiss}
         dismissLabel={t('insights.rail.dismiss')}
       />

@@ -6,6 +6,8 @@ import type { HorizonKey, Insight, InsightScope, Match } from '@smash-tracker/sh
 import { INSIGHT_TEMPLATES, confidenceTierFor } from '@smash-tracker/shared';
 import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { InsightTrackAction } from '@/components/analytics/track/InsightTrackAction';
+import { trackRefForInsight } from '@/components/analytics/track/trackRef';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { localizedFighterName } from '@/lib/fighterNames';
@@ -171,6 +173,9 @@ export function MatchupOrPlayerCard({
       verdict={verdict}
       evidence={evidence}
       doors={doors}
+      action={
+        trackRefForInsight(insight) !== null ? <InsightTrackAction insight={insight} /> : undefined
+      }
     />
   );
 }

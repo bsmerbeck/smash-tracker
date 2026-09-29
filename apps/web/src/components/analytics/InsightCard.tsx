@@ -35,6 +35,12 @@ export interface InsightCardProps {
   caveat?: string;
   /** Real router links built by the host — the frame renders the node it is given, never an `onClick` that mutates page state. */
   doors?: InsightCardDoors;
+  /**
+   * An optional caller-built control shown beside the doors, right-aligned in
+   * the same row and after them in tab order. Unlike a door it may change
+   * state (a toggle), so it is a node the host owns, never a link.
+   */
+  action?: ReactNode;
   onDismiss?: () => void;
   /** Accessible name for the dismiss control. Required whenever `onDismiss` is supplied. */
   dismissLabel?: string;
@@ -46,9 +52,10 @@ export interface InsightCardProps {
  * The insight frame (INS-04, UI-SPEC §7.8): one verdict, its evidence, and at
  * most three doors, in a fixed order. Composes the installed `Card` — never
  * edited — at compact density by default (20px padding, 16px header-to-body
- * gap, no shadow). Accepts no salience, ranking, tracking or watchlist prop:
- * a score or an inert control cannot reach the DOM through this type (DD-01,
- * T-39.1-07-02).
+ * gap, no shadow). Its props carry no ordering or grading data, so none can
+ * reach the DOM through this type (DD-01, T-39.1-07-02). Its one caller-built
+ * control slot, `action` (39.2 DD-09), renders after the doors and before the
+ * dismiss control, so the tab order stays verdict, doors, action, dismiss.
  */
 export function InsightCard({
   chip,
@@ -60,6 +67,7 @@ export function InsightCard({
   sub,
   caveat,
   doors,
+  action,
   onDismiss,
   dismissLabel,
   density = 'compact',
@@ -131,13 +139,18 @@ export function InsightCard({
           </p>
         )}
 
-        {doors && doors.length > 0 && (
+        {((doors && doors.length > 0) || action) && (
           <div className="flex flex-wrap gap-2" data-slot="insight-card-doors">
-            {doors.map((door, index) => (
+            {doors?.map((door, index) => (
               <Button key={index} asChild variant={index === 0 ? 'default' : 'outline'} size="sm">
                 {door}
               </Button>
             ))}
+            {action && (
+              <div className="ml-auto flex items-center" data-slot="insight-card-action">
+                {action}
+              </div>
+            )}
           </div>
         )}
       </div>

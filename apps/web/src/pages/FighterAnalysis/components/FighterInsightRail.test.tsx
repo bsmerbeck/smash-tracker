@@ -31,11 +31,19 @@ vi.mock('@/lib/firebase', async () => {
 
 const list = vi.fn();
 const aliasesList = vi.fn();
+const watchlistList = vi.fn();
+const watchlistTrack = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: { upsertMe: (...args: unknown[]) => upsertMe(...args) },
+    // Plan 39.2-11: a trackable card's Track action reads and writes the subject's watchlist.
+    watchlist: {
+      list: (...args: unknown[]) => watchlistList(...args),
+      track: (...args: unknown[]) => watchlistTrack(...args),
+      untrack: vi.fn(),
+    },
     matches: { list: (...args: unknown[]) => list(...args) },
     opponents: { aliases: { list: (...args: unknown[]) => aliasesList(...args) } },
   },
@@ -220,6 +228,8 @@ describe('FighterInsightRail', () => {
     vi.clearAllMocks();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     aliasesList.mockResolvedValue({});
+    watchlistList.mockResolvedValue({ items: [] });
+    watchlistTrack.mockResolvedValue({});
     window.localStorage.clear();
     setMockUser(makeMockUser());
     await i18n.changeLanguage('en');
@@ -249,14 +259,82 @@ describe('FighterInsightRail', () => {
     expect(unlocksCard).toBeInTheDocument();
   });
 
-  it('the last-event recap renders no debrief door and no tracking control', async () => {
+  it('the last-event recap renders no debrief door and no Track control', async () => {
     list.mockResolvedValue(richFixture());
     renderRail(richFixture());
     await waitForSettled();
-    const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent ?? '');
-    const links = [...document.querySelectorAll('a')].map((a) => a.textContent ?? '');
+    // DD-09: characterMovers / rivalMovers cards carry Track now, so the recap
+    // card is located by its own verdict (the named event) and checked alone.
+    const cards = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="insight-rail-card"]'),
+    );
+    const recap = cards.find((card) => /Supernova 2026/.test(card.textContent ?? ''));
+    expect(recap).toBeDefined();
+    const buttons = [...recap!.querySelectorAll('button')].map((b) => b.textContent ?? '');
+    const links = [...recap!.querySelectorAll('a')].map((a) => a.textContent ?? '');
     expect(buttons.some((t) => /debrief|track/i.test(t))).toBe(false);
     expect(links.some((t) => /debrief|track/i.test(t))).toBe(false);
+    expect(recap!.querySelector('[data-slot="insight-card-action"]')).toBeNull();
+  });
+
+  describe('plan 39.2-11 (DD-09): the Track action on trackable cards', () => {
+    it('a characterMovers card carries a Track action that tracks the (primary fighter, mover fighter) matchup', async () => {
+      list.mockResolvedValue(dismissFixture());
+      renderRail(dismissFixture());
+      await waitForSettled();
+
+      const cards = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-slot="insight-rail-card"]'),
+      );
+      const movers = cards.find((card) => /vs Fox — win rate up/.test(card.textContent ?? ''));
+      expect(movers).toBeDefined();
+      const toggle = within(movers!).getByRole('button', { name: 'Track Mario vs Fox' });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      expect(movers!.querySelector('[data-slot="insight-card-action"]')).not.toBeNull();
+
+      fireEvent.click(toggle);
+
+      await waitFor(() => expect(watchlistTrack).toHaveBeenCalledTimes(1));
+      expect(watchlistTrack).toHaveBeenCalledWith({
+        kind: 'matchup',
+        ref: { fighterId: mario.id, vsFighterId: fox.id },
+      });
+    });
+
+    it('a rivalMovers card carries a Track action that tracks the headline rival', async () => {
+      list.mockResolvedValue(dismissFixture());
+      renderRail(dismissFixture());
+      await waitForSettled();
+
+      const cards = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-slot="insight-rail-card"]'),
+      );
+      const rival = cards.find((card) => /vs rival-fox — win rate up/.test(card.textContent ?? ''));
+      expect(rival).toBeDefined();
+      const toggle = within(rival!).getByRole('button', { name: 'Track rival-fox' });
+      await waitFor(() => expect(toggle).toBeEnabled());
+
+      fireEvent.click(toggle);
+
+      await waitFor(() => expect(watchlistTrack).toHaveBeenCalledTimes(1));
+      expect(watchlistTrack).toHaveBeenCalledWith({ kind: 'opponent', ref: 'rival-fox' });
+    });
+
+    it('a card whose template is not trackable renders no action and an unchanged doors row', async () => {
+      list.mockResolvedValue(richFixture());
+      renderRail(richFixture());
+      await waitForSettled();
+
+      const cards = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-slot="insight-rail-card"]'),
+      );
+      const recap = cards.find((card) => /Supernova 2026/.test(card.textContent ?? ''))!;
+      expect(recap.querySelector('[data-slot="insight-card-action"]')).toBeNull();
+      // The unlock / fallback cards never carry it either.
+      for (const card of document.querySelectorAll('[data-card-kind="unlocks-next"]')) {
+        expect(card.querySelector('[data-slot="insight-card-action"]')).toBeNull();
+      }
+    });
   });
 
   it('with no tournament event, the recap is absent and at least one card still renders', async () => {
