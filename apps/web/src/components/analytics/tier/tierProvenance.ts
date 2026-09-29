@@ -7,6 +7,17 @@ export interface TierProvenanceMessage {
   values: Record<string, string | number>;
 }
 
+/** The estimated sentence for `entrants`: `count` selects `_one`/`_other`, `entrants` is pre-formatted for `locale`. */
+export function estimatedProvenanceMessage(
+  entrants: number,
+  locale: string,
+): TierProvenanceMessage {
+  return {
+    key: 'tiers.provenance.estimated',
+    values: { count: entrants, entrants: new Intl.NumberFormat(locale).format(entrants) },
+  };
+}
+
 /**
  * The sentence naming HOW a tier was established (UI-SPEC §7.2), as ONE
  * whole-sentence key per (basis, reason). Pure: the entrant figure is
@@ -31,11 +42,7 @@ export function tierProvenanceKey(
       : null;
   }
   if (resolution.basis === 'estimated') {
-    const entrants = resolution.entrants ?? 0;
-    return {
-      key: 'tiers.provenance.estimated',
-      values: { count: entrants, entrants: new Intl.NumberFormat(locale).format(entrants) },
-    };
+    return estimatedProvenanceMessage(resolution.entrants ?? 0, locale);
   }
   switch (resolution.reason) {
     case 'online':

@@ -3743,6 +3743,17 @@
     },
     "tooltip": {
       "estimateCaveat": "Estimativa pela contagem de participantes: pode subestimar um evento, nunca o contrário."
+    },
+    "override": {
+      "title": "Nível deste evento",
+      "label": "Substituir nível",
+      "placeholder": "Sem substituição — usar o nível resolvido",
+      "clear": "Remover substituição",
+      "saved": "Nível salvo para este evento.",
+      "saveFailed": "Não foi possível salvar o nível. Tente novamente.",
+      "ignored": "O nível salvo deste evento foi escrito por uma versão mais nova do app e não está sendo aplicado.",
+      "help": "Uma substituição prevalece sobre qualquer outra fonte e pode ser removida a qualquer momento.",
+      "wouldBe": "A estimativa teria sido: {{tier}} ({{provenance}})"
     }
   }
 }

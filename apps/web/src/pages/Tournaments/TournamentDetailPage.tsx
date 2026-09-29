@@ -12,6 +12,8 @@ import {
   trimmedEventKey,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
+import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
+import { TierOverrideSection } from '@/components/analytics/tier/TierOverrideSection';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
@@ -360,8 +362,19 @@ export function TournamentDetailPage() {
       {/* EVID-04 (D-10, D-18): renders for every entry including
           admin-imported ones — plan 37-06's retrospective grades historical
           picks under whichever ruleset applied to that event, and this is
-          where that ruleset is disclosed and (own-account only) edited. */}
-      <RulesetOverrideSection entry={entry} />
+          where that ruleset is disclosed and (own-account only) edited.
+          Phase 39.2 (TIER-04, D-15): the per-event tier override sits beside
+          it in one grid row (stacked below 1024px), also for every entry. */}
+      <PageGrid>
+        {tierResolution && (
+          <GridCell span={6}>
+            <TierOverrideSection entry={entry} resolution={tierResolution} />
+          </GridCell>
+        )}
+        <GridCell span={6}>
+          <RulesetOverrideSection entry={entry} />
+        </GridCell>
+      </PageGrid>
       {retrospective && (
         <AdvisorRetrospective retrospective={retrospective} eventKeyForStage={eventKeyForStage} />
       )}

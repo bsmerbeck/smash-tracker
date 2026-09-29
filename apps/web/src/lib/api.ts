@@ -69,6 +69,8 @@ import {
   reviewDraftSchema,
   rulesetOverrideResponseSchema,
   rulesetOverrideUpdateBodySchema,
+  tierOverrideResponseSchema,
+  tierOverrideUpdateBodySchema,
   SAFE_MARKDOWN_DOC_MAX_LENGTH,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -106,6 +108,7 @@ import {
   type ResearchEnrichmentConfirmRequest,
   type ReviewChecklistItemId,
   type RulesetOverrideStored,
+  type TierWord,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -793,6 +796,22 @@ export const api = {
         {
           method: 'PATCH',
           body: rulesetOverrideUpdateBodySchema.parse({ rulesetOverride }),
+        },
+      ),
+    /**
+     * PATCH /api/tournaments/:entryKey/tier (TIER-04, D-15, D-17 — own-account
+     * only, uid-scoped). `tierOverride: null` requests clearing the stored
+     * override (the route removes the child; a null is never stored). The
+     * client sends only `{ tier }` — the server stamps the contract version
+     * and time — so saving never carries a member the user did not touch.
+     */
+    setTierOverride: (entryKey: string, tierOverride: { tier: TierWord } | null) =>
+      apiRequestParsed(
+        `/api/tournaments/${encodeURIComponent(entryKey)}/tier`,
+        tierOverrideResponseSchema,
+        {
+          method: 'PATCH',
+          body: tierOverrideUpdateBodySchema.parse({ tierOverride }),
         },
       ),
   },

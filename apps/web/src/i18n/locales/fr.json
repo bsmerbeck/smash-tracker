@@ -3743,6 +3743,17 @@
     },
     "tooltip": {
       "estimateCaveat": "Estimation d'après le nombre de participants : elle peut sous-évaluer un événement, jamais l'inverse."
+    },
+    "override": {
+      "title": "Niveau de cet événement",
+      "label": "Forcer le niveau",
+      "placeholder": "Aucun forçage — utiliser le niveau résolu",
+      "clear": "Retirer le forçage",
+      "saved": "Niveau enregistré pour cet événement.",
+      "saveFailed": "Impossible d'enregistrer le niveau. Réessayer.",
+      "ignored": "Le niveau enregistré pour cet événement a été écrit par une version plus récente de l'application et n'est pas appliqué.",
+      "help": "Un forçage l'emporte sur toute autre source et peut être retiré à tout moment.",
+      "wouldBe": "L'estimation aurait été : {{tier}} ({{provenance}})"
     }
   }
 }

@@ -3743,6 +3743,17 @@
     },
     "tooltip": {
       "estimateCaveat": "Schätzung anhand der Teilnehmerzahl – sie kann ein Event zu niedrig einstufen, nie zu hoch."
+    },
+    "override": {
+      "title": "Stufe dieses Events",
+      "label": "Stufe überschreiben",
+      "placeholder": "Keine Überschreibung – aufgelöste Stufe verwenden",
+      "clear": "Überschreibung entfernen",
+      "saved": "Stufe für dieses Event gespeichert.",
+      "saveFailed": "Die Stufe konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "ignored": "Die für dieses Event gespeicherte Stufe wurde von einer neueren App-Version geschrieben und wird nicht angewendet.",
+      "help": "Eine Überschreibung hat Vorrang vor jeder anderen Quelle und lässt sich jederzeit entfernen.",
+      "wouldBe": "Die Schätzung wäre gewesen: {{tier}} ({{provenance}})"
     }
   }
 }

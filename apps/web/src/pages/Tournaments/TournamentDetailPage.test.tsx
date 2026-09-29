@@ -40,6 +40,7 @@ vi.mock('@/lib/firebase', async () => {
 
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
+const setTierOverride = vi.fn();
 const createVodShare = vi.fn();
 const getMe = vi.fn();
 const listAliases = vi.fn();
@@ -69,6 +70,7 @@ vi.mock('@/lib/api', async () => {
       },
       tournaments: {
         list: (...args: unknown[]) => listTournaments(...args),
+        setTierOverride: (...args: unknown[]) => setTierOverride(...args),
       },
       vodShares: {
         create: (...args: unknown[]) => createVodShare(...args),
@@ -348,6 +350,65 @@ describe('TournamentDetailPage', () => {
       expect(badge).toHaveAttribute('data-basis', 'manual');
       expect(badge).toHaveAttribute('data-variant', 'secondary');
       expect(within(block).getByText('Set manually')).toBeInTheDocument();
+    });
+
+    it('mounts the tier override card beside the ruleset card, for an admin-imported entry too', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          origin: 'admin-imported',
+          provider: 'startgg',
+        } as Partial<TournamentEntry>),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const tierCard = document.querySelector('[data-slot="tier-override"]') as HTMLElement;
+      expect(tierCard).not.toBeNull();
+      expect(within(tierCard).getByText('Tier for this event')).toBeInTheDocument();
+      expect(screen.getByText('Ruleset for this event')).toBeInTheDocument();
+      // One grid row holds both cards (UI-SPEC §8.2), tier card first.
+      expect(tierCard.closest('[data-slot="page-grid"]')).toBe(
+        screen.getByText('Ruleset for this event').closest('[data-slot="page-grid"]'),
+      );
+    });
+
+    it('saving an override PATCHes the entry, refetches the registry, and the header turns into a solid manual badge', async () => {
+      const user = userEvent.setup();
+      const base = makeEntry({ eventId: 42, numEntrants: 412, isOnline: false });
+      listTournaments
+        .mockResolvedValueOnce([base])
+        .mockResolvedValue([
+          { ...base, tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 5 } },
+        ]);
+      setTierOverride.mockResolvedValue({
+        entryKey: '42',
+        tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 5 },
+      });
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const header = document.querySelector(
+        '[data-slot="tournament-tier"] [data-slot="tier-badge"]',
+      );
+      expect(header).toHaveAttribute('data-variant', 'outline');
+
+      await user.click(screen.getByRole('combobox', { name: 'Override tier' }));
+      await user.click(await screen.findByRole('option', { name: 'Major' }));
+
+      await waitFor(() => expect(setTierOverride).toHaveBeenCalledWith('42', { tier: 'major' }));
+      await waitFor(() => {
+        const badge = document.querySelector(
+          '[data-slot="tournament-tier"] [data-slot="tier-badge"]',
+        );
+        expect(badge).toHaveAttribute('data-basis', 'manual');
+        expect(badge).toHaveAttribute('data-variant', 'secondary');
+      });
+      expect(listTournaments).toHaveBeenCalledTimes(2);
     });
 
     it('states an unknown setting on the provenance line and labels a side event', async () => {

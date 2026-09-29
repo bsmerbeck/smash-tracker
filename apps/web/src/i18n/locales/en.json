@@ -3743,6 +3743,17 @@
     },
     "tooltip": {
       "estimateCaveat": "An estimate from entrant count — it may under-rate an event, never the reverse."
+    },
+    "override": {
+      "title": "Tier for this event",
+      "label": "Override tier",
+      "placeholder": "No override — use the resolved tier",
+      "clear": "Clear override",
+      "saved": "Tier saved for this event.",
+      "saveFailed": "Couldn't save the tier. Try again.",
+      "ignored": "This event's saved tier was written by a newer version of the app and is not being applied.",
+      "help": "An override wins over every other source and can be cleared at any time.",
+      "wouldBe": "Estimate would have been: {{tier}} ({{provenance}})"
     }
   }
 }

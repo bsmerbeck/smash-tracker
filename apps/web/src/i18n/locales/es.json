@@ -3743,6 +3743,17 @@
     },
     "tooltip": {
       "estimateCaveat": "Estimación según el número de participantes: puede subestimar un evento, nunca sobrestimarlo."
+    },
+    "override": {
+      "title": "Nivel de este evento",
+      "label": "Anular nivel",
+      "placeholder": "Sin anulación — usar el nivel resuelto",
+      "clear": "Quitar anulación",
+      "saved": "Nivel guardado para este evento.",
+      "saveFailed": "No se pudo guardar el nivel. Inténtalo de nuevo.",
+      "ignored": "El nivel guardado de este evento se escribió con una versión más nueva de la app y no se está aplicando.",
+      "help": "Una anulación prevalece sobre cualquier otra fuente y se puede quitar en cualquier momento.",
+      "wouldBe": "La estimación habría sido: {{tier}} ({{provenance}})"
     }
   }
 }
