@@ -304,7 +304,7 @@ describe('conflict-aware copy', () => {
     const first = await copyTree(asDatabase(database), descriptor, SOURCE_ID, DEST_UID);
     expect(first).toMatchObject({ copied: 2, skipped: 0, conflicts: [] });
 
-    const dumpAfterFirst = database.dump();
+    const dumpAfterFirst = structuredClone(database.dump());
     const second = await copyTree(asDatabase(database), descriptor, SOURCE_ID, DEST_UID);
     expect(second).toMatchObject({ copied: 0, skipped: 2, conflicts: [] });
     expect(database.dump()).toEqual(dumpAfterFirst);
@@ -503,7 +503,7 @@ describe('verifyMigration', () => {
     database.seed(`matches/${SOURCE_ID}/m1`, { time: 1 });
     await runMigration(asDatabase(database), { sourceId: SOURCE_ID, destUid: DEST_UID });
 
-    const dumpBefore = database.dump();
+    const dumpBefore = structuredClone(database.dump());
     const result = await verifyMigration(asDatabase(database), {
       sourceId: SOURCE_ID,
       destUid: DEST_UID,

@@ -673,7 +673,7 @@ describe('publishCoverageSnapshot', () => {
       startedAtMs: 0,
     };
     void holder;
-    const before = database.dump().researchCoverage;
+    const before = structuredClone(database.dump().researchCoverage);
     await expect(
       publishCoverageSnapshot(asDatabase(database), TENANT_ID, runId, run),
     ).rejects.toThrow();
@@ -691,7 +691,7 @@ describe('publishCoverageSnapshot', () => {
       failedAtMs: 500,
       reason: 'boom',
     };
-    const before = database.dump().researchCoverage;
+    const before = structuredClone(database.dump().researchCoverage);
     await expect(
       publishCoverageSnapshot(asDatabase(database), TENANT_ID, 'run-x', run),
     ).rejects.toThrow();

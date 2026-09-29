@@ -170,7 +170,7 @@ describe('confirmIdentityPlayers', () => {
       [{ playerId: 'p1' }],
       1000,
     );
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await confirmIdentityPlayers(asDatabase(database), TENANT_ID, ADMIN_UID, [], 2000);
 

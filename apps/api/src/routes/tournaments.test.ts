@@ -597,7 +597,7 @@ describe('PATCH /api/tournaments/:entryKey/ruleset', () => {
         setsPlayed: 5,
       },
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     const response = await app.inject({
       method: 'PATCH',

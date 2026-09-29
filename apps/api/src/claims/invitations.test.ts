@@ -354,7 +354,7 @@ describe('issueClaimInvitation', () => {
       archivedAt: null,
       kind: 'research',
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     // Message equality, not `.rejects.toThrow(ForbiddenError)` — this
     // test's dynamic `await import('./invitations.js')` may run against a
@@ -480,7 +480,7 @@ describe('revokeClaimInvitation', () => {
       archivedAt: null,
       kind: 'research',
     });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       revokeClaimInvitation(

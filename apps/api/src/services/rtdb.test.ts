@@ -2022,7 +2022,7 @@ describe('RTEN-03 (D-05): createShare refuses to mint for a research or unresolv
       vodUrl: 'https://youtube.com/watch?v=abc123',
     });
     database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       rtdb.createShare(
@@ -2045,7 +2045,7 @@ describe('RTEN-03 (D-05): createShare refuses to mint for a research or unresolv
     const rtdb = new RtdbService(database as never);
     seedRecapFixture(database, RESEARCH_TENANT);
     database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       rtdb.createShare(
@@ -2066,7 +2066,7 @@ describe('RTEN-03 (D-05): createShare refuses to mint for a research or unresolv
       publishedAt: 1_700_000_000_000,
     });
     database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       rtdb.createShare(
@@ -2092,7 +2092,7 @@ describe('RTEN-03 (D-05): createShare refuses to mint for a research or unresolv
     // An unparseable stored kind value resolves to 'unresolved', not
     // 'ordinary' — mirrors research/subjectKind.test.ts's own fixture.
     database.seed(`clientTenants/${RESEARCH_TENANT}/kind`, 'not-a-real-kind');
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       rtdb.createShare(
@@ -2464,7 +2464,7 @@ describe('RTEN-03 (D-05): resolution refusal at all four independent chokepoints
       seedResearchTenant(database, RESEARCH_TENANT);
       seedEditShareForTenant(database, RESEARCH_TENANT, SAME_TOKEN);
       const rtdb = new RtdbService(database as never);
-      const beforeMatches = (database.dump() as Record<string, unknown>).matches;
+      const beforeMatches = structuredClone((database.dump() as Record<string, unknown>).matches);
 
       await expect(
         rtdb.createCoachNote(SAME_TOKEN, COACH_SESSION, 'Coach Person', {

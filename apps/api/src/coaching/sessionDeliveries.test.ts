@@ -152,7 +152,7 @@ describe('createSessionDelivery', () => {
       homework: [],
     });
     database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createSessionDelivery(asDatabase(database), RESEARCH_TENANT, sessionId, WEB_BASE_URL),
@@ -171,7 +171,7 @@ describe('createSessionDelivery', () => {
       homework: [],
     });
     database.seed(`clientTenants/${UNRESOLVABLE_TENANT}/kind`, 'not-a-real-kind');
-    const before = database.dump();
+    const before = structuredClone(database.dump());
 
     await expect(
       createSessionDelivery(asDatabase(database), UNRESOLVABLE_TENANT, sessionId, WEB_BASE_URL),
