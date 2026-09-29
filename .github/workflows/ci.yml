@@ -1,3 +1,22 @@
+# CI layout: four parallel work jobs plus one aggregate gate.
+#
+#   checks        lint, typecheck, build, chart-bundle guard
+#   test-shared   shared vitest suite and the web node:test guards
+#   test-api      api vitest, sharded across a matrix
+#   test-web      web vitest, sharded across a matrix
+#   build-and-test  aggregate gate; goes red unless every job above succeeded
+#
+# Why: the old single job spent 9m40s in its Test step because api and web
+# vitest contended for one 4-vCPU runner (11m42s end to end). Each shard now
+# gets its own runner.
+#
+# `build-and-test` is the single stable check to gate on. It keeps the old job
+# id on purpose, so the historical check name still exists.
+#
+# The shard lists and the `--shard` denominator are pinned by
+# apps/web/scripts/ciTestSharding.test.mjs, and the chart-bundle step by
+# apps/web/scripts/ciChartBundleGuard.test.mjs. Edit the matrices and those
+# pins together.
 name: CI
 
 on:
@@ -6,9 +25,20 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
+# A superseded PR run is cancelled; every master push gets its own group (its
+# run_id), so master runs are never queued or cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
+  checks:
+    name: Lint, typecheck, build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,11 +61,110 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test
-        run: pnpm test
-
       - name: Build
         run: pnpm build
 
       - name: Chart bundle guard
         run: pnpm --filter @smash-tracker/web guard:chart-bundle
+
+  test-shared:
+    name: Test shared + web node guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared
+        run: pnpm --filter @smash-tracker/shared build
+
+      - name: Test shared
+        run: pnpm --filter @smash-tracker/shared test
+
+      - name: Web node guards
+        run: pnpm --filter @smash-tracker/web test:guards
+
+  test-api:
+    name: Test api (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared
+        run: pnpm --filter @smash-tracker/shared build
+
+      - name: Test api
+        run: pnpm --filter @smash-tracker/api exec vitest run --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  test-web:
+    name: Test web (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared
+        run: pnpm --filter @smash-tracker/shared build
+
+      - name: Test web
+        run: pnpm --filter @smash-tracker/web exec vitest run --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [checks, test-shared, test-api, test-web]
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

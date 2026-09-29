@@ -63,6 +63,9 @@ export default defineConfig({
       // node:test files, wired into test:guards the same way.
       'scripts/sketch003Fixture.test.mjs',
       'scripts/checkFidelityIndex.test.mjs',
+      // quick-260929-g80: the CI test-sharding pin, a plain node:test file wired into
+      // test:guards (excluded for the same reason as ciChartBundleGuard.test.mjs).
+      'scripts/ciTestSharding.test.mjs',
     ],
     // GitHub Actions runners are ~3x slower than dev hardware; the heaviest
     // userEvent interaction tests (e.g. GspPage Quick Logger double-entry)
