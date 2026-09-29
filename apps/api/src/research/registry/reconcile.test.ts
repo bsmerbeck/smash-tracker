@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
-import type { ResearchSourceSetRecord } from '@smash-tracker/shared';
+import { resolveTournamentTier, type ResearchSourceSetRecord } from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import { computeForeignRowDigest } from './foreignDigest.js';
 import {
@@ -387,5 +387,124 @@ describe('progress reporting and bounded operations', () => {
       applyTournamentRegistryPlan(asDatabase(database), plan, { signal: controller.signal }),
     ).rejects.toThrow(/terminated by SIGINT/);
     expect(entriesDump(database)[UID]).toBeUndefined();
+  });
+});
+
+describe('per-event override carry-forward (39.2 F1)', () => {
+  const TIER_OVERRIDE = { contractVersion: 1, tier: 'major', setAtMs: 1 };
+  const RULESET_OVERRIDE = { contractVersion: 1, dsr: 'standard' as const };
+
+  function storedRow(database: FakeDatabase, entryId: string): Record<string, unknown> {
+    const entries = entriesDump(database)[UID] as Record<string, Record<string, unknown>>;
+    return entries[entryId];
+  }
+
+  /** The user's PATCH: adds the override members to the stored child, nothing else. */
+  function setOverrides(database: FakeDatabase, entryId: string): void {
+    database.seed(`tournamentEntries/${UID}/${entryId}`, {
+      ...storedRow(database, entryId),
+      tierOverride: TIER_OVERRIDE,
+      rulesetOverride: RULESET_OVERRIDE,
+    });
+  }
+
+  function withPlacement(placement: number): ResearchSourceSetRecord {
+    return makeRecord('s1', '100', {
+      lastObservedAtMs: 1_754_500_000_000,
+      entrants: [{ entrantId: 'e-subject', name: 'Subject', seedNum: 5, placement }],
+    });
+  }
+
+  it('store -> reconcile -> assert: both overrides survive a content-changing refresh', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    setOverrides(database, 'histimport:100');
+
+    seedSources(database, [withPlacement(1)]);
+    const second = await projectTournamentRegistry(asDatabase(database), UID, LATER_MS);
+
+    expect(second.plan.updates).toEqual(['histimport:100']);
+    expect(second.apply.written).toEqual(['histimport:100']);
+    const row = storedRow(database, 'histimport:100');
+    expect(row.placement).toBe(1);
+    expect(row.tierOverride).toEqual(TIER_OVERRIDE);
+    expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
+  });
+
+  it('classifies an overridden row with no other change as unchanged, never a perpetual update', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    setOverrides(database, 'histimport:100');
+    const before = structuredClone(database.dump());
+
+    const second = await projectTournamentRegistry(asDatabase(database), UID, LATER_MS);
+
+    expect(second.plan.unchanged).toEqual(['histimport:100']);
+    expect(second.plan.updates).toEqual([]);
+    expect(second.apply.writesPerformed).toBe(0);
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('keeps an override set between plan and apply (transaction replace branch)', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+
+    // The plan sees NO override (none stored yet) and plans an update.
+    seedSources(database, [withPlacement(2)]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    expect(plan.updates).toEqual(['histimport:100']);
+    expect(plan.writes['histimport:100']).not.toHaveProperty('tierOverride');
+
+    // The user sets both overrides after the plan was read.
+    setOverrides(database, 'histimport:100');
+    await applyTournamentRegistryPlan(asDatabase(database), plan);
+
+    const row = storedRow(database, 'histimport:100');
+    expect(row.placement).toBe(2);
+    expect(row.tierOverride).toEqual(TIER_OVERRIDE);
+    expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
+  });
+
+  it('adds no override keys to a row that never had any', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    seedSources(database, [withPlacement(1)]);
+    await projectTournamentRegistry(asDatabase(database), UID, LATER_MS);
+
+    const row = storedRow(database, 'histimport:100');
+    expect(row).not.toHaveProperty('tierOverride');
+    expect(row).not.toHaveProperty('rulesetOverride');
+  });
+
+  it('carries the source isOnline to the resolver: false + entrants estimates, absent is settingUnknown', async () => {
+    const database = new FakeDatabase();
+    const offline = makeRecord('s1', '100');
+    offline.event = { ...offline.event, isOnline: false, eventType: '1', numEntrants: 1581 };
+    const unknownSetting = makeRecord('s2', '200');
+    unknownSetting.event = { ...unknownSetting.event, numEntrants: 1581 };
+    seedSources(database, [offline, unknownSetting]);
+
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+
+    const offlineRow = storedRow(database, 'histimport:100');
+    expect(offlineRow.isOnline).toBe(false);
+    expect(offlineRow.eventType).toBe('1');
+    const resolved = resolveTournamentTier({
+      entry: offlineRow as unknown as Parameters<typeof resolveTournamentTier>[0]['entry'],
+    });
+    expect(resolved.basis).toBe('estimated');
+    expect(resolved.tier).toBe('supermajor');
+
+    const unknownRow = storedRow(database, 'histimport:200');
+    expect(unknownRow).not.toHaveProperty('isOnline');
+    const unresolved = resolveTournamentTier({
+      entry: unknownRow as unknown as Parameters<typeof resolveTournamentTier>[0]['entry'],
+    });
+    expect(unresolved.tier).toBe('unknown');
+    expect(unresolved.reason).toBe('settingUnknown');
   });
 });

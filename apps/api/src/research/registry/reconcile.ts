@@ -2,7 +2,9 @@ import type { Database } from 'firebase-admin/database';
 import {
   isTournamentRegistryOwnedRow,
   researchSourceSetRecordSchema,
+  rulesetOverrideStoredSchema,
   TOURNAMENT_REGISTRY_ENTRY_ID_PREFIX,
+  tierOverrideStoredSchema,
   tournamentRegistryRowSchema,
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
@@ -135,6 +137,30 @@ export interface TournamentRegistryPlan {
   derivedRows: TournamentRegistryRow[];
 }
 
+/**
+ * User-owned per-event members (39.2 tierOverride, 37-04 rulesetOverride).
+ * The derive step can never produce them, so both reconcile paths carry the
+ * STORED value onto the row they write: without the copy every overridden row
+ * would be a perpetual "update" and the apply would delete the override
+ * (RESEARCH F1). Conditional spreads only — a null is never persisted.
+ */
+function carriedOverrides(
+  stored: unknown,
+): Pick<TournamentRegistryRow, 'tierOverride' | 'rulesetOverride'> {
+  if (stored === null || typeof stored !== 'object') {
+    return {};
+  }
+  // Each member is validated on its own so an unrelated defect elsewhere in
+  // the stored row can never cost the user their override.
+  const record = stored as Record<string, unknown>;
+  const tier = tierOverrideStoredSchema.safeParse(record.tierOverride);
+  const ruleset = rulesetOverrideStoredSchema.safeParse(record.rulesetOverride);
+  return {
+    ...(tier.success ? { tierOverride: tier.data } : {}),
+    ...(ruleset.success ? { rulesetOverride: ruleset.data } : {}),
+  };
+}
+
 function readOwnedImportedAtMs(value: unknown): number | null {
   // Only called for values that already passed `isTournamentRegistryOwnedRow`;
   // the schema parse still guards against a structurally-owned but corrupt row.
@@ -216,13 +242,15 @@ export async function planTournamentRegistry(
       continue;
     }
     const existingImportedAtMs = readOwnedImportedAtMs(existing);
-    const finalRow: TournamentRegistryRow =
-      existingImportedAtMs !== null
+    const finalRow: TournamentRegistryRow = {
+      ...(existingImportedAtMs !== null
         ? {
             ...row,
             provenance: { ...row.provenance, importedAtMs: existingImportedAtMs },
           }
-        : row;
+        : row),
+      ...carriedOverrides(existing),
+    };
     derivedRows.push(finalRow);
     if (recordsDeepEqual(existing, finalRow)) {
       unchanged.push(row.entryId);
@@ -348,10 +376,15 @@ export async function applyTournamentRegistryPlan(
           }
           // Owned — replace, but preserve the stored first-import stamp the
           // plan may not have seen (a concurrent first write is still ours).
+          // A per-event override set between plan and apply is still the
+          // user's: carry the value stored NOW, not the one the plan saw.
           const storedImportedAtMs = readOwnedImportedAtMs(current);
-          return storedImportedAtMs !== null
-            ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
-            : row;
+          return {
+            ...(storedImportedAtMs !== null
+              ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
+              : row),
+            ...carriedOverrides(current),
+          };
         }),
       options,
     );
