@@ -14,92 +14,105 @@ import {
 import { Line } from 'react-chartjs-2';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import type { Match } from '@smash-tracker/shared';
-import {
-  getRollingWinRate,
-  getRunningWinRateSeries,
-  type RollingWinRatePoint,
-  type RunningWinRatePoint,
-} from '@/lib/stats';
-import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+  ABSTENTION_FLOOR_GAMES,
+  resolveWindow,
+  type HorizonKey,
+  type Match,
+} from '@smash-tracker/shared';
+import { getRunningWinRateSeries, type RunningWinRatePoint } from '@/lib/stats';
+import { chartColors, darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { useDashboardContext } from '../DashboardContext';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-const WINDOW_OPTIONS = [5, 10, 20] as const;
-type WindowOption = (typeof WINDOW_OPTIONS)[number];
-type WindowValue = WindowOption | 'cumulative';
-
-type SeriesPoint = RollingWinRatePoint | RunningWinRatePoint;
+type SeriesPoint = RunningWinRatePoint;
 
 /**
- * Builds the chart series for the selected window. `'cumulative'` falls back
- * to `getRunningWinRateSeries` (the original all-time running rate) and
- * plots every match. A numeric window (5/10/20) uses `getRollingWinRate`
- * (the v3 form curve's trailing-average smoothing) but then SLICES to only
- * the trailing `window` points.
+ * Plan 39.1-39 (UI-SPEC §10.4 "never a per-chart control", D-06): the Form
+ * Curve plots the page horizon's window of the selected fighter's games —
+ * the page-level window `resolveWindow({ scoped: false })` resolves (Trends'
+ * convention; a chart asserts no direction, so D-15's 12-month bound does
+ * not apply) — as a running win rate from the window's FIRST game. No
+ * rolling-N smoothing (CHRT-03).
  *
- * Phase 11 fix round 3 (FB-10, BUG): before this fix, a numeric window only
- * changed the trailing-average smoothing width — every match still plotted,
- * so picking "Last 5" and "Last 20" produced curves of identical length
- * (only the y-values differed), reading to the owner as "plots ALL data
- * regardless of the selected window." The slice below makes the window
- * selector also limit which matches are shown, matching its plain-language
- * "Last N" label. `matches` itself already carries the global analytics
- * source/time-range filter (applied by the caller via `useFilteredMatches`
- * before it ever reaches this component) — that coupling was already
- * correct and is unchanged here.
+ * Phase 11 FB-10's intent survives in the horizon form: the chosen window
+ * LIMITS which games plot, so two horizons plot different game sets (the
+ * card's own "Window: Last N / Cumulative" select, which FB-10 fixed, is
+ * gone). `matches` already carries the global analytics source/time-range
+ * filter (the caller's `useFilteredMatches`).
  */
-export function buildSeries(matches: Match[], window: WindowValue): SeriesPoint[] {
-  if (window === 'cumulative') {
-    return getRunningWinRateSeries(matches);
-  }
-  return getRollingWinRate(matches, window).slice(-window);
+export function buildFormCurveSeries(
+  matches: Match[],
+  horizon: HorizonKey,
+  nowMs: number,
+): SeriesPoint[] {
+  const { matches: windowed } = resolveWindow({ matches, horizon, scoped: false, nowMs });
+  return getRunningWinRateSeries(windowed);
 }
 
-/** Ports legacy/src/screens/Dashboard/components/LastMatchesChart; upgraded to a rolling win-rate form curve with a window selector (V3 Phase C). */
-export function LastMatchesChart({ matches }: { matches: Match[] }) {
+/**
+ * The chart.js data: one line on the tokenised series ink (DD-11 — brand red
+ * is never a data mark). Not exported (a second non-component export would
+ * add a react-refresh lint warning); its test reads the `data` prop through a
+ * file-local react-chartjs-2 mock.
+ */
+function buildFormCurveData(series: SeriesPoint[], label: string) {
+  return {
+    labels: series.map((point) => point.index.toString()),
+    datasets: [
+      {
+        label,
+        ...seriesLineDataset(),
+        data: series.map((point) => point.winRate),
+      },
+    ],
+  };
+}
+
+/** Ports legacy/src/screens/Dashboard/components/LastMatchesChart; a running win-rate form curve over the page horizon's window (plan 39.1-39). */
+export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
   const { t, i18n } = useTranslation();
   const { fighter } = useDashboardContext();
-  const [window, setWindow] = useState<WindowValue>(10);
+  // The window's "now" is fixed for the page's life (the codebase's lazy
+  // initializer pattern) so a re-render never shifts the last-90-days edge.
+  const [nowMs] = useState(() => Date.now());
   const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
-  const series = buildSeries(fighterMatches, window);
+  const series = buildFormCurveSeries(fighterMatches, horizon, nowMs);
+  const showChart = series.length >= ABSTENTION_FLOOR_GAMES;
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle>{t('dashboard.formCurve.title')}</CardTitle>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('dashboard.formCurve.window')}</span>
-          <Select value={String(window)} onValueChange={(v) => setWindow(parseWindow(v))}>
-            <SelectTrigger className="w-[130px]" aria-label={t('dashboard.formCurve.windowAria')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WINDOW_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>
-                  {t('dashboard.formCurve.lastN', { count: option })}
-                </SelectItem>
-              ))}
-              <SelectItem value="cumulative">{t('dashboard.formCurve.cumulative')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {showChart && (
+          <p data-slot="form-curve-caption" className="text-xs text-muted-foreground">
+            {/* Plan 39.1-50 (owner: no text legends; sketches 001-C / 002-C):
+                the series is named by this caption's series-ink swatch. */}
+            <span
+              aria-hidden="true"
+              data-slot="form-curve-swatch"
+              className="mr-1.5 inline-block h-0.5 w-3 align-middle"
+              style={{ backgroundColor: chartColors.series }}
+            />
+            {t(`dashboard.formCurve.caption.${horizon}`)}
+          </p>
+        )}
       </CardHeader>
       <CardContent>
-        {series.length === 0 ? (
+        {fighterMatches.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('dashboard.formCurve.empty')}</p>
+        ) : !showChart ? (
+          <p data-slot="form-curve-window-empty" className="text-sm text-muted-foreground">
+            {t(`dashboard.formCurve.windowEmpty.${horizon}`)}
+          </p>
         ) : (
           <div className="h-64">
-            <Line data={buildData(series, t)} options={buildOptions(series, t, i18n.language)} />
+            <Line
+              data={buildFormCurveData(series, t('dashboard.formCurve.winRate'))}
+              options={buildOptions(series, t, i18n.language)}
+            />
           </div>
         )}
       </CardContent>
@@ -107,35 +120,42 @@ export function LastMatchesChart({ matches }: { matches: Match[] }) {
   );
 }
 
-function parseWindow(value: string): WindowValue {
-  if (value === 'cumulative') {
-    return value;
-  }
-  const parsed = Number(value);
-  return (WINDOW_OPTIONS as readonly number[]).includes(parsed) ? (parsed as WindowOption) : 10;
-}
-
-function buildData(series: SeriesPoint[], t: TFunction) {
-  return {
-    labels: series.map((point) => point.index.toString()),
-    datasets: [
-      {
-        label: t('dashboard.formCurve.winRate'),
-        ...redLineDataset(),
-        data: series.map((point) => point.winRate),
-      },
-    ],
-  };
-}
-
 /** Builds chart options with tooltip callbacks closed over `series` so they can look up the underlying Match for the hovered point (date + opponent), mirroring legacy MatchChart's tooltip title/footer. */
 function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): ChartOptions<'line'> {
   const theme = darkChartOptions();
+  // Plan 39.1-50 (owner: no rotated index ticks): only the two ends are
+  // labelled, each with its plotted game's date — and only the right end
+  // when both fall on the same calendar day.
+  const endDate = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' });
+  const first = series[0];
+  const last = series[series.length - 1];
+  const sameDay =
+    first != null &&
+    last != null &&
+    new Date(first.match.time).toDateString() === new Date(last.match.time).toDateString();
+  const endTick = (index: number): string => {
+    const lastIndex = series.length - 1;
+    if (index === lastIndex && last) return endDate.format(new Date(last.match.time));
+    if (index === 0 && first && !sameDay) return endDate.format(new Date(first.match.time));
+    return '';
+  };
+  const themeX = theme.scales?.x;
   return {
     responsive: theme.responsive,
     maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
-      x: theme.scales?.x,
+      x: {
+        ...themeX,
+        grid: { display: false },
+        ticks: {
+          ...themeX?.ticks,
+          maxRotation: 0,
+          minRotation: 0,
+          autoSkip: false,
+          align: 'inner',
+          callback: (_value, index) => endTick(index),
+        },
+      },
       y: {
         ...theme.scales?.y,
         position: 'right',
@@ -143,10 +163,7 @@ function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): Char
       },
     },
     plugins: {
-      legend: {
-        display: true,
-        labels: theme.plugins?.legend?.labels,
-      },
+      legend: { display: false },
       tooltip: {
         ...theme.plugins?.tooltip,
         mode: 'nearest',

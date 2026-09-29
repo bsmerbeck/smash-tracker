@@ -233,6 +233,34 @@ describe('InsightRail', () => {
     expect(legend.textContent).toBe('legend content');
   });
 
+  // Plan 39.1-50 (OOS-11, UI-SPEC §7.8 rule 5, sketch 001-C): the overline
+  // reads on its own line with the claim legend on the line below — never
+  // squeezed beside the legend into 3-4 lines.
+  it('the header is two rows: the overline line, then a wrapping legend row', () => {
+    const { container } = render(
+      <InsightRail
+        rail={emptyRail()}
+        header="Insights · last 30 games vs all time"
+        legend={<span>legend content</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    const header = container.querySelector('[data-slot="insight-rail-header"]')!;
+    const [first, second] = Array.from(header.children);
+    expect(first).toHaveAttribute('data-slot', 'insight-rail-overline');
+    expect(first!.textContent).toBe('Insights · last 30 games vs all time');
+    expect(second).toHaveAttribute('data-slot', 'insight-rail-legend');
+    expect(second).toHaveAttribute('aria-hidden', 'true');
+    expect(second!.textContent).toBe('legend content');
+    expect(header.className).toMatch(/\bflex-col\b/);
+    expect(header.className).not.toMatch(/\bjustify-between\b/);
+    expect(second!.className).toMatch(/\bflex-wrap\b/);
+  });
+
   it("calls onDismiss with the dismissed card's id when its dismiss button is clicked", async () => {
     const user = userEvent.setup();
     const onDismiss = vi.fn();
@@ -395,5 +423,50 @@ describe('InsightRail', () => {
     );
     expect(railSource).not.toMatch(/salience/i);
     expect(unlocksNextSource).not.toMatch(/salience/i);
+  });
+});
+
+describe('InsightRail restore link tone (plan 39.1-39, UI-SPEC §4.3)', () => {
+  function expectMuted(el: HTMLElement) {
+    const classes = el.className.split(/\s+/);
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).not.toContain('text-primary');
+  }
+
+  it('the all-dismissed card restore control is a muted link', () => {
+    const cards = [makeCard('a', 'A')];
+    render(
+      <InsightRail
+        rail={{ cards, unlocksNext: null, lines: [], promotionQueue: [] }}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={['a']}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    for (const button of screen.getAllByRole('button', { name: LABELS.restore })) {
+      expectMuted(button);
+    }
+  });
+
+  it('the rail-foot restore control is a muted link', () => {
+    const cards = [makeCard('a', 'A'), makeCard('b', 'B')];
+    render(
+      <InsightRail
+        rail={{ cards, unlocksNext: null, lines: [], promotionQueue: [] }}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={['a']}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expectMuted(screen.getByRole('button', { name: LABELS.restore }));
   });
 });

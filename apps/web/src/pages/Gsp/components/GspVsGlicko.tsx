@@ -13,7 +13,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import type { GspPoint, GspSettings, Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import { chartColors, darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
 import { computeRatingHistory } from '@/lib/glicko';
 import { GSP_VS_GLICKO_MIN_POINTS, buildGspVsGlickoData } from '../lib/gspVsGlicko';
 import { useModelCalibration } from '../lib/useModelCalibration';
@@ -41,7 +41,7 @@ function buildChartData(
     datasets: [
       {
         label: t('gsp.vsGlicko.mmrLabel'),
-        ...redLineDataset(),
+        ...seriesLineDataset(),
         spanGaps: true,
         data: allTimes.map((t) => mmrByTime.get(t) ?? null),
       },

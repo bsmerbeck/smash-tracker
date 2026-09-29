@@ -222,11 +222,15 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
 
-  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's five cards
+  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's cards
   // render as `GridCell span={3}` — 4 per row at the widest breakpoint, the
-  // fifth wrapping to a second row LEFT-ALIGNED (never stretched to a
-  // sibling's height — `PageGrid`'s `items-start` is hardcoded, never a prop).
-  it('renders the hero row as five span-3 grid cells, the fifth wrapping left-aligned', async () => {
+  // second row LEFT-ALIGNED (never stretched to a sibling's height —
+  // `PageGrid`'s `items-start` is hardcoded, never a prop).
+  // Plan 39.1-50 REWROTE this case from five cells to six. Reason: design
+  // audit 5.4 / the planner decision — the selected fighter's record joins
+  // the hero row as the sixth 3-span tile (left-aligned beside Rating),
+  // replacing the centred span-12 tracker card.
+  it('renders the hero row as six span-3 grid cells, the sixth holding the fighter record tile', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
 
@@ -235,12 +239,36 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
 
     const heroCells = Array.from(container.querySelectorAll('[data-span="3"]'));
-    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating —
-    // exactly the hero row's five cards, no more.
-    expect(heroCells).toHaveLength(5);
+    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating,
+    // and the selected fighter's record — exactly six, no more.
+    expect(heroCells).toHaveLength(6);
+    expect(heroCells[5]!.querySelector('[data-slot="fighter-record-tile"]')).not.toBeNull();
     for (const cell of heroCells) {
       expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
     }
+    // No span-12 cell holds the tracker any more.
+    for (const wide of container.querySelectorAll('[data-span="12"]')) {
+      expect(wide.querySelector('[data-slot="fighter-record-tile"]')).toBeNull();
+    }
+  });
+
+  // Plan 39.1-50 Task 3 (DEFECT found on the after capture, UI-SPEC §6.1
+  // "no orphan half"): with six hero tiles the second hero row holds Rating
+  // and the fighter tile (6 columns), so the 6-span Form Curve packed in
+  // beside them and left Previous Matches alone on the next row. The Form
+  // Curve starts its own row at lg, so it and Previous Matches stay a pair.
+  it('the Form Curve cell starts a new row at lg, pairing it with Previous Matches', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderDashboard();
+
+    const curveCell = (await screen.findByText('Form Curve')).closest('[data-span]')!;
+    const previousCell = screen.getByText('Previous Matches').closest('[data-span]')!;
+    expect(curveCell).toHaveAttribute('data-span', '6');
+    expect(curveCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(previousCell).toHaveAttribute('data-span', '6');
+    expect(curveCell.nextElementSibling).toBe(previousCell);
   });
 
   it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
@@ -359,6 +387,25 @@ describe('DashboardPage', () => {
           'Overall Record, 10–30 recent vs 70–30 all time',
         ),
       );
+    });
+
+    // Plan 39.1-39 (UI-SPEC §10.4, D-06): the Form Curve has no window select
+    // of its own — it plots the page horizon's window, so the same switch
+    // press re-windows it and its caption names the new window.
+    it('the Form Curve follows the page horizon (no per-card select)', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue(horizonFixture());
+
+      const { container } = renderDashboard();
+
+      const caption = () => container.querySelector('[data-slot="form-curve-caption"]');
+      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 30 games'));
+      expect(screen.queryByRole('combobox', { name: 'Rolling window' })).toBeNull();
+
+      await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
+
+      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 90 days'));
     });
   });
 
@@ -534,6 +581,21 @@ describe('DashboardPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
+    it('plan 39.1-50: the skeleton mirrors the loaded hero row — six span-3 stat-row skeletons and no 12-span stat-row skeleton', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      // CardSkeleton's stat-row variant is its only two-column block grid.
+      const statRowSkeletonCells = (span: string) =>
+        Array.from(container.querySelectorAll(`[data-span="${span}"]`)).filter((cell) =>
+          cell.querySelector('.grid-cols-2 [data-slot="skeleton-block"]'),
+        );
+      expect(statRowSkeletonCells('3')).toHaveLength(6);
+      expect(statRowSkeletonCells('12')).toHaveLength(0);
+    });
+
     it('renders zero skeleton blocks once the dashboard has loaded', async () => {
       getFighters.mockResolvedValue({ primary: [1], secondary: [] });
       listMatches.mockResolvedValue([]);
@@ -590,5 +652,45 @@ describe('DashboardPage', () => {
         expect(grid?.className).not.toMatch(/opacity-60/);
       });
     });
+  });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §8.7, §10.4).
+  it("plan 39.1-38 filter-row: the toolbar is the page shell's first child, one unboxed page-filter-row holding the picker, Add Match and the HorizonSwitch, with no page h1", async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    const { container } = renderDashboard();
+    await screen.findAllByText('Overall Record');
+    const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+    const row = shell.firstElementChild as HTMLElement;
+    expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+    expect(row.querySelector('[data-slot="horizon-switch"]')).not.toBeNull();
+    expect(within(row).getByRole('button', { name: 'Add Match' })).toBeInTheDocument();
+    expect(row.querySelector('h1')).toBeNull();
+    expect(row.closest('[data-slot="card"]')).toBeNull();
+  });
+
+  // Plan 39.1-50 REWROTE this plan-39.1-38 case (the three-figure tracker's
+  // fixed-columns StatRow). Reason: UI-SPEC section 8.7 / section 6.5 rule 4 —
+  // the tracker is now the fighter record hero tile, one win-rate lead with a
+  // Record support line, so there is no three-figure row left to fix.
+  it('plan 39.1-50: the fighter record tile names the selected fighter and states the record once', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    const base = {
+      fighter_id: 1,
+      opponent_id: 10,
+      map: { id: 1, name: 'Battlefield' },
+      opponent: 'rival',
+      notes: '',
+      matchType: 'none',
+    };
+    listMatches.mockResolvedValue([
+      { ...base, id: 'm1', time: Date.now() - 1000, win: true },
+      { ...base, id: 'm2', time: Date.now() - 2000, win: false },
+    ]);
+    const { container } = renderDashboard();
+    expect(await screen.findByText('Mario record')).toBeInTheDocument();
+    const tile = container.querySelector('[data-slot="fighter-record-tile"]');
+    expect(tile).not.toBeNull();
+    expect(tile!.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]')).toBeNull();
   });
 });

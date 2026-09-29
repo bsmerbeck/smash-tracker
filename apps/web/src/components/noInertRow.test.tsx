@@ -32,6 +32,7 @@ import { buildRetrospective } from '@/pages/Tournaments/lib/retrospective';
 import { SessionsAndTilt } from '@/pages/Trends/components/SessionsAndTilt';
 import { RecentEncounters } from '@/pages/Opponents/components/RecentEncounters';
 import { ScoutCommonOpponentsCard } from '@/pages/Scout/components/ScoutCommonOpponentsCard';
+import { ScoutRecentEventsCard } from '@/pages/Scout/components/ScoutRecentEventsCard';
 import { OpponentList } from '@/pages/Opponents/components/OpponentList';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from '@/pages/Opponents/components/ScoutingStagesCard';
@@ -260,6 +261,89 @@ const SURFACES: Surface[] = [
       return withRouter(<MatchupStageGuide fighterMatches={matches} />);
     },
     rows: (result) => dataRows(result.container),
+  },
+  // Plan 39.1-49 (UI-SPEC §6.6): the stacked phone layouts of the converted
+  // tables, each rendered with `layout="stack"` (FilteredMatchList's
+  // precedent) — every stacked row keeps its table row's link.
+  {
+    name: 'Fighter Analysis opponent table, stacked (below 640px)',
+    file: 'apps/web/src/pages/FighterAnalysis/components/OpponentTable.tsx',
+    render: () => {
+      const rows: OpponentTableRow[] = [
+        { key: 'mkleo', displayLabel: 'mkleo', wins: 3, losses: 1, total: 4, winRate: 75 },
+        { key: 'unknown', displayLabel: 'unknown', wins: 1, losses: 0, total: 1, winRate: 100 },
+      ];
+      return withRouter(
+        <OpponentTable
+          rows={rows}
+          hubHref={(row) => (row.key === 'unknown' ? undefined : `/opponents/${row.key}`)}
+          layout="stack"
+        />,
+      );
+    },
+    rows: (result) =>
+      Array.from(
+        result.container.querySelectorAll<HTMLElement>('ul[data-slot="opponent-table"] > li'),
+      ),
+  },
+  {
+    name: 'Matchup stage guide, stacked (below 640px)',
+    file: 'apps/web/src/pages/FighterAnalysis/components/MatchupStageGuide.tsx',
+    render: () => {
+      const matches = Array.from({ length: 3 }, (_, i) =>
+        makeMatch({ id: `g${i}`, time: i, win: true, fighter_id: mario.id, opponent_id: luigi.id }),
+      );
+      return withRouter(<MatchupStageGuide fighterMatches={matches} layout="stack" />);
+    },
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('li[data-slot="stage-guide-row"]')),
+  },
+  {
+    name: 'Absorbed hub card: what-they-play, stacked (below 640px)',
+    file: 'apps/web/src/pages/Opponents/components/WhatTheyPlayTable.tsx',
+    render: () =>
+      withRouter(
+        <WhatTheyPlayTable
+          byTheirFighter={
+            [
+              { opponentFighterId: 41, wins: 3, losses: 1, ratio: 75, totalMatches: 4 },
+              { opponentFighterId: 999_999, wins: 1, losses: 0, ratio: 100, totalMatches: 1 },
+            ] as never
+          }
+          rowHref={(row) =>
+            `/matchups?vs=${(row as { opponentFighterId: number }).opponentFighterId}`
+          }
+          layout="stack"
+        />,
+      ),
+    rows: (result) =>
+      Array.from(
+        result.container.querySelectorAll<HTMLElement>('ul[data-slot="what-they-play"] > li'),
+      ),
+  },
+  {
+    name: "Scout's recent events, stacked (below 640px)",
+    file: 'apps/web/src/pages/Scout/components/ScoutRecentEventsCard.tsx',
+    render: () =>
+      render(
+        <ScoutRecentEventsCard
+          events={[
+            {
+              eventName: 'Ultimate Singles',
+              placement: 3,
+              numEntrants: 64,
+              lastSetAt: 1_700_000_000_000,
+              slug: 'tournament/the-big-house-9/event/ultimate-singles',
+              source: 'startgg',
+            },
+          ]}
+          layout="stack"
+        />,
+      ),
+    rows: (result) =>
+      Array.from(
+        result.container.querySelectorAll<HTMLElement>('ul[data-slot="scout-recent-events"] > li'),
+      ),
   },
   {
     name: 'Stage breakdown tile grid (StageMastery, own-subject host, stageHref supplied)',
@@ -809,6 +893,16 @@ const ROW_EXEMPTIONS: RowExemption[] = [
     predicate: (row) => row.textContent?.includes('unknown') === true,
   },
   {
+    surface: 'Fighter Analysis opponent table, stacked (below 640px)',
+    reason: 'unnamed-opponent bucket',
+    predicate: (row) => row.textContent?.includes('unknown') === true,
+  },
+  {
+    surface: 'Absorbed hub card: what-they-play, stacked (below 640px)',
+    reason: 'unknown character',
+    predicate: (row) => row.textContent?.includes('Unknown') === true,
+  },
+  {
     surface: 'Absorbed hub card: scouting stages',
     reason: 'unknown stage',
     predicate: (row) => row.textContent?.includes('unknown') === true,
@@ -857,8 +951,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated TWENTY-SIX entries (18 + 39.1-21's 7 + 39.1-23's 1)", () => {
-    expect(SURFACES.length).toBe(26);
+  it("the surface enumeration has the stated THIRTY entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts)", () => {
+    expect(SURFACES.length).toBe(30);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

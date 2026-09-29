@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assembleRail } from './rail.js';
+import { assembleRail, isRailFallbackInsight } from './rail.js';
 import type { Insight, InsightState, InsightTemplateId } from './types.js';
 
 const NOW_MS = 1_700_100_000_000;
@@ -221,5 +221,138 @@ describe('assembleRail', () => {
     });
     const result = assembleRail({ insights: [b, a] });
     expect(result.cards.map((c) => c.templateId)).toEqual(['bestMatchup', 'formNow']);
+  });
+});
+
+/**
+ * Plan 39.1-40 (D-14, D-07, UI-SPEC §7.8 rules 1-4): the optional `backfill`
+ * input. A host's OWN reads are classified and filled exactly as before;
+ * direction-free FACT back-fill fills the slots they leave, but only when the
+ * own set holds no locked candidate (a thin account keeps its unlock lead).
+ */
+describe('assembleRail backfill (39.1-40)', () => {
+  function backfillFact(id: string, salience: number, templateId = 'bestMatchup'): Insight {
+    return makeInsight({
+      id,
+      templateId: templateId as InsightTemplateId,
+      scopeKey: id,
+      state: 'fact',
+      salience,
+    });
+  }
+
+  const EXISTING_FIXTURES: Insight[][] = [
+    [
+      assertiveInsight('a', 40),
+      assertiveInsight('b', 30),
+      assertiveInsight('c', 20),
+      assertiveInsight('d', 10),
+    ],
+    [lockedInsight('l1', 30), lockedInsight('l2', 20), lockedInsight('l3', 10)],
+    [lockedInsight('l1', 30, 1)],
+    [],
+    [
+      assertiveInsight('a', 50),
+      assertiveInsight('b', 45),
+      factInsight('f1', 40),
+      factInsight('f2', 30),
+      factInsight('f3', 20),
+      factInsight('f4', 10),
+    ],
+    [lineInsight('s1', 'steady', 50), lineInsight('t1', 'thinRecent', 40), factInsight('f1', 10)],
+  ];
+
+  it('an explicit empty backfill is deep-equal to omitting it for every existing fixture', () => {
+    for (const insights of EXISTING_FIXTURES) {
+      expect(assembleRail({ insights, backfill: [] })).toEqual(assembleRail({ insights }));
+    }
+  });
+
+  it('one assertive own card + two fact back-fills -> [assertive, fact, fact], facts in salience-then-templateId order', () => {
+    const result = assembleRail({
+      insights: [assertiveInsight('own', 10)],
+      backfill: [
+        backfillFact('worstMatchup:account:last30', 5, 'worstMatchup'),
+        backfillFact('bestMatchup:account:last30', 5, 'bestMatchup'),
+      ],
+    });
+    expect(result.cards.map((c) => c.id)).toEqual([
+      'own',
+      'bestMatchup:account:last30',
+      'worstMatchup:account:last30',
+    ]);
+  });
+
+  it('an own set holding a locked candidate ignores the back-fill (thin account keeps its unlock lead)', () => {
+    const result = assembleRail({
+      insights: [lockedInsight('l1', 30)],
+      backfill: [backfillFact('bf1', 50), backfillFact('bf2', 40)],
+    });
+    expect(result.cards.map((c) => c.id)).toEqual(['l1']);
+    expect(result.promotionQueue.some((c) => c.id === 'bf1' || c.id === 'bf2')).toBe(false);
+  });
+
+  it('an own set that would reach the fallback + two fact back-fills -> exactly those two cards and no fallback', () => {
+    const result = assembleRail({
+      insights: [lineInsight('s1', 'steady', 50)],
+      backfill: [backfillFact('bf1', 10), backfillFact('bf2', 20)],
+    });
+    expect(result.cards.map((c) => c.id)).toEqual(['bf2', 'bf1']);
+    expect(result.cards.some((c) => isRailFallbackInsight(c))).toBe(false);
+    expect(result.lines.map((l) => l.id)).toEqual(['s1']);
+  });
+
+  it.each(['locked', 'hidden', 'steady', 'trend', 'suggestion'] as const)(
+    'a back-fill entry in state %s is ignored',
+    (state) => {
+      const result = assembleRail({
+        insights: [assertiveInsight('own', 10)],
+        backfill: [
+          makeInsight({
+            id: `bf-${state}`,
+            templateId: 'bestMatchup',
+            scopeKey: `bf-${state}`,
+            state,
+            salience: 99,
+          }),
+        ],
+      });
+      expect(result.cards.map((c) => c.id)).toEqual(['own']);
+      expect(result.lines.some((l) => l.id === `bf-${state}`)).toBe(false);
+      expect(result.promotionQueue.some((c) => c.id === `bf-${state}`)).toBe(false);
+      expect(result.unlocksNext).toBeNull();
+    },
+  );
+
+  it('with the cap already full, the back-fill goes to the END of promotionQueue', () => {
+    const result = assembleRail({
+      insights: [
+        assertiveInsight('a', 40),
+        assertiveInsight('b', 30),
+        assertiveInsight('c', 20),
+        assertiveInsight('d', 10),
+      ],
+      backfill: [backfillFact('bf1', 99)],
+    });
+    expect(result.cards.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+    expect(result.promotionQueue.map((c) => c.id)).toEqual(['d', 'bf1']);
+  });
+
+  it('a back-fill id equal to an own id is ignored', () => {
+    const own = factInsight('dup', 10);
+    const result = assembleRail({
+      insights: [own],
+      backfill: [backfillFact('dup', 90), backfillFact('bf1', 5)],
+    });
+    expect(result.cards.map((c) => c.id)).toEqual(['dup', 'bf1']);
+    expect(result.cards[0]).toBe(own);
+  });
+
+  it('isRailFallbackInsight is true only for the synthetic fallback', () => {
+    const fallback = assembleRail({ insights: [] }).cards[0]!;
+    expect(isRailFallbackInsight(fallback)).toBe(true);
+    expect(isRailFallbackInsight(factInsight('f1', 10))).toBe(false);
+    // A real formNow read that happens to share the fallback's id is not the fallback.
+    expect(isRailFallbackInsight(assertiveInsight('formNow:account:last30', 10))).toBe(false);
   });
 });

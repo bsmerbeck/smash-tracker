@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '../match.js';
+import * as eventSeriesModule from './eventSeries.js';
 import { buildOpponentEventSeries, buildStageEventSeries } from './eventSeries.js';
 import { ABSTENTION_FLOOR_GAMES } from './policy.js';
 
@@ -132,5 +133,148 @@ describe('buildStageEventSeries', () => {
   it('a stage id with no matches returns an empty anchor array', () => {
     const series = buildStageEventSeries({ matches: [], stageId: 5, refreshedAt: 1 });
     expect(series).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-39 (VIZ-01, UI-SPEC section 11 "line points at most 60"): the ONE
+// event-anchor derivation also bins a long series for DISPLAY. Read through
+// the module namespace so a RED run fails on an assertion, not an import.
+// ---------------------------------------------------------------------------
+
+type BinFn = (
+  series: ReturnType<typeof buildStageEventSeries>,
+  options?: { maxPoints?: number },
+) => Array<{
+  key: string;
+  kind: string;
+  grain?: string;
+  label: string;
+  startMs: number;
+  endMs: number;
+  wins: number;
+  losses: number;
+  total: number;
+  cumulativeWins: number;
+  cumulativeLosses: number;
+  cumulativeWinRate: number;
+  confidenceTier: string | null;
+  matchIds: string[];
+}>;
+
+function binFn(): BinFn {
+  const fn = (eventSeriesModule as Record<string, unknown>).binEventSeries;
+  expect(typeof fn, 'binEventSeries is exported').toBe('function');
+  return fn as BinFn;
+}
+
+/** `count` one-game sessions, one a day from 2026-01-05 (a Monday) 18:00 UTC, alternating results. */
+function dailySessions(count: number, startMs = Date.UTC(2026, 0, 5, 18)): Match[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeMatch({
+      id: `d${String(i).padStart(3, '0')}`,
+      time: startMs + i * DAY_MS,
+      win: i % 3 !== 0,
+      map: { id: 1, name: 'Battlefield' },
+    }),
+  );
+}
+
+function stageSeries(matches: Match[]) {
+  return buildStageEventSeries({ matches, stageId: 1, refreshedAt: 1 });
+}
+
+describe('binEventSeries (plan 39.1-39)', () => {
+  it('bound: a 150-anchor series spanning ~5 months becomes at most 60 bins at the finest fitting grain (week)', () => {
+    const series = stageSeries(dailySessions(150));
+    expect(series).toHaveLength(150);
+    const bins = binFn()(series);
+    expect(bins.length).toBeLessThanOrEqual(60);
+    expect(bins.length).toBeGreaterThan(1);
+    expect(new Set(bins.map((b) => b.kind))).toEqual(new Set(['bin']));
+    expect(new Set(bins.map((b) => b.grain))).toEqual(new Set(['week']));
+    // 150 days from a Monday: 21 full weeks + 3 days -> 22 weekly bins.
+    expect(bins).toHaveLength(22);
+  });
+
+  it('picks a coarser grain only when the finer one exceeds the bound (450 daily anchors = 65 weeks -> month)', () => {
+    const bins = binFn()(stageSeries(dailySessions(450)));
+    expect(bins.length).toBeLessThanOrEqual(60);
+    expect(new Set(bins.map((b) => b.grain))).toEqual(new Set(['month']));
+  });
+
+  it('identity: a series of 60 or fewer anchors is returned as the SAME array reference', () => {
+    const series = stageSeries(dailySessions(60));
+    expect(binFn()(series)).toBe(series);
+    const small = stageSeries(dailySessions(3));
+    expect(binFn()(small)).toBe(small);
+  });
+
+  it('partition: the bins partition the input matchIds (union equal, no duplicate, none dropped)', () => {
+    const series = stageSeries(dailySessions(150));
+    const bins = binFn()(series);
+    const inputIds = series.flatMap((a) => a.matchIds);
+    const binIds = bins.flatMap((b) => b.matchIds);
+    expect(binIds).toHaveLength(inputIds.length);
+    expect(new Set(binIds).size).toBe(binIds.length);
+    expect([...binIds].sort()).toEqual([...inputIds].sort());
+  });
+
+  it("cumulative at bin end: each bin's record is the sum of its members and its cumulative values equal its LAST member's", () => {
+    const series = stageSeries(dailySessions(150));
+    const bins = binFn()(series);
+    for (const bin of bins) {
+      const members = series.filter((a) => a.matchIds.some((id) => bin.matchIds.includes(id)));
+      expect(bin.wins).toBe(members.reduce((sum, a) => sum + a.wins, 0));
+      expect(bin.losses).toBe(members.reduce((sum, a) => sum + a.losses, 0));
+      expect(bin.total).toBe(members.reduce((sum, a) => sum + a.total, 0));
+      const last = members[members.length - 1]!;
+      expect(bin.cumulativeWins).toBe(last.cumulativeWins);
+      expect(bin.cumulativeLosses).toBe(last.cumulativeLosses);
+      expect(bin.cumulativeWinRate).toBe(last.cumulativeWinRate);
+      expect(bin.startMs).toBe(members[0]!.startMs);
+      expect(bin.endMs).toBe(last.endMs);
+    }
+    expect(bins[bins.length - 1]!.cumulativeWinRate).toBe(
+      series[series.length - 1]!.cumulativeWinRate,
+    );
+  });
+
+  it('stable keys: bin:<grain>:<bucketStartMs>, identical across calls', () => {
+    const matches = dailySessions(150);
+    const a = binFn()(stageSeries(matches));
+    const b = binFn()(stageSeries([...matches].reverse()));
+    expect(a.map((bin) => bin.key)).toEqual(b.map((bin) => bin.key));
+    expect(a[0]!.key).toBe(`bin:week:${Date.UTC(2026, 0, 5)}`);
+    for (const bin of a) expect(bin.key).toMatch(/^bin:week:\d+$/);
+  });
+
+  it('confidenceTier follows the bin total (a 7-game bin is tiered, never null)', () => {
+    const bins = binFn()(stageSeries(dailySessions(150)));
+    const full = bins.find((b) => b.total === 7)!;
+    expect(full).toBeDefined();
+    expect(full.confidenceTier).not.toBeNull();
+  });
+
+  it('empty series -> empty', () => {
+    expect(binFn()([])).toEqual([]);
+  });
+
+  it("resolveEventBin: a bin key resolves to exactly that bucket's members at any grain; a non-bin or unknown key is null", () => {
+    const resolve = (eventSeriesModule as Record<string, unknown>).resolveEventBin as (
+      series: ReturnType<typeof buildStageEventSeries>,
+      key: string,
+    ) => { matchIds: string[]; total: number } | null;
+    expect(typeof resolve).toBe('function');
+    const series = stageSeries(dailySessions(150));
+    const bins = binFn()(series);
+    const resolved = resolve(series, bins[2]!.key)!;
+    expect([...resolved.matchIds].sort()).toEqual([...bins[2]!.matchIds].sort());
+    expect(resolved.total).toBe(bins[2]!.total);
+    // A month key resolves too, even though this series bins weekly.
+    const january = resolve(series, `bin:month:${Date.UTC(2026, 0, 1)}`)!;
+    expect(january.matchIds).toHaveLength(27); // Jan 5 .. Jan 31
+    expect(resolve(series, series[0]!.key)).toBeNull();
+    expect(resolve(series, `bin:month:${Date.UTC(2030, 0, 1)}`)).toBeNull();
   });
 });

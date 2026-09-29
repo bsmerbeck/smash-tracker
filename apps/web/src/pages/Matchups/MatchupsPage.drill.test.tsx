@@ -2,7 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { PeriodPoint } from '@smash-tracker/shared';
+import type { Match, PeriodPoint } from '@smash-tracker/shared';
+import { buildPeriodSeries } from '@smash-tracker/shared';
 import type { TrendLineProps } from '@/components/charts/TrendLine';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -170,26 +171,61 @@ describe('MatchupsPage period-point drill (CR-02, 39.1-REVIEW)', () => {
     HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
-  it('an eventSession point over interleaved events lands on exactly its own total, not every game inside its time window', async () => {
+  // REWRITTEN by plan 39.1-41 (PD-41-1): the page used to PLOT this fixture at
+  // `eventSession` grain (50 points) and the case clicked one. The scoped
+  // Matchups trend now starts the ladder at `quarter`, so it plots this
+  // 30-day fixture as quarters; the CR-02 property it pinned — an
+  // `eventSession` point key resolves to exactly the games that point
+  // counted, never every game inside its non-contiguous time window — is
+  // kept on the URL path (a key written before this plan, or by the
+  // unconstrained ladder elsewhere), and a plotted quarter's click narrows
+  // to exactly its own games.
+  it('an eventSession point key in the URL lands on exactly its own total, not every game inside its time window; the plotted grain is quarter', async () => {
     const fixture = interleavedEventFixture();
     listMatches.mockResolvedValue(fixture);
-
-    renderMatchupsAt(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
-
-    await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
-    await waitFor(() =>
-      expect((capturedTrendLineProps as { points: PeriodPoint[] }).points).toHaveLength(50),
-    );
-    const points = (capturedTrendLineProps as { points: PeriodPoint[] }).points;
-    expect(points[0]!.grain).toBe('eventSession');
+    // The unconstrained engine's eventSession points over the same games.
+    // The fixture rows carry `matchType: 'none'` as a plain string (the API mock's shape).
+    const eventSessionPoints = buildPeriodSeries({ matches: fixture as unknown as Match[] }).points;
+    expect(eventSessionPoints[0]!.grain).toBe('eventSession');
     // Non-vacuous by construction: the chosen point's window holds MORE games
     // than it counts, and its count differs from the pairing's unfiltered 300.
-    const point = points.find(
+    const point = eventSessionPoints.find(
       (p) => fixture.filter((m) => m.time >= p.startMs && m.time <= p.endMs).length > p.total,
     )!;
     expect(point).toBeDefined();
     expect(point.total).toBe(9);
 
+    renderMatchupsAt(
+      `/matchups?fighter=${mario.id}&vs=${luigi.id}&event=${encodeURIComponent(point.key)}#matchup-table`,
+    );
+
+    await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
+    const plotted = (capturedTrendLineProps as { points: PeriodPoint[] }).points;
+    expect(plotted.length).toBeGreaterThan(0);
+    expect(plotted.every((p) => p.grain === 'quarter')).toBe(true);
+    const gamesCard = document.getElementById('matchup-table') as HTMLElement;
+    await waitFor(() => {
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(point.total);
+    });
+  });
+
+  it('a plotted quarter point drill narrows the results to exactly its own games (event=<quarter key>)', async () => {
+    // Half the games moved 200 days earlier: two quarters, whatever today is.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const fixture = interleavedEventFixture().map((m, i) =>
+      i < 150 ? { ...m, time: m.time - 200 * dayMs } : m,
+    );
+    listMatches.mockResolvedValue(fixture);
+
+    renderMatchupsAt(`/matchups?fighter=${mario.id}&vs=${luigi.id}`);
+
+    await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
+    const points = (capturedTrendLineProps as { points: PeriodPoint[] }).points;
+    const point = points[0]!;
+    expect(point.grain).toBe('quarter');
+    expect(points.length).toBeGreaterThan(1);
+    expect(point.total).toBe(150);
     const gamesCard = document.getElementById('matchup-table') as HTMLElement;
     await waitFor(() => {
       const table = within(gamesCard).getByRole('table');
@@ -215,6 +251,8 @@ describe('MatchupsPage period-point drill (CR-02, 39.1-REVIEW)', () => {
   // 39.1-REVIEW iteration 2 WR-02: the ladder sits at `eventSession` here,
   // so a `set:` key (written while the pairing had <= 100 sets and the
   // ladder sat at `set`) used to resolve to nothing: an empty terminus.
+  // REWRITTEN by plan 39.1-41 (PD-41-1): the plotted grain is now `quarter`
+  // (was `eventSession`); the set key must still land on exactly its set.
   it('WR-02: a set-grain key written at another grain still lands on exactly that set', async () => {
     listMatches.mockResolvedValue(interleavedEventFixture());
 
@@ -223,9 +261,7 @@ describe('MatchupsPage period-point drill (CR-02, 39.1-REVIEW)', () => {
     );
 
     await waitFor(() => expect(capturedTrendLineProps).toBeDefined());
-    expect((capturedTrendLineProps as { points: PeriodPoint[] }).points[0]!.grain).toBe(
-      'eventSession',
-    );
+    expect((capturedTrendLineProps as { points: PeriodPoint[] }).points[0]!.grain).toBe('quarter');
     const gamesCard = document.getElementById('matchup-table') as HTMLElement;
     await waitFor(() => {
       const table = within(gamesCard).getByRole('table');

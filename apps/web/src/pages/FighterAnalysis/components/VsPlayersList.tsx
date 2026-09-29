@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import type { InsightState, Match, RateValue } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
@@ -12,30 +11,12 @@ import {
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BoundedList, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { Record } from '@/components/analytics/Record';
 import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
-
-/** Duplicated per this codebase's small-helper-duplication convention (see `VsCharactersList.tsx`, `MatchWinLossCard.tsx`). */
-function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
-}
 
 interface PlayerCandidate {
   identity: string;
@@ -148,14 +129,18 @@ export function VsPlayersList({ fighterId, fighterMatches, aliasMap }: VsPlayers
     const name = candidate.displayTag;
     const subFloor = candidate.recentRate.total < ABSTENTION_FLOOR_GAMES;
     const collapsed = candidate.state === 'collapsed';
-    // WR-C01: `locked` (below the abstention floor) is a different honesty
-    // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-    // omit the chip entirely rather than let it fall through to
-    // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-    const chipState =
-      candidate.state === 'locked'
-        ? null
-        : deltaChipStateFor(candidate.state, candidate.deltaPoints);
+    // Plan 39.1-36 (INS-04): the one ladder-to-chip mapping. A sub-floor
+    // row states its window size ("n 2 · no direction") and an empty one
+    // "no games" instead of omitting the chip; the list meta ("last 30 in
+    // each") names the horizon, so the chip never repeats it.
+    const chipView = deltaChipView({
+      state: candidate.state,
+      deltaPoints: candidate.deltaPoints,
+      recentGames: candidate.recentRate.total,
+      horizon: 'last30',
+      horizonOwnedByParent: true,
+      t,
+    });
     const recordNode = subFloor ? (
       <Record
         wins={candidate.baselineRate.wins}
@@ -177,11 +162,9 @@ export function VsPlayersList({ fighterId, fighterMatches, aliasMap }: VsPlayers
       label: name,
       recentRecordNode: recordNode,
       deltaNode:
-        collapsed || chipState === null ? null : (
+        collapsed || chipView === null ? null : (
           <DeltaChip
-            state={chipState}
-            valueLabel={deltaValueLabel(chipState, candidate.deltaPoints, t)}
-            horizonOwnedByParent
+            {...chipView}
             ariaLabel={t('analytics.dumbbell.rowAria', {
               label: name,
               recentRecord,

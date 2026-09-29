@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useTranslation } from 'react-i18next';
@@ -9,13 +9,10 @@ import { ABSTENTION_FLOOR_GAMES, buildPeriodSeries } from '@smash-tracker/shared
 import i18n from '@/i18n';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
+import { buildMatchupPeriodSeries } from '../lib/matchupPeriodSeries';
 import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
-import {
-  MatchupChart,
-  formStripEventKeyForMatch,
-  renderFormNowHead,
-  useMatchupFormNow,
-} from './MatchupChart';
+import { MatchupChart, renderFormNowHead, useMatchupFormNow } from './MatchupChart';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 
 /**
  * `MatchupChart.tsx` never imports `ChartCard` (the Phase 37 structural
@@ -56,7 +53,7 @@ function ChartCardWrapper({
       <MatchupChart
         matchupMatches={matchupMatches}
         horizon={horizon}
-        periodSeries={buildPeriodSeries({ matches: matchupMatches })}
+        periodSeries={buildMatchupPeriodSeries(matchupMatches)}
         width={width}
         height={height}
       />
@@ -105,6 +102,27 @@ function oldSequence(count: number, wins: number, opponentId = 1): Match[] {
   return Array.from({ length: count }, (_, i) =>
     makeMatch({ id: `o${i}`, opponent_id: opponentId, time: base + i * dayMs, win: i < wins }),
   );
+}
+
+/**
+ * Plan 39.1-41: `perQuarter` games in each of the `quarters` calendar quarters
+ * BEFORE the current one (5 days into the quarter, an hour apart) — the scoped
+ * trend's quarterly grain draws one point per quarter whatever today's date
+ * is, and the newest quarters stay inside D-15's 12-month bound.
+ */
+function quarterlySequence(quarters: number, perQuarter: number): Match[] {
+  const now = new Date();
+  const currentQuarterFirstMonth = Math.floor(now.getUTCMonth() / 3) * 3;
+  const matches: Match[] = [];
+  for (let k = quarters; k >= 1; k--) {
+    const start = Date.UTC(now.getUTCFullYear(), currentQuarterFirstMonth - 3 * k, 5, 12);
+    for (let i = 0; i < perQuarter; i++) {
+      matches.push(
+        makeMatch({ id: `q${k}-${i}`, time: start + i * 60 * 60 * 1000, win: (k + i) % 3 !== 0 }),
+      );
+    }
+  }
+  return matches;
 }
 
 /** Two games inside both D-15's 12-month scoped bound and the `last30` window. */
@@ -167,7 +185,9 @@ describe('MatchupChart', () => {
   });
 
   it('renders the card body in order: verdict, evidence, form strip, plot, caption', () => {
-    const { container } = renderChart(recentSequence(10));
+    // REWRITTEN by plan 39.1-41 (PD-41-1): 10 daily games are one quarter —
+    // the scoped trend locks there — so the fixture is 9 quarters of 3 games.
+    const { container } = renderChart(quarterlySequence(9, 3));
 
     // `[data-slot]` covers the verdict/evidence/form-strip/caption markers;
     // the plot itself is a plain Recharts `<path class="trend-line-period-line">`
@@ -183,8 +203,7 @@ describe('MatchupChart', () => {
     );
 
     // The plot only renders once the trend is unlocked (>=8 periods) — the
-    // 10-game fixture above is at 'game' grain, 10 points, satisfying that
-    // floor.
+    // fixture above is at 'quarter' grain, 9 points, satisfying that floor.
     expect(order).toEqual([
       'matchup-form-now-verdict',
       'matchup-form-now-evidence',
@@ -194,27 +213,29 @@ describe('MatchupChart', () => {
     ]);
   });
 
-  it('at "game" grain every point is sub-floor (n=1 < the 3-game floor): renders only hollow dots and draws no connecting line segment', () => {
-    const { container } = renderChart(recentSequence(10));
-    const circles = container.querySelectorAll('circle');
-    expect(circles.length).toBe(10);
-    for (const circle of Array.from(circles)) {
-      expect(circle.getAttribute('stroke')).toBe('var(--viz-context)');
-    }
-    // The stroked connecting line's `d` attribute is empty/absent when every
-    // `lineRatePercent` value is `null` (Recharts draws nothing to connect).
-    const line = container.querySelector('.trend-line-period-line');
-    expect(line).not.toBeNull();
-    const d = line?.getAttribute('d') ?? '';
-    expect(d.trim()).toBe('');
+  // REWRITTEN by plan 39.1-41 (PD-41-1): the scoped trend never bins finer
+  // than a quarter, so the all-sub-floor case is 8 quarters of 2 games (was
+  // 10 single-game 'game' points).
+  // REWRITTEN by plan 39.1-43 (was: 8 sub-floor quarters drew 8 hollow dots
+  // and no connecting line): PD-43-1 / UI-SPEC 7.13 — the trend locks while
+  // fewer than 8 quarters reach the 3-game floor, so 8 quarters of 2 games
+  // are the locked trend (the hollow / unjoined rule itself is pinned in
+  // TrendLine.test.tsx on a drawn series).
+  it('at "quarter" grain with every quarter sub-floor (n=2 < the 3-game floor): the locked trend — "8 more quarters", meter "0 of 8", no plot (PD-43-1)', () => {
+    const { container } = renderChart(quarterlySequence(8, 2));
+    expect(container.querySelectorAll('circle')).toHaveLength(0);
+    const locked = container.querySelector('[data-slot="trend-line-period-locked"]');
+    expect(locked).not.toBeNull();
+    expect(locked!.textContent).toContain('8 more quarters with 3+ games unlock this chart.');
+    expect(locked!.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('0 of 8');
   });
 
-  it('on a 200-game fixture the rendered period-point count is at most 60 and the strip-tick count is at most 30', () => {
+  // REWRITTEN by plan 39.1-42 (PD-42-3, sketch A): the Matchups strip limit
+  // is 60 (was 30) — 200 games draw exactly 60 ticks under jsdom (no fit).
+  it('on a 200-game fixture the rendered period-point count is at most 60 and the strip draws exactly its 60-game limit', () => {
     const { container } = renderChart(recentSequence(200));
     expect(container.querySelectorAll('circle').length).toBeLessThanOrEqual(60);
-    expect(container.querySelectorAll('[data-slot="form-strip-tick"]').length).toBeLessThanOrEqual(
-      30,
-    );
+    expect(container.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(60);
   });
 
   it('mounts no brand/primary-colour MARK on the surface (data ink only — a `text-primary` link-styled chrome button, e.g. TrendLine\'s own pre-existing "view as table" toggle, is not a mark and is out of scope)', () => {
@@ -335,11 +356,15 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     expect(labels[2]).toMatch(/^Session · /);
     expect(labels.some((l) => l?.startsWith('Unknown'))).toBe(false);
 
-    // The caption's first (oldest shown) span carries the same event's
-    // label as its title — no width-fit prop is given in this render, so
-    // every group is shown and the oldest is session A.
-    const captionFirst = container.querySelector('[data-slot="form-strip-caption-first"]');
-    expect(captionFirst).toHaveAttribute('title', `Session · ${expectedDate}`);
+    // REWRITTEN by plan 39.1-42: the caption is gone — every shown group's
+    // label row carries its label (title = full label); no width-fit prop is
+    // given, so every group is shown and the oldest is session A.
+    const labelRows = Array.from(
+      container.querySelectorAll('[data-slot="form-strip-event-label"]'),
+    );
+    expect(labelRows).toHaveLength(3);
+    expect(labelRows[0]!.firstElementChild).toHaveAttribute('title', `Session · ${expectedDate}`);
+    expect(container.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
   });
 
   it("WR-01: a recurring start.gg event name at two tournaments is ordered by its sets' own games — the newest tournament's sets end the strip, not an older manual session", () => {
@@ -370,18 +395,20 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     const { container } = renderChart([...olderTournament, ...manualSession, ...newerTournament]);
     const sets = Array.from(container.querySelectorAll('[data-slot="form-strip-set"]'));
     expect(sets[sets.length - 1]!.getAttribute('aria-label')).toMatch(/newest-rival/);
-    expect(container.querySelector('[data-slot="form-strip-caption-last"]')).toHaveAttribute(
-      'title',
-      'Ultimate Singles',
-    );
+    // REWRITTEN by plan 39.1-42 (PD-42-2): the group is named by its
+    // TOURNAMENT ("Evo"), never the shared bracket name "Ultimate Singles",
+    // on the newest shown event's own label row (the caption is gone).
+    const labelRows = container.querySelectorAll('[data-slot="form-strip-event-label"]');
+    expect(labelRows[labelRows.length - 1]!.firstElementChild).toHaveAttribute('title', 'Evo');
     const groups = Array.from(container.querySelectorAll('[data-slot="form-strip-event"]'));
     expect(groups).toHaveLength(3);
   });
 
-  it('WR-03: the strip row is named for the games DRAWN of the total ("Form strip, 30 of 35 games"), and the key pluralises on the total', () => {
-    const { container } = renderChart(recentSequence(35));
+  // REWRITTEN by plan 39.1-42 (PD-42-3): limit 60, so 70 games -> 60 of 70.
+  it('WR-03: the strip row is named for the games DRAWN of the total ("Form strip, 60 of 70 games"), and the key pluralises on the total', () => {
+    const { container } = renderChart(recentSequence(70));
     const row = container.querySelector('[data-slot="form-strip-root"] [role="group"]');
-    expect(row).toHaveAttribute('aria-label', 'Form strip, 30 of 35 games');
+    expect(row).toHaveAttribute('aria-label', 'Form strip, 60 of 70 games');
     const t = i18n.getFixedT('en');
     expect(t('analytics.strip.aria', { count: 1, shown: 1 })).toBe('Form strip, 1 of 1 game');
     expect(t('analytics.strip.aria', { count: 77, shown: 11 })).toBe('Form strip, 11 of 77 games');
@@ -398,10 +425,56 @@ describe('Form strip session grouping (39.1-31, item 7, UI-SPEC §7.10/§8.6)', 
     }
   });
 
-  it('a pairing of 35 games renders "30 of 35 games shown" — the host formatter wiring, jsdom applies only the 30-game limit (no measured width)', () => {
-    const { container } = renderChart(recentSequence(35));
+  // REWRITTEN by plan 39.1-42 (PD-42-3 limit 60; sketch 003 foot wording).
+  it('a pairing of 70 games renders "60 of 70 games shown · older events drop first · oldest → newest" — the host formatter wiring, jsdom applies only the 60-game limit (no measured width)', () => {
+    const { container } = renderChart(recentSequence(70));
     const shownOfTotal = container.querySelector('[data-slot="form-strip-shown-of-total"]');
-    expect(shownOfTotal).toHaveTextContent('30 of 35 games shown');
+    expect(shownOfTotal?.textContent).toBe(
+      '60 of 70 games shown · older events drop first · oldest → newest',
+    );
+  });
+
+  it('head: the strip head reads "Form · last 60 games, by event" (count = min(limit, games)) with the four swatch-legend items', () => {
+    const { container } = renderChart(recentSequence(70));
+    const head = container.querySelector('[data-slot="form-strip-head"]');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 60 games, by event',
+    );
+    expect(
+      Array.from(head!.querySelectorAll('[data-slot="form-strip-legend-item"]')).map(
+        (el) => el.textContent,
+      ),
+    ).toEqual(['up = win', 'down = loss', 'gap = new set', 'label = event · W–L']);
+    const { container: small } = renderChart(recentSequence(12));
+    expect(small.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 12 games, by event',
+    );
+  });
+
+  it('no-window (UI-SPEC 7.10 "collapsed: no dimming"): with collapsed horizons (30 of 40 games) no strip tick is dimmed and the foot says "Whole record shown"', () => {
+    const { container } = renderChart(recentSequence(40));
+    const ticks = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="form-strip-tick"]'),
+    );
+    expect(ticks).toHaveLength(40);
+    expect(ticks.filter((tick) => tick.style.opacity === '0.32')).toHaveLength(0);
+    expect(container.querySelector('[data-slot="form-strip-window-note"]')?.textContent).toBe(
+      'Whole record shown',
+    );
+  });
+
+  it('foot-line: the foot states what is drawn and the window note — highlighted window (70 games) and collapsed horizons (12 games, the whole record)', () => {
+    const footParts = (count: number) =>
+      Array.from(
+        renderChart(recentSequence(count)).container.querySelector('[data-slot="form-strip-foot"]')
+          ?.children ?? [],
+      ).map((child) => child.textContent);
+    expect(footParts(70)).toEqual([
+      '60 of 70 games shown · older events drop first · oldest → newest',
+      'Last 30 games highlighted',
+    ]);
+    expect(footParts(12)).toEqual(['all 12 games · oldest → newest', 'Whole record shown']);
   });
 });
 
@@ -410,7 +483,9 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
     const scrollIntoView = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
 
-    const matches = recentSequence(10);
+    // REWRITTEN by plan 39.1-41 (PD-41-1): the clicked point is the oldest
+    // QUARTER (was the oldest 'game' point of 10 daily games).
+    const matches = quarterlySequence(9, 3);
     const { container, setDrillDown } = renderChart(matches);
 
     const svg = container.querySelector('svg.recharts-surface');
@@ -421,23 +496,186 @@ describe('MatchupChart drill-down (D-07, CHRT-02, Phase 38-04)', () => {
 
     // jsdom's zero-size layout resolves every click to activeTooltipIndex 0
     // (see TrendLine.test.tsx and the 37-01 SUMMARY) — the clicked point is
-    // therefore always the oldest ('game' grain) point. CR-02 (39.1-REVIEW):
+    // therefore always the oldest (quarter) point. CR-02 (39.1-REVIEW):
     // the drill names that point by its key — a `[startMs, endMs]` window
     // over-counts on tied timestamps and non-contiguous grains.
     expect(setDrillDown).toHaveBeenCalledTimes(1);
     const call = setDrillDown.mock.calls[0]?.[0];
-    expect(call).toEqual({ eventKey: `game:${matches[0]?.id}` });
+    expect(call).toEqual({ eventKey: buildMatchupPeriodSeries(matches).points[0]?.key });
+    expect(call.eventKey).toMatch(/^quarter:\d{4}-Q[1-4]$/);
     expect(scrollIntoView).toHaveBeenCalledWith(
       expect.objectContaining({ behavior: 'smooth', block: 'start' }),
     );
   });
 });
 
-describe('formStripEventKeyForMatch (event axis <-> form-strip set identity)', () => {
-  it('resolves a parseable externalId to its set id, and a manual match to a synthetic per-match key', () => {
-    expect(formStripEventKeyForMatch(makeMatch({ externalId: 'sgg:abc123:g2' }))).toBe('abc123');
-    expect(formStripEventKeyForMatch(makeMatch({ id: 'manual-1', externalId: undefined }))).toBe(
-      'game:manual-1',
+// REWRITTEN by plan 39.1-42 (PD-42-4): the per-game `formStripEventKeyForMatch`
+// wrapper is retired — the terminus resolves through the ONE strip derivation,
+// where a manual game belongs to its play-session set and keeps its legacy
+// per-game key for links shared before the change.
+describe('createFormStripSetKeyResolver (event axis <-> form-strip set identity)', () => {
+  it('resolves a parseable externalId to its set id, and a manual match to its session set key plus its legacy per-match key', () => {
+    const parsed = makeMatch({ externalId: 'sgg:abc123:g2' });
+    const manual = makeMatch({ id: 'manual-1', externalId: undefined });
+    const resolve = createFormStripSetKeyResolver([parsed, manual]);
+    expect(resolve(parsed)).toEqual(['abc123']);
+    expect(resolve(manual)).toEqual(['manual-session:manual-1', 'game:manual-1']);
+  });
+});
+
+/**
+ * Plan 39.1-41 (sketch 003 A tracer; PD-41-1/2/3): the scoped Matchups trend
+ * on the sketch's own two pairings. The fixture (`scripts/sketch003Fixture.mjs`)
+ * and the new builder are loaded inside each test body so a missing export
+ * fails the test, not the file.
+ */
+describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
+  type Sketch003Fixture = {
+    buildSketch003Scale: () => { matches: Match[] };
+    SKETCH_003_PAIRINGS: { deep: readonly [number, number]; thin: readonly [number, number] };
+  };
+
+  async function loadFixture(): Promise<Sketch003Fixture> {
+    const url = pathToFileURL(path.resolve(__dirname, '../../../../scripts/sketch003Fixture.mjs'));
+    return (await import(/* @vite-ignore */ url.href)) as Sketch003Fixture;
+  }
+
+  async function pairing(which: 'deep' | 'thin'): Promise<Match[]> {
+    const { buildSketch003Scale, SKETCH_003_PAIRINGS } = await loadFixture();
+    const [fighterId, opponentId] = SKETCH_003_PAIRINGS[which];
+    return buildSketch003Scale().matches.filter(
+      (m) => m.fighter_id === fighterId && m.opponent_id === opponentId,
     );
+  }
+
+  type ScopedBuilder = (matches: Match[]) => ReturnType<typeof buildPeriodSeries>;
+
+  async function loadBuilder(): Promise<{ build: ScopedBuilder; minGrain: unknown }> {
+    const mod = (await import('../lib/matchupPeriodSeries')) as Record<string, unknown>;
+    expect(typeof mod.buildMatchupPeriodSeries, 'buildMatchupPeriodSeries is exported').toBe(
+      'function',
+    );
+    return {
+      build: mod.buildMatchupPeriodSeries as ScopedBuilder,
+      minGrain: mod.MATCHUP_TREND_MIN_GRAIN,
+    };
+  }
+
+  it("buildMatchupPeriodSeries bins quarterly (MATCHUP_TREND_MIN_GRAIN = 'quarter'): deep 21 points, 18 at the floor", async () => {
+    const { build, minGrain } = await loadBuilder();
+    expect(minGrain).toBe('quarter');
+    const series = build(await pairing('deep'));
+    expect(series.grain).toBe('quarter');
+    expect(series.points).toHaveLength(21);
+    expect(series.points.filter((p) => !p.subFloor)).toHaveLength(18);
+  });
+
+  it('buildMatchupPeriodSeries on the thin pairing: 4 quarters, 1 at the floor', async () => {
+    const { build } = await loadBuilder();
+    const series = build(await pairing('thin'));
+    expect(series.grain).toBe('quarter');
+    expect(series.points).toHaveLength(4);
+    expect(series.points.filter((p) => !p.subFloor)).toHaveLength(1);
+  });
+
+  function renderScoped(matches: Match[], series: ReturnType<typeof buildPeriodSeries>) {
+    const contextValue: MatchupsContextValue = {
+      fighterSprites: [],
+      fighter: undefined,
+      setFighter: vi.fn(),
+      opponent: undefined,
+      setOpponent: vi.fn(),
+      fighterUsageById: new Map(),
+      opponentUsage: [],
+      drillDownAxes: {},
+      setDrillDown: vi.fn(),
+    };
+    return render(
+      <MatchupsContext.Provider value={contextValue}>
+        <MatchupChart matchupMatches={matches} horizon="last30" periodSeries={series} width={640} />
+      </MatchupsContext.Provider>,
+    );
+  }
+
+  // REWRITTEN by plan 39.1-43 (was: the surface is CHART_H_COMPACT = 160px
+  // tall): PD-43-3 — the trend draws sketch 003's 160px VALUE range, so its
+  // outer box is 240px (plan 37's 24 / 16px paddings and the 30px axis band
+  // outside it) and the root declares data-value-range-px="160".
+  it('the deep trend draws a 160px value range (240px outer box) with tier dots (5 and 7 px only) and ONE stroked line', async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('drawn');
+    expect(root?.getAttribute('data-dot-sizing')).toBe('tier');
+    expect(root?.getAttribute('data-y-domain')).toBe('20,100');
+    expect(root?.getAttribute('data-value-range-px')).toBe('160');
+    const surface = container.querySelector('svg.recharts-surface');
+    expect(surface?.getAttribute('height')).toBe('240');
+    const diameters = new Set(
+      Array.from(container.querySelectorAll('[data-slot="trend-period-dot"]')).map(
+        (c) => Number(c.getAttribute('r')) * 2,
+      ),
+    );
+    expect([...diameters].sort()).toEqual([5, 7]);
+    const stroked = Array.from(container.querySelectorAll('path.recharts-line-curve')).filter(
+      (p) => (p.getAttribute('stroke') ?? 'none') !== 'none',
+    );
+    expect(stroked).toHaveLength(1);
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1);
+    const labels = Array.from(
+      container.querySelectorAll('[data-slot="trend-period-value-label"]'),
+    ).map((el) => el.textContent);
+    expect([...labels].sort()).toEqual(['100%', '33%', '60%']);
+  });
+
+  it("the reference label reads t('analytics.trend.referenceLabel') — '63% all time' on the deep pairing (was a bare '63%')", async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const label = container.querySelector('.trend-period-reference-label');
+    expect(label?.textContent).toBe(i18n.t('analytics.trend.referenceLabel', { rate: '63%' }));
+    expect(label?.textContent).toBe('63% all time');
+  });
+
+  it('the thin pairing shows the locked trend', async () => {
+    const { build } = await loadBuilder();
+    const thin = await pairing('thin');
+    const { container } = renderScoped(thin, build(thin));
+    const root = container.querySelector('[data-slot="trend-line-period"]');
+    expect(root?.getAttribute('data-state')).toBe('locked');
+    expect(container.querySelector('svg.recharts-surface')).toBeNull();
+  });
+
+  // Plan 39.1-43 (sketch 003 trendLegend / trendSection, PD-43-1 / PD-43-2).
+  it('trend head: the deep trend reads "Win rate by quarter" with the dot, hollow and "63% all time" legend items', async () => {
+    const { build } = await loadBuilder();
+    const deep = await pairing('deep');
+    const { container } = renderScoped(deep, build(deep));
+    const head = container.querySelector('[data-slot="trend-period-head"]');
+    expect(head?.firstElementChild?.textContent).toBe('Win rate by quarter');
+    const items = Array.from(container.querySelectorAll('[data-slot="trend-legend-item"]'));
+    const byKind = new Map(items.map((item) => [item.getAttribute('data-kind'), item.textContent]));
+    expect(byKind.get('dot')).toBe('size = games');
+    expect(byKind.get('hollow')).toBe('hollow = under 3 games');
+    expect(byKind.get('reference')).toBe('63% all time');
+  });
+
+  it('locked-at-floor: the thin pairing reads "7 more quarters with 3+ games unlock this chart." with a "1 of 8" meter', async () => {
+    const { build } = await loadBuilder();
+    const thin = await pairing('thin');
+    const { container } = renderScoped(thin, build(thin));
+    const locked = container.querySelector('[data-slot="trend-line-period-locked"]')!;
+    expect(locked.textContent).toContain('7 more quarters with 3+ games unlock this chart.');
+    expect(locked.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('1 of 8');
+    expect(locked.textContent).toContain('1 of 8');
+    expect(container.querySelector('[data-slot="trend-period-head"]')?.textContent).toBe(
+      'Win rate by quarter',
+    );
+  });
+
+  it('MatchupChart.tsx carries no cumulative context series', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'MatchupChart.tsx'), 'utf8');
+    expect(source).not.toMatch(/contextRatePercents|computeCumulativeContextPercents/);
   });
 });

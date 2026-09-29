@@ -108,6 +108,55 @@ describe('HeroStats', () => {
     expect(within(overallCard).queryByText('Thin')).not.toBeInTheDocument();
   });
 
+  describe('plan 39.1-36 (honest-none-chip): the overall-record chip states its horizon and never a direction below the floor', () => {
+    function overallChip(): HTMLElement | null {
+      const card = screen.getByText('Overall Record').closest('[data-slot="card"]') as HTMLElement;
+      return card.querySelector('[data-slot="delta-chip"]');
+    }
+
+    it('a stale account (no games in the scoped window) reads "no games · last 30"', () => {
+      const now = Date.now();
+      const matches = Array.from({ length: 40 }, (_, i) =>
+        makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+      );
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const chip = overallChip();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('none');
+      expect(chip!.textContent).toBe('no games· last 30');
+    });
+
+    it('a 2-game scoped window reads "n 2 · no direction"', () => {
+      const now = Date.now();
+      const matches = [
+        ...Array.from({ length: 40 }, (_, i) =>
+          makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+        makeMatch({ id: 'n1', time: now - 2 * DAY_MS, win: true }),
+        makeMatch({ id: 'n2', time: now - DAY_MS, win: true }),
+      ];
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const chip = overallChip();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('thin');
+      expect(chip!.textContent).toBe('n 2 · no direction');
+    });
+
+    it("a steady 30-game window carries its own horizon label 'last 30'", () => {
+      const now = Date.now();
+      const matches = [
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({ id: `o${i}`, time: now - (200 + i) * DAY_MS, win: i % 2 === 0 }),
+        ),
+        ...Array.from({ length: 30 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: now - i * DAY_MS, win: i % 2 === 0 }),
+        ),
+      ];
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      expect(overallChip()!.textContent).toBe('steady· last 30');
+    });
+  });
+
   it('renders the current streak in the form card', () => {
     const matches = [
       makeMatch({ id: '1', time: 1, win: false }),
@@ -294,5 +343,66 @@ describe('HeroStats', () => {
       expect(screen.queryByLabelText('Rating down from last session')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Rating unchanged from last session')).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * Plan 39.1-39 (coordinator item 2026-09-25, UI-SPEC §7.3 / §7.4 / §6.5
+ * rule 2): each split card's two figures are ONE StatRow (never a hand-rolled
+ * two-column grid) and each record wraps whole tokens inside its own cell,
+ * so the two records never overprint (39.1-36's capture: "1,0266–184").
+ */
+describe('HeroStats split cards — one StatRow, wrapping records (plan 39.1-39)', () => {
+  const matches = [
+    makeMatch({ id: 'm1', time: 1, win: true }),
+    makeMatch({ id: 'm2', time: 2, win: false }),
+    makeMatch({ id: 'm3', time: 3, win: true }),
+    makeMatch({ id: 'c1', time: 4, win: true, source: 'startgg' }),
+    makeMatch({ id: 'c2', time: 5, win: false, source: 'startgg' }),
+    makeMatch({ id: 'c3', time: 6, win: false, source: 'startgg' }),
+    makeMatch({ id: 'q1', time: 7, win: true, matchType: 'quickplay' }),
+    makeMatch({ id: 'q2', time: 8, win: true, matchType: 'quickplay' }),
+    makeMatch({ id: 'q3', time: 9, win: false, matchType: 'quickplay' }),
+    makeMatch({ id: 'f1', time: 10, win: true, matchType: 'offline-friendly' }),
+    makeMatch({ id: 'f2', time: 11, win: false, matchType: 'offline-friendly' }),
+  ];
+
+  function cardOf(title: string): HTMLElement {
+    return screen.getByText(title).closest('[data-slot="card"]') as HTMLElement;
+  }
+
+  it.each(['Casual vs Competitive', 'Online vs Offline'])(
+    '%s renders exactly one stat-row holding two figures, and no grid-cols-2 gap-2 wrapper',
+    (title) => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const card = cardOf(title);
+      const rows = card.querySelectorAll('[data-slot="stat-row"]');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.children).toHaveLength(2);
+      expect(card.querySelector('.grid-cols-2.gap-2')).toBeNull();
+    },
+  );
+
+  it.each(['Casual vs Competitive', 'Online vs Offline'])(
+    "%s: each figure's record is in whole-token wrap mode",
+    (title) => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const records = cardOf(title).querySelectorAll('[data-slot="record"]');
+      expect(records.length).toBe(2);
+      for (const record of records) {
+        const classes = (record as HTMLElement).className.split(/\s+/);
+        expect(classes).toContain('flex-wrap');
+        expect(classes).not.toContain('whitespace-nowrap');
+      }
+    },
+  );
+
+  it('the empty-side state and the delta line are unchanged', () => {
+    const manualOnly = matches.filter((m) => m.source !== 'startgg');
+    render(<HeroStats matches={manualOnly} timeFilteredMatches={manualOnly} />);
+    const card = cardOf('Casual vs Competitive');
+    expect(card.querySelector('[data-slot="stat-row"]')).not.toBeNull();
+    expect(within(card).getByText('no data')).toBeInTheDocument();
+    expect(screen.queryByText(/pts$/)).not.toBeInTheDocument();
   });
 });

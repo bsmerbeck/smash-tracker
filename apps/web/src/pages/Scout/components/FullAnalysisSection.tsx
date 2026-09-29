@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
-import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  MARK_BOUND_LINE_POINTS,
+  type ScoutGame,
+} from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import {
@@ -47,7 +51,12 @@ export function FullAnalysisSection({
   const [open, setOpen] = useState(false);
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="rounded-lg border">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="rounded-lg border"
+      data-slot="scout-full-analysis"
+    >
       <CollapsibleTrigger asChild>
         <button
           type="button"
@@ -82,7 +91,12 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
   const { t } = useTranslation();
   const matches = scoutGamesToMatches(games);
   const trendSeries = getRollingWinRate(matches, ROLLING_WINDOW);
-  const trendPoints = buildScoutTrendChartPoints(trendSeries, t);
+  // Plan 39.1-49 (UI-SPEC §11, orchestrator 2026-09-26): a line chart shows at
+  // most MARK_BOUND_LINE_POINTS points — "Recent Form" plots the most recent
+  // ones (each still its own trailing-5 value over the full history) and says
+  // how many of how many games it shows, the strip's own shownOf line.
+  const shownSeries = trendSeries.slice(-MARK_BOUND_LINE_POINTS);
+  const trendPoints = buildScoutTrendChartPoints(shownSeries, t);
 
   // "Their top character" — the character with the most sampled games,
   // i.e. whichever fighter_id appears most often once adapted to Match[]
@@ -164,7 +178,17 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
         {trendPoints.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('opponents.trend.empty')}</p>
         ) : (
-          <TrendLine points={trendPoints} />
+          <div data-slot="scout-recent-form" data-points={trendPoints.length}>
+            <TrendLine points={trendPoints} />
+            {shownSeries.length < trendSeries.length && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t('analytics.strip.shownOf', {
+                  shown: shownSeries.length,
+                  total: trendSeries.length,
+                })}
+              </p>
+            )}
+          </div>
         )}
       </ChartCard>
 

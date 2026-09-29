@@ -213,7 +213,7 @@ function MatrixHeatGrid({
 }) {
   return (
     <div className="overflow-x-auto" data-slot="matrix-heat-grid">
-      <table className="mx-auto w-max border-separate border-spacing-0 text-sm">
+      <table className="w-max border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
             <th className="sticky left-0 z-10 w-32 border-r border-border bg-card p-2 text-left" />
@@ -277,15 +277,13 @@ function MatrixHeatStack({
   }
   return (
     <Tabs defaultValue={firstRow.key} data-slot="matrix-heat-stack">
-      {/* Plan 39.1-20 Task 3 [Rule 1]: overflow-x-auto — TabsList itself
-          never wraps (shadcn default `inline-flex`, no wrap), and with
-          enough row tabs (one per fighter pairing) it can exceed a narrow
-          viewport's width. MatrixHeatGrid (the wide-viewport sibling, just
-          above) already wraps its own table in the SAME pattern; this stack
-          variant was missing the equivalent. The layout oracle
-          (guard:layout) measured this as a real horizontal-overflow
-          violation on the opponent hub at the 390px viewport. */}
-      <TabsList className="max-w-full overflow-x-auto">
+      {/* Plan 39.1-49 (OOS-5): the tab list WRAPS whole tabs onto further
+          lines — one tab per fighter pairing can exceed a phone's width, and
+          plan 39.1-20's sideways scroller (added so the page itself never
+          overflowed) hid the third pairing's label at the card edge. With no
+          inner scroller and no fixed width, nothing overflows the page and
+          every pairing label reads whole; triggers keep their own width. */}
+      <TabsList className="flex h-auto w-full flex-wrap justify-start">
         {rows.map((row) => (
           <TabsTrigger
             key={row.key}

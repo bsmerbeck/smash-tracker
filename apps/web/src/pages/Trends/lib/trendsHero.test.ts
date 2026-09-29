@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
-import { BEST_MONTH_MIN_GAMES, CURRENT_FORM_WINDOW, buildTrendsHero } from './trendsHero';
+import {
+  BEST_MONTH_MIN_GAMES,
+  CURRENT_FORM_WINDOW,
+  buildTrendsHero,
+  formatMonthLabel,
+} from './trendsHero';
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -118,5 +123,18 @@ describe('buildTrendsHero', () => {
 
     expect(hero.currentFormGames).toBe(3);
     expect(hero.currentFormWinRate).toBe(67);
+  });
+});
+
+// Plan 39.1-34: moved unchanged from the retired MonthlyPerformance.test.tsx
+// together with formatMonthLabel itself (TrendsHero's best-month caption).
+describe('formatMonthLabel', () => {
+  it('formats a YYYY-MM key as a short month/year label', () => {
+    expect(formatMonthLabel('2021-01', 'en')).toBe('Jan 2021');
+    expect(formatMonthLabel('2021-12', 'en')).toBe('Dec 2021');
+  });
+
+  it('falls back to the raw key for malformed input', () => {
+    expect(formatMonthLabel('garbage', 'en')).toBe('garbage');
   });
 });

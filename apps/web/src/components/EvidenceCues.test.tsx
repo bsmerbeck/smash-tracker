@@ -52,7 +52,9 @@ describe('SampleCue', () => {
     render(
       <SampleCue sample={makeSample({ eligibleDenominator: 4564, confidenceTier: 'high' })} />,
     );
-    expect(screen.getByText('4564 games · high confidence')).toBeInTheDocument();
+    // Plan 39.1-51 (OOS-40-B): was '4564 games · …' — counts of 1,000+ now group
+    // through the `grouped` interpolation format (UI-SPEC §5).
+    expect(screen.getByText('4,564 games · high confidence')).toBeInTheDocument();
   });
 
   it('renders nothing below the abstention floor (no confidence tier)', () => {
@@ -78,7 +80,8 @@ describe('SampleCueGlyph', () => {
     rerender(
       <SampleCueGlyph sample={makeSample({ eligibleDenominator: 4564, confidenceTier: 'high' })} />,
     );
-    expect(screen.getByRole('img', { name: 'high confidence, 4564 games' })).toHaveTextContent(
+    // Plan 39.1-51 (OOS-40-B): was 'high confidence, 4564 games'.
+    expect(screen.getByRole('img', { name: 'high confidence, 4,564 games' })).toHaveTextContent(
       '●●●',
     );
   });

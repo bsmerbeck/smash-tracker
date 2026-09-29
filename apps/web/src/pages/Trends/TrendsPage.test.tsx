@@ -1,7 +1,8 @@
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -49,6 +50,47 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+/**
+ * Plan 39.1-35: the real CareerTimelineCard plus a probe button that calls
+ * whatever `onSelectPeriod` the page passes it with a fixed window — the page
+ * only forwards axes, so the page-level test drives the handler directly.
+ */
+const { DRILL_FROM_MS, DRILL_TO_MS } = vi.hoisted(() => ({
+  DRILL_FROM_MS: Date.UTC(2021, 0, 1),
+  DRILL_TO_MS: Date.UTC(2021, 0, 31, 23, 59, 59, 999),
+}));
+vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./components/CareerTimelineCard')>();
+  function CareerTimelineCardWithProbe(props: ComponentProps<typeof actual.CareerTimelineCard>) {
+    const { onSelectPeriod: selectPeriod, onSelectSet: selectSet } = props as {
+      onSelectPeriod?: (range: object) => void;
+      onSelectSet?: (key: string) => void;
+    };
+    return (
+      <>
+        <actual.CareerTimelineCard {...props} />
+        <button
+          type="button"
+          onClick={() => selectPeriod?.({ fromMs: DRILL_FROM_MS, toMs: DRILL_TO_MS })}
+        >
+          timeline-drill-probe
+        </button>
+        <button type="button" onClick={() => selectSet?.('SETA')}>
+          timeline-set-probe
+        </button>
+      </>
+    );
+  }
+  return { ...actual, CareerTimelineCard: CareerTimelineCardWithProbe };
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</div>
+  );
+}
+
 function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'm1',
@@ -73,7 +115,15 @@ function renderTrends(initialEntry = '/trends') {
           <AnalyticsFilterProvider>
             <TooltipProvider>
               <Routes>
-                <Route path="/trends" element={<TrendsPage />} />
+                <Route
+                  path="/trends"
+                  element={
+                    <>
+                      <TrendsPage />
+                      <LocationProbe />
+                    </>
+                  }
+                />
                 <Route path="/dashboard" element={<div>Dashboard page</div>} />
               </Routes>
             </TooltipProvider>
@@ -119,14 +169,28 @@ describe('TrendsPage', () => {
 
     renderTrends();
 
-    expect(await screen.findByText('Monthly Performance')).toBeInTheDocument();
-    expect(screen.getByText('Rating Curve')).toBeInTheDocument();
+    expect(await screen.findByText('Career timeline')).toBeInTheDocument();
     expect(screen.getByText('Sessions & Tilt')).toBeInTheDocument();
     expect(screen.getByText('Recent Events')).toBeInTheDocument();
     expect(screen.getByText('Setting Comparison')).toBeInTheDocument();
     expect(screen.getByText('Match-Type Mix')).toBeInTheDocument();
     // The six-column Tournaments table no longer renders on Trends (DD-10/UI-SPEC §8.2).
     expect(screen.queryByRole('table', { name: /tournament/i })).not.toBeInTheDocument();
+  });
+
+  it('plan 39.1-34: renders the career timeline and neither legacy title (the chart.js pair is retired)', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+      makeMatch({ id: 'm2', win: false, time: Date.UTC(2021, 1, 1), matchType: 'offline-tourney' }),
+    ]);
+
+    const { container } = renderTrends();
+
+    expect(await screen.findByText('Career timeline')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="career-timeline"]')).not.toBeNull();
+    expect(screen.queryByText('Rating Curve')).not.toBeInTheDocument();
+    expect(screen.queryByText('Monthly Performance')).not.toBeInTheDocument();
+    expect(container.querySelector('canvas')).toBeNull();
   });
 
   it('shows the resync hint in the tournaments section when there are no tournament entries yet', async () => {
@@ -153,7 +217,7 @@ describe('TrendsPage', () => {
 
     expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
     // Page itself still renders (not the page-level "no matches at all" hero).
-    expect(screen.getByText('Monthly Performance')).toBeInTheDocument();
+    expect(screen.getByText('Career timeline')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go to Dashboard' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -170,7 +234,7 @@ describe('TrendsPage', () => {
     ]);
 
     const { container } = renderTrends();
-    await screen.findByText('Monthly Performance');
+    await screen.findByText('Career timeline');
 
     const cardRoots = container.querySelectorAll('[data-slot="card"]');
     expect(cardRoots.length).toBeGreaterThan(0);
@@ -187,7 +251,7 @@ describe('TrendsPage', () => {
 
       renderTrends();
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       expect(document.getElementById('games')).not.toBeInTheDocument();
     });
 
@@ -210,7 +274,7 @@ describe('TrendsPage', () => {
 
       renderTrends();
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       await waitFor(() =>
         expect(
           document.querySelector('[data-slot="insight-rail-card"][data-card-kind="regular"]'),
@@ -243,7 +307,7 @@ describe('TrendsPage', () => {
 
       renderTrends('/trends?claim=ratingMove:account:doesNotExist');
 
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
       await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
       const gamesCard = document.getElementById('games') as HTMLElement;
       expect(within(gamesCard).getByRole('table')).toBeInTheDocument();
@@ -256,7 +320,7 @@ describe('TrendsPage', () => {
 
     renderTrends('/trends?stage=1&claim=ratingMove:account:last30#games');
 
-    await screen.findByText('Monthly Performance');
+    await screen.findByText('Career timeline');
     await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
     await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
 
@@ -467,6 +531,66 @@ describe('TrendsPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('plan 39.1-35: a timeline period drills to the Trends terminus', () => {
+    it('writes from/to through the drill contract, keeps unrelated params, drops every other drill axis, lands on #games and mounts the terminus', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'in1', win: true, time: Date.UTC(2021, 0, 5) }),
+        makeMatch({ id: 'in2', win: false, time: Date.UTC(2021, 0, 20) }),
+        makeMatch({ id: 'out1', win: true, time: Date.UTC(2021, 1, 3) }),
+        makeMatch({ id: 'out2', win: true, time: Date.UTC(2020, 11, 30) }),
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends('/trends?keep=1&claim=x&event=y&stage=1&fighter=1&vs=2');
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-drill-probe' }));
+
+      await waitFor(() => expect(screen.getByTestId('location').textContent).toMatch(/#games$/));
+      const url = new URL(`http://x${screen.getByTestId('location').textContent}`);
+      expect(url.pathname).toBe('/trends');
+      expect(url.searchParams.get('from')).toBe(String(DRILL_FROM_MS));
+      expect(url.searchParams.get('to')).toBe(String(DRILL_TO_MS));
+      expect(url.searchParams.get('keep')).toBe('1');
+      for (const dropped of ['claim', 'event', 'stage', 'fighter', 'vs']) {
+        expect(url.searchParams.has(dropped), dropped).toBe(false);
+      }
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(2);
+    });
+  });
+
+  describe('plan 39.1-35: a thin-account FormStrip set drills to exactly its games', () => {
+    it('writes event=<set key> + #games, and the terminus uses the shared form-strip resolver so its count equals the set', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'a1', externalId: 'sgg:SETA:g1', time: Date.UTC(2021, 0, 5, 18) }),
+        makeMatch({ id: 'a2', externalId: 'sgg:SETA:g2', time: Date.UTC(2021, 0, 5, 18, 10) }),
+        makeMatch({ id: 'a3', externalId: 'sgg:SETA:g3', time: Date.UTC(2021, 0, 5, 18, 20) }),
+        makeMatch({ id: 'b1', externalId: 'sgg:SETB:g1', time: Date.UTC(2021, 0, 6, 18) }),
+        makeMatch({ id: 'm1', time: Date.UTC(2021, 0, 7, 18) }),
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends('/trends?keep=1&from=1&to=2');
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-set-probe' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location').textContent).toMatch(/event=SETA.*#games$/),
+      );
+      const url = new URL(`http://x${screen.getByTestId('location').textContent}`);
+      expect(url.searchParams.get('event')).toBe('SETA');
+      expect(url.searchParams.get('keep')).toBe('1');
+      expect(url.searchParams.has('from')).toBe(false);
+      expect(url.searchParams.has('to')).toBe(false);
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(3);
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
       listMatches.mockReturnValue(new Promise(() => {}));
@@ -492,7 +616,7 @@ describe('TrendsPage', () => {
       ]);
 
       const { container } = renderTrends();
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
 
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
       expect(container.querySelector('[data-slot="trends-hero-body"]')).not.toBeNull();
@@ -508,7 +632,7 @@ describe('TrendsPage', () => {
       ]);
 
       const { container, queryClient } = renderTrends();
-      await screen.findByText('Monthly Performance');
+      await screen.findByText('Career timeline');
 
       let resolveSecondFetch: (value: unknown) => void = () => {};
       listMatches.mockImplementation(
@@ -524,7 +648,7 @@ describe('TrendsPage', () => {
         const grid = container.querySelector('[data-slot="page-grid"]');
         expect(grid?.className).toMatch(/opacity-60/);
       });
-      expect(screen.getByText('Monthly Performance')).toBeInTheDocument();
+      expect(screen.getByText('Career timeline')).toBeInTheDocument();
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
 
       resolveSecondFetch([
@@ -534,6 +658,81 @@ describe('TrendsPage', () => {
         const grid = container.querySelector('[data-slot="page-grid"]');
         expect(grid?.className).not.toMatch(/opacity-60/);
       });
+    });
+  });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §10.4, sketch 002-C `.filters`).
+  it('plan 39.1-38 filter-row: the first child of the page shell is one unboxed page-filter-row with the h1 "Trends" and the HorizonSwitch; no card contains either', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+    ]);
+    const { container } = renderTrends();
+    await screen.findByText('Career timeline');
+    const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+    const row = shell.firstElementChild as HTMLElement;
+    expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Trends' });
+    expect(row.contains(h1)).toBe(true);
+    const horizonSwitch = container.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+    expect(row.contains(horizonSwitch)).toBe(true);
+    expect(h1.closest('[data-slot="card"]')).toBeNull();
+    expect(horizonSwitch.closest('[data-slot="card"]')).toBeNull();
+  });
+
+  // Plan 39.1-38 (design-audit item 9; UI-SPEC §8.2 "insight before chart"):
+  // DOM order = the phone reading order; the desktop composition is restored
+  // by lg grid placement, never a CSS `order` utility (UI-SPEC §14.5).
+  describe('plan 39.1-38 insight-first phone order', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    it('DOM order is stat row, reads rail, career timeline, left stack (Sessions, Recent events), right stack (Setting, Mix)', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+        makeMatch({
+          id: 'm2',
+          win: false,
+          time: Date.UTC(2021, 1, 1),
+          matchType: 'offline-tourney',
+        }),
+      ]);
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const indexOf = (predicate: (cell: HTMLElement) => boolean) => cells.findIndex(predicate);
+      const hero = indexOf((c) => Boolean(c.querySelector('[data-slot="trends-hero-body"]')));
+      const reads = indexOf((c) => Boolean(c.querySelector('[data-slot="trends-reads-rail"]')));
+      const timeline = indexOf((c) => Boolean(c.querySelector('[data-slot="career-timeline"]')));
+      const left = indexOf((c) => (c.textContent ?? '').includes('Sessions & Tilt'));
+      const right = indexOf((c) => (c.textContent ?? '').includes('Setting Comparison'));
+      expect([hero, reads, timeline, left, right]).toEqual([0, 1, 2, 3, 4]);
+      expect(cells[left]!.textContent).toContain('Recent Events');
+      expect(cells[right]!.textContent).toContain('Match-Type Mix');
+
+      expect(cls(cells[hero]!)).toContain('lg:row-start-1');
+      expect(cls(cells[timeline]!)).toContain('lg:row-start-2');
+      expect(cls(cells[left]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']),
+      );
+      expect(cls(cells[reads]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']),
+      );
+      expect(cls(cells[right]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']),
+      );
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+    });
+
+    it('the loading skeleton uses the same order and placement', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderTrends();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['12', '4', '12', '4', '4']);
+      expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']));
+      expect(cls(cells[2]!)).toContain('lg:row-start-2');
+      expect(cls(cells[3]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']));
+      expect(cls(cells[4]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']));
     });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -226,6 +226,87 @@ describe('SessionsAndTilt component', () => {
 
       expect(screen.getByText(/2 games/)).toBeInTheDocument();
       expect(matchesDrillDownSpy.mock.calls.length).toBe(callsBefore);
+    });
+  });
+
+  /**
+   * Plan 39.1-40 OOS-4 (UI-SPEC §6.5 rules 1-2, §8.2 session row "date · … ·
+   * Record"): a session row's date is never the row's flexible slot — it
+   * reads whole (shrink-0 whitespace-nowrap, never truncate); the duration
+   * and the loss-run tokens move to a wrapping meta line under the date.
+   */
+  describe('OOS-4: session dates read whole', () => {
+    // One session of three straight losses (a 3L run on the row) lasting 25 min.
+    const START = Date.UTC(2023, 10, 19, 18);
+    const tiltSession = [
+      makeMatch({ id: 'a', time: START, win: false }),
+      makeMatch({ id: 'b', time: START + 10 * 60_000, win: false }),
+      makeMatch({ id: 'c', time: START + 25 * 60_000, win: false }),
+    ];
+    const DATE_LABEL = new Date(START).toLocaleDateString('en', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    function sessionRow(): HTMLElement {
+      const row = document.querySelector('[data-slot="bounded-list"] li');
+      expect(row, 'no session row').not.toBeNull();
+      return row as HTMLElement;
+    }
+
+    it("the row's date renders shrink-0 and whitespace-nowrap, never truncate", () => {
+      renderWithProviders(<SessionsAndTilt matches={tiltSession} />);
+      const date = within(sessionRow()).getByText(DATE_LABEL);
+      expect(date.className).toMatch(/\bshrink-0\b/);
+      expect(date.className).toMatch(/\bwhitespace-nowrap\b/);
+      expect(date.className).not.toMatch(/\btruncate\b/);
+      expect(date.className).not.toMatch(/\bflex-1\b/);
+    });
+
+    it('the duration and the loss-run tokens sit on a wrapping meta line under the date, not in the date line', () => {
+      renderWithProviders(<SessionsAndTilt matches={tiltSession} />);
+      const row = sessionRow();
+      const date = within(row).getByText(DATE_LABEL);
+      const duration = within(row).getByText('25 min');
+      const lossRun = within(row).getByText('3L run');
+      const meta = duration.parentElement!;
+      expect(lossRun.parentElement).toBe(meta);
+      for (const cls of ['flex', 'flex-wrap', 'gap-x-2', 'gap-y-0.5']) {
+        expect(meta.classList.contains(cls), `meta line lacks ${cls}`).toBe(true);
+      }
+      expect(meta.contains(date)).toBe(false);
+      expect(date.parentElement!.contains(duration)).toBe(false);
+      // Under the date: the meta line follows the date's line in DOM order.
+      expect(
+        date.parentElement!.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('the row keeps its one DrillableRow overlay, its Record and its chevron, and expansion still mounts the FilteredMatchList', async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<SessionsAndTilt matches={tiltSession} />);
+      const row = sessionRow();
+      const overlays = within(row).getAllByRole('button', { name: /opens details/ });
+      expect(overlays).toHaveLength(1);
+      expect(overlays[0]!.getAttribute('aria-label')).toContain(DATE_LABEL);
+      expect(overlays[0]).toHaveAttribute('aria-expanded', 'false');
+      expect(row.querySelector('[data-slot="record"]')).not.toBeNull();
+      expect(row.querySelector('svg[class*="chevron-right"]')).not.toBeNull();
+
+      await user.click(overlays[0]!);
+      expect(overlays[0]).toHaveAttribute('aria-expanded', 'true');
+      expect(within(row).getByText(/3 games/)).toBeInTheDocument();
+    });
+
+    it('the card content carries the layout-neutral sessions-and-tilt hook (never the Card)', () => {
+      const { container } = renderWithProviders(<SessionsAndTilt matches={tiltSession} />);
+      const hook = container.querySelector('[data-slot="sessions-and-tilt"]');
+      expect(hook).not.toBeNull();
+      expect(hook!.matches('[data-slot="card"]')).toBe(false);
+      expect(hook!.closest('[data-slot="card-content"]')).not.toBeNull();
+      expect(hook!.querySelector('[data-slot="stat-row"]')).not.toBeNull();
+      expect(hook!.querySelector('[data-slot="bounded-list"]')).not.toBeNull();
     });
   });
 

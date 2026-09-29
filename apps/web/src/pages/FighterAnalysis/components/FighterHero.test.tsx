@@ -189,6 +189,31 @@ describe('FighterHero', () => {
     expect(ticks.length).toBeGreaterThan(0);
   });
 
+  it('head (plan 39.1-42, sketch 001-C / 003): the strip head is the kit title "Form · last 60 games, by event" with the four swatch-legend items — no second overline paragraph of the hero', () => {
+    renderHero({ fighterMatches: largeFixture() });
+    const section = document.querySelector('[data-slot="fighter-hero-strip"]')!;
+    const head = section.querySelector('[data-slot="form-strip-head"]');
+    expect(head).not.toBeNull();
+    expect(head!.querySelector('[data-slot="form-strip-overline"]')?.textContent).toBe(
+      'Form · last 60 games, by event',
+    );
+    expect(head!.querySelectorAll('[data-slot="form-strip-legend-item"]')).toHaveLength(4);
+    expect(section.textContent?.match(/Form · last 60 games, by event/g)).toHaveLength(1);
+    expect(section.firstElementChild?.getAttribute('data-slot')).toBe('form-strip-root');
+  });
+
+  it('foot-line (plan 39.1-42): the strip foot states the drawn count and the window note', () => {
+    renderHero({ fighterMatches: largeFixture() });
+    const foot = document.querySelector(
+      '[data-slot="fighter-hero-strip"] [data-slot="form-strip-foot"]',
+    );
+    expect(foot).not.toBeNull();
+    expect(foot!.children[0]!.textContent).toMatch(
+      /^60 of \d+ games shown · older events drop first · oldest → newest$/,
+    );
+    expect(foot!.children).toHaveLength(2);
+  });
+
   it('renders localised by-match-type labels — no raw enum value reaches the DOM', () => {
     renderHero({ fighterMatches: largeFixture() });
     expect(screen.getByText('Quickplay')).toBeInTheDocument();
@@ -204,13 +229,20 @@ describe('FighterHero', () => {
   });
 
   describe('on a forty-game, no-event account', () => {
-    it('collapses the recent horizons with no delta chip and locks the last-event figure', () => {
+    it('collapses the recent horizons with no delta chip; the event-less last-event figure reads "no games"', () => {
       renderHero({ fighterMatches: fortyGameFixture(), horizon: 'last30' });
       const collapsedValues = screen.getAllByText('= all games');
       expect(collapsedValues.length).toBeGreaterThanOrEqual(1);
-      const statBody = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
-      const chips = within(statBody).queryAllByLabelText(/last 30|last event|90 days/i);
-      expect(chips.length).toBe(0);
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      // Plan 39.1-36 (rewritten assertion): the two collapsed figures still
+      // carry no chip; the last-event figure (no named event -> 0 games) now
+      // renders the honest "no games" chip instead of an unlock caption.
+      const chips = Array.from(statRow.querySelectorAll('[data-slot="delta-chip"]'));
+      expect(chips.map((chip) => chip.getAttribute('data-state'))).toEqual(['none']);
+      expect(chips[0]!.textContent).toBe('no games');
+      expect(screen.getByText('Last event').closest('button')).toContainElement(
+        chips[0] as HTMLElement,
+      );
     });
 
     it('asserts no direction anywhere on the surface', () => {
@@ -220,9 +252,244 @@ describe('FighterHero', () => {
     });
   });
 
+  describe('plan 39.1-36 (INS-04, honest-none-chip): a stale account never reads "Steady"', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const TYPES = ['quickplay', 'online-tourney', 'offline-tourney'] as const;
+
+    /** 40 games, every one dated more than 12 months ago, across three match types. */
+    function staleFixture(): Match[] {
+      const now = Date.now();
+      return Array.from({ length: 40 }, (_, i) =>
+        makeMatch({
+          id: `stale${i}`,
+          time: now - (400 + (40 - i)) * DAY_MS,
+          // Wins independent of type, so every type sits near the fighter's
+          // own 50% — the shipped all-time-vs-fighter comparison read "Steady".
+          win: i % 2 === 0,
+          matchType: TYPES[i % 3],
+        }),
+      );
+    }
+
+    /** The stale fixture plus two quickplay games in the last week. */
+    function staleWithTwoRecent(): Match[] {
+      const now = Date.now();
+      return [
+        ...staleFixture(),
+        makeMatch({ id: 'fresh1', time: now - 3 * DAY_MS, win: true, matchType: 'quickplay' }),
+        makeMatch({ id: 'fresh2', time: now - 2 * DAY_MS, win: false, matchType: 'quickplay' }),
+      ];
+    }
+
+    function shareRowChips(): Map<string, HTMLElement | null> {
+      const rows = Array.from(document.querySelectorAll('[data-slot="share-bar-row"]'));
+      return new Map(
+        rows.map((row) => [
+          row.textContent ?? '',
+          row.querySelector('[data-slot="delta-chip"]') as HTMLElement | null,
+        ]),
+      );
+    }
+
+    function figureButton(label: string): HTMLElement {
+      return screen.getByText(label).closest('button') as HTMLElement;
+    }
+
+    it('every by-match-type row reads "no games · last 30" (data-state none)', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      const chips = shareRowChips();
+      expect(chips.size).toBe(3);
+      for (const [row, chip] of chips) {
+        expect(chip, `row ${row}`).not.toBeNull();
+        expect(chip!.getAttribute('data-state')).toBe('none');
+        expect(chip!.textContent).toBe('no games· last 30');
+      }
+    });
+
+    it('a type with 2 recent games reads "n 2 · no direction" (data-state thin)', () => {
+      renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
+      const quickplayRow = Array.from(
+        document.querySelectorAll('[data-slot="share-bar-row"]'),
+      ).find((row) => row.textContent?.includes('Quickplay')) as HTMLElement;
+      const chip = quickplayRow.querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('thin');
+      expect(chip.textContent).toBe('n 2 · no direction');
+    });
+
+    it('no element in the hero reads "Steady"', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      const body = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      const steady = Array.from(body.querySelectorAll('*')).filter((el) =>
+        /^steady/i.test((el.textContent ?? '').trim()),
+      );
+      expect(steady.map((el) => el.outerHTML.slice(0, 120))).toEqual([]);
+    });
+
+    it('the three recent figures render a muted em dash and the "no games" chip, never the unlock sentence', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
+      for (const label of ['30 games', 'Last event', '90 days']) {
+        const figure = figureButton(label);
+        const chip = figure.querySelector('[data-slot="delta-chip"]');
+        expect(chip, `figure ${label}`).not.toBeNull();
+        expect(chip!.getAttribute('data-state')).toBe('none');
+        expect(chip!.textContent).toBe('no games');
+        const dash = within(figure).getByText('—');
+        expect(dash.className).toMatch(/text-muted-foreground/);
+      }
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      expect(statRow.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('a figure whose window holds 2 games reads "n 2 · no direction"', () => {
+      renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
+      const chip = figureButton('30 games').querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('thin');
+      expect(chip.textContent).toBe('n 2 · no direction');
+      const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
+      expect(statRow.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('with the page horizon last90 the row chips read "· last 90 days"', () => {
+      renderHero({ fighterMatches: staleFixture(), horizon: 'last90' });
+      for (const [row, chip] of shareRowChips()) {
+        expect(chip, `row ${row}`).not.toBeNull();
+        expect(chip!.textContent).toBe('no games· last 90 days');
+      }
+    });
+
+    it("a type whose last 30 games are recent and inside its own baseline interval reads 'steady · last 30'", () => {
+      const now = Date.now();
+      const matches: Match[] = [
+        // 60 old offline-tourney games at 50%.
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({
+            id: `ot-old${i}`,
+            time: now - (500 + i) * DAY_MS,
+            win: i % 2 === 0,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        // 30 recent offline-tourney games at 50% — inside the type's own interval.
+        ...Array.from({ length: 30 }, (_, i) =>
+          makeMatch({
+            id: `ot-new${i}`,
+            time: now - (60 - i) * DAY_MS,
+            win: i % 2 === 0,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        // A much stronger quickplay history (90%) the offline type must NOT be compared against.
+        ...Array.from({ length: 60 }, (_, i) =>
+          makeMatch({
+            id: `qp${i}`,
+            time: now - (700 + i) * DAY_MS,
+            win: i % 10 !== 0,
+            matchType: 'quickplay',
+          }),
+        ),
+      ];
+      renderHero({ fighterMatches: matches, horizon: 'last30' });
+      const offlineRow = Array.from(document.querySelectorAll('[data-slot="share-bar-row"]')).find(
+        (row) => row.textContent?.includes('Offline tournament'),
+      ) as HTMLElement;
+      const chip = offlineRow.querySelector('[data-slot="delta-chip"]')!;
+      expect(chip.getAttribute('data-state')).toBe('steady');
+      expect(chip.textContent).toBe('steady· last 30');
+    });
+  });
+
   it('renders the trend locked inset instead of a plot on a fixture under the period-trend floor', () => {
     renderHero({ fighterMatches: tinyFixture() });
     expect(document.querySelector('[data-slot="trend-line-period-locked"]')).toBeInTheDocument();
+  });
+
+  // REWRITTEN by plan 39.1-43 (was: plan 37's separate hollow-legend line,
+  // [data-slot="fighter-hero-trend-legend"]): the hollow rule is now a swatch
+  // item of the kit's trend head (sketch 001-C trendSection / 003 trendLegend).
+  describe('plan 39.1-37 (VIZ-01, UI-SPEC §11, fitted-period-trend) -> 39.1-43: the trend head legend names the hollow rule', () => {
+    /** Weekly four-game sessions, one day apart per game block; `thinWeek` gets one game only. */
+    function weeklySessions(thinWeek: number | null): Match[] {
+      const now = Date.now();
+      const week = 7 * 24 * 60 * 60 * 1000;
+      const matches: Match[] = [];
+      for (let w = 0; w < 20; w++) {
+        const games = w === thinWeek ? 1 : 4;
+        for (let g = 0; g < games; g++) {
+          matches.push(
+            makeMatch({
+              id: `w${w}g${g}`,
+              time: now - (20 - w) * week + g * 10 * 60 * 1000,
+              win: (w + g) % 2 === 0,
+            }),
+          );
+        }
+      }
+      return matches;
+    }
+
+    it('shows the "hollow = under 3 games" head item when a sub-floor period is drawn', () => {
+      const matches = weeklySessions(10);
+      const series = buildPeriodSeries({ matches });
+      expect(series.points.some((p) => p.subFloor)).toBe(true);
+      renderHero({ fighterMatches: matches });
+      const hollow = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-legend-item"][data-kind="hollow"]',
+      );
+      expect(hollow).not.toBeNull();
+      expect(hollow!.textContent).toBe(i18n.t('analytics.trend.legendHollow'));
+      // Plan 37's separate line is gone.
+      expect(document.querySelector('[data-slot="fighter-hero-trend-legend"]')).toBeNull();
+    });
+
+    it('omits the hollow legend when every period is joined', () => {
+      const matches = weeklySessions(null);
+      const series = buildPeriodSeries({ matches });
+      expect(series.points.length).toBeGreaterThanOrEqual(8);
+      expect(series.points.some((p) => p.subFloor)).toBe(false);
+      renderHero({ fighterMatches: matches });
+      expect(document.querySelector('[data-kind="hollow"]')).toBeNull();
+      expect(document.querySelector('[data-kind="dot"]')?.textContent).toBe('size = games');
+      expect(screen.queryByText(i18n.t('analytics.trend.legendHollow'))).toBeNull();
+    });
+  });
+
+  describe('plan 39.1-43 (trend-head-locked, PD-43-1 / PD-43-2 / PD-43-3): the hero trend head, locked rule and value range', () => {
+    it('the trend root declares the sketch 160px value range (data-value-range-px="160")', () => {
+      renderHero({ fighterMatches: largeFixture() });
+      const root = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-line-period"]',
+      );
+      expect(root?.getAttribute('data-value-range-px')).toBe('160');
+    });
+
+    it('the head overline is analytics.trend.title.<grain> and the reference item reads "NN% all time"', () => {
+      const matches = largeFixture();
+      const series = buildPeriodSeries({ matches });
+      renderHero({ fighterMatches: matches });
+      const head = document.querySelector(
+        '[data-slot="fighter-hero-trend"] [data-slot="trend-period-head"]',
+      );
+      expect(head?.firstElementChild?.textContent).toBe(
+        i18n.t(`analytics.trend.title.${series.grain}`),
+      );
+      expect(document.querySelector('[data-kind="reference"]')?.textContent).toMatch(
+        /^\d+% all time$/,
+      );
+      // One overline for the trend: plan 37's own overline paragraph is gone.
+      const section = document.querySelector('[data-slot="fighter-hero-trend"]')!;
+      expect(section.querySelectorAll(':scope > p')).toHaveLength(0);
+    });
+
+    it('the forty-game account (40 single-game periods, every one under the floor) now shows the locked trend — orchestrator Finding 6 / PD-43-1', () => {
+      renderHero({ fighterMatches: fortyGameFixture() });
+      const locked = document.querySelector('[data-slot="trend-line-period-locked"]');
+      expect(locked).not.toBeNull();
+      const series = buildPeriodSeries({ matches: fortyGameFixture() });
+      expect(locked!.textContent).toContain(
+        i18n.t(`analytics.trend.lockedPeriods.${series.grain}`, { count: 8 }),
+      );
+      expect(locked!.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('0 of 8');
+    });
   });
 
   describe('T-39.1-25 (gap closure, SC4/INS-04): the door is built from the claim axis, never a hand-built fighter axis', () => {
@@ -307,7 +574,10 @@ describe('FighterHero', () => {
   });
 
   describe('WR-04 (39.1-REVIEW.md): manual games are named as sessions, never "Unknown"', () => {
-    it('a manual-only history captions and names every group "Session · <date>" (Matchups\' naming), split into 3-hour sessions', () => {
+    // REWRITTEN by plan 39.1-42 (PD-42-4): two consecutive manual sessions
+    // are ONE run group labelled "Sessions · <span>" whose two sets are the
+    // sessions (was two "Session · <date>" groups of per-game sets).
+    it('a manual-only history is one run group "Sessions · <span>" (Matchups\' naming) whose sets are its 3-hour sessions', () => {
       const hourMs = 60 * 60 * 1000;
       const base = Date.now() - 3 * 24 * hourMs;
       const matches: Match[] = [
@@ -318,22 +588,23 @@ describe('FighterHero', () => {
       ];
       renderHero({ fighterMatches: matches });
 
-      const expectedDate = new Intl.DateTimeFormat('en', {
+      const expectedSpan = new Intl.DateTimeFormat('en', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
-      }).format(new Date(base));
+      }).formatRange(new Date(base), new Date(base + 10.5 * hourMs));
       const groups = Array.from(document.querySelectorAll('[data-slot="form-strip-event"]'));
-      expect(groups).toHaveLength(2);
-      for (const group of groups) {
-        expect(group.getAttribute('aria-label')).toMatch(/^Session · /);
-      }
-      const captionFirst = document.querySelector('[data-slot="form-strip-caption-first"]');
-      expect(captionFirst).toHaveTextContent(`Session · ${expectedDate}`);
-      const captions = Array.from(
-        document.querySelectorAll('[data-slot^="form-strip-caption-"]'),
-      ).map((el) => el.textContent);
-      expect(captions.some((text) => text?.includes('Unknown'))).toBe(false);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]!.getAttribute('aria-label')).toMatch(/^Sessions · /);
+      expect(groups[0]!.querySelectorAll('[data-slot="form-strip-set"]')).toHaveLength(2);
+      // REWRITTEN by plan 39.1-42: the run group's own label row (the
+      // first / last caption is gone). `formatRange` may use thin spaces
+      // around its dash: compare raw text.
+      const labelRow = document.querySelector('[data-slot="form-strip-event-label"]');
+      expect(labelRow?.firstElementChild?.textContent).toBe(`Sessions · ${expectedSpan}`);
+      expect(labelRow?.lastElementChild?.textContent).toBe('3–1');
+      expect(document.querySelector('[data-slot^="form-strip-caption"]')).toBeNull();
+      expect(labelRow?.textContent?.includes('Unknown')).toBe(false);
     });
   });
 

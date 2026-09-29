@@ -121,3 +121,150 @@ describe('MatchupStageGuide', () => {
     expect(label).toHaveAttribute('for', select.id);
   });
 });
+
+/**
+ * Plan 39.1-49 (UI-SPEC §6.6, §6.5 rules 1-2): below 640px the guide renders
+ * stacked two-line rows — the same rows, the same best and worst stage links,
+ * every value — and its header stacks the min-matches control under the title.
+ */
+const normText = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+function guideFixture(): Match[] {
+  const matches: Match[] = [];
+  const add = (
+    opponentId: number,
+    stage: { id: number; name: string },
+    win: boolean,
+    n: number,
+  ) => {
+    for (let g = 0; g < n; g++) {
+      matches.push(
+        makeMatch({
+          id: `m-${opponentId}-${stage.id}-${win}-${g}`,
+          time: matches.length + 1,
+          win,
+          opponent_id: opponentId,
+          map: stage,
+        }),
+      );
+    }
+  };
+  const battlefield = { id: 1, name: 'Battlefield' };
+  const other = { id: 3, name: 'Final Destination' };
+  // Fox: wins on Battlefield, losses on the other stage (best + worst links).
+  add(fox.id, battlefield, true, 3);
+  add(fox.id, other, false, 3);
+  // Opponent 20: only Battlefield qualifies (best link, worst em-dash).
+  add(20, battlefield, true, 3);
+  return matches;
+}
+
+function renderGuideLayout(matches: Match[], layout: 'table' | 'stack') {
+  return render(
+    <MemoryRouter>
+      <MatchupStageGuide fighterMatches={matches} layout={layout} />
+    </MemoryRouter>,
+  );
+}
+
+describe('MatchupStageGuide — stacked rows below 640px (plan 39.1-49)', () => {
+  it('stack versus table parity: same rows, the same best and worst stage links per row, every table value in its stacked row', () => {
+    const matches = guideFixture();
+    const table = renderGuideLayout(matches, 'table');
+    const tableEl = table.container.querySelector('table[data-slot="matchup-stage-guide"]');
+    expect(tableEl).not.toBeNull();
+    const tableRows = Array.from(tableEl!.querySelectorAll('tbody tr'))
+      .filter((tr) => tr.querySelectorAll('td').length > 1)
+      .map((tr) => ({
+        hrefs: Array.from(tr.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+        cells: Array.from(tr.querySelectorAll('td'))
+          .map((td) => normText(td.textContent))
+          .filter(Boolean),
+      }));
+    expect(tableRows.length).toBeGreaterThanOrEqual(2);
+    table.unmount();
+
+    const stack = renderGuideLayout(matches, 'stack');
+    expect(stack.container.querySelector('table')).toBeNull();
+    const list = stack.container.querySelector('ul[data-slot="matchup-stage-guide"]');
+    expect(list).not.toBeNull();
+    const stackRows = Array.from(
+      list!.querySelectorAll(':scope > li[data-slot="stage-guide-row"]'),
+    );
+    expect(stackRows).toHaveLength(tableRows.length);
+    stackRows.forEach((li, index) => {
+      expect(Array.from(li.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(
+        tableRows[index]!.hrefs,
+      );
+      const text = normText(li.textContent);
+      for (const cell of tableRows[index]!.cells) {
+        expect(text).toContain(cell);
+      }
+    });
+    // Two same-typed values are told apart by visible labels.
+    expect(stack.getAllByText('Best Stage').length).toBeGreaterThan(0);
+    expect(stack.getAllByText('Worst Stage').length).toBeGreaterThan(0);
+  });
+
+  it('the stacked opponent slot truncates in one flexible slot with the full name as its title', () => {
+    const { container } = renderGuideLayout(guideFixture(), 'stack');
+    const slot = container.querySelector(`[title="${fox.name}"]`);
+    expect(slot).not.toBeNull();
+    expect(slot!.className).toMatch(/\btruncate\b/);
+    expect(slot!.className).toMatch(/\bmin-w-0\b/);
+  });
+
+  it('the cap and Show all / Show fewer behave the same in both layouts, and the toggle controls the root', () => {
+    const matches: Match[] = [];
+    for (let opponentId = 20; opponentId < 32; opponentId++) {
+      for (let g = 0; g < 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `m${opponentId}-${g}`,
+            time: opponentId * 10 + g,
+            win: true,
+            opponent_id: opponentId,
+          }),
+        );
+      }
+    }
+    for (const layout of ['table', 'stack'] as const) {
+      const view = renderGuideLayout(matches, layout);
+      const count = () =>
+        layout === 'table'
+          ? view.container.querySelectorAll('tbody tr').length
+          : view.container.querySelectorAll(
+              'ul[data-slot="matchup-stage-guide"] > li[data-slot="stage-guide-row"]',
+            ).length;
+      expect(count()).toBe(8);
+      const toggle = screen.getByRole('button', { name: /show all/i });
+      expect(
+        document.getElementById(toggle.getAttribute('aria-controls')!)?.getAttribute('data-slot'),
+      ).toBe('matchup-stage-guide');
+      fireEvent.click(toggle);
+      expect(count()).toBe(12);
+      fireEvent.click(screen.getByRole('button', { name: /show fewer/i }));
+      expect(count()).toBe(8);
+      view.unmount();
+    }
+  });
+
+  it('header: below 640px the min-matches control stacks under the title; sm: classes restore the row', () => {
+    const { container } = renderGuide(guideFixture());
+    const header = container.querySelector('[data-slot="card-header"]');
+    expect(header).not.toBeNull();
+    const classes = header!.className.split(/\s+/);
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'flex',
+        'flex-col',
+        'sm:flex-row',
+        'sm:items-center',
+        'sm:justify-between',
+      ]),
+    );
+    expect(classes).not.toContain('flex-row');
+    expect(classes).not.toContain('items-center');
+    expect(classes).not.toContain('justify-between');
+  });
+});

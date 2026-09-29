@@ -12,7 +12,7 @@ import {
 import { Bar } from 'react-chartjs-2';
 import type { GspGainStats } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { chartColors, darkChartOptions } from '@/lib/chartTheme';
+import { chartColors, darkChartOptions, seriesBarDataset } from '@/lib/chartTheme';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -23,8 +23,7 @@ function buildPerWinGainsData(perWinGains: number[], t: TFunction) {
       {
         label: t('gsp.gains.gainedGsp'),
         data: perWinGains,
-        backgroundColor: chartColors.red,
-        borderRadius: 2,
+        ...seriesBarDataset(),
       },
     ],
   };

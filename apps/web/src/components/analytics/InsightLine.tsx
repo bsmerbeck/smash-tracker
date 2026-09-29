@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 export type InsightLineTone = 'steady' | 'notable';
 
@@ -14,8 +15,7 @@ export interface InsightLineProps {
    * the host — never a dismiss. The host passes a bare `<Link>`; this
    * component wraps it in `Button asChild size="sm" variant="link"` (a line
    * is not a card, so it never takes the card's brand-red primary fill,
-   * UI-SPEC §7.8). With no door, this component's markup is byte-identical
-   * to before this prop existed.
+   * UI-SPEC §7.8). With no door, no door slot and no flex-wrap class render.
    */
   door?: ReactNode;
 }
@@ -41,7 +41,7 @@ export function InsightLine({ text, chip, tone, door }: InsightLineProps) {
         <span>{text}</span>
         {door && (
           <span data-slot="insight-line-door" className="shrink-0">
-            <Button asChild size="sm" variant="link">
+            <Button asChild size="sm" variant="link" className={MUTED_LINK_TONE}>
               {door}
             </Button>
           </span>
@@ -59,13 +59,26 @@ export function InsightLine({ text, chip, tone, door }: InsightLineProps) {
       data-slot="insight-line"
       data-tone="steady"
     >
-      <svg width="8" height="2" viewBox="0 0 8 2" aria-hidden="true" className="shrink-0">
-        <rect width="8" height="2" fill="var(--steady)" />
-      </svg>
-      <span>{text}</span>
+      {/* Plan 39.1-50 (OOS-40-A): the dash and its text are ONE flex item,
+          top-aligned — the dash is centred on the text's first 20px line
+          (mt-[9px] of a 2px bar) — so a wrapping door never strands the dash
+          on a line of its own and a two-line text never centres it between
+          its lines. */}
+      <span data-slot="insight-line-body" className="flex min-w-0 items-start gap-2">
+        <svg
+          width="8"
+          height="2"
+          viewBox="0 0 8 2"
+          aria-hidden="true"
+          className="mt-[9px] shrink-0"
+        >
+          <rect width="8" height="2" fill="var(--steady)" />
+        </svg>
+        <span data-slot="insight-line-text">{text}</span>
+      </span>
       {door && (
         <span data-slot="insight-line-door" className="shrink-0">
-          <Button asChild size="sm" variant="link">
+          <Button asChild size="sm" variant="link" className={MUTED_LINK_TONE}>
             {door}
           </Button>
         </span>

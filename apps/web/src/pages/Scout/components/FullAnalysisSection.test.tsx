@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ScoutGame } from '@smash-tracker/shared';
@@ -87,5 +87,78 @@ describe('FullAnalysisSection', () => {
 
     expect(screen.getByText('Stage Mastery — Overall')).toBeInTheDocument();
     expect(screen.getByText('Stage Mastery — Mario')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Plan 39.1-49 (T-39.1-49-02): on a phone the Full analysis tables render
+ * their stacked roots, and the third-party-data host still renders ZERO
+ * anchors — the stacked rows add no link into the viewer's own routes.
+ */
+describe('FullAnalysisSection — phone layout (plan 39.1-49)', () => {
+  it('with (max-width: 639px) matching, OpponentTable and WhatTheyPlayTable render their stack roots and the section renders zero anchors', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === '(max-width: 639px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+      })),
+    });
+    try {
+      const user = userEvent.setup();
+      const games = [
+        makeGame({ time: 1, win: true }),
+        makeGame({ time: 2, win: false, opponentTag: 'Kola' }),
+        makeGame({ time: 3, win: true }),
+        makeGame({ time: 4, win: true, fighterId: 2 }),
+      ];
+      const { container } = render(<FullAnalysisSection games={games} gamerTag="Pandem1c" />);
+      await user.click(screen.getByRole('button', { name: /full analysis/i }));
+      expect(container.querySelector('ul[data-slot="opponent-table"]')).not.toBeNull();
+      expect(container.querySelector('ul[data-slot="what-they-play"]')).not.toBeNull();
+      expect(container.querySelector('table[data-slot="opponent-table"]')).toBeNull();
+      expect(container.querySelectorAll('a')).toHaveLength(0);
+    } finally {
+      // @ts-expect-error — jsdom has no matchMedia; restore that default.
+      delete window.matchMedia;
+    }
+  });
+});
+
+/**
+ * Plan 39.1-49 (orchestrator 2026-09-26; UI-SPEC §11 "a line chart shows at
+ * most 60 points"): the Recent Form trend plots at most MARK_BOUND_LINE_POINTS
+ * of the scouted player's rolling-form points — the most recent ones — and
+ * says how many of how many games it shows (the strip's existing
+ * `analytics.strip.shownOf` line).
+ */
+describe('FullAnalysisSection — Recent Form point cap (plan 39.1-49)', () => {
+  it('recent form cap: 100 games plot 60 points with a "60 of 100 games shown" line; 20 games plot 20 with no line', async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 100 }, (_, i) =>
+      makeGame({ time: 1_700_000_000_000 + i * 60_000, win: i % 3 !== 0 }),
+    );
+    const view = render(<FullAnalysisSection games={many} gamerTag="Pandem1c" />);
+    await user.click(screen.getByRole('button', { name: /full analysis/i }));
+    const trend = view.container.querySelector('[data-slot="scout-recent-form"]');
+    expect(trend).not.toBeNull();
+    expect(trend!.getAttribute('data-points')).toBe('60');
+    expect(screen.getByText('60 of 100 games shown')).toBeInTheDocument();
+    view.unmount();
+
+    const few = Array.from({ length: 20 }, (_, i) =>
+      makeGame({ time: 1_700_000_000_000 + i * 60_000, win: i % 2 === 0 }),
+    );
+    const small = render(<FullAnalysisSection games={few} gamerTag="Pandem1c" />);
+    await user.click(screen.getByRole('button', { name: /full analysis/i }));
+    expect(
+      small.container.querySelector('[data-slot="scout-recent-form"]')?.getAttribute('data-points'),
+    ).toBe('20');
+    expect(screen.queryByText(/games shown/)).not.toBeInTheDocument();
   });
 });

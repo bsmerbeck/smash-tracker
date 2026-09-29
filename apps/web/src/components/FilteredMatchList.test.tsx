@@ -544,11 +544,36 @@ describe('FilteredMatchList — narrow-layout parity (phase 38-08 Task 2)', () =
     }
   });
 
-  it('table layout: the wrapper around the table still carries the grandfathered 500px scroll box (exemption 2 unchanged)', () => {
+  /**
+   * REWRITTEN by plan 39.1-51 — was "table layout: the wrapper around the
+   * table still carries the grandfathered 500px scroll box (exemption 2
+   * unchanged)". Reason: UI-SPEC §6.4 amended 2026-09-26 (exemption 2
+   * deleted), sketch 003 M14 ("no inner scroller"), OOS-8 (the box's bottom
+   * edge cut the last visible row at 1440). The table now flows in the page,
+   * mirroring the stacked case's walk above.
+   */
+  it('table layout: no element between the root and the table carries a max-height or vertical-overflow utility (OOS-8, §6.4 amended)', () => {
     const { container } = renderList({ matches: [makeMatch()], layout: 'table' });
-    const table = container.querySelector('[data-slot="filtered-match-table"]');
-    expect(table?.closest('.max-h-\\[500px\\]')).not.toBeNull();
-    expect(table?.closest('.overflow-y-auto')).not.toBeNull();
+    const table = container.querySelector('[data-slot="filtered-match-table"]') as HTMLElement;
+    expect(table).not.toBeNull();
+    const root = container.querySelector('[data-slot="filtered-match-list"]');
+    expect(root).not.toBeNull();
+    let node: HTMLElement | null = table;
+    while (node && node !== root) {
+      expect(node.className).not.toMatch(/max-h-|overflow-y-auto|overflow-y-scroll/);
+      node = node.parentElement;
+    }
+    expect(node).toBe(root);
+  });
+
+  it('plan 39.1-51: the root carries data-slot="filtered-match-list" in both layouts (the guard:layout last-row-visible hook)', () => {
+    for (const layout of ['table', 'stack'] as const) {
+      const { container, unmount } = renderList({ matches: [makeMatch()], layout });
+      const roots = container.querySelectorAll('[data-slot="filtered-match-list"]');
+      expect(roots).toHaveLength(1);
+      expect(roots[0]?.querySelector('[data-total-rows]')).not.toBeNull();
+      unmount();
+    }
   });
 });
 
@@ -634,7 +659,8 @@ describe('FilteredMatchList — 100-row first pass + "Show 50 more" paging (plan
 
     const progress = document.querySelector('[aria-live="polite"]');
     expect(progress).not.toBeNull();
-    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1000`));
+    // Plan 39.1-51: was `… 1000` — the progress line now groups counts of 1,000+.
+    expect(progress).toHaveTextContent(new RegExp(`${FILTERED_MATCH_LIST_ROW_CAP} .* 1,000`));
   });
 
   it('stacked layout: count, data-total-rows and paging control against <li> rows, at the layout-appropriate cap (plan 39.1-33: stack no longer shares the table cap — see the dedicated stack-paging describe below for its 20-row bound)', () => {
@@ -886,6 +912,17 @@ describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged
     expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
   });
 
+  // Plan 39.1-51 (whole-page review, OOS-40-B on the terminus's own copy): the
+  // summary and progress line printed '1720 games' / 'Showing 20 of 1720
+  // games' ungrouped on the recent drill routes (UI-SPEC §5 thousands separators).
+  it('plan 39.1-51: counts of 1,000+ in the summary and progress line are grouped (1,234 games, Showing 20 of 1,234 games)', () => {
+    const matches = makeManyMatches(1234);
+    renderList({ matches, axes: { fighterId: mario.id }, layout: 'stack' });
+    expect(screen.getByText(/^1,234 games ·/)).toBeInTheDocument();
+    const progress = document.querySelector('[aria-live="polite"]');
+    expect(progress).toHaveTextContent(/Showing 20 of 1,234 games/);
+  });
+
   it('stacked layout: 50 matches, one activation mounts 40 and leaves focus on the control now named "Show 10 more"; the next activation mounts all 50, unmounts the control, moves focus to the list root with preventScroll, and the progress line announces the full count', async () => {
     const user = userEvent.setup();
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus');
@@ -1098,4 +1135,44 @@ describe('WR-04: focus after a row delete', () => {
     expect(triggers).toHaveLength(3);
     await waitFor(() => expect(document.activeElement).toBe(triggers[1]));
   });
+});
+
+/**
+ * Plan 39.1-39 (UI-SPEC §4.3): the paging control is a muted link
+ * (MUTED_LINK_TONE); the tournament links are inline content links in the
+ * foreground tone with an underline on hover (INLINE_LINK_TONE) — neither is
+ * ever brand-red text.
+ */
+describe('FilteredMatchList link tone (plan 39.1-39)', () => {
+  function classesOf(el: HTMLElement) {
+    return el.className.split(/\s+/);
+  }
+
+  it('the "Show 50 more" paging control carries the muted link tone', () => {
+    renderList({ matches: makeManyMatches(300), axes: {}, layout: 'table' });
+    const classes = classesOf(
+      screen.getByRole('button', { name: showMoreName(FILTERED_MATCH_LIST_PAGE_SIZE) }),
+    );
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).not.toContain('text-primary');
+  });
+
+  it.each(['table', 'stack'] as const)(
+    '%s layout: the tournament link is an inline foreground link, never brand red',
+    async (layout) => {
+      const user = userEvent.setup();
+      renderList({
+        matches: [makeMatch({ id: 'novid-1', vodUrl: undefined })],
+        layout,
+        tournamentLinkForMatch: () => ({ href: '/tournaments/xyz', label: 'View tournament' }),
+      });
+      await user.click(screen.getByRole('button', { name: /show details|opens video/i }));
+      const classes = classesOf(screen.getByRole('link', { name: 'View tournament' }));
+      expect(classes).toContain('text-foreground');
+      expect(classes).toContain('underline-offset-4');
+      expect(classes).toContain('hover:underline');
+      expect(classes).not.toContain('text-primary');
+    },
+  );
 });

@@ -127,3 +127,60 @@ describe('BoundedList', () => {
     expect(source).not.toMatch(/overflow-y-\S+/);
   });
 });
+
+/**
+ * Plan 39.1-39 (UI-SPEC §4.3: red is the one filled primary door, the
+ * HorizonSwitch inset, the focus ring and app chrome — never text): every
+ * BoundedList control is a muted link (`MUTED_LINK_TONE`,
+ * `text-muted-foreground hover:text-foreground`), never the Button link
+ * variant's brand-red `text-primary`.
+ */
+function expectMutedLinkTone(el: HTMLElement) {
+  const classes = el.className.split(/\s+/);
+  expect(classes).toContain('text-muted-foreground');
+  expect(classes).toContain('hover:text-foreground');
+  expect(classes).not.toContain('text-primary');
+}
+
+describe('BoundedList link tone (plan 39.1-39)', () => {
+  it('"Show all", "Show fewer" and both terminus forms carry the muted link tone', async () => {
+    const user = userEvent.setup();
+    render(<BoundedList rows={makeRows(20)} cap={LIST_CAP} labels={LABELS} empty={<p>none</p>} />);
+    const showAll = screen.getByRole('button', { name: 'Show all' });
+    expectMutedLinkTone(showAll);
+    await user.click(showAll);
+    expectMutedLinkTone(screen.getByRole('button', { name: 'Show fewer' }));
+  });
+
+  it('the terminus link and the terminus button carry the muted link tone', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <BoundedList
+        rows={makeRows(40)}
+        cap={LIST_CAP}
+        labels={LABELS}
+        empty={<p>none</p>}
+        terminusHref="/opponents"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Show all' }));
+    expectMutedLinkTone(screen.getByRole('link', { name: 'All →' }));
+    unmount();
+    render(<BoundedList rows={makeRows(40)} cap={LIST_CAP} labels={LABELS} empty={<p>none</p>} />);
+    await user.click(screen.getByRole('button', { name: 'Show all' }));
+    expectMutedLinkTone(screen.getByRole('button', { name: 'All →' }));
+  });
+
+  it('the full-page "Show 50 more" control carries the muted link tone', () => {
+    render(
+      <BoundedList
+        rows={makeRows(LIST_PASS_MAX + 10)}
+        cap={LIST_CAP}
+        labels={LABELS}
+        empty={<p>none</p>}
+        mode="full-page"
+      />,
+    );
+    expectMutedLinkTone(screen.getByRole('button', { name: 'Show 50 more' }));
+  });
+});

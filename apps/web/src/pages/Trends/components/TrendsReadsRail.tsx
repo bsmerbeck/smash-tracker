@@ -5,9 +5,11 @@ import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import {
   ACCOUNT_SCOPE,
-  INSIGHT_TEMPLATES,
   RAIL_CARD_CAP,
-  assembleRail,
+  TRENDS_READ_TEMPLATES,
+  assembleTrendsRail,
+  buildTrendsBackfillInsights,
+  isRailFallbackInsight,
   scoreInsight,
 } from '@smash-tracker/shared';
 import {
@@ -24,36 +26,8 @@ import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatPercent } from '@/lib/formatPercent';
-
-/**
- * The three account-scoped cards this rail draws from (TRND-02/D-09):
- * `RatingMove`, `TiltCost`, `SessionFatigue`, plus the two D-14 back-fill
- * FACT templates (WR-A03, 39.1-REVIEW.md). NOTE: `bestMatchup`/
- * `worstMatchup` both guard `scope.kind !== 'character'` internally and
- * this rail runs at `ACCOUNT_SCOPE`, so they never actually contribute a
- * card here today — they're wired for consistency with the other two
- * rails. Unlike `FighterInsightRail`/`MatchDataRail`, this rail's own three
- * templates CAN all legitimately land on `hidden`/hidden-equivalent states
- * at once for a real account on the `last30` horizon, in which case
- * `rail.ts`'s synthetic fallback still fires — `railBackfillRegression.test.ts`
- * documents this residual case against the shared 8k fixture; it is why the
- * fallback's OWN copy was made honest (a distinct `insights.rail.unavailable`
- * key with no games-needed claim) rather than relying on back-fill wiring
- * alone. Resolved once at module scope: the registry is a static, closed
- * array.
- */
-const RATING_MOVE_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'ratingMove')!;
-const TILT_COST_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'tiltCost')!;
-const SESSION_FATIGUE_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'sessionFatigue')!;
-const BEST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'bestMatchup')!;
-const WORST_MATCHUP_TEMPLATE = INSIGHT_TEMPLATES.find((t) => t.id === 'worstMatchup')!;
-const RAIL_TEMPLATES = [
-  RATING_MOVE_TEMPLATE,
-  TILT_COST_TEMPLATE,
-  SESSION_FATIGUE_TEMPLATE,
-  BEST_MATCHUP_TEMPLATE,
-  WORST_MATCHUP_TEMPLATE,
-];
+import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
+import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention. */
 function claimChipKindFor(kind: Insight['kind']): ClaimChipKind {
@@ -96,12 +70,10 @@ function insightDoorLabel(door: InsightDoorDescriptor, t: TFunction): string {
  * `FALLBACK_ROUTE_BY_KIND` mapping) follow, capped at 3 total.
  */
 function buildDoorNodes(
-  insight: Insight,
+  descriptors: InsightDoorDescriptor[],
   t: TFunction,
-  subjectPath: (personalPath: string) => string,
   extraDoors: ReactNode[] = [],
 ): InsightCardDoors | undefined {
-  const descriptors = buildInsightDoors({ insight, subjectPath });
   const doorLinks = descriptors.map((door) => (
     <Link key={door.kind} to={door.href}>
       {insightDoorLabel(door, t)}
@@ -120,13 +92,50 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
     return '';
   }
   const record = `${claim.value.wins}–${claim.value.losses}`;
+  const tier = claim.sample.confidenceTier;
+  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
+  // Plan 39.1-40 (UI-SPEC §9.4, D-06): a sample is labelled by what it is.
+  // A Best / Toughest record is a lifetime matchup record — 'all time', never
+  // a recent horizon. A LastEventRecap names one event, which is its own
+  // window (the Fighter rail's precedent).
+  if (insight.templateId === 'bestMatchup' || insight.templateId === 'worstMatchup') {
+    return t('insights.evidence.allTimeOnly', {
+      record,
+      rate: formatPercent(claim.value.rate, locale),
+      cue,
+    });
+  }
+  if (insight.templateId === 'lastEventRecap') {
+    return t('insights.evidence.single', { record, cue });
+  }
+  // TiltCost pools every spot of the account's history and SessionFatigue
+  // every session — lifetime / cohort samples, never a recent horizon. Card
+  // states that reach here always carry a tier (n at least 8); a tier-less
+  // one falls back to the single-sample line.
+  if (insight.templateId === 'tiltCost' || insight.templateId === 'sessionFatigue') {
+    if (!tier) {
+      return t('insights.evidence.single', { record, cue });
+    }
+    const tierLabel = t(`insights.evidence.tier.${tier}`);
+    if (insight.templateId === 'tiltCost') {
+      return t('insights.evidence.spots', {
+        record,
+        count: claim.value.total,
+        tier: tierLabel,
+      });
+    }
+    const lateGameNumber = Number(insight.copy.values.lateGameNumber);
+    return t('insights.evidence.longSessions', {
+      count: Number(insight.copy.values.longSessionCount),
+      games: lateGameNumber - 1,
+      tier: tierLabel,
+    });
+  }
   // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
   // percent formatter instead of a bare `${Math.round(x * 100)}%` template
   // literal, which baked in the English convention (no space before `%`)
   // inside every locale's translated evidence sentence.
   const rate = formatPercent(claim.value.rate, locale);
-  const tier = claim.sample.confidenceTier;
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
   const baselineClaim = insight.baseline;
   const baselineRate =
     baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
@@ -140,6 +149,10 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
 }
 
 function buildSpan(insight: Insight, t: TFunction): string | undefined {
+  // Plan 39.1-40: one named event is its own window — no span line.
+  if (insight.templateId === 'lastEventRecap') {
+    return undefined;
+  }
   if (insight.window.fromMs == null || insight.window.toMs == null) {
     return undefined;
   }
@@ -183,14 +196,14 @@ export function useTrendsInsights({
 
   const insights = useMemo(() => {
     const built: Insight[] = [];
-    for (const template of RAIL_TEMPLATES) {
+    const keep = (insight: Insight) => {
+      if (!dismissedIds.includes(insight.id)) {
+        built.push({ ...insight, salience: scoreInsight(insight, nowMs) });
+      }
+    };
+    for (const template of TRENDS_READ_TEMPLATES) {
       try {
-        const results = template.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs });
-        for (const insight of results) {
-          if (!dismissedIds.includes(insight.id)) {
-            built.push({ ...insight, salience: scoreInsight(insight, nowMs) });
-          }
-        }
+        template.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs }).forEach(keep);
       } catch (err) {
         // WR-C03 (39.1-REVIEW.md): a template crash must not silently drop
         // its card with zero signal — `template.id` carries no user
@@ -198,6 +211,14 @@ export function useTrendsInsights({
         console.error('[insight-rail] template failed', template.id, err);
         continue;
       }
+    }
+    // Plan 39.1-40 (D-14): the engine's account-scope FACT back-fill joins
+    // the SAME array (TrendsPage's terminus resolves its claims from it).
+    try {
+      buildTrendsBackfillInsights({ matches, horizon, nowMs }).forEach(keep);
+    } catch (err) {
+      // T-39.1-40-04: a fixed label and the error only — no identifiers.
+      console.error('[insight-rail] backfill failed', err);
     }
     return built;
   }, [matches, horizon, nowMs, dismissedIds]);
@@ -217,7 +238,12 @@ export interface TrendsReadsRailProps {
 /**
  * The centre rail of the Trends Pro desk (UI-SPEC §8.2 Row 3, TRND-02,
  * INS-05): the closed `InsightRail` primitive wired to the real engine at
- * whole-account scope — `RatingMove`, `TiltCost` and `SessionFatigue`.
+ * whole-account scope — `RatingMove`, `TiltCost` and `SessionFatigue`, plus
+ * the engine's D-14 FACT back-fill (Best / Toughest record, LastEventRecap;
+ * plan 39.1-40, `trendsReads.ts`) when those reads leave free slots and none
+ * is locked. Each card is wrapped in a layout-neutral
+ * `[data-slot="trends-read-card"]` hook carrying its template id and state
+ * (`data-rail-fallback` on the engine's synthetic fallback only).
  * `RatingMove`'s card carries the rating-model door, demoting the page-level
  * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Session
  * fatigue always renders its standing caveat, in every rendered state — the
@@ -238,7 +264,9 @@ export function TrendsReadsRail({
 
   const insightById = useMemo(() => new Map(insights.map((i) => [i.id, i])), [insights]);
 
-  const assembled = useMemo(() => assembleRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
+  // Plan 39.1-40 (INS-01): the engine assembles own reads + back-fill; this
+  // rail ranks, sorts and back-fills nothing itself.
+  const assembled = useMemo(() => assembleTrendsRail({ insights, cap: RAIL_CARD_CAP }), [insights]);
 
   function insightToRailCard(insight: Insight): InsightRailCard {
     const chipKind = claimChipKindFor(insight.kind);
@@ -253,27 +281,41 @@ export function TrendsReadsRail({
         {t('insights.door.ratingModelNote')}
       </button>
     ) : null;
-    const doors = buildDoorNodes(
-      insight,
-      t,
-      subjectPath,
-      ratingModelButton ? [ratingModelButton] : [],
-    );
+    // One descriptor build per card: the doors AND the mark's games href.
+    const descriptors = buildInsightDoors({ insight, subjectPath });
+    const doors = buildDoorNodes(descriptors, t, ratingModelButton ? [ratingModelButton] : []);
+    const gamesHref = descriptors.find((door) => door.kind === 'games')?.href ?? '';
+    // Plan 39.1-40 (sketch 002-C): the evidence mark, only when the card has one.
+    const mark =
+      trendsReadMarkKind(insight) !== null ? (
+        <TrendsReadMark insight={insight} gamesHref={gamesHref} />
+      ) : undefined;
+    const subLineKey = insight.copy.values.subLineKey;
+    const sub = typeof subLineKey === 'string' ? t(subLineKey, insight.copy.values) : undefined;
     return {
       id: insight.id,
       render: ({ onDismiss }) => (
-        <InsightCard
-          key={insight.id}
-          chip={<ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />}
-          name={accountName}
-          verdict={verdict}
-          evidence={evidence}
-          span={span}
-          caveat={caveat}
-          doors={doors}
-          onDismiss={onDismiss}
-          dismissLabel={t('insights.rail.dismiss')}
-        />
+        <div
+          data-slot="trends-read-card"
+          data-template-id={insight.templateId}
+          data-insight-state={insight.state}
+          {...(isRailFallbackInsight(insight) ? { 'data-rail-fallback': 'true' } : {})}
+        >
+          <InsightCard
+            key={insight.id}
+            chip={<ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />}
+            name={accountName}
+            verdict={verdict}
+            evidence={evidence}
+            span={span}
+            mark={mark}
+            sub={sub}
+            caveat={caveat}
+            doors={doors}
+            onDismiss={onDismiss}
+            dismissLabel={t('insights.rail.dismiss')}
+          />
+        </div>
       ),
     };
   }
@@ -307,7 +349,15 @@ export function TrendsReadsRail({
         : ([meters[0]!, meters[1]!] as const);
     return {
       id,
-      render: () => <UnlocksNext key={id} chip={chip} name={accountName} meters={tuple} />,
+      render: () => (
+        <div
+          data-slot="trends-read-card"
+          data-template-id="unlocksNext"
+          data-insight-state="locked"
+        >
+          <UnlocksNext key={id} chip={chip} name={accountName} meters={tuple} />
+        </div>
+      ),
     };
   }
 
@@ -361,12 +411,19 @@ export function TrendsReadsRail({
   );
 
   const fallbackCard = (
-    <InsightCard
-      chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
-      name={accountName}
-      verdict={t('insights.rail.unavailable')}
-      evidence=""
-    />
+    <div
+      data-slot="trends-read-card"
+      data-template-id="formNow"
+      data-insight-state="locked"
+      data-rail-fallback="true"
+    >
+      <InsightCard
+        chip={<ClaimChip kind="fact" label={t('insights.kind.fact')} />}
+        name={accountName}
+        verdict={t('insights.rail.unavailable')}
+        evidence=""
+      />
+    </div>
   );
 
   return (

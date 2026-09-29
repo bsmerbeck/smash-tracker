@@ -56,6 +56,13 @@ export default defineConfig({
       'scripts/guardPaletteCore.test.mjs',
       'scripts/guardLayoutShutdown.test.mjs',
       'scripts/ciChartBundleGuard.test.mjs',
+      // Plan 39.1-51: the verify:built-chunks core's node:test file, wired into
+      // test:guards the same way.
+      'scripts/evaluateBuiltChunksCore.test.mjs',
+      // Plan 39.1-41: the sketch-003 fixture's and the fidelity gate's
+      // node:test files, wired into test:guards the same way.
+      'scripts/sketch003Fixture.test.mjs',
+      'scripts/checkFidelityIndex.test.mjs',
     ],
     // GitHub Actions runners are ~3x slower than dev hardware; the heaviest
     // userEvent interaction tests (e.g. GspPage Quick Logger double-entry)

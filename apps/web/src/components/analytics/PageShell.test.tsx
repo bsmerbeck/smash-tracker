@@ -27,4 +27,15 @@ describe('PageShell', () => {
     );
     expect(screen.getByTestId('content')).toBeInTheDocument();
   });
+
+  it('plan 39.1-38: carries data-slot="page-shell" and the named inline-size container `page` (the StatRow / list-pair collapse keys on it)', () => {
+    const { container } = render(
+      <PageShell>
+        <div>Body</div>
+      </PageShell>,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root).toHaveAttribute('data-slot', 'page-shell');
+    expect(root.className.split(/\s+/)).toContain('@container/page');
+  });
 });

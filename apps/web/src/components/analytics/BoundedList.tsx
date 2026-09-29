@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /** The whole cap ladder (UI-SPEC §3/§6.4), exported so every host reads the same constants. */
 export const LIST_CAP = 8;
@@ -72,6 +73,7 @@ export function BoundedList({
             type="button"
             variant="link"
             size="sm"
+            className={MUTED_LINK_TONE}
             onClick={() => setVisibleCount((v) => Math.min(v + LIST_PASS_STEP, total))}
           >
             {labels.showMore}
@@ -104,25 +106,43 @@ export function BoundedList({
         <ul className="flex flex-col gap-2">{extraRows}</ul>
       </CollapsibleContent>
       {!expanded && (
-        <Button type="button" variant="link" size="sm" onClick={() => setExpanded(true)}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className={MUTED_LINK_TONE}
+          onClick={() => setExpanded(true)}
+        >
           {labels.showAll}
         </Button>
       )}
       {expanded && fitsInline && (
-        <Button type="button" variant="link" size="sm" onClick={() => setExpanded(false)}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className={MUTED_LINK_TONE}
+          onClick={() => setExpanded(false)}
+        >
           {labels.showFewer}
         </Button>
       )}
       {expanded &&
         !fitsInline &&
         (terminusHref ? (
-          <Button asChild variant="link" size="sm">
+          <Button asChild variant="link" size="sm" className={MUTED_LINK_TONE}>
             <a href={terminusHref} onClick={onTerminus}>
               {labels.terminus}
             </a>
           </Button>
         ) : (
-          <Button type="button" variant="link" size="sm" onClick={onTerminus}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className={MUTED_LINK_TONE}
+            onClick={onTerminus}
+          >
             {labels.terminus}
           </Button>
         ))}

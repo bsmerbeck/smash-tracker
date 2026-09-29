@@ -14,15 +14,21 @@ import type {
 import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
+import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { buildFormStripEvents, formStripSetKeyForMatch } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  formStripLabels,
+  formStripRecentWindow,
+  formStripWindowNote,
+} from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatPercent } from '@/lib/formatPercent';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
 
-/** UI-SPEC §7.13: the trend's total-period-count unlock floor. Duplicated as a local literal (not imported from `PERIOD_TREND_MIN_PERIODS`) only for the locked-sentence's own `count` arithmetic below — the kit component itself already reads the shared constant. */
+/** UI-SPEC §7.13: the trend's unlock floor (8 periods at the 3-game floor) — the locked meter's "of N". Duplicated as a local literal (not imported from `PERIOD_TREND_MIN_PERIODS`); the kit itself counts the periods (plan 39.1-43, PD-43-1). */
 const PERIOD_TREND_LOCKED_FLOOR = 8;
 
 /**
@@ -36,6 +42,9 @@ const PERIOD_TREND_LOCKED_FLOOR = 8;
  * at module scope: the registry is a static, closed array.
  */
 const FORM_NOW_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'formNow')!;
+
+/** Plan 39.1-42 (PD-42-3, sketch 003 A `STRIP_CAP`): the Matchups strip draws at most 60 games. */
+const MATCHUP_STRIP_LIMIT = 60;
 
 /** UI-SPEC §7.8: `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated, not shared, in `MatchupOrPlayerCard.tsx` — mirrors this codebase's established "no shared file for one small mapping" convention (see `bestWorstMatchup.ts`'s doc comment on `groupByOpponentCharacter`). */
 export function claimChipKindFor(kind: InsightKind): ClaimChipKind {
@@ -247,22 +256,6 @@ export function renderFormNowHead(
   );
 }
 
-/** The resolver `MatchupsPage` passes to `FilteredMatchList` so a form-strip set click's `event=` axis actually narrows the results list — the shared `formStripSetKeyForMatch` rule. */
-export function formStripEventKeyForMatch(match: Match): string {
-  return formStripSetKeyForMatch(match);
-}
-
-/** UI-SPEC §7.13: the cumulative rate at (and through) each period point, as a context series parallel to `points` — never a second binning pass, just a running reduction over the SAME already-binned points. */
-function computeCumulativeContextPercents(points: { wins: number; total: number }[]): number[] {
-  let wins = 0;
-  let total = 0;
-  return points.map((point) => {
-    wins += point.wins;
-    total += point.total;
-    return total > 0 ? (wins / total) * 100 : 0;
-  });
-}
-
 /**
  * Ports legacy/src/screens/Matchups/components/MatchupChart — win rate over
  * time for the specific matchup. Phase 39.1 (VIZ-03, INS-05, UI-SPEC §8.3):
@@ -296,9 +289,10 @@ export function MatchupChart({
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
-  /** CR-02 (39.1-REVIEW): the host's ONE `buildPeriodSeries` result over `matchupMatches` — plotted here, resolved by the host's terminus. */
+  /** CR-02 (39.1-REVIEW): the host's ONE `buildMatchupPeriodSeries` (`../lib/matchupPeriodSeries`) result over `matchupMatches` — plotted here, resolved by the host's terminus. */
   periodSeries: PeriodSeries;
   width?: number;
+  /** Tests only; the page draws the trend at the sketches' 160px value range (`PERIOD_HERO_VALUE_RANGE_PX`, PD-43-3). */
   height?: number;
 }) {
   const { t, i18n } = useTranslation();
@@ -308,19 +302,15 @@ export function MatchupChart({
 
   const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
 
-  const contextRatePercents = useMemo(
-    () => computeCumulativeContextPercents(periodSeries.points),
-    [periodSeries.points],
-  );
-
   const recentWindow = useMemo(
     () => ({ fromMs: insight?.window.fromMs ?? null, toMs: insight?.window.toMs ?? null }),
     [insight],
   );
 
   const formStripEvents = useMemo(
-    () => buildFormStripEvents(matchupMatches, recentWindow, t, i18n.language),
-    [matchupMatches, recentWindow, t, i18n.language],
+    // Plan 39.1-42: the strip dims nothing when the horizons collapse.
+    () => buildFormStripEvents(matchupMatches, formStripRecentWindow(insight), t, i18n.language),
+    [matchupMatches, insight, t, i18n.language],
   );
 
   function handleSelectPeriodPoint(point: PeriodPoint) {
@@ -344,24 +334,24 @@ export function MatchupChart({
     <div className="flex min-w-0 flex-col gap-4" data-slot="matchup-chart-body">
       <FormStrip
         events={formStripEvents}
-        limit={30}
+        // Plan 39.1-42 (PD-42-3, sketch 003 A): the last 60 games (was 30).
+        limit={MATCHUP_STRIP_LIMIT}
         labels={{
+          ...formStripLabels(t),
           // WR-03: names the games actually DRAWN of the total (kit-computed).
           summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-          legend: t('analytics.strip.legend'),
-          // Plan 39.1-33 (R1): a formatter — only the kit knows how many
-          // games it actually drew after `limit` AND its own measured-width
-          // fit, so the host no longer computes `shown` itself.
-          shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+          // Plan 39.1-42 (sketch 003 `stripSection`): "Form · last N games, by event".
+          title: t('analytics.strip.title', {
+            count: Math.min(MATCHUP_STRIP_LIMIT, matchupMatches.length),
+          }),
           empty: <span>{t('analytics.strip.empty')}</span>,
-          // Plan 39.1-31 (item 7): suppressed exactly when the verdict head
-          // already states the scoped-empty window itself (D-15's "No games
-          // ... — showing lifetime." sentence) — printing both would be the
-          // same contradictory double-note this plan closes.
-          windowEmpty:
-            insight && insight.window.games === 0 && !headStatesScopedWindow(insight)
-              ? t(`analytics.strip.windowEmpty.${horizon}`)
-              : undefined,
+          // Plan 39.1-31 (item 7): the empty-window note is suppressed exactly
+          // when the verdict head already states the scoped-empty window
+          // itself (D-15's "No games ... — showing lifetime." sentence).
+          windowNote:
+            insight && insight.window.games === 0 && headStatesScopedWindow(insight)
+              ? undefined
+              : formStripWindowNote({ insight, horizon, t }),
         }}
         onSelectSet={handleSelectSet}
       />
@@ -372,17 +362,28 @@ export function MatchupChart({
         onSelectPoint={handleSelectPeriodPoint}
         referenceRate={overallRate}
         emphasisStartMs={recentWindow.fromMs ?? undefined}
-        contextRatePercents={contextRatePercents}
+        // Plan 39.1-41 (PD-41-2, sketch 003 `dotSize`): dots by confidence tier.
+        dotSizing="tier"
         width={width}
-        height={height}
+        // Plan 39.1-43 (PD-43-3, sketch 003 `trend(d, { height: 160 })`): the
+        // 160px VALUE range; an explicit test height keeps its old meaning.
+        {...(height !== undefined ? { height } : { valueRangePx: PERIOD_HERO_VALUE_RANGE_PX })}
         labels={{
-          lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
-            count: Math.max(0, PERIOD_TREND_LOCKED_FLOOR - periodSeries.points.length),
-          }),
-          lockedCountLabel: t('insights.state.lockedMeter', {
-            have: periodSeries.points.length,
-            need: PERIOD_TREND_LOCKED_FLOOR,
-          }),
+          // Plan 39.1-43 (sketch 003 trendSection / trendLegend, PD-43-2).
+          title: t(`analytics.trend.title.${periodSeries.grain}`),
+          legend: {
+            dot: t('analytics.trend.legend.dot'),
+            hollow: t('analytics.trend.legendHollow'),
+            reference: t('analytics.trend.legend.reference', {
+              rate: `${Math.round(overallRate)}%`,
+            }),
+            band: t(`insights.horizon.${horizon}`),
+          },
+          // PD-43-1: the kit counts the periods at the 3-game floor.
+          lockedSentence: ({ need }) =>
+            t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, { count: need }),
+          lockedCountLabel: ({ have }) =>
+            t('analytics.trend.lockedMeter', { have, need: PERIOD_TREND_LOCKED_FLOOR }),
           tableToggle: t('analytics.trend.tableToggle'),
           tableHeaders: {
             period: t('analytics.trend.tableHeaders.period'),
@@ -390,7 +391,11 @@ export function MatchupChart({
             rate: t('analytics.trend.tableHeaders.rate'),
             sample: t('analytics.trend.tableHeaders.sample'),
           },
-          referenceLabel: `${Math.round(overallRate)}%`,
+          // Plan 39.1-41 (sketch 003 / 001-C): "63% all time" — the exact call
+          // FighterHero makes (plan 37), never a bare rate.
+          referenceLabel: t('analytics.trend.referenceLabel', {
+            rate: `${Math.round(overallRate)}%`,
+          }),
         }}
       />
     </div>
