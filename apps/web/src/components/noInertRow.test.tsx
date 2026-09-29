@@ -154,6 +154,12 @@ const enrichmentAttribution = vi.fn().mockResolvedValue({ attributions: [] });
 
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: vi.fn().mockResolvedValue({ items: [] }),
+      track: vi.fn(),
+      untrack: vi.fn(),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getMe: (...args: unknown[]) => getMe(...args),

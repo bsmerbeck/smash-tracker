@@ -62,6 +62,12 @@ vi.mock('@/lib/api', async () => {
   return {
     ...actual,
     api: {
+      // Plan 39.2-10: every Track host reads the subject's watchlist.
+      watchlist: {
+        list: vi.fn().mockResolvedValue({ items: [] }),
+        track: vi.fn(),
+        untrack: vi.fn(),
+      },
       users: {
         getMe: (...args: unknown[]) => getMe(...args),
       },

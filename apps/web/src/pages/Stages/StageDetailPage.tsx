@@ -44,6 +44,7 @@ import {
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { TrackToggle } from '@/components/analytics/track/TrackToggle';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import {
   buildEventKeysForMatch,
@@ -423,6 +424,15 @@ export function StageDetailPage() {
             </p>
           )}
         </div>
+        {/* Plan 39.2-10 (T-04): Track sits on the right of the identity row; it renders only for a real (positive) stage id. */}
+        {resolvedStageId != null && (
+          <TrackToggle
+            kind="stage"
+            itemRef={resolvedStageId}
+            name={stageName}
+            className="ml-auto"
+          />
+        )}
       </div>
 
       {showEmpty ? (

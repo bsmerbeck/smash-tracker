@@ -23,6 +23,7 @@ import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { TrackToggle } from '@/components/analytics/track/TrackToggle';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import {
   DRILL_DOWN_CLAIM_PARAM,
@@ -616,24 +617,40 @@ export function MatchupsPage() {
             */}
             {effectiveFighter && effectiveOpponent && (
               <div className="flex flex-col gap-3">
-                <h2
-                  id={pairingHeadingId}
-                  data-slot="matchup-detail-heading"
-                  className="flex items-center gap-2"
-                >
-                  {effectiveFighter.url && (
-                    <img src={effectiveFighter.url} alt="" className="size-6 object-contain" />
-                  )}
-                  {effectiveOpponent.url && (
-                    <img src={effectiveOpponent.url} alt="" className="size-6 object-contain" />
-                  )}
-                  <span className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-                    {t('matchups.pairingHeading', {
+                {/*
+                  Plan 39.2-10 (T-04): the pairing heading shares a row with the
+                  Track toggle, right-aligned. The toggle sits OUTSIDE the h2 so
+                  the heading (and the section's aria-labelledby name) stays the
+                  bare pairing text.
+                */}
+                <div className="flex items-center justify-between gap-2">
+                  <h2
+                    id={pairingHeadingId}
+                    data-slot="matchup-detail-heading"
+                    className="flex items-center gap-2"
+                  >
+                    {effectiveFighter.url && (
+                      <img src={effectiveFighter.url} alt="" className="size-6 object-contain" />
+                    )}
+                    {effectiveOpponent.url && (
+                      <img src={effectiveOpponent.url} alt="" className="size-6 object-contain" />
+                    )}
+                    <span className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
+                      {t('matchups.pairingHeading', {
+                        fighter: localizedFighterName(effectiveFighter.id, t),
+                        opponent: localizedFighterName(effectiveOpponent.id, t),
+                      })}
+                    </span>
+                  </h2>
+                  <TrackToggle
+                    kind="matchup"
+                    itemRef={{ fighterId: effectiveFighter.id, vsFighterId: effectiveOpponent.id }}
+                    name={t('matchups.pairingHeading', {
                       fighter: localizedFighterName(effectiveFighter.id, t),
                       opponent: localizedFighterName(effectiveOpponent.id, t),
                     })}
-                  </span>
-                </h2>
+                  />
+                </div>
 
                 {/*
                   UI-SPEC §6.1 (GridCell stack, "No orphan half"), §8.3

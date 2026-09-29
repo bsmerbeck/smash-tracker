@@ -81,8 +81,18 @@ const listNotes = vi.fn();
 const upsertNote = vi.fn();
 const removeNote = vi.fn();
 
+const listWatchlist = vi.fn();
+const trackWatchlist = vi.fn();
+const untrackWatchlist = vi.fn();
+
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: (...args: unknown[]) => listWatchlist(...args),
+      track: (...args: unknown[]) => trackWatchlist(...args),
+      untrack: (...args: unknown[]) => untrackWatchlist(...args),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getMe: (...args: unknown[]) => getMe(...args),
@@ -176,6 +186,11 @@ describe('StageDetailPage', () => {
     listTournaments.mockResolvedValue([]);
     listAliases.mockResolvedValue({});
     listNotes.mockResolvedValue({});
+    listWatchlist.mockResolvedValue({ items: [] });
+    trackWatchlist.mockResolvedValue({
+      itemKey: 'stage:1',
+      item: { kind: 'stage', ref: 1, createdAt: 1 },
+    });
     setMockUser(makeMockUser());
   });
 
@@ -194,6 +209,46 @@ describe('StageDetailPage', () => {
     expect(screen.getByText('Games')).toBeInTheDocument();
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
     expect(screen.getAllByText('second').length).toBeGreaterThan(0);
+  });
+
+  describe('plan 39.2-10 (T-04): the Track toggle on the identity row', () => {
+    it('sits on the right of the identity row and tracks the stage id', async () => {
+      const user = userEvent.setup();
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+      renderStageAt('/stages/1');
+
+      const toggle = await screen.findByRole('button', { name: 'Track Battlefield' });
+      const heading = screen.getByRole('heading', { level: 1 });
+      expect(toggle.className).toContain('ml-auto');
+      expect(toggle.parentElement?.contains(heading)).toBe(true);
+      expect(toggle.parentElement?.lastElementChild).toBe(toggle);
+      await waitFor(() => expect(toggle).toBeEnabled());
+
+      await user.click(toggle);
+
+      await waitFor(() => expect(trackWatchlist).toHaveBeenCalledTimes(1));
+      expect(trackWatchlist).toHaveBeenCalledWith({ kind: 'stage', ref: 1 });
+    });
+
+    it('reads Tracked when the subject list holds stage:1', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+      listWatchlist.mockResolvedValue({
+        items: [{ itemKey: 'stage:1', item: { kind: 'stage', ref: 1, createdAt: 1 } }],
+      });
+      renderStageAt('/stages/1');
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking Battlefield' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('offers no toggle for the unknown-stage bucket (id 0 is not trackable) or a non-stage segment', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 0, name: 'no selection' } }),
+      ]);
+      renderStageAt('/stages/0');
+      await waitFor(() => expect(listMatches).toHaveBeenCalled());
+      await screen.findByRole('heading', { level: 1 });
+      expect(screen.queryByRole('button', { name: /^Track / })).not.toBeInTheDocument();
+    });
   });
 
   it('renders the neutral empty state for a non-numeric stage id, without throwing', async () => {
