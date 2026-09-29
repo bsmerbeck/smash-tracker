@@ -48,6 +48,9 @@ import {
   type TournamentTableRow,
 } from '@/pages/Tournaments/components/TournamentsTable';
 import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
+import { TrackedRow } from '@/components/analytics/track/TrackedRow';
+import { buildTrackedRows } from '@/components/analytics/track/trackedRowModel';
+import i18n from '@/i18n';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
 import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
 import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
@@ -101,6 +104,10 @@ import userEvent from '@testing-library/user-event';
  * Plan 39.2-08 (TIER-03, UI-SPEC §13 G6) appends ONE more entry (32 -> 33):
  * the By-tier card (`ByTierCard.tsx`), whose rows include the Unknown row in
  * its inset — every tier row and the Unknown row is a filter door.
+ *
+ * Plan 39.2-11 (TRK-02, UI-SPEC §13 G6) appends TWO more entries (33 -> 35):
+ * the Dashboard's Tracked rows (`TrackedRow.tsx`), full and compact, one row of
+ * each kind (opponent, matchup, stage).
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -245,6 +252,39 @@ function accessibleInteractiveDescendant(row: HTMLElement): HTMLElement | null {
 // authored separately, per this task's own instruction; phase 38-08 adds a
 // second entry for the shared filtered match list's narrow/stacked layout).
 // ---------------------------------------------------------------------------
+
+/**
+ * Plan 39.2-11: one tracked item of each kind (opponent, matchup, stage) over
+ * a small history, built through the same `buildTrackedRows` the Dashboard's
+ * section uses, so the enumerated rows are the real rows.
+ */
+function trackedRowModelsFixture() {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const matches = Array.from({ length: 6 }, (_, i) =>
+    makeMatch({ id: `tr-${i}`, time: now - (6 - i) * day, win: i % 2 === 0, opponent: 'rival' }),
+  );
+  const entries = [
+    { itemKey: 'opponent:rival', item: { kind: 'opponent' as const, ref: 'rival', createdAt: 1 } },
+    {
+      itemKey: `matchup:${mario.id}-${luigi.id}`,
+      item: {
+        kind: 'matchup' as const,
+        ref: { fighterId: mario.id, vsFighterId: luigi.id },
+        createdAt: 2,
+      },
+    },
+    { itemKey: 'stage:1', item: { kind: 'stage' as const, ref: 1, createdAt: 3 } },
+  ];
+  return buildTrackedRows({
+    entries,
+    matches,
+    aliasMap: {},
+    horizon: 'last30',
+    nowMs: now,
+    t: i18n.t.bind(i18n),
+  });
+}
 
 interface Surface {
   name: string;
@@ -948,6 +988,37 @@ const SURFACES: Surface[] = [
     rows: (result) =>
       Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="by-tier-row"]')),
   },
+  // Plan 39.2-11 (TRK-02, UI-SPEC §13 G6): the Dashboard Tracked rows, full and
+  // compact. Every row of every kind is a `DrillableRow` overlay into the item's
+  // own surface; the untrack button is a second, separate control.
+  {
+    name: 'Tracked rows (TrackedRow, full)',
+    file: 'apps/web/src/components/analytics/track/TrackedRow.tsx',
+    render: () =>
+      withRouter(
+        <ul>
+          {trackedRowModelsFixture().map((model) => (
+            <TrackedRow key={model.itemKey} model={model} onUntrack={() => undefined} />
+          ))}
+        </ul>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tracked-row"]')),
+  },
+  {
+    name: 'Tracked rows (TrackedRow, compact — the digest variant)',
+    file: 'apps/web/src/components/analytics/track/TrackedRow.tsx',
+    render: () =>
+      withRouter(
+        <ul>
+          {trackedRowModelsFixture().map((model) => (
+            <TrackedRow key={model.itemKey} model={model} compact />
+          ))}
+        </ul>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tracked-row"]')),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1090,8 +1161,30 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-THREE entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card)", () => {
-    expect(SURFACES.length).toBe(33);
+  it("the surface enumeration has the stated THIRTY-FIVE entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants)", () => {
+    expect(SURFACES.length).toBe(35);
+  });
+
+  it('the Tracked entries enumerate one row per kind and each is a door to its own surface (plan 39.2-11 non-vacuity)', async () => {
+    for (const name of ['Tracked rows (TrackedRow, full)', 'Tracked rows (TrackedRow, compact']) {
+      const surface = SURFACES.find((s) => s.name.startsWith(name))!;
+      const result = await renderReady(surface);
+      const rows = surface.rows(result);
+      expect(rows.map((row) => row.getAttribute('data-kind')).sort()).toEqual([
+        'matchup',
+        'opponent',
+        'stage',
+      ]);
+      const hrefs = rows.map((row) => row.querySelector('a')?.getAttribute('href'));
+      expect(hrefs).toEqual(
+        expect.arrayContaining([
+          '/opponents/rival',
+          `/matchups?fighter=${mario.id}&vs=${luigi.id}`,
+          '/stages/1',
+        ]),
+      );
+      result.unmount();
+    }
   });
 
   it('the By-tier entry enumerates a plain tier row, an abstaining tier row and the Unknown row (plan 39.2-08 non-vacuity)', async () => {
