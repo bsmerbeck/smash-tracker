@@ -1014,7 +1014,7 @@ export function OpponentHubPage() {
             in the same DOM order as before.
           */}
           <PageGrid>
-            <GridCell span={8}>
+            <GridCell span={8} stack>
               <ChartCard
                 title={t('opponents.trend.title')}
                 abstained={
@@ -1060,6 +1060,8 @@ export function OpponentHubPage() {
                   onSelectPoint={handleSelectTrendPoint}
                 />
               </ChartCard>
+              {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot, directly under the H2H trend in the trend's own 8-col cell (39.1-37 grid). */}
+              {prepBriefCard}
             </GridCell>
             <GridCell span={4} stack>
               <WhatTheyPlayTable
@@ -1076,10 +1078,6 @@ export function OpponentHubPage() {
               />
             </GridCell>
           </PageGrid>
-
-          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot; after the 39.1-37 trend row, the trend card and the scouting lists share one row, so the card follows that row. */}
-          {prepBriefCard}
-
           <RecentEncounters
             matches={profile.recent}
             tournamentLinkForMatch={tournamentLinkForMatch}

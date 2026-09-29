@@ -24,14 +24,15 @@ const RESERVED_PLACEMENT_MARKER = /data-[a-z-]*(placement|offer|promo|upsell)|di
 /**
  * The ONE deviation from the locked proof's mechanism, and an exact one: the
  * hub page composes the chart kit's form strip, whose identifiers
- * (`FormStripEvent` and two locals built on it) contain the letters
- * "StripE" and therefore match the case-insensitive `stripe` alternative.
- * These three whole identifiers — and nothing else — are masked before the
+ * (`FormStripEvent`, two locals built on it, and 39.1's shared
+ * `buildFormStripEvents` builder) contain the letters "StripE" and therefore
+ * match the case-insensitive `stripe` alternative.
+ * These four whole identifiers — and nothing else — are masked before the
  * regex runs. Any other spelling (a bare "stripe", "Stripe checkout", a
  * new identifier) is still caught; the control case below proves it.
  */
 const KIT_IDENTIFIER_FALSE_POSITIVES =
-  /\b(?:FormStripEvent|buildOpponentFormStripEvents|formStripEvents)\b/g;
+  /\b(?:FormStripEvent|buildOpponentFormStripEvents|buildFormStripEvents|formStripEvents)\b/g;
 
 function scannableSource(file: string): string {
   return readFileSync(file, 'utf-8').replace(KIT_IDENTIFIER_FALSE_POSITIVES, '<kit-identifier>');
@@ -56,8 +57,9 @@ describe('opponent hub prep-brief structural integrity (no paid affordance, D-11
     },
   );
 
-  it('control: the kit-identifier mask hides only those three identifiers, never the vocabulary itself', () => {
-    const probe = 'FormStripEvent formStripEvents buildOpponentFormStripEvents';
+  it('control: the kit-identifier mask hides only those four identifiers, never the vocabulary itself', () => {
+    const probe =
+      'FormStripEvent formStripEvents buildOpponentFormStripEvents buildFormStripEvents';
     expect(probe).toMatch(MONETIZATION_VOCABULARY);
     expect(probe.replace(KIT_IDENTIFIER_FALSE_POSITIVES, '')).not.toMatch(MONETIZATION_VOCABULARY);
     for (const leak of ['stripe', 'Stripe checkout', 'FormStripeEvent', 'myFormStripEventPrice']) {
