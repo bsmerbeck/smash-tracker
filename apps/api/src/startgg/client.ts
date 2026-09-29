@@ -238,6 +238,8 @@ const setsPageSchema = z.object({
                   slug: z.string().nullish(),
                   isOnline: z.boolean().nullish(),
                   numEntrants: z.number().int().nullish(),
+                  /** Phase 39.2 D-20: provider event-type integer, persisted as a string and never interpreted (Assumption A3). */
+                  type: z.number().int().nullish(),
                   videogame: z.object({ id: z.number() }).nullish(),
                   tournament: z.object({ name: z.string().nullish() }).nullish(),
                 })
@@ -336,7 +338,7 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
         displayScore
         totalGames
         vodUrl
-        event { id name slug isOnline numEntrants videogame { id } tournament { name } }
+        event { id name slug isOnline numEntrants type videogame { id } tournament { name } }
         slots {
           entrant {
             id

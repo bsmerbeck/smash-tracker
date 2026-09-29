@@ -1,5 +1,10 @@
 import type { Database } from 'firebase-admin/database';
-import type { MatchRecord, StartggSyncSummary, TournamentEntry } from '@smash-tracker/shared';
+import {
+  TOURNAMENT_EVENT_TYPE_MAX_LENGTH,
+  type MatchRecord,
+  type StartggSyncSummary,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import {
   fetchEventDetails,
   fetchPlayerSetsPage,
@@ -212,6 +217,8 @@ interface RegistryAccumulator {
   numEntrants?: number;
   /** 39.2 D-20: `false` is real data (offline); only an absent provider value leaves this undefined. */
   isOnline?: boolean;
+  /** 39.2 D-20: the provider's event-type integer as a bounded string; stored uninterpreted (A3). */
+  eventType?: string;
   seed?: number;
   placement?: number;
   firstSetAt: number;
@@ -248,6 +255,10 @@ export function accumulateRegistry(
   const tournamentName = set.event?.tournament?.name?.trim();
   const numEntrants = set.event?.numEntrants;
   const isOnline = set.event?.isOnline;
+  const eventType =
+    set.event?.type != null
+      ? String(set.event.type).slice(0, TOURNAMENT_EVENT_TYPE_MAX_LENGTH)
+      : undefined;
   const completedAt = set.completedAt != null ? set.completedAt * 1000 : undefined;
 
   const existing = accumulators.get(eventId);
@@ -258,6 +269,7 @@ export function accumulateRegistry(
       ...(tournamentName ? { tournamentName } : {}),
       ...(numEntrants != null ? { numEntrants } : {}),
       ...(isOnline != null ? { isOnline } : {}),
+      ...(eventType != null ? { eventType } : {}),
       ...(seed != null ? { seed } : {}),
       ...(placement != null ? { placement } : {}),
       firstSetAt: completedAt ?? 0,
@@ -277,6 +289,9 @@ export function accumulateRegistry(
   // Keep an already-known value when a later set omits it.
   if (isOnline != null) {
     existing.isOnline = isOnline;
+  }
+  if (eventType != null) {
+    existing.eventType = eventType;
   }
   if (seed != null) {
     existing.seed = seed;
@@ -383,6 +398,8 @@ export async function importPlayerMatches(
         ...(acc.numEntrants != null ? { numEntrants: acc.numEntrants } : {}),
         // `!= null`, never truthiness: `false` is real data (an offline event).
         ...(acc.isOnline != null ? { isOnline: acc.isOnline } : {}),
+        // Stored uninterpreted (Assumption A3): side-event detection stays name-token based.
+        ...(acc.eventType != null ? { eventType: acc.eventType } : {}),
         ...(acc.seed != null ? { seed: acc.seed } : {}),
         ...(acc.placement != null ? { placement: acc.placement } : {}),
         firstSetAt: acc.firstSetAt,

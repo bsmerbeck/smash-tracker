@@ -1150,3 +1150,79 @@ describe('importPlayerMatches — per-event override carry-forward', () => {
     expect('rulesetOverride' in entry).toBe(false);
   });
 });
+
+// Phase 39.2 plan 03 (D-20, eventType half): the provider's event-type integer
+// is persisted as a bounded string, uninterpreted, with a `!= null` spread.
+describe('importPlayerMatches — registry eventType', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  it("stores a set's event type: 1 as eventType '1'", async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: { ...base.event, type: 1 } }]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['eventType']).toBe('1');
+  });
+
+  it('stores NO eventType key when the provider omits or nulls type (never null)', async () => {
+    for (const type of [undefined, null]) {
+      const database = new FakeDatabase();
+      const base = makeSet();
+      await importPlayerMatches(
+        database as never,
+        'uid-1',
+        PLAYER_ID,
+        'server-token',
+        pagesFetch([{ ...base, event: { ...base.event, type } }]),
+        { warn: vi.fn() },
+      );
+
+      const entry = storedEntry(database);
+      expect(entry).toBeDefined();
+      expect('eventType' in entry).toBe(false);
+    }
+  });
+
+  it('keeps an already-known eventType when a later set of the same event omits it', async () => {
+    const database = new FakeDatabase();
+    const first = makeSet({ id: 1, completedAt: 1_700_000_000 });
+    const later = makeSet({ id: 2, completedAt: 1_700_000_100 });
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([
+        { ...first, event: { ...first.event, type: 5 } },
+        { ...later, event: { ...later.event, type: undefined } },
+      ]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['eventType']).toBe('5');
+  });
+});
