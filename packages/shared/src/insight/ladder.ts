@@ -1,6 +1,11 @@
 import { ABSTENTION_FLOOR_GAMES } from '../evidence/policy.js';
 import { wilsonInterval } from './wilsonInterval.js';
-import { TREND_MIN_RECENT_GAMES, SUGGESTION_MIN_GAMES, HORIZON_COLLAPSE_RATIO } from './policy.js';
+import {
+  TREND_MIN_RECENT_GAMES,
+  SUGGESTION_MIN_GAMES,
+  HORIZON_COLLAPSE_RATIO,
+  WILSON_Z,
+} from './policy.js';
 import type { InsightKind, InsightState, RateValue } from './types.js';
 
 export interface ClassifyResult {
@@ -24,7 +29,10 @@ export interface ClassifyResult {
  *    (D-06). Using `>=`: exactly 60% collapses, 59.9% does not.
  * 4. `recent.total < TREND_MIN_RECENT_GAMES` (unscoped thin case) -> `thin`.
  * 5. baseline rate inside the recent window's two-sided Wilson interval ->
- *    `steady`.
+ *    `steady`. The interval's z is the optional `z` input, defaulting to
+ *    `WILSON_Z` (1.96); only the digest's "moved" classification passes a
+ *    stricter one (`MOVED_NOTABLE_Z`, digest.ts) because it runs a
+ *    max-of-25 selection on every visit.
  * 6. Otherwise a direction is asserted: `suggestion` when `hasAction` is
  *    true AND the recent sample reaches `SUGGESTION_MIN_GAMES` (high tier);
  *    `trend` otherwise.
@@ -36,8 +44,10 @@ export function classify(input: {
   baseline: RateValue;
   scoped: boolean;
   hasAction: boolean;
+  /** Wilson z for the step-5 steady test; defaults to `WILSON_Z`. */
+  z?: number;
 }): ClassifyResult {
-  const { recent, baseline, scoped, hasAction } = input;
+  const { recent, baseline, scoped, hasAction, z = WILSON_Z } = input;
 
   if (recent.total < ABSTENTION_FLOOR_GAMES) {
     return { state: 'locked', kind: 'fact', deltaPoints: null };
@@ -55,7 +65,7 @@ export function classify(input: {
     return { state: 'thin', kind: 'fact', deltaPoints: null };
   }
 
-  const interval = wilsonInterval(recent.wins, recent.total);
+  const interval = wilsonInterval(recent.wins, recent.total, z);
   const baselineInsideInterval = baseline.rate >= interval.lower && baseline.rate <= interval.upper;
   if (baselineInsideInterval) {
     return { state: 'steady', kind: 'fact', deltaPoints: null };

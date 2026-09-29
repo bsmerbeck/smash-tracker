@@ -66,4 +66,6 @@ export * from './evidence/index.js';
 export * from './ruleset.js';
 export * from './tournamentTier.js';
 export * from './tierSplit.js';
+export * from './watchlist.js';
+export * from './digest.js';
 export * from './insight/index.js';
