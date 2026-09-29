@@ -1265,6 +1265,30 @@
         "saveFailed": "この大会のルールを保存できませんでした。"
       },
       "debriefCta": "このイベントを振り返る"
+    },
+    "table": {
+      "tier": "ティア",
+      "event": "イベント",
+      "date": "日付",
+      "placement": "順位",
+      "seedDelta": "シード差",
+      "record": "戦績",
+      "sectionLabel_one": "イベント · 期間内1件",
+      "sectionLabel_other": "イベント · 期間内{{count}}件",
+      "sortNote": "新しい順",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}位",
+      "placement_ordinal_two": "{{count, grouped}}位",
+      "placement_ordinal_few": "{{count, grouped}}位",
+      "placement_ordinal_other": "{{count, grouped}}位",
+      "seedDeltaAria": "シード {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}}年 · 1件",
+      "yearGroup_other": "{{year}}年 · {{count}}件",
+      "undated": "日付なし",
+      "rowAria": "{{tournament}}、{{event}}、{{date}}、{{tier}}、{{placement}}、{{record}}；イベントを開く",
+      "showMore50": "さらに50件表示",
+      "showMore20": "さらに20件表示",
+      "loadError": "大会を読み込めませんでした。データは安全です。もう一度お試しください。"
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "この大会に保存されたティアは新しいバージョンのアプリで書き込まれたため、適用されていません。",
       "help": "上書きは他のどの情報源よりも優先され、いつでも解除できます。",
       "wouldBe": "推定値は次のとおりでした: {{tier}}（{{provenance}}）"
+    },
+    "filter": {
+      "tierLabel": "ティア",
+      "settingLabel": "開催形式",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "サイドイベントを非表示",
+      "clear": "フィルターをクリア",
+      "empty": "これらの条件に一致するイベントはありません。",
+      "countsNote": "件数は他のフィルターを反映しています。",
+      "noneInRange": "この期間に{{label}}のイベントはありません。",
+      "sheetButton": "フィルター"
     }
   }
 }

@@ -11,7 +11,7 @@ import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { filterEntriesByRange } from '@/hooks/useFilteredMatches';
 import { entryDisplayDateRange } from '@/lib/historicalTournament';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { buildTournamentEntryRows, type TournamentEntryRow } from './Tournaments';
+import { buildTournamentEntryRows, type TournamentEntryRow } from '@/lib/tournamentEntryRows';
 import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 
 function formatDateRange(entry: TournamentEntryRow['entry'], locale: string): string {
@@ -112,9 +112,8 @@ export interface RecentEventsProps {
 /**
  * The left rail's second card (UI-SPEC §8.2 Row 3, replaces the six-column
  * `Tournaments` table on Trends — it clipped its W-L column in a half-width
- * slot). `Tournaments.tsx` itself stays: `TournamentsPage.tsx` still imports
- * it, so it is retained (never deleted) and its buider `buildTournamentEntryRows`
- * is reused here rather than duplicated.
+ * slot). Plan 39.2-07 (F8) moved its row builder `buildTournamentEntryRows` to
+ * `@/lib/tournamentEntryRows`, shared with the Tournaments page.
  */
 export function RecentEvents({ matches }: RecentEventsProps) {
   const { t, i18n } = useTranslation();

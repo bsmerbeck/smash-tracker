@@ -1265,6 +1265,30 @@
         "saveFailed": "Could not save the ruleset for this event."
       },
       "debriefCta": "Debrief this event"
+    },
+    "table": {
+      "tier": "Tier",
+      "event": "Event",
+      "date": "Date",
+      "placement": "Placement",
+      "seedDelta": "Seed Δ",
+      "record": "Record",
+      "sectionLabel_one": "Events · 1 in range",
+      "sectionLabel_other": "Events · {{count}} in range",
+      "sortNote": "newest first",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}st",
+      "placement_ordinal_two": "{{count, grouped}}nd",
+      "placement_ordinal_few": "{{count, grouped}}rd",
+      "placement_ordinal_other": "{{count, grouped}}th",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 event",
+      "yearGroup_other": "{{year}} · {{count}} events",
+      "undated": "No date",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; opens the event",
+      "showMore50": "Show 50 more",
+      "showMore20": "Show 20 more",
+      "loadError": "Tournaments couldn't be loaded. The data is safe — try again."
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "This event's saved tier was written by a newer version of the app and is not being applied.",
       "help": "An override wins over every other source and can be cleared at any time.",
       "wouldBe": "Estimate would have been: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Tier",
+      "settingLabel": "Setting",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Hide side events",
+      "clear": "Clear filters",
+      "empty": "No events match these filters.",
+      "countsNote": "Counts reflect the other filters.",
+      "noneInRange": "No {{label}} events in this range.",
+      "sheetButton": "Filters"
     }
   }
 }

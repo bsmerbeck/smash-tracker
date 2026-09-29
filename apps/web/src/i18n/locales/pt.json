@@ -1265,6 +1265,30 @@
         "saveFailed": "Não foi possível salvar as regras deste evento."
       },
       "debriefCta": "Analisar este evento"
+    },
+    "table": {
+      "tier": "Nível",
+      "event": "Evento",
+      "date": "Data",
+      "placement": "Colocação",
+      "seedDelta": "Seed Δ",
+      "record": "Retrospecto",
+      "sectionLabel_one": "Eventos · 1 no período",
+      "sectionLabel_other": "Eventos · {{count}} no período",
+      "sortNote": "mais recentes primeiro",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}º",
+      "placement_ordinal_two": "{{count, grouped}}º",
+      "placement_ordinal_few": "{{count, grouped}}º",
+      "placement_ordinal_other": "{{count, grouped}}º",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 evento",
+      "yearGroup_other": "{{year}} · {{count}} eventos",
+      "undated": "Sem data",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; abre o evento",
+      "showMore50": "Mostrar mais 50",
+      "showMore20": "Mostrar mais 20",
+      "loadError": "Não foi possível carregar os torneios. Os dados estão seguros — tente novamente."
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "O nível salvo deste evento foi escrito por uma versão mais nova do app e não está sendo aplicado.",
       "help": "Uma substituição prevalece sobre qualquer outra fonte e pode ser removida a qualquer momento.",
       "wouldBe": "A estimativa teria sido: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Nível",
+      "settingLabel": "Formato",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Ocultar eventos paralelos",
+      "clear": "Limpar filtros",
+      "empty": "Nenhum evento corresponde a esses filtros.",
+      "countsNote": "As contagens refletem os outros filtros.",
+      "noneInRange": "Nenhum evento {{label}} neste período.",
+      "sheetButton": "Filtros"
     }
   }
 }

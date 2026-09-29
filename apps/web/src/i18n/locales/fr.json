@@ -1265,6 +1265,30 @@
         "saveFailed": "Impossible d'enregistrer les règles de cet événement."
       },
       "debriefCta": "Débriefer cet événement"
+    },
+    "table": {
+      "tier": "Niveau",
+      "event": "Événement",
+      "date": "Date",
+      "placement": "Classement",
+      "seedDelta": "Seed Δ",
+      "record": "Bilan",
+      "sectionLabel_one": "Événements · 1 dans la période",
+      "sectionLabel_other": "Événements · {{count}} dans la période",
+      "sortNote": "les plus récents d’abord",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}er",
+      "placement_ordinal_two": "{{count, grouped}}e",
+      "placement_ordinal_few": "{{count, grouped}}e",
+      "placement_ordinal_other": "{{count, grouped}}e",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 événement",
+      "yearGroup_other": "{{year}} · {{count}} événements",
+      "undated": "Sans date",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}} ; ouvre l’événement",
+      "showMore50": "Afficher 50 de plus",
+      "showMore20": "Afficher 20 de plus",
+      "loadError": "Impossible de charger les tournois. Les données sont en sécurité — réessayez."
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "Le niveau enregistré pour cet événement a été écrit par une version plus récente de l'application et n'est pas appliqué.",
       "help": "Un forçage l'emporte sur toute autre source et peut être retiré à tout moment.",
       "wouldBe": "L'estimation aurait été : {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Niveau",
+      "settingLabel": "Cadre",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Masquer les événements annexes",
+      "clear": "Effacer les filtres",
+      "empty": "Aucun événement ne correspond à ces filtres.",
+      "countsNote": "Les totaux reflètent les autres filtres.",
+      "noneInRange": "Aucun événement {{label}} dans cette période.",
+      "sheetButton": "Filtres"
     }
   }
 }

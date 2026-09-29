@@ -1265,6 +1265,30 @@
         "saveFailed": "No se pudieron guardar las reglas de este evento."
       },
       "debriefCta": "Analizar este evento"
+    },
+    "table": {
+      "tier": "Nivel",
+      "event": "Evento",
+      "date": "Fecha",
+      "placement": "Puesto",
+      "seedDelta": "Seed Δ",
+      "record": "Récord",
+      "sectionLabel_one": "Eventos · 1 en el rango",
+      "sectionLabel_other": "Eventos · {{count}} en el rango",
+      "sortNote": "más recientes primero",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}.º",
+      "placement_ordinal_two": "{{count, grouped}}.º",
+      "placement_ordinal_few": "{{count, grouped}}.º",
+      "placement_ordinal_other": "{{count, grouped}}.º",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 evento",
+      "yearGroup_other": "{{year}} · {{count}} eventos",
+      "undated": "Sin fecha",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; abre el evento",
+      "showMore50": "Mostrar 50 más",
+      "showMore20": "Mostrar 20 más",
+      "loadError": "No se pudieron cargar los torneos. Los datos están a salvo: vuelve a intentarlo."
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "El nivel guardado de este evento se escribió con una versión más nueva de la app y no se está aplicando.",
       "help": "Una anulación prevalece sobre cualquier otra fuente y se puede quitar en cualquier momento.",
       "wouldBe": "La estimación habría sido: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Nivel",
+      "settingLabel": "Modalidad",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Ocultar eventos secundarios",
+      "clear": "Borrar filtros",
+      "empty": "Ningún evento coincide con estos filtros.",
+      "countsNote": "Los recuentos reflejan los demás filtros.",
+      "noneInRange": "Sin eventos {{label}} en este rango.",
+      "sheetButton": "Filtros"
     }
   }
 }

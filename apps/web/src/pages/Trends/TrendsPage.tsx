@@ -75,9 +75,9 @@ const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
  * only). Row 3 is the three 4-col
  * rails: left (Sessions & Tilt, Recent events), centre (`TrendsReadsRail`,
  * the engine-backed reads), right (Setting comparison, Match-type mix). The
- * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2) —
- * `Tournaments.tsx` itself stays committed, since `TournamentsPage.tsx`
- * still imports it.
+ * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2);
+ * plan 39.2-07 then deleted the component itself once `TournamentsTable`
+ * replaced it on `/tournaments`.
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.

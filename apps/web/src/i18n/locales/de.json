@@ -1265,6 +1265,30 @@
         "saveFailed": "Regelwerk für dieses Event konnte nicht gespeichert werden."
       },
       "debriefCta": "Event nachbesprechen"
+    },
+    "table": {
+      "tier": "Stufe",
+      "event": "Event",
+      "date": "Datum",
+      "placement": "Platzierung",
+      "seedDelta": "Seed Δ",
+      "record": "Bilanz",
+      "sectionLabel_one": "Events · 1 im Zeitraum",
+      "sectionLabel_other": "Events · {{count}} im Zeitraum",
+      "sortNote": "neueste zuerst",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}.",
+      "placement_ordinal_two": "{{count, grouped}}.",
+      "placement_ordinal_few": "{{count, grouped}}.",
+      "placement_ordinal_other": "{{count, grouped}}.",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 Event",
+      "yearGroup_other": "{{year}} · {{count}} Events",
+      "undated": "Ohne Datum",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; öffnet das Event",
+      "showMore50": "50 weitere anzeigen",
+      "showMore20": "20 weitere anzeigen",
+      "loadError": "Die Turniere konnten nicht geladen werden. Die Daten sind sicher — bitte erneut versuchen."
     }
   },
   "billing": {
@@ -3754,6 +3778,17 @@
       "ignored": "Die für dieses Event gespeicherte Stufe wurde von einer neueren App-Version geschrieben und wird nicht angewendet.",
       "help": "Eine Überschreibung hat Vorrang vor jeder anderen Quelle und lässt sich jederzeit entfernen.",
       "wouldBe": "Die Schätzung wäre gewesen: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Stufe",
+      "settingLabel": "Austragungsart",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Nebenevents ausblenden",
+      "clear": "Filter zurücksetzen",
+      "empty": "Keine Events entsprechen diesen Filtern.",
+      "countsNote": "Die Zahlen berücksichtigen die anderen Filter.",
+      "noneInRange": "Keine {{label}}-Events in diesem Zeitraum.",
+      "sheetButton": "Filter"
     }
   }
 }
