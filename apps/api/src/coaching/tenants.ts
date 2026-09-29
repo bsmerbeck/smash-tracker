@@ -930,6 +930,7 @@ export interface ClientWorkspaceExport {
   opponentAliases: Awaited<ReturnType<RtdbService['listOpponentAliases']>>;
   opponentNotes: Awaited<ReturnType<RtdbService['listOpponentNotes']>>;
   stageFavorites: Awaited<ReturnType<RtdbService['getStageFavorites']>>;
+  watchlist: Awaited<ReturnType<RtdbService['getWatchlist']>>;
   fighterSelection: Awaited<ReturnType<RtdbService['getFighterSelection']>>;
 }
 
@@ -976,6 +977,7 @@ export async function exportClient(
     opponentAliases,
     opponentNotes,
     stageFavorites,
+    watchlist,
     fighterSelection,
   ] = await Promise.all([
     rtdb.listMatches(tenantId),
@@ -984,6 +986,7 @@ export async function exportClient(
     rtdb.listOpponentAliases(tenantId),
     rtdb.listOpponentNotes(tenantId),
     rtdb.getStageFavorites(tenantId),
+    rtdb.getWatchlist(tenantId),
     rtdb.getFighterSelection(tenantId),
   ]);
 
@@ -997,6 +1000,7 @@ export async function exportClient(
     opponentAliases,
     opponentNotes,
     stageFavorites,
+    watchlist,
     fighterSelection,
   };
 }

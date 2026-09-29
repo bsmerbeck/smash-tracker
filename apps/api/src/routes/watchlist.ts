@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  errorResponseSchema,
   watchlistItemKeySchema,
   watchlistResponseSchema,
   watchlistTrackInputSchema,
@@ -54,6 +55,7 @@ const watchlistRoutes: FastifyPluginAsyncZod = async (app) => {
         body: watchlistTrackInputSchema,
         response: {
           200: watchlistTrackResponseSchema,
+          409: errorResponseSchema,
         },
       },
     },

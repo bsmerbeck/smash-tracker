@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WATCHLIST_MAX_ITEMS } from '@smash-tracker/shared';
+import { createClient } from '../coaching/tenants.js';
 import { RtdbService } from '../services/rtdb.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
@@ -10,6 +11,13 @@ const TENANT_ID = 'tenant-abc';
 function seedClientTenant(database: FakeDatabase, tenantId: string = TENANT_ID): void {
   database.seed(`clientTenants/${tenantId}`, { createdAt: 1, archivedAt: null, kind: 'coaching' });
   database.seed(`clientMembers/${tenantId}/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+}
+
+/** The stored `watchlist/<subjectId>` map, or `{}` when the subject has none. */
+function subjectTree(database: FakeDatabase, subjectId: string): Record<string, unknown> {
+  const tree = (database.dump() as { watchlist?: Record<string, Record<string, unknown>> })
+    .watchlist;
+  return tree?.[subjectId] ?? {};
 }
 
 function clientHeaders(tenantId: string = TENANT_ID): Record<string, string> {
@@ -92,10 +100,8 @@ describe('watchlist routes — tracer (subject-scoped persistence)', () => {
     expect(forClient.statusCode).toBe(200);
     expect(forClient.json().itemKey).toBe('matchup:3-9');
 
-    const tree = (database.dump() as { watchlist: Record<string, Record<string, unknown>> })
-      .watchlist;
-    expect(Object.keys(tree[TENANT_ID])).toEqual(['matchup:3-9']);
-    expect(Object.keys(tree[TEST_UID])).toEqual(['opponent:coachrival']);
+    expect(Object.keys(subjectTree(database, TENANT_ID))).toEqual(['matchup:3-9']);
+    expect(Object.keys(subjectTree(database, TEST_UID))).toEqual(['opponent:coachrival']);
 
     // Both directions: the own list excludes the client's item...
     const ownList = await app.inject({
@@ -146,10 +152,8 @@ describe('watchlist routes — tracer (subject-scoped persistence)', () => {
 
     expect(del.statusCode).toBe(200);
     expect(del.json()).toEqual({ itemKey: 'stage:3' });
-    const tree = (database.dump() as { watchlist: Record<string, Record<string, unknown>> })
-      .watchlist;
-    expect(Object.keys(tree[TEST_UID])).toEqual(['stage:4']);
-    expect(Object.keys(tree[TENANT_ID])).toEqual(['stage:3']);
+    expect(Object.keys(subjectTree(database, TEST_UID))).toEqual(['stage:4']);
+    expect(Object.keys(subjectTree(database, TENANT_ID))).toEqual(['stage:3']);
   });
 
   it('untracking an item that is not tracked is a no-op success', async () => {
@@ -176,7 +180,7 @@ function stageMap(count: number): Record<string, unknown> {
 
 function putItem(
   app: ReturnType<typeof buildTestApp>['app'],
-  payload: unknown,
+  payload: object,
   headers: Record<string, string> = authHeader(),
 ) {
   return app.inject({ method: 'PUT', url: '/api/watchlist/items', headers, payload });
@@ -193,8 +197,7 @@ describe('watchlist cap, idempotency and input hardening', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ statusCode: 409, code: 'watchlist-full' });
     expect(database.dump()).toEqual(before);
-    const stored = (database.dump() as { watchlist: Record<string, Record<string, unknown>> })
-      .watchlist[TEST_UID];
+    const stored = subjectTree(database, TEST_UID);
     expect(Object.keys(stored)).toHaveLength(WATCHLIST_MAX_ITEMS);
   });
 
@@ -219,8 +222,7 @@ describe('watchlist cap, idempotency and input hardening', () => {
     ]);
 
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
-    const stored = (database.dump() as { watchlist: Record<string, Record<string, unknown>> })
-      .watchlist[TEST_UID];
+    const stored = subjectTree(database, TEST_UID);
     expect(Object.keys(stored)).toHaveLength(WATCHLIST_MAX_ITEMS);
   });
 
@@ -242,7 +244,7 @@ describe('watchlist cap, idempotency and input hardening', () => {
     const service = new RtdbService(database as never);
 
     await service.trackWatchlistItem('u1', { kind: 'stage', ref: 500 });
-    const decide = updateFns[0];
+    const decide = updateFns[0]!;
     // null is the first run of every transaction: it must become a one-item map, not an abort.
     expect(Object.keys(decide(null) as Record<string, unknown>)).toEqual(['stage:500']);
     // Full map, different key: abort.
@@ -284,8 +286,7 @@ describe('watchlist cap, idempotency and input hardening', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().itemKey).toBe('stage:3');
     expect(response.json().item.createdAt).toBeGreaterThanOrEqual(before);
-    const stored = (database.dump() as { watchlist: Record<string, Record<string, unknown>> })
-      .watchlist[TEST_UID];
+    const stored = subjectTree(database, TEST_UID);
     expect(Object.keys(stored)).toEqual(['stage:3']);
   });
 
@@ -378,5 +379,57 @@ describe('watchlist cap, idempotency and input hardening', () => {
     const revokedWrite = await putItem(app, { kind: 'stage', ref: 3 }, clientHeaders());
     expect(revokedWrite.statusCode).toBe(403);
     expect(database.dump()).not.toHaveProperty('watchlist');
+  });
+});
+
+describe('watchlist and the client workspace lifecycle', () => {
+  async function createTenantWithTwoItems() {
+    const built = buildTestApp();
+    const { tenantId } = await createClient(built.database as never, TEST_UID, 'Alex', {
+      sessionId: 'session-1',
+    });
+    for (const payload of [
+      { kind: 'opponent', ref: 'izaw' },
+      { kind: 'matchup', ref: { fighterId: 3, vsFighterId: 9 } },
+    ]) {
+      const response = await putItem(built.app, payload, clientHeaders(tenantId));
+      expect(response.statusCode).toBe(200);
+    }
+    return { ...built, tenantId };
+  }
+
+  it('the client workspace export carries both tracked items', async () => {
+    const { app, tenantId } = await createTenantWithTwoItems();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${tenantId}/export`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const keys = response
+      .json()
+      .watchlist.items.map((entry: { itemKey: string }) => entry.itemKey)
+      .sort();
+    expect(keys).toEqual(['matchup:3-9', 'opponent:izaw']);
+  });
+
+  it('a hard delete of the client tenant removes watchlist/<tenant> through the deletion cascade', async () => {
+    const { app, database, tenantId } = await createTenantWithTwoItems();
+    // The coach's own list is a different subject and must survive.
+    await putItem(app, { kind: 'stage', ref: 3 });
+    expect(database.dump()).toHaveProperty(['watchlist', tenantId]);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${tenantId}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(204);
+    const tree = (database.dump() as { watchlist?: Record<string, unknown> }).watchlist ?? {};
+    expect(tree).not.toHaveProperty(tenantId);
+    expect(tree).toHaveProperty(TEST_UID);
   });
 });

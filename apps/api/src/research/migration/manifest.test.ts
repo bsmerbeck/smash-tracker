@@ -43,11 +43,11 @@ const DEST_UID = 'demo-account-uid-1';
 // ---------------------------------------------------------------------------
 
 describe('TREE_DESCRIPTORS lock', () => {
-  it('the real registry exact-set-locks against TENANT_DELETION_TREES (30 members, 15 copy + 15 assert-empty)', () => {
+  it('the real registry exact-set-locks against TENANT_DELETION_TREES (31 members, 15 copy + 16 assert-empty)', () => {
     expect(TREE_DESCRIPTOR_LOCK.ok).toBe(true);
-    expect(TREE_DESCRIPTORS).toHaveLength(30);
+    expect(TREE_DESCRIPTORS).toHaveLength(31);
     expect(TREE_DESCRIPTORS.filter(isCopyDescriptor)).toHaveLength(15);
-    expect(TREE_DESCRIPTORS.filter((d) => d.disposition === 'assert-empty')).toHaveLength(15);
+    expect(TREE_DESCRIPTORS.filter((d) => d.disposition === 'assert-empty')).toHaveLength(16);
   });
 
   it('every deletion tree has exactly one descriptor', () => {

@@ -187,7 +187,7 @@ const CONTENT_TREE_READER_ALLOWLIST: ContentReaderEntry[] = [
   {
     file: 'src/services/rtdb.ts',
     reason:
-      'RtdbService — the central data-access layer. Every method takes the CALLER-RESOLVED subject id (request.subjectId or request.uid) as a direct parameter; no method aggregates across a foreign/cross-user id list. Covers matches/playlists/opponents/opponentAliases/opponentNotes/stageFavorites/primaryFighters/secondaryFighters/reviewVersions/reviewDeliveries/sessionDeliveries.',
+      'RtdbService — the central data-access layer. Every method takes the CALLER-RESOLVED subject id (request.subjectId or request.uid) as a direct parameter; no method aggregates across a foreign/cross-user id list. Covers matches/playlists/opponents/opponentAliases/opponentNotes/stageFavorites/watchlist/primaryFighters/secondaryFighters/reviewVersions/reviewDeliveries/sessionDeliveries.',
   },
   {
     file: 'src/startgg/sync.ts',

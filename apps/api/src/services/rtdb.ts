@@ -1620,9 +1620,9 @@ export class RtdbService {
             : itemResult.error.issues.map((issue) => issue.path.join('.') || '(root)')),
         ];
         console.warn(
-          `RtdbService.getWatchlist: skipped a corrupt watchlist child (kind prefix "${itemKey
-            .split(':')[0]
-            .slice(0, 16)}", invalid: ${paths.join(', ')})`,
+          `RtdbService.getWatchlist: skipped a corrupt watchlist child (kind prefix "${(
+            itemKey.split(':', 1)[0] ?? ''
+          ).slice(0, 16)}", invalid: ${paths.join(', ')})`,
         );
         continue;
       }
