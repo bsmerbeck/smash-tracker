@@ -444,6 +444,31 @@ export const LAYOUT_ORACLE_ROUTES = [
   // Plan 39.1-39: brand-red-text (UI-SPEC §4.3).
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]', checks: ['brand-red-text'] },
   {
+    // Plan 39.2-07 (UI-SPEC §13 G1): the tier-aware Tournaments page on the
+    // harness's 19-row registry (`guardLayoutHarness.mjs`'s `tournaments`
+    // scale), inside the MainLayout-geometry shell. brand-red-text (§4.3): the
+    // chips, the Clear link and the event links are neutral. On a phone the
+    // rows stack and the table-clip sweep reads the stacked list.
+    id: 'tournaments',
+    loadedMarker: '[data-slot="tournaments-body"]',
+    scale: 'tournaments',
+    checks: ['brand-red-text'],
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="tournaments-table"]'],
+  },
+  {
+    // Plan 39.2-07: the SAME page on a 100-row registry (`tournaments100`) —
+    // one full DOM pass. The table counts at most 500 px toward the page
+    // scroll budget, like every table-layout list (UI-SPEC §6.3 terminus
+    // allowance); the phone stack mounts 20 rows and counts in full.
+    id: 'tournaments-100',
+    loadedMarker: '[data-slot="tournaments-body"]',
+    scale: 'tournaments100',
+    checks: ['brand-red-text'],
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="tournaments-table"]'],
+  },
+  {
     id: 'opponent-hub',
     loadedMarker: '[data-slot="opponent-hub-body"]',
     // Plan 39.1-33: form-strip-fit — no extra viewport, no scroll budget.
@@ -1586,6 +1611,15 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       el = el.parentElement;
     }
     terminusLists.push(record);
+  }
+
+  // Plan 39.2-07 (UI-SPEC §6.3): the Tournaments table is the same kind of
+  // table-layout list — its scroll container's height counts toward the page
+  // budget only up to the terminus allowance. The stacked phone list has no
+  // `table` and counts in full.
+  for (const table of document.querySelectorAll('table[data-slot="tournaments-table"]')) {
+    const container = table.closest('[data-slot="table-container"]') ?? table;
+    terminusFlowsPx.push(container.getBoundingClientRect().height);
   }
 
   // -------------------------------------------------------------------
