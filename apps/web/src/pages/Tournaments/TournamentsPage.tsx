@@ -8,12 +8,19 @@ import { CardSkeleton, PageSkeleton } from '@/components/analytics/CardSkeleton'
 import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { PageShell } from '@/components/analytics/PageShell';
 import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
+import { TierFilterChips } from '@/components/analytics/tier/TierFilterChips';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { filterEntriesByRange, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useMatches } from '@/hooks/useMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
-import { buildTierFilterSearch, readTierFilterParams } from '@/lib/tierFilterParams';
+import {
+  applyTierFilters,
+  buildTierFilterSearch,
+  facetedSettingCounts,
+  facetedTierCounts,
+  readTierFilterParams,
+} from '@/lib/tierFilterParams';
 import { buildTournamentEntryRows } from '@/lib/tournamentEntryRows';
 import { HiddenByRangeNotice } from '@/pages/Tournaments/components/HiddenByRangeNotice';
 import {
@@ -86,17 +93,12 @@ export function TournamentsPage() {
     [visibleEntries, matches, resolutionByEntry],
   );
 
-  const rows = useMemo(
-    () =>
-      inRangeRows.filter(({ resolution }) => {
-        if (filters.tiers.length > 0 && !filters.tiers.includes(resolution.tier)) {
-          return false;
-        }
-        if (filters.setting != null && resolution.setting !== filters.setting) {
-          return false;
-        }
-        return !(filters.side === 'hide' && resolution.eventKind === 'side-event');
-      }),
+  const rows = useMemo(() => applyTierFilters(inRangeRows, filters), [inRangeRows, filters]);
+  // Faceted counts (UI-SPEC §7.3): each facet ignores its own selection, so a chip
+  // says how many events pressing it would show.
+  const tierCounts = useMemo(() => facetedTierCounts(inRangeRows, filters), [inRangeRows, filters]);
+  const settingCounts = useMemo(
+    () => facetedSettingCounts(inRangeRows, filters),
     [inRangeRows, filters],
   );
 
@@ -174,7 +176,7 @@ export function TournamentsPage() {
   } else {
     content = (
       <>
-        <TournamentsTable key={searchParams.toString()} rows={rows} />
+        <TournamentsTable rows={rows} />
         {hiddenCount > 0 && range !== 'all' && (
           <HiddenByRangeNotice hiddenCount={hiddenCount} range={range} className="mt-3" />
         )}
@@ -188,23 +190,38 @@ export function TournamentsPage() {
   }
 
   return (
-    <PageShell>
+    <PageShell
+      filterRow={
+        inRangeRows.length > 0 ? (
+          <TierFilterChips tierCounts={tierCounts} settingCounts={settingCounts} />
+        ) : undefined
+      }
+    >
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
       {/* data-slot="tournaments-body": present only once the loading gate
           above has cleared — the layout oracle's page-loaded marker. */}
       <div data-slot="tournaments-body" className="flex flex-col gap-4">
-        {rows.length > 0 && (
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 className={OVERLINE}>
-              {t('tournaments.table.sectionLabel', { count: rows.length })}
-              {' · '}
-              {t('tournaments.table.sortNote')}
-            </h2>
-          </div>
-        )}
-        <PageGrid>
-          <GridCell span={12}>{content}</GridCell>
-        </PageGrid>
+        {/* A chip change re-keys this wrapper: the results fade in over 120ms
+            (instant under prefers-reduced-motion, UI-SPEC §10.4) and the table's
+            paging progress restarts with the new row set. */}
+        <div
+          key={searchParams.toString()}
+          data-slot="tournaments-results"
+          className="flex animate-in flex-col gap-4 fade-in-0 duration-[120ms] motion-reduce:animate-none"
+        >
+          {rows.length > 0 && (
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h2 className={OVERLINE}>
+                {t('tournaments.table.sectionLabel', { count: rows.length })}
+                {' · '}
+                {t('tournaments.table.sortNote')}
+              </h2>
+            </div>
+          )}
+          <PageGrid>
+            <GridCell span={12}>{content}</GridCell>
+          </PageGrid>
+        </div>
       </div>
     </PageShell>
   );

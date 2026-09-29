@@ -365,8 +365,13 @@ describe('TournamentsPage', () => {
       listTournaments.mockResolvedValue(sparg0Shaped());
       const { container } = renderPage('/tournaments?tier=regional');
 
-      expect(await screen.findByText('No events match these filters.')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+      const empty = await screen.findByText('No events match these filters.');
+      expect(
+        within(empty.closest('[data-slot="tournaments-filter-empty"]') as HTMLElement).getByRole(
+          'button',
+          { name: 'Clear filters' },
+        ),
+      ).toBeInTheDocument();
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
       expect(container.querySelector('tbody')).toBeNull();
     });
@@ -376,8 +381,12 @@ describe('TournamentsPage', () => {
       renderPage('/tournaments?tier=regional');
 
       const user = userEvent.setup();
-      await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+      const empty = (await screen.findByText('No events match these filters.')).closest(
+        '[data-slot="tournaments-filter-empty"]',
+      ) as HTMLElement;
+      await user.click(within(empty).getByRole('button', { name: 'Clear filters' }));
       expect(await screen.findByRole('link', { name: 'Supernova 2026' })).toBeInTheDocument();
+      expect(screen.queryByText('No events match these filters.')).not.toBeInTheDocument();
     });
 
     it('never writes a filter to device-local storage', async () => {
@@ -389,6 +398,116 @@ describe('TournamentsPage', () => {
         window.localStorage.getItem(key),
       );
       expect(stored.join('|')).not.toMatch(/supermajor|offline|hide/);
+    });
+  });
+
+  describe('tier filter chips on the page (D-13, faceted counts)', () => {
+    function mixed() {
+      return [
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Supernova 2026',
+          numEntrants: 2048,
+          isOnline: false,
+        }),
+        makeEntry({ eventId: 2, tournamentName: 'Genesis', numEntrants: 600, isOnline: false }),
+        makeEntry({ eventId: 3, tournamentName: 'Big Local', numEntrants: 130, isOnline: false }),
+        makeEntry({ eventId: 4, tournamentName: 'Weekly One', numEntrants: 40, isOnline: true }),
+        makeEntry({ eventId: 5, tournamentName: 'Weekly Two', numEntrants: 44, isOnline: true }),
+      ];
+    }
+
+    it('mounts the chips as the page filter row with a stable vocabulary and faceted counts', async () => {
+      listTournaments.mockResolvedValue(mixed());
+      renderPage();
+
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      const tiers = screen.getByRole('toolbar', { name: 'Tier' });
+      expect(
+        within(tiers)
+          .getAllByRole('button')
+          .map((b) => b.textContent),
+      ).toEqual([
+        'Supermajor (1)',
+        'Major (1)',
+        'Minor (0)',
+        'Regional (1)',
+        'Local (0)',
+        'Tier unknown (2)',
+      ]);
+      expect(screen.getByRole('button', { name: 'Minor (0)' })).toBeDisabled();
+    });
+
+    it('a tier count changes with the setting filter and NOT with the tier selection', async () => {
+      listTournaments.mockResolvedValue(mixed());
+      renderPage('/tournaments?setting=online');
+      await screen.findByRole('link', { name: 'Weekly One' });
+      // With setting=online only the two online events are counted; both are unknown.
+      expect(screen.getByRole('button', { name: 'Tier unknown (2)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Supermajor (0)' })).toBeInTheDocument();
+    });
+
+    it('selecting a tier does not move any tier count', async () => {
+      listTournaments.mockResolvedValue(mixed());
+      renderPage('/tournaments?tier=supermajor');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      expect(screen.getByRole('button', { name: 'Supermajor (1)' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Major (1)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Regional (1)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Tier unknown (2)' })).toBeInTheDocument();
+      // The table is filtered, the counts are not.
+      expect(screen.queryByRole('link', { name: 'Genesis' })).not.toBeInTheDocument();
+    });
+
+    it('a chip press filters the table through the URL and keeps a zero-count chip visible', async () => {
+      listTournaments.mockResolvedValue(mixed());
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole('button', { name: 'Major (1)' }));
+      expect(await screen.findByRole('link', { name: 'Genesis' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Supernova 2026' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Major (1)' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      // The setting chips now count only major events: no online major exists, so
+      // Online is disabled with its zero, and Offline says pressing it keeps one row.
+      expect(screen.getByRole('button', { name: 'Online (0)' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Offline (1)' })).not.toBeDisabled();
+
+      await user.click(screen.getByRole('button', { name: 'Major (1)' }));
+      expect(await screen.findByRole('link', { name: 'Supernova 2026' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Online (2)' })).not.toBeDisabled();
+    });
+
+    it('cross-fades the results on a chip change and never under reduced motion', async () => {
+      listTournaments.mockResolvedValue(mixed());
+      const { container } = renderPage();
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      const results = container.querySelector('[data-slot="tournaments-results"]') as HTMLElement;
+      expect(results.className).toMatch(/animate-in/);
+      expect(results.className).toMatch(/duration-\[120ms\]/);
+      expect(results.className).toMatch(/motion-reduce:animate-none/);
+    });
+
+    it('renders no chips when the range hides every event', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Old',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+      ]);
+      renderPage();
+      await screen.findByText('1 tournament outside the last 12m.');
+      expect(screen.queryByRole('toolbar', { name: 'Tier' })).not.toBeInTheDocument();
     });
   });
 

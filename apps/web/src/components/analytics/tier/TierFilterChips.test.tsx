@@ -69,7 +69,7 @@ describe('TierFilterChips (D-13, DD-04)', () => {
   describe('E2 populated: the chips reflect the URL on every render', () => {
     it('renders the six tier chips in vocabulary order with faceted counts, Unknown last', () => {
       renderChips();
-      const group = screen.getByRole('group', { name: 'Tier' });
+      const group = screen.getByRole('toolbar', { name: 'Tier' });
       expect(
         within(group)
           .getAllByRole('button')
@@ -86,7 +86,7 @@ describe('TierFilterChips (D-13, DD-04)', () => {
 
     it('renders the setting chips and the side-event toggle', () => {
       renderChips();
-      const group = screen.getByRole('group', { name: 'Setting' });
+      const group = screen.getByRole('toolbar', { name: 'Setting' });
       expect(
         within(group)
           .getAllByRole('button')
@@ -145,7 +145,7 @@ describe('TierFilterChips (D-13, DD-04)', () => {
       renderChips('/tournaments', {
         tierCounts: { supermajor: 0, major: 0, minor: 0, regional: 0, local: 0, unknown: 13 },
       });
-      const group = screen.getByRole('group', { name: 'Tier' });
+      const group = screen.getByRole('toolbar', { name: 'Tier' });
       const disabled = within(group)
         .getAllByRole('button')
         .filter((b) => b.getAttribute('aria-disabled') === 'true');
@@ -266,10 +266,10 @@ describe('TierFilterChips (D-13, DD-04)', () => {
       expect(major.className).toMatch(/rounded-full/);
     });
 
-    it('the group labels are the aria-labelledby targets', () => {
+    it('each chip group is a labelled toolbar (radix roving focus), named by its overline label', () => {
       renderChips();
-      expect(screen.getByRole('group', { name: 'Tier' })).toBeInTheDocument();
-      expect(screen.getByRole('group', { name: 'Setting' })).toBeInTheDocument();
+      expect(screen.getByRole('toolbar', { name: 'Tier' })).toBeInTheDocument();
+      expect(screen.getByRole('toolbar', { name: 'Setting' })).toBeInTheDocument();
     });
 
     it('the count is a tabular figure inside the chip label', () => {
@@ -284,7 +284,7 @@ describe('TierFilterChips (D-13, DD-04)', () => {
       const button = screen.getByRole('button', { name: /^Filters/ });
       expect(button).toBeInTheDocument();
       expect(within(button).queryByText(/^\d+$/)).not.toBeInTheDocument();
-      expect(screen.queryByRole('group', { name: 'Tier' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('toolbar', { name: 'Tier' })).not.toBeInTheDocument();
     });
 
     it('carries the active-filter count as a badge', () => {
@@ -299,8 +299,8 @@ describe('TierFilterChips (D-13, DD-04)', () => {
       await user.click(screen.getByRole('button', { name: /^Filters/ }));
 
       const dialog = await screen.findByRole('dialog');
-      expect(within(dialog).getByRole('group', { name: 'Tier' })).toBeInTheDocument();
-      expect(within(dialog).getByRole('group', { name: 'Setting' })).toBeInTheDocument();
+      expect(within(dialog).getByRole('toolbar', { name: 'Tier' })).toBeInTheDocument();
+      expect(within(dialog).getByRole('toolbar', { name: 'Setting' })).toBeInTheDocument();
       expect(within(dialog).getByRole('button', { name: 'Hide side events' })).toBeInTheDocument();
 
       await user.click(within(dialog).getByRole('button', { name: 'Clear filters' }));

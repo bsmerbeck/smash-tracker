@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import {
   buildSetTimeline,
+  resolveTournamentTier,
   ROSTER_MAIN_MIN_GAMES,
   ROSTER_SECONDARY_MIN_GAMES,
 } from '@smash-tracker/shared';
@@ -41,6 +42,10 @@ import { FilteredMatchList, FILTERED_MATCH_LIST_ROW_CAP } from '@/components/Fil
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { FullAnalysisSection } from '@/pages/Scout/components/FullAnalysisSection';
 import { SetTimeline } from '@/pages/Tournaments/components/SetTimeline';
+import {
+  TournamentsTable,
+  type TournamentTableRow,
+} from '@/pages/Tournaments/components/TournamentsTable';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
 import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
 import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
@@ -86,6 +91,10 @@ import userEvent from '@testing-library/user-event';
  * terminus's row-cap Show-all expanded tail, proving no-inert-row holds past
  * `FILTERED_MATCH_LIST_ROW_CAP`, not just in the capped head every other
  * FilteredMatchList entry above exercises.
+ *
+ * Plan 39.2-07 (TIER-02, UI-SPEC §13 G6) appends TWO more entries (30 -> 32):
+ * the tier-aware Tournaments table (`TournamentsTable.tsx`) in both its table
+ * root and its stacked phone root.
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -230,6 +239,50 @@ interface Surface {
   file: string;
   render: () => RenderResult;
   rows: (result: RenderResult) => HTMLElement[];
+}
+
+/** Plan 39.2-07: three Tournaments rows — dated, imported with no games, and undated. */
+function tournamentTableFixtureRows(): TournamentTableRow[] {
+  const entries = [
+    {
+      eventId: 1,
+      entryKey: '1',
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Supernova 2026',
+      firstSetAt: Date.UTC(2026, 7, 8),
+      lastSetAt: Date.UTC(2026, 7, 9),
+      setsPlayed: 5,
+      numEntrants: 2048,
+      placement: 3,
+      seed: 8,
+      isOnline: false,
+    },
+    {
+      eventId: 2,
+      entryKey: '2',
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+      firstSetAt: Date.UTC(2024, 5, 10),
+      lastSetAt: Date.UTC(2024, 5, 10),
+      setsPlayed: 5,
+      origin: 'admin-imported',
+      provider: 'startgg',
+    },
+    {
+      eventId: 3,
+      entryKey: '3',
+      eventName: 'Squad Strike',
+      tournamentName: 'Undated Open',
+      firstSetAt: 0,
+      lastSetAt: 0,
+      setsPlayed: 0,
+    },
+  ] as unknown as TournamentEntry[];
+  return entries.map((entry) => ({
+    entry,
+    record: { wins: 0, losses: 0, total: 0, winRate: 0 } as TournamentTableRow['record'],
+    resolution: resolveTournamentTier({ entry, observedOnline: false }),
+  }));
 }
 
 const SURFACES: Surface[] = [
@@ -809,6 +862,33 @@ const SURFACES: Surface[] = [
     },
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
+  // Plan 39.2-07 (TIER-02, UI-SPEC §13 G6): the tier-aware Tournaments table,
+  // both roots — every row is a DrillableRow overlay into its event. The
+  // fixture spans a dated row, an imported row with no linked games (the
+  // Gate 4 dash record) and an undated row, so no shape is left uncovered.
+  {
+    name: 'Tournaments table (TournamentsTable)',
+    file: 'apps/web/src/pages/Tournaments/components/TournamentsTable.tsx',
+    render: () =>
+      withRouter(
+        <TooltipProvider>
+          <TournamentsTable rows={tournamentTableFixtureRows()} layout="table" />
+        </TooltipProvider>,
+      ),
+    rows: (result) => dataRows(result.container),
+  },
+  {
+    name: 'Tournaments table, stacked (below 640px)',
+    file: 'apps/web/src/pages/Tournaments/components/TournamentsTable.tsx',
+    render: () =>
+      withRouter(
+        <TooltipProvider>
+          <TournamentsTable rows={tournamentTableFixtureRows()} layout="stack" />
+        </TooltipProvider>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tournaments-row"]')),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -951,8 +1031,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts)", () => {
-    expect(SURFACES.length).toBe(30);
+  it("the surface enumeration has the stated THIRTY-TWO entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots)", () => {
+    expect(SURFACES.length).toBe(32);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {
