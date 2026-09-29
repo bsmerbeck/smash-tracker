@@ -3830,5 +3830,16 @@
       "rowAria_one": "{{tier}}: {{record}}, 1 game; opens the tournaments filtered to this tier",
       "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} games; opens the tournaments filtered to this tier"
     }
+  },
+  "watchlist": {
+    "track": "Track",
+    "tracked": "Tracked",
+    "trackAria": "Track {{name}}",
+    "untrackAria": "Stop tracking {{name}}",
+    "trackedToast": "Tracking {{name}}.",
+    "untrackedToast": "No longer tracking {{name}}.",
+    "full": "Tracked list is full — 25 of 25. Untrack something first.",
+    "manage": "Manage tracked",
+    "error": "Couldn't update the tracked list. Try again."
   }
 }

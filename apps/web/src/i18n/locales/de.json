@@ -3830,5 +3830,16 @@
       "rowAria_one": "{{tier}}: {{record}}, 1 Spiel; öffnet die Turniere, gefiltert nach dieser Stufe",
       "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} Spiele; öffnet die Turniere, gefiltert nach dieser Stufe"
     }
+  },
+  "watchlist": {
+    "track": "Verfolgen",
+    "tracked": "Verfolgt",
+    "trackAria": "{{name}} verfolgen",
+    "untrackAria": "{{name}} nicht mehr verfolgen",
+    "trackedToast": "{{name}} wird verfolgt.",
+    "untrackedToast": "{{name}} wird nicht mehr verfolgt.",
+    "full": "Die Liste ist voll – 25 von 25. Zuerst muss ein Eintrag entfernt werden.",
+    "manage": "Verfolgte verwalten",
+    "error": "Die Liste konnte nicht aktualisiert werden. Bitte erneut versuchen."
   }
 }

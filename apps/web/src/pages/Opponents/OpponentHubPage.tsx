@@ -93,6 +93,7 @@ import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
 import { TendenciesCard } from './components/TendenciesCard';
 import { ExportH2HButton } from './components/ExportH2HButton';
+import { TrackToggle } from '@/components/analytics/track/TrackToggle';
 import { PrintableEvidencePacket } from './components/PrintableEvidencePacket';
 import { HubPrepBriefCard } from './components/HubPrepBriefCard';
 import {
@@ -342,6 +343,13 @@ export function OpponentHubPage() {
         : [],
     [allMatches, prepResolve, prepIdentity],
   );
+  // Plan 39.2-10 (TRK-02): the watchlist ref is the resolved canonical tag, and
+  // only for a real identity with at least one game — the same gate the prep
+  // card uses, so a typo'd URL never offers to track a rival who does not exist.
+  const trackOpponentRef =
+    prepIdentity && prepIdentity !== UNKNOWN_OPPONENT_IDENTITY && prepIdentityMatches.length > 0
+      ? prepIdentity
+      : null;
   const prepTournamentBlocks = useMemo(
     () => groupTournamentBlocks(prepIdentityMatches),
     [prepIdentityMatches],
@@ -808,6 +816,10 @@ export function OpponentHubPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-2xl font-semibold tracking-tight">{displayTag}</h1>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Plan 39.2-10 (T-04): Track is the FIRST control of the group. It tracks the resolved canonical identity, so an alias-only URL never lists the same rival under two tags. */}
+          {trackOpponentRef && (
+            <TrackToggle kind="opponent" itemRef={trackOpponentRef} name={displayTag} />
+          )}
           {profile && (
             <Button
               type="button"

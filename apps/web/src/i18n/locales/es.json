@@ -3830,5 +3830,16 @@
       "rowAria_one": "{{tier}}: {{record}}, 1 partida; abre los torneos filtrados por este nivel",
       "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} partidas; abre los torneos filtrados por este nivel"
     }
+  },
+  "watchlist": {
+    "track": "Seguir",
+    "tracked": "Siguiendo",
+    "trackAria": "Seguir {{name}}",
+    "untrackAria": "Dejar de seguir {{name}}",
+    "trackedToast": "Siguiendo {{name}}.",
+    "untrackedToast": "Ya no se sigue {{name}}.",
+    "full": "La lista de seguidos está llena: 25 de 25. Primero hay que dejar de seguir algo.",
+    "manage": "Gestionar seguidos",
+    "error": "No se pudo actualizar la lista de seguidos. Inténtalo de nuevo."
   }
 }

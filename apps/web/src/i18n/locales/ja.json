@@ -3830,5 +3830,16 @@
       "rowAria_one": "{{tier}}: {{record}}、1試合。このティアで絞り込んだ大会一覧を開く",
       "rowAria_other": "{{tier}}: {{record}}、{{count, grouped}}試合。このティアで絞り込んだ大会一覧を開く"
     }
+  },
+  "watchlist": {
+    "track": "追跡",
+    "tracked": "追跡中",
+    "trackAria": "{{name}}を追跡",
+    "untrackAria": "{{name}}の追跡を解除",
+    "trackedToast": "{{name}}を追跡しています。",
+    "untrackedToast": "{{name}}の追跡を解除しました。",
+    "full": "追跡リストがいっぱいです（25／25）。先にどれかの追跡を解除してください。",
+    "manage": "追跡を管理",
+    "error": "追跡リストを更新できませんでした。もう一度お試しください。"
   }
 }

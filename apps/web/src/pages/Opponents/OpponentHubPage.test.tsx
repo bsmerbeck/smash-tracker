@@ -104,6 +104,9 @@ const removeAlias = vi.fn();
 const listNotes = vi.fn();
 const upsertNote = vi.fn();
 const removeNote = vi.fn();
+const listWatchlist = vi.fn();
+const trackWatchlist = vi.fn();
+const untrackWatchlist = vi.fn();
 
 function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
   return {
@@ -139,6 +142,11 @@ vi.mock('@/lib/api', () => ({
         upsert: (...args: unknown[]) => upsertNote(...args),
         remove: (...args: unknown[]) => removeNote(...args),
       },
+    },
+    watchlist: {
+      list: (...args: unknown[]) => listWatchlist(...args),
+      track: (...args: unknown[]) => trackWatchlist(...args),
+      untrack: (...args: unknown[]) => untrackWatchlist(...args),
     },
   },
 }));
@@ -249,6 +257,12 @@ describe('OpponentHubPage', () => {
     listNotes.mockResolvedValue({});
     upsertNote.mockResolvedValue({ updatedAt: 123 });
     removeNote.mockResolvedValue(undefined);
+    listWatchlist.mockResolvedValue({ items: [] });
+    trackWatchlist.mockResolvedValue({
+      itemKey: 'opponent:rival',
+      item: { kind: 'opponent', ref: 'rival', createdAt: 1 },
+    });
+    untrackWatchlist.mockResolvedValue({ itemKey: 'opponent:rival' });
     setMockUser(makeMockUser());
   });
 
@@ -490,6 +504,68 @@ describe('OpponentHubPage', () => {
       await findRecordText('1-0');
       await user.click(screen.getByRole('button', { name: 'Merge into...' }));
       expect(await screen.findByText('Merge "rival" into...')).toBeInTheDocument();
+    });
+  });
+
+  describe('plan 39.2-10 (T-04): the Track toggle in the header', () => {
+    it('is the FIRST control of the header group, before "Merge into..."', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+
+      const toggle = await screen.findByRole('button', { name: 'Track rival' });
+      const merge = screen.getByRole('button', { name: 'Merge into...' });
+      expect(toggle.parentElement?.firstElementChild).toBe(toggle);
+      expect(toggle.parentElement).toBe(merge.parentElement);
+      expect(toggle.compareDocumentPosition(merge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('tracks the resolved CANONICAL tag when the URL names an alias', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+      ]);
+      listAliases.mockResolvedValue({ 'old rival': 'rival' });
+      const user = userEvent.setup();
+      renderHub('/opponents/old%20rival');
+      await findRecordText('2-0');
+
+      const toggle = await screen.findByRole('button', { name: /^Track / });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
+
+      await waitFor(() => expect(trackWatchlist).toHaveBeenCalledTimes(1));
+      expect(trackWatchlist).toHaveBeenCalledWith({ kind: 'opponent', ref: 'rival' });
+    });
+
+    it('reads Tracked once the subject list holds the canonical opponent', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      listWatchlist.mockResolvedValue({
+        items: [
+          { itemKey: 'opponent:rival', item: { kind: 'opponent', ref: 'rival', createdAt: 1 } },
+        ],
+      });
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking rival' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      expect(within(toggle).getByText('Tracked')).toBeInTheDocument();
+    });
+
+    it('offers no toggle for a tag with no recorded games (a typo URL is never trackable)', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      renderHub('/opponents/nobody-known');
+      await screen.findByText('No games recorded against nobody-known yet.');
+      expect(screen.queryByRole('button', { name: /^Track / })).not.toBeInTheDocument();
     });
   });
 

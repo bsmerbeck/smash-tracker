@@ -3830,5 +3830,16 @@
       "rowAria_one": "{{tier}} : {{record}}, 1 match ; ouvre les tournois filtrés sur ce niveau",
       "rowAria_other": "{{tier}} : {{record}}, {{count, grouped}} matchs ; ouvre les tournois filtrés sur ce niveau"
     }
+  },
+  "watchlist": {
+    "track": "Suivre",
+    "tracked": "Suivi",
+    "trackAria": "Suivre {{name}}",
+    "untrackAria": "Ne plus suivre {{name}}",
+    "trackedToast": "{{name}} est désormais suivi.",
+    "untrackedToast": "{{name}} n'est plus suivi.",
+    "full": "La liste de suivi est pleine : 25 sur 25. Il faut d'abord retirer un élément.",
+    "manage": "Gérer les suivis",
+    "error": "Impossible de mettre à jour la liste de suivi. Réessayer."
   }
 }
