@@ -1,13 +1,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import {
+  buildTierSplitStats,
   resolveTournamentTier,
+  type Match,
   type TierEntryFields,
   type TierResolution,
+  type TierSplitCoverage,
+  type TierSplitEntry,
+  type TierSplitStats,
 } from '@smash-tracker/shared';
 import i18n from '@/i18n';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ByTierCard } from './ByTierCard';
 import { TierBadge } from './TierBadge';
+import { TierCoverageLine } from './TierCoverageLine';
 import { TierProvenanceLine } from './TierProvenanceLine';
 import { tierProvenanceKey, useTierProvenanceText } from './tierProvenance';
 
@@ -161,5 +169,254 @@ describe('tier copy through the real locale files (G4)', () => {
     expect(jaContainer.querySelector('[data-slot="tier-badge"]')?.textContent).toBe(
       'スーパーメジャー',
     );
+  });
+});
+
+/**
+ * G4, part 2 (UI-SPEC §13, plan 39.2-08): the By-tier card and the coverage
+ * line through the SAME six real locale files. Every state the card can be in
+ * is rendered from the real `buildTierSplitStats` output, and in each locale
+ * no placeholder may survive and no raw tier id may stand where the localised
+ * tier word belongs (in visible text or in an accessible name).
+ */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const BASE = Date.UTC(2026, 0, 1);
+// `unknown` is left out: it is also an ordinary English word ("12 unknown"), so its raw id cannot be told apart from copy.
+const RAW_TIER_IDS = ['supermajor', 'major', 'minor', 'regional', 'local'];
+
+function splitEntry(index: number, overrides: Partial<TierSplitEntry> = {}): TierSplitEntry {
+  return {
+    entryKey: `copy-${index}`,
+    eventName: `Copy Event ${index}`,
+    tournamentName: `Copy Tournament ${index}`,
+    firstSetAt: BASE + index * 30 * DAY_MS,
+    lastSetAt: BASE + index * 30 * DAY_MS + DAY_MS / 2,
+    isOnline: false,
+    ...overrides,
+  };
+}
+
+function gamesFor(target: TierSplitEntry, wins: number, losses: number, online = false): Match[] {
+  return Array.from({ length: wins + losses }, (_, i) => ({
+    id: `${target.entryKey}-${i}`,
+    time: target.firstSetAt + i * 1000,
+    win: i < wins,
+    fighter_id: 1,
+    opponent_id: 2,
+    map: { id: 0, name: 'no selection' },
+    opponent: '',
+    notes: '',
+    matchType: online ? 'online-tourney' : 'offline-tourney',
+    eventName: target.eventName,
+    tournamentName: target.tournamentName ?? undefined,
+  })) as Match[];
+}
+
+interface CardCase {
+  name: string;
+  stats: TierSplitStats;
+  sideEventCount: number;
+  initialEntry?: string;
+}
+
+function cardCases(): CardCase[] {
+  const supermajor = splitEntry(1, { numEntrants: 2048 });
+  const minor = splitEntry(2, { numEntrants: 300 });
+  const minorEmpty = splitEntry(3, { numEntrants: 300 });
+  const local = splitEntry(4, { numEntrants: 20 });
+  const onlineA = splitEntry(5, { isOnline: true, numEntrants: 40 });
+  const onlineB = splitEntry(6, { isOnline: true, numEntrants: 44 });
+  const side = splitEntry(7, { eventName: 'Squad Strike', numEntrants: 300 });
+  const manual = splitEntry(8, {
+    numEntrants: 20,
+    tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+  });
+
+  const populated = [supermajor, minor, local, onlineA, onlineB, side];
+  const populatedGames = [
+    ...gamesFor(supermajor, 26, 7),
+    ...gamesFor(minor, 1, 0),
+    ...gamesFor(local, 8, 2),
+    ...gamesFor(onlineA, 5, 5, true),
+    ...gamesFor(side, 2, 1),
+  ];
+  return [
+    {
+      name: 'populated (rate bars, an abstaining tier, Unknown inset, three side events excluded)',
+      stats: buildTierSplitStats({
+        entries: populated,
+        matches: populatedGames,
+        includeSideEvents: false,
+      }),
+      sideEventCount: 3,
+    },
+    {
+      name: 'abstaining, singular need (2 games)',
+      stats: buildTierSplitStats({
+        entries: [minor],
+        matches: gamesFor(minor, 1, 1),
+        includeSideEvents: false,
+      }),
+      sideEventCount: 1,
+    },
+    {
+      name: 'abstaining, plural need (no linked games)',
+      stats: buildTierSplitStats({
+        entries: [minorEmpty],
+        matches: [],
+        includeSideEvents: false,
+      }),
+      sideEventCount: 0,
+    },
+    {
+      name: 'all-unknown',
+      stats: buildTierSplitStats({
+        entries: [onlineA, onlineB],
+        matches: gamesFor(onlineA, 4, 2, true),
+        includeSideEvents: false,
+      }),
+      sideEventCount: 0,
+    },
+    {
+      name: 'side events included',
+      stats: buildTierSplitStats({
+        entries: populated,
+        matches: populatedGames,
+        includeSideEvents: true,
+      }),
+      sideEventCount: 1,
+      initialEntry: '/tournaments?side=include',
+    },
+    {
+      name: 'a hand-set tier (the manual coverage token)',
+      stats: buildTierSplitStats({
+        entries: [manual],
+        matches: gamesFor(manual, 3, 1),
+        includeSideEvents: false,
+      }),
+      sideEventCount: 0,
+    },
+  ];
+}
+
+/** Every visible string and accessible name in a container, joined, with hrefs deliberately left out. */
+function visibleAndNamedText(container: HTMLElement): string {
+  const names = Array.from(container.querySelectorAll('[aria-label]')).map(
+    (node) => node.getAttribute('aria-label') ?? '',
+  );
+  return [container.textContent ?? '', ...names].join('\n');
+}
+
+function isolatedRawIds(text: string): string[] {
+  // A raw id is a lowercase whole word; the localised words are capitalised, so this never matches them.
+  return RAW_TIER_IDS.filter((id) => new RegExp(`(^|[^\\p{L}])${id}([^\\p{L}]|$)`, 'u').test(text));
+}
+
+describe('by-tier copy through the real locale files (G4, plan 39.2-08)', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it('exercises every state of the card (non-vacuity)', () => {
+    const cases = cardCases();
+    expect(cases.some((c) => c.stats.rows.some((row) => row.rate != null))).toBe(true);
+    expect(cases.some((c) => c.stats.rows.some((row) => row.rate == null))).toBe(true);
+    expect(cases.some((c) => c.stats.rows.length === 0 && c.stats.unknown != null)).toBe(true);
+    expect(cases.some((c) => c.stats.coverage.manual > 0)).toBe(true);
+    expect(cases.some((c) => c.initialEntry?.includes('side=include'))).toBe(true);
+    expect(new Set(cases.map((c) => c.sideEventCount)).size).toBeGreaterThan(2);
+  });
+
+  for (const locale of LOCALES) {
+    describe(locale, () => {
+      for (const item of cardCases()) {
+        it(`${item.name}: no placeholder survives and no raw tier id stands where a word belongs`, async () => {
+          await i18n.changeLanguage(locale);
+          const { container } = render(
+            <MemoryRouter initialEntries={[item.initialEntry ?? '/tournaments']}>
+              <ByTierCard
+                stats={item.stats}
+                sideEventCount={item.sideEventCount}
+                overallRate={0.6}
+              />
+            </MemoryRouter>,
+          );
+          const text = visibleAndNamedText(container);
+          expect(text).not.toContain('{{');
+          expect(text).not.toContain('}}');
+          expect(isolatedRawIds(text), `${locale}: raw tier id in copy`).toEqual([]);
+          expect(container.querySelector('h2')?.textContent?.trim()).toBeTruthy();
+          // The coverage line is always present and always non-empty.
+          expect(
+            container.querySelector('[data-slot="tier-coverage"]')?.textContent?.trim(),
+          ).toBeTruthy();
+        });
+      }
+
+      it('the coverage line groups large counts in this locale and keeps every token', async () => {
+        await i18n.changeLanguage(locale);
+        const coverage: TierSplitCoverage = {
+          total: 1300,
+          known: 1234,
+          recorded: 1000,
+          manual: 34,
+          estimated: 200,
+          unknown: 66,
+          sideExcluded: 0,
+        };
+        const { container } = render(<TierCoverageLine coverage={coverage} />);
+        const text = container.textContent ?? '';
+        const grouped = new Intl.NumberFormat(locale).format(1234);
+        expect(text).toContain(grouped);
+        expect(text).not.toContain('{{');
+        expect(container.querySelectorAll('[data-token]')).toHaveLength(5);
+      });
+
+      it('the singular and plural coverage tokens both resolve (no missing-key echo)', async () => {
+        await i18n.changeLanguage(locale);
+        for (const count of [0, 1, 2]) {
+          const coverage: TierSplitCoverage = {
+            total: count,
+            known: count,
+            recorded: count,
+            manual: 0,
+            estimated: 0,
+            unknown: count,
+            sideExcluded: 0,
+          };
+          const { container, unmount } = render(<TierCoverageLine coverage={coverage} />);
+          expect(container.textContent).not.toContain('tiers.coverage');
+          expect(container.textContent).not.toContain('{{');
+          unmount();
+        }
+      });
+    });
+  }
+
+  it('en: the coverage line reads exactly as the spec words it, zero values kept', async () => {
+    await i18n.changeLanguage('en');
+    const { container } = render(
+      <TierCoverageLine
+        coverage={{
+          total: 19,
+          known: 7,
+          recorded: 0,
+          manual: 0,
+          estimated: 7,
+          unknown: 12,
+          sideExcluded: 0,
+        }}
+      />,
+    );
+    expect(container.textContent).toBe(
+      'Tier known for 7 of 19 events · 0 recorded · 7 estimated · 12 unknown',
+    );
+  });
+
+  it('a guard that can fail: a raw tier id standing where a word belongs is detected', () => {
+    expect(isolatedRawIds('Regional: 3–1')).toEqual([]);
+    expect(isolatedRawIds('supermajor: 3–1, 4 games')).toEqual(['supermajor']);
+    expect(isolatedRawIds('Tier=major')).toEqual(['major']);
   });
 });

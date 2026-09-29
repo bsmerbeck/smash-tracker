@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import {
   buildSetTimeline,
+  buildTierSplitStats,
   resolveTournamentTier,
   ROSTER_MAIN_MIN_GAMES,
   ROSTER_SECONDARY_MIN_GAMES,
@@ -46,6 +47,7 @@ import {
   TournamentsTable,
   type TournamentTableRow,
 } from '@/pages/Tournaments/components/TournamentsTable';
+import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
 import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
 import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
@@ -95,6 +97,10 @@ import userEvent from '@testing-library/user-event';
  * Plan 39.2-07 (TIER-02, UI-SPEC §13 G6) appends TWO more entries (30 -> 32):
  * the tier-aware Tournaments table (`TournamentsTable.tsx`) in both its table
  * root and its stacked phone root.
+ *
+ * Plan 39.2-08 (TIER-03, UI-SPEC §13 G6) appends ONE more entry (32 -> 33):
+ * the By-tier card (`ByTierCard.tsx`), whose rows include the Unknown row in
+ * its inset — every tier row and the Unknown row is a filter door.
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -283,6 +289,43 @@ function tournamentTableFixtureRows(): TournamentTableRow[] {
     record: { wins: 0, losses: 0, total: 0, winRate: 0 } as TournamentTableRow['record'],
     resolution: resolveTournamentTier({ entry, observedOnline: false }),
   }));
+}
+
+/**
+ * Plan 39.2-08: a By-tier split with two ordinary tier rows, one tier row
+ * that abstains (a row must be a door even with no bar) and the Unknown row.
+ */
+function byTierFixtureStats() {
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 0, 1);
+  const entryAt = (index: number, overrides: Record<string, unknown>) => ({
+    entryKey: `by-tier-${index}`,
+    eventName: `Fixture Event ${index}`,
+    tournamentName: `Fixture Tournament ${index}`,
+    firstSetAt: base + index * 30 * day,
+    lastSetAt: base + index * 30 * day + day / 2,
+    isOnline: false,
+    ...overrides,
+  });
+  const entries = [
+    entryAt(1, { numEntrants: 2048 }),
+    entryAt(2, { numEntrants: 20 }),
+    entryAt(3, { numEntrants: 300 }),
+    entryAt(4, { isOnline: true, numEntrants: 40 }),
+  ];
+  const matches: Match[] = entries.flatMap((entry, index) =>
+    Array.from({ length: index === 2 ? 1 : 5 }, (_, g) =>
+      makeMatch({
+        id: `by-tier-${index}-${g}`,
+        time: entry.firstSetAt + g * 1000,
+        win: g % 2 === 0,
+        eventName: entry.eventName,
+        tournamentName: entry.tournamentName,
+        matchType: entry.isOnline ? 'online-tourney' : 'offline-tourney',
+      }),
+    ),
+  );
+  return buildTierSplitStats({ entries, matches, includeSideEvents: false });
 }
 
 const SURFACES: Surface[] = [
@@ -889,6 +932,16 @@ const SURFACES: Surface[] = [
     rows: (result) =>
       Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tournaments-row"]')),
   },
+  // Plan 39.2-08 (TIER-03, UI-SPEC §13 G6): the By-tier card. Rows include the
+  // Unknown row in its inset; each is a `DrillableRow` into a `?tier=` filter.
+  {
+    name: 'By-tier card rows, including the Unknown row (ByTierCard)',
+    file: 'apps/web/src/components/analytics/tier/ByTierCard.tsx',
+    render: () =>
+      withRouter(<ByTierCard stats={byTierFixtureStats()} sideEventCount={0} overallRate={0.6} />),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="by-tier-row"]')),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1031,8 +1084,23 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-TWO entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots)", () => {
-    expect(SURFACES.length).toBe(32);
+  it("the surface enumeration has the stated THIRTY-THREE entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card)", () => {
+    expect(SURFACES.length).toBe(33);
+  });
+
+  it('the By-tier entry enumerates a plain tier row, an abstaining tier row and the Unknown row (plan 39.2-08 non-vacuity)', async () => {
+    const surface = SURFACES.find((s) => s.name.startsWith('By-tier card rows'))!;
+    const result = await renderReady(surface);
+    const tiers = surface.rows(result).map((row) => row.getAttribute('data-tier'));
+    expect(tiers).toContain('unknown');
+    expect(tiers).toContain('supermajor');
+    // The abstaining row draws no bar but is still a door.
+    const abstaining = surface
+      .rows(result)
+      .find((row) => row.getAttribute('data-tier') === 'minor')!;
+    expect(abstaining.querySelector('[data-slot="by-tier-bar"]')).toBeNull();
+    expect(accessibleInteractiveDescendant(abstaining)).not.toBeNull();
+    result.unmount();
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {
