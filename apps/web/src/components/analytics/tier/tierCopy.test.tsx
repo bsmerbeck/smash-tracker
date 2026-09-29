@@ -16,6 +16,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ByTierCard } from './ByTierCard';
 import { TierBadge } from './TierBadge';
 import { TierCoverageLine } from './TierCoverageLine';
+import { TierInsightCard } from './TierInsightCard';
+import { buildTierGapInsight } from './tierGapInsight';
 import { TierProvenanceLine } from './TierProvenanceLine';
 import { tierProvenanceKey, useTierProvenanceText } from './tierProvenance';
 
@@ -418,5 +420,217 @@ describe('by-tier copy through the real locale files (G4, plan 39.2-08)', () => 
     expect(isolatedRawIds('Regional: 3–1')).toEqual([]);
     expect(isolatedRawIds('supermajor: 3–1, 4 games')).toEqual(['supermajor']);
     expect(isolatedRawIds('Tier=major')).toEqual(['major']);
+  });
+});
+
+/**
+ * G4, part 3 (UI-SPEC 13, plan 39.2-09): every `tierGap` state, rendered by the
+ * real card from the real template over the real cohorts, through the SAME six
+ * locale files. No placeholder may survive, no missing-key echo may appear, no
+ * raw tier id may stand where a localised word belongs, and a param the
+ * template failed to set on a state would leave a literal `{{param}}` behind.
+ */
+describe('tier insight copy through the real locale files (G4, plan 39.2-09)', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  interface InsightCase {
+    name: string;
+    state: string;
+    key: string;
+    stats: TierSplitStats;
+    matches: Match[];
+    includeSideEvents?: boolean;
+  }
+
+  function insightCases(): InsightCase[] {
+    const big = splitEntry(11, { numEntrants: 2048 });
+    const local = splitEntry(12, { numEntrants: 20 });
+    const manualBig = splitEntry(13, {
+      numEntrants: 2048,
+      tierOverride: { contractVersion: 1, tier: 'supermajor', setAtMs: 1 },
+    });
+    const manualLocal = splitEntry(14, {
+      numEntrants: 20,
+      tierOverride: { contractVersion: 1, tier: 'local', setAtMs: 1 },
+    });
+    const unknown = splitEntry(15);
+    const side = splitEntry(16, {
+      eventName: 'Squad Strike',
+      numEntrants: 300,
+      tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+    });
+
+    const make = (
+      entries: TierSplitEntry[],
+      matches: Match[],
+      includeSideEvents = false,
+    ): { stats: TierSplitStats; matches: Match[]; includeSideEvents: boolean } => ({
+      stats: buildTierSplitStats({ entries, matches, includeSideEvents }),
+      matches,
+      includeSideEvents,
+    });
+
+    return [
+      {
+        name: 'up (a large grouped cohort, both events estimated)',
+        state: 'trend',
+        key: 'insights.tierGap.up',
+        ...make([big, local], [...gamesFor(big, 1000, 234), ...gamesFor(local, 4, 8)]),
+      },
+      {
+        name: 'down',
+        state: 'trend',
+        key: 'insights.tierGap.down',
+        ...make([big, local], [...gamesFor(big, 4, 8), ...gamesFor(local, 26, 7)]),
+      },
+      {
+        name: 'steady',
+        state: 'steady',
+        key: 'insights.tierGap.steady',
+        ...make([big, local], [...gamesFor(big, 17, 16), ...gamesFor(local, 6, 6)]),
+      },
+      {
+        name: 'abstained (majors short)',
+        state: 'locked',
+        key: 'insights.tierGap.abstained',
+        ...make([big, local], [...gamesFor(big, 3, 2), ...gamesFor(local, 4, 8)]),
+      },
+      {
+        name: 'abstained (smaller events short)',
+        state: 'locked',
+        key: 'insights.tierGap.abstainedSmaller',
+        ...make([big, local], [...gamesFor(big, 26, 7), ...gamesFor(local, 1, 2)]),
+      },
+      {
+        name: 'noTiers',
+        state: 'thin',
+        key: 'insights.tierGap.noTiers',
+        ...make([unknown], gamesFor(unknown, 4, 4)),
+      },
+      {
+        name: 'no estimated event (the sub line is absent)',
+        state: 'trend',
+        key: 'insights.tierGap.up',
+        ...make(
+          [manualBig, manualLocal],
+          [...gamesFor(manualBig, 26, 7), ...gamesFor(manualLocal, 4, 8)],
+        ),
+      },
+      {
+        name: 'side events included',
+        state: 'trend',
+        key: 'insights.tierGap.up',
+        ...make(
+          [big, local, side],
+          [...gamesFor(big, 26, 7), ...gamesFor(local, 4, 8), ...gamesFor(side, 6, 0)],
+          true,
+        ),
+      },
+    ];
+  }
+
+  function renderInsight(item: InsightCase) {
+    const insight = buildTierGapInsight({
+      stats: item.stats,
+      matches: item.matches,
+      includeSideEvents: item.includeSideEvents ?? false,
+      nowMs: BASE + 400 * DAY_MS,
+    })!;
+    return {
+      insight,
+      ...render(
+        <MemoryRouter initialEntries={['/tournaments']}>
+          <TierInsightCard
+            insight={insight}
+            coverage={item.stats.coverage}
+            onDismiss={() => undefined}
+          />
+        </MemoryRouter>,
+      ),
+    };
+  }
+
+  it('exercises every tierGap state and both cohort short-sides (non-vacuity)', () => {
+    const cases = insightCases();
+    const keys = new Set(cases.map((item) => item.key));
+    for (const key of ['up', 'down', 'steady', 'abstained', 'abstainedSmaller', 'noTiers']) {
+      expect(keys.has(`insights.tierGap.${key}`), key).toBe(true);
+    }
+    for (const item of cases) {
+      const insight = buildTierGapInsight({
+        stats: item.stats,
+        matches: item.matches,
+        includeSideEvents: item.includeSideEvents ?? false,
+        nowMs: BASE + 400 * DAY_MS,
+      });
+      expect(insight?.copy.key, item.name).toBe(item.key);
+      expect(insight?.state, item.name).toBe(item.state);
+    }
+  });
+
+  for (const locale of LOCALES) {
+    describe(locale, () => {
+      for (const item of insightCases()) {
+        it(`${item.name}: no placeholder, no missing-key echo, no raw tier id`, async () => {
+          await i18n.changeLanguage(locale);
+          const { container, insight } = renderInsight(item);
+          const text = visibleAndNamedText(container);
+          expect(text).not.toContain('{{');
+          expect(text).not.toContain('}}');
+          expect(text).not.toContain('insights.tierGap');
+          expect(text).not.toContain('insights.door');
+          expect(isolatedRawIds(text), `${locale}: raw tier id in copy`).toEqual([]);
+          // The verdict states the state's own sentence, never the English fallback in another locale.
+          const verdict = i18n.t(insight.copy.key, insight.copy.values);
+          expect(verdict.trim()).not.toBe('');
+          expect(container.textContent).toContain(verdict);
+          if (locale !== 'en') {
+            expect(verdict).not.toBe(
+              i18n.t(insight.copy.key, { ...insight.copy.values, lng: 'en' }),
+            );
+          }
+        });
+      }
+
+      it('a large cohort is grouped in this locale and the estimated note names its count', async () => {
+        await i18n.changeLanguage(locale);
+        const [up] = insightCases();
+        const { container } = renderInsight(up!);
+        const grouped = new Intl.NumberFormat(locale).format(1234);
+        expect(container.textContent).toContain(grouped);
+        const note = container.querySelector('[data-slot="insight-card-sub"]')?.textContent ?? '';
+        expect(note).toContain('2');
+        expect(note).not.toContain('{{');
+      });
+    });
+  }
+
+  it('en: the verdicts read exactly as the spec words them', async () => {
+    await i18n.changeLanguage('en');
+    const byKey = new Map(insightCases().map((item) => [item.name, item] as const));
+    const verdictOf = (name: string): string => {
+      const item = byKey.get(name)!;
+      const insight = buildTierGapInsight({
+        stats: item.stats,
+        matches: item.matches,
+        includeSideEvents: item.includeSideEvents ?? false,
+        nowMs: BASE + 400 * DAY_MS,
+      })!;
+      return i18n.t(insight.copy.key, insight.copy.values);
+    };
+    expect(verdictOf('down')).toBe('Majors and above — 33% over 12, below 79% at smaller events.');
+    expect(verdictOf('abstained (majors short)')).toBe('Not enough games at majors (5).');
+    expect(verdictOf('abstained (smaller events short)')).toBe(
+      'Not enough games at smaller events (3).',
+    );
+    expect(verdictOf('noTiers')).toBe('Tier — no event has a known tier yet.');
+  });
+
+  it('a guard that can fail: a template that omits a param leaves a placeholder the render check catches', async () => {
+    await i18n.changeLanguage('en');
+    const rendered = i18n.t('insights.tierGap.up', { aRate: '80%', bRate: '30%' });
+    expect(rendered.includes('{{') || rendered.includes('undefined')).toBe(true);
   });
 });
