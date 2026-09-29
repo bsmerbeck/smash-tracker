@@ -294,6 +294,14 @@ export function gamesFromMatchContext(
  * minus the fields parry.gg doesn't expose (numEntrants, placement,
  * top standings) — see Pitfall 1/Assumption A5 in 07-RESEARCH.md.
  *
+ * Phase 39.2 (D-20): no online flag or event type is persisted either. The
+ * `MatchContext` this sync fetches carries neither (its `hierarchy.pathsList`
+ * entries are id/type/name/slug/imageUrl/startTime only); `LocationType`
+ * lives on the `Event` model, which is not reachable from a `MatchContext`,
+ * and adding a request to fetch it is out of scope. parry.gg rows therefore
+ * resolve `unknown` through `resolveTournamentTier` unless a user override
+ * applies.
+ *
  * Walkthrough round 3 (07-11): `slug`/`eventSlug` capture parry.gg's own
  * tournament-level/event-level path slugs directly during sync (unlike
  * start.gg, which fetches these in a separate post-sync enrichment step) —
@@ -475,8 +483,19 @@ export async function importParryggMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
+    // The closing `.update()` replaces each event's whole child node, so any
+    // user-authored member not rebuilt here is deleted by every re-sync
+    // (Phase 39.2 F1, the same defect fixed for start.gg in 39.2-03). Read the
+    // stored registry once and carry the per-event overrides forward.
+    const existingRegistrySnapshot = await database.ref(`tournamentEntries/${uid}`).get();
+    const existingRegistry = (existingRegistrySnapshot.val() ?? {}) as Record<
+      string,
+      TournamentEntry | undefined
+    >;
+
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [entryKey, acc] of registry) {
+      const existingEntry = existingRegistry[entryKey];
       registryUpdates[entryKey] = {
         eventName: acc.eventName,
         ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
@@ -488,6 +507,13 @@ export async function importParryggMatches(
         setsPlayed: acc.setsPlayed,
         source: 'parrygg',
         entryKey,
+        // Copied verbatim when present, no key when absent (never a null write).
+        ...(existingEntry?.tierOverride != null
+          ? { tierOverride: existingEntry.tierOverride }
+          : {}),
+        ...(existingEntry?.rulesetOverride != null
+          ? { rulesetOverride: existingEntry.rulesetOverride }
+          : {}),
       };
     }
     await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);

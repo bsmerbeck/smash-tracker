@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ParryggSyncSummary } from '@smash-tracker/shared';
+import {
+  resolveTournamentTier,
+  tournamentEntrySchema,
+  type ParryggSyncSummary,
+} from '@smash-tracker/shared';
 import {
   Entrant,
   EventEntrant,
@@ -639,5 +643,112 @@ describe('importParryggMatches', () => {
     expect(rowsAfter.filter((row) => row.eventName === 'tournament_prep_activated')).toHaveLength(
       1,
     );
+  });
+
+  describe('per-event override carry-forward (39.2 F1)', () => {
+    const TIER_OVERRIDE = { contractVersion: 1, tier: 'major', setAtMs: 1 };
+    const RULESET_OVERRIDE = { contractVersion: 1, dsr: 'standard' as const };
+
+    function registryOf(database: FakeDatabase): Record<string, Record<string, unknown>> {
+      const tree = structuredClone(database.dump()) as Record<string, Record<string, unknown>>;
+      return (tree['tournamentEntries']?.['uid-1'] ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
+    }
+
+    function slugContext(): ParryggMatchContext {
+      return makeMatchContext({
+        eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+        mySeed: 8,
+      });
+    }
+
+    it('store -> sync -> assert: both overrides survive a re-sync', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      expect(entryKey).toBeDefined();
+
+      // The user's PATCH adds the members to the stored child.
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...registryOf(database)[entryKey!],
+        tierOverride: TIER_OVERRIDE,
+        rulesetOverride: RULESET_OVERRIDE,
+      });
+
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.tierOverride).toEqual(TIER_OVERRIDE);
+      expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
+      expect(row.source).toBe('parrygg');
+      expect(tournamentEntrySchema.safeParse(row).success).toBe(true);
+    });
+
+    it('adds no override, isOnline or eventType key to an entry that never had one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      for (const row of Object.values(registryOf(database))) {
+        expect(row).not.toHaveProperty('tierOverride');
+        expect(row).not.toHaveProperty('rulesetOverride');
+        expect(row).not.toHaveProperty('isOnline');
+        expect(row).not.toHaveProperty('eventType');
+      }
+    });
+
+    it('leaves a sibling entry the sync does not rebuild untouched', async () => {
+      const database = new FakeDatabase();
+      const sibling = {
+        eventName: 'Other Event',
+        firstSetAt: 1,
+        lastSetAt: 2,
+        setsPlayed: 3,
+        source: 'manual',
+        tierOverride: TIER_OVERRIDE,
+      };
+      database.seed('tournamentEntries/uid-1/manual-1', sibling);
+
+      await importParryggMatches(
+        database as never,
+        'uid-1',
+        PARRY_USER_ID,
+        'api-key',
+        clientsReturning([slugContext()]),
+      );
+
+      expect(registryOf(database)['manual-1']).toEqual(sibling);
+    });
+
+    it('a parry.gg row has no entrant count: unknown without an override, manual with one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      const stored = registryOf(database)[entryKey!]!;
+
+      const bare = resolveTournamentTier({
+        entry: stored as unknown as Parameters<typeof resolveTournamentTier>[0]['entry'],
+      });
+      expect(bare.tier).toBe('unknown');
+      expect(bare.reason).toBe('noEntrants');
+
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...stored,
+        tierOverride: TIER_OVERRIDE,
+      });
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const overridden = resolveTournamentTier({
+        entry: registryOf(database)[entryKey!] as unknown as Parameters<
+          typeof resolveTournamentTier
+        >[0]['entry'],
+      });
+      expect(overridden.basis).toBe('manual');
+      expect(overridden.tier).toBe('major');
+    });
   });
 });
