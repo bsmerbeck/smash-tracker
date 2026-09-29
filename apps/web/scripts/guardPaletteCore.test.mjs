@@ -10,11 +10,16 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import {
   LIGHTNESS_BAND,
   CONTRAST_MIN,
   CVD_FLOOR,
   TOKEN_NAMES,
+  TIER_TOKEN_NAMES,
+  TIER_MIN_DELTA_L,
   CVD_PAIRS,
   CARD_SURFACE_NAME,
   parseTokenHexes,
@@ -26,6 +31,7 @@ import {
   checkChromaFloor,
   checkContrastOnSurface,
   checkColourVisionSeparation,
+  checkTierRamp,
 } from './guardPaletteCore.mjs';
 
 const FIXTURE_ROOT_CSS = `
@@ -122,7 +128,10 @@ test('checkContrastOnSurface exempts --viz-context-strong by default (UI-SPEC §
   const withoutExemption = checkContrastOnSurface(tokenHexes, surface, { exempt: [] });
   assert.equal(withoutExemption.length, 1);
   assert.equal(withoutExemption[0].token, 'viz-context-strong');
-  assert.ok(Math.abs(withoutExemption[0].ratio - 2.4) < 0.01, `expected ~2.40:1, got ${withoutExemption[0].ratio}`);
+  assert.ok(
+    Math.abs(withoutExemption[0].ratio - 2.4) < 0.01,
+    `expected ~2.40:1, got ${withoutExemption[0].ratio}`,
+  );
 });
 
 test('checkContrastOnSurface fails a token below 3:1 that is NOT the documented exemption', () => {
@@ -162,4 +171,109 @@ test('deltaE(x, x) is exactly 0 under every simulation kind and under normal vis
   assert.equal(deltaE('#3186e9', '#3186e9'), 0);
   assert.equal(deltaE('#3186e9', '#3186e9', 'protan'), 0);
   assert.equal(deltaE('#3186e9', '#3186e9', 'deutan'), 0);
+});
+
+// -- Phase 39.2 plan 06 (UI-SPEC §13 G2): the tier ramp ------------------------------------
+
+/** The five tier tokens as `index.css` declares them (UI-SPEC §4.1), plus the card surface. */
+const TIER_FIXTURE_CSS = `
+:root {
+  --card: oklch(0.205 0.006 285);
+  --tier-1: oklch(0.56 0.11 75);
+  --tier-2: oklch(0.63 0.12 75);
+  --tier-3: oklch(0.70 0.13 75);
+  --tier-4: oklch(0.77 0.14 75);
+  --tier-5: oklch(0.84 0.13 75);
+}
+`;
+
+/** `TIER_FIXTURE_CSS` with one declaration replaced, so a failing case differs from the passing one in exactly one token. */
+function tierFixtureWith(token, value) {
+  return TIER_FIXTURE_CSS.replace(new RegExp(`--${token}: [^;]+;`), `--${token}: ${value};`);
+}
+
+function tierCheck(cssSource) {
+  const tierHexes = parseTokenHexes(cssSource, TIER_TOKEN_NAMES);
+  const surface = parseTokenHexes(cssSource, [CARD_SURFACE_NAME])[CARD_SURFACE_NAME].hex;
+  return checkTierRamp(tierHexes, surface);
+}
+
+test('the tier ramp is its own list: TOKEN_NAMES is untouched and holds no tier token (the identity lightness band would reject tier-3..5)', () => {
+  assert.deepEqual(TOKEN_NAMES, [
+    'viz-series-1',
+    'viz-series-2',
+    'viz-context',
+    'viz-context-strong',
+    'win',
+    'loss',
+    'steady',
+  ]);
+  assert.deepEqual(TIER_TOKEN_NAMES, ['tier-1', 'tier-2', 'tier-3', 'tier-4', 'tier-5']);
+  const tierHexes = parseTokenHexes(TIER_FIXTURE_CSS, TIER_TOKEN_NAMES);
+  // Proves the separate list is load-bearing: the identity band WOULD flag the lighter steps.
+  const bandViolations = checkLightnessBand(tierHexes, { exempt: [] });
+  assert.ok(bandViolations.some((v) => v.token === 'tier-5'));
+});
+
+test('the tier ramp as declared (fixture literal) clears contrast, gamut and step size', () => {
+  assert.deepEqual(tierCheck(TIER_FIXTURE_CSS), []);
+});
+
+test('the REAL index.css tier ramp clears all three checks (read from disk, never a copied table)', () => {
+  const cssPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css');
+  assert.deepEqual(tierCheck(readFileSync(cssPath, 'utf8')), []);
+});
+
+test('NAMED FAILING CASE (UI-SPEC §13 G2): --tier-1 at oklch(0.45 0.11 75) fails the 3:1 contrast floor', () => {
+  const violations = tierCheck(tierFixtureWith('tier-1', 'oklch(0.45 0.11 75)'));
+  const contrast = violations.filter((v) => v.check === 'tier-contrast');
+  assert.equal(contrast.length, 1);
+  assert.equal(contrast[0].token, 'tier-1');
+  assert.ok(
+    contrast[0].ratio < CONTRAST_MIN,
+    `expected below ${CONTRAST_MIN}, got ${contrast[0].ratio}`,
+  );
+});
+
+test('NAMED FAILING CASE: --tier-2 as light as --tier-1 fails the adjacent lightness step (delta L below the floor)', () => {
+  const violations = tierCheck(tierFixtureWith('tier-2', 'oklch(0.56 0.12 75)'));
+  const steps = violations.filter((v) => v.check === 'tier-adjacent-delta-l');
+  assert.ok(steps.some((v) => v.pair[0] === 'tier-1' && v.pair[1] === 'tier-2'));
+  assert.ok(steps[0].deltaL < TIER_MIN_DELTA_L);
+});
+
+test('a ramp that DARKENS with level fails: the step is a signed rise, not an absolute difference', () => {
+  const violations = tierCheck(tierFixtureWith('tier-3', 'oklch(0.60 0.13 75)'));
+  assert.ok(
+    violations.some((v) => v.check === 'tier-adjacent-delta-l' && v.pair[1] === 'tier-3'),
+    JSON.stringify(violations),
+  );
+});
+
+test('NAMED FAILING CASE: an out-of-gamut value fails the gamut check even though its clamped hex would pass contrast', () => {
+  const violations = tierCheck(tierFixtureWith('tier-5', 'oklch(0.84 0.4 75)'));
+  const gamut = violations.filter((v) => v.check === 'tier-gamut');
+  assert.equal(gamut.length, 1);
+  assert.equal(gamut[0].token, 'tier-5');
+});
+
+test('an in-gamut value at the same lightness does not trip the gamut check (the check discriminates)', () => {
+  const violations = tierCheck(tierFixtureWith('tier-5', 'oklch(0.84 0.13 75)'));
+  assert.equal(violations.filter((v) => v.check === 'tier-gamut').length, 0);
+});
+
+test('a tier token the stylesheet does not declare is reported, never skipped', () => {
+  const withoutTier4 = TIER_FIXTURE_CSS.replace(/--tier-4: [^;]+;\n/, '');
+  const violations = tierCheck(withoutTier4);
+  assert.ok(violations.some((v) => v.check === 'tier-missing' && v.token === 'tier-4'));
+});
+
+test('checkTierRamp reports EVERY offender, not just the first', () => {
+  const twoBad = tierFixtureWith('tier-1', 'oklch(0.45 0.11 75)').replace(
+    /--tier-5: [^;]+;/,
+    '--tier-5: oklch(0.84 0.4 75);',
+  );
+  const checks = tierCheck(twoBad).map((v) => `${v.check}:${v.token ?? v.pair?.join('>')}`);
+  assert.ok(checks.includes('tier-contrast:tier-1'));
+  assert.ok(checks.includes('tier-gamut:tier-5'));
 });

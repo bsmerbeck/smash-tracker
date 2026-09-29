@@ -74,6 +74,28 @@ export const TOKEN_NAMES = [
 /** The card surface custom property name (no leading `--`) every contrast/CVD check validates against. */
 export const CARD_SURFACE_NAME = 'card';
 
+/**
+ * The tournament tier ramp (Phase 39.2 plan 06, UI-SPEC §4.1 / §13 G2): five
+ * amber lightness steps, ordinal from local (1) to supermajor (5), used ONLY
+ * as the fill of a tier glyph's bars. They are checked by `checkTierRamp`
+ * below and are deliberately NOT in `TOKEN_NAMES`: that list feeds the
+ * identity-token lightness band (dark `[0.48, 0.67]`) and chroma floor, which
+ * `--tier-3..5` (L 0.70 to 0.84) would leave by design. One hue, stepped in
+ * lightness, needs its own three checks (contrast, gamut, step size), not the
+ * categorical ones.
+ */
+export const TIER_TOKEN_NAMES = ['tier-1', 'tier-2', 'tier-3', 'tier-4', 'tier-5'];
+
+/**
+ * Minimum OKLCH lightness rise between adjacent tier steps. Below it two
+ * neighbouring bars stop reading as different steps; the filled-bar COUNT is
+ * the primary ordinal channel, but the ramp must still brighten visibly.
+ */
+export const TIER_MIN_DELTA_L = 0.06;
+
+/** Per-channel tolerance for the sRGB gamut test: a linear channel this far outside `[0, 1]` is float noise, not clipping. */
+const GAMUT_EPSILON = 0.0005;
+
 // Machado, Oliveira & Fernandes (2009) CVD transforms at severity 1.0 (linear RGB) — ported verbatim from the dataviz skill's validate_palette.js.
 const MACHADO = {
   protan: [
@@ -149,6 +171,16 @@ export function oklch(hex) {
  * can run.
  */
 export function oklchToHex(L, C, hueDegrees) {
+  const [rLin, gLin, bLin] = oklchToLinearRgb(L, C, hueDegrees);
+  return `#${toHexByte(lin2s(rLin))}${toHexByte(lin2s(gLin))}${toHexByte(lin2s(bLin))}`;
+}
+
+/**
+ * OKLCH(L, C, H-degrees) to UNCLAMPED linear sRGB. A channel outside `[0, 1]`
+ * means the colour lies outside the sRGB gamut; `oklchToHex` clamps it away,
+ * which is exactly why the gamut test reads this function instead of a hex.
+ */
+export function oklchToLinearRgb(L, C, hueDegrees) {
   const hRad = (hueDegrees * Math.PI) / 180;
   const a = C * Math.cos(hRad);
   const b = C * Math.sin(hRad);
@@ -158,10 +190,11 @@ export function oklchToHex(L, C, hueDegrees) {
   const l = l_ ** 3;
   const m = m_ ** 3;
   const s = s_ ** 3;
-  const rLin = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
-  const gLin = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
-  const bLin = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
-  return `#${toHexByte(lin2s(rLin))}${toHexByte(lin2s(gLin))}${toHexByte(lin2s(bLin))}`;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
 }
 
 function simulate(hex, kind) {
@@ -232,7 +265,10 @@ function resolveTokenValue(name, rawValues, seen) {
   const oklchMatch = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/.exec(raw);
   if (oklchMatch) {
     const [, L, C, H] = oklchMatch;
-    return { hex: oklchToHex(Number(L), Number(C), Number(H)) };
+    return {
+      hex: oklchToHex(Number(L), Number(C), Number(H)),
+      declaredOklch: [Number(L), Number(C), Number(H)],
+    };
   }
   return { error: `--${name} has an unrecognized value shape for the palette oracle: "${raw}"` };
 }
@@ -253,7 +289,14 @@ export function parseTokenHexes(cssSource, tokenNames) {
   const result = {};
   for (const name of tokenNames) {
     const resolved = resolveTokenValue(name, rawValues, new Set());
-    result[name] = resolved.hex !== undefined ? { hex: resolved.hex } : { missing: true, error: resolved.error };
+    result[name] =
+      resolved.hex !== undefined
+        ? {
+            hex: resolved.hex,
+            // Carried only when the token is declared as an `oklch(L C H)` literal (directly or through `var()`): the tier ramp's gamut check needs the declared values, since a hex is already clamped.
+            ...(resolved.declaredOklch ? { declaredOklch: resolved.declaredOklch } : {}),
+          }
+        : { missing: true, error: resolved.error };
   }
   return result;
 }
@@ -261,7 +304,9 @@ export function parseTokenHexes(cssSource, tokenNames) {
 // -- checks -----------------------------------------------------------------
 
 function resolvedEntries(tokenHexes, exempt) {
-  return Object.entries(tokenHexes).filter(([name, entry]) => !exempt.includes(name) && !entry.missing);
+  return Object.entries(tokenHexes).filter(
+    ([name, entry]) => !exempt.includes(name) && !entry.missing,
+  );
 }
 
 /** UI-SPEC §13.6: every resolved, non-exempt token's OKLCH lightness must sit inside the dark band. */
@@ -271,7 +316,13 @@ export function checkLightnessBand(tokenHexes, { exempt = CHROMA_AND_LIGHTNESS_E
   for (const [name, entry] of resolvedEntries(tokenHexes, exempt)) {
     const [L] = oklch(entry.hex);
     if (L < lo || L > hi) {
-      violations.push({ check: 'lightness-band', token: name, hex: entry.hex, lightness: L, band: [lo, hi] });
+      violations.push({
+        check: 'lightness-band',
+        token: name,
+        hex: entry.hex,
+        lightness: L,
+        band: [lo, hi],
+      });
     }
   }
   return violations;
@@ -283,7 +334,13 @@ export function checkChromaFloor(tokenHexes, { exempt = CHROMA_AND_LIGHTNESS_EXE
   for (const [name, entry] of resolvedEntries(tokenHexes, exempt)) {
     const [, C] = oklch(entry.hex);
     if (C < CHROMA_FLOOR) {
-      violations.push({ check: 'chroma-floor', token: name, hex: entry.hex, chroma: C, floor: CHROMA_FLOOR });
+      violations.push({
+        check: 'chroma-floor',
+        token: name,
+        hex: entry.hex,
+        chroma: C,
+        floor: CHROMA_FLOOR,
+      });
     }
   }
   return violations;
@@ -295,7 +352,13 @@ export function checkContrastOnSurface(tokenHexes, surfaceHex, { exempt = CONTRA
   for (const [name, entry] of resolvedEntries(tokenHexes, exempt)) {
     const ratio = contrastRatio(entry.hex, surfaceHex);
     if (ratio < CONTRAST_MIN) {
-      violations.push({ check: 'contrast-on-surface', token: name, hex: entry.hex, ratio, floor: CONTRAST_MIN });
+      violations.push({
+        check: 'contrast-on-surface',
+        token: name,
+        hex: entry.hex,
+        ratio,
+        floor: CONTRAST_MIN,
+      });
     }
   }
   return violations;
@@ -309,13 +372,21 @@ export function checkContrastOnSurface(tokenHexes, surfaceHex, { exempt = CONTRA
  * own load-bearing property is proven directly on the real `{win, loss}`
  * pair moving below the floor in `guardPaletteCore.test.mjs`).
  */
-export function checkColourVisionSeparation(tokenHexes, pairs = CVD_PAIRS, { floor = CVD_FLOOR } = {}) {
+export function checkColourVisionSeparation(
+  tokenHexes,
+  pairs = CVD_PAIRS,
+  { floor = CVD_FLOOR } = {},
+) {
   const violations = [];
   for (const [nameA, nameB] of pairs) {
     const a = tokenHexes[nameA];
     const b = tokenHexes[nameB];
     if (!a || !b || a.missing || b.missing) {
-      violations.push({ check: 'colour-vision-separation', pair: [nameA, nameB], error: 'a token in this pair is missing/unresolved' });
+      violations.push({
+        check: 'colour-vision-separation',
+        pair: [nameA, nameB],
+        error: 'a token in this pair is missing/unresolved',
+      });
       continue;
     }
     const protan = deltaE(a.hex, b.hex, 'protan');
@@ -332,5 +403,75 @@ export function checkColourVisionSeparation(tokenHexes, pairs = CVD_PAIRS, { flo
       });
     }
   }
+  return violations;
+}
+
+/**
+ * UI-SPEC §13 G2: the tier ramp's three checks, in one pass over
+ * `TIER_TOKEN_NAMES`. A token that is missing or unresolved is reported (the
+ * ramp cannot shrink silently). For each resolved token: contrast against the
+ * card surface must clear `CONTRAST_MIN`; a token declared as an `oklch()`
+ * literal must sit inside the sRGB gamut (an out-of-gamut value is clipped
+ * differently by every display); and each step must be at least
+ * `TIER_MIN_DELTA_L` lighter than the step before it. Reports EVERY offender.
+ *
+ * `tierHexes` is `parseTokenHexes(css, TIER_TOKEN_NAMES)`'s output.
+ */
+export function checkTierRamp(tierHexes, surfaceHex, { minDeltaL = TIER_MIN_DELTA_L } = {}) {
+  const violations = [];
+
+  for (const name of TIER_TOKEN_NAMES) {
+    const entry = tierHexes[name];
+    if (!entry || entry.missing) {
+      violations.push({
+        check: 'tier-missing',
+        token: name,
+        error: entry?.error ?? 'not resolved',
+      });
+      continue;
+    }
+    const ratio = contrastRatio(entry.hex, surfaceHex);
+    if (ratio < CONTRAST_MIN) {
+      violations.push({
+        check: 'tier-contrast',
+        token: name,
+        hex: entry.hex,
+        ratio,
+        floor: CONTRAST_MIN,
+      });
+    }
+    if (entry.declaredOklch) {
+      const [L, C, H] = entry.declaredOklch;
+      const channels = oklchToLinearRgb(L, C, H);
+      if (channels.some((channel) => channel < -GAMUT_EPSILON || channel > 1 + GAMUT_EPSILON)) {
+        violations.push({
+          check: 'tier-gamut',
+          token: name,
+          declared: entry.declaredOklch,
+          linearRgb: channels,
+        });
+      }
+    }
+  }
+
+  for (let i = 1; i < TIER_TOKEN_NAMES.length; i++) {
+    const lowName = TIER_TOKEN_NAMES[i - 1];
+    const highName = TIER_TOKEN_NAMES[i];
+    const low = tierHexes[lowName];
+    const high = tierHexes[highName];
+    if (!low || !high || low.missing || high.missing) {
+      continue; // already reported as tier-missing above
+    }
+    const delta = oklch(high.hex)[0] - oklch(low.hex)[0];
+    if (delta < minDeltaL) {
+      violations.push({
+        check: 'tier-adjacent-delta-l',
+        pair: [lowName, highName],
+        deltaL: delta,
+        floor: minDeltaL,
+      });
+    }
+  }
+
   return violations;
 }
