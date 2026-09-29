@@ -1,4 +1,4 @@
-import { TIER_WORDS, type TierWord } from '@smash-tracker/shared';
+import { TIER_WORDS, type TierResolution, type TierWord } from '@smash-tracker/shared';
 
 /**
  * Phase 39.2 (D-13, UI-SPEC §7.3 / §10.1): the ONE module declaring the three
@@ -93,4 +93,72 @@ export function activeTierFilterCount(filters: TierFilters): number {
   return (
     filters.tiers.length + (filters.setting != null ? 1 : 0) + (filters.side === 'hide' ? 1 : 0)
   );
+}
+
+/** Anything carrying a resolved tier — the filter and the faceted counts read only this. */
+export interface TierFilterable {
+  resolution: TierResolution;
+}
+
+type FilterFacet = 'tier' | 'setting';
+
+function passesFilters(
+  row: TierFilterable,
+  filters: TierFilters,
+  ignore: FilterFacet | null,
+): boolean {
+  const { resolution } = row;
+  if (ignore !== 'tier' && filters.tiers.length > 0 && !filters.tiers.includes(resolution.tier)) {
+    return false;
+  }
+  if (ignore !== 'setting' && filters.setting != null && resolution.setting !== filters.setting) {
+    return false;
+  }
+  // The table shows side events unless `side=hide` (T-06); `side=include` is a stats setting.
+  return !(filters.side === 'hide' && resolution.eventKind === 'side-event');
+}
+
+/** The rows the table shows: every present filter applied (an unknown setting never matches a setting filter). */
+export function applyTierFilters<T extends TierFilterable>(rows: T[], filters: TierFilters): T[] {
+  return rows.filter((row) => passesFilters(row, filters, null));
+}
+
+/**
+ * Faceted counts (UI-SPEC §7.3): each tier chip counts the rows that pass the
+ * setting and side filters while IGNORING the tier selection itself, so a chip
+ * says how many events pressing it would show. Every word is present, zeros
+ * included, so the chip vocabulary is stable across accounts.
+ */
+export function facetedTierCounts<T extends TierFilterable>(
+  rows: T[],
+  filters: TierFilters,
+): Record<TierWord, number> {
+  const counts = Object.fromEntries(TIER_WORDS.map((word) => [word, 0])) as Record<
+    TierWord,
+    number
+  >;
+  for (const row of rows) {
+    if (passesFilters(row, filters, 'tier')) {
+      counts[row.resolution.tier] += 1;
+    }
+  }
+  return counts;
+}
+
+/** Setting chips count the rows that pass the tier and side filters, ignoring the setting selection. */
+export function facetedSettingCounts<T extends TierFilterable>(
+  rows: T[],
+  filters: TierFilters,
+): Record<TierFilterSetting, number> {
+  const counts: Record<TierFilterSetting, number> = { offline: 0, online: 0 };
+  for (const row of rows) {
+    if (!passesFilters(row, filters, 'setting')) {
+      continue;
+    }
+    const { setting } = row.resolution;
+    if (setting === 'offline' || setting === 'online') {
+      counts[setting] += 1;
+    }
+  }
+  return counts;
 }

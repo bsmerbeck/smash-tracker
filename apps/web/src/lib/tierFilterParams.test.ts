@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TIER_WORDS } from '@smash-tracker/shared';
+import { TIER_WORDS, type TierResolution } from '@smash-tracker/shared';
 import {
   TIER_FILTER_SETTING_PARAM,
   TIER_FILTER_SIDE_PARAM,
   TIER_FILTER_TIER_PARAM,
   activeTierFilterCount,
+  applyTierFilters,
+  facetedSettingCounts,
+  facetedTierCounts,
   buildTierFilterSearch,
   readTierFilterParams,
 } from './tierFilterParams';
@@ -156,5 +159,67 @@ describe('G7: nothing is ever written to device-local storage', () => {
     );
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(code).not.toMatch(/localStorage|sessionStorage/);
+  });
+});
+
+describe('faceted counts (UI-SPEC §7.3)', () => {
+  function row(
+    tier: TierResolution['tier'],
+    setting: TierResolution['setting'],
+    eventKind: TierResolution['eventKind'] = 'main',
+  ) {
+    return { resolution: { tier, setting, eventKind } as TierResolution };
+  }
+  const rows = [
+    row('supermajor', 'offline'),
+    row('major', 'offline'),
+    row('major', 'offline'),
+    row('major', 'online'),
+    row('unknown', 'online'),
+    row('unknown', 'online', 'side-event'),
+    row('unknown', 'unknown'),
+  ];
+
+  it('lists every tier word, zeros included, in a stable vocabulary', () => {
+    const counts = facetedTierCounts(rows, { tiers: [] });
+    expect(Object.keys(counts)).toEqual([...TIER_WORDS]);
+    expect(counts).toEqual({
+      supermajor: 1,
+      major: 3,
+      minor: 0,
+      regional: 0,
+      local: 0,
+      unknown: 3,
+    });
+  });
+
+  it('tier counts follow the setting filter but never the tier selection itself', () => {
+    const online = facetedTierCounts(rows, { tiers: [], setting: 'online' });
+    expect(online).toMatchObject({ supermajor: 0, major: 1, unknown: 2 });
+    const withTier = facetedTierCounts(rows, { tiers: ['supermajor'], setting: 'online' });
+    expect(withTier).toEqual(online);
+  });
+
+  it('tier counts follow the side filter', () => {
+    expect(facetedTierCounts(rows, { tiers: [], side: 'hide' }).unknown).toBe(2);
+    expect(facetedTierCounts(rows, { tiers: [], side: 'include' }).unknown).toBe(3);
+  });
+
+  it('setting counts follow the tier filter but never the setting selection itself', () => {
+    expect(facetedSettingCounts(rows, { tiers: [] })).toEqual({ offline: 3, online: 3 });
+    expect(facetedSettingCounts(rows, { tiers: ['major'] })).toEqual({ offline: 2, online: 1 });
+    expect(facetedSettingCounts(rows, { tiers: ['major'], setting: 'offline' })).toEqual({
+      offline: 2,
+      online: 1,
+    });
+  });
+
+  it('applyTierFilters keeps side events by default and drops an unknown setting under a setting filter', () => {
+    expect(applyTierFilters(rows, { tiers: [] })).toHaveLength(7);
+    expect(applyTierFilters(rows, { tiers: [], side: 'hide' })).toHaveLength(6);
+    expect(applyTierFilters(rows, { tiers: [], setting: 'online' })).toHaveLength(3);
+    expect(applyTierFilters(rows, { tiers: ['major', 'unknown'], setting: 'online' })).toHaveLength(
+      3,
+    );
   });
 });
