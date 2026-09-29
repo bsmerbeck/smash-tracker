@@ -11,6 +11,7 @@ import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import { api } from '@/lib/api';
+import { analyticsDigestStorageKey, writeStoredDigest } from '@/lib/analyticsDigest';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -621,6 +622,78 @@ describe('DashboardPage', () => {
     });
   });
 
+  // Plan 39.2-12 (TRK-01, DD-10): the since-last-visit digest sits directly above
+  // the Tracked section and reads this device's own store.
+  describe('Digest (plan 39.2-12)', () => {
+    function syncedGames(count: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `dg-${i}`,
+        fighter_id: 1,
+        opponent_id: 2,
+        win: i % 2 === 0,
+        time: 10_000 + i,
+        opponent: 'rival',
+      }));
+    }
+
+    it('renders the digest cell directly above #tracked, before the hero row', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const digestCard = container.querySelector('#digest');
+      const tracked = container.querySelector('#tracked');
+      expect(digestCard).not.toBeNull();
+      expect(
+        digestCard!.compareDocumentPosition(tracked!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(digestCard!.closest('[data-span="12"]')).not.toBeNull();
+    });
+
+    it('a first visit on this device says the digest starts now, with no button', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(syncedGames(3));
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const digestCard = container.querySelector('#digest')!;
+      expect(digestCard.getAttribute('data-state')).toBe('start');
+      expect(within(digestCard as HTMLElement).queryByRole('button')).toBeNull();
+    });
+
+    it('after a sync adds 41 games it reads 41, and Mark as read collapses it and writes once', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(syncedGames(51));
+      writeStoredDigest('test-uid', null, {
+        lastSeenAt: 5_000,
+        lastSeenMatchCount: 10,
+        tracked: {},
+      });
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+
+      const { container } = renderDashboard();
+      const digestCard = await waitFor(() => {
+        const node = container.querySelector('#digest[data-state="expanded"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      expect(within(digestCard).getByText('41')).toBeInTheDocument();
+      expect(set).not.toHaveBeenCalled();
+
+      await userEvent.click(within(digestCard).getByRole('button', { name: 'Mark as read' }));
+
+      const written = set.mock.calls.filter(
+        (call) => call[0] === analyticsDigestStorageKey('test-uid', null),
+      );
+      expect(written).toHaveLength(1);
+      expect(container.querySelector('#digest')?.getAttribute('data-state')).toBe('quiet');
+      set.mockRestore();
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
@@ -636,7 +709,7 @@ describe('DashboardPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
-    it('plan 39.1-50: the skeleton mirrors the loaded hero row — six span-3 stat-row skeletons and no 12-span stat-row skeleton', () => {
+    it('plan 39.1-50: the skeleton mirrors the loaded hero row — six span-3 stat-row skeletons and only the digest 12-span stat-row skeleton', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
       listMatches.mockReturnValue(new Promise(() => {}));
 
@@ -648,7 +721,8 @@ describe('DashboardPage', () => {
           cell.querySelector('.grid-cols-2 [data-slot="skeleton-block"]'),
         );
       expect(statRowSkeletonCells('3')).toHaveLength(6);
-      expect(statRowSkeletonCells('12')).toHaveLength(0);
+      // Plan 39.2-12: exactly ONE 12-span stat-row skeleton is legitimate — the digest's own cell.
+      expect(statRowSkeletonCells('12')).toHaveLength(1);
     });
 
     it('renders zero skeleton blocks once the dashboard has loaded', async () => {

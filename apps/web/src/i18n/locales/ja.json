@@ -3857,5 +3857,20 @@
       "aria_one": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く",
       "aria_other": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く"
     }
+  },
+  "digest": {
+    "title": "前回の訪問以降",
+    "since": "{{date}}以降",
+    "deviceNote": "既読の状態はこの端末に保存されます。",
+    "markRead": "既読にする",
+    "markedToast": "この端末で既読にしました。",
+    "newGames": "新しい試合",
+    "newEvents": "新しいイベント",
+    "moved": "変化のあった追跡項目",
+    "andMore_one": "ほか1件 →",
+    "andMore_other": "ほか{{count}}件 →",
+    "noneMoved": "変化のあった追跡項目はありません。",
+    "quiet": "{{date}}以降、新しい情報はありません。",
+    "start": "ダイジェストはここから始まります — 今回の訪問以降の変化がここに表示されます。"
   }
 }

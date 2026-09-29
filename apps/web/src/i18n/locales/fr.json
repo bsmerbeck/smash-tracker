@@ -3857,5 +3857,20 @@
       "aria_one": "{{kind}} {{name}} : {{record}}, {{count}} match ; {{state}} ; ouvre les détails",
       "aria_other": "{{kind}} {{name}} : {{record}}, {{count}} matchs ; {{state}} ; ouvre les détails"
     }
+  },
+  "digest": {
+    "title": "Depuis la dernière visite",
+    "since": "depuis le {{date}}",
+    "deviceNote": "L'état de lecture est conservé sur cet appareil.",
+    "markRead": "Marquer comme lu",
+    "markedToast": "Marqué comme lu sur cet appareil.",
+    "newGames": "Nouvelles parties",
+    "newEvents": "Nouveaux événements",
+    "moved": "Suivis ayant évolué",
+    "andMore_one": "et 1 de plus →",
+    "andMore_other": "et {{count}} de plus →",
+    "noneMoved": "Aucun élément suivi n'a évolué.",
+    "quiet": "Rien de nouveau depuis le {{date}}.",
+    "start": "Le résumé démarre maintenant — les changements depuis cette visite s'afficheront ici."
   }
 }

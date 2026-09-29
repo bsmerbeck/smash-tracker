@@ -3857,5 +3857,20 @@
       "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} partida; {{state}}; abre os detalhes",
       "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} partidas; {{state}}; abre os detalhes"
     }
+  },
+  "digest": {
+    "title": "Desde a última visita",
+    "since": "desde {{date}}",
+    "deviceNote": "O estado de leitura fica guardado neste dispositivo.",
+    "markRead": "Marcar como lido",
+    "markedToast": "Marcado como lido neste dispositivo.",
+    "newGames": "Partidas novas",
+    "newEvents": "Eventos novos",
+    "moved": "Acompanhados com mudança",
+    "andMore_one": "e mais 1 →",
+    "andMore_other": "e mais {{count}} →",
+    "noneMoved": "Nenhum item acompanhado mudou.",
+    "quiet": "Nada de novo desde {{date}}.",
+    "start": "O resumo começa agora — as mudanças desde esta visita aparecerão aqui."
   }
 }

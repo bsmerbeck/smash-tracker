@@ -29,7 +29,9 @@ import { LastMatchesChart } from './components/LastMatchesChart';
 import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
+import { DigestCard } from '@/components/analytics/track/DigestCard';
 import { TrackedSection } from '@/components/analytics/track/TrackedSection';
+import { useDigest } from '@/hooks/useDigest';
 import { SelfDataCoveragePanel } from '@/pages/Coaching/components/SelfDataCoveragePanel';
 
 type NextBestAction =
@@ -167,6 +169,9 @@ export function DashboardPage() {
   // setHorizon to all mounted calls on the same subject (39.1-REVIEW
   // iteration 2 CR-01) — localStorage alone is NOT a shared React state.
   const { horizon } = useHorizon();
+  // Plan 39.2-12 (TRK-01): the since-last-visit digest, owned by the page so the card
+  // (and, below, the Tracked section) share ONE reader/writer.
+  const digest = useDigest();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -205,6 +210,10 @@ export function DashboardPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('dashboard.loading')}</span>
           <PageGrid>
+            {/* Plan 39.2-12: the digest's cell (stat-row), above the Tracked cell. */}
+            <GridCell span={12}>
+              <CardSkeleton variant="stat-row" rows={3} statusLabel={t('dashboard.loading')} />
+            </GridCell>
             {/* Plan 39.2-11: the Tracked section's cell, so nothing shifts when it lands. */}
             <GridCell span={12}>
               <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />
@@ -293,6 +302,11 @@ export function DashboardPage() {
                 'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
             )}
           >
+            {/* Plan 39.2-12 (TRK-01, DD-10): the since-last-visit digest, directly above
+                Tracked. Plan 39.2-13 adds the 4-col recap beside it and re-spans it to 8. */}
+            <GridCell span={12}>
+              <DigestCard digest={digest} />
+            </GridCell>
             {/* Plan 39.2-11 (TRK-02, DD-10): the Tracked section sits directly above the
                 hero stat row. It reads the subject's watchlist and games only (D-17) and
                 owns its own loading and error states, so the hero never waits for it. */}

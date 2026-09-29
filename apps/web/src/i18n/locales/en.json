@@ -3857,5 +3857,20 @@
       "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} game; {{state}}; opens details",
       "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} games; {{state}}; opens details"
     }
+  },
+  "digest": {
+    "title": "Since last visit",
+    "since": "since {{date}}",
+    "deviceNote": "Read state is kept on this device.",
+    "markRead": "Mark as read",
+    "markedToast": "Marked as read on this device.",
+    "newGames": "New games",
+    "newEvents": "New events",
+    "moved": "Tracked moved",
+    "andMore_one": "and 1 more →",
+    "andMore_other": "and {{count}} more →",
+    "noneMoved": "No tracked item moved.",
+    "quiet": "Nothing new since {{date}}.",
+    "start": "Digest starts now — changes since this visit will show here."
   }
 }
