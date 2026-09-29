@@ -1,9 +1,19 @@
 import {
+  movedTransition,
   parseDigestSnapshot,
+  readTrackedItem,
+  selectMovedItems,
   trimmedEventKey,
+  type DigestMovedToken,
   type DigestSnapshot,
+  type DigestStateClass,
   type Match,
+  type WatchlistItem,
 } from '@smash-tracker/shared';
+import {
+  dedupeTrackedEntries,
+  type WatchlistEntry,
+} from '@/components/analytics/track/trackedRowModel';
 import { subjectSegment } from '@/lib/subjectQueryKey';
 
 /**
@@ -85,4 +95,74 @@ export function countNewEvents(matches: readonly Match[], lastSeenAt: number): n
     if (first > lastSeenAt) count += 1;
   }
   return count;
+}
+
+/** One tracked item's read at the digest's fixed horizon (`DIGEST_HORIZON`), never the page's switch. */
+export interface DigestItemState {
+  /** The stored key of the entry standing for the item (the snapshot key). */
+  itemKey: string;
+  stateClass: DigestStateClass;
+  /** The engine's own salience for the read; orders moved rows, never rendered. */
+  salience: number;
+}
+
+/**
+ * Reads every tracked item's state class from the SUBJECT's games (D-05, D-17).
+ * Items that alias merges made one identity are read once, under the resolved
+ * identity, and keyed by the entry that stands for them — the same grouping the
+ * Tracked section displays, so the snapshot and the rows agree.
+ */
+export function readDigestItems(input: {
+  entries: readonly WatchlistEntry[];
+  matches: Match[];
+  aliasMap: Record<string, string>;
+  nowMs: number;
+}): DigestItemState[] {
+  const { entries, matches, aliasMap, nowMs } = input;
+  return dedupeTrackedEntries(entries, matches, aliasMap).map(({ entry, identity }) => {
+    // The stored ref may be an alias; the scope is always built on the resolved identity.
+    const item: WatchlistItem =
+      entry.item.kind === 'opponent' ? { ...entry.item, ref: identity } : entry.item;
+    const read = readTrackedItem({ matches, item, nowMs });
+    return { itemKey: entry.itemKey, stateClass: read.stateClass, salience: read.salience };
+  });
+}
+
+/** The snapshot's `tracked` map for the items just read: every item's class, keyed by its stored key. */
+export function trackedSnapshotOf(items: readonly DigestItemState[]): DigestSnapshot['tracked'] {
+  return Object.fromEntries(items.map((item) => [item.itemKey, item.stateClass]));
+}
+
+/** Two `tracked` maps hold the same classes under the same keys. */
+export function sameTracked(a: DigestSnapshot['tracked'], b: DigestSnapshot['tracked']): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+
+/** One moved item, keyed by stored item key. */
+export interface DigestMoved {
+  itemKey: string;
+  token: DigestMovedToken;
+  salience: number;
+}
+
+/**
+ * D-05: an item MOVED when `movedTransition(snapshot class, current class)` is
+ * non-null — an item absent from the snapshot is never one. Returns the moved
+ * items in the engine's salience order (`selectMovedItems` orders them; its cap
+ * is applied by the caller through `shown` / `moreCount`).
+ */
+export function movedItemsOf(
+  items: readonly DigestItemState[],
+  previous: DigestSnapshot['tracked'],
+): { all: DigestMoved[]; shown: DigestMoved[]; moreCount: number } {
+  const all: DigestMoved[] = [];
+  for (const item of items) {
+    const token = movedTransition(previous[item.itemKey], item.stateClass);
+    if (token !== null) {
+      all.push({ itemKey: item.itemKey, token, salience: item.salience });
+    }
+  }
+  const { shown, moreCount } = selectMovedItems(all);
+  return { all, shown, moreCount };
 }

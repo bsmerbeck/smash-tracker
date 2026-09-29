@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -6,7 +7,11 @@ import { Card } from '@/components/ui/card';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { InsightLine } from '@/components/analytics/InsightLine';
 import { StatFigure, StatRow } from '@/components/analytics/StatRow';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { CompactTrackedRow } from '@/components/analytics/track/TrackedRow';
+import { TRACKED_SECTION_ID } from '@/components/analytics/track/TrackedSection';
 import type { UseDigestResult } from '@/hooks/useDigest';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 
 /** The `overline` role (UI-SPEC 5). */
 const OVERLINE =
@@ -34,6 +39,7 @@ export interface DigestCardProps {
  */
 export function DigestCard({ digest, nudge }: DigestCardProps) {
   const { t, i18n } = useTranslation();
+  const subjectPath = useSubjectPath();
   const loadingLabel = t('dashboard.loading');
 
   if (digest.status === 'loading') {
@@ -69,11 +75,48 @@ export function DigestCard({ digest, nudge }: DigestCardProps) {
     const figures = [
       <StatFigure key="games" lead label={gamesLabel} value={numbers.format(digest.newGames)} />,
       <StatFigure key="events" label={eventsLabel} value={numbers.format(digest.newEvents)} />,
-      <StatFigure key="moved" label={movedLabel} state="empty" />,
+      digest.movedCount === null ? (
+        // The tracked list is still resolving: a muted dash, never a zero that may be wrong.
+        <StatFigure key="moved" label={movedLabel} state="empty" />
+      ) : (
+        <StatFigure key="moved" label={movedLabel} value={numbers.format(digest.movedCount)} />
+      ),
     ];
+    // The moved list (D-05, D-06), or the one muted line when games came in but nothing tracked changed.
+    let movedBlock: ReactNode = null;
+    if (digest.movedRows.length > 0) {
+      movedBlock = (
+        <div data-slot="digest-moved" className="flex flex-col gap-1">
+          <ul data-slot="digest-moved-list" className="flex flex-col">
+            {digest.movedRows.map((model) => (
+              <CompactTrackedRow key={model.itemKey} model={model} />
+            ))}
+          </ul>
+          {digest.moreCount > 0 && (
+            <div>
+              <Button asChild variant="link" size="sm" className={MUTED_LINK_TONE}>
+                <Link
+                  data-slot="digest-more"
+                  to={{ pathname: subjectPath('/dashboard'), hash: `#${TRACKED_SECTION_ID}` }}
+                >
+                  {t('digest.andMore', { count: digest.moreCount })}
+                </Link>
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    } else if (digest.movedCount === 0) {
+      movedBlock = (
+        <p data-slot="digest-none-moved" className="text-sm leading-5 text-muted-foreground">
+          {t('digest.noneMoved')}
+        </p>
+      );
+    }
     body = (
       <>
         <StatRow figures={figures} leadWidth leadSpanOnPhone />
+        {movedBlock}
         {nudge}
       </>
     );

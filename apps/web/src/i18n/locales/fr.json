@@ -3846,7 +3846,8 @@
       "title": "Suivis",
       "count_one": "{{count}} sur 25",
       "count_other": "{{count}} sur 25",
-      "empty": "Rien de suivi pour l'instant — un adversaire, un affrontement ou un stage se suit depuis sa page."
+      "empty": "Rien de suivi pour l'instant — un adversaire, un affrontement ou un stage se suit depuis sa page.",
+      "sortNote": "ceux qui ont changé d'abord · puis le plus de parties"
     },
     "kind": {
       "opponent": "Adversaire",
@@ -3855,7 +3856,15 @@
     },
     "row": {
       "aria_one": "{{kind}} {{name}} : {{record}}, {{count}} match ; {{state}} ; ouvre les détails",
-      "aria_other": "{{kind}} {{name}} : {{record}}, {{count}} matchs ; {{state}} ; ouvre les détails"
+      "aria_other": "{{kind}} {{name}} : {{record}}, {{count}} matchs ; {{state}} ; ouvre les détails",
+      "stateMoved": "{{state}}, {{moved}}"
+    },
+    "moved": {
+      "up": "a changé — désormais à la hausse",
+      "down": "a changé — désormais à la baisse",
+      "steady": "a changé — désormais stable",
+      "unlocked": "a changé — assez de parties désormais",
+      "asserting": "a changé — indique désormais une direction"
     }
   },
   "digest": {

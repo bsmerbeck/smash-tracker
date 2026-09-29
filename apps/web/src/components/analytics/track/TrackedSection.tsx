@@ -7,6 +7,7 @@ import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { TrackedRow } from '@/components/analytics/track/TrackedRow';
 import {
   buildTrackedRows,
+  type TrackedMovedEntry,
   type TrackedRowModel,
 } from '@/components/analytics/track/trackedRowModel';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -33,6 +34,12 @@ export interface TrackedSectionProps {
   matches: Match[];
   /** The page's ONE horizon (`useHorizon`); every row's chip follows it. */
   horizon: HorizonKey;
+  /**
+   * Plan 39.2-12: the digest's moved items by stored item key. They sort first
+   * (engine salience) and show their moved token. Absent, nothing is marked moved
+   * and the order is most games first.
+   */
+  moved?: ReadonlyMap<string, TrackedMovedEntry>;
 }
 
 /**
@@ -43,7 +50,7 @@ export interface TrackedSectionProps {
  * the hero. Untracking has no confirmation (DD-15); focus moves to the next
  * row's link, or to the section heading when none remains.
  */
-export function TrackedSection({ matches, horizon }: TrackedSectionProps) {
+export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps) {
   const { t } = useTranslation();
   const watchlist = useWatchlist();
   const aliases = useOpponentAliases();
@@ -59,9 +66,9 @@ export function TrackedSection({ matches, horizon }: TrackedSectionProps) {
   const rows = useMemo(
     () =>
       entries
-        ? buildTrackedRows({ entries, matches, aliasMap: aliasMap ?? {}, horizon, nowMs, t })
+        ? buildTrackedRows({ entries, matches, aliasMap: aliasMap ?? {}, horizon, nowMs, t, moved })
         : [],
-    [entries, matches, aliasMap, horizon, nowMs, t],
+    [entries, matches, aliasMap, horizon, nowMs, t, moved],
   );
 
   const loadingLabel = t('dashboard.loading');
@@ -76,6 +83,7 @@ export function TrackedSection({ matches, horizon }: TrackedSectionProps) {
   const count = entries?.length ?? 0;
   const title = t('watchlist.section.title');
   const countLabel = watchlist.isError ? null : t('watchlist.section.count', { count });
+  const sortNote = watchlist.isError || count === 0 ? null : t('watchlist.section.sortNote');
 
   function handleUntrack(model: TrackedRowModel) {
     const items = Array.from(
@@ -139,13 +147,20 @@ export function TrackedSection({ matches, horizon }: TrackedSectionProps) {
           <h2 id={TITLE_ID} ref={headingRef} tabIndex={-1} className={OVERLINE}>
             {title}
           </h2>
-          <p
-            id={COUNT_ID}
-            data-slot="tracked-count"
-            className="text-xs leading-4 text-muted-foreground"
-          >
-            {countLabel}
-          </p>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {sortNote && (
+              <p data-slot="tracked-sort-note" className="text-xs leading-4 text-muted-foreground">
+                {sortNote}
+              </p>
+            )}
+            <p
+              id={COUNT_ID}
+              data-slot="tracked-count"
+              className="text-xs leading-4 text-muted-foreground"
+            >
+              {countLabel}
+            </p>
+          </div>
         </div>
         {body}
       </Card>

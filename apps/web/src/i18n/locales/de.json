@@ -3846,7 +3846,8 @@
       "title": "Verfolgt",
       "count_one": "{{count}} von 25",
       "count_other": "{{count}} von 25",
-      "empty": "Noch nichts verfolgt — Gegner, Matchups und Stages lassen sich auf der jeweiligen Seite verfolgen."
+      "empty": "Noch nichts verfolgt — Gegner, Matchups und Stages lassen sich auf der jeweiligen Seite verfolgen.",
+      "sortNote": "Veränderte zuerst · dann meiste Spiele"
     },
     "kind": {
       "opponent": "Gegner",
@@ -3855,7 +3856,15 @@
     },
     "row": {
       "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} Match; {{state}}; öffnet Details",
-      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} Matches; {{state}}; öffnet Details"
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} Matches; {{state}}; öffnet Details",
+      "stateMoved": "{{state}}, {{moved}}"
+    },
+    "moved": {
+      "up": "verändert — jetzt steigend",
+      "down": "verändert — jetzt fallend",
+      "steady": "verändert — jetzt stabil",
+      "unlocked": "verändert — jetzt genug Spiele",
+      "asserting": "verändert — zeigt jetzt eine Richtung"
     }
   },
   "digest": {

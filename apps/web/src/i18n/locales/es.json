@@ -3846,7 +3846,8 @@
       "title": "Seguidos",
       "count_one": "{{count}} de 25",
       "count_other": "{{count}} de 25",
-      "empty": "Nada en seguimiento todavía — un rival, un enfrentamiento o un escenario se puede seguir desde su página."
+      "empty": "Nada en seguimiento todavía — un rival, un enfrentamiento o un escenario se puede seguir desde su página.",
+      "sortNote": "primero los que cambiaron · luego con más partidas"
     },
     "kind": {
       "opponent": "Rival",
@@ -3855,7 +3856,15 @@
     },
     "row": {
       "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} partida; {{state}}; abre los detalles",
-      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} partidas; {{state}}; abre los detalles"
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} partidas; {{state}}; abre los detalles",
+      "stateMoved": "{{state}}, {{moved}}"
+    },
+    "moved": {
+      "up": "ha cambiado — ahora al alza",
+      "down": "ha cambiado — ahora a la baja",
+      "steady": "ha cambiado — ahora estable",
+      "unlocked": "ha cambiado — ya hay partidas suficientes",
+      "asserting": "ha cambiado — ahora marca una dirección"
     }
   },
   "digest": {

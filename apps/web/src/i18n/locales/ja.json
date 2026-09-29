@@ -3846,7 +3846,8 @@
       "title": "追跡中",
       "count_one": "25件中{{count}}件",
       "count_other": "25件中{{count}}件",
-      "empty": "まだ追跡中の項目はありません — 対戦相手・マッチアップ・ステージは各ページから追跡できます。"
+      "empty": "まだ追跡中の項目はありません — 対戦相手・マッチアップ・ステージは各ページから追跡できます。",
+      "sortNote": "変化のあった項目を先頭に · 次に試合数順"
     },
     "kind": {
       "opponent": "対戦相手",
@@ -3855,7 +3856,15 @@
     },
     "row": {
       "aria_one": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く",
-      "aria_other": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く"
+      "aria_other": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く",
+      "stateMoved": "{{state}}、{{moved}}"
+    },
+    "moved": {
+      "up": "変化あり — 上昇傾向になりました",
+      "down": "変化あり — 下降傾向になりました",
+      "steady": "変化あり — 安定しました",
+      "unlocked": "変化あり — 試合数が十分になりました",
+      "asserting": "変化あり — 傾向が示されました"
     }
   },
   "digest": {

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -126,6 +126,15 @@ function renderDashboard(initialEntry = '/dashboard') {
 }
 
 describe('DashboardPage', () => {
+  // Plan 39.2-12: a settled Dashboard writes its digest on a real unmount through a
+  // zero-delay timer. Unmount and let it fire before the next test clears storage,
+  // or the previous test's write lands in the next test's fresh store.
+  afterEach(async () => {
+    cleanup();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    window.localStorage.clear();
+  });
+
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
@@ -613,7 +622,11 @@ describe('DashboardPage', () => {
     it('a watchlist load failure is one line inside the section and leaves the Dashboard alone', async () => {
       getFighters.mockResolvedValue({ primary: [1], secondary: [] });
       listMatches.mockResolvedValue([]);
-      vi.mocked(api.watchlist.list).mockRejectedValueOnce(new Error('boom'));
+      // Two failures: the page-level digest starts the GET at mount, and the Tracked section
+      // mounting after the load retries an errored query once (a benign shared-query refetch).
+      vi.mocked(api.watchlist.list)
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockRejectedValueOnce(new Error('boom'));
 
       renderDashboard();
 
@@ -690,6 +703,41 @@ describe('DashboardPage', () => {
       );
       expect(written).toHaveLength(1);
       expect(container.querySelector('#digest')?.getAttribute('data-state')).toBe('quiet');
+      set.mockRestore();
+    });
+  });
+
+  describe('Digest leave-write (plan 39.2-12, T-03)', () => {
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const digestWrites = (set: { mock: { calls: unknown[][] } }) =>
+      set.mock.calls.filter((call) => call[0] === analyticsDigestStorageKey('test-uid', null));
+
+    it('leaving a settled Dashboard writes the digest once; leaving the no-fighters state writes nothing', async () => {
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      writeStoredDigest('test-uid', null, {
+        lastSeenAt: 5_000,
+        lastSeenMatchCount: 0,
+        tracked: {},
+      });
+      set.mockClear();
+
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      const empty = renderDashboard();
+      await screen.findByText("You haven't picked any fighters yet!");
+      empty.unmount();
+      await tick();
+      expect(digestWrites(set)).toHaveLength(0);
+
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      const loaded = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      await waitFor(() => expect(loaded.container.querySelector('#digest')).not.toBeNull());
+      await tick();
+      expect(digestWrites(set)).toHaveLength(0);
+      loaded.unmount();
+      await tick();
+      expect(digestWrites(set)).toHaveLength(1);
       set.mockRestore();
     });
   });

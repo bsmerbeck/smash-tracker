@@ -4,6 +4,7 @@ import {
   resolveOpponentIdentities,
   toRateValue,
   trackedItemScope,
+  type DigestMovedToken,
   type HorizonKey,
   type Match,
   type WatchlistItem,
@@ -55,6 +56,14 @@ export interface TrackedRowModel {
   recentLosses: number;
   /** The last {@link TRACKED_STRIP_GAMES} games in scope, oldest first, never padded. */
   strip: MiniStripGame[];
+  /** Plan 39.2-12 (D-05): the class change since this device's last digest, when the item genuinely moved. */
+  movedToken: DigestMovedToken | null;
+}
+
+/** One moved item as the digest computed it: the token the row shows and the engine salience that orders it. */
+export interface TrackedMovedEntry {
+  token: DigestMovedToken;
+  salience: number;
 }
 
 export interface BuildTrackedRowsInput {
@@ -66,6 +75,13 @@ export interface BuildTrackedRowsInput {
   horizon: HorizonKey;
   nowMs: number;
   t: TFunction;
+  /**
+   * The chip's horizon is named by the page's one switch on the Tracked section
+   * (default). The digest's rows read at their own fixed horizon, so they name it.
+   */
+  horizonOwnedByParent?: boolean;
+  /** Moved items by stored item key (the digest's D-05 read); absent or empty means nothing moved. */
+  moved?: ReadonlyMap<string, TrackedMovedEntry>;
 }
 
 /** The identity an item collapses under for display: an opponent by its resolved identity, anything else by its own key. */
@@ -116,13 +132,22 @@ function fighterLabel(id: number, t: TFunction): string {
 }
 
 /**
- * Builds the sorted Tracked rows: one per display identity, most games in scope
- * first (plan 39.2-12 layers moved-first on top). Direction is NEVER computed
+ * Builds the sorted Tracked rows: one per display identity, moved items first
+ * (engine salience, plan 39.2-12) and then most games in scope. Direction is NEVER computed
  * here (D-05): the chip is `deltaChipView` over the engine's own `formNow` read
  * at the item's `trackedItemScope`, at the page's horizon.
  */
 export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[] {
-  const { entries, matches, aliasMap, horizon, nowMs, t } = input;
+  const {
+    entries,
+    matches,
+    aliasMap,
+    horizon,
+    nowMs,
+    t,
+    horizonOwnedByParent = true,
+    moved,
+  } = input;
   const rows = dedupeTrackedEntries(entries, matches, aliasMap).map(
     ({ entry, itemKeys, identity }): TrackedRowModel => {
       // The stored ref may be an alias; the scope is always built on the resolved identity.
@@ -139,7 +164,7 @@ export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[
         recentGames,
         horizon,
         // The page's one HorizonSwitch names the horizon for every row (UI-SPEC 7.8).
-        horizonOwnedByParent: true,
+        horizonOwnedByParent,
         t,
       });
       const recent = insight?.recent;
@@ -194,10 +219,18 @@ export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[
         recentWins: recentRecord.wins,
         recentLosses: recentRecord.losses,
         strip,
+        movedToken: moved?.get(entry.itemKey)?.token ?? null,
       };
     },
   );
-  return rows.sort((a, b) =>
-    b.total !== a.total ? b.total - a.total : a.itemKey.localeCompare(b.itemKey),
-  );
+  const salienceOf = (row: TrackedRowModel): number => moved?.get(row.itemKey)?.salience ?? 0;
+  return rows.sort((a, b) => {
+    if ((a.movedToken !== null) !== (b.movedToken !== null)) {
+      return a.movedToken !== null ? -1 : 1;
+    }
+    if (a.movedToken !== null && salienceOf(a) !== salienceOf(b)) {
+      return salienceOf(b) - salienceOf(a);
+    }
+    return b.total !== a.total ? b.total - a.total : a.itemKey.localeCompare(b.itemKey);
+  });
 }

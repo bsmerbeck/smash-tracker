@@ -7,6 +7,7 @@ import i18n from '@/i18n';
 import {
   INSIGHT_TEMPLATES,
   trackedItemScope,
+  type DigestMovedToken,
   type HorizonKey,
   type Match,
 } from '@smash-tracker/shared';
@@ -117,7 +118,11 @@ const MATCHUP_ITEM = item('matchup', { fighterId: 10, vsFighterId: 12 }, 'matchu
 const STAGE_ITEM = item('stage', 1, 'stage:1');
 
 function renderSection(
-  props: { matches?: Match[]; horizon?: HorizonKey } = {},
+  props: {
+    matches?: Match[];
+    horizon?: HorizonKey;
+    moved?: ReadonlyMap<string, { token: DigestMovedToken; salience: number }>;
+  } = {},
   path = '/dashboard',
 ) {
   const now = Date.now();
@@ -126,7 +131,7 @@ function renderSection(
   const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
-        <TrackedSection matches={matches} horizon={props.horizon ?? 'last30'} />
+        <TrackedSection matches={matches} horizon={props.horizon ?? 'last30'} moved={props.moved} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -387,5 +392,64 @@ describe('TrackedSection', () => {
     );
     // Both stored items remain: the count is the stored list, the display is deduped.
     expect(document.getElementById('tracked')).toHaveTextContent('2 of 25');
+  });
+  it('plan 39.2-12: a moved item sorts above a higher-volume unmoved one, shows its token, and the header states the order', async () => {
+    serverItems = [MKLEO_ITEM, STAGE_ITEM];
+    const moved = new Map([['stage:1', { token: 'down' as const, salience: 3 }]]);
+    renderSection({ moved });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="tracked-row"]')).toHaveLength(2),
+    );
+    const keys = Array.from(document.querySelectorAll('[data-slot="tracked-row"]')).map(
+      (row) => (row as HTMLElement).dataset.itemKey,
+    );
+    // mkleo has 200 games, the stage 8: without the moved flag mkleo leads.
+    expect(keys).toEqual(['stage:1', 'opponent:mkleo']);
+    const stageRow = document.querySelector('[data-item-key="stage:1"]')!;
+    expect(stageRow.querySelector('[data-slot="tracked-row-moved"]')?.textContent).toBe(
+      'moved — now trending down',
+    );
+    expect(
+      document.querySelector('[data-item-key="opponent:mkleo"] [data-slot="tracked-row-moved"]'),
+    ).toBeNull();
+    expect(document.querySelector('[data-slot="tracked-sort-note"]')?.textContent).toBe(
+      'moved first · then most games',
+    );
+  });
+
+  it('plan 39.2-12: moved items order among themselves by engine salience, then unmoved by most games', async () => {
+    serverItems = [MKLEO_ITEM, MATCHUP_ITEM, STAGE_ITEM];
+    const moved = new Map([
+      ['stage:1', { token: 'up' as const, salience: 1 }],
+      ['matchup:10-12', { token: 'steady' as const, salience: 9 }],
+    ]);
+    renderSection({ moved });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="tracked-row"]')).toHaveLength(3),
+    );
+    const keys = Array.from(document.querySelectorAll('[data-slot="tracked-row"]')).map(
+      (row) => (row as HTMLElement).dataset.itemKey,
+    );
+    expect(keys).toEqual(['matchup:10-12', 'stage:1', 'opponent:mkleo']);
+  });
+
+  it('plan 39.2-12: the moved token is part of the row accessible name', async () => {
+    serverItems = [STAGE_ITEM];
+    renderSection({ moved: new Map([['stage:1', { token: 'up' as const, salience: 1 }]]) });
+    const link = await screen.findByRole('link', { name: /moved — now trending up/ });
+    expect(link).toBeInTheDocument();
+  });
+
+  it('plan 39.2-12: with nothing moved the order is unchanged and no token renders', async () => {
+    serverItems = [MKLEO_ITEM, STAGE_ITEM];
+    renderSection();
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="tracked-row"]')).toHaveLength(2),
+    );
+    const keys = Array.from(document.querySelectorAll('[data-slot="tracked-row"]')).map(
+      (row) => (row as HTMLElement).dataset.itemKey,
+    );
+    expect(keys).toEqual(['opponent:mkleo', 'stage:1']);
+    expect(document.querySelector('[data-slot="tracked-row-moved"]')).toBeNull();
   });
 });

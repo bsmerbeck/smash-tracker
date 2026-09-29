@@ -30,8 +30,9 @@ import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
 import { DigestCard } from '@/components/analytics/track/DigestCard';
-import { TrackedSection } from '@/components/analytics/track/TrackedSection';
+import { TRACKED_SECTION_ID, TrackedSection } from '@/components/analytics/track/TrackedSection';
 import { useDigest } from '@/hooks/useDigest';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { SelfDataCoveragePanel } from '@/pages/Coaching/components/SelfDataCoveragePanel';
 
 type NextBestAction =
@@ -169,9 +170,6 @@ export function DashboardPage() {
   // setHorizon to all mounted calls on the same subject (39.1-REVIEW
   // iteration 2 CR-01) — localStorage alone is NOT a shared React state.
   const { horizon } = useHorizon();
-  // Plan 39.2-12 (TRK-01): the since-last-visit digest, owned by the page so the card
-  // (and, below, the Tracked section) share ONE reader/writer.
-  const digest = useDigest();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -182,6 +180,14 @@ export function DashboardPage() {
   // 260725-Q1: alphabetized by localized name, not primary+secondary save
   // order — matches every other fighter picker in the app.
   const fighterSprites = useSortedFighters(rawFighterSprites);
+
+  // Plan 39.2-12 (TRK-01): the since-last-visit digest, owned by the page so the card and the
+  // Tracked section share ONE reader/writer. It is on screen only in the loaded branch with
+  // fighters chosen, so leaving any other state never marks it as read.
+  const digestVisible = !fightersLoading && fighterSprites.length > 0;
+  const digest = useDigest({ enabled: digestVisible });
+  // The digest's "and N more" link and the Track refusal toast both land on #tracked.
+  useLandingScroll({ anchorId: TRACKED_SECTION_ID, ready: digestVisible && !matchesLoading });
 
   // Tracks an explicit user selection only; when unset, the first available
   // fighter is used (derived below during render, mirroring legacy's
@@ -311,7 +317,11 @@ export function DashboardPage() {
                 hero stat row. It reads the subject's watchlist and games only (D-17) and
                 owns its own loading and error states, so the hero never waits for it. */}
             <GridCell span={12}>
-              <TrackedSection matches={allMatches} horizon={horizon} />
+              <TrackedSection
+                matches={allMatches}
+                horizon={horizon}
+                moved={digest.movedByItemKey}
+              />
             </GridCell>
             <HeroStats
               matches={matches}

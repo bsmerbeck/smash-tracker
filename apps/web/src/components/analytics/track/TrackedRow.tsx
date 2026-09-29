@@ -75,7 +75,14 @@ export function TrackedRow({ model, onUntrack, compact = false }: TrackedRowProp
     ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: model.total })
     : undefined;
   const kindLabel = t(`watchlist.kind.${model.kind}`);
-  const stateLabel = model.chip ? model.chip.valueLabel : t('analytics.stat.collapsedValue');
+  const chipLabel = model.chip ? model.chip.valueLabel : t('analytics.stat.collapsedValue');
+  // Each translation is resolved in its own statement (insightCopy guard): the moved
+  // token joins the row's accessible state through one interpolated key, never by concatenation.
+  const movedLabel = model.movedToken ? t(`watchlist.moved.${model.movedToken}`) : null;
+  const stateLabel =
+    movedLabel === null
+      ? chipLabel
+      : t('watchlist.row.stateMoved', { state: chipLabel, moved: movedLabel });
   const rowAria = t('watchlist.row.aria', {
     kind: kindLabel,
     name: model.name,
@@ -107,13 +114,27 @@ export function TrackedRow({ model, onUntrack, compact = false }: TrackedRowProp
         data-slot="tracked-row-body"
         className="flex min-w-0 flex-1 flex-col gap-1 @min-[480px]/tracked-row:flex-row @min-[480px]/tracked-row:items-center @min-[480px]/tracked-row:gap-2"
       >
-        <span
-          data-slot="tracked-row-name"
-          className="min-w-0 truncate text-sm font-medium @min-[480px]/tracked-row:flex-1"
-          title={model.name}
+        <div
+          data-slot="tracked-row-title"
+          className="flex min-w-0 flex-col @min-[480px]/tracked-row:flex-1"
         >
-          {model.name}
-        </span>
+          <span
+            data-slot="tracked-row-name"
+            className="min-w-0 truncate text-sm font-medium"
+            title={model.name}
+          >
+            {model.name}
+          </span>
+          {movedLabel !== null && (
+            <span
+              data-slot="tracked-row-moved"
+              data-moved={model.movedToken}
+              className="min-w-0 truncate text-xs leading-4 text-muted-foreground"
+            >
+              {movedLabel}
+            </span>
+          )}
+        </div>
         <div
           data-slot="tracked-row-metrics"
           className="flex flex-wrap items-center gap-x-2 gap-y-1 @min-[480px]/tracked-row:shrink-0 @min-[480px]/tracked-row:flex-nowrap"
