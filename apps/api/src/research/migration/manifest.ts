@@ -117,6 +117,7 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   { tree: 'opponentAliases', disposition: 'assert-empty' },
   { tree: 'opponentNotes', disposition: 'assert-empty' },
   { tree: 'stageFavorites', disposition: 'assert-empty' },
+  { tree: 'watchlist', disposition: 'assert-empty' },
   { tree: 'primaryFighters', disposition: 'assert-empty' },
   { tree: 'secondaryFighters', disposition: 'assert-empty' },
   { tree: 'reviewDrafts', disposition: 'assert-empty' },

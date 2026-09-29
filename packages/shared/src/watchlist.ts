@@ -71,6 +71,23 @@ const watchlistOpponentRefSchema = opponentNameInputSchema.refine(
   { message: 'Opponent name is limited to 80 characters' },
 );
 
+/**
+ * The STORED/wire opponent ref: the already-canonical tag `watchlistOpponentRefSchema`
+ * produced on the way in. It carries no `.transform()`, because fastify-type-provider-zod
+ * serialises responses with `safeEncode` and a one-way transform makes every 200 a 500.
+ * It re-asserts the same invariants (trimmed, lowercase, non-empty, bounded, no RTDB
+ * path character, no control character) instead of re-normalising, so a hand-edited
+ * stored ref that would not survive the input schema reads as corrupt and is skipped.
+ */
+const watchlistStoredOpponentRefSchema = z
+  .string()
+  .min(1)
+  .max(WATCHLIST_OPPONENT_TAG_MAX_LENGTH)
+  .regex(/^[^.#$[\]/]+$/, 'invalid opponent ref')
+  .refine((tag) => tag === tag.trim().toLowerCase() && !hasControlCharacter(tag), {
+    message: 'opponent ref is not canonical',
+  });
+
 const watchlistMatchupRefSchema = z.object({
   fighterId: z.number().int().positive(),
   vsFighterId: z.number().int().positive(),
@@ -88,7 +105,7 @@ const watchlistStageRefSchema = z.number().int().positive();
 export const watchlistItemStoredSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('opponent'),
-    ref: watchlistOpponentRefSchema,
+    ref: watchlistStoredOpponentRefSchema,
     createdAt: z.number().int().nonnegative(),
     note: z.string().max(WATCHLIST_NOTE_MAX_LENGTH).nullish(),
   }),

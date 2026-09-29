@@ -74,6 +74,9 @@ export const CANONICAL_TENANT_TREES = [
   'opponentAliases',
   'opponentNotes',
   'stageFavorites',
+  // Phase 39.2 (TRK-02): `watchlist/{subjectId}` is keyed exactly like
+  // `stageFavorites`, so the hard-delete cascade reaches it from this list.
+  'watchlist',
   'primaryFighters',
   'secondaryFighters',
   // Phase 12 Plan 03 (Coach Reviews & Delivery): the review-authoring trees

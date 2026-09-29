@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { Match } from './match.js';
 import {
   WATCHLIST_ITEM_KEY_PATTERN,
@@ -271,5 +272,24 @@ describe('trackedItemScope', () => {
     expect(scope.key).toBe('stage:3');
     expect(scope.axes).toEqual({ stage: 3 });
     expect(ids(scope.filter(matches))).toEqual(['a', 'c']);
+  });
+});
+
+describe('response schemas encode (fastify-type-provider-zod serialises with safeEncode)', () => {
+  it('a stored opponent item round-trips through z.safeEncode, so a 200 never becomes a 500', () => {
+    const response = {
+      itemKey: 'opponent:izaw',
+      item: { kind: 'opponent' as const, ref: 'izaw', createdAt: 5 },
+    };
+    expect(z.safeEncode(watchlistTrackResponseSchema, response).success).toBe(true);
+    expect(z.safeEncode(watchlistResponseSchema, { items: [response] }).success).toBe(true);
+  });
+
+  it('a stored opponent ref that is not canonical (uppercase, padded, reserved character) reads as corrupt', () => {
+    for (const ref of ['IzAw', ' izaw', 'iz/aw', 'iz.aw', '']) {
+      expect(
+        watchlistItemStoredSchema.safeParse({ kind: 'opponent', ref, createdAt: 1 }).success,
+      ).toBe(false);
+    }
   });
 });

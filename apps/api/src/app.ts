@@ -27,6 +27,7 @@ import gspSettingsRoutes from './routes/gspSettings.js';
 import gspReadingsRoutes from './routes/gspReadings.js';
 import gspLiveRoutes from './routes/gspLive.js';
 import stageFavoritesRoutes from './routes/stageFavorites.js';
+import watchlistRoutes from './routes/watchlist.js';
 import startggRoutes from './routes/startgg.js';
 import parryggRoutes from './routes/parrygg.js';
 import parryggAuthRoutes from './routes/parryggAuth.js';
@@ -515,6 +516,8 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(gspReadingsRoutes);
       await api.register(gspLiveRoutes, { fetchImpl: options.gspLiveFetch });
       await api.register(stageFavoritesRoutes);
+      // Phase 39.2 (TRK-02): the subject-scoped, per-item, transaction-capped watchlist.
+      await api.register(watchlistRoutes);
       await api.register(tournamentsRoutes);
       // Phase 26 (PREP-01..04): the event-bound free prep brief,
       // personal-only (always request.uid), mirroring tournamentsRoutes'

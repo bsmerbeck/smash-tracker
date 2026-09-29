@@ -36,6 +36,15 @@ const SAME_SUBJECT_ROUTES = [
   { method: 'GET', path: '/api/opponents/aliases', usesSubjectHeader: true },
   { method: 'GET', path: '/api/opponents', usesSubjectHeader: true },
   { method: 'GET', path: '/api/stage-favorites', usesSubjectHeader: true },
+  // Phase 39.2 (TRK-02): the per-item watchlist routes, all header-addressed.
+  { method: 'GET', path: '/api/watchlist', usesSubjectHeader: true },
+  {
+    method: 'PUT',
+    path: '/api/watchlist/items',
+    usesSubjectHeader: true,
+    body: { kind: 'opponent', ref: 'someone' },
+  },
+  { method: 'DELETE', path: '/api/watchlist/items/opponent:x', usesSubjectHeader: true },
   { method: 'GET', path: '/api/users/me/fighters', usesSubjectHeader: true },
   {
     method: 'PATCH',
@@ -249,6 +258,7 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   opponentAliases: '/api/opponents/aliases',
   opponentNotes: '/api/opponent-notes',
   stageFavorites: '/api/stage-favorites',
+  watchlist: '/api/watchlist',
   primaryFighters: '/api/users/me/fighters',
   secondaryFighters: '/api/users/me/fighters',
   // Phase 12 Plan 03: reviewDrafts is written by the draft-fetch route;
