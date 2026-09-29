@@ -396,6 +396,18 @@ export async function importPlayerMatches(
         ...(existingEntry?.topStandings && existingEntry.topStandings.length > 0
           ? { topStandings: existingEntry.topStandings }
           : {}),
+        // User-authored per-event overrides. The closing `.update()` replaces
+        // each event's whole node, so anything not carried forward here is
+        // deleted by every re-sync. Phase 39.2 (F1) carries `tierOverride`;
+        // it also fixes a live 37-04 defect where every re-sync silently
+        // deleted the per-event `rulesetOverride`. Copied verbatim when
+        // present, no key when absent (never a null write).
+        ...(existingEntry?.tierOverride != null
+          ? { tierOverride: existingEntry.tierOverride }
+          : {}),
+        ...(existingEntry?.rulesetOverride != null
+          ? { rulesetOverride: existingEntry.rulesetOverride }
+          : {}),
       };
     }
 

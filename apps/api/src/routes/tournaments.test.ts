@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { RULESET_CONTRACT_VERSION, stageIdKey } from '@smash-tracker/shared';
+import {
+  resolveTournamentTier,
+  RULESET_CONTRACT_VERSION,
+  stageIdKey,
+  TIER_OVERRIDE_CONTRACT_VERSION,
+  tournamentEntrySchema,
+  type TierEntryFields,
+} from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import { importPlayerMatches } from '../startgg/sync.js';
+import type { StartggSet } from '../startgg/client.js';
 
 describe('GET /api/tournaments', () => {
   it('rejects unauthenticated requests', async () => {
@@ -825,6 +834,375 @@ describe('PATCH /api/tournaments/:entryKey/ruleset', () => {
     expect(entry?.rulesetOverride).toEqual({
       contractVersion: RULESET_CONTRACT_VERSION,
       dsr: 'none',
+    });
+  });
+});
+
+// Phase 39.2 (TIER-04, D-15, D-17): the tier override route's hard edges —
+// ownership, server-stamped members, null-as-clear, both row shapes, and the
+// never-persisted-resolution property.
+describe('PATCH /api/tournaments/:entryKey/tier', () => {
+  const LEGACY_ENTRY = {
+    eventId: 987,
+    eventName: 'Ultimate Singles',
+    firstSetAt: 1_700_000_000_000,
+    lastSetAt: 1_700_000_500_000,
+    setsPlayed: 5,
+  };
+
+  function storedFor(
+    database: ReturnType<typeof buildTestApp>['database'],
+    uid: string,
+    key: string,
+  ): Record<string, unknown> | undefined {
+    return (database.dump().tournamentEntries as Record<string, Record<string, unknown>>)?.[uid]?.[
+      key
+    ] as Record<string, unknown> | undefined;
+  }
+
+  it('rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      payload: { tierOverride: null },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('answers 404 for an entry key with no stored entry', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/missing-entry/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'major' } },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('answers 404 for an entry owned by a different uid and leaves the database byte-identical', async () => {
+    const { app, database, auth } = buildTestApp();
+    auth.registerToken('other-uid-token', { uid: 'other-uid', email: 'other@example.com' });
+    database.seed(`tournamentEntries/${TEST_UID}`, { '987': LEGACY_ENTRY });
+    // dump() returns the LIVE tree, so snapshot by value or the comparison is vacuous.
+    const before = structuredClone(database.dump());
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader('other-uid-token'),
+      payload: { tierOverride: { tier: 'major' } },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('stores exactly one tierOverride child with the running contract version and a numeric setAtMs, ignoring smuggled members', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, { '987': LEGACY_ENTRY });
+    const before = structuredClone(storedFor(database, TEST_UID, '987'));
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'major', contractVersion: 99, setAtMs: 5 } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { entryKey: string; tierOverride: Record<string, unknown> };
+    expect(body.entryKey).toBe('987');
+    const stored = storedFor(database, TEST_UID, '987') as Record<string, unknown>;
+    const override = stored.tierOverride as Record<string, unknown>;
+    expect(Object.keys(override).sort()).toEqual(['contractVersion', 'setAtMs', 'tier']);
+    expect(override.contractVersion).toBe(TIER_OVERRIDE_CONTRACT_VERSION);
+    expect(override.tier).toBe('major');
+    expect(typeof override.setAtMs).toBe('number');
+    expect(override.setAtMs).not.toBe(5);
+    expect(body.tierOverride).toEqual(override);
+    // No sibling member of the entry was rewritten (WR-02).
+    const { tierOverride: _added, ...rest } = stored;
+    void _added;
+    expect(rest).toEqual(before);
+  });
+
+  it('rejects an unknown tier word with 400 and writes nothing', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, { '987': LEGACY_ENTRY });
+    // dump() returns the LIVE tree, so snapshot by value or the comparison is vacuous.
+    const before = structuredClone(database.dump());
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'legendary' } },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('a clearing PATCH removes the tierOverride child entirely and writes no null', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        ...LEGACY_ENTRY,
+        tierOverride: {
+          contractVersion: TIER_OVERRIDE_CONTRACT_VERSION,
+          tier: 'minor',
+          setAtMs: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader(),
+      payload: { tierOverride: null },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ entryKey: '987' });
+    const stored = storedFor(database, TEST_UID, '987') as Record<string, unknown>;
+    expect('tierOverride' in stored).toBe(false);
+    expect(stored).toEqual(LEGACY_ENTRY);
+  });
+
+  // D-17: the coach clause is vacuous at the data layer — client tenants have
+  // no tournament registry and this route is own-uid. The committed proof is
+  // that a client-subject header can never redirect the write.
+  it('D-17: an X-Active-Subject client header cannot write another subject entry and never redirects the caller write', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = 'tenant-abc';
+    database.seed(`tournamentEntries/${TEST_UID}`, { a: { ...LEGACY_ENTRY, eventId: 1 } });
+    database.seed(`tournamentEntries/${tenantId}`, { b: { ...LEGACY_ENTRY, eventId: 2 } });
+    const headers = { ...authHeader(), 'x-active-subject': `client:${tenantId}` };
+
+    // dump() returns the LIVE tree, so snapshot by value or the comparison is vacuous.
+    const before = structuredClone(database.dump());
+    const foreign = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/b/tier',
+      headers,
+      payload: { tierOverride: { tier: 'major' } },
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(database.dump()).toEqual(before);
+
+    const own = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/a/tier',
+      headers,
+      payload: { tierOverride: { tier: 'major' } },
+    });
+    expect(own.statusCode).toBe(200);
+    expect(storedFor(database, TEST_UID, 'a')?.tierOverride).toMatchObject({ tier: 'major' });
+    // The client tenant's subtree is byte-identical to before.
+    expect(storedFor(database, tenantId, 'b')).toEqual({ ...LEGACY_ENTRY, eventId: 2 });
+    expect(
+      Object.keys(
+        (database.dump().tournamentEntries as Record<string, unknown>)[tenantId] as object,
+      ),
+    ).toEqual(['b']);
+  });
+
+  it('a GET after a successful PATCH returns tierOverride for an ordinary (legacy-shaped) entry', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, { '987': LEGACY_ENTRY });
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'regional' } },
+    });
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+    const [entry] = getResponse.json() as Array<{ tierOverride?: { tier: string } }>;
+    expect(entry?.tierOverride).toMatchObject({ tier: 'regional' });
+  });
+
+  it('a GET after a successful PATCH returns tierOverride for an admin-imported registry row', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      'histimport:100001': {
+        entryId: 'histimport:100001',
+        origin: 'admin-imported',
+        provider: 'startgg',
+        startggEventId: '100001',
+        eventName: 'Ultimate Singles',
+        playedSetCount: 8,
+        provenance: { source: 'research-import', importedAtMs: 1_755_000_000_000 },
+        registryWitness: 'research-import:v1:100001',
+        firstSetAt: 1_699_000_000_000,
+        lastSetAt: 1_699_000_500_000,
+        setsPlayed: 8,
+      },
+    });
+
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/histimport:100001/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'local' } },
+    });
+    expect(patch.statusCode).toBe(200);
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+    const [entry] = getResponse.json() as Array<{
+      tierOverride?: { tier: string };
+      origin?: string;
+    }>;
+    expect(entry?.origin).toBe('admin-imported');
+    expect(entry?.tierOverride).toMatchObject({ tier: 'local' });
+  });
+
+  it('never persists a resolved tier: the stored entry parses under the STRICT row schema after a PATCH', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': { ...LEGACY_ENTRY, numEntrants: 1581, isOnline: false },
+    });
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/987/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'major' } },
+    });
+
+    const stored = storedFor(database, TEST_UID, '987') as Record<string, unknown>;
+    const parsed = tournamentEntrySchema.strict().safeParse(stored);
+    expect(parsed.success).toBe(true);
+    for (const forbidden of ['tier', 'basis', 'source', 'estimate']) {
+      expect(stored).not.toHaveProperty(forbidden);
+    }
+  });
+});
+
+// Phase 39.2 tracer (TIER-04 + F1): an owner sets Major on a synced event, the
+// routine start.gg re-sync runs, and the real GET route still resolves Major
+// (Set manually) — on one database, through the real writer, RTDB and route.
+describe('tier override tracer: sync -> PATCH -> re-sync -> GET -> resolveTournamentTier', () => {
+  const PLAYER_ID = 1802316;
+
+  function offlineEventSet(): StartggSet {
+    return {
+      id: 1,
+      completedAt: 1_700_000_000,
+      fullRoundText: 'Winners Round 1',
+      round: 1,
+      displayScore: '2-0',
+      totalGames: 2,
+      event: {
+        id: 4001,
+        name: 'Ultimate Singles',
+        isOnline: false,
+        numEntrants: 1581,
+        videogame: { id: 1386 },
+        tournament: { name: 'Supernova Fixture' },
+      },
+      slots: [
+        {
+          entrant: {
+            id: 1,
+            name: 'Team | Me',
+            participants: [{ player: { id: PLAYER_ID } }],
+            seeds: [{ seedNum: 4 }],
+            standing: { placement: 9 },
+          },
+        },
+        {
+          entrant: {
+            id: 2,
+            name: 'PowPow',
+            participants: [{ player: { id: 999, gamerTag: 'PowPow' } }],
+            seeds: [{ seedNum: 12 }],
+            standing: { placement: 33 },
+          },
+        },
+      ],
+      games: [
+        {
+          winnerId: 1,
+          stage: { id: 311, name: 'Battlefield' },
+          selections: [
+            { character: { id: 1271 }, entrant: { id: 1 } },
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+          entrant1Score: 3,
+          entrant2Score: 0,
+        },
+      ],
+    };
+  }
+
+  function fetchFor(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  it('an override set through the route survives the next sync and resolves as manual with the estimate still visible', async () => {
+    const { app, database } = buildTestApp();
+    const sync = () =>
+      importPlayerMatches(
+        database as never,
+        TEST_UID,
+        PLAYER_ID,
+        'server-token',
+        fetchFor([offlineEventSet()]),
+        { warn: () => undefined },
+      );
+
+    await sync();
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: '/api/tournaments/4001/tier',
+      headers: authHeader(),
+      payload: { tierOverride: { tier: 'major' } },
+    });
+    expect(patch.statusCode).toBe(200);
+
+    await sync();
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+    expect(getResponse.statusCode).toBe(200);
+    const entries = getResponse.json() as Array<TierEntryFields & { eventId?: number }>;
+    const entry = entries.find((e) => e.eventId === 4001);
+    expect(entry).toBeDefined();
+    expect(resolveTournamentTier({ entry: entry as TierEntryFields })).toMatchObject({
+      tier: 'major',
+      basis: 'manual',
+      source: 'manual',
+      estimate: { tier: 'supermajor', entrants: 1581 },
     });
   });
 });

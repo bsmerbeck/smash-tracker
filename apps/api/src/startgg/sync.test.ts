@@ -1072,3 +1072,81 @@ describe('importPlayerMatches — registry isOnline', () => {
     expect(storedEntry(database)['isOnline']).toBe(false);
   });
 });
+
+// Phase 39.2 plan 03 (F1, D-20): the closing registry `.update()` replaces each
+// event's whole node, so user-authored per-event overrides must be carried
+// forward or every re-sync deletes them. `rulesetOverride` (37-04) was being
+// wiped by every sync before this fix — a live defect found by this phase.
+describe('importPlayerMatches — per-event override carry-forward', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  const TIER_OVERRIDE = { contractVersion: 1, tier: 'major', setAtMs: 1_700_000_000_000 };
+  const RULESET_OVERRIDE = { contractVersion: 1, dsr: 'none' };
+
+  it('store -> sync -> assert: a stored tierOverride AND rulesetOverride survive a re-sync byte-equal', async () => {
+    const database = new FakeDatabase();
+    database.seed('tournamentEntries/uid-1', {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1,
+        lastSetAt: 2,
+        setsPlayed: 1,
+        tierOverride: TIER_OVERRIDE,
+        rulesetOverride: RULESET_OVERRIDE,
+      },
+    });
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    // The re-sync really rewrote the entry (sync-derived members are fresh)...
+    expect(entry['numEntrants']).toBe(512);
+    expect(entry['setsPlayed']).toBe(1);
+    // ...and both user-authored overrides came through unchanged.
+    expect(entry['tierOverride']).toEqual(TIER_OVERRIDE);
+    expect(entry['rulesetOverride']).toEqual(RULESET_OVERRIDE);
+  });
+
+  it('writes neither override key when none was stored (never null, never empty)', async () => {
+    const database = new FakeDatabase();
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry).toBeDefined();
+    expect('tierOverride' in entry).toBe(false);
+    expect('rulesetOverride' in entry).toBe(false);
+  });
+});

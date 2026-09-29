@@ -8,11 +8,15 @@ import {
   RULESET_CONTRACT_VERSION,
   rulesetOverrideResponseSchema,
   rulesetOverrideUpdateBodySchema,
+  TIER_OVERRIDE_CONTRACT_VERSION,
+  tierOverrideResponseSchema,
+  tierOverrideUpdateBodySchema,
   TOURNAMENT_REGISTRY_ORIGIN,
   tournamentEntrySchema,
   tournamentRegistryListSchema,
   tournamentRegistryRowSchema,
   type RulesetOverrideStored,
+  type TierOverrideStored,
   type TournamentEntry,
   type TournamentRegistryListEntry,
 } from '@smash-tracker/shared';
@@ -239,6 +243,62 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
       // from a previous write.
       await entryRef.update({ rulesetOverride: stored });
       return { entryKey, rulesetOverride: stored };
+    },
+  );
+
+  // PATCH /api/tournaments/:entryKey/tier — Phase 39.2 (TIER-04, D-15): set
+  // or clear the per-event manual tier override. Mirrors the ruleset route
+  // above: the RTDB path is assembled from `request.uid` ONLY (own-uid by
+  // D-17 — the owner deferred a real coach tier path, so this plugin
+  // registers no subject resolution), which makes a foreign entry key
+  // indistinguishable from a missing one (the same 404).
+  //
+  // WR-02 ("saving never freezes untouched members") holds here because the
+  // override has exactly ONE user-editable member (`tier`): the write
+  // replaces only the named `tierOverride` child, so no sibling member of
+  // the entry is rewritten. Any future member (for example a reason note)
+  // must adopt `RulesetOverrideSection`'s baseline-diff payload before it
+  // ships. The resolved tier, basis and estimate are read-time only and are
+  // never written (TIER-01).
+  app.patch(
+    '/tournaments/:entryKey/tier',
+    {
+      schema: {
+        params: z.object({ entryKey: entryKeyInputSchema }),
+        body: tierOverrideUpdateBodySchema,
+        response: {
+          200: tierOverrideResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { entryKey } = request.params;
+      const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
+      const existing = await entryRef.get();
+      if (!existing.exists()) {
+        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+      }
+
+      const { tierOverride } = request.body;
+
+      if (tierOverride === null) {
+        // Child `.remove()`, never a null inside an update payload (RTDB
+        // null-stripping house rule).
+        await app.firebase.database
+          .ref(`tournamentEntries/${request.uid}/${entryKey}/tierOverride`)
+          .remove();
+        return { entryKey };
+      }
+
+      // Version and timestamp are stamped by the server; the body schema
+      // does not even carry them, so a smuggled value never reaches storage.
+      const stored: TierOverrideStored = {
+        contractVersion: TIER_OVERRIDE_CONTRACT_VERSION,
+        tier: tierOverride.tier,
+        setAtMs: Date.now(),
+      };
+      await entryRef.update({ tierOverride: stored });
+      return { entryKey, tierOverride: stored };
     },
   );
 };
