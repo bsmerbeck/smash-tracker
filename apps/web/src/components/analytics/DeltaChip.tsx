@@ -13,6 +13,12 @@ export interface DeltaChipProps {
   ariaLabel: string;
   /** Set when the enclosing figure's overline already carries the horizon (see the guard below). */
   horizonOwnedByParent?: boolean;
+  /**
+   * Plan 39.1-36: the recent window's real game count, rendered as
+   * `data-recent-games` (no visual change) so tests, captures and browser
+   * oracles can see a chip's sample size.
+   */
+  recentGames?: number;
 }
 
 /**
@@ -77,6 +83,7 @@ export function DeltaChip({
   horizonLabel,
   ariaLabel,
   horizonOwnedByParent = false,
+  recentGames,
 }: DeltaChipProps) {
   if (state === 'collapsed') {
     return null;
@@ -98,17 +105,32 @@ export function DeltaChip({
 
   return (
     <span
+      data-slot="delta-chip"
+      data-state={state}
+      data-recent-games={recentGames}
       tabIndex={0}
       aria-label={ariaLabel}
       style={backgroundStyle}
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums whitespace-nowrap',
+        // Plan 39.1-36: `flex-wrap` + `min-h-5` (not a fixed `h-5`) + `max-w-full`
+        // — one 20px line wherever it fits (every desktop cell); in a cell
+        // narrower than the chip it wraps INSIDE the chip instead of spilling
+        // into the next column or across the card edge.
+        'inline-flex min-h-5 max-w-full flex-wrap items-center gap-x-1 rounded-full px-2 text-xs font-medium tabular-nums',
         !isTinted && 'bg-muted/40',
       )}
     >
-      <Glyph state={state} color={color} />
-      <span className="text-foreground">{valueLabel}</span>
-      {horizonLabel && <span className="text-muted-foreground">{`· ${horizonLabel}`}</span>}
+      {/* The glyph and value never separate. The chip never grows past its
+          cell (max-w-full): below its one-line width the horizon label wraps
+          first, then the value's own words. */}
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <Glyph state={state} color={color} />
+        {/* UI-SPEC §7.5 / sketch 001-C `.chip--steady`: quiet states read muted. */}
+        <span className={isTinted ? 'text-foreground' : 'text-muted-foreground'}>{valueLabel}</span>
+      </span>
+      {horizonLabel && (
+        <span className="whitespace-nowrap text-muted-foreground">{`· ${horizonLabel}`}</span>
+      )}
     </span>
   );
 }

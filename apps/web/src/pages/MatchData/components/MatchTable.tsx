@@ -13,6 +13,7 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type Table as ReactTableInstance,
   type VisibilityState,
 } from '@tanstack/react-table';
 import type { Fighter, Match } from '@smash-tracker/shared';
@@ -75,6 +76,7 @@ import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/colu
 import { AnalyzeOpponentLink } from '@/components/AnalyzeOpponentLink';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
 import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
+import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
@@ -151,12 +153,18 @@ function downloadCsv(matches: Match[]) {
 export function MatchTable({
   matches,
   fighterSprites,
+  layout: layoutOverride,
 }: {
   matches: Match[];
   /** The signed-in user's primary+secondary fighter selections, passed through to EditMatchForm's "Your Fighter" picker. */
   fighterSprites: Fighter[];
+  /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
+  layout?: RowLayout;
 }) {
   const { t } = useTranslation();
+  // Plan 39.1-49 (UI-SPEC §6.6): exactly one of the table / stacked roots
+  // mounts; sorting, filters, pagination and dialogs are shared.
+  const layout = useRowLayout(layoutOverride);
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   // Phase 30.3 (Gate 6): CSV export is one of the affordances a demo/
@@ -514,12 +522,13 @@ export function MatchTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-slot="match-table-toolbar">
         <Input
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder={t('matchData.table.searchPlaceholder', { count: data.length })}
-          className="max-w-xs"
+          // Plan 39.1-49: below 640px the search spans the row; 640+ unchanged.
+          className="max-sm:max-w-none sm:max-w-xs"
           aria-label={t('matchData.table.searchAria')}
         />
 
@@ -594,51 +603,55 @@ export function MatchTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getIsSorted() === 'asc' && ' \u{1F53C}'}
-                    {header.column.getIsSorted() === 'desc' && ' \u{1F53D}'}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={table.getVisibleFlatColumns().length}
-                  className="text-center text-muted-foreground"
-                >
-                  {t('matchData.table.noneFound')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+      {layout === 'stack' ? (
+        <MatchTableStack table={table} t={t} />
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table data-slot="match-table">
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getIsSorted() === 'asc' && ' \u{1F53C}'}
+                      {header.column.getIsSorted() === 'desc' && ' \u{1F53D}'}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={table.getVisibleFlatColumns().length}
+                    className="text-center text-muted-foreground"
+                  >
+                    {t('matchData.table.noneFound')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -777,7 +790,14 @@ function ColumnFilterSelect({
   const { t } = useTranslation();
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-[150px]" aria-label={label}>
+      {/* Plan 39.1-49 (OOS-10): content-sized so the whole "All <label>"
+          reads (capped; a long selected value truncates with its full text
+          as the title); below 640px each select spans the toolbar row. */}
+      <SelectTrigger
+        className="w-auto max-w-[16rem] min-w-[150px] max-sm:w-full max-sm:max-w-none"
+        aria-label={label}
+        title={value !== ALL_FILTER_VALUE ? value : undefined}
+      >
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
@@ -791,5 +811,109 @@ function ColumnFilterSelect({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** Plan 39.1-49: the pairing cells that lead a stacked row (line 1); every other visible cell wraps on line 2. */
+const STACK_SUBJECT_COLUMNS = new Set(['fighter', 'opponentFighter', 'opponentName']);
+
+/**
+ * Plan 39.1-49 (UI-SPEC §6.6 "< 640 tables become stacked rows", §6.5 rules
+ * 1-2): the match table's phone layout, built from each row's OWN visible
+ * cells through the same `flexRender` cell definitions the table uses — one
+ * rendering definition for both layouts. Line 1 is the pairing (fighter vs
+ * opponent fighter, opponent name — its full text as the title) with the
+ * row's actions at its end; line 2 the remaining values (date, stage, type,
+ * result, tournament, notes) as whole tokens that wrap, each with its column
+ * label for assistive tech. Above the list, the sortable columns' header
+ * labels as buttons driving the same sort handlers as the table headers.
+ */
+function MatchTableStack({ table, t }: { table: ReactTableInstance<MatchRow>; t: TFunction }) {
+  const rows = table.getRowModel().rows;
+  const sortable = (table.getHeaderGroups()[0]?.headers ?? []).filter(
+    (header) => !header.isPlaceholder && header.column.getCanSort(),
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      <div
+        className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm"
+        data-slot="match-table-sort"
+      >
+        {sortable.map((header) => (
+          <button
+            key={header.id}
+            type="button"
+            className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={header.column.getToggleSortingHandler()}
+          >
+            {flexRender(header.column.columnDef.header, header.getContext())}
+            {header.column.getIsSorted() === 'asc' && ' \u{1F53C}'}
+            {header.column.getIsSorted() === 'desc' && ' \u{1F53D}'}
+          </button>
+        ))}
+      </div>
+      <ul data-slot="match-table" className="flex flex-col divide-y rounded-md border">
+        {rows.length === 0 ? (
+          <li className="p-3 text-center text-sm text-muted-foreground">
+            {t('matchData.table.noneFound')}
+          </li>
+        ) : (
+          rows.map((row) => {
+            const cells = row.getVisibleCells();
+            const subject = cells.filter((cell) => STACK_SUBJECT_COLUMNS.has(cell.column.id));
+            const actions = cells.find((cell) => cell.column.id === 'actions');
+            const rest = cells.filter(
+              (cell) => !STACK_SUBJECT_COLUMNS.has(cell.column.id) && cell.column.id !== 'actions',
+            );
+            const { fighter, opponentFighter, opponentName } = row.original;
+            const subjectTitle = [
+              `${fighter ? localizedFighterName(fighter.id, t) : t('common.unknown')} ${t('matchups.vs')} ${opponentFighter ? localizedFighterName(opponentFighter.id, t) : t('common.unknown')}`,
+              opponentName,
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            return (
+              <li
+                key={row.id}
+                data-slot="match-table-row"
+                className="flex min-w-0 flex-col gap-2 p-3"
+              >
+                <div className="flex min-w-0 items-start gap-2">
+                  <div
+                    className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium"
+                    title={subjectTitle}
+                  >
+                    {subject.map((cell) => (
+                      <div key={cell.id} className="flex max-w-full min-w-0 items-center gap-2">
+                        <span className="sr-only">{columnLabel(t, cell.column.id)}</span>
+                        {cell.column.id === 'opponentFighter' && (
+                          <span aria-hidden="true" className="text-muted-foreground">
+                            {t('matchups.vs')}
+                          </span>
+                        )}
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </div>
+                    ))}
+                  </div>
+                  {actions && (
+                    <div className="shrink-0">
+                      {flexRender(actions.column.columnDef.cell, actions.getContext())}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                  {rest.map((cell) => (
+                    <div key={cell.id} className="flex max-w-full min-w-0 items-center break-words">
+                      <span className="sr-only">{columnLabel(t, cell.column.id)} </span>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
+                  ))}
+                </div>
+              </li>
+            );
+          })
+        )}
+      </ul>
+    </div>
   );
 }

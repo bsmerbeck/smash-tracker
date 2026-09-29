@@ -22,8 +22,9 @@ import { TrendLine, type TrendLinePeriodLabels } from '@/components/charts/Trend
 const PERIOD_Y_AXIS_AND_PADDING_PX = 60 + 16 * 2;
 
 const FIXTURE_LABELS: TrendLinePeriodLabels = {
-  lockedSentence: 'Period trend locked.',
-  lockedCountLabel: '0 of 8',
+  // Plan 39.1-43: the locked labels are formatters of the kit's { need, have }.
+  lockedSentence: () => 'Period trend locked.',
+  lockedCountLabel: ({ have }) => `${have} of 8`,
   tableToggle: 'View as table',
   tableHeaders: { period: 'Period', record: 'Record', rate: 'Rate', sample: 'Sample' },
 };

@@ -37,6 +37,8 @@ import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
 
 /** WR-C06 (39.1-REVIEW.md): a stable id the show-all/show-fewer toggle's `aria-controls` points at — this component mounts once per `FighterAnalysisPage`, so a single static id is safe. */
 const STAGE_GUIDE_TABLE_ID = 'matchup-stage-guide-table';
@@ -105,8 +107,17 @@ function stageCell(
  * present, and a mixed-context badge flags a session-type/provenance split —
  * the same claim shape every other advisor surface renders from (D-13).
  */
-export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] }) {
+export function MatchupStageGuide({
+  fighterMatches,
+  layout: layoutOverride,
+}: {
+  fighterMatches: Match[];
+  /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
+  layout?: RowLayout;
+}) {
   const { t } = useTranslation();
+  // Plan 39.1-49 (UI-SPEC §6.6): exactly one root mounts per render.
+  const layout = useRowLayout(layoutOverride);
   const subjectPath = useSubjectPath();
   const [threshold, setThreshold] = useMinStageMatches();
   // IN-06 (39.1-REVIEW iteration 2): associates the visible caption with the
@@ -134,7 +145,9 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      {/* Plan 39.1-49: below 640px the min-matches control stacks under the
+          title (no word-per-line title column); sm: restores today's row. */}
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <CardTitle>{t('fighterAnalysis.guide.title')}</CardTitle>
@@ -168,66 +181,139 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
           </p>
         ) : (
           <>
-            <Table id={STAGE_GUIDE_TABLE_ID}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('matchups.opponent')}</TableHead>
-                  <TableHead>{t('matchups.stageTable.record')}</TableHead>
-                  <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
-                  <TableHead>{t('matchups.insights.bestStage')}</TableHead>
-                  <TableHead>{t('matchups.insights.worstStage')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            {layout === 'stack' ? (
+              // Plan 39.1-49 (UI-SPEC §6.6 / §6.5 rules 1-2): one stacked row
+              // per opponent fighter — line 1 the sprite and name in the one
+              // flexible truncating slot, then record and rate as whole
+              // tokens; line 2 the best and worst stage, each behind its
+              // visible header label (two same-typed values told apart) and
+              // keeping its own link.
+              <ul
+                id={STAGE_GUIDE_TABLE_ID}
+                data-slot="matchup-stage-guide"
+                className="flex flex-col divide-y"
+              >
                 {visibleRows.map((row) => {
                   const sprite = getFighterById(row.opponentFighterId);
+                  const name = sprite
+                    ? localizedFighterName(row.opponentFighterId, t)
+                    : t('common.unknown');
                   return (
-                    <TableRow key={row.opponentFighterId}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {sprite && (
-                            <img src={sprite.url} alt="" className="size-6 object-contain" />
-                          )}
-                          <span>
-                            {sprite
-                              ? localizedFighterName(row.opponentFighterId, t)
-                              : t('common.unknown')}
+                    <li
+                      key={row.opponentFighterId}
+                      data-slot="stage-guide-row"
+                      className="flex min-w-0 flex-col gap-1 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        {sprite && (
+                          <img src={sprite.url} alt="" className="size-6 shrink-0 object-contain" />
+                        )}
+                        <span title={name} className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {name}
+                        </span>
+                        <span className="shrink-0 text-sm whitespace-nowrap tabular-nums">
+                          <span className="sr-only">{t('matchups.stageTable.record')} </span>
+                          {row.record.wins}-{row.record.losses}
+                        </span>
+                        <span className="shrink-0 text-sm whitespace-nowrap text-muted-foreground tabular-nums">
+                          <span className="sr-only">{t('matchups.stageTable.winRate')} </span>
+                          {row.record.winRate}%
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                        <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                          <span className="text-muted-foreground">
+                            {t('matchups.insights.bestStage')}
                           </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {row.record.wins}-{row.record.losses}
-                      </TableCell>
-                      <TableCell>{row.record.winRate}%</TableCell>
-                      <TableCell>
-                        {stageCell(
-                          row.bestStage,
-                          row.opponentFighterId,
-                          t,
-                          refreshedAt,
-                          subjectPath,
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {stageCell(
-                          row.worstStage,
-                          row.opponentFighterId,
-                          t,
-                          refreshedAt,
-                          subjectPath,
-                        )}
-                      </TableCell>
-                    </TableRow>
+                          {stageCell(
+                            row.bestStage,
+                            row.opponentFighterId,
+                            t,
+                            refreshedAt,
+                            subjectPath,
+                          )}
+                        </span>
+                        <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                          <span className="text-muted-foreground">
+                            {t('matchups.insights.worstStage')}
+                          </span>
+                          {stageCell(
+                            row.worstStage,
+                            row.opponentFighterId,
+                            t,
+                            refreshedAt,
+                            subjectPath,
+                          )}
+                        </span>
+                      </div>
+                    </li>
                   );
                 })}
-                <UnknownRow bucket={unknown} as="tr" />
-              </TableBody>
-            </Table>
+                <UnknownRow bucket={unknown} as="li" />
+              </ul>
+            ) : (
+              <Table id={STAGE_GUIDE_TABLE_ID} data-slot="matchup-stage-guide">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('matchups.opponent')}</TableHead>
+                    <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                    <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                    <TableHead>{t('matchups.insights.bestStage')}</TableHead>
+                    <TableHead>{t('matchups.insights.worstStage')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleRows.map((row) => {
+                    const sprite = getFighterById(row.opponentFighterId);
+                    return (
+                      <TableRow key={row.opponentFighterId}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {sprite && (
+                              <img src={sprite.url} alt="" className="size-6 object-contain" />
+                            )}
+                            <span>
+                              {sprite
+                                ? localizedFighterName(row.opponentFighterId, t)
+                                : t('common.unknown')}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {row.record.wins}-{row.record.losses}
+                        </TableCell>
+                        <TableCell>{row.record.winRate}%</TableCell>
+                        <TableCell>
+                          {stageCell(
+                            row.bestStage,
+                            row.opponentFighterId,
+                            t,
+                            refreshedAt,
+                            subjectPath,
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {stageCell(
+                            row.worstStage,
+                            row.opponentFighterId,
+                            t,
+                            refreshedAt,
+                            subjectPath,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  <UnknownRow bucket={unknown} as="tr" />
+                </TableBody>
+              </Table>
+            )}
             {hasMore && (
               <Button
                 type="button"
                 variant="link"
                 size="sm"
+                className={MUTED_LINK_TONE}
                 onClick={() => setExpanded((prev) => !prev)}
                 aria-expanded={expanded}
                 aria-controls={STAGE_GUIDE_TABLE_ID}

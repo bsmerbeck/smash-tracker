@@ -231,7 +231,17 @@ async function resolveDoorRegion(doorRegion: string): Promise<HTMLElement> {
 
 /** Finds, within `region`, the link whose href's `claim` query param starts with `<templateId>:` — decoding the query string so a percent-encoded `:` (`%3A`) never causes a false miss. */
 function findDoorForTemplate(region: HTMLElement, templateId: InsightTemplateId): HTMLElement {
-  const links = within(region).getAllByRole('link');
+  // Plan 39.1-40: a card's MARK may link to the same counted games (TiltCost's
+  // "Next game" dumbbell row) but its text is a rate, not the door's count
+  // label — on a surface with InsightCard doors rows, the door is a doors-row
+  // link. Every other surface keeps searching its whole region.
+  const doorRows = Array.from(
+    region.querySelectorAll<HTMLElement>('[data-slot="insight-card-doors"]'),
+  );
+  const links =
+    doorRows.length > 0
+      ? doorRows.flatMap((row) => within(row).queryAllByRole('link'))
+      : within(region).getAllByRole('link');
   for (const link of links) {
     const href = link.getAttribute('href') ?? '';
     const queryPart = href.split('?')[1]?.split('#')[0] ?? '';

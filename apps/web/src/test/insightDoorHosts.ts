@@ -1,4 +1,5 @@
 import type { InsightTemplateId, Match } from '@smash-tracker/shared';
+import { ACCOUNT_SCOPE, TRENDS_READ_TEMPLATES } from '@smash-tracker/shared';
 
 /**
  * Plan 39.1-29 (gap closure, SC4/INS-04): the registry-driven, typed host
@@ -111,6 +112,7 @@ const TRENDS_RAIL_TEMPLATE_IDS: InsightTemplateId[] = [
   'sessionFatigue',
   'bestMatchup',
   'worstMatchup',
+  'lastEventRecap',
 ];
 
 function fighterRailScopeKey(fighterId: number): string {
@@ -519,7 +521,48 @@ function sessionFatigueFixture(): Match[] {
   return matches;
 }
 
-type TrendsRailTemplateId = 'ratingMove' | 'tiltCost' | 'sessionFatigue';
+/**
+ * Plan 39.1-40 (D-14): the Trends rail back-fills its account-scope FACT
+ * cards (Best record, Toughest record, LastEventRecap) only when its OWN
+ * reads hold no locked candidate. 30 games, one per minute, alternating win
+ * / loss so no two losses are consecutive (TiltCost finds no spot and builds
+ * nothing), wins against one opponent character and losses against another
+ * (a distinct Best and Toughest record), one session (SessionFatigue hidden)
+ * and every game inside RatingMove's window (collapsed, a fact). For
+ * LastEventRecap the trailing 6 games carry an event name. Each counted set
+ * (15 / 15 / 6) is smaller than the Trends terminus base (30), per WR-04.
+ */
+function trendsBackfillFixture(target: 'bestMatchup' | 'worstMatchup' | 'lastEventRecap'): Match[] {
+  const now = Date.now();
+  const total = 30;
+  const matches = Array.from({ length: total }, (_, i) => {
+    const win = i % 2 === 0;
+    return mk({
+      id: `tbf-${i}`,
+      fighter_id: FOX_ID,
+      opponent_id: win ? LUIGI_ID : DK_ID,
+      time: now - (total - i) * MINUTE,
+      win,
+      ...(target === 'lastEventRecap' && i >= total - 6 ? { eventName: 'Genesis 12' } : {}),
+    });
+  });
+  // The host is only meaningful while the rail's own reads hold no locked
+  // candidate — assert it here, so a later engine change cannot make this
+  // host silently vacuous.
+  const nowMs = Date.now();
+  const lockedOwn = TRENDS_READ_TEMPLATES.flatMap((template) =>
+    template.build({ matches, scope: ACCOUNT_SCOPE, horizon: DEFAULT_HORIZON, nowMs }),
+  ).filter((insight) => insight.state === 'locked');
+  if (lockedOwn.length > 0) {
+    throw new Error(
+      `trendsBackfillFixture: own reads hold a locked candidate (${lockedOwn.map((i) => i.id).join(', ')}) — the back-fill would not render`,
+    );
+  }
+  return matches;
+}
+
+type TrendsRailTemplateId =
+  'ratingMove' | 'tiltCost' | 'sessionFatigue' | 'bestMatchup' | 'worstMatchup' | 'lastEventRecap';
 
 function trendsRailHostFor(target: TrendsRailTemplateId): InsightDoorHost {
   return {
@@ -534,7 +577,9 @@ function trendsRailHostFor(target: TrendsRailTemplateId): InsightDoorHost {
           ? ratingMoveFixture()
           : target === 'tiltCost'
             ? tiltCostFixture()
-            : sessionFatigueFixture();
+            : target === 'sessionFatigue'
+              ? sessionFatigueFixture()
+              : trendsBackfillFixture(target);
       return {
         matches,
         primaryFighterId: MARIO_ID,
@@ -670,29 +715,24 @@ const TRENDS_MIX_HOST: InsightDoorHost = {
 };
 
 /**
- * Reachability finding (plan 39.1-29, recorded verbatim in the SUMMARY):
- * `bestMatchup`/`worstMatchup` ARE wired into `MatchDataRail.tsx`'s and
- * `TrendsReadsRail.tsx`'s own `RAIL_TEMPLATES` arrays, but both templates
- * guard `if (scope.kind !== 'character') return null` internally
- * (`bestWorstMatchup.ts`), and both rails call `template.build({ ..., scope:
- * ACCOUNT_SCOPE })` — `ACCOUNT_SCOPE.kind === 'account'`. Each rail's OWN
- * source doc comment says this explicitly: "they never actually contribute
- * a card here today — they're wired for consistency with the other two
- * rails". This is confirmed, documented, INTENTIONAL production behavior
- * (not a bug this test-only plan may fix, per its own prohibition) — so
- * Match Data rail and Trends reads rail are NOT live hosts for these two
- * templates, contradicting this plan's own must_haves hypothesis ("bestMatchup,
- * worstMatchup -> Fighter Analysis rail, Match Data rail, Trends reads
- * rail"). Their only live host is the Fighter Analysis rail, where
- * `FighterInsightRail.tsx` calls them with a real character scope.
+ * Reachability finding (plan 39.1-29, rewritten by plan 39.1-40):
+ * `bestMatchup` / `worstMatchup` / `lastEventRecap` keep their
+ * `scope.kind !== 'character'` guard as TEMPLATES, so Match Data's
+ * account-scoped rail still gets nothing from them (documented, unchanged).
+ * The Trends reads rail no longer calls those templates: it builds its
+ * back-fill through the engine's account-scope core
+ * (`trendsReads.ts` `buildTrendsBackfillInsights`), assembled by
+ * `assembleTrendsRail` whenever its own reads hold no locked candidate
+ * (D-14, D-07). So all three templates now have TWO live hosts — the Fighter
+ * Analysis rail (character scope) and the Trends reads rail (account scope).
  */
 export const INSIGHT_DOOR_HOSTS: Record<InsightTemplateId, readonly InsightDoorHost[]> = {
   formNow: [FIGHTER_HERO_HOST, MATCHUPS_CHART_HOST, OPPONENT_HUB_HOST],
   characterMovers: [fighterRailHostFor('characterMovers')],
   rivalMovers: [fighterRailHostFor('rivalMovers')],
-  lastEventRecap: [fighterRailHostFor('lastEventRecap')],
-  bestMatchup: [fighterRailHostFor('bestMatchup')],
-  worstMatchup: [fighterRailHostFor('worstMatchup')],
+  lastEventRecap: [fighterRailHostFor('lastEventRecap'), trendsRailHostFor('lastEventRecap')],
+  bestMatchup: [fighterRailHostFor('bestMatchup'), trendsRailHostFor('bestMatchup')],
+  worstMatchup: [fighterRailHostFor('worstMatchup'), trendsRailHostFor('worstMatchup')],
   rosterCore: [matchDataRailHostFor('rosterCore')],
   rosterShift: [matchDataRailHostFor('rosterShift')],
   secondaryPayoff: [matchDataRailHostFor('secondaryPayoff')],

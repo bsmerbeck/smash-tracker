@@ -83,4 +83,16 @@ i18n
     },
   });
 
+/**
+ * Plan 39.1-51 (OOS-40-B; UI-SPEC §5 "Thousands separators through
+ * `Intl.NumberFormat(i18n.language)`"): the `grouped` interpolation format,
+ * used by every game-count placeholder in insight copy (`{{count, grouped}}`).
+ * A number is grouped for the rendering language (en 1,425 · de 1.425); a
+ * string — a count a host already formatted — passes through unchanged, where
+ * i18next's built-in `number` format would print "NaN".
+ */
+i18n.services.formatter?.add('grouped', (value: unknown, lng: string | undefined) =>
+  typeof value === 'number' ? new Intl.NumberFormat(lng).format(value) : String(value),
+);
+
 export default i18n;

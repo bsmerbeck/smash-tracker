@@ -36,8 +36,14 @@ function StageRow({
   const recordText = `${record.wins}–${record.losses}`;
 
   return (
+    // Plan 39.1-49 (OOS-3; UI-SPEC §8.4 "< 640 the bar drops below the name
+    // line", §6.5 rules 1-2): a named row container. Below a 480px row width
+    // line 2 (bar + record) wraps under line 1 (name + chevron), starting at
+    // the name's left edge (thumb 32px + gap 12px); at 480px and wider both
+    // wrappers are `display: contents` and the chevron is ordered last, so
+    // the one-line row is unchanged.
     <li
-      className="relative flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+      className="@container/stage-row relative flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md p-2 hover:bg-accent"
       data-slot="stage-row"
     >
       <DrillableRow
@@ -61,14 +67,24 @@ function StageRow({
           {stageAbbreviation(name)}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
-        {name}
-      </span>
-      <span className="shrink-0">
-        <RecordBar wins={record.wins} losses={record.losses} />
-      </span>
-      <Record wins={record.wins} losses={record.losses} cue="none" />
-      <DrillableRowChevron />
+      <div
+        className="flex min-w-0 flex-1 items-center gap-3 @min-[480px]/stage-row:contents"
+        data-slot="stage-row-line1"
+      >
+        <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
+          {name}
+        </span>
+        <DrillableRowChevron className="@min-[480px]/stage-row:order-last" />
+      </div>
+      <div
+        className="flex basis-full items-center gap-3 pl-11 @min-[480px]/stage-row:contents"
+        data-slot="stage-row-line2"
+      >
+        <span className="shrink-0">
+          <RecordBar wins={record.wins} losses={record.losses} />
+        </span>
+        <Record wins={record.wins} losses={record.losses} cue="none" />
+      </div>
     </li>
   );
 }
@@ -116,24 +132,31 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
         <CardDescription>{t('analytics.list.sortMostGames')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <StatRow
-          figures={[
-            <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
-            <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
-            <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
-          ]}
-        />
-        <BoundedList
-          cap={LIST_CAP}
-          rows={rows}
-          labels={{
-            showAll: t('analytics.list.showAll', { count: records.length }),
-            showFewer: t('analytics.list.showFewer'),
-            showMore: t('analytics.list.showMore50'),
-            terminus: t('analytics.list.allStages', { count: records.length }),
-          }}
-          empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
-        />
+        {/* Plan 39.1-49: a layout-neutral text-fit hook (display: contents —
+            the CardContent's own flex column still lays these children out). */}
+        <div data-slot="stage-breakdown" className="contents">
+          <StatRow
+            // Plan 39.1-38: three short figures stay three-up on a phone
+            // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
+            fixedColumns
+            figures={[
+              <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
+              <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
+              <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
+            ]}
+          />
+          <BoundedList
+            cap={LIST_CAP}
+            rows={rows}
+            labels={{
+              showAll: t('analytics.list.showAll', { count: records.length }),
+              showFewer: t('analytics.list.showFewer'),
+              showMore: t('analytics.list.showMore50'),
+              terminus: t('analytics.list.allStages', { count: records.length }),
+            }}
+            empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
+          />
+        </div>
       </CardContent>
     </Card>
   );

@@ -116,6 +116,15 @@ export interface BuildPeriodSeriesOptions {
   target?: number;
   /** Reserved for API-shape parity with `computeInsights(matches, horizon, nowMs)`; the ladder needs no "now" reference — a period is defined entirely by its own games' timestamps. */
   nowMs?: number;
+  /**
+   * Plan 39.1-41 (sketch 003 A, MANIFEST 2026-09-25 "quarterly trend", PD-41-1):
+   * the FINEST grain the ladder may choose. The walk starts at this rung and
+   * still climbs past it while its point count exceeds `target` — never
+   * clamped. Scoped (Matchups) trends start at `quarter`; omitted, the whole
+   * ladder is walked from `game`. Point keys and `periodPointMatchIdsForKey`
+   * are unchanged: a key still names its own grain.
+   */
+  minGrain?: PeriodGrain;
 }
 
 function toPeriodPoint(input: {
@@ -312,6 +321,65 @@ function yearKey(ms: number): string {
   return `${new Date(ms).getUTCFullYear()}`;
 }
 
+/** The four calendar grains — every one a UTC bucket with a closed-open `[startMs, endMs)` span. */
+export type CalendarGrain = 'week' | 'month' | 'quarter' | 'year';
+
+/** One UTC calendar bucket: its period key (identical to the key `buildPeriodSeries` emits for the same bucket), its locale-independent label and its `[startMs, endMs)` span. */
+export interface CalendarBucket {
+  key: string;
+  label: string;
+  startMs: number;
+  /** Exclusive — the next bucket's `startMs`. */
+  endMs: number;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Plan 39.1-34: THE one UTC calendar bucket rule, shared by
+ * `buildPeriodSeries` (through the same private key functions below) and
+ * the career timeline (`careerTimeline.ts`) — never a second bucketing
+ * algorithm. Returns the bucket containing `ms`: ISO weeks start Monday
+ * 00:00 UTC; months, quarters and years start on their UTC calendar
+ * boundaries. `endMs` is exclusive.
+ */
+export function calendarBucketBounds(grain: CalendarGrain, ms: number): CalendarBucket {
+  const d = new Date(ms);
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  let label: string;
+  let startMs: number;
+  let endMs: number;
+  switch (grain) {
+    case 'week': {
+      const dayStart = Date.UTC(year, month, d.getUTCDate());
+      const isoDayNumber = new Date(dayStart).getUTCDay() || 7; // Monday=1 .. Sunday=7
+      startMs = dayStart - (isoDayNumber - 1) * MS_PER_DAY;
+      endMs = startMs + 7 * MS_PER_DAY;
+      label = isoWeekKey(ms);
+      break;
+    }
+    case 'month':
+      startMs = Date.UTC(year, month, 1);
+      endMs = Date.UTC(year, month + 1, 1);
+      label = monthKey(ms);
+      break;
+    case 'quarter': {
+      const firstMonth = Math.floor(month / 3) * 3;
+      startMs = Date.UTC(year, firstMonth, 1);
+      endMs = Date.UTC(year, firstMonth + 3, 1);
+      label = quarterKey(ms);
+      break;
+    }
+    case 'year':
+      startMs = Date.UTC(year, 0, 1);
+      endMs = Date.UTC(year + 1, 0, 1);
+      label = yearKey(ms);
+      break;
+  }
+  return { key: `${grain}:${label}`, label, startMs, endMs };
+}
+
 /** Groups `matches` by a UTC-derived key function into one `PeriodPoint` per distinct key. */
 function buildKeyedPoints(
   matches: Match[],
@@ -364,24 +432,26 @@ function sortPoints(points: PeriodPoint[]): PeriodPoint[] {
 
 /**
  * VIZ-01: picks the FINEST grain of `game → set → eventSession → week →
- * month → quarter → year` whose emitted point count is at or below `target`.
+ * month → quarter → year` (starting at `minGrain` when given) whose emitted
+ * point count is at or below `target`.
  * Only periods containing at least one countable game are ever emitted —
  * an empty period is absent, not zero-valued. Over zero matches, returns an
- * empty series at the finest grain (`game`) with `boundReached: true` — a
+ * empty series at the finest grain (`game`, or `minGrain`) with `boundReached: true` — a
  * named grain and no synthetic period, never a throw.
  */
 export function buildPeriodSeries(options: BuildPeriodSeriesOptions): PeriodSeries {
-  const { matches, target = MARK_BOUND_LINE_POINTS } = options;
+  const { matches, target = MARK_BOUND_LINE_POINTS, minGrain } = options;
   void options.domain; // bookkeeping only — see `BuildPeriodSeriesOptions.domain`'s doc comment.
   void options.nowMs; // reserved for call-shape parity; unused by the ladder itself.
 
   const countable = matches.filter(isCountableGame);
 
-  let chosenGrain: PeriodGrain = 'game';
+  const ladder = PERIOD_GRAIN_LADDER.slice(minGrain ? PERIOD_GRAIN_LADDER.indexOf(minGrain) : 0);
+  let chosenGrain: PeriodGrain = ladder[0]!;
   let chosenPoints: PeriodPoint[] = [];
   let boundReached = false;
 
-  for (const grain of PERIOD_GRAIN_LADDER) {
+  for (const grain of ladder) {
     const points = sortPoints(buildPointsForGrain(grain, countable));
     chosenGrain = grain;
     chosenPoints = points;
@@ -425,6 +495,7 @@ export function periodPointKeyByMatchId(series: PeriodSeries): Map<string, strin
  * request rather than an unlabeled second call to `buildPeriodSeries`.
  * Delegates to the exact same ladder — there is only ONE binning algorithm
  * in this module, never a second, divergent one for the narrow-plot case.
+ * A caller's `minGrain` (plan 39.1-41) passes straight through.
  */
 export function regrainFor(options: BuildPeriodSeriesOptions & { target: number }): PeriodSeries {
   return buildPeriodSeries(options);

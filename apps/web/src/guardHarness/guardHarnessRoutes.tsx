@@ -9,6 +9,8 @@ import { TrendsPage } from '@/pages/Trends/TrendsPage';
 import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { OpponentHubPage } from '@/pages/Opponents/OpponentHubPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
+import { GspPage } from '@/pages/Gsp/GspPage';
+import { ScoutPage } from '@/pages/Scout/ScoutPage';
 
 /**
  * The layout-oracle harness's route table (Phase 39.1 Plan 09, review
@@ -51,7 +53,11 @@ export interface GuardHarnessRouteEntry {
    * MainLayout-geometry wrapper (`GuardAppShell.tsx`) so its content is
    * measured at production content widths, not the harness's default raw
    * viewport width. Omitted (mounts unwrapped, today's behaviour) for every
-   * route except `matchups`.
+   * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
+   * `trends-casual`, (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
+   * capture-only `gsp`, (plan 39.1-51) the three `*-games` drill routes,
+   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin` and (plan
+   * 39.1-43) `fighter-analysis-recent`.
    */
   shell?: 'app';
 }
@@ -107,6 +113,18 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     loadedMarker: '[data-slot="dashboard-body"]',
   },
   {
+    // Plan 39.1-39 (record-fit): the SAME Dashboard page at the SAME path,
+    // measured inside the MainLayout-geometry shell (the `trends-career`
+    // precedent) — production card widths, where 39.1-36's shelled capture
+    // recorded the Casual vs Competitive / Online vs Offline overprint.
+    id: 'dashboard-app',
+    path: '/dashboard',
+    initialEntry: '/dashboard',
+    element: <DashboardPage />,
+    loadedMarker: '[data-slot="dashboard-body"]',
+    shell: 'app',
+  },
+  {
     id: 'fighter-analysis',
     path: '/fighter-analysis',
     initialEntry: '/fighter-analysis',
@@ -117,6 +135,27 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     id: 'matchups',
     path: '/matchups',
     initialEntry: '/matchups',
+    element: <MatchupsPage />,
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-41 (sketch 003 tracer): the Matchups page on sketch 003's own
+    // data (guardLayout / capture:matchups-fidelity send
+    // `x-guard-layout-scale: sketch003`) — the deep pairing, Cloud vs
+    // Pyra/Mythra (102 games) ...
+    id: 'matchups-sketch-deep',
+    path: '/matchups',
+    initialEntry: '/matchups?fighter=65&vs=84',
+    element: <MatchupsPage />,
+    loadedMarker: '[data-slot="matchup-chart-body"]',
+    shell: 'app',
+  },
+  {
+    // ... and the thin pairing, Pikachu vs Joker (11 games).
+    id: 'matchups-sketch-thin',
+    path: '/matchups',
+    initialEntry: '/matchups?fighter=9&vs=76',
     element: <MatchupsPage />,
     loadedMarker: '[data-slot="matchup-chart-body"]',
     shell: 'app',
@@ -134,6 +173,29 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/trends',
     element: <TrendsPage />,
     loadedMarker: '[data-slot="trends-hero-body"]',
+  },
+  {
+    // Plan 39.1-34: the career timeline's oracle route — the SAME Trends page
+    // at the SAME path, fed the harness's sparg0-shaped `career` fixture
+    // (guardLayout sends `x-guard-layout-scale: career` for this id) and
+    // measured inside the MainLayout-geometry shell at production widths.
+    id: 'trends-career',
+    path: '/trends',
+    initialEntry: '/trends',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-35: the casual-account oracle route — the Trends page at the
+    // SAME path, fed the harness's 41-game `casual` fixture (guardLayout sends
+    // `x-guard-layout-scale: casual` for this id): the timeline's thin state.
+    id: 'trends-casual',
+    path: '/trends',
+    initialEntry: '/trends',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="trends-hero-body"]',
+    shell: 'app',
   },
   {
     id: 'opponents',
@@ -155,6 +217,82 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     initialEntry: '/stages/1',
     element: <StageDetailPage />,
     loadedMarker: '[data-slot="stage-detail-body"]',
+  },
+  {
+    // Plan 39.1-39 (deferred from 39.1-37): the SAME stage page on the
+    // harness's `recent` scale (guardLayout sends `x-guard-layout-scale:
+    // recent`), in the MainLayout-geometry shell — ~150 session anchors on
+    // Battlefield, the mark-count family's over-the-bound account.
+    id: 'stage-detail-recent',
+    path: '/stages/:stageId',
+    initialEntry: '/stages/1',
+    element: <StageDetailPage />,
+    loadedMarker: '[data-slot="stage-detail-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-43 (OOS-6, 39.1-39 whole-page review): the Fighter hero on
+    // the harness's `recent` scale (guardLayout sends `x-guard-layout-scale:
+    // recent`), in the MainLayout-geometry shell — where 39.1-39's capture
+    // showed the "NN% all time" reference label over the last period dots.
+    id: 'fighter-analysis-recent',
+    path: '/fighter-analysis',
+    initialEntry: '/fighter-analysis',
+    element: <FighterAnalysisPage />,
+    loadedMarker: '[data-slot="fighter-hero-body"]',
+    shell: 'app',
+  },
+  // Plan 39.1-51 (OOS-8): the three hosts that mount the results list
+  // (`FilteredMatchList`) only under a drill axis, drilled with `?from=1`
+  // (every game), in the MainLayout-geometry shell — so guard:layout's
+  // last-row-visible family measures them and capture:design shoots them.
+  {
+    id: 'fighter-analysis-games',
+    path: '/fighter-analysis',
+    initialEntry: '/fighter-analysis?from=1',
+    element: <FighterAnalysisPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    shell: 'app',
+  },
+  {
+    id: 'match-data-games',
+    path: '/match-data',
+    initialEntry: '/match-data?from=1',
+    element: <MatchDataPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    shell: 'app',
+  },
+  {
+    id: 'trends-games',
+    path: '/trends',
+    initialEntry: '/trends?from=1',
+    element: <TrendsPage />,
+    loadedMarker: '[data-slot="filtered-match-list"] [data-total-rows]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): a
+    // CAPTURE-ONLY route — `captureDesignScreens.mjs` screenshots the GSP
+    // page's three chart.js charts on its `gsp` fixture scale. It is never
+    // one of guard:layout's `LAYOUT_ORACLE_ROUTES` (GSP stays chart.js until
+    // Phase 41 and is not an analytics route).
+    id: 'gsp',
+    path: '/gsp',
+    initialEntry: '/gsp',
+    element: <GspPage />,
+    loadedMarker: '[data-slot="gsp-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.1-49: the Scout page, unshelled like the other real routes.
+    // Its report exists only after the search form's POST /api/scout (the
+    // fixture plugin answers it), so guard:layout's `scout` route drives the
+    // form and expands Full analysis before this marker appears.
+    id: 'scout',
+    path: '/scout',
+    initialEntry: '/scout',
+    element: <ScoutPage />,
+    loadedMarker: '[data-slot="scout-full-analysis"][data-state="open"]',
   },
 ];
 

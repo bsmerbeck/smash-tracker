@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import type {
   Fighter,
   HorizonKey,
@@ -11,66 +10,35 @@ import type {
   PeriodPoint,
   PeriodSeries,
 } from '@smash-tracker/shared';
-import {
-  ABSTENTION_FLOOR_GAMES,
-  PERIOD_TREND_MIN_PERIODS,
-  classify,
-  confidenceTierFor,
-  resolveWindow,
-  toRateValue,
-} from '@smash-tracker/shared';
+import { PERIOD_TREND_MIN_PERIODS, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { FormStrip } from '@/components/charts/FormStrip';
-import { ShareBar, type ShareBarSegment } from '@/components/charts/inlineMarks';
-import { CHART_H_COMPACT } from '@/components/charts/tokens';
-import { StatRow, StatFigure } from '@/components/analytics/StatRow';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
-import { Record } from '@/components/analytics/Record';
+import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
+import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';
+import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
-import { buildFormStripEvents } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  formStripLabels,
+  formStripRecentWindow,
+  formStripWindowNote,
+} from '@/lib/formStripEvents';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
-import { getMatchTypeRecords } from '@/lib/stats';
 import { formatPercent } from '@/lib/formatPercent';
 
-/**
- * The three recent-window figures the hero's `StatRow` renders as buttons —
- * a SECOND control for the same page-level persisted horizon `useHorizon`
- * owns (D-06). Order is fixed, matching UI-SPEC §8.1's stat row.
- */
-const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
+/** UI-SPEC §8.5 / sketch 001-C: the hero strip draws at most the last 60 games. */
+const HERO_STRIP_LIMIT = 60;
 
 /** `InsightKind` (engine) -> `ClaimChipKind` (UI). Duplicated per this codebase's small-helper-duplication convention (see `MatchupChart.tsx`'s `claimChipKindFor`). */
 function claimChipKindFor(kind: InsightKind): ClaimChipKind {
   if (kind === 'inference') return 'trend';
   if (kind === 'recommendation') return 'suggestion';
   return 'fact';
-}
-
-/** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union (duplicated, see `MatchWinLossCard.tsx`). */
-function deltaChipStateFor(
-  state: ReturnType<typeof classify>['state'],
-  deltaPoints: number | null,
-): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
 }
 
 /** `●●● / ●●○ / ●○○ / ○○○` — duplicated from `Record.tsx`'s own private map (not exported); see the small-helper-duplication convention. */
@@ -160,25 +128,6 @@ export function FighterHero({
     allMatches.length > 0 ? Math.round((fighterMatches.length / allMatches.length) * 100) : 0;
   const allTimeTier = confidenceTierFor(baselineAllTime.total);
 
-  const horizonFigures = useMemo(() => {
-    return RECENT_HORIZON_KEYS.map((key) => {
-      const { window, matches: recentMatches } = resolveWindow({
-        matches: fighterMatches,
-        horizon: key,
-        scoped: true,
-        nowMs,
-      });
-      const recentRate = toRateValue(recentMatches);
-      const { state, deltaPoints } = classify({
-        recent: recentRate,
-        baseline: baselineAllTime,
-        scoped: true,
-        hasAction: false,
-      });
-      return { key, window, recentRate, state, deltaPoints };
-    });
-  }, [fighterMatches, baselineAllTime, nowMs]);
-
   const overallRatePercent = baselineAllTime.rate * 100;
   const recentWindow = useMemo(
     () => ({
@@ -191,17 +140,11 @@ export function FighterHero({
     // WR-04 (39.1-REVIEW.md): the SAME builder Matchups uses — manual games
     // split into 3-hour sessions named "Session · <date>", never one
     // `__manual__` bucket captioned "Unknown".
-    () => buildFormStripEvents(fighterMatches, recentWindow, t, i18n.language),
-    [fighterMatches, recentWindow, t, i18n.language],
+    // Plan 39.1-42: the strip dims nothing when the horizons collapse.
+    () =>
+      buildFormStripEvents(fighterMatches, formStripRecentWindow(formNowInsight), t, i18n.language),
+    [fighterMatches, formNowInsight, t, i18n.language],
   );
-
-  const typeRecords = useMemo(() => getMatchTypeRecords(fighterMatches), [fighterMatches]);
-
-  function handleSelectHorizon(next: HorizonKey): void {
-    // T-39.1-14-03: never write a horizon while the match query is loading.
-    if (isLoading) return;
-    setHorizon(next);
-  }
 
   if (!hasMatches) {
     return (
@@ -251,127 +194,6 @@ export function FighterHero({
       })
     : '';
 
-  const allTimeFigure = (
-    <StatFigure
-      key="all-time"
-      label={t('fighterAnalysis.hero.allTime')}
-      value={`${Math.round(overallRatePercent)}%`}
-      lead
-      support={
-        <Record
-          wins={baselineAllTime.wins}
-          losses={baselineAllTime.losses}
-          cueLabel={
-            allTimeTier
-              ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
-              : undefined
-          }
-        />
-      }
-    />
-  );
-
-  const recentFigureNodes = horizonFigures.map(({ key, recentRate, state, deltaPoints }) => {
-    const isPressed = horizon === key;
-
-    if (state === 'locked') {
-      const gamesNeeded = Math.max(0, ABSTENTION_FLOOR_GAMES - recentRate.total);
-      return (
-        <StatFigure
-          key={key}
-          label={t(`insights.horizon.short.${key}`)}
-          state="empty"
-          emptyCaption={t('fighterAnalysis.hero.figureLocked', { count: gamesNeeded })}
-          onSelect={() => handleSelectHorizon(key)}
-          pressed={isPressed}
-        />
-      );
-    }
-
-    if (state === 'collapsed') {
-      return (
-        <StatFigure
-          key={key}
-          label={t(`insights.horizon.short.${key}`)}
-          state="collapsed"
-          value={t('analytics.stat.collapsedValue')}
-          support={t('analytics.stat.collapsedSupport', {
-            recent: recentRate.total,
-            total: baselineAllTime.total,
-          })}
-          onSelect={() => handleSelectHorizon(key)}
-          pressed={isPressed}
-        />
-      );
-    }
-
-    const chipState = deltaChipStateFor(state, deltaPoints);
-    const isThinRecent = state === 'thinRecent' || state === 'thin';
-    const delta =
-      chipState === 'collapsed' ? null : (
-        <DeltaChip
-          state={chipState}
-          valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-          horizonOwnedByParent
-          ariaLabel={t('analytics.dumbbell.rowAria', {
-            label: t(`insights.horizon.${key}`),
-            recentRecord: `${recentRate.wins}–${recentRate.losses}`,
-            baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
-          })}
-        />
-      );
-
-    return (
-      <StatFigure
-        key={key}
-        label={t(`insights.horizon.short.${key}`)}
-        value={`${Math.round(recentRate.rate * 100)}%`}
-        state={isThinRecent ? 'thinRecent' : 'populated'}
-        support={<Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />}
-        delta={delta}
-        onSelect={() => handleSelectHorizon(key)}
-        pressed={isPressed}
-      />
-    );
-  });
-
-  const shareBarSegments: ShareBarSegment[] = typeRecords.map((record) => {
-    const key = record.matchType === 'unspecified' ? 'none' : record.matchType;
-    const label = t(`analytics.matchType.${key}`, { defaultValue: record.matchType });
-    const rate = {
-      wins: record.wins,
-      losses: record.losses,
-      total: record.total,
-      rate: record.winRate / 100,
-    };
-    const { state, deltaPoints } = classify({
-      recent: rate,
-      baseline: baselineAllTime,
-      scoped: false,
-      hasAction: false,
-    });
-    const chipState = deltaChipStateFor(state, deltaPoints);
-    return {
-      key: record.matchType,
-      label,
-      count: record.total,
-      record: <Record wins={record.wins} losses={record.losses} cue="none" />,
-      delta:
-        chipState === 'collapsed' ? null : (
-          <DeltaChip
-            state={chipState}
-            valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-            horizonOwnedByParent
-            ariaLabel={t('analytics.dumbbell.rowAria', {
-              label,
-              recentRecord: `${record.wins}–${record.losses}`,
-              baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
-            })}
-          />
-        ),
-    };
-  });
-
   // CR-02 (39.1-REVIEW): a period point drills by its own KEY, never by its
   // `[startMs, endMs]` bounds — `eventSession`/`set` groups are not
   // contiguous in time (an interleaved Redemption bracket falls inside a
@@ -392,6 +214,9 @@ export function FighterHero({
         (door) => door.kind === 'games',
       )
     : undefined;
+
+  const overallRateText = `${Math.round(overallRatePercent)}%`;
+  const trendTitle = t(`analytics.trend.title.${periodSeries.grain}`);
 
   const confidenceLabel = allTimeTier
     ? t(`shared.evidence.sampleCueGlyph.${allTimeTier}`, { count: baselineAllTime.total })
@@ -442,32 +267,35 @@ export function FighterHero({
         )}
 
         {/* 3. stat row of four */}
-        <StatRow leadWidth figures={[allTimeFigure, ...recentFigureNodes]} />
+        {/* Plan 39.1-43: the kit's horizon stat row (plan 44's pairing hero renders the same piece). */}
+        <HorizonStatRow
+          matches={fighterMatches}
+          horizon={horizon}
+          onSelectHorizon={setHorizon}
+          disabled={isLoading}
+          nowMs={nowMs}
+        />
 
         {/* 4. form strip. min-w-0 (plan 39.1-20 Task 3 [Rule 1]): without
             it, this flex item refuses to shrink below FormStrip's
             unconstrained (every event on one line) max-content width — see
             FormStrip.tsx's own doc comment for the full mechanism. */}
         <div className="flex min-w-0 flex-col gap-2" data-slot="fighter-hero-strip">
-          <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-            {t('fighterAnalysis.hero.formStrip.title')}
-          </p>
+          {/* Plan 39.1-42 (sketch 001-C / 003): the kit's head carries the
+              overline ("Form · last N games, by event") and the swatch
+              legend — the hero no longer prints its own overline. */}
           <FormStrip
             events={formStripEvents}
-            limit={60}
+            limit={HERO_STRIP_LIMIT}
             labels={{
+              ...formStripLabels(t),
               // WR-03: names the games actually DRAWN of the total (kit-computed).
               summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-              legend: t('analytics.strip.legend'),
-              // Plan 39.1-33 (R1): a formatter — only the kit knows how many
-              // games it actually drew after `limit` AND its own measured-
-              // width fit, so the host no longer computes `shown` itself.
-              shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
+              title: t('analytics.strip.title', {
+                count: Math.min(HERO_STRIP_LIMIT, fighterMatches.length),
+              }),
               empty: <span>{t('analytics.strip.empty')}</span>,
-              windowEmpty:
-                formNowInsight && formNowInsight.window.games === 0
-                  ? t(`analytics.strip.windowEmpty.${horizon}`)
-                  : undefined,
+              windowNote: formStripWindowNote({ insight: formNowInsight, horizon, t }),
             }}
             onSelectSet={(setKey) => onDrill({ eventKey: setKey })}
           />
@@ -475,24 +303,33 @@ export function FighterHero({
 
         {/* 5. period trend */}
         <div className="flex flex-col gap-2" data-slot="fighter-hero-trend">
-          <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-            {t(`fighterAnalysis.hero.trendTitle.${periodSeries.grain}`)}
-          </p>
+          {/* Plan 39.1-43 (sketch 001-C trendSection / 003 trendLegend): the
+              kit's trend head carries the grain overline and the swatch
+              legend (dot, hollow when a sub-floor period is drawn, the
+              all-time rate, the recent band) — plan 37's separate hollow
+              line and the hero's own overline are gone. PD-43-3: the plot
+              draws the sketches' 160px value range. */}
           <TrendLine
             mode="period"
             points={periodSeries.points}
             onSelectPoint={handleSelectPeriodPoint}
             referenceRate={overallRatePercent}
             emphasisStartMs={recentWindow.fromMs ?? undefined}
-            height={CHART_H_COMPACT}
+            valueRangePx={PERIOD_HERO_VALUE_RANGE_PX}
             labels={{
-              lockedSentence: t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, {
-                count: Math.max(0, PERIOD_TREND_MIN_PERIODS - periodSeries.points.length),
-              }),
-              lockedCountLabel: t('insights.state.lockedMeter', {
-                have: periodSeries.points.length,
-                need: PERIOD_TREND_MIN_PERIODS,
-              }),
+              title: trendTitle,
+              legend: {
+                dot: t('analytics.trend.legend.dot'),
+                hollow: t('analytics.trend.legendHollow'),
+                reference: t('analytics.trend.legend.reference', { rate: overallRateText }),
+                band: t(`insights.horizon.${horizon}`),
+              },
+              // PD-43-1: the kit counts the periods at the floor; the
+              // sentence names what is still missing, the meter what exists.
+              lockedSentence: ({ need }) =>
+                t(`analytics.trend.lockedPeriods.${periodSeries.grain}`, { count: need }),
+              lockedCountLabel: ({ have }) =>
+                t('analytics.trend.lockedMeter', { have, need: PERIOD_TREND_MIN_PERIODS }),
               tableToggle: t('analytics.trend.tableToggle'),
               tableHeaders: {
                 period: t('analytics.trend.tableHeaders.period'),
@@ -500,20 +337,16 @@ export function FighterHero({
                 rate: t('analytics.trend.tableHeaders.rate'),
                 sample: t('analytics.trend.tableHeaders.sample'),
               },
-              referenceLabel: `${Math.round(overallRatePercent)}%`,
+              // Plan 39.1-37 (UI-SPEC §7.13, sketch 001-C): "48% all time".
+              referenceLabel: t('analytics.trend.referenceLabel', {
+                rate: overallRateText,
+              }),
             }}
           />
         </div>
 
         {/* 6. by match type */}
-        <ShareBar
-          segments={shareBarSegments}
-          total={fighterMatches.length}
-          headerLabel={t('matchups.insights.byMatchType')}
-          shareSuffix={(pct) => `${pct}%`}
-          emptyNode={t('analytics.share.empty')}
-          ariaSummary={t('analytics.share.aria', { count: fighterMatches.length })}
-        />
+        <MatchTypeShareBar matches={fighterMatches} horizon={horizon} nowMs={nowMs} />
 
         {/* 7. doors */}
         {gamesDoor && (

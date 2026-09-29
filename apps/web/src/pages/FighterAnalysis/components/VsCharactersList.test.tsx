@@ -102,6 +102,60 @@ describe('VsCharactersList', () => {
     expect(screen.queryByText('Thin')).not.toBeInTheDocument();
   });
 
+  describe('plan 39.1-36 (honest-none-chip): sub-floor rows state their window size, never a direction', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    function chipOf(): HTMLElement | null {
+      return document.querySelector('[data-slot="delta-chip"]');
+    }
+
+    it('a row with 2 recent games reads "n 2 · no direction" (the list meta names the horizon)', () => {
+      renderList(subFloorFixture());
+      const chip = chipOf();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('thin');
+      expect(chip!.getAttribute('data-recent-games')).toBe('2');
+      expect(chip!.textContent).toBe('n 2 · no direction');
+    });
+
+    it('a row with 5 recent games reads "n 5 · no direction", never "Thin"', () => {
+      const now = Date.now();
+      const matches = [
+        ...Array.from({ length: 20 }, (_, i) =>
+          makeMatch({
+            id: `old${i}`,
+            time: now - (500 + i) * DAY_MS,
+            win: i % 2 === 0,
+            opponent_id: 2,
+          }),
+        ),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ id: `new${i}`, time: now - (5 - i) * DAY_MS, win: true, opponent_id: 2 }),
+        ),
+      ];
+      renderList(matches);
+      expect(chipOf()!.textContent).toBe('n 5 · no direction');
+      expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+    });
+
+    it('a row with no recent games reads "no games" with no horizon suffix', () => {
+      const now = Date.now();
+      const matches = Array.from({ length: 12 }, (_, i) =>
+        makeMatch({
+          id: `stale${i}`,
+          time: now - (400 + i) * DAY_MS,
+          win: i % 2 === 0,
+          opponent_id: 2,
+        }),
+      );
+      renderList(matches);
+      const chip = chipOf();
+      expect(chip).not.toBeNull();
+      expect(chip!.getAttribute('data-state')).toBe('none');
+      expect(chip!.textContent).toBe('no games');
+    });
+  });
+
   it('states its sort order and window in the meta line', () => {
     renderList(manyOpponentsFixture());
     expect(screen.getByText(/most games first/i)).toBeInTheDocument();

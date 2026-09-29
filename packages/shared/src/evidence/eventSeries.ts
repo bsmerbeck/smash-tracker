@@ -4,6 +4,8 @@ import { isCountableGame, stageBucketId } from './predicate.js';
 import { confidenceTierFor, effectiveFloor } from './policy.js';
 import { getWinLossRecord } from './records.js';
 import { splitIntoSessions } from '../glicko.js';
+import { calendarBucketBounds, type CalendarGrain } from '../insight/periodSeries.js';
+import { MARK_BOUND_LINE_POINTS } from '../insight/markBounds.js';
 import type { ClaimKind, ConfidenceTier } from './types.js';
 
 /**
@@ -261,4 +263,142 @@ export function buildStageEventSeries(input: {
   const onStage = matches.filter((m) => stageBucketId(m) === stageId);
   const countable = onStage.filter(isCountableGame);
   return buildEventSeries(countable, refreshedAt, minMatches);
+}
+
+/**
+ * Plan 39.1-39 (VIZ-01, UI-SPEC §11 "line points at most 60"): the calendar
+ * grains a long event series is binned into for DISPLAY, finest first. The
+ * UTC bucket rule is `insight/periodSeries.ts`'s `calendarBucketBounds` (plan
+ * 39.1-34) — imported, never restated.
+ */
+export const EVENT_BIN_GRAINS: readonly CalendarGrain[] = ['week', 'month', 'quarter', 'year'];
+
+export type EventBinGrain = CalendarGrain;
+
+/** One display bin: consecutive anchors whose first game falls in the same calendar period. Same record shape as an anchor. */
+export interface EventBin extends Omit<EventAnchor, 'kind'> {
+  kind: 'bin';
+  grain: EventBinGrain;
+}
+
+/** What an event trend plots: the anchors themselves (at or under the bound) or their bins. */
+export type EventDisplaySeries = Array<EventAnchor | EventBin>;
+
+const BIN_KEY_PATTERN = /^bin:(week|month|quarter|year):(-?\d+)$/;
+
+/** The ONE bin-key format: `bin:<grain>:<bucketStartMs>` for the calendar bucket holding `anchorStartMs`. */
+export function eventBinKey(grain: EventBinGrain, anchorStartMs: number): string {
+  return `bin:${grain}:${calendarBucketBounds(grain, anchorStartMs).startMs}`;
+}
+
+/** Parses a bin key back into its grain and bucket start, or `null` for any other key (an anchor key included). */
+export function parseEventBinKey(
+  key: string,
+): { grain: EventBinGrain; bucketStartMs: number } | null {
+  const match = BIN_KEY_PATTERN.exec(key);
+  if (!match) {
+    return null;
+  }
+  return { grain: match[1] as EventBinGrain, bucketStartMs: Number(match[2]) };
+}
+
+/** Folds consecutive member anchors (chronological, non-empty) into one bin: records summed, cumulative values from the LAST member. */
+function foldBin(grain: EventBinGrain, members: EventAnchor[], floor: number): EventBin {
+  const first = members[0]!;
+  const last = members[members.length - 1]!;
+  const wins = members.reduce((sum, a) => sum + a.wins, 0);
+  const losses = members.reduce((sum, a) => sum + a.losses, 0);
+  const total = members.reduce((sum, a) => sum + a.total, 0);
+  const bucket = calendarBucketBounds(grain, first.startMs);
+  return {
+    key: `bin:${grain}:${bucket.startMs}`,
+    kind: 'bin',
+    grain,
+    label: bucket.label,
+    startMs: first.startMs,
+    endMs: last.endMs,
+    wins,
+    losses,
+    total,
+    cumulativeWins: last.cumulativeWins,
+    cumulativeLosses: last.cumulativeLosses,
+    cumulativeWinRate: last.cumulativeWinRate,
+    confidenceTier: total < floor ? null : confidenceTierFor(total),
+    claimKind: 'fact',
+    matchIds: members.flatMap((a) => a.matchIds),
+  };
+}
+
+/** Groups a chronological series into runs of anchors sharing one calendar bucket at `grain`. */
+function groupByBucket(series: EventSeries, grain: EventBinGrain): EventAnchor[][] {
+  const groups: EventAnchor[][] = [];
+  let currentKey: string | null = null;
+  for (const anchor of series) {
+    const key = eventBinKey(grain, anchor.startMs);
+    if (key !== currentKey) {
+      groups.push([anchor]);
+      currentKey = key;
+    } else {
+      groups[groups.length - 1]!.push(anchor);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Plan 39.1-39 (VIZ-01, UI-SPEC §11): the event trend's DISPLAY series. At or
+ * under `maxPoints` (default `MARK_BOUND_LINE_POINTS`, 60) the input is
+ * returned as-is — the SAME array reference. Over it, consecutive anchors are
+ * binned into calendar periods at the finest of week, month, quarter, year
+ * that fits the bound (year when none does): each bin's record is the sum of
+ * its anchors and its cumulative values are its LAST anchor's, so the
+ * cumulative line keeps its true value at every bin end. Keys are
+ * `bin:<grain>:<bucketStartMs>`. The chart never bins; hosts apply this to
+ * the series they PLOT only — tournament links, TournamentDetailPage and the
+ * games terminus keep resolving the unbinned anchor keys.
+ */
+export function binEventSeries(
+  series: EventSeries,
+  options: { maxPoints?: number; minMatches?: number } = {},
+): EventDisplaySeries {
+  const maxPoints = options.maxPoints ?? MARK_BOUND_LINE_POINTS;
+  if (series.length <= maxPoints) {
+    return series;
+  }
+  const floor = effectiveFloor(options.minMatches);
+  let groups: EventAnchor[][] = [];
+  let chosen: EventBinGrain = 'year';
+  for (const grain of EVENT_BIN_GRAINS) {
+    groups = groupByBucket(series, grain);
+    chosen = grain;
+    if (groups.length <= maxPoints) {
+      break;
+    }
+  }
+  return groups.map((members) => foldBin(chosen, members, floor));
+}
+
+/**
+ * Plan 39.1-39: resolves a bin key against the FULL (unbinned) series — the
+ * anchors whose first game falls in that calendar bucket, folded into one bin
+ * — at ANY grain, independent of the grain the display series happened to
+ * use (a from/to window can re-grain it). `null` for a non-bin key or a
+ * bucket holding no anchor.
+ */
+export function resolveEventBin(
+  series: EventSeries,
+  key: string,
+  options: { minMatches?: number } = {},
+): EventBin | null {
+  const parsed = parseEventBinKey(key);
+  if (!parsed) {
+    return null;
+  }
+  const members = series.filter(
+    (anchor) => calendarBucketBounds(parsed.grain, anchor.startMs).startMs === parsed.bucketStartMs,
+  );
+  if (members.length === 0) {
+    return null;
+  }
+  return foldBin(parsed.grain, members, effectiveFloor(options.minMatches));
 }

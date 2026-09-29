@@ -16,7 +16,7 @@ import type { GspPoint, GspSettings, TCalibration } from '@smash-tracker/shared'
 import { GSP_MODEL } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import { chartColors, darkChartOptions, seriesLineDataset } from '@/lib/chartTheme';
 import { calibrationFromSettings, computedEliteThreshold, toMmrSeries } from '../lib/gspMmrModel';
 import { useModelCalibration } from '../lib/useModelCalibration';
 import { useNowMs } from '../lib/useNowMs';
@@ -63,7 +63,7 @@ export function buildGspCurveData(
     datasets: [
       {
         label: t('gsp.curve.gspLabel'),
-        ...redLineDataset(),
+        ...seriesLineDataset(),
         ...calibrationPointStyling(series),
         data: series.map((p) => p.gsp),
       },
@@ -103,7 +103,7 @@ export function buildMmrCurveData(
     datasets: [
       {
         label: t('gsp.curve.estMmrLabel'),
-        ...redLineDataset(),
+        ...seriesLineDataset(),
         ...calibrationPointStyling(series),
         data: mmrSeries.map((p) => Math.round(p.mmr)),
       },

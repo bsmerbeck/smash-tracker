@@ -12,6 +12,7 @@ import { filterEntriesByRange } from '@/hooks/useFilteredMatches';
 import { entryDisplayDateRange } from '@/lib/historicalTournament';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildTournamentEntryRows, type TournamentEntryRow } from './Tournaments';
+import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 
 function formatDateRange(entry: TournamentEntryRow['entry'], locale: string): string {
   const range = entryDisplayDateRange(entry);
@@ -128,7 +129,7 @@ export function RecentEvents({ matches }: RecentEventsProps) {
   const empty = (
     <p className="text-sm text-muted-foreground">
       {t('trends.tournaments.resyncPrefix')}{' '}
-      <Link to="/settings/integrations" className="font-medium text-primary underline">
+      <Link to="/settings/integrations" className={`font-medium ${INLINE_LINK_TONE}`}>
         {t('nav.integrations')}
       </Link>{' '}
       {t('trends.tournaments.resyncSuffix')}

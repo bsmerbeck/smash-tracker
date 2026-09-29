@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { twoGameWorkspace } from '@smash-tracker/shared/testUtils';
 import { createGuardLayoutFixturePlugin } from './guardLayoutFixturePlugin.mjs';
+import { buildSketch003Scale } from './sketch003Fixture.mjs';
 
 const WEB_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const VITE_CONFIG_PATH = fileURLToPath(new URL('../vite.config.ts', import.meta.url));
@@ -55,13 +56,79 @@ const HARNESS_FIGHTER_B_ID = 22;
  * selected Matchups/FighterAnalysis pairing is guaranteed well above
  * `ABSTENTION_FLOOR_GAMES` (3) regardless of PRNG output. `stageIds: [1]`
  * (Battlefield) for the same reason on the stage-detail route.
+ *
+ * Exported (plan 39.1-39) so capture:design's capture-only `gsp` scale is
+ * built FROM this one definition (the same games plus GSP readings), never
+ * a second copy of the fixture parameters.
  */
-function buildRealisticScale() {
+export function buildRealisticScale() {
   // generateSyntheticMatches already assigns each row a unique, deterministic
   // `id` (`synth-<seed>-<i>`) — no re-keying needed.
   const matches = generateSyntheticMatches({
     seed: 39_120_024,
     count: 300,
+    mainFighterIds: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  });
+  return {
+    matches,
+    fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
+/**
+ * Plan 39.1-34: the ONE sparg0-shaped dataset — the career timeline's
+ * oracle route (`trends-career`) selects it per page through the
+ * `x-guard-layout-scale: career` request header. 8,400 games, sessions of
+ * 6-28 games spaced by a fixed 135h gap, 73% wins: first game
+ * 2018-12-18T18:00:00Z, last game 2026-08-22T07:51:00Z (read from a run of
+ * this exact call, never guessed) — 495 sessions, 93 months with games, so
+ * the engine picks the quarter rating grain (~31 closes) and month strips.
+ */
+const CAREER_SESSION_GAP_MS = 135 * 60 * 60 * 1000;
+
+function buildCareerScale() {
+  const matches = generateSyntheticMatches({
+    seed: 39_134_001,
+    count: 8_400,
+    startMs: Date.UTC(2018, 11, 18, 18),
+    sessionSizeRange: [6, 28],
+    sessionGapMs: CAREER_SESSION_GAP_MS,
+    winRate: 0.73,
+    mainFighterIds: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  });
+  return {
+    matches,
+    fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
+/**
+ * Plan 39.1-35: the casual account — 41 games in sessions of 2-6 spaced by a
+ * fixed 156h (6.5-day) gap from 2026-07-03T19:00:00Z, so only three calendar
+ * months hold games: the career timeline's THIN state (a per-session line and
+ * the per-game FormStrip in place of the month strips). Selected per page by
+ * the `trends-casual` route's `x-guard-layout-scale: casual` header.
+ */
+const CASUAL_SESSION_GAP_MS = 156 * 60 * 60 * 1000;
+
+function buildCasualScale() {
+  const matches = generateSyntheticMatches({
+    seed: 39_135_001,
+    count: 41,
+    startMs: Date.UTC(2026, 6, 3, 19),
+    sessionSizeRange: [2, 6],
+    sessionGapMs: CASUAL_SESSION_GAP_MS,
+    winRate: 0.56,
     mainFighterIds: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID],
     opponentFighterIds: [1, 10],
     stageIds: [1],
@@ -87,9 +154,157 @@ function buildSparseScale() {
   };
 }
 
-export async function startGuardLayoutHarnessServer() {
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Shifts every row's time so the LAST row sits at `endMs`; ids are untouched. */
+function shiftToEnd(matches, endMs) {
+  const last = matches.reduce((max, match) => Math.max(max, match.time), -Infinity);
+  const delta = endMs - last;
+  return matches.map((match) => ({ ...match, time: match.time + delta }));
+}
+
+/**
+ * Plan 39.1-36: the `recent` scale — two-horizon content the stale
+ * `realistic` fixture (every game in 2023) cannot show. Two seeded runs with
+ * the realistic scale's mains (Fox 8, Falco 22), opponent characters [1, 10]
+ * and stage [1], so every harness route still resolves (/opponents/synthopp15,
+ * /stages/1):
+ * - an older, sparse segment: ~420 games in sessions of 3-6 spaced 10 days
+ *   apart (~30 months; monthly periods hold well under 50 games per main);
+ * - a dense segment: 1,300 games in sessions of 18-30 spaced 26h apart
+ *   (~2 months; monthly periods hold 150+ games per main), ending one day
+ *   before the harness starts.
+ * The Fighter hero's period series therefore shows more than one dot-size
+ * step and the D-15 scoped last-30 / last-90 windows are non-empty.
+ *
+ * DELIBERATELY anchored to the wall clock (dev-only): this scale exists to
+ * show what a CURRENT account looks like. The harness is excluded from the
+ * production build (guardHarnessProductionBuild.guard.test.ts). Plan 39.1-39
+ * moved this ONE definition here from `captureDesignScreens.mjs` and
+ * registered it in the scale map: guard:layout's `stage-detail-recent` route
+ * selects it per page for the mark-count family, whose assertion (at most 60
+ * line points) holds for any anchor date; it is never the initial scale.
+ */
+export function buildRecentScale() {
+  const common = {
+    mainFighterIds: [8, 22],
+    opponentFighterIds: [1, 10],
+    stageIds: [1],
+  };
+  const denseRaw = generateSyntheticMatches({
+    ...common,
+    seed: 39_136_002,
+    count: 1_300,
+    startMs: 0,
+    sessionSizeRange: [18, 30],
+    sessionGapMs: 26 * HOUR_MS,
+    winRate: 0.58,
+  });
+  const dense = shiftToEnd(denseRaw, Date.now() - DAY_MS);
+  const denseStart = dense.reduce((min, match) => Math.min(min, match.time), Infinity);
+  const olderRaw = generateSyntheticMatches({
+    ...common,
+    seed: 39_136_001,
+    count: 420,
+    startMs: 0,
+    sessionSizeRange: [3, 6],
+    sessionGapMs: 10 * DAY_MS,
+    winRate: 0.52,
+  });
+  const older = shiftToEnd(olderRaw, denseStart - 7 * DAY_MS);
+  const matches = [...older, ...dense].sort((a, b) =>
+    a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  return {
+    matches,
+    fighters: { primary: [8, 22], secondary: [] },
+    aliases: {},
+    opponentNotes: {},
+    tournaments: [],
+  };
+}
+
+/** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
+function seededRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Plan 39.1-39: the `gsp` scale (plan 39.1-49 moved this ONE definition here
+ * verbatim from `captureDesignScreens.mjs` and registered it in the scale
+ * map, so guard:layout's `gsp` route and capture:design read the same data) — the realistic scale's games
+ * (guard:layout's own 300-game fixture, one definition) with a deterministic
+ * `gsp` value on every game of the harness mains (a seeded walk between 9 and
+ * 11 million per fighter: a win climbs 40-140k, a loss drops 30-120k), two
+ * calibration readings per main and gsp settings with an Elite threshold,
+ * so GspCurve, GspVsGlicko and GainsAnalysis all render data.
+ */
+function buildGspScale() {
+  const base = buildRealisticScale();
+  const random = seededRandom(39_139_001);
+  const mains = base.fighters.primary;
+  const level = new Map(mains.map((id) => [id, 9_600_000]));
+  const clamp = (value) => Math.min(11_000_000, Math.max(9_000_000, value));
+  const matches = [...base.matches]
+    .sort((a, b) => (a.time !== b.time ? a.time - b.time : a.id < b.id ? -1 : 1))
+    .map((match) => {
+      if (!level.has(match.fighter_id)) return match;
+      const step = match.win ? 40_000 + random() * 100_000 : -(30_000 + random() * 90_000);
+      const next = Math.round(clamp(level.get(match.fighter_id) + step));
+      level.set(match.fighter_id, next);
+      return { ...match, gsp: next };
+    });
+  const byFighter = mains.map((id) => matches.filter((m) => m.fighter_id === id));
+  const gspReadings = byFighter.flatMap((games, index) =>
+    [0.33, 0.66].map((at, n) => {
+      const anchor = games[Math.floor(games.length * at)];
+      return {
+        id: `gsp-reading-${mains[index]}-${n}`,
+        fighter_id: mains[index],
+        gsp: Math.round(clamp((anchor?.gsp ?? 9_800_000) + 150_000)),
+        time: (anchor?.time ?? 0) + 60_000,
+      };
+    }),
+  );
+  const lastTime = matches.reduce((max, match) => Math.max(max, match.time), 0);
+  return {
+    ...base,
+    matches,
+    gspReadings,
+    gspSettings: { eliteThreshold: 10_400_000, updatedAt: lastTime },
+  };
+}
+
+/**
+ * Plan 39.1-34: `extraScales` merges caller-supplied in-memory datasets into
+ * the fixture plugin's scale map (selected per page via the
+ * `x-guard-layout-scale` header) — `captureTimelineFidelity.mjs` passes the
+ * owner's local export as `export`. Omitted, the server is unchanged.
+ */
+export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
   const scale = process.env.GUARD_LAYOUT_SCALE === 'sparse' ? 'sparse' : 'realistic';
-  const scales = { realistic: buildRealisticScale(), sparse: buildSparseScale() };
+  const scales = {
+    realistic: buildRealisticScale(),
+    sparse: buildSparseScale(),
+    career: buildCareerScale(),
+    casual: buildCasualScale(),
+    recent: buildRecentScale(),
+    gsp: buildGspScale(),
+    // Plan 39.1-41: sketch 003's own two pairings (Cloud vs Pyra/Mythra,
+    // Pikachu vs Joker) + its matrix, ported set for set — guard:layout's
+    // matchups-sketch-deep / -thin routes and capture:matchups-fidelity
+    // select it per page with `x-guard-layout-scale: sketch003`.
+    sketch003: buildSketch003Scale(),
+    ...extraScales,
+  };
   const server = await createViteServer({
     root: WEB_ROOT,
     configFile: VITE_CONFIG_PATH,
@@ -113,9 +328,7 @@ export async function startGuardLayoutHarnessServer() {
       'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(
         'guard-layout-harness-fake-project',
       ),
-      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(
-        '1:0:web:0000000000000000000001',
-      ),
+      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify('1:0:web:0000000000000000000001'),
       // Empty string (never left `undefined`, which falls back to a
       // non-harness origin): keeps every `/api/**` request relative, so it
       // lands on THIS SAME Vite dev server origin — the one origin the

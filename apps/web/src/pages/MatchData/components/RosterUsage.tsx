@@ -13,6 +13,7 @@ import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 const USAGE_BAR_HEIGHT_PX = 10;
 
@@ -104,8 +105,13 @@ function RosterRow({
   );
 
   return (
+    // Plan 39.1-49 (OOS-3's same-class find; UI-SPEC §8.4): below a 480px
+    // row width line 2 (usage bar + record) wraps under line 1 (name, share,
+    // chevron), starting at the name's left edge (sprite 24px + gap 12px), so
+    // the name is never starved; at 480px and wider both wrappers are
+    // `display: contents` with the chevron ordered last — the row unchanged.
     <li
-      className="@container/roster-row relative flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+      className="@container/roster-row relative flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md p-2 hover:bg-accent"
       data-slot="roster-row"
     >
       <DrillableRow
@@ -114,23 +120,36 @@ function RosterRow({
         ariaLabel={t('shared.drillableRow.aria', { subject: name, context: recordText })}
       />
       {fighter?.url && <img src={fighter.url} alt="" className="size-6 shrink-0 object-contain" />}
-      <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
-        {name}
-      </span>
-      <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{sharePercent}%</span>
-      <span
-        className="w-16 shrink-0 overflow-hidden rounded-full bg-muted @max-[380px]/roster-row:hidden"
-        style={{ height: USAGE_BAR_HEIGHT_PX }}
-        data-slot="roster-usage-bar-track"
+      <div
+        className="flex min-w-0 flex-1 items-center gap-3 @min-[480px]/roster-row:contents"
+        data-slot="roster-row-line1"
+      >
+        <span className="min-w-0 flex-1 truncate" title={name} data-truncate-guard>
+          {name}
+        </span>
+        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{sharePercent}%</span>
+        <DrillableRowChevron className="@min-[480px]/roster-row:order-last" />
+      </div>
+      <div
+        className="flex basis-full items-center gap-3 pl-9 @min-[480px]/roster-row:contents"
+        data-slot="roster-row-line2"
       >
         <span
-          className="block h-full rounded-full"
-          data-slot="roster-usage-bar-fill"
-          style={{ width: `${Math.max(sharePercent, 2)}%`, backgroundColor: CHART_TOKENS.series1 }}
-        />
-      </span>
-      <Record wins={entry.wins} losses={entry.losses} cue="glyph" cueLabel={cueLabel} />
-      <DrillableRowChevron />
+          className="w-16 shrink-0 overflow-hidden rounded-full bg-muted @max-[380px]/roster-row:hidden"
+          style={{ height: USAGE_BAR_HEIGHT_PX }}
+          data-slot="roster-usage-bar-track"
+        >
+          <span
+            className="block h-full rounded-full"
+            data-slot="roster-usage-bar-fill"
+            style={{
+              width: `${Math.max(sharePercent, 2)}%`,
+              backgroundColor: CHART_TOKENS.series1,
+            }}
+          />
+        </span>
+        <Record wins={entry.wins} losses={entry.losses} cue="glyph" cueLabel={cueLabel} />
+      </div>
     </li>
   );
 }
@@ -236,15 +255,17 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
           <CardTitle>{t('matchData.roster.title')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">
-            {t('analytics.roster.mainNotEstablished')}
-          </p>
-          <RosterRowList
-            entries={flatEntries}
-            t={t}
-            subjectPath={subjectPath}
-            fighterName={fighterName}
-          />
+          <div data-slot="roster-usage" className="contents">
+            <p className="text-sm text-muted-foreground">
+              {t('analytics.roster.mainNotEstablished')}
+            </p>
+            <RosterRowList
+              entries={flatEntries}
+              t={t}
+              subjectPath={subjectPath}
+              fighterName={fighterName}
+            />
+          </div>
         </CardContent>
       </Card>
     );
@@ -260,76 +281,79 @@ export function RosterUsage({ matches }: { matches: Match[] }) {
         <CardTitle>{t('matchData.roster.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <RosterGroup label={t('analytics.roster.main')}>
-          <RosterRowList
-            entries={[mainEntry]}
-            t={t}
-            subjectPath={subjectPath}
-            fighterName={fighterName}
-          />
-        </RosterGroup>
-
-        {secondaryEntries.length > 0 && (
-          <RosterGroup label={t('analytics.roster.secondaries')}>
+        {/* Plan 39.1-49: a layout-neutral text-fit hook (display: contents). */}
+        <div data-slot="roster-usage" className="contents">
+          <RosterGroup label={t('analytics.roster.main')}>
             <RosterRowList
-              entries={secondaryEntries}
+              entries={[mainEntry]}
               t={t}
               subjectPath={subjectPath}
               fighterName={fighterName}
             />
           </RosterGroup>
-        )}
 
-        {model.pockets.fighterIds.length > 0 && (
-          <RosterGroup label={t('analytics.roster.pockets')}>
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <ul className="flex flex-col gap-1">
-                <li
-                  className="flex flex-col gap-1 rounded-md p-2 text-sm text-muted-foreground"
-                  data-slot="roster-pocket-summary"
-                >
-                  <span>
-                    {t('analytics.roster.pocketsRow', {
-                      count: model.pockets.fighterIds.length,
-                      games: model.pockets.games,
-                    })}
-                    {' · '}
-                    {pocketRatePercent}%
-                  </span>
-                </li>
-              </ul>
-              {!pocketsExpanded ? (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="w-fit self-start px-0"
-                  onClick={() => setPocketsExpanded(true)}
-                >
-                  {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
-                </Button>
-              ) : (
-                <>
-                  <RosterRowList
-                    entries={pocketEntries.slice(0, LIST_INLINE_MAX)}
-                    t={t}
-                    subjectPath={subjectPath}
-                    fighterName={fighterName}
-                  />
+          {secondaryEntries.length > 0 && (
+            <RosterGroup label={t('analytics.roster.secondaries')}>
+              <RosterRowList
+                entries={secondaryEntries}
+                t={t}
+                subjectPath={subjectPath}
+                fighterName={fighterName}
+              />
+            </RosterGroup>
+          )}
+
+          {model.pockets.fighterIds.length > 0 && (
+            <RosterGroup label={t('analytics.roster.pockets')}>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <ul className="flex flex-col gap-1">
+                  <li
+                    className="flex flex-col gap-1 rounded-md p-2 text-sm text-muted-foreground"
+                    data-slot="roster-pocket-summary"
+                  >
+                    <span>
+                      {t('analytics.roster.pocketsRow', {
+                        count: model.pockets.fighterIds.length,
+                        games: model.pockets.games,
+                      })}
+                      {' · '}
+                      {pocketRatePercent}%
+                    </span>
+                  </li>
+                </ul>
+                {!pocketsExpanded ? (
                   <Button
                     type="button"
                     variant="link"
                     size="sm"
-                    className="w-fit self-start px-0"
-                    onClick={() => setPocketsExpanded(false)}
+                    className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
+                    onClick={() => setPocketsExpanded(true)}
                   >
-                    {t('analytics.list.showFewer')}
+                    {t('analytics.list.showAll', { count: model.pockets.fighterIds.length })}
                   </Button>
-                </>
-              )}
-            </div>
-          </RosterGroup>
-        )}
+                ) : (
+                  <>
+                    <RosterRowList
+                      entries={pocketEntries.slice(0, LIST_INLINE_MAX)}
+                      t={t}
+                      subjectPath={subjectPath}
+                      fighterName={fighterName}
+                    />
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className={`w-fit self-start px-0 ${MUTED_LINK_TONE}`}
+                      onClick={() => setPocketsExpanded(false)}
+                    >
+                      {t('analytics.list.showFewer')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </RosterGroup>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

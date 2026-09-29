@@ -34,8 +34,18 @@ const ALLOWED_ARBITRARY_TEXT_SIZES = new Set(['text-[0.6875rem]', 'text-[1.75rem
 const ALLOWED_NAMED_SIZES = new Set(['text-xs', 'text-sm', 'text-base', 'text-xl']);
 /** The three declared weights. */
 const ALLOWED_WEIGHTS = new Set(['font-normal', 'font-medium', 'font-semibold']);
-/** The kit's exported axis font-size constant name — the only legal SVG `fontSize` value. */
-const CHART_AXIS_FONT_SIZE_IDENTIFIER = 'CHART_AXIS_FONT_SIZE';
+/**
+ * The kit's exported axis font-size constant names — the only legal SVG
+ * `fontSize` values: `CHART_AXIS_FONT_SIZE` (12, every chart) and, since
+ * plan 39.1-43b (PD-43b-1, amending DD-06 for the period trend only),
+ * `trendGeometry.ts`'s `PERIOD_AXIS_FONT_SIZE_PX` (10, sketch 003 A / 001-C
+ * `trend()`'s `.ytick` / `.xaxis` / `.val` / `.ref-label`). A literal number
+ * or any other identifier still fails.
+ */
+const CHART_AXIS_FONT_SIZE_IDENTIFIERS = new Set([
+  'CHART_AXIS_FONT_SIZE',
+  'PERIOD_AXIS_FONT_SIZE_PX',
+]);
 
 export interface TypeScaleViolation {
   type: 'arbitrary-size' | 'named-size' | 'weight' | 'inline-style' | 'svg-font-size';
@@ -97,7 +107,7 @@ export function scanTypeScaleViolations(source: string): TypeScaleViolation[] {
   // kit's exported axis font-size constant.
   for (const match of source.matchAll(/\bfontSize\s*[:=]\s*\{?([A-Za-z0-9_.'"$-]+)/g)) {
     const value = match[1] ?? '';
-    if (value !== CHART_AXIS_FONT_SIZE_IDENTIFIER) {
+    if (!CHART_AXIS_FONT_SIZE_IDENTIFIERS.has(value)) {
       violations.push({ type: 'svg-font-size', match: match[0] });
     }
   }
@@ -199,6 +209,14 @@ describe('type-scale guard — source-tree guard (UIX-04, §5.1/§13.16)', () =>
     expect(scanTypeScaleViolations('fontSize={14}')).not.toEqual([]);
     expect(scanTypeScaleViolations('tick={{ fontSize: CHART_AXIS_FONT_SIZE }}')).toEqual([]);
     expect(scanTypeScaleViolations('tick={{ fontSize: 14 }}')).not.toEqual([]);
+  });
+
+  it('plan 39.1-43b (PD-43b-1): the period trend constant PERIOD_AXIS_FONT_SIZE_PX passes; a literal 10, a local variable or any other identifier fails', () => {
+    expect(scanTypeScaleViolations('fontSize={PERIOD_AXIS_FONT_SIZE_PX}')).toEqual([]);
+    expect(scanTypeScaleViolations('{ fontSize: PERIOD_AXIS_FONT_SIZE_PX }')).toEqual([]);
+    expect(scanTypeScaleViolations('fontSize={10}')).not.toEqual([]);
+    expect(scanTypeScaleViolations('fontSize={fontSize}')).not.toEqual([]);
+    expect(scanTypeScaleViolations('fontSize={PERIOD_AXIS_FONT_SIZE}')).not.toEqual([]);
   });
 
   it('an inline fontSize/fontWeight style is a violation', () => {

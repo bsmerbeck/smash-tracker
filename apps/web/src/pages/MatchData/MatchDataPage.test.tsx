@@ -1273,4 +1273,91 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
       });
     });
   });
+
+  // Plan 39.1-38 (design-audit item 6 / P5; UI-SPEC §8.4, §10.4).
+  describe('plan 39.1-38: the page frame', () => {
+    async function renderLoaded() {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+      ]);
+      const result = renderMatchData();
+      await screen.findByText('Match History');
+      return result;
+    }
+
+    it('filter-row: the first child of the page shell is one unboxed page-filter-row with the page h1 and the HorizonSwitch; the table card keeps its own title', async () => {
+      const { container } = await renderLoaded();
+      const shell = container.querySelector('[data-slot="page-shell"]') as HTMLElement;
+      const row = shell.firstElementChild as HTMLElement;
+      expect(row).toHaveAttribute('data-slot', 'page-filter-row');
+      const h1 = screen.getByRole('heading', { level: 1, name: 'Match Data' });
+      expect(row.contains(h1)).toBe(true);
+      const horizonSwitch = container.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+      expect(row.contains(horizonSwitch)).toBe(true);
+      expect(h1.closest('[data-slot="card"]')).toBeNull();
+      expect(horizonSwitch.closest('[data-slot="card"]')).toBeNull();
+      // The table card's own CardTitle is unchanged.
+      expect(screen.getByText('Match History').closest('[data-slot="card"]')).not.toBeNull();
+    });
+
+    it('the stage headline StatRow (three short figures) keeps fixed columns', async () => {
+      const { container } = await renderLoaded();
+      const stageCard = screen
+        .getByText('Stage Breakdown')
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(stageCard).not.toBeNull();
+      const statRow = stageCard.querySelector('[data-slot="stat-row"]');
+      expect(statRow).not.toBeNull();
+      expect(statRow).toHaveAttribute('data-fixed-columns', '');
+      expect(container).toBeTruthy();
+    });
+  });
+
+  // Plan 39.1-38 (design-audit item 9; UI-SPEC §8.4 "insight before chart"):
+  // DOM order = the phone reading order (rail, [Roster, Stages], table); the
+  // desktop composition (table row 1, stack + rail row 2) by lg placement.
+  describe('plan 39.1-38 insight-first phone order', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    it('DOM order is rail, [Roster, Stages] stack, match table card; at lg the table is row 1 and the stack / rail share row 2', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+      ]);
+      const { container } = renderMatchData();
+      await screen.findByText('Match History');
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const rail = cells.findIndex((c) => c.querySelector('[data-slot="match-data-rail"]'));
+      const stack = cells.findIndex((c) => (c.textContent ?? '').includes('Stage Breakdown'));
+      const table = cells.findIndex((c) => c.querySelector('#match-data-table'));
+      expect([rail, stack, table]).toEqual([0, 1, 2]);
+      expect(cls(cells[table]!)).toContain('lg:row-start-1');
+      expect(cls(cells[stack]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']),
+      );
+      expect(cls(cells[rail]!)).toEqual(
+        expect.arrayContaining(['lg:col-start-9', 'lg:row-start-2']),
+      );
+      expect((container.querySelector('#match-data-table') as HTMLElement).textContent).toContain(
+        'Match History',
+      );
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+    });
+
+    it('the loading skeleton uses the same order and placement', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderMatchData();
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8', '12']);
+      expect(cls(cells[0]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-2']));
+      expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-2']));
+      expect(cls(cells[2]!)).toContain('lg:row-start-1');
+    });
+  });
 });

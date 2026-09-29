@@ -118,3 +118,99 @@ describe('OpponentTable', () => {
     expect(opponentLabels).toEqual(['alice', 'bob', 'cara']);
   });
 });
+
+/**
+ * Plan 39.1-49 (UI-SPEC §6.6 "< 640 tables become stacked rows", §6.5 rules
+ * 1-2): the same rows rendered as the table and as stacked two-line rows —
+ * one root per render, every value and every link kept.
+ */
+const norm = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+function tableRowsOf(container: HTMLElement) {
+  const table = container.querySelector('table[data-slot="opponent-table"]');
+  expect(table).not.toBeNull();
+  return Array.from(table!.querySelectorAll('tbody tr')).map((tr) => ({
+    hrefs: Array.from(tr.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+    cells: Array.from(tr.querySelectorAll('td'))
+      .map((td) => norm(td.textContent))
+      .filter(Boolean),
+  }));
+}
+
+function stackRowsOf(container: HTMLElement) {
+  const list = container.querySelector('ul[data-slot="opponent-table"]');
+  expect(list).not.toBeNull();
+  return Array.from(list!.querySelectorAll(':scope > li')).map((li) => ({
+    li: li as HTMLElement,
+    hrefs: Array.from(li.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+    text: norm(li.textContent),
+  }));
+}
+
+describe('OpponentTable — stacked rows below 640px (plan 39.1-49)', () => {
+  const rows: OpponentTableRow[] = [
+    makeRow({ key: 'mkleo', displayLabel: 'mkleo', wins: 3, losses: 1, total: 4, winRate: 75 }),
+    makeRow({ key: 'sparg0', displayLabel: 'sparg0', wins: 1, losses: 4, total: 5, winRate: 20 }),
+    makeRow({ key: 'unknown', displayLabel: 'unknown', wins: 2, losses: 2, total: 4, winRate: 50 }),
+  ];
+  const hubHref = (row: OpponentTableRow) =>
+    row.key === 'unknown' ? undefined : `/opponents/${row.key}`;
+
+  it('stack versus table parity: same rows, same links per row, every table value in its stacked row, one root per render', () => {
+    const table = renderWithRouter(<OpponentTable rows={rows} hubHref={hubHref} layout="table" />);
+    const tableRows = tableRowsOf(table.container);
+    expect(table.container.querySelector('ul[data-slot="opponent-table"]')).toBeNull();
+    table.unmount();
+
+    const stack = renderWithRouter(<OpponentTable rows={rows} hubHref={hubHref} layout="stack" />);
+    expect(stack.container.querySelector('table')).toBeNull();
+    const stackRows = stackRowsOf(stack.container);
+    expect(stackRows).toHaveLength(tableRows.length);
+    stackRows.forEach((stacked, index) => {
+      expect(stacked.hrefs).toEqual(tableRows[index]!.hrefs);
+      for (const cell of tableRows[index]!.cells) {
+        expect(stacked.text).toContain(cell);
+      }
+    });
+    // One overlay link per addressable row; the unaddressable row has none.
+    expect(stackRows.map((r) => r.hrefs.length)).toEqual([1, 1, 0]);
+  });
+
+  it('the stacked opponent slot is the one flexible truncating slot, with the full label as its title', () => {
+    const { container } = renderWithRouter(
+      <OpponentTable rows={rows} hubHref={hubHref} layout="stack" />,
+    );
+    const slot = container.querySelector('[title="sparg0"]');
+    expect(slot).not.toBeNull();
+    expect(slot!.className).toMatch(/\btruncate\b/);
+    expect(slot!.className).toMatch(/\bmin-w-0\b/);
+  });
+
+  it('the third-party host (no hubHref) renders zero anchors in the stack layout too', () => {
+    const { container } = render(<OpponentTable rows={rows} layout="stack" />);
+    expect(container.querySelector('ul[data-slot="opponent-table"]')).not.toBeNull();
+    expect(container.querySelectorAll('a')).toHaveLength(0);
+  });
+
+  it('the cap and Show all / Show fewer behave the same in both layouts, and the toggle controls the stack root', () => {
+    const many: OpponentTableRow[] = Array.from({ length: 12 }, (_, i) =>
+      makeRow({ key: `opp${i}`, displayLabel: `opp${i}`, total: 12 - i }),
+    );
+    for (const layout of ['table', 'stack'] as const) {
+      const view = render(<OpponentTable rows={many} layout={layout} />);
+      const count = () =>
+        layout === 'table'
+          ? view.container.querySelectorAll('tbody tr').length
+          : view.container.querySelectorAll('ul[data-slot="opponent-table"] > li').length;
+      expect(count()).toBe(8);
+      const toggle = screen.getByRole('button', { name: /show all/i });
+      const root = document.getElementById(toggle.getAttribute('aria-controls')!);
+      expect(root?.getAttribute('data-slot')).toBe('opponent-table');
+      fireEvent.click(toggle);
+      expect(count()).toBe(12);
+      fireEvent.click(screen.getByRole('button', { name: /show fewer/i }));
+      expect(count()).toBe(8);
+      view.unmount();
+    }
+  });
+});

@@ -36,6 +36,12 @@ export const CHART_TOKENS = Object.freeze({
   grid: 'var(--border)',
   /** Axis tick / legend text color. */
   axisText: 'var(--muted-foreground)',
+  /**
+   * Plan 39.1-43b (sketch 003 A / 001-C `.trend .val`, which sets no colour
+   * of its own and so draws in the body's `--color-text`): a direct value
+   * label's ink.
+   */
+  text: 'var(--foreground)',
   /** The chart plot surface — the same surface every `Card` renders on. */
   surface: 'var(--card)',
   /** Border color shared with the rest of the `Card` family. */
@@ -72,3 +78,13 @@ export const CHART_DOT_RADIUS = 4;
 export const CHART_BAR_ROW_HEIGHT_PX = 32;
 /** Comparison-bar maximum thickness in px. */
 export const CHART_BAR_MAX_THICKNESS_PX = 24;
+/**
+ * UI-SPEC §12.1 / sketch 002-C `drawRating`: the career timeline's plot
+ * bottom, in px from the top of its SVG (the sketch's `ph` — the 20px top
+ * margin plus the plot). SIBLING named export, never a `CHART_TOKENS` key.
+ */
+export const CHART_H_TIMELINE = 220;
+/** UI-SPEC §12.1: `CHART_H_TIMELINE` below a `CHART_NARROW_PLOT_PX` plot (sketch 002-C's `compact` branch). */
+export const CHART_H_TIMELINE_NARROW = 170;
+/** UI-SPEC §11 "narrow plots re-grain, they do not squeeze": below this plot width (px) a chart asks for its narrow grain instead of drawing sub-legible marks. */
+export const CHART_NARROW_PLOT_PX = 520;

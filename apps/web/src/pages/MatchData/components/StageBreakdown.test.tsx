@@ -99,3 +99,48 @@ describe('StageBreakdown', () => {
     expect(screen.getByText('Most games')).toBeInTheDocument();
   });
 });
+
+/**
+ * Plan 39.1-49 (OOS-3; UI-SPEC §8.4 "the usage bar drops below the name
+ * line", §6.5 rules 1-2): each stage row is a named row container whose name
+ * and chevron sit in a line-1 wrapper and whose RecordBar and Record sit in a
+ * line-2 wrapper — below a 480px row width line 2 moves under line 1 at the
+ * name's left edge; at or above 480px both wrappers are `display: contents`,
+ * so the one-line desktop row is unchanged.
+ */
+describe('StageBreakdown — two-line rows below a 480px row width (plan 39.1-49, OOS-3)', () => {
+  it('stage row two-line: a named row container, line-1 name + chevron, line-2 bar + record, contents at 480px and wider', () => {
+    renderCard(stagesFixture(3));
+    const rows = Array.from(document.querySelectorAll('li[data-slot="stage-row"]'));
+    expect(rows.length).toBe(3);
+    for (const row of rows) {
+      expect(row.className.split(/\s+/)).toContain('@container/stage-row');
+      const line1 = row.querySelector('[data-slot="stage-row-line1"]');
+      const line2 = row.querySelector('[data-slot="stage-row-line2"]');
+      expect(line1).not.toBeNull();
+      expect(line2).not.toBeNull();
+      const name = line1!.querySelector('span[title]');
+      expect(name).not.toBeNull();
+      expect(name!.className).toMatch(/\bmin-w-0\b/);
+      expect(name!.className).toMatch(/\btruncate\b/);
+      expect(line1!.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+      expect(line2!.querySelector('[data-slot="record-bar"]')).not.toBeNull();
+      expect(line2!.querySelector('[data-slot="record"]')).not.toBeNull();
+      expect(line1!.className.split(/\s+/)).toContain('@min-[480px]/stage-row:contents');
+      expect(line2!.className.split(/\s+/)).toEqual(
+        expect.arrayContaining(['basis-full', '@min-[480px]/stage-row:contents']),
+      );
+    }
+  });
+
+  it('stage row two-line: each row keeps exactly its one overlay link, destination and accessible name', () => {
+    renderCard(stagesFixture(3));
+    const rows = Array.from(document.querySelectorAll('li[data-slot="stage-row"]'));
+    rows.forEach((row, index) => {
+      const links = row.querySelectorAll('a');
+      expect(links).toHaveLength(1);
+      expect(links[0]).toHaveAttribute('href', `/stages/${index + 1}`);
+      expect(links[0]!.getAttribute('aria-label')).toMatch(/1–0/);
+    });
+  });
+});

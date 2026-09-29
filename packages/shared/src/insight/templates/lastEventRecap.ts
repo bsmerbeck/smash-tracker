@@ -4,6 +4,7 @@ import type { TournamentRegistryRow } from '../../tournamentRegistry.js';
 import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
+import { buildSetStripMark } from '../marks.js';
 
 const TEMPLATE_ID = 'lastEventRecap' as const;
 /** How many lost sets the sub line names before falling back to a count-only phrasing. */
@@ -69,6 +70,12 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
   };
 }
 
+/** A set's opponent tag, or null when no game named one (an empty / whitespace tag reads as no name). */
+function opponentNameOf(set: ReturnType<typeof buildSetTimeline>['sets'][number]): string | null {
+  const trimmed = set.opponentName?.trim();
+  return trimmed ? trimmed : null;
+}
+
 function setLossSubLine(sets: ReturnType<typeof buildSetTimeline>['sets']): {
   key: string;
   values: Record<string, string | number>;
@@ -78,8 +85,11 @@ function setLossSubLine(sets: ReturnType<typeof buildSetTimeline>['sets']): {
     return { key: `insights.${TEMPLATE_ID}.noSetLosses`, values: {} };
   }
   const named = losses.slice(0, MAX_SET_LOSSES_NAMED).map((s) => {
-    const opponent = s.opponentName ?? 'unknown';
-    return `${opponent} ${s.gamesWon}–${s.gamesLost}`;
+    const record = `${s.gamesWon}–${s.gamesLost}`;
+    // Plan 39.1-40: an unnamed opponent contributes its record alone — never
+    // an English fallback word inside a translated sentence.
+    const opponent = opponentNameOf(s);
+    return opponent === null ? record : `${opponent} ${record}`;
   });
   return {
     key: `insights.${TEMPLATE_ID}.setLosses`,
@@ -178,6 +188,20 @@ export function buildLastEventRecapInsight(input: {
     ],
     // Plan 39.1-22: the one named event's own games — the same set `gameRecord.total` counts.
     countedMatchIds: countedMatchIdsOf(games),
+    // Plan 39.1-40 (sketch 002-C, UI-SPEC §7.10): one SetStrip tick per set, in set order.
+    ...(hasSets
+      ? {
+          mark: buildSetStripMark(
+            sets.map((set) => ({
+              setId: set.setId,
+              won: set.won,
+              opponentName: opponentNameOf(set),
+              gamesWon: set.gamesWon,
+              gamesLost: set.gamesLost,
+            })),
+          ),
+        }
+      : {}),
   };
 
   return insight;

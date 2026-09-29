@@ -11,6 +11,7 @@ import {
   type TournamentBlock,
   type TournamentSet,
 } from '../tournamentHistory';
+import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 
 function formatDate(time: number, locale: string): string {
   return new Date(time).toLocaleDateString(locale, {
@@ -154,7 +155,7 @@ function TournamentBlockCard({
           {entryPath ? (
             <Link
               to={subjectPath(`/tournaments/${entryPath}`)}
-              className="font-semibold text-primary underline-offset-2 hover:underline"
+              className={`font-semibold ${INLINE_LINK_TONE}`}
             >
               {title}
             </Link>

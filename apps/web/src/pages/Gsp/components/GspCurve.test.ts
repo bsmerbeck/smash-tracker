@@ -4,6 +4,7 @@ import { GSP_MODEL, estimateT, mmrToGsp } from '@smash-tracker/shared';
 // Bundled-English i18n instance (see src/test/setup.ts) — the builders take
 // `t`/locale so chart labels localize; passing i18n.t keeps assertions English.
 import i18n from '@/i18n';
+import { chartColors } from '@/lib/chartTheme';
 import { buildGspCurveData, buildGspCurveOptions, buildMmrCurveData } from './GspCurve';
 
 describe('buildGspCurveData', () => {
@@ -115,5 +116,39 @@ describe('buildGspCurveOptions', () => {
       undefined as never,
     );
     expect(clicks).toEqual([]);
+  });
+});
+
+// Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): the GSP and
+// MMR lines take the series ink; the dashed threshold line is unchanged.
+describe('GspCurve dataset colours (DD-11)', () => {
+  const series: GspPoint[] = [
+    { time: GSP_MODEL.T_ANCHOR.atMs, gsp: 9_000_000, win: true },
+    { time: GSP_MODEL.T_ANCHOR.atMs + 60 * 60 * 1000, gsp: 9_100_000, win: null },
+  ];
+
+  it('buildGspCurveData: the GSP line and its point rings are the series blue, the threshold keeps the grid tone', () => {
+    const data = buildGspCurveData(series, 10_000_000, i18n.t, 'en');
+    const [line, threshold] = data.datasets as Array<Record<string, unknown>>;
+    expect(line!.borderColor).toBe(chartColors.series);
+    expect(line!.pointBorderColor).toBe(chartColors.series);
+    expect(line!.borderColor).not.toBe(chartColors.red);
+    expect(line!.pointBorderColor).not.toBe(chartColors.red);
+    expect(threshold!.borderColor).toBe(chartColors.grid);
+    expect(threshold!.borderDash).toEqual([6, 4]);
+  });
+
+  it('buildMmrCurveData: the MMR line and its point rings are the series blue, the Elite line keeps the grid tone', () => {
+    const data = buildMmrCurveData(
+      series,
+      { eliteThreshold: 10_000_000, updatedAt: 0 },
+      i18n.t,
+      'en',
+    );
+    const [line, elite] = data.datasets as Array<Record<string, unknown>>;
+    expect(line!.borderColor).toBe(chartColors.series);
+    expect(line!.pointBorderColor).toBe(chartColors.series);
+    expect(line!.borderColor).not.toBe(chartColors.red);
+    expect(elite!.borderColor).toBe(chartColors.grid);
   });
 });

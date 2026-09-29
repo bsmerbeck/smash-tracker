@@ -187,3 +187,78 @@ describe('lastEventRecapTemplate (Task 2: the link-less factual recap)', () => {
     }
   });
 });
+
+/**
+ * Plan 39.1-40 (sketch 002-C, UI-SPEC §7.10): the recap card's SetStrip mark
+ * and its set-loss sub line. A set whose opponent has no name contributes its
+ * record alone — never an English fallback word.
+ */
+describe('lastEventRecap set strip mark (39.1-40)', () => {
+  function recapFor(matches: Match[]) {
+    return buildLastEventRecapInsight({
+      matches,
+      scope: subjectScope(),
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+  }
+
+  it('with sets, carries a setStrip mark with one entry per set in set order', () => {
+    const games = buildEventGames({
+      eventName: 'Strip Check',
+      setCount: 3,
+      gamesPerSet: 3,
+      startAt: NOW_MS - 20 * ONE_HOUR_MS,
+      // set 0: W W L (won 2-1), set 1: L L L (lost 0-3), set 2: W L W (won 2-1)
+      win: (s, g) => (s === 0 ? g < 2 : s === 1 ? false : g !== 1),
+    }).map((match) => (match.id.includes('-2-') ? { ...match, opponent: 'rival' } : match));
+    const insight = recapFor(games);
+    expect(insight.mark?.kind).toBe('setStrip');
+    const data = insight.mark!.data as { sets: unknown[] };
+    expect(data.sets).toEqual([
+      { setId: expect.any(String), won: true, opponentName: null, gamesWon: 2, gamesLost: 1 },
+      { setId: expect.any(String), won: false, opponentName: null, gamesWon: 0, gamesLost: 3 },
+      { setId: expect.any(String), won: true, opponentName: 'rival', gamesWon: 2, gamesLost: 1 },
+    ]);
+  });
+
+  it('without parsable sets, carries no mark', () => {
+    const insight = recapFor(
+      buildEventGames({
+        eventName: 'No Sets',
+        setCount: 1,
+        gamesPerSet: 4,
+        startAt: NOW_MS - 5 * ONE_HOUR_MS,
+        win: (_s, g) => g % 2 === 0,
+        parsableSets: false,
+      }),
+    );
+    expect(insight.mark).toBeUndefined();
+  });
+
+  it('a lost set whose opponent has no name names its record only in the sub value (no fallback word)', () => {
+    const games = buildEventGames({
+      eventName: 'Unnamed Loss',
+      setCount: 2,
+      gamesPerSet: 4,
+      startAt: NOW_MS - 10 * ONE_HOUR_MS,
+      // set 0: W W W L (won 3-1), set 1: W L L L (lost 1-3)
+      win: (s, g) => (s === 0 ? g < 3 : g === 0),
+    });
+    const insight = recapFor(games);
+    expect(insight.copy.values.subLineKey).toBe('insights.lastEventRecap.setLosses');
+    expect(insight.copy.values.named).toBe('1–3');
+    expect(String(insight.copy.values.named)).not.toMatch(/unknown/i);
+  });
+
+  it('a lost set whose opponent has a name keeps the name before the record', () => {
+    const games = buildEventGames({
+      eventName: 'Named Loss',
+      setCount: 1,
+      gamesPerSet: 3,
+      startAt: NOW_MS - 10 * ONE_HOUR_MS,
+      win: () => false,
+    }).map((match) => ({ ...match, opponent: 'rival' }));
+    expect(recapFor(games).copy.values.named).toBe('rival 0–3');
+  });
+});

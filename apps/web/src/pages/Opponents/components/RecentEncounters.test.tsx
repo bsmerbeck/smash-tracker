@@ -174,6 +174,34 @@ describe('RecentEncounters (39.1-18 Task 2, UIX-08/D-10)', () => {
     expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(12);
   });
 
+  // Plan 39.1-39 (UI-SPEC §4.3): "Show all sets" / "Show fewer" are muted
+  // links (MUTED_LINK_TONE), never brand-red text.
+  it('plan 39.1-39: the show-all-sets and show-fewer controls carry the muted link tone', async () => {
+    const user = userEvent.setup();
+    const matches: Match[] = Array.from({ length: 12 }, (_, i) =>
+      makeMatch({
+        id: `s${i}`,
+        time: 1000 + i,
+        win: i % 2 === 0,
+        externalId: `sgg:${i}:g1`,
+        eventName: 'One Big Event',
+      }),
+    );
+    renderEncounters(matches, {
+      tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }),
+    });
+    const muted = (el: HTMLElement) => {
+      const classes = el.className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+    };
+    const showAll = screen.getByRole('button', { name: 'Show all sets' });
+    muted(showAll);
+    await user.click(showAll);
+    muted(screen.getByRole('button', { name: /show fewer/i }));
+  });
+
   it('a manual-only fixture renders session headers with single rows and no set score', () => {
     const matches = [
       makeMatch({ id: 'm1', time: 1000, win: true }),
@@ -207,6 +235,47 @@ describe('RecentEncounters (39.1-18 Task 2, UIX-08/D-10)', () => {
     });
     const body = document.body.textContent ?? '';
     expect(body).not.toContain('unknown');
+  });
+
+  // Plan 39.1-39 (UI-SPEC §4.3): inline content links read in the
+  // foreground tone with an underline on hover (INLINE_LINK_TONE), never
+  // brand red — the event header and a game's VOD link.
+  it('plan 39.1-39: the event header link carries the inline link tone', () => {
+    renderEncounters(twoEventFixture(), {
+      tournamentLinkForMatch: (m) => ({
+        href: `/tournaments/${m.eventName}`,
+        label: m.eventName ?? '',
+      }),
+    });
+    const header = document.querySelectorAll(
+      '[data-slot="encounter-event-header"]',
+    )[0] as HTMLElement;
+    const classes = header.className.split(/\s+/);
+    expect(classes).toContain('text-foreground');
+    expect(classes).toContain('underline-offset-4');
+    expect(classes).toContain('hover:underline');
+    expect(classes).not.toContain('text-primary');
+  });
+
+  it('plan 39.1-39: an expanded VOD game link carries the inline link tone, never brand red', async () => {
+    const user = userEvent.setup();
+    renderEncounters(
+      [
+        makeMatch({
+          id: 'v1',
+          time: 1000,
+          win: true,
+          externalId: 'sgg:7:g1',
+          eventName: 'Video Event',
+          vodUrl: 'https://x.test/v',
+        }),
+      ],
+      { tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }) },
+    );
+    await user.click(document.querySelector('[data-slot="encounter-set-row"] button')!);
+    const classes = screen.getByRole('link', { name: /Win/ }).className.split(/\s+/);
+    expect(classes).toContain('text-foreground');
+    expect(classes).not.toContain('text-primary');
   });
 
   it('with no encounters, the existing empty copy renders and zero headers, controls and set rows render', () => {

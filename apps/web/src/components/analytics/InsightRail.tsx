@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { InsightCardErrorBoundary } from './InsightCardErrorBoundary';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 /**
  * One card's stable identity plus a factory that builds its content, given
@@ -154,11 +155,21 @@ export function InsightRail({
 
   return (
     <div data-slot="insight-rail">
-      <div className="flex items-center justify-between gap-2" data-slot="insight-rail-header">
-        <p className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
+      {/* Plan 39.1-50 (OOS-11, UI-SPEC §7.8 rule 5, sketch 001-C): the overline
+          reads on its own line, the claim legend on the line below — never
+          squeezed beside the legend into 3-4 lines. */}
+      <div className="flex flex-col items-start gap-1" data-slot="insight-rail-header">
+        <p
+          data-slot="insight-rail-overline"
+          className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+        >
           {header}
         </p>
-        <div aria-hidden="true" data-slot="insight-rail-legend" className="flex items-center gap-1">
+        <div
+          aria-hidden="true"
+          data-slot="insight-rail-legend"
+          className="flex flex-wrap items-center gap-1"
+        >
           {legend}
         </div>
       </div>
@@ -183,7 +194,13 @@ export function InsightRail({
             data-card-kind="all-dismissed"
           >
             <p className="text-sm leading-5 text-muted-foreground">{labels.allDismissed}</p>
-            <Button type="button" variant="link" size="sm" onClick={onRestore}>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className={MUTED_LINK_TONE}
+              onClick={onRestore}
+            >
               {labels.restore}
             </Button>
           </div>
@@ -231,7 +248,13 @@ export function InsightRail({
           <span className="text-xs leading-4 text-muted-foreground tabular-nums">
             {labels.dismissedCount(dismissedIds.length)}
           </span>
-          <Button type="button" variant="link" size="sm" onClick={onRestore}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className={MUTED_LINK_TONE}
+            onClick={onRestore}
+          >
             {labels.restore}
           </Button>
         </div>

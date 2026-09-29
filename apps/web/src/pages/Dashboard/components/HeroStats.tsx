@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { classify, confidenceTierFor, resolveWindow, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,43 +15,10 @@ import { computeRatingHistory } from '@/lib/glicko';
 import { filterBySource } from '@/hooks/useFilteredMatches';
 import { DEFAULT_HORIZON } from '@/hooks/useHorizon';
 import { GridCell } from '@/components/analytics/PageGrid';
-import { StatFigure } from '@/components/analytics/StatRow';
+import { StatFigure, StatRow } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
-
-/**
- * `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union,
- * duplicated per this codebase's small-helper-duplication convention (see
- * `FighterHero.tsx`/`PairingOpponents.tsx`'s own copies). WR-C01
- * (39.1-REVIEW.md): callers MUST branch on `state === 'locked'` themselves
- * before ever calling this function (mirroring `FighterHero.tsx`'s own
- * `winRateFigure`/`ratingFigure` pattern) — `locked` has no `DeltaChip`
- * representation of its own (it is a below-the-abstention-floor read, a
- * different honesty tier than `thin`/`thinRecent`, which have enough games
- * to count but not to assert a direction) and must never fall through to
- * this function's `'none'` default, which `deltaValueLabel` then silently
- * relabels "Thin".
- */
-function deltaChipStateFor(
-  state: Exclude<ReturnType<typeof classify>['state'], 'locked'>,
-  deltaPoints: number | null,
-): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
-}
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
 
 /**
  * Account-wide hero row: overall record, recent form, casual-vs-competitive
@@ -119,6 +85,34 @@ export function HeroStats({
 
 function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
   const { t } = useTranslation();
+  return (
+    <HorizonRecordCard
+      matches={matches}
+      horizon={horizon}
+      label={t('dashboard.hero.overallRecord')}
+    />
+  );
+}
+
+/**
+ * Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the Overall Record tile's body,
+ * extracted unchanged so the Dashboard's per-fighter record tile renders the
+ * SAME horizon figure path (`resolveWindow` / `toRateValue` / `classify` /
+ * `deltaChipView`) under its own overline. `children` is a layout-neutral
+ * slot inside the card (the fighter tile's hook).
+ */
+export function HorizonRecordCard({
+  matches,
+  horizon,
+  label,
+  children,
+}: {
+  matches: Match[];
+  horizon: HorizonKey;
+  label: string;
+  children?: ReactNode;
+}) {
+  const { t } = useTranslation();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `FighterHero.tsx`'s own convention.
@@ -135,19 +129,26 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
     scoped: true,
     hasAction: false,
   });
-  // WR-C01: `locked` (below the abstention floor) is a different honesty
-  // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-  // omit the chip entirely rather than let it fall through to
-  // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-  const chipState = state === 'locked' ? null : deltaChipStateFor(state, deltaPoints);
+  // Plan 39.1-36 (INS-04, UI-SPEC §7.5): the one ladder-to-chip mapping. The
+  // "Overall Record" overline does not name the horizon, so the chip carries
+  // its own ("Steady · last 30", "no games · last 30").
+  const chipView = deltaChipView({
+    state,
+    deltaPoints,
+    recentGames: recentRate.total,
+    horizon,
+    horizonOwnedByParent: false,
+    t,
+  });
   const allTimeTier = confidenceTierFor(baseline.total);
 
   return (
     <Card>
       <CardContent>
+        {children}
         {hasMatches ? (
           <StatFigure
-            label={t('dashboard.hero.overallRecord')}
+            label={label}
             value={`${Math.round(baseline.rate * 100)}%`}
             lead
             support={
@@ -162,13 +163,11 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
               />
             }
             delta={
-              chipState === null || chipState === 'collapsed' ? null : (
+              chipView === null ? null : (
                 <DeltaChip
-                  state={chipState}
-                  valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-                  horizonLabel={t(`insights.horizon.short.${horizon}`)}
+                  {...chipView}
                   ariaLabel={t('analytics.dumbbell.rowAria', {
-                    label: t('dashboard.hero.overallRecord'),
+                    label,
                     recentRecord: `${recentRate.wins}–${recentRate.losses}`,
                     baselineRecord: `${baseline.wins}–${baseline.losses}`,
                   })}
@@ -177,7 +176,10 @@ function OverallRecordCard({ matches, horizon }: { matches: Match[]; horizon: Ho
             }
           />
         ) : (
-          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
+          // Plan 39.1-50: the empty tile still names itself (the kit's
+          // StatFigure empty state — overline, em dash, caption), so the
+          // Overall and the fighter tiles never read as one untitled line.
+          <StatFigure label={label} lead state="empty" emptyCaption={t('common.noMatchData')} />
         )}
       </CardContent>
     </Card>
@@ -234,10 +236,14 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <p className="text-xs text-muted-foreground">{t('dashboard.hero.ignoresSourceFilter')}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <SplitStat label={t('common.casual')} record={casual} />
-          <SplitStat label={t('common.competitive')} record={competitive} />
-        </div>
+        {/* Plan 39.1-39 (UI-SPEC §7.3): the one stat idiom — one StatRow,
+            never a hand-rolled two-column grid; each record wraps whole. */}
+        <StatRow
+          figures={[
+            <SplitStat key="casual" label={t('common.casual')} record={casual} />,
+            <SplitStat key="competitive" label={t('common.competitive')} record={competitive} />,
+          ]}
+        />
         {bothHaveData && delta != null && (
           <p className="text-sm">
             <span className="text-muted-foreground">{t('dashboard.hero.deltaLabel')} </span>
@@ -270,7 +276,7 @@ function SplitStat({ label, record }: { label: string; record: WinLossRecord }) 
     <StatFigure
       label={label}
       value={`${record.winRate}%`}
-      support={<Record wins={record.wins} losses={record.losses} cue="none" />}
+      support={<Record wins={record.wins} losses={record.losses} cue="none" wrap />}
     />
   );
 }
@@ -287,10 +293,12 @@ function OnlineOfflineCard({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent>
         {hasAny ? (
-          <div className="grid grid-cols-2 gap-2">
-            <SplitStat label={t('dashboard.hero.online')} record={online} />
-            <SplitStat label={t('dashboard.hero.offline')} record={offline} />
-          </div>
+          <StatRow
+            figures={[
+              <SplitStat key="online" label={t('dashboard.hero.online')} record={online} />,
+              <SplitStat key="offline" label={t('dashboard.hero.offline')} record={offline} />,
+            ]}
+          />
         ) : (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         )}

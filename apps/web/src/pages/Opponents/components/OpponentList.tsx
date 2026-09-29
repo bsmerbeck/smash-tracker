@@ -35,6 +35,7 @@ import { LIST_PASS_MAX, LIST_PASS_STEP } from '@/components/analytics/BoundedLis
 import { Record as RecordFigure } from '@/components/analytics/Record';
 import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
 import { OpponentSourceBadge } from './OpponentSourceBadge';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 
 export interface OpponentListProps {
   matches: Match[];
@@ -242,6 +243,7 @@ export function OpponentList({
                   type="button"
                   variant="link"
                   size="sm"
+                  className={MUTED_LINK_TONE}
                   onClick={() =>
                     setVisibleCount((v) => Math.min(v + LIST_PASS_STEP, filtered.length))
                   }

@@ -4,13 +4,6 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -20,26 +13,129 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { Match } from '@smash-tracker/shared';
+import { resolveWindow, type HorizonKey, type Match } from '@smash-tracker/shared';
 import { toast } from 'sonner';
-import { getLastNMatches } from '@/lib/stats';
-import { getFighterById } from '@/data/sprites';
+import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
+import {
+  buildDrillDownSearch,
+  matchesDrillDown,
+  sortMatchesNewestFirst,
+} from '@/lib/drillDownParams';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
+import { CHART_TOKENS } from '@/components/charts/tokens';
 import { useDashboardContext } from '../DashboardContext';
 
-const LIMIT_OPTIONS = [5, 10, 20, 30];
-
-/** Ports legacy/src/screens/Dashboard/components/PreviousMatches. */
-export function PreviousMatches({ matches }: { matches: Match[] }) {
-  const { t } = useTranslation();
+/**
+ * Ports legacy/src/screens/Dashboard/components/PreviousMatches.
+ *
+ * Plan 39.1-50 (OOS-12b; UI-SPEC §10.4 "never a per-chart control", §6.4,
+ * §4.3 rules 2 and 7): no card-level Limit select. The list is the selected
+ * fighter's games inside the page horizon's window, newest first — the Form
+ * Curve's window (`resolveWindow({ scoped: false })`) — on the kit
+ * BoundedList (8 rows, "Show all N" inline to 25, then a terminus to Fighter
+ * Analysis' `#games` list). The terminus's N is `matchesDrillDown` over the
+ * SAME matches and axes the link applies, so the label equals the list it
+ * opens by construction (ties at the window's oldest edge included).
+ */
+export function PreviousMatches({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
+  const { t, i18n } = useTranslation();
   const { fighter } = useDashboardContext();
-  const [limit, setLimit] = useState(5);
+  const subjectPath = useSubjectPath();
+  // React Compiler forbids a bare `Date.now()` in render; a lazy initializer
+  // fixes the window's "now" for the page's life (LastMatchesChart's pattern).
+  const [nowMs] = useState(() => Date.now());
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
 
   const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
-  const recent = getLastNMatches(fighterMatches, limit);
+  const windowed = sortMatchesNewestFirst(
+    resolveWindow({ matches: fighterMatches, horizon, scoped: false, nowMs }).matches,
+  );
+  const newest = windowed[0];
+  const oldest = windowed[windowed.length - 1];
+  const axes =
+    fighter && newest && oldest
+      ? { fighterId: fighter.id, from: oldest.time, to: newest.time }
+      : null;
+  const terminusCount = axes ? matches.filter((m) => matchesDrillDown(m, axes)).length : 0;
+  const terminusHref = axes
+    ? subjectPath(`/fighter-analysis?${buildDrillDownSearch(axes).toString()}#games`)
+    : undefined;
+  const dateFormat: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  };
+
+  const rows = windowed.map((match) => {
+    const pairing = t('matchups.pairingHeading', {
+      fighter: localizedFighterName(match.fighter_id, t),
+      opponent: localizedFighterName(match.opponent_id, t),
+    });
+    const stageId = match.map?.id ?? 0;
+    const stageName = stageId !== 0 ? (stagesById.get(stageId)?.name ?? match.map?.name) : null;
+    return (
+      <li
+        key={match.id}
+        className="flex flex-col gap-0.5 py-1.5"
+        data-slot="previous-match-row"
+        data-match-id={match.id}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            data-slot="previous-match-mark"
+            className="inline-block size-1.5 shrink-0 rounded-sm"
+            style={{ backgroundColor: match.win ? CHART_TOKENS.win : CHART_TOKENS.loss }}
+          />
+          <span data-slot="previous-match-result" className="shrink-0 text-sm font-medium">
+            {match.win ? t('common.win') : t('common.loss')}
+          </span>
+          <span
+            data-slot="previous-match-pairing"
+            className="min-w-0 flex-1 truncate text-sm"
+            title={pairing}
+          >
+            {pairing}
+          </span>
+          {/* Synced matches can't be deleted (the next sync would just
+              re-create them; the API 409s it) — manage them on the Match
+              Data page instead. */}
+          {!match.source && (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              // A 32 px button in a 20 px text line: the negative block
+              // margin keeps manual and synced rows the same height.
+              className="-my-1.5 shrink-0"
+              aria-label={t('shared.matchDelete.aria')}
+              onClick={() => setPendingDelete(match)}
+            >
+              <Trash2 />
+            </Button>
+          )}
+        </div>
+        <p
+          data-slot="previous-match-meta"
+          className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs leading-4 text-muted-foreground tabular-nums"
+        >
+          {stageName && <span>{stageName}</span>}
+          <span>{new Date(match.time).toLocaleDateString(i18n.language, dateFormat)}</span>
+        </p>
+      </li>
+    );
+  });
+
+  const empty = (
+    <p className="text-sm text-muted-foreground">
+      {fighterMatches.length === 0 || horizon === 'last30'
+        ? t('dashboard.previous.empty')
+        : t(`dashboard.previous.windowEmpty.${horizon}`)}
+    </p>
+  );
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -55,80 +151,22 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle>{t('dashboard.previous.title')}</CardTitle>
-        {recent.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{t('dashboard.previous.limit')}</span>
-            <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
-              <SelectTrigger className="w-[80px]" aria-label={t('dashboard.previous.limitAria')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LIMIT_OPTIONS.map((option) => (
-                  <SelectItem key={option} value={String(option)}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
       </CardHeader>
       <CardContent>
-        {recent.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('dashboard.previous.empty')}</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {recent.map((match) => {
-              const fighterSprite = getFighterById(match.fighter_id);
-              const opponentSprite = getFighterById(match.opponent_id);
-              return (
-                <li
-                  key={match.id}
-                  className="flex items-center justify-between gap-2 rounded-md border p-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center text-center">
-                      {fighterSprite && (
-                        <img src={fighterSprite.url} alt="" className="size-8 object-contain" />
-                      )}
-                      <span className="text-xs">
-                        {fighterSprite ? localizedFighterName(match.fighter_id, t) : ''}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-center text-center">
-                      {opponentSprite && (
-                        <img src={opponentSprite.url} alt="" className="size-8 object-contain" />
-                      )}
-                      <span className="text-xs">
-                        {opponentSprite ? localizedFighterName(match.opponent_id, t) : ''}
-                      </span>
-                    </div>
-                    <span
-                      className={`font-medium ${match.win ? 'text-emerald-500' : 'text-destructive'}`}
-                    >
-                      {match.win ? t('common.win') : t('common.loss')}
-                    </span>
-                  </div>
-                  {/* Synced matches can't be deleted (the next sync would
-                      just re-create them; the API 409s it) — manage them on
-                      the Match Data page instead. */}
-                  {!match.source && (
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={t('shared.matchDelete.aria')}
-                      onClick={() => setPendingDelete(match)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <BoundedList
+          cap={LIST_CAP}
+          rows={rows}
+          labels={{
+            showAll: t('analytics.list.showAll', { count: rows.length }),
+            showFewer: t('analytics.list.showFewer'),
+            showMore: t('analytics.list.showMore50'),
+            terminus: t('analytics.list.allGames', { count: terminusCount }),
+          }}
+          empty={empty}
+          terminusHref={terminusHref}
+        />
       </CardContent>
 
       <AlertDialog

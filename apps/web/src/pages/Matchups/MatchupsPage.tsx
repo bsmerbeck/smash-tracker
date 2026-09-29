@@ -2,11 +2,7 @@ import { useCallback, useId, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Insight, Match } from '@smash-tracker/shared';
-import {
-  ABSTENTION_FLOOR_GAMES,
-  buildPeriodSeries,
-  periodPointMatchIdsForKey,
-} from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, periodPointMatchIdsForKey } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartCard } from '@/components/charts/ChartCard';
@@ -47,10 +43,11 @@ import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
+import { buildMatchupPeriodSeries } from './lib/matchupPeriodSeries';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import {
   MatchupChart,
   buildFormNowVerdict,
-  formStripEventKeyForMatch,
   renderFormNowHead,
   useMatchupFormNow,
 } from './components/MatchupChart';
@@ -299,10 +296,9 @@ export function MatchupsPage() {
   // against — each game resolves to both its form-strip set key and its
   // period key, so one `event` axis narrows to exactly the clicked mark's
   // games. Above every early return (Rules of Hooks).
-  const periodSeries = useMemo(
-    () => buildPeriodSeries({ matches: matchupMatches }),
-    [matchupMatches],
-  );
+  // Plan 39.1-41 (PD-41-1): quarterly — `buildMatchupPeriodSeries`, the ONE
+  // scoped builder the chart's own tests exercise.
+  const periodSeries = useMemo(() => buildMatchupPeriodSeries(matchupMatches), [matchupMatches]);
   // WR-02 (39.1-REVIEW iteration 2): the URL's `event=` period key resolves
   // by the key's OWN grain rule over this same base, not through whichever
   // grain the ladder picks right now — a key drawn at `week` still lands on
@@ -314,14 +310,21 @@ export function MatchupsPage() {
     const ids = periodPointMatchIdsForKey(drillEventKey, matchupMatches);
     return ids ? new Set(ids) : undefined;
   }, [drillEventKey, matchupMatches]);
+  // Plan 39.1-42 (PD-42-4): the strip's set keys over the SAME
+  // `matchupMatches` MatchupChart builds its strip from — a manual play
+  // session is one set, a legacy `game:<id>` key still resolves.
+  const stripSetKeysForMatch = useMemo(
+    () => createFormStripSetKeyResolver(matchupMatches),
+    [matchupMatches],
+  );
   const eventKeysForMatch = useCallback(
     (match: Match): string[] => {
-      const setKey = formStripEventKeyForMatch(match);
+      const setKeys = stripSetKeysForMatch(match);
       return drillEventKey != null && periodEventMatchIds?.has(match.id)
-        ? [setKey, drillEventKey]
-        : [setKey];
+        ? [...setKeys, drillEventKey]
+        : setKeys;
     },
-    [drillEventKey, periodEventMatchIds],
+    [drillEventKey, periodEventMatchIds, stripSetKeysForMatch],
   );
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE

@@ -62,11 +62,17 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
   const isElite = roundedMmr !== null && roundedMmr >= GSP_MODEL.ELITE_MMR;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    // Plan 39.1-49 (OOS-9): below 640px the figures use the `figure` role
+    // size (text-xl font-semibold) so '10,880,284' fits its half-width card,
+    // and the cards hug their own content (max-sm:items-start — the RED run
+    // measured two stretched cards at 390); sm: and up are unchanged.
+    <div className="grid grid-cols-2 gap-4 max-sm:items-start lg:grid-cols-5" data-slot="gsp-hero">
       <HeroCard label={t('gsp.hero.currentGsp')}>
         {lastPoint !== null ? (
           <>
-            <span className="text-3xl font-bold">{lastPoint.gsp.toLocaleString()}</span>
+            <span className="text-xl font-semibold sm:text-3xl sm:font-bold">
+              {lastPoint.gsp.toLocaleString()}
+            </span>
             <p className="text-sm text-muted-foreground">{t('gsp.hero.latestReading')}</p>
           </>
         ) : (
@@ -77,7 +83,9 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
       <HeroCard label={t('gsp.hero.estMmr')}>
         {estimate !== null && roundedMmr !== null ? (
           <>
-            <span className="text-3xl font-bold">{roundedMmr.toLocaleString()}</span>
+            <span className="text-xl font-semibold sm:text-3xl sm:font-bold">
+              {roundedMmr.toLocaleString()}
+            </span>
             {estimate.zone !== 'main' && (
               <p className="text-xs font-medium text-amber-500">
                 {t('gsp.hero.tailReading', { zone: estimate.zone })}
@@ -111,7 +119,7 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
           </span>
         ) : (
           <>
-            <span className="text-3xl font-bold">
+            <span className="text-xl font-semibold sm:text-3xl sm:font-bold">
               {(GSP_MODEL.ELITE_MMR - roundedMmr).toLocaleString()}
             </span>
             <p className="text-sm text-muted-foreground">
@@ -127,7 +135,9 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
       <HeroCard label={t('gsp.hero.recentWinRate')}>
         {winRate !== null ? (
           <>
-            <span className="text-3xl font-bold">{Math.round(winRate * 100)}%</span>
+            <span className="text-xl font-semibold sm:text-3xl sm:font-bold">
+              {Math.round(winRate * 100)}%
+            </span>
             <p className="text-sm text-muted-foreground">
               {t('gsp.hero.lastNGames', {
                 // Count only match points — calibration readings aren't games.
@@ -235,7 +245,9 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
-            <span className="text-3xl font-bold">{computed.toLocaleString()}</span>
+            <span className="text-xl font-semibold sm:text-3xl sm:font-bold">
+              {computed.toLocaleString()}
+            </span>
             <Button
               type="button"
               size="icon-xs"

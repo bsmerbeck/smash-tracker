@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
@@ -25,17 +26,19 @@ import {
   DRILL_DOWN_STAGE_PARAM,
   DRILL_DOWN_TO_PARAM,
   DRILL_DOWN_VS_PARAM,
+  buildDrillDownSearch,
   readDrillDownParams,
   sortMatchesNewestFirst,
   type DrillDownAxes,
 } from '@/lib/drillDownParams';
+import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { TrendsHero } from './components/TrendsHero';
 import {
   TrendsReadsRail,
   buildTrendsVerdict,
   useTrendsInsights,
 } from './components/TrendsReadsRail';
-import { CareerTimelineSlot } from './components/CareerTimelineSlot';
+import { CareerTimelineCard } from './components/CareerTimelineCard';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
@@ -45,15 +48,31 @@ import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCard
 const GAMES_ANCHOR_ID = 'games';
 
 /**
+ * Plan 39.1-38 (design-audit item 9; UI-SPEC §8.2 "insight before chart"):
+ * below lg the cells stack in DOM order — stat row, reads rail, career
+ * timeline, [Sessions, Recent events], [Setting, Mix] — so a phone reads the
+ * insight before the chart. At lg these placement utilities restore the
+ * desktop composition (stat row row 1, timeline row 2, the three 4-col cells
+ * row 3 with the reads in the centre), never a CSS `order` utility; the
+ * loading skeleton uses the same constants.
+ */
+const TRENDS_HERO_PLACEMENT = 'lg:row-start-1';
+const TRENDS_TIMELINE_PLACEMENT = 'lg:row-start-2';
+const TRENDS_LEFT_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-3';
+const TRENDS_READS_PLACEMENT = 'lg:col-start-5 lg:row-start-3';
+const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
+
+/**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
  * §8.2, TRND-02, INS-05): `PageShell` -> one filter row (title + `HorizonSwitch`)
  * -> `PageGrid` rows. Own-account only (38 D-04) — every link this page
  * builds is an own-account link, never branched on coach state.
  *
- * Row 1 is the five-figure `StatRow` hero. Row 2 is the interim
- * career-timeline slot (`CareerTimelineSlot`: the existing `RatingCurve`/
- * `MonthlyPerformance` charts at 6+6, D-02/D-13 — Phase 41 replaces this with
- * the bound career-timeline chart, UI-SPEC §12.1). Row 3 is the three 4-col
+ * Row 1 is the five-figure `StatRow` hero. Row 2 is the 12-col career
+ * timeline (`CareerTimelineCard`, UI-SPEC §12.1, sketch 002-C) — plan
+ * 39.1-34 retired the interim chart.js Rating Curve / Monthly Performance
+ * slot here (owner decision 2026-09-25, superseding D-02 for the timeline
+ * only). Row 3 is the three 4-col
  * rails: left (Sessions & Tilt, Recent events), centre (`TrendsReadsRail`,
  * the engine-backed reads), right (Setting comparison, Match-type mix). The
  * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2) —
@@ -118,6 +137,10 @@ export function TrendsPage() {
     ],
   );
   const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  // Plan 39.1-42 (PD-42-4): the thin strip's set keys over the SAME
+  // `matches` CareerTimelineCard builds its strip from — a manual play
+  // session is one set, a legacy `game:<id>` key still resolves.
+  const stripSetKeysForMatch = useMemo(() => createFormStripSetKeyResolver(matches), [matches]);
 
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
   // computation this page shares with `TrendsReadsRail` (which takes the
@@ -192,7 +215,8 @@ export function TrendsPage() {
   // the URL, and this page's doors write one — Clear filters drops every
   // axis the terminus reads (and the `#games` hash), which unmounts it.
   const navigate = useNavigate();
-  function handleClearFilters(): void {
+  /** The current search minus every axis this page's terminus narrows by — the ONE spelling every writer below shares. */
+  function searchWithoutDrillAxes(): URLSearchParams {
     const params = new URLSearchParams(searchParams);
     for (const key of [
       DRILL_DOWN_FIGHTER_PARAM,
@@ -205,8 +229,47 @@ export function TrendsPage() {
     ]) {
       params.delete(key);
     }
-    const search = params.toString();
+    return params;
+  }
+  function handleClearFilters(): void {
+    const search = searchWithoutDrillAxes().toString();
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
+
+  // Plan 39.1-35 (UI-SPEC §10.3, §12.1 "click a period → from / to →
+  // FilteredMatchList"): a career-timeline period or month drills through
+  // Phase 38's URL contract, built exactly like FighterAnalysisPage's
+  // `handleHeroDrill` — a drill REPLACES any prior narrowing or claim axis,
+  // keeps every other param, and lands on this page's own terminus. The
+  // page's own pathname, never a subject prefix (Trends is own-account only,
+  // 38 D-04).
+  function handleTimelineDrill({ fromMs, toMs }: { fromMs: number; toMs: number }): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ from: fromMs, to: toMs })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
+  // Plan 39.1-35 (UI-SPEC §10.1 FormStrip set → `event=<key>`): a thin
+  // account's per-game strip set drills like every other FormStrip host's —
+  // the terminus below resolves the key through the SAME
+  // `createFormStripSetKeyResolver` rule over the strip's own base, so the
+  // list is exactly that set's games (plan 39.1-42: a session set too).
+  function handleTimelineSetDrill(setKey: string): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ eventKey: setKey })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
   }
 
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
@@ -235,20 +298,20 @@ export function TrendsPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('trends.loading')}</span>
           <PageGrid>
-            <GridCell span={12}>
+            <GridCell span={12} className={TRENDS_HERO_PLACEMENT}>
               <CardSkeleton variant="stat-row" rows={5} statusLabel={t('trends.loading')} />
             </GridCell>
-            <GridCell span={12}>
-              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
-            </GridCell>
-            <GridCell span={4} stack>
-              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
-              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
-            </GridCell>
-            <GridCell span={4}>
+            <GridCell span={4} className={TRENDS_READS_PLACEMENT}>
               <CardSkeleton variant="insight" statusLabel={t('trends.loading')} />
             </GridCell>
-            <GridCell span={4} stack>
+            <GridCell span={12} className={TRENDS_TIMELINE_PLACEMENT}>
+              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
             </GridCell>
@@ -273,14 +336,9 @@ export function TrendsPage() {
     );
   }
 
-  const filterRow = (
-    <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('trends.title')}</h1>
-        <HorizonSwitch />
-      </CardContent>
-    </Card>
-  );
+  // Plan 39.1-38 (design-audit item 6; UI-SPEC §10.4, sketch 002-C
+  // `.filters`): ONE unboxed row — title, spacer, HorizonSwitch.
+  const filterRow = <PageFilterRow title={t('trends.title')} trailing={<HorizonSwitch />} />;
 
   return (
     <PageShell filterRow={filterRow}>
@@ -292,20 +350,14 @@ export function TrendsPage() {
             'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
         )}
       >
-        <GridCell span={12}>
+        {/* Plan 39.1-38 (UI-SPEC §8.2 "insight before chart"): DOM order is
+            the phone reading order — stat row, reads, timeline, then the two
+            rail stacks; lg placement keeps the desktop composition. */}
+        <GridCell span={12} className={TRENDS_HERO_PLACEMENT}>
           <TrendsHero matches={matches} horizon={horizon} />
         </GridCell>
 
-        <GridCell span={12}>
-          <CareerTimelineSlot matches={matches} />
-        </GridCell>
-
-        <GridCell span={4} stack>
-          <SessionsAndTilt matches={matches} />
-          <RecentEvents matches={matches} />
-        </GridCell>
-
-        <GridCell span={4}>
+        <GridCell span={4} className={TRENDS_READS_PLACEMENT}>
           <TrendsReadsRail
             insights={trendsInsights}
             dismissedIds={dismissedIds}
@@ -315,7 +367,21 @@ export function TrendsPage() {
           />
         </GridCell>
 
-        <GridCell span={4} stack>
+        <GridCell span={12} className={TRENDS_TIMELINE_PLACEMENT}>
+          <CareerTimelineCard
+            matches={matches}
+            horizon={horizon}
+            onSelectPeriod={handleTimelineDrill}
+            onSelectSet={handleTimelineSetDrill}
+          />
+        </GridCell>
+
+        <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
+          <SessionsAndTilt matches={matches} />
+          <RecentEvents matches={matches} />
+        </GridCell>
+
+        <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
           <SettingComparison
             matches={matches}
             horizon={horizon}
@@ -339,6 +405,7 @@ export function TrendsPage() {
                 <FilteredMatchList
                   matches={sortedMatches}
                   axes={terminusAxes}
+                  eventKeyForMatch={stripSetKeysForMatch}
                   resolveClaim={resolveClaimForTerminus}
                   claimSummary={claimSummary}
                   onClearFilters={handleClearFilters}

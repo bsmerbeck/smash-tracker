@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { HorizonKey, Match } from '@smash-tracker/shared';
+import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
+import {
+  ACCOUNT_SCOPE,
+  TRENDS_READ_TEMPLATES,
+  buildTrendsBackfillInsights,
+} from '@smash-tracker/shared';
+import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -264,6 +270,263 @@ describe('TrendsReadsRail', () => {
       // The games door precedes the rating-model button in DOM/tab order.
       const relation = links[0]!.compareDocumentPosition(ratingModelButton);
       expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    });
+  });
+
+  /**
+   * Plan 39.1-40 (D-14, UI-SPEC §7.8 rules 1-4, §9.4): the guard:layout
+   * harness's realistic account (seed 39_120_024, 300 games, opponents Mario
+   * / Luigi) — its own reads leave free slots and hold no locked candidate, so
+   * the engine back-fills Best record and Toughest record FACT cards at
+   * account scope instead of an apology card.
+   */
+  describe('39.1-40: engine back-fill on a quiet account', () => {
+    function realisticFixture(): Match[] {
+      return generateSyntheticMatches({
+        seed: 39_120_024,
+        count: 300,
+        mainFighterIds: [8, 22],
+        opponentFighterIds: [1, 10],
+        stageIds: [1],
+      });
+    }
+
+    function readCard(templateId: string): HTMLElement {
+      const card = document.querySelector(
+        `[data-slot="trends-read-card"][data-template-id="${templateId}"]`,
+      );
+      expect(card, `no ${templateId} read card`).not.toBeNull();
+      return card as HTMLElement;
+    }
+
+    it('back-fills Best and Toughest record cards: at least 2 regular cards and no fallback card', async () => {
+      const { container } = renderRail(realisticFixture());
+      await waitForSettled();
+
+      const regular = container.querySelectorAll(`${RAIL_CARD_SELECTOR}[data-card-kind="regular"]`);
+      expect(regular.length).toBeGreaterThanOrEqual(2);
+      expect(
+        container.querySelectorAll(
+          '[data-slot="trends-read-card"][data-template-id="bestMatchup"]',
+        ),
+      ).toHaveLength(1);
+      expect(
+        container.querySelectorAll(
+          '[data-slot="trends-read-card"][data-template-id="worstMatchup"]',
+        ),
+      ).toHaveLength(1);
+      expect(container.querySelector('[data-rail-fallback="true"]')).toBeNull();
+    });
+
+    it("each back-fill card's evidence names its lifetime sample ('all time') and never a recent horizon", async () => {
+      renderRail(realisticFixture());
+      await waitForSettled();
+
+      for (const templateId of ['bestMatchup', 'worstMatchup']) {
+        const evidence =
+          readCard(templateId).querySelector('[data-slot="insight-card-evidence"]')?.textContent ??
+          '';
+        expect(evidence).toContain('all time');
+        expect(evidence).not.toContain('last 30');
+      }
+    });
+
+    it("the Best record card's first door is its counted-games door, claim=bestMatchup:account:last30 (URL-encoded)", async () => {
+      renderRail(realisticFixture());
+      await waitForSettled();
+
+      const links = within(readCard('bestMatchup')).getAllByRole('link');
+      const href = links[0]!.getAttribute('href') ?? '';
+      expect(href).toContain('claim=bestMatchup%3Aaccount%3Alast30');
+      const query = href.split('?')[1]?.split('#')[0] ?? '';
+      expect(new URLSearchParams(query).get('claim')).toBe('bestMatchup:account:last30');
+      expect(links[0]!.textContent ?? '').toMatch(/see the \d+ games?/i);
+    });
+
+    it('marks the synthetic fallback card with data-rail-fallback when there are no games at all', async () => {
+      const { container } = renderRail([]);
+      await waitForSettled();
+
+      expect(container.querySelectorAll('[data-rail-fallback="true"]')).toHaveLength(1);
+    });
+  });
+
+  /**
+   * Plan 39.1-40 Task 2 (UI-SPEC §9.4, D-06, sketch 002-C): every evidence
+   * line names its real sample, and each card carries its evidence mark
+   * between the evidence and the doors (UI-SPEC §7.8 order).
+   */
+  describe('39.1-40: evidence names the real sample; marks sit between evidence and doors', () => {
+    function renderInsights(insights: Insight[]) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <TrendsReadsRail
+                  insights={insights}
+                  dismissedIds={[]}
+                  dismiss={() => {}}
+                  restoreAll={() => {}}
+                  horizon="last30"
+                />
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    }
+
+    function cardFor(templateId: string): HTMLElement {
+      const card = document.querySelector(
+        `[data-slot="trends-read-card"][data-template-id="${templateId}"]`,
+      );
+      expect(card, `no ${templateId} read card`).not.toBeNull();
+      return card as HTMLElement;
+    }
+
+    function evidenceOf(templateId: string): string {
+      return (
+        cardFor(templateId).querySelector('[data-slot="insight-card-evidence"]')?.textContent ?? ''
+      );
+    }
+
+    it("a TiltCost card's evidence reads '<record> · <n> spots · <confidence> · lifetime scope' — no recent horizon, no 'all time over'", async () => {
+      renderRail(sessionFatigueFixture());
+      await waitForSettled();
+
+      const evidence = evidenceOf('tiltCost');
+      expect(evidence).toMatch(
+        /^\d+–\d+ · \d+ spots? · (low|medium|high) confidence · lifetime scope$/,
+      );
+      expect(evidence).not.toContain('last 30');
+      expect(evidence).not.toContain('all time over');
+    });
+
+    it("a SessionFatigue card's evidence reads '<n> sessions ran past 20 games · <confidence>' and keeps its standing caveat", async () => {
+      renderRail(sessionFatigueFixture());
+      await waitForSettled();
+
+      expect(evidenceOf('sessionFatigue')).toMatch(
+        /^\d+ sessions? ran past 20 games · (low|medium|high) confidence$/,
+      );
+      expect(
+        cardFor('sessionFatigue').querySelector('[data-slot="insight-card-caveat"]')?.textContent,
+      ).toBe(
+        'Bracket depth also rises late in a session, so part of this gap is opponent strength.',
+      );
+    });
+
+    it("each card's mark sits between its evidence and its doors", async () => {
+      renderRail(sessionFatigueFixture());
+      await waitForSettled();
+
+      for (const templateId of ['tiltCost', 'sessionFatigue']) {
+        const card = cardFor(templateId);
+        const evidence = card.querySelector('[data-slot="insight-card-evidence"]')!;
+        const mark = card.querySelector('[data-slot="insight-card-mark"]');
+        const doors = card.querySelector('[data-slot="insight-card-doors"]')!;
+        expect(mark, `${templateId} has no mark`).not.toBeNull();
+        expect(
+          evidence.compareDocumentPosition(mark!) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+        expect(
+          mark!.compareDocumentPosition(doors) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+      const tiltCard = cardFor('tiltCost');
+      const rowHref = tiltCard
+        .querySelector('[data-slot="comparison-bars-dumbbell"] a')
+        ?.getAttribute('href');
+      const doorHref = tiltCard
+        .querySelector('[data-slot="insight-card-doors"] a')
+        ?.getAttribute('href');
+      // The 'Next game' row links to the card's own counted games.
+      // (The router Link resolves against the current path; the kit row keeps
+      // the same-route relative href — both land on the same location.)
+      expect(rowHref).toBeTruthy();
+      expect(new URL(rowHref!, 'http://app/').href).toBe(new URL(doorHref!, 'http://app/').href);
+      expect(
+        cardFor('sessionFatigue').querySelector('[data-slot="trends-session-buckets"]'),
+      ).not.toBeNull();
+    });
+
+    it('a LastEventRecap card with a set loss renders its set-loss sub line and its set strip', async () => {
+      const base = NOW - 10 * HOUR;
+      const games: Match[] = [
+        makeMatch({
+          id: 'e1',
+          time: base,
+          win: true,
+          eventName: 'Genesis 12',
+          externalId: 'sgg:gen-set1:g1',
+          opponent: 'rival',
+        }),
+        makeMatch({
+          id: 'e2',
+          time: base + HOUR,
+          win: true,
+          eventName: 'Genesis 12',
+          externalId: 'sgg:gen-set1:g2',
+          opponent: 'rival',
+        }),
+        makeMatch({
+          id: 'e3',
+          time: base + 2 * HOUR,
+          win: false,
+          eventName: 'Genesis 12',
+          externalId: 'sgg:gen-set2:g1',
+          opponent: 'ace',
+        }),
+        makeMatch({
+          id: 'e4',
+          time: base + 3 * HOUR,
+          win: false,
+          eventName: 'Genesis 12',
+          externalId: 'sgg:gen-set2:g2',
+          opponent: 'ace',
+        }),
+      ];
+      const recap = buildTrendsBackfillInsights({
+        matches: games,
+        horizon: 'last30',
+        nowMs: NOW,
+      }).find((insight) => insight.templateId === 'lastEventRecap')!;
+      expect(recap.state).toBe('fact');
+      renderInsights([recap]);
+      await waitForSettled();
+
+      const card = cardFor('lastEventRecap');
+      expect(card.querySelector('[data-slot="insight-card-sub"]')?.textContent).toBe(
+        'Set loss — ace 0–2.',
+      );
+      expect(card.querySelector('[data-slot="set-strip"]')).not.toBeNull();
+    });
+
+    it('a TiltCost card with no confidence tier falls back to the single-sample evidence line', async () => {
+      const base = NOW - 60 * DAY;
+      const games = Array.from({ length: 39 }, (_, i) =>
+        makeMatch({ id: `t${i}`, time: base + i * 60_000, win: i % 13 < 8 }),
+      );
+      const tilt = TRENDS_READ_TEMPLATES.find((template) => template.id === 'tiltCost')!.build({
+        matches: games,
+        scope: ACCOUNT_SCOPE,
+        horizon: 'last30',
+        nowMs: NOW,
+      })[0]!;
+      expect(tilt.recent.kind).toBe('evidenced');
+      const tierless: Insight = {
+        ...tilt,
+        recent: { ...tilt.recent, sample: { ...tilt.recent.sample, confidenceTier: null } },
+      } as Insight;
+      renderInsights([tierless]);
+      await waitForSettled();
+
+      const evidence = evidenceOf('tiltCost');
+      expect(evidence).toMatch(/^\d+–\d+/);
+      expect(evidence).not.toContain('spots');
+      expect(evidence).not.toContain('lifetime scope');
     });
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,6 +12,27 @@ import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as statsModule from '@/lib/stats';
 import * as drillDownParamsModule from '@/lib/drillDownParams';
+import type { TrendLineProps } from '@/components/charts/TrendLine';
+
+/**
+ * Plan 39.1-39: records the H2H trend's props (points, onSelectPoint) while
+ * still rendering the REAL TrendLine, so every other case in this file sees
+ * the unchanged chart.
+ */
+let capturedHubTrendProps: TrendLineProps | undefined;
+vi.mock('@/components/charts/TrendLine', async () => {
+  const actual = await vi.importActual<typeof import('@/components/charts/TrendLine')>(
+    '@/components/charts/TrendLine',
+  );
+  const RealTrendLine = actual.TrendLine;
+  return {
+    ...actual,
+    TrendLine: (props: TrendLineProps) => {
+      capturedHubTrendProps = props;
+      return <RealTrendLine {...props} />;
+    },
+  };
+});
 
 /**
  * WR-03 (38-REVIEW-FIX): a partial mock of `matchesDrillDown` (defaulting to
@@ -440,6 +461,24 @@ describe('OpponentHubPage', () => {
   });
 
   describe('un-pooling and merge affordances', () => {
+    // Plan 39.1-39 (UI-SPEC §4.3): the header's merge affordance is a
+    // muted link button (MUTED_LINK_TONE), never brand-red text.
+    it('plan 39.1-39: "Merge into..." is a muted link button, never brand red', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+      const classes = screen.getByRole('button', { name: 'Merge into...' }).className.split(/\s+/);
+      expect(classes).toContain('text-muted-foreground');
+      expect(classes).toContain('hover:text-foreground');
+      expect(classes).not.toContain('text-primary');
+      // Design-fidelity loop (after-39.1-39 realistic hub 390): the link sits
+      // flush with the h1's left edge when the header wraps — no button inset.
+      expect(classes).toContain('px-0');
+    });
+
     it('renders a "Merge into..." affordance on the header', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
@@ -670,15 +709,60 @@ describe('OpponentHubPage', () => {
         expect(groups).toHaveLength(1);
         expect(document.querySelectorAll('[data-slot="form-strip-tick"]')).toHaveLength(20);
 
-        const caption = document.querySelector('[data-slot="form-strip-caption-first"]');
-        const captionText = caption?.textContent ?? '';
-        // Date only (the other two hosts' `analytics.strip.sessionLabel`) — no record at all.
-        expect(captionText).toMatch(/^Session · /);
-        expect(captionText).not.toMatch(/\d+–\d+/);
+        // REWRITTEN by plan 39.1-42: the caption is gone — the group's own
+        // label row carries the date-only label and, separately, the DRAWN
+        // W–L (20–0), never the whole session's 20–5.
+        const labelRow = groups[0]!.querySelector('[data-slot="form-strip-event-label"]');
+        const labelText = labelRow?.firstElementChild?.textContent ?? '';
+        // Date only (the other hosts' `analytics.strip.sessionLabel`) — no record in the label.
+        expect(labelText).toMatch(/^Session · /);
+        expect(labelText).not.toMatch(/\d+–\d+/);
+        expect(labelRow?.lastElementChild?.textContent).toBe('20–0');
 
         const groupName = groups[0]!.getAttribute('aria-label') ?? '';
-        expect(groupName).toBe(`${captionText} · 20–0`);
+        expect(groupName).toBe(`${labelText} · 20–0`);
         expect(groupName).not.toMatch(/20–5/);
+      });
+
+      it('plan 39.1-42: the hub strip has no head (no title), a foot with the drawn count, and one labelled event per tournament', async () => {
+        const start = Date.UTC(2024, 2, 10, 12, 0, 0);
+        const day = 24 * 60 * 60 * 1000;
+        listMatches.mockResolvedValue([
+          ...[0, 1].map((g) =>
+            makeMatch({
+              id: `a${g}`,
+              time: start + g * 60_000,
+              opponent: 'rival',
+              externalId: `sgg:set-a:g${g + 1}`,
+              tournamentName: 'Genesis 9',
+              eventName: 'Ultimate Singles',
+            }),
+          ),
+          ...[0, 1].map((g) =>
+            makeMatch({
+              id: `b${g}`,
+              time: start + 30 * day + g * 60_000,
+              opponent: 'rival',
+              win: false,
+              externalId: `sgg:set-b:g${g + 1}`,
+              tournamentName: 'Battle of BC 8',
+              eventName: 'Ultimate Singles',
+            }),
+          ),
+        ]);
+        renderHub('/opponents/rival');
+
+        await findRecordText('2-2');
+        expect(document.querySelector('[data-slot="form-strip-head"]')).toBeNull();
+        const labels = Array.from(
+          document.querySelectorAll('[data-slot="form-strip-event-label"]'),
+        ).map((row) => Array.from(row.children).map((child) => child.textContent));
+        expect(labels).toEqual([
+          ['Genesis 9', '2–0'],
+          ['Battle of BC 8', '0–2'],
+        ]);
+        const foot = document.querySelector('[data-slot="form-strip-foot"]');
+        expect(foot?.firstElementChild?.textContent).toBe('all 4 games · oldest → newest');
       });
     });
   });
@@ -985,6 +1069,187 @@ describe('OpponentHubPage', () => {
         const body = container.querySelector('[data-slot="opponent-hub-body"]');
         expect(body?.className).not.toMatch(/opacity-60/);
       });
+    });
+  });
+
+  // Plan 39.1-37 (UIX-01, UI-SPEC §6.1 "chart = 8 + 4"; OWNER DECISION 2026-09-25
+  // overriding §8.6's "39.1 leaves the hub layout unchanged"; event-chart-aspect).
+  describe('plan 39.1-37: the hub sits in the page container with its H2H trend in an 8 + 4 row', () => {
+    function threeGames() {
+      return [
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'rival', win: false }),
+      ];
+    }
+
+    function cardTitled(title: string): HTMLElement {
+      const card = [...document.querySelectorAll('[data-slot="card"]')].find(
+        (el) => el.querySelector('[data-slot="card-title"]')?.textContent === title,
+      );
+      expect(card, `card "${title}"`).toBeDefined();
+      return card as HTMLElement;
+    }
+
+    it('renders inside PageShell (content capped at 1440px)', async () => {
+      listMatches.mockResolvedValue(threeGames());
+      const { container } = renderHub('/opponents/rival');
+      await findRecordText('2-1');
+      const body = container.querySelector('[data-slot="opponent-hub-body"]')!;
+      const shell = body.closest('.max-w-\\[1440px\\]');
+      expect(shell).not.toBeNull();
+      expect(shell!.querySelector('h1')?.textContent).toBe('rival');
+    });
+
+    it('puts the H2H trend in an 8-col cell beside a 4-col stack of What They Play then Stages', async () => {
+      listMatches.mockResolvedValue(threeGames());
+      renderHub('/opponents/rival');
+      await findRecordText('2-1');
+
+      const trendCell = cardTitled('H2H Trend').closest('[data-span]');
+      expect(trendCell?.getAttribute('data-span')).toBe('8');
+      const listCell = trendCell!.nextElementSibling;
+      expect(listCell?.getAttribute('data-span')).toBe('4');
+      const stacked = [...listCell!.querySelectorAll('[data-slot="card"]')].map(
+        (card) => card.querySelector('[data-slot="card-title"]')?.textContent,
+      );
+      expect(stacked).toEqual(['What They Play', 'Stages']);
+      expect(trendCell!.parentElement?.getAttribute('data-slot')).toBe('page-grid');
+    });
+
+    it('the loading skeleton mirrors the loaded spans (an 8-col chart beside a 4-col list stack)', () => {
+      listMatches.mockReturnValue(new Promise(() => {}));
+      const { container } = renderHub('/opponents/rival');
+      const status = container.querySelector('[role="status"][aria-busy="true"]')!;
+      expect(status.closest('.max-w-\\[1440px\\]')).not.toBeNull();
+      const eight = status.querySelector('[data-span="8"]');
+      expect(eight).not.toBeNull();
+      const four = eight!.nextElementSibling;
+      expect(four?.getAttribute('data-span')).toBe('4');
+      expect(four!.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
+    });
+  });
+
+  // Plan 39.1-38 (design-audit item 6 / P5, row 7.5; UI-SPEC §10.4).
+  it('plan 39.1-38 filter-row: the hub filter bar is one unboxed page-filter-row (no border, no padding box, no card) keeping every control and aria-label; the h1 header row above it is unchanged', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: false }),
+    ]);
+    const { container } = renderHub('/opponents/rival');
+    await findRecordText('1-1');
+    const rows = container.querySelectorAll('[data-slot="page-filter-row"]');
+    expect(rows).toHaveLength(1);
+    const row = rows[0] as HTMLElement;
+    expect(row.closest('[data-slot="card"]')).toBeNull();
+    expect(row.className).not.toMatch(/(^|\s)(border|rounded-lg|p-4)(\s|$)/);
+    for (const name of ['My character', 'Their character', 'Stage']) {
+      expect(within(row).getByRole('combobox', { name })).toBeInTheDocument();
+    }
+    expect(within(row).getAllByRole('radio').length).toBeGreaterThanOrEqual(6);
+    // The header row's h1 (the print-only H2H evidence packet carries its own).
+    const h1 = screen.getByRole('heading', { level: 1, name: 'rival' });
+    expect(row.contains(h1)).toBe(false);
+    expect(row.compareDocumentPosition(h1) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+});
+
+// Plan 39.1-39 (VIZ-01, UI-SPEC section 11 "line points at most 60"; section
+// 10.2 readable tooltips): the H2H event trend renders at most 60 points on
+// any account (binned by the engine, never by the chart), built ONLY through
+// buildEventTrendPoints; clicking a bin drills event=bin:... and the terminus
+// lists exactly that bin's games; a tournament anchor's event= still lists
+// exactly that anchor's games.
+describe('OpponentHubPage — bounded, readable event trend (plan 39.1-39)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const START = Date.UTC(2026, 0, 5, 18);
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    capturedHubTrendProps = undefined;
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    setMockUser(makeMockUser());
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  function longHistory() {
+    return [
+      ...Array.from({ length: 150 }, (_, i) =>
+        makeMatch({ id: `d${i}`, time: START + i * DAY, win: i % 3 !== 0, opponent: 'rival' }),
+      ),
+      makeMatch({
+        id: 'g1',
+        time: START + 200 * DAY,
+        win: true,
+        opponent: 'rival',
+        eventName: 'Genesis 9',
+      }),
+      makeMatch({
+        id: 'g2',
+        time: START + 200 * DAY + 60_000,
+        win: false,
+        opponent: 'rival',
+        eventName: 'Genesis 9',
+      }),
+    ];
+  }
+
+  function eventPoints() {
+    if (capturedHubTrendProps?.mode !== 'event')
+      throw new Error('expected event-mode TrendLine props');
+    return capturedHubTrendProps;
+  }
+
+  it('a 151-anchor history renders at most 60 points, with readable labels (no engine key, no ISO)', async () => {
+    listMatches.mockResolvedValue(longHistory());
+    renderHub('/opponents/rival');
+    await waitFor(() => expect(capturedHubTrendProps?.mode).toBe('event'));
+    await waitFor(() => expect(eventPoints().points.length).toBeGreaterThan(1));
+    const { points } = eventPoints();
+    expect(points.length).toBeLessThanOrEqual(60);
+    expect(points.some((p) => p.eventKey.startsWith('bin:'))).toBe(true);
+    for (const point of points) {
+      expect(point.context.eventLabel).not.toContain('::');
+      expect(point.context.eventLabel).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+    }
+  });
+
+  it("clicking a bin drills event=bin:... and the terminus lists exactly that bin's games", async () => {
+    listMatches.mockResolvedValue(longHistory());
+    renderHub('/opponents/rival');
+    await waitFor(() => expect(eventPoints().points.length).toBeGreaterThan(1));
+    const bin = eventPoints().points.find((p) => p.eventKey.startsWith('bin:'))!;
+    act(() => eventPoints().onSelectPoint!(bin));
+    await waitFor(() =>
+      expect(screen.getByTestId('location-probe').textContent).toContain(
+        `event=${encodeURIComponent(bin.eventKey)}`,
+      ),
+    );
+    const listEl = document.getElementById('opponent-hub-list') as HTMLElement;
+    await waitFor(() => {
+      const table = within(listEl).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(bin.wins + bin.losses);
+    });
+  });
+
+  it("arriving with a tournament anchor's event= still lists exactly that anchor's games", async () => {
+    listMatches.mockResolvedValue(longHistory());
+    const key = `tournament:genesis 9:${START + 200 * DAY}`;
+    renderHub(`/opponents/rival?event=${encodeURIComponent(key)}`);
+    const listEl = await waitFor(() => {
+      const el = document.getElementById('opponent-hub-list');
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    await waitFor(() => {
+      const table = within(listEl).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(2);
     });
   });
 });

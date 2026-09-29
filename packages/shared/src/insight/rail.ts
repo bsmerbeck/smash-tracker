@@ -88,6 +88,22 @@ const FALLBACK_LOCKED_INSIGHT: Insight = {
 };
 
 /**
+ * Plan 39.1-40: true only for the engine's synthetic fallback card (the
+ * degenerate "insights aren't available" candidate above) — the id AND its
+ * honest copy key, so a real `formNow` read that shares the id is never
+ * mistaken for it. Hosts use this to mark the card (`data-rail-fallback`).
+ */
+export function isRailFallbackInsight(insight: Insight): boolean {
+  return (
+    insight.id === FALLBACK_LOCKED_INSIGHT.id &&
+    insight.copy.key === FALLBACK_LOCKED_INSIGHT.copy.key
+  );
+}
+
+/** Back-fill accepts only direction-free FACT states (D-14: never invented). */
+const BACKFILL_STATES: ReadonlySet<Insight['state']> = new Set(['fact', 'collapsed', 'thin']);
+
+/**
  * UI-SPEC §7.8's `InsightRail` rules (D-07, D-14): at most `cap` cards
  * ranked by (already-populated) salience, never empty, back-filling to the
  * cap with direction-free FACT results before ever inventing a claim, and
@@ -95,8 +111,23 @@ const FALLBACK_LOCKED_INSIGHT: Insight = {
  * carrying at most `UNLOCKS_NEXT_METER_CAP` meters. `steady`/`thinRecent`
  * results are lines, never cards; `hidden` results are dropped entirely.
  */
-export function assembleRail(input: { insights: Insight[]; cap?: number }): AssembleRailResult {
-  const { insights, cap = RAIL_CARD_CAP } = input;
+export function assembleRail(input: {
+  insights: Insight[];
+  cap?: number;
+  /**
+   * Plan 39.1-40 (D-14, D-07): optional host-supplied FACT back-fill (the
+   * Trends rail's account-scope Best / Toughest record and LastEventRecap —
+   * `trendsReads.ts`). Classified after the host's OWN reads and used only
+   * when those hold no locked candidate (a thin account keeps its unlock
+   * lead, UI-SPEC §8.2): entries in state fact / collapsed / thin whose id is
+   * not already an own id fill the free card slots in the same
+   * salience-then-templateId-then-scopeKey order, the rest go to the END of
+   * `promotionQueue`; the fallback is pushed only if `cards` is still empty.
+   * Omitted or empty: byte-identical to the assembly without it.
+   */
+  backfill?: Insight[];
+}): AssembleRailResult {
+  const { insights, cap = RAIL_CARD_CAP, backfill = [] } = input;
 
   const assertive: Insight[] = [];
   const factsOnly: Insight[] = [];
@@ -195,6 +226,20 @@ export function assembleRail(input: { insights: Insight[]; cap?: number }): Asse
       cards.push(locked[0]!);
     } else {
       promotionQueue.push(locked[0]!);
+    }
+  }
+
+  if (locked.length === 0 && backfill.length > 0) {
+    const ownIds = new Set(insights.map((insight) => insight.id));
+    const facts = backfill
+      .filter((insight) => BACKFILL_STATES.has(insight.state) && !ownIds.has(insight.id))
+      .sort(bySalienceThenId);
+    for (const insight of facts) {
+      if (cards.length < cap) {
+        cards.push(insight);
+      } else {
+        promotionQueue.push(insight);
+      }
     }
   }
 

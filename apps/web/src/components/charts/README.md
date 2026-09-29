@@ -7,15 +7,18 @@ come from — read this before adding a sixth chart.
 
 - **Recharts** (`recharts`) may only be imported from inside this directory
   (`apps/web/src/components/charts/**`).
-- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the ten
-  legacy chart.js components Phase 41 will migrate onto this kit (each one is named explicitly in
-  the allowlists below — the list shrinks as Phase 41 lands, never grows).
+- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the five
+  legacy chart.js files still on the allowlist (`chartTheme.ts`, `LastMatchesChart.tsx` and the
+  three GSP charts — each one named explicitly in the allowlists below; the list only shrinks,
+  never grows). Plan 39.1-34 retired the Trends `RatingCurve.tsx` / `MonthlyPerformance.tsx` pair
+  (the career timeline below replaces both); the `chart.js` package stays a dependency until the
+  last five migrate (Phase 41, CHRT-04).
 
 Two independent, committed oracles enforce this, plus a third that enforces the runtime
 consequence of getting it wrong:
 
 1. **`eslint.config.js`** — a `no-restricted-imports` rule scoped to `apps/web/**/*.{ts,tsx}`,
-   with an `ignores` array naming this directory and the ten legacy files. Catches a bad import at
+   with an `ignores` array naming this directory and the five legacy files. Catches a bad import at
    edit time (`pnpm lint`).
 2. **`chartKitBoundary.test.ts`** — a committed test in the DEFAULT `pnpm test` suite that greps
    the source tree for the same two import patterns. It also proves the allowlist can't rot (every
@@ -123,6 +126,35 @@ variant, no new surface colour, no new spacing value.
 | Footer          | `footer?`                                     | Rendered below `children` when not abstained (e.g. a click hint).                                                                                     |
 
 ## The vocabulary — five members, four implemented (D-05, D-09)
+
+### The career timeline (plan 39.1-34 — the UI-SPEC §12.1 replacement, not a new idiom)
+
+**Career timeline** (`CareerTimeline.tsx`) — the Trends Row 2 chart that replaces the chart.js
+Rating Curve and Monthly Performance pair (owner decision 2026-09-25, superseding D-02 for the
+timeline only; VIZ-02's "exactly two members" is superseded for this chart by that decision). It is
+the second `KIT_CHART_PRIMITIVES` member, with a colocated test that renders it inside a
+`ChartCard`. The binding visual is sketch 002-C's `drawRating`: a close-of-period rating line
+with its RD as a 10% band, a fitted y-domain on 100-point hairlines (200 past a 600-point span or on
+a narrow plot), year gridlines through plot and strips, dots and direct labels only on last / peak
+/ low, a neutral recent-window band, and two strips under the plot — a month-resolution
+rate-vs-own-baseline strip (diverging blue / amber, derived `color-mix` fills of the frozen token
+map) and a games strip (5-step sequential blue).
+
+- **The chart never bins.** It reads only `buildCareerTimeline`'s output
+  (`packages/shared/src/insight/careerTimeline.ts`): at most 60 rating closes, at most 108 strip
+  cells, and a second (quarter) strip set the chart switches to below a 520px plot.
+- **One shared time axis, by construction.** One `ComposedChart` with ONE hidden numeric
+  `XAxis`; the strips, gridlines, tick labels, band and direct labels are drawn by in-chart layer
+  components reading that axis through Recharts 3's `useXAxisScale` / `useYAxisScale` /
+  `usePlotArea`, ordered with `ZIndexLayer` (under the band and line: `DefaultZIndexes.grid`;
+  over them: `DefaultZIndexes.label`). The strips are never a second layout.
+- **The oracle.** `guard:layout`'s career-timeline family (`evaluateCareerTimeline`, route
+  `trends-career` on the sparg0-shaped `career` fixture) proves in real Chrome that every strip
+  cell edge sits within 1.5px of the rating line's own time-to-pixel mapping, the mark bounds hold,
+  narrow plots are quarter-grained and no canvas renders.
+- Pure helpers: `careerTimelineLayout.ts` (geometry, y-domain, fills, SVG height) and
+  `timeAxisTicks.ts` (UTC year / month gridlines, local day ticks, label thinning with
+  `periodTicks`' width estimate).
 
 ### Implemented this phase
 

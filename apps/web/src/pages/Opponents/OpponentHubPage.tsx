@@ -11,6 +11,7 @@ import {
   RECENCY_TREATMENT,
   UNKNOWN_STAGE_ID,
   buildOpponentCrossTab,
+  binEventSeries,
   buildOpponentEventSeries,
   confidenceTierFor,
   resolveAliasChain,
@@ -32,13 +33,21 @@ import {
 } from '@/components/charts/MatrixHeat';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { FormStrip, type FormStripEvent } from '@/components/charts/FormStrip';
-import { formStripSessionLabel } from '@/lib/formStripEvents';
+import {
+  buildFormStripEvents,
+  createFormStripSetKeyResolver,
+  formStripLabels,
+  formStripRecentWindow,
+} from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
+import { PageShell } from '@/components/analytics/PageShell';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
+import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { cn } from '@/lib/utils';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
@@ -79,7 +88,6 @@ import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
 import { RecentEncounters } from './components/RecentEncounters';
-import { groupEncounters, type EncounterGroup } from './components/encounterGrouping';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
@@ -93,6 +101,8 @@ import {
   resolveTournamentEntry,
 } from './tournamentHistory';
 import { buildEvidencePacket } from './evidencePacket';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { buildEventKeysForMatch, buildEventTrendPoints } from '@/lib/eventTrendPoints';
 
 /**
  * Phase 38-05 (D-01/D-02): the opponent hub — a child route of the SAME
@@ -204,64 +214,6 @@ function renderOpponentFormNowHead(
       )}
     </div>
   );
-}
-
-/**
- * Converts Task 1's `groupEncounters()` output (newest-first groups of
- * newest-first sets) into `FormStrip`'s oldest-first `FormStripEvent[]` —
- * reusing the SAME event/session grouping `RecentEncounters.tsx` renders
- * rather than writing a second grouping algorithm for this strip.
- */
-function buildOpponentFormStripEvents(
-  groups: EncounterGroup[],
-  recentWindow: { fromMs: number | null; toMs: number | null },
-  opponentTag: string,
-  t: TFunction,
-  locale: string,
-): FormStripEvent[] {
-  const inWindow = (m: Match): boolean =>
-    recentWindow.fromMs != null &&
-    recentWindow.toMs != null &&
-    m.time >= recentWindow.fromMs &&
-    m.time <= recentWindow.toMs;
-
-  const oldestFirst = [...groups].reverse();
-
-  return oldestFirst.map((group) => {
-    // WR-02 (review iteration 2): a session group is labelled by the SAME
-    // helper the other two strip hosts use — date only. The kit appends the
-    // record of the games it draws, so a session the limit trim or width fit
-    // cuts never states the whole session's record.
-    const label =
-      group.kind === 'event'
-        ? group.label
-        : formStripSessionLabel({
-            firstGameMs: Math.min(
-              ...group.sets.flatMap((set) => set.games.map((game) => game.match.time)),
-            ),
-            t,
-            locale,
-          });
-    return {
-      key: group.key,
-      label,
-      sets: [...group.sets].reverse().map((set) => ({
-        key: set.key,
-        label: t('analytics.strip.setAria', {
-          opponent: opponentTag,
-          record: `${set.gamesWon}–${set.gamesLost}`,
-        }),
-        inRecentWindow: set.games.some((game) => inWindow(game.match)),
-        // WR-01: the kit orders sets by this across events before its trim/fit.
-        lastGameMs: Math.max(...set.games.map((game) => game.match.time)),
-        games: set.games.map((game) => ({
-          key: game.match.id,
-          won: game.match.win,
-          label: `${game.match.win ? t('common.win') : t('common.loss')} · ${new Date(game.match.time).toLocaleDateString()}`,
-        })),
-      })),
-    };
-  });
 }
 
 /**
@@ -605,40 +557,40 @@ export function OpponentHubPage() {
     });
   }, [trendSourceMatches, aliasMap, targetIdentity, refreshedAt]);
 
-  const eventKeyByMatchId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const anchor of eventSeries) {
-      for (const id of anchor.matchIds) {
-        map.set(id, anchor.key);
-      }
-    }
-    return map;
-  }, [eventSeries]);
-
-  // WR-03 (38-REVIEW-FIX): `useCallback`, not a plain function-per-render —
-  // `FilteredMatchList`'s own doc comment states its narrowing is memoized
+  // WR-03 (38-REVIEW-FIX): a memoised resolver, never a function-per-render
+  // — `FilteredMatchList`'s own doc comment states its narrowing is memoized
   // by array reference AND this resolver's reference (D-16); an unstable
   // reference here defeats that memo on every render even when neither the
-  // matches nor the axes actually changed.
-  const eventKeyForMatch = useCallback(
-    (match: Match): string | undefined => eventKeyByMatchId.get(match.id),
-    [eventKeyByMatchId],
-  );
+  // matches nor the axes actually changed. Plan 39.1-39: a game resolves to
+  // its anchor key AND its bin key at every grain, so a bin click and a
+  // tournament set row's anchor key each list exactly their own games.
+  //
+  // Plan 39.1-42 (PD-42-4): plus the form strip's set keys over the SAME
+  // `trendSourceMatches` the strip below is built from — a manual play
+  // session is one set, a start.gg set its parsed id, and a legacy
+  // `game:<id>` key still lands on its one game.
+  const eventKeyForMatch = useMemo(() => {
+    const anchorKeysForMatch = buildEventKeysForMatch(eventSeries);
+    const stripSetKeysForMatch = createFormStripSetKeyResolver(trendSourceMatches);
+    return (match: Match): string[] => [
+      ...anchorKeysForMatch(match),
+      ...stripSetKeysForMatch(match),
+    ];
+  }, [eventSeries, trendSourceMatches]);
 
+  // Plan 39.1-39 (VIZ-01, UI-SPEC §11 / §10.2): the PLOTTED series is binned
+  // by the engine to at most 60 points (identity at or under the bound), and
+  // points come only through the shared host mapper with readable,
+  // pre-resolved tooltip labels.
   const trendPoints: TrendEventPoint[] = useMemo(
     () =>
-      eventSeries.map((anchor) => ({
-        eventKey: anchor.key,
-        cumulativeWinRate: anchor.cumulativeWinRate,
-        wins: anchor.wins,
-        losses: anchor.losses,
-        context: {
-          opponentTag: profile?.opponent ?? pathTag ?? '',
-          eventLabel: anchor.label,
-          dateMs: anchor.startMs,
-        },
-      })),
-    [eventSeries, profile, pathTag],
+      buildEventTrendPoints({
+        series: binEventSeries(eventSeries),
+        opponentTag: profile?.opponent ?? pathTag ?? '',
+        t,
+        locale: i18n.language,
+      }),
+    [eventSeries, profile, pathTag, t, i18n.language],
   );
 
   // Plan 39.1-18 (UI-SPEC §8.6): the H2H trend's insight slot — `formNow` at
@@ -709,31 +661,17 @@ export function OpponentHubPage() {
     ready: !isLoading && profile != null,
   });
 
-  // The twenty-tick set-grouped form strip above the trend plot, replacing
-  // the header's ten-pip indicator (`ScoutingHeader.tsx`). Reuses Task 1's
-  // `groupEncounters()` — the SAME event/session grouping `RecentEncounters`
-  // renders — rather than a second grouping algorithm for this strip.
-  const encounterGroupsForStrip = useMemo(
-    () => groupEncounters({ matches: trendSourceMatches }),
-    [trendSourceMatches],
-  );
-  const trendRecentWindow = useMemo(
-    () => ({
-      fromMs: trendInsight?.window.fromMs ?? null,
-      toMs: trendInsight?.window.toMs ?? null,
-    }),
-    [trendInsight],
-  );
+  // The set-grouped form strip above the trend plot, replacing the header's
+  // ten-pip indicator (`ScoutingHeader.tsx`). Plan 39.1-42: built by the ONE
+  // strip derivation every FormStrip host uses (`buildFormStripEvents` over
+  // `trendSourceMatches`) instead of `groupEncounters`' one-pseudo-set-per-
+  // manual-game rows — Recent Encounters keeps its own grouping (UIX-08).
+  // Plan 39.1-42 (UI-SPEC §7.10): collapsed horizons dim nothing; an empty
+  // window dims every set.
+  const trendRecentWindow = useMemo(() => formStripRecentWindow(trendInsight), [trendInsight]);
   const formStripEvents: FormStripEvent[] = useMemo(
-    () =>
-      buildOpponentFormStripEvents(
-        encounterGroupsForStrip,
-        trendRecentWindow,
-        profile?.opponent ?? pathTag ?? '',
-        t,
-        i18n.language,
-      ),
-    [encounterGroupsForStrip, trendRecentWindow, profile, pathTag, t, i18n.language],
+    () => buildFormStripEvents(trendSourceMatches, trendRecentWindow, t, i18n.language),
+    [trendSourceMatches, trendRecentWindow, t, i18n.language],
   );
 
   const headToHeadSample: SampleMeta | null = useMemo(() => {
@@ -801,24 +739,29 @@ export function OpponentHubPage() {
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
   // skeleton echoing the loaded hub's own section shapes (header, matrix,
-  // trend, the 2-up what-they-play/stages pair, and the encounters/history
-  // list below). This page is not on the PageGrid/GridCell contract, so the
-  // skeleton mirrors the same raw section stack rather than asserting an
-  // exact `data-span` match.
+  // the 8 + 4 trend | what-they-play/stages row, and the encounters/history
+  // list below). Plan 39.1-37: the hub is on PageShell/PageGrid now, so the
+  // skeleton's trend row carries the SAME spans as the loaded row.
   if (isLoading) {
     return (
-      <div role="status" aria-busy="true" className="flex flex-col gap-6">
-        <span className="sr-only">{t('opponents.loading')}</span>
-        <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+      <PageShell>
+        <div role="status" aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t('opponents.loading')}</span>
+          <CardSkeleton variant="stat-row" rows={3} statusLabel={t('opponents.loading')} />
+          <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+          <PageGrid>
+            <GridCell span={8}>
+              <CardSkeleton variant="chart" statusLabel={t('opponents.loading')} />
+            </GridCell>
+            <GridCell span={4} stack>
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
+            </GridCell>
+          </PageGrid>
+          <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
           <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
         </div>
-        <CardSkeleton variant="list" rows={4} statusLabel={t('opponents.loading')} />
-        <CardSkeleton variant="list" rows={3} statusLabel={t('opponents.loading')} />
-      </div>
+      </PageShell>
     );
   }
 
@@ -856,21 +799,25 @@ export function OpponentHubPage() {
       ? buildOpponentFormNowVerdict(trendInsight, displayTag, t)
       : undefined;
 
+  // Plan 39.1-37 (UIX-01): the hub renders inside the one page container
+  // (content capped at 1440px); its header row stays the first child.
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-2xl font-semibold tracking-tight">{displayTag}</h1>
         <div className="flex flex-wrap items-center gap-2">
           {profile && (
-            <button
+            <Button
               type="button"
-              className="text-sm text-primary hover:underline"
+              variant="link"
+              size="sm"
+              className={`px-0 ${MUTED_LINK_TONE}`}
               onClick={() => setMergeCandidate(profile.opponent)}
             >
               {t('opponents.list.mergeInto')}
-            </button>
+            </Button>
           )}
           {evidencePacket && <ExportH2HButton packet={evidencePacket} />}
         </div>
@@ -904,137 +851,144 @@ export function OpponentHubPage() {
             {headToHeadSample && <SampleCue sample={headToHeadSample} />}
           </div>
 
-          {/* Filter bar (D-05/D-10) */}
-          <div className="flex flex-col gap-3 rounded-lg border p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.fighter')}
-                </span>
-                <Select
-                  value={
-                    axesFromUrl.fighterId != null ? String(axesFromUrl.fighterId) : ALL_AXIS_VALUE
-                  }
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_FIGHTER_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.fighter')}
-                    className="w-full sm:w-[200px]"
+          {/* Filter bar (D-05/D-10). Plan 39.1-38 (design-audit row 7.5, UI-SPEC
+              §10.4): one unboxed PageFilterRow — the three selects and the
+              mixed-context badge lead, the two context/source toggle groups
+              trail; no border, no padding box, no card. */}
+          <PageFilterRow
+            leading={
+              <>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.fighter')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.fighterId != null ? String(axesFromUrl.fighterId) : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_FIGHTER_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {SpriteList.map((sprite) => (
-                      <SelectItem key={sprite.id} value={String(sprite.id)}>
-                        {localizedFighterName(sprite.id, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.fighter')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {SpriteList.map((sprite) => (
+                        <SelectItem key={sprite.id} value={String(sprite.id)}>
+                          {localizedFighterName(sprite.id, t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.vs')}
-                </span>
-                <Select
-                  value={
-                    axesFromUrl.vsFighterId != null
-                      ? String(axesFromUrl.vsFighterId)
-                      : ALL_AXIS_VALUE
-                  }
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_VS_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.vs')}
-                    className="w-full sm:w-[200px]"
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.vs')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.vsFighterId != null
+                        ? String(axesFromUrl.vsFighterId)
+                        : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_VS_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {SpriteList.map((sprite) => (
-                      <SelectItem key={sprite.id} value={String(sprite.id)}>
-                        {localizedFighterName(sprite.id, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.vs')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {SpriteList.map((sprite) => (
+                        <SelectItem key={sprite.id} value={String(sprite.id)}>
+                          {localizedFighterName(sprite.id, t)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('opponents.hub.filter.stage')}
-                </span>
-                <Select
-                  value={axesFromUrl.stageId != null ? String(axesFromUrl.stageId) : ALL_AXIS_VALUE}
-                  onValueChange={(value) =>
-                    setUrlParam(DRILL_DOWN_STAGE_PARAM, value === ALL_AXIS_VALUE ? null : value)
-                  }
-                >
-                  <SelectTrigger
-                    aria-label={t('opponents.hub.filter.stage')}
-                    className="w-full sm:w-[200px]"
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('opponents.hub.filter.stage')}
+                  </span>
+                  <Select
+                    value={
+                      axesFromUrl.stageId != null ? String(axesFromUrl.stageId) : ALL_AXIS_VALUE
+                    }
+                    onValueChange={(value) =>
+                      setUrlParam(DRILL_DOWN_STAGE_PARAM, value === ALL_AXIS_VALUE ? null : value)
+                    }
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
-                    {alphaStageList.map((stage) => (
-                      <SelectItem key={stage.id} value={String(stage.id)}>
-                        {stage.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      aria-label={t('opponents.hub.filter.stage')}
+                      className="w-full sm:w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_AXIS_VALUE}>{t('filters.all')}</SelectItem>
+                      {alphaStageList.map((stage) => (
+                        <SelectItem key={stage.id} value={String(stage.id)}>
+                          {stage.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
+              </>
+            }
+            trailing={
+              <div className="flex flex-wrap items-center gap-3">
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={hubContext ?? ''}
+                  onValueChange={(next) => setUrlParam(HUB_CONTEXT_PARAM, next || null)}
+                >
+                  <ToggleGroupItem value="online">
+                    {t('shared.evidence.cohort.online')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="offline">
+                    {t('shared.evidence.cohort.offline')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="unspecified">
+                    {t('shared.evidence.cohort.unspecified')}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={hubSource ?? ''}
+                  onValueChange={(next) => setUrlParam(HUB_SOURCE_PARAM, next || null)}
+                >
+                  <ToggleGroupItem value="manual">
+                    {t('shared.evidence.cohort.manual')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="startgg">
+                    {t('shared.evidence.cohort.startgg')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="parrygg">
+                    {t('shared.evidence.cohort.parrygg')}
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
-
-              {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={hubContext ?? ''}
-                onValueChange={(next) => setUrlParam(HUB_CONTEXT_PARAM, next || null)}
-              >
-                <ToggleGroupItem value="online">
-                  {t('shared.evidence.cohort.online')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="offline">
-                  {t('shared.evidence.cohort.offline')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="unspecified">
-                  {t('shared.evidence.cohort.unspecified')}
-                </ToggleGroupItem>
-              </ToggleGroup>
-
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={hubSource ?? ''}
-                onValueChange={(next) => setUrlParam(HUB_SOURCE_PARAM, next || null)}
-              >
-                <ToggleGroupItem value="manual">
-                  {t('shared.evidence.cohort.manual')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="startgg">
-                  {t('shared.evidence.cohort.startgg')}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="parrygg">
-                  {t('shared.evidence.cohort.parrygg')}
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          </div>
+            }
+          />
 
           {/* Cross-tab (OPP-02) */}
           <ChartCard title={t('matchups.matrix.title')}>
@@ -1050,74 +1004,82 @@ export function OpponentHubPage() {
           {/* Event-anchored trend (OPP-03) — Plan 39.1-18: gains the formNow
               insight slot and a 20-tick set-grouped form strip above the
               plot (UI-SPEC §8.6), replacing the header's ten-pip indicator. */}
-          <ChartCard
-            title={t('opponents.trend.title')}
-            abstained={trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null}
-            insight={
-              trendInsight
-                ? renderOpponentFormNowHead(
-                    trendInsight,
-                    displayTag,
-                    t,
-                    i18n.language,
-                    trendGamesDoor ? (
-                      <Link to={trendGamesDoor.href}>
-                        {t('insights.door.seeGames', { count: trendGamesDoor.count })}
-                      </Link>
-                    ) : undefined,
+          {/*
+            Plan 39.1-37 — OWNER DECISION 2026-09-25 (overrides UI-SPEC §8.6's
+            "39.1 leaves the hub layout unchanged"): UI-SPEC §6.1's chart = 8 + 4
+            row. The H2H trend card sits in an 8-col cell and the two short
+            absorbed scouting lists (What they play, Stages — content
+            unchanged, D-12; Phase 38-07 D-14 identity threading unchanged) are
+            stacked in the 4-col cell beside it. Below lg every cell spans 12,
+            in the same DOM order as before.
+          */}
+          <PageGrid>
+            <GridCell span={8}>
+              <ChartCard
+                title={t('opponents.trend.title')}
+                abstained={
+                  trendPoints.length === 0 ? { gamesNeeded: ABSTENTION_FLOOR_GAMES } : null
+                }
+                insight={
+                  trendInsight
+                    ? renderOpponentFormNowHead(
+                        trendInsight,
+                        displayTag,
+                        t,
+                        i18n.language,
+                        trendGamesDoor ? (
+                          <Link to={trendGamesDoor.href}>
+                            {t('insights.door.seeGames', { count: trendGamesDoor.count })}
+                          </Link>
+                        ) : undefined,
+                      )
+                    : null
+                }
+              >
+                <FormStrip
+                  events={formStripEvents}
+                  limit={20}
+                  // Plan 39.1-42: the kit's legend and foot formatters; the hub
+                  // passes no title (no head) and keeps its empty-window note.
+                  labels={{
+                    ...formStripLabels(t),
+                    // WR-03: names the games actually DRAWN of the total (kit-computed).
+                    summary: ({ shown, total }) =>
+                      t('analytics.strip.aria', { count: total, shown }),
+                    empty: <span>{t('analytics.strip.empty')}</span>,
+                    windowNote:
+                      trendInsight && trendInsight.window.games === 0
+                        ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
+                        : undefined,
+                  }}
+                  onSelectSet={handleSelectEvent}
+                />
+                <TrendLine
+                  mode="event"
+                  points={trendPoints}
+                  onSelectPoint={handleSelectTrendPoint}
+                />
+              </ChartCard>
+            </GridCell>
+            <GridCell span={4} stack>
+              <WhatTheyPlayTable
+                byTheirFighter={profile.byTheirFighter}
+                rowHref={(row) =>
+                  subjectPath(
+                    `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
                   )
-                : null
-            }
-          >
-            <FormStrip
-              events={formStripEvents}
-              limit={20}
-              labels={{
-                // WR-03: names the games actually DRAWN of the total (kit-computed).
-                summary: ({ shown, total }) => t('analytics.strip.aria', { count: total, shown }),
-                legend: t('analytics.strip.legend'),
-                // Plan 39.1-33 (R1): a formatter — only the kit knows how
-                // many games it actually drew after `limit` AND its own
-                // measured-width fit, so the host no longer computes `shown`
-                // itself.
-                shownOfTotal: ({ shown, total }) => t('analytics.strip.shownOf', { shown, total }),
-                empty: <span>{t('analytics.strip.empty')}</span>,
-                windowEmpty:
-                  trendInsight && trendInsight.window.games === 0
-                    ? t(`analytics.strip.windowEmpty.${DEFAULT_HORIZON}`)
-                    : undefined,
-              }}
-              onSelectSet={handleSelectEvent}
-            />
-            <TrendLine mode="event" points={trendPoints} onSelectPoint={handleSelectTrendPoint} />
-          </ChartCard>
+                }
+              />
+              <ScoutingStagesCard
+                byStage={profile.byStage}
+                stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
+              />
+            </GridCell>
+          </PageGrid>
 
-          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot. */}
+          {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot; after the 39.1-37 trend row, the trend card and the scouting lists share one row, so the card follows that row. */}
           {prepBriefCard}
 
-          {/*
-            Absorbed scouting cards (D-12) — content unchanged, chart.js
-            trend removed. Phase 38-07 (D-14): the hub threads its resolved
-            opponent identity into each card's destination builder; no
-            absorbed card re-derives the opponent from its own data prop.
-          */}
-          {/* Plan 39.1-20 Task 3 [Rule 1]: items-start added — see
-              OpponentsPage.tsx's identical fix for the same pair; the layout
-              oracle measured the same 29px stretch violation here. */}
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            <WhatTheyPlayTable
-              byTheirFighter={profile.byTheirFighter}
-              rowHref={(row) =>
-                subjectPath(
-                  `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
-                )
-              }
-            />
-            <ScoutingStagesCard
-              byStage={profile.byStage}
-              stageHref={(stageId) => subjectPath(`/stages/${stageId}`)}
-            />
-          </div>
           <RecentEncounters
             matches={profile.recent}
             tournamentLinkForMatch={tournamentLinkForMatch}
@@ -1172,6 +1134,6 @@ export function OpponentHubPage() {
           onMerged={() => setMergeCandidate(null)}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
