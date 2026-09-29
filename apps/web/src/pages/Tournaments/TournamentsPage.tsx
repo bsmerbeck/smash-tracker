@@ -1,24 +1,43 @@
-import { useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useCallback, useMemo } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   ABSTENTION_FLOOR_GAMES,
   buildTierSplitStats,
   resolveEntryTiers,
   toRateValue,
+  type Insight,
+  type Match,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { CardSkeleton, PageSkeleton } from '@/components/analytics/CardSkeleton';
 import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { PageShell } from '@/components/analytics/PageShell';
 import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
+import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
 import { TierFilterChips } from '@/components/analytics/tier/TierFilterChips';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { filterEntriesByRange, useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { useMatches } from '@/hooks/useMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { stagesById } from '@/data/stages';
+import {
+  DRILL_DOWN_CLAIM_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FIGHTER_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_VS_PARAM,
+  readDrillDownParams,
+  sortMatchesNewestFirst,
+  type DrillDownAxes,
+} from '@/lib/drillDownParams';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import {
   applyTierFilters,
@@ -36,6 +55,28 @@ import {
 
 const OVERLINE =
   'text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase';
+
+const GAMES_ANCHOR_ID = 'games';
+
+/** Every drill-down axis the `#games` terminus narrows by — what Clear filters removes. */
+const DRILL_AXIS_PARAMS = [
+  DRILL_DOWN_FIGHTER_PARAM,
+  DRILL_DOWN_VS_PARAM,
+  DRILL_DOWN_STAGE_PARAM,
+  DRILL_DOWN_EVENT_PARAM,
+  DRILL_DOWN_FROM_PARAM,
+  DRILL_DOWN_TO_PARAM,
+  DRILL_DOWN_CLAIM_PARAM,
+] as const;
+
+/**
+ * The insights this page computed, which a `claim=` door may name. Empty until
+ * the tier insight (plan 39.2-09) registers into it: an id no insight owns
+ * resolves to `undefined`, so `FilteredMatchList` announces the unresolved
+ * claim instead of silently widening to every game. A module constant so the
+ * `resolveClaim` callback below keeps one identity across renders.
+ */
+const PAGE_INSIGHTS: Insight[] = [];
 
 /**
  * `/tournaments` — the tier-aware tournament list (TIER-02 / T-08). Every row
@@ -60,7 +101,8 @@ const OVERLINE =
  * registry rows — tournament entries are inherently competitive (D-02).
  *
  * Row A is the By-tier card (TIER-03), fed by `buildTierSplitStats` over the
- * rows the filters leave.
+ * rows the filters leave. Row C is the `#games` terminus, mounted ONLY while a
+ * drill-down axis (including `claim=`) is in the URL (39.1 §10.3, DD-12).
  *
  * The tier resolves ONCE per entry through the shared resolver, from ALL of
  * the subject's matches (never the range-filtered set), because the evidence
@@ -78,6 +120,7 @@ export function TournamentsPage() {
   const { range } = useAnalyticsFilter();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const filters = useMemo(() => readTierFilterParams(searchParams), [searchParams]);
   const allEntries = useMemo(() => entries ?? [], [entries]);
@@ -130,6 +173,59 @@ export function TournamentsPage() {
     return overall.total >= ABSTENTION_FLOOR_GAMES ? overall.rate : null;
   }, [allMatches]);
 
+  // D-05: a tolerant read of every drill-down axis in the URL. This page's
+  // by-tier rows write none (they are filters, DD-12); the `#games` terminus is
+  // the read half of the contract, mounted only when a door asks for it.
+  const stageIds = useMemo(() => new Set(stagesById.keys()), []);
+  const axesFromUrl = useMemo(
+    () => readDrillDownParams(searchParams, { stageIds }),
+    [searchParams, stageIds],
+  );
+  const hasDrillAxis =
+    axesFromUrl.fighterId != null ||
+    axesFromUrl.vsFighterId != null ||
+    axesFromUrl.stageId != null ||
+    axesFromUrl.eventKey != null ||
+    axesFromUrl.from != null ||
+    axesFromUrl.to != null ||
+    axesFromUrl.claimId != null;
+  // `FilteredMatchList`'s D-16 memo keys on reference identity, so the axes
+  // object, the sorted array and `resolveClaim` are all memoised, above every
+  // early return (Rules of Hooks).
+  const terminusAxes: DrillDownAxes = useMemo(
+    () => ({
+      fighterId: axesFromUrl.fighterId,
+      vsFighterId: axesFromUrl.vsFighterId,
+      stageId: axesFromUrl.stageId,
+      eventKey: axesFromUrl.eventKey,
+      from: axesFromUrl.from,
+      to: axesFromUrl.to,
+      claimId: axesFromUrl.claimId,
+    }),
+    [
+      axesFromUrl.fighterId,
+      axesFromUrl.vsFighterId,
+      axesFromUrl.stageId,
+      axesFromUrl.eventKey,
+      axesFromUrl.from,
+      axesFromUrl.to,
+      axesFromUrl.claimId,
+    ],
+  );
+  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  const resolveClaimForTerminus = useCallback(
+    (claimId: string, ms: Match[]) =>
+      resolveInsightClaim({ claimId, insights: PAGE_INSIGHTS, matches: ms }),
+    [],
+  );
+  // `BrowserRouter` performs no hash scroll of its own and the terminus mounts
+  // conditionally, so an effect once the data has landed is the only place the
+  // scroll can happen (WR-02, 39.1-REVIEW).
+  useLandingScroll({
+    anchorId: GAMES_ANCHOR_ID,
+    ready: !isLoading && !entriesLoading && hasDrillAxis,
+  });
+
   if (isLoading || entriesLoading) {
     return (
       <PageShell>
@@ -179,6 +275,16 @@ export function TournamentsPage() {
       { search: buildTierFilterSearch({ tiers: [] }, searchParams).toString() },
       { replace: true },
     );
+
+  /** Clear filters on the terminus: drops every drill axis (and the `#games` hash), which unmounts it. */
+  function handleClearDrillFilters(): void {
+    const params = new URLSearchParams(searchParams);
+    for (const key of DRILL_AXIS_PARAMS) {
+      params.delete(key);
+    }
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' });
+  }
 
   let content;
   if (allEntries.length === 0) {
@@ -269,6 +375,25 @@ export function TournamentsPage() {
             )}
             <PageGrid>
               <GridCell span={12}>{content}</GridCell>
+              {/* Row C (39.1 §10.3, DD-12): the scoped games terminus, only when a door asked for one. */}
+              {hasDrillAxis && (
+                <GridCell span={12}>
+                  <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
+                    <CardHeader>
+                      <CardTitle>{t('matchups.results')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <FilteredMatchList
+                        matches={sortedMatches}
+                        axes={terminusAxes}
+                        resolveClaim={resolveClaimForTerminus}
+                        onClearFilters={handleClearDrillFilters}
+                        showDelete
+                      />
+                    </CardContent>
+                  </Card>
+                </GridCell>
+              )}
             </PageGrid>
           </div>
         </div>

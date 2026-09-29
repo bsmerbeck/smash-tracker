@@ -765,6 +765,126 @@ describe('TournamentsPage', () => {
     });
   });
 
+  describe('the #games terminus (39.1 §10.3, DD-12)', () => {
+    function seedTerminus() {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Supernova 2026',
+          firstSetAt: Date.UTC(2026, 7, 8),
+          lastSetAt: Date.UTC(2026, 7, 9),
+          numEntrants: 2048,
+          isOnline: false,
+        }),
+      ]);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'vs-two',
+          time: Date.UTC(2026, 7, 8, 12),
+          win: true,
+          opponent_id: 2,
+          opponent: 'AlphaTag',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Supernova 2026',
+        }),
+        makeMatch({
+          id: 'vs-three',
+          time: Date.UTC(2026, 7, 8, 13),
+          win: false,
+          opponent_id: 3,
+          opponent: 'BetaTag',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Supernova 2026',
+        }),
+      ]);
+    }
+
+    it('renders no #games element when the URL carries no drill axis', async () => {
+      seedTerminus();
+      const { container } = renderPage();
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      expect(container.querySelector('#games')).toBeNull();
+      expect(container.querySelector('[data-slot="filtered-match-list"]')).toBeNull();
+    });
+
+    it('a param that is not a drill axis (an unknown key) mounts nothing', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?opponent=AlphaTag&tier=supermajor');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      expect(container.querySelector('#games')).toBeNull();
+    });
+
+    it('a drill axis mounts #games as the last row, narrowed to only the matching games', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?vs=2');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+
+      const games = container.querySelector('#games') as HTMLElement;
+      expect(games).not.toBeNull();
+      expect(within(games).getByText('AlphaTag')).toBeInTheDocument();
+      expect(within(games).queryByText('BetaTag')).not.toBeInTheDocument();
+      // Row order: the By-tier card, then the events table, then the terminus.
+      const card = container.querySelector('[data-slot="by-tier-card"]')!;
+      const table = container.querySelector('table[data-slot="tournaments-table"]')!;
+      expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(table.compareDocumentPosition(games) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(games.closest('.col-span-12')).not.toBeNull();
+    });
+
+    it('the terminus follows the URL: a different axis value shows the other game', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?vs=3');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      const games = container.querySelector('#games') as HTMLElement;
+      expect(within(games).getByText('BetaTag')).toBeInTheDocument();
+      expect(within(games).queryByText('AlphaTag')).not.toBeInTheDocument();
+    });
+
+    it('an unknown claim id is announced as not applied, never silently treated as a narrowing', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?claim=tierGap:account:last30');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+
+      const games = container.querySelector('#games') as HTMLElement;
+      expect(games).not.toBeNull();
+      const notice = games.querySelector('[data-slot="claim-not-applied"]');
+      expect(notice).not.toBeNull();
+      expect(notice?.textContent?.trim()).not.toBe('');
+      // The summary line never describes the unresolved claim as if it had applied.
+      expect(games.textContent).not.toContain('tierGap');
+    });
+
+    it('a claim id that fails the shape check reads as no axis at all', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?claim=%3Cscript%3E');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      expect(container.querySelector('#games')).toBeNull();
+    });
+
+    it('Clear filters on the terminus drops the axes and unmounts it, keeping the tier filters', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?vs=2&tier=supermajor');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      const user = userEvent.setup();
+      const games = container.querySelector('#games') as HTMLElement;
+      await user.click(within(games).getByRole('button', { name: 'Clear filters' }));
+      await waitFor(() => expect(container.querySelector('#games')).toBeNull());
+      // The tier filter is not a drill axis, so the table is still filtered to Supermajor.
+      expect(screen.getByRole('link', { name: 'Supernova 2026' })).toBeInTheDocument();
+    });
+
+    it('never writes a drill axis to device-local storage', async () => {
+      seedTerminus();
+      const { container } = renderPage('/tournaments?vs=2&claim=tierGap:account:last30');
+      await screen.findByRole('link', { name: 'Supernova 2026' });
+      expect(container.querySelector('#games')).not.toBeNull();
+      const stored = Object.keys(window.localStorage).map((key) =>
+        window.localStorage.getItem(key),
+      );
+      expect(stored.join('|')).not.toMatch(/tierGap|"vs"|vs=2/);
+    });
+  });
+
   describe('admin-imported rows', () => {
     const imported = { origin: 'admin-imported', provider: 'startgg' };
 
