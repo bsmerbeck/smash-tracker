@@ -188,7 +188,7 @@ describe('resolveTournamentTier — estimate rung and the F2 gate', () => {
         entry: entry({ eventName: 'Doubles', isOnline: false }),
       }).reason as TierUnknownReason,
       resolveTournamentTier({ entry: entry({ isOnline: false }) }).reason as TierUnknownReason,
-      resolveTournamentTier({ entry: entry() }).reason as TierUnknownReason,
+      resolveTournamentTier({ entry: entry({ numEntrants: 100 }) }).reason as TierUnknownReason,
       resolveTournamentTier({
         entry: entry({ tierOverride: { contractVersion: 1, tier: 'unknown', setAtMs: 1 } }),
       }).reason as TierUnknownReason,

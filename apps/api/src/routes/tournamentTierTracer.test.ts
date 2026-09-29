@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  resolveTournamentTier,
-  type TournamentRegistryListEntry,
-  type TierEntryFields,
-} from '@smash-tracker/shared';
+import { resolveTournamentTier, type TierEntryFields } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import { importPlayerMatches } from '../startgg/sync.js';
 import type { StartggSet } from '../startgg/client.js';
@@ -104,6 +100,13 @@ function fetchFor(sets: StartggSet[]): typeof fetch {
   }) as typeof fetch;
 }
 
+/** The wire members this test reads back from GET /api/tournaments (both union shapes). */
+type TournamentWire = TierEntryFields & {
+  eventId?: number | null;
+  entryKey?: string | null;
+  origin?: string;
+};
+
 async function getTournaments(app: ReturnType<typeof buildTestApp>['app']) {
   const response = await app.inject({
     method: 'GET',
@@ -111,7 +114,7 @@ async function getTournaments(app: ReturnType<typeof buildTestApp>['app']) {
     headers: authHeader(),
   });
   expect(response.statusCode).toBe(200);
-  return response.json() as (TournamentRegistryListEntry & TierEntryFields)[];
+  return response.json() as TournamentWire[];
 }
 
 describe('tier tracer: sync writer -> RTDB -> GET /api/tournaments -> resolveTournamentTier', () => {
@@ -219,7 +222,8 @@ describe('tier tracer: sync writer -> RTDB -> GET /api/tournaments -> resolveTou
   it('serialises isOnline, eventType and tierOverride for a registry-row-shaped entry too (both union members declare them)', async () => {
     const { app, database } = buildTestApp();
     database.seed(`tournamentEntries/${TEST_UID}`, {
-      'registry-row-1': {
+      'histimport:5001': {
+        entryId: 'histimport:5001',
         origin: 'admin-imported',
         provider: 'startgg',
         startggEventId: '5001',
@@ -231,7 +235,7 @@ describe('tier tracer: sync writer -> RTDB -> GET /api/tournaments -> resolveTou
         tierOverride: { contractVersion: 1, tier: 'minor', setAtMs: 1_700_000_000_000 },
         playedSetCount: 3,
         provenance: { source: 'research-import', importedAtMs: 1_700_000_000_000 },
-        registryWitness: 'witness-1',
+        registryWitness: 'research-import:v1:5001',
         firstSetAt: 1_700_000_000_000,
         lastSetAt: 1_700_000_100_000,
         setsPlayed: 3,
@@ -239,7 +243,7 @@ describe('tier tracer: sync writer -> RTDB -> GET /api/tournaments -> resolveTou
     });
 
     const entries = await getTournaments(app);
-    const row = entries.find((e) => e.entryKey === 'registry-row-1') as
+    const row = entries.find((e) => e.entryKey === 'histimport:5001') as
       (TierEntryFields & { origin?: string }) | undefined;
     expect(row).toBeDefined();
     // Only a parsed registry-row-shaped member carries `origin`; if the row

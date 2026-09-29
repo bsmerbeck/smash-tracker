@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { rulesetOverrideStoredSchema } from './ruleset.js';
+import { TOURNAMENT_EVENT_TYPE_MAX_LENGTH, tierOverrideStoredSchema } from './tournamentTier.js';
 
 /**
  * `startggLinks/{uid}` — server-only record of a user's linked start.gg
@@ -166,6 +167,17 @@ export const tournamentEntrySchema = z.object({
    * mirroring this codebase's documented `260725-juj` null-strip incident.
    */
   rulesetOverride: rulesetOverrideStoredSchema.nullish(),
+  /**
+   * TIER-01 (39.2 D-20): whether start.gg reports the event as online. Written
+   * by the live sync with a `!= null` conditional spread, so `false` (a real
+   * offline event) is stored and an absent value stores no key. An absent
+   * member is UNKNOWN setting — never evidence of offline (`deriveSetting`).
+   */
+  isOnline: z.boolean().nullish(),
+  /** TIER-01: the provider's raw event type string, stored but not interpreted in 39.2 (Assumption A3). */
+  eventType: z.string().max(TOURNAMENT_EVENT_TYPE_MAX_LENGTH).nullish(),
+  /** TIER-01: the owner's manual tier override; the server stamps `contractVersion`/`setAtMs`. `resolveTournamentTier` is the only interpreter. */
+  tierOverride: tierOverrideStoredSchema.nullish(),
 });
 export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
 

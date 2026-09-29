@@ -992,6 +992,13 @@ describe('importPlayerMatches — registry isOnline', () => {
     }) as typeof fetch;
   }
 
+  /** The set's event with the `isOnline` key removed entirely (the provider omitted it). */
+  function withoutIsOnline(set: StartggSet): NonNullable<StartggSet['event']> {
+    const event = { ...set.event } as Record<string, unknown>;
+    delete event['isOnline'];
+    return event as NonNullable<StartggSet['event']>;
+  }
+
   function storedEntry(database: FakeDatabase): Record<string, unknown> {
     const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
     return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
@@ -1030,7 +1037,7 @@ describe('importPlayerMatches — registry isOnline', () => {
   it('stores NO isOnline key when the provider omits it (never null)', async () => {
     const database = new FakeDatabase();
     const base = makeSet();
-    const { isOnline: _omitted, ...eventWithoutIsOnline } = base.event ?? {};
+    const eventWithoutIsOnline = withoutIsOnline(base);
     await importPlayerMatches(
       database as never,
       'uid-1',
@@ -1049,7 +1056,7 @@ describe('importPlayerMatches — registry isOnline', () => {
     const database = new FakeDatabase();
     const first = makeSet({ id: 1, completedAt: 1_700_000_000 });
     const base = makeSet({ id: 2, completedAt: 1_700_000_100 });
-    const { isOnline: _omitted, ...eventWithoutIsOnline } = base.event ?? {};
+    const eventWithoutIsOnline = withoutIsOnline(base);
     await importPlayerMatches(
       database as never,
       'uid-1',
