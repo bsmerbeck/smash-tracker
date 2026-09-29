@@ -3789,6 +3789,34 @@
       "countsNote": "As contagens refletem os outros filtros.",
       "noneInRange": "Nenhum evento {{label}} neste período.",
       "sheetButton": "Filtros"
+    },
+    "coverage": {
+      "known_one": "Nível conhecido em {{known, grouped}} de 1 evento",
+      "known_other": "Nível conhecido em {{known, grouped}} de {{count, grouped}} eventos",
+      "recorded_one": "1 registrado",
+      "recorded_other": "{{count, grouped}} registrados",
+      "manual_one": "1 definido manualmente",
+      "manual_other": "{{count, grouped}} definidos manualmente",
+      "estimated_one": "1 estimado",
+      "estimated_other": "{{count, grouped}} estimados",
+      "unknown_one": "1 desconhecido",
+      "unknown_other": "{{count, grouped}} desconhecidos",
+      "sideExcluded_one": "1 evento paralelo excluído",
+      "sideExcluded_other": "{{count, grouped}} eventos paralelos excluídos",
+      "sideIncluded_one": "1 evento paralelo incluído",
+      "sideIncluded_other": "{{count, grouped}} eventos paralelos incluídos",
+      "include": "Incluir",
+      "exclude": "Excluir"
+    },
+    "byTier": {
+      "title": "Por nível",
+      "sortNote": "Ordem de nível · Desconhecido por último",
+      "abstain_one": "{{tier}} — falta 1 partida para calcular uma taxa.",
+      "abstain_other": "{{tier}} — faltam {{count, grouped}} partidas para calcular uma taxa.",
+      "excluded": "excluído da comparação",
+      "allUnknown": "Nenhum evento tem um nível conhecido ainda — é possível defini-lo na página do evento.",
+      "rowAria_one": "{{tier}}: {{record}}, 1 partida; abre os torneios filtrados por este nível",
+      "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} partidas; abre os torneios filtrados por este nível"
     }
   }
 }

@@ -3789,6 +3789,34 @@
       "countsNote": "Les totaux reflètent les autres filtres.",
       "noneInRange": "Aucun événement {{label}} dans cette période.",
       "sheetButton": "Filtres"
+    },
+    "coverage": {
+      "known_one": "Niveau connu pour {{known, grouped}} sur 1 événement",
+      "known_other": "Niveau connu pour {{known, grouped}} sur {{count, grouped}} événements",
+      "recorded_one": "1 enregistré",
+      "recorded_other": "{{count, grouped}} enregistrés",
+      "manual_one": "1 défini manuellement",
+      "manual_other": "{{count, grouped}} définis manuellement",
+      "estimated_one": "1 estimé",
+      "estimated_other": "{{count, grouped}} estimés",
+      "unknown_one": "1 inconnu",
+      "unknown_other": "{{count, grouped}} inconnus",
+      "sideExcluded_one": "1 événement annexe exclu",
+      "sideExcluded_other": "{{count, grouped}} événements annexes exclus",
+      "sideIncluded_one": "1 événement annexe inclus",
+      "sideIncluded_other": "{{count, grouped}} événements annexes inclus",
+      "include": "Inclure",
+      "exclude": "Exclure"
+    },
+    "byTier": {
+      "title": "Par niveau",
+      "sortNote": "Ordre des niveaux · Inconnu en dernier",
+      "abstain_one": "{{tier}} — encore 1 match nécessaire pour un taux.",
+      "abstain_other": "{{tier}} — encore {{count, grouped}} matchs nécessaires pour un taux.",
+      "excluded": "exclu de la comparaison",
+      "allUnknown": "Aucun événement n’a encore de niveau connu — à définir depuis la page d’un événement.",
+      "rowAria_one": "{{tier}} : {{record}}, 1 match ; ouvre les tournois filtrés sur ce niveau",
+      "rowAria_other": "{{tier}} : {{record}}, {{count, grouped}} matchs ; ouvre les tournois filtrés sur ce niveau"
     }
   }
 }

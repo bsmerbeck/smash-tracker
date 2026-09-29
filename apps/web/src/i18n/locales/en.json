@@ -3789,6 +3789,34 @@
       "countsNote": "Counts reflect the other filters.",
       "noneInRange": "No {{label}} events in this range.",
       "sheetButton": "Filters"
+    },
+    "coverage": {
+      "known_one": "Tier known for {{known, grouped}} of 1 event",
+      "known_other": "Tier known for {{known, grouped}} of {{count, grouped}} events",
+      "recorded_one": "1 recorded",
+      "recorded_other": "{{count, grouped}} recorded",
+      "manual_one": "1 set manually",
+      "manual_other": "{{count, grouped}} set manually",
+      "estimated_one": "1 estimated",
+      "estimated_other": "{{count, grouped}} estimated",
+      "unknown_one": "1 unknown",
+      "unknown_other": "{{count, grouped}} unknown",
+      "sideExcluded_one": "1 side event excluded",
+      "sideExcluded_other": "{{count, grouped}} side events excluded",
+      "sideIncluded_one": "1 side event included",
+      "sideIncluded_other": "{{count, grouped}} side events included",
+      "include": "Include",
+      "exclude": "Exclude"
+    },
+    "byTier": {
+      "title": "By tier",
+      "sortNote": "Tier order · Unknown last",
+      "abstain_one": "{{tier}} — 1 more game needed for a rate.",
+      "abstain_other": "{{tier}} — {{count, grouped}} more games needed for a rate.",
+      "excluded": "excluded from the comparison",
+      "allUnknown": "No event has a known tier yet — set one from an event's page.",
+      "rowAria_one": "{{tier}}: {{record}}, 1 game; opens the tournaments filtered to this tier",
+      "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} games; opens the tournaments filtered to this tier"
     }
   }
 }

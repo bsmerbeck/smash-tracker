@@ -227,7 +227,8 @@ describe('TournamentsPage', () => {
       '/tournaments/42',
     );
     expect(screen.getByText('Ultimate Singles')).toBeInTheDocument();
-    expect(screen.getByText('1–0')).toBeInTheDocument();
+    // The By-tier card repeats the same record, so the row's own cell is scoped to the table.
+    expect(within(screen.getByRole('table')).getByText('1–0')).toBeInTheDocument();
     expect(
       screen.queryByText(/Tournament entries attach on your next start\.gg sync/),
     ).not.toBeInTheDocument();
@@ -512,6 +513,258 @@ describe('TournamentsPage', () => {
   });
 
   /** Phase 30.3 (Gate 4): admin-imported historical rows. */
+  describe('By tier card (TIER-03, T-05, T-06, DD-12)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    /** `count` linked games for `name`: the first `wins` are wins. Inside the entry's window, matched by names. */
+    function linked(
+      name: string,
+      day: number,
+      wins: number,
+      losses: number,
+      extra: Partial<Match> = {},
+    ): Match[] {
+      return Array.from({ length: wins + losses }, (_, i) =>
+        makeMatch({
+          id: `${name}-${i}`,
+          time: Date.UTC(2026, 0, 1) + day * DAY + i * 1000,
+          win: i < wins,
+          eventName: 'Ultimate Singles',
+          tournamentName: name,
+          matchType: 'offline-tourney',
+          ...extra,
+        }),
+      );
+    }
+
+    function eventAt(id: number, name: string, day: number, extra: Record<string, unknown> = {}) {
+      return makeEntry({
+        eventId: id,
+        tournamentName: name,
+        firstSetAt: Date.UTC(2026, 0, 1) + day * DAY,
+        lastSetAt: Date.UTC(2026, 0, 1) + day * DAY + 3600 * 1000,
+        ...extra,
+      });
+    }
+
+    /** 19 events: 7 with an estimated tier (1 supermajor, 1 minor, 2 regional, 3 local) and 12 online (unknown). */
+    function sparg0Nineteen() {
+      const entries = [
+        eventAt(1, 'Supernova 2026', 0, { numEntrants: 2048, isOnline: false }),
+        eventAt(2, 'Mid Minor', 10, { numEntrants: 300, isOnline: false }),
+        eventAt(3, 'Regional A', 20, { numEntrants: 100, isOnline: false }),
+        eventAt(4, 'Regional B', 30, { numEntrants: 90, isOnline: false }),
+        eventAt(5, 'Local A', 40, { numEntrants: 20, isOnline: false }),
+        eventAt(6, 'Local B', 50, { numEntrants: 22, isOnline: false }),
+        eventAt(7, 'Local C', 60, { numEntrants: 24, isOnline: false }),
+        ...Array.from({ length: 12 }, (_, i) =>
+          eventAt(100 + i, `Weekly ${i}`, 70 + i * 7, { numEntrants: 40, isOnline: true }),
+        ),
+      ];
+      const matches = [
+        ...linked('Supernova 2026', 0, 26, 7),
+        // One game: below the abstention floor, two more needed.
+        ...linked('Mid Minor', 10, 1, 0),
+        ...linked('Regional A', 20, 4, 1),
+        ...linked('Local A', 40, 3, 1),
+        ...linked('Weekly 0', 70, 6, 4, { matchType: 'online-tourney' }),
+      ];
+      return { entries, matches };
+    }
+
+    async function renderNineteen(initialEntry = '/tournaments') {
+      const { entries, matches } = sparg0Nineteen();
+      listTournaments.mockResolvedValue(entries);
+      listMatches.mockResolvedValue(matches);
+      const view = renderPage(initialEntry);
+      await screen.findByRole('heading', { name: 'By tier' });
+      return view;
+    }
+
+    function tierRow(container: HTMLElement, tier: string) {
+      return container.querySelector<HTMLElement>(`[data-slot="by-tier-row"][data-tier="${tier}"]`);
+    }
+
+    it('sparg0-shaped data shows Supermajor 26–7 · 79%, a Minor that needs more games, Unknown excluded and the coverage line', async () => {
+      const { container } = await renderNineteen();
+
+      const supermajor = tierRow(container, 'supermajor')!;
+      expect(supermajor.textContent).toContain('26–7');
+      expect(supermajor.textContent).toContain('79%');
+      expect(supermajor.querySelector('[data-slot="by-tier-bar"]')).not.toBeNull();
+
+      const minor = tierRow(container, 'minor')!;
+      expect(
+        within(minor).getByText('Minor — 2 more games needed for a rate.'),
+      ).toBeInTheDocument();
+      expect(minor.querySelector('[data-slot="by-tier-bar"]')).toBeNull();
+
+      const rows = Array.from(container.querySelectorAll('[data-slot="by-tier-row"]'));
+      expect(rows.map((row) => row.getAttribute('data-tier'))).toEqual([
+        'supermajor',
+        'minor',
+        'regional',
+        'local',
+        'unknown',
+      ]);
+      const unknown = rows[rows.length - 1] as HTMLElement;
+      expect(within(unknown).getByText('excluded from the comparison')).toBeInTheDocument();
+      expect(unknown.textContent).toContain('6–4');
+
+      expect(container.querySelector('[data-slot="tier-coverage"]')?.textContent).toBe(
+        'Tier known for 7 of 19 events · 0 recorded · 7 estimated · 12 unknown',
+      );
+    });
+
+    it('sits above the events table as Row A, alone at span 12', async () => {
+      const { container } = await renderNineteen();
+      const card = container.querySelector('[data-slot="by-tier-card"]')!;
+      const table = container.querySelector('table')!;
+      expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(card.closest('.col-span-12')).not.toBeNull();
+      expect(card.closest('.lg\\:col-span-8')).toBeNull();
+    });
+
+    it('a by-tier row is a filter door: it keeps setting and never lands a game list', async () => {
+      const { container } = await renderNineteen('/tournaments?setting=offline');
+      const link = tierRow(container, 'supermajor')!.querySelector('a')!;
+      const params = new URLSearchParams(link.getAttribute('href')!.split('?')[1]);
+      expect(params.get('tier')).toBe('supermajor');
+      expect(params.get('setting')).toBe('offline');
+      expect(container.querySelector('#games')).toBeNull();
+
+      const user = userEvent.setup();
+      await user.click(link);
+      // Now filtered to the one tier: the card shows that row only, and still no game list.
+      await waitFor(() =>
+        expect(container.querySelectorAll('[data-slot="by-tier-row"]')).toHaveLength(1),
+      );
+      expect(container.querySelector('#games')).toBeNull();
+      expect(container.querySelector('[data-slot="filtered-match-list"]')).toBeNull();
+    });
+
+    it('the card follows the URL filters: ?tier=local counts only local events', async () => {
+      const { container } = await renderNineteen('/tournaments?tier=local');
+      const rows = Array.from(container.querySelectorAll('[data-slot="by-tier-row"]'));
+      expect(rows.map((row) => row.getAttribute('data-tier'))).toEqual(['local']);
+      expect(container.querySelector('[data-slot="tier-coverage"]')?.textContent).toBe(
+        'Tier known for 3 of 3 events · 0 recorded · 3 estimated · 0 unknown',
+      );
+    });
+
+    it('renders no card when the filters leave zero rows, only the filter-empty line', async () => {
+      listTournaments.mockResolvedValue(sparg0Nineteen().entries);
+      const { container } = renderPage('/tournaments?tier=major');
+      await screen.findByText('No events match these filters.');
+      expect(container.querySelector('[data-slot="by-tier-card"]')).toBeNull();
+    });
+
+    it('renders no card when the registry is empty, only the resync hint', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: Date.UTC(2021, 5, 2), win: true }),
+      ]);
+      listTournaments.mockResolvedValue([]);
+      const { container } = renderPage();
+      await screen.findByText(/Tournament entries attach on your next start\.gg sync/);
+      expect(container.querySelector('[data-slot="by-tier-card"]')).toBeNull();
+    });
+
+    it('an all-unknown account shows the Unknown row, the coverage line and the all-unknown sentence', async () => {
+      listTournaments.mockResolvedValue([
+        eventAt(1, 'Weekly One', 0, { numEntrants: 40, isOnline: true }),
+        eventAt(2, 'Weekly Two', 7, { numEntrants: 44, isOnline: true }),
+      ]);
+      listMatches.mockResolvedValue(linked('Weekly One', 0, 2, 1, { matchType: 'online-tourney' }));
+      const { container } = renderPage();
+      await screen.findByRole('heading', { name: 'By tier' });
+      expect(container.querySelectorAll('[data-slot="by-tier-row"]')).toHaveLength(1);
+      expect(
+        screen.getByText("No event has a known tier yet — set one from an event's page."),
+      ).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="tier-coverage"]')?.textContent).toBe(
+        'Tier known for 0 of 2 events · 0 recorded · 0 estimated · 2 unknown',
+      );
+    });
+
+    describe('side events (T-06)', () => {
+      function withSideEvent() {
+        const entries = [
+          eventAt(1, 'Supernova 2026', 0, { numEntrants: 2048, isOnline: false }),
+          eventAt(2, 'Side Bracket', 10, {
+            eventName: 'Squad Strike',
+            numEntrants: 300,
+            isOnline: false,
+            // A hand-set tier is the one way a side event has a tier of its own.
+            tierOverride: { contractVersion: 1, tier: 'minor', setAtMs: 1 },
+          }),
+        ];
+        const matches = [
+          ...linked('Supernova 2026', 0, 4, 1),
+          ...linked('Side Bracket', 10, 3, 0, { eventName: 'Squad Strike' }),
+        ];
+        return { entries, matches };
+      }
+
+      it('excludes them by default, stating the count with an Include link', async () => {
+        const { entries, matches } = withSideEvent();
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue(matches);
+        const { container } = renderPage();
+        await screen.findByRole('heading', { name: 'By tier' });
+
+        expect(screen.getByText('1 side event excluded')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Include' })).toBeInTheDocument();
+        expect(tierRow(container, 'minor')).toBeNull();
+      });
+
+      it('?side=include joins the side event games to its tier row and switches the header to the included form', async () => {
+        const { entries, matches } = withSideEvent();
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue(matches);
+        const { container } = renderPage('/tournaments?side=include');
+        await screen.findByRole('heading', { name: 'By tier' });
+
+        expect(screen.getByText('1 side event included')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Exclude' })).toBeInTheDocument();
+        const minor = tierRow(container, 'minor')!;
+        expect(minor).not.toBeNull();
+        expect(minor.textContent).toContain('3–0');
+      });
+
+      it('an un-overridden side event joins the Unknown bucket when included, never a real tier', async () => {
+        const entries = [
+          eventAt(1, 'Supernova 2026', 0, { numEntrants: 2048, isOnline: false }),
+          eventAt(2, 'Side Bracket', 10, {
+            eventName: 'Squad Strike',
+            numEntrants: 300,
+            isOnline: false,
+          }),
+        ];
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue([
+          ...linked('Supernova 2026', 0, 4, 1),
+          ...linked('Side Bracket', 10, 2, 1, { eventName: 'Squad Strike' }),
+        ]);
+        const { container } = renderPage('/tournaments?side=include');
+        await screen.findByRole('heading', { name: 'By tier' });
+        expect(tierRow(container, 'unknown')!.textContent).toContain('2–1');
+        expect(tierRow(container, 'supermajor')!.textContent).toContain('4–1');
+      });
+
+      it('the Include link turns the setting on through the URL', async () => {
+        const { entries, matches } = withSideEvent();
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue(matches);
+        const { container } = renderPage();
+        await screen.findByRole('heading', { name: 'By tier' });
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Include' }));
+        expect(await screen.findByText('1 side event included')).toBeInTheDocument();
+        expect(tierRow(container, 'minor')).not.toBeNull();
+      });
+    });
+  });
+
   describe('admin-imported rows', () => {
     const imported = { origin: 'admin-imported', provider: 'startgg' };
 
@@ -543,7 +796,7 @@ describe('TournamentsPage', () => {
       renderPage();
 
       await screen.findByRole('link', { name: 'Ultimate Singles' });
-      expect(screen.getByText('1–1')).toBeInTheDocument();
+      expect(within(screen.getByRole('table')).getByText('1–1')).toBeInTheDocument();
       // Two games is under the abstention floor: the record and n render, the rate does not.
       expect(screen.queryByText(/%/)).not.toBeInTheDocument();
     });

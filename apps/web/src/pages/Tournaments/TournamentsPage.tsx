@@ -1,13 +1,19 @@
 import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { resolveEntryTiers } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  buildTierSplitStats,
+  resolveEntryTiers,
+  toRateValue,
+} from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { CardSkeleton, PageSkeleton } from '@/components/analytics/CardSkeleton';
 import { GridCell, PageGrid } from '@/components/analytics/PageGrid';
 import { PageShell } from '@/components/analytics/PageShell';
 import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
+import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
 import { TierFilterChips } from '@/components/analytics/tier/TierFilterChips';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { filterEntriesByRange, useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -52,6 +58,9 @@ const OVERLINE =
  * matches do, and the hidden count is surfaced with a one-click widen so the
  * narrowing is never silent. The source filter is deliberately not applied to
  * registry rows — tournament entries are inherently competitive (D-02).
+ *
+ * Row A is the By-tier card (TIER-03), fed by `buildTierSplitStats` over the
+ * rows the filters leave.
  *
  * The tier resolves ONCE per entry through the shared resolver, from ALL of
  * the subject's matches (never the range-filtered set), because the evidence
@@ -102,11 +111,36 @@ export function TournamentsPage() {
     [inRangeRows, filters],
   );
 
+  // TIER-03: the by-tier split over the rows the filters leave, from ALL of
+  // the subject's matches (the evidence must not move with the date filter,
+  // exactly as the per-row tier above). Side events join only on `side=include`.
+  const includeSideEvents = filters.side === 'include';
+  const splitEntries = useMemo(() => rows.map(({ entry }) => entry), [rows]);
+  const tierStats = useMemo(
+    () => buildTierSplitStats({ entries: splitEntries, matches: allMatches, includeSideEvents }),
+    [splitEntries, allMatches, includeSideEvents],
+  );
+  const sideEventCount = useMemo(
+    () => rows.filter(({ resolution }) => resolution.eventKind === 'side-event').length,
+    [rows],
+  );
+  // The reference tick: the account's overall rate, drawn only from the abstention floor up.
+  const overallRate = useMemo(() => {
+    const overall = toRateValue(allMatches);
+    return overall.total >= ABSTENTION_FLOOR_GAMES ? overall.rate : null;
+  }, [allMatches]);
+
   if (isLoading || entriesLoading) {
     return (
       <PageShell>
         <PageSkeleton>
           <PageGrid>
+            {/* Row A's placeholder is decorative: the table skeleton below owns the one status announcement. */}
+            <GridCell span={12}>
+              <div aria-hidden="true">
+                <CardSkeleton variant="list" rows={5} statusLabel={t('tournaments.listLoading')} />
+              </div>
+            </GridCell>
             <GridCell span={12}>
               <CardSkeleton variant="list" rows={6} statusLabel={t('tournaments.listLoading')} />
             </GridCell>
@@ -207,20 +241,36 @@ export function TournamentsPage() {
         <div
           key={searchParams.toString()}
           data-slot="tournaments-results"
-          className="flex animate-in flex-col gap-4 fade-in-0 duration-[120ms] motion-reduce:animate-none"
+          className="flex animate-in flex-col gap-8 fade-in-0 duration-[120ms] motion-reduce:animate-none"
         >
+          {/* Row A: the By-tier card alone at span 12; the tier insight (plan
+              39.2-09) lands beside it and re-spans the card to 8. Rendered only
+              while rows are visible: no card computes over nothing (§8.1). */}
           {rows.length > 0 && (
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h2 className={OVERLINE}>
-                {t('tournaments.table.sectionLabel', { count: rows.length })}
-                {' · '}
-                {t('tournaments.table.sortNote')}
-              </h2>
-            </div>
+            <PageGrid>
+              <GridCell span={12}>
+                <ByTierCard
+                  stats={tierStats}
+                  sideEventCount={sideEventCount}
+                  overallRate={overallRate}
+                />
+              </GridCell>
+            </PageGrid>
           )}
-          <PageGrid>
-            <GridCell span={12}>{content}</GridCell>
-          </PageGrid>
+          <div className="flex flex-col gap-4">
+            {rows.length > 0 && (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <h2 className={OVERLINE}>
+                  {t('tournaments.table.sectionLabel', { count: rows.length })}
+                  {' · '}
+                  {t('tournaments.table.sortNote')}
+                </h2>
+              </div>
+            )}
+            <PageGrid>
+              <GridCell span={12}>{content}</GridCell>
+            </PageGrid>
+          </div>
         </div>
       </div>
     </PageShell>

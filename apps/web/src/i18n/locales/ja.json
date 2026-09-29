@@ -3789,6 +3789,34 @@
       "countsNote": "件数は他のフィルターを反映しています。",
       "noneInRange": "この期間に{{label}}のイベントはありません。",
       "sheetButton": "フィルター"
+    },
+    "coverage": {
+      "known_one": "ティア判明: 1件中{{known, grouped}}件",
+      "known_other": "ティア判明: {{count, grouped}}件中{{known, grouped}}件",
+      "recorded_one": "記録済み 1件",
+      "recorded_other": "記録済み {{count, grouped}}件",
+      "manual_one": "手動設定 1件",
+      "manual_other": "手動設定 {{count, grouped}}件",
+      "estimated_one": "推定 1件",
+      "estimated_other": "推定 {{count, grouped}}件",
+      "unknown_one": "不明 1件",
+      "unknown_other": "不明 {{count, grouped}}件",
+      "sideExcluded_one": "サイドイベント1件を除外",
+      "sideExcluded_other": "サイドイベント{{count, grouped}}件を除外",
+      "sideIncluded_one": "サイドイベント1件を含む",
+      "sideIncluded_other": "サイドイベント{{count, grouped}}件を含む",
+      "include": "含める",
+      "exclude": "除外する"
+    },
+    "byTier": {
+      "title": "ティア別",
+      "sortNote": "ティア順 · 不明は最後",
+      "abstain_one": "{{tier}} — 勝率の算出にはあと1試合必要です。",
+      "abstain_other": "{{tier}} — 勝率の算出にはあと{{count, grouped}}試合必要です。",
+      "excluded": "比較から除外",
+      "allUnknown": "ティアが判明しているイベントはまだありません — イベントのページから設定できます。",
+      "rowAria_one": "{{tier}}: {{record}}、1試合。このティアで絞り込んだ大会一覧を開く",
+      "rowAria_other": "{{tier}}: {{record}}、{{count, grouped}}試合。このティアで絞り込んだ大会一覧を開く"
     }
   }
 }

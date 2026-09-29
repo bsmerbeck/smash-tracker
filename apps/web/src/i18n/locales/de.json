@@ -3789,6 +3789,34 @@
       "countsNote": "Die Zahlen berücksichtigen die anderen Filter.",
       "noneInRange": "Keine {{label}}-Events in diesem Zeitraum.",
       "sheetButton": "Filter"
+    },
+    "coverage": {
+      "known_one": "Stufe bekannt bei {{known, grouped}} von 1 Event",
+      "known_other": "Stufe bekannt bei {{known, grouped}} von {{count, grouped}} Events",
+      "recorded_one": "1 erfasst",
+      "recorded_other": "{{count, grouped}} erfasst",
+      "manual_one": "1 manuell festgelegt",
+      "manual_other": "{{count, grouped}} manuell festgelegt",
+      "estimated_one": "1 geschätzt",
+      "estimated_other": "{{count, grouped}} geschätzt",
+      "unknown_one": "1 unbekannt",
+      "unknown_other": "{{count, grouped}} unbekannt",
+      "sideExcluded_one": "1 Nebenevent ausgeschlossen",
+      "sideExcluded_other": "{{count, grouped}} Nebenevents ausgeschlossen",
+      "sideIncluded_one": "1 Nebenevent einbezogen",
+      "sideIncluded_other": "{{count, grouped}} Nebenevents einbezogen",
+      "include": "Einbeziehen",
+      "exclude": "Ausschließen"
+    },
+    "byTier": {
+      "title": "Nach Stufe",
+      "sortNote": "Stufenreihenfolge · Unbekannt zuletzt",
+      "abstain_one": "{{tier}} — 1 weiteres Spiel für eine Quote nötig.",
+      "abstain_other": "{{tier}} — {{count, grouped}} weitere Spiele für eine Quote nötig.",
+      "excluded": "vom Vergleich ausgeschlossen",
+      "allUnknown": "Noch kein Event hat eine bekannte Stufe — auf der Seite eines Events festlegen.",
+      "rowAria_one": "{{tier}}: {{record}}, 1 Spiel; öffnet die Turniere, gefiltert nach dieser Stufe",
+      "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} Spiele; öffnet die Turniere, gefiltert nach dieser Stufe"
     }
   }
 }
