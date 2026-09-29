@@ -167,3 +167,44 @@ describe('classify (D-07 honesty ladder)', () => {
     }
   });
 });
+
+describe('classify optional z (39.2-02: the digest "moved" test needs a stricter Wilson gate)', () => {
+  const recent = rate(21, 9);
+  const baseline = rate(50, 50);
+
+  it('with no z behaves as at WILSON_Z (byte-identical to passing 1.96 explicitly)', () => {
+    const implicit = classify({ recent, baseline, scoped: true, hasAction: false });
+    const explicit = classify({ recent, baseline, scoped: true, hasAction: false, z: 1.96 });
+    expect(implicit).toEqual(explicit);
+    expect(implicit.state).toBe('trend');
+    expect(implicit.deltaPoints).toBe(20);
+  });
+
+  it('reads trend at z 1.96 and steady at z 3.09 for the same recent/baseline pair', () => {
+    const strict = classify({ recent, baseline, scoped: true, hasAction: false, z: 3.09 });
+    expect(strict.state).toBe('steady');
+    expect(strict.deltaPoints).toBeNull();
+  });
+
+  it('a z never changes the locked/thinRecent/collapsed branches that precede the Wilson step', () => {
+    for (const z of [1.96, 3.09]) {
+      expect(
+        classify({ recent: rate(1, 1), baseline: rate(50, 50), scoped: true, hasAction: false, z })
+          .state,
+      ).toBe('locked');
+      expect(
+        classify({ recent: rate(5, 0), baseline: rate(50, 50), scoped: true, hasAction: false, z })
+          .state,
+      ).toBe('thinRecent');
+      expect(
+        classify({
+          recent: rate(20, 10),
+          baseline: rate(20, 30),
+          scoped: true,
+          hasAction: false,
+          z,
+        }).state,
+      ).toBe('collapsed');
+    }
+  });
+});
