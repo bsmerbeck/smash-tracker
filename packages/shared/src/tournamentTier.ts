@@ -126,9 +126,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const SIDE_EVENT_PATTERNS = SIDE_EVENT_NAME_TOKENS.map(
-  (token) => new RegExp(`(^|[^a-z0-9])${escapeRegExp(token)}($|[^a-z0-9])`, 'i'),
-);
+/** Whole-word/phrase test, built per call so this module has no top-level evaluation (sideEffects audit). */
+function containsWholePhrase(text: string, phrase: string): boolean {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(phrase)}($|[^a-z0-9])`, 'i').test(text);
+}
 
 /**
  * Case-insensitive whole-word/phrase match against `SIDE_EVENT_NAME_TOKENS`
@@ -141,7 +142,9 @@ export function deriveEventKind(eventName: string): TierEventKind {
   if (name === '') {
     return 'unknown';
   }
-  return SIDE_EVENT_PATTERNS.some((pattern) => pattern.test(name)) ? 'side-event' : 'main';
+  return SIDE_EVENT_NAME_TOKENS.some((token) => containsWholePhrase(name, token))
+    ? 'side-event'
+    : 'main';
 }
 
 /**
@@ -254,6 +257,8 @@ export function resolveTournamentTier(input: {
   entry: TierEntryFields;
   observedOnline?: boolean | null;
   externalTierRow?: ExternalTierInput | null;
+  /** Calibration-oracle ONLY: a mutated ladder to prove the oracle's failing direction. Production callers omit it. */
+  ladder?: readonly { tier: KnownTierWord; minEntrants: number }[];
 }): TierResolution {
   const { entry, externalTierRow } = input;
   const eventKind = deriveEventKind(entry.eventName);
@@ -262,7 +267,7 @@ export function resolveTournamentTier(input: {
 
   const estimate =
     setting === 'offline' && eventKind !== 'side-event' && entrants != null
-      ? { tier: estimateTierFromEntrants(entrants) as TierWord, entrants }
+      ? { tier: estimateTierFromEntrants(entrants, input.ladder) as TierWord, entrants }
       : null;
 
   const base = {

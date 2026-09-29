@@ -22,7 +22,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "budget": "vitest run --config vitest.budget.config.ts"
+    "budget": "vitest run --config vitest.budget.config.ts",
+    "calibrate:tiers": "vitest run src/tournamentTier.calibration.test.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
