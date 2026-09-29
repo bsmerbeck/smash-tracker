@@ -972,3 +972,96 @@ describe('importPlayerMatches', () => {
     );
   });
 });
+
+// Phase 39.2 plan 01 (D-20, isOnline half): the live sync persists `isOnline`
+// on the registry entry with a `!= null` conditional spread. `false` is real
+// data (an offline event) and must be stored; an absent value must store NO
+// key (never null — RTDB null-stripping house rule).
+describe('importPlayerMatches — registry isOnline', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  it('stores isOnline: false as false (not omitted, not null)', async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: { ...base.event, isOnline: false } }]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry['isOnline']).toBe(false);
+  });
+
+  it('stores isOnline: true as true', async () => {
+    const database = new FakeDatabase();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['isOnline']).toBe(true);
+  });
+
+  it('stores NO isOnline key when the provider omits it (never null)', async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    const { isOnline: _omitted, ...eventWithoutIsOnline } = base.event ?? {};
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: eventWithoutIsOnline }]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry).toBeDefined();
+    expect('isOnline' in entry).toBe(false);
+  });
+
+  it('keeps an already-known isOnline when a later set of the same event omits it', async () => {
+    const database = new FakeDatabase();
+    const first = makeSet({ id: 1, completedAt: 1_700_000_000 });
+    const base = makeSet({ id: 2, completedAt: 1_700_000_100 });
+    const { isOnline: _omitted, ...eventWithoutIsOnline } = base.event ?? {};
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([
+        { ...first, event: { ...first.event, isOnline: false } },
+        { ...base, event: eventWithoutIsOnline },
+      ]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['isOnline']).toBe(false);
+  });
+});
