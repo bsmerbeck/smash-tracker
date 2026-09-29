@@ -16,7 +16,7 @@ import {
 
 /**
  * Phase 39.1 plan 39.1-22 (gap closure, orchestrator Finding 8, INS-03/
- * INS-06): proves, for ALL 17 registered templates, that `Insight.
+ * INS-06): proves, for ALL 18 registered templates, that `Insight.
  * countedMatchIds` — the new single source of truth for "which games did
  * this card count" — is a real, exact, deterministic set. Iterates
  * `INSIGHT_TEMPLATES` itself (never a hand-written list), mirroring
@@ -42,8 +42,32 @@ function characterScope(fighterId: number = SUBJECT_FIGHTER_ID): InsightScope {
   };
 }
 
-/** Matches `conformance.test.ts`'s own `scopeFor` — every registered template is either account- or character-scoped today. */
-function scopeFor(template: InsightTemplate): InsightScope {
+/** `tierGap`'s scope, ported from `conformance.test.ts`: even-indexed games are cohort A, odd cohort B, both admitted by the scope's own filter. */
+function tierScope(matches: Match[]): InsightScope {
+  const a = matches.filter((_, index) => index % 2 === 0);
+  const b = matches.filter((_, index) => index % 2 === 1);
+  const ids = new Set(matches.map((m) => m.id));
+  return {
+    kind: 'account',
+    key: 'tier:side-excluded',
+    axes: {},
+    filter: (all) => all.filter((m) => ids.has(m.id)),
+    tierCohorts: {
+      a,
+      b,
+      aEvents: a.length > 0 ? 1 : 0,
+      bEvents: b.length > 0 ? 1 : 0,
+      estimatedEvents: 0,
+      knownEvents: matches.length > 0 ? 2 : 0,
+    },
+  };
+}
+
+/** Matches `conformance.test.ts`'s own `scopeFor` — every registered template is either account- or character-scoped today (`tierGap` also needs its cohorts). */
+function scopeFor(template: InsightTemplate, matches: Match[]): InsightScope {
+  if (template.id === 'tierGap') {
+    return tierScope(matches);
+  }
   return template.scopeKind === 'character' ? characterScope() : accountScope();
 }
 
@@ -139,6 +163,7 @@ const FIXTURES: Record<InsightTemplateId, Match[]> = {
   rosterShift: buildRosterShiftFixture(),
   secondaryPayoff: eightK,
   pocketCost: eightK,
+  tierGap: eightK,
 };
 
 const THIN_FIXTURES: ReadonlyArray<readonly [string, () => Match[]]> = [
@@ -199,7 +224,7 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
 
   it('records an exact, honest countedMatchIds on its real fixture', () => {
     const matches = FIXTURES[templateId];
-    const scope = scopeFor(template);
+    const scope = scopeFor(template, matches);
     const scopedMatches = scope.filter(matches);
     const insights = template.build({ matches, scope, horizon: 'last30', nowMs: NOW_MS });
     expect(
@@ -214,7 +239,7 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
 
   it('is deterministic — building twice yields identical id arrays in identical order', () => {
     const matches = FIXTURES[templateId];
-    const scope = scopeFor(template);
+    const scope = scopeFor(template, matches);
     const first = template.build({ matches, scope, horizon: 'last30', nowMs: NOW_MS });
     const second = template.build({ matches, scope, horizon: 'last30', nowMs: NOW_MS });
     expect(second.map((i) => i.countedMatchIds)).toEqual(first.map((i) => i.countedMatchIds));
@@ -222,7 +247,7 @@ describe.each(INSIGHT_TEMPLATES.map((t) => t.id))('template %s', (templateId) =>
 
   it.each(THIN_FIXTURES)('holds over the %s FIXT-02 sparse fixture', (_name, buildFixture) => {
     const matches = buildFixture();
-    const scope = scopeFor(template);
+    const scope = scopeFor(template, matches);
     const scopedMatches = scope.filter(matches);
     const insights = template.build({ matches, scope, horizon: 'last30', nowMs: NOW_MS });
     for (const insight of insights) {

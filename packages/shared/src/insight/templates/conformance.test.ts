@@ -33,7 +33,7 @@ import {
  * thin-data result fails this suite automatically. Mirrors
  * `evidence/abstentionFixtures.test.ts`'s assertion style (plan 36-xx) and
  * `engine.test.ts`'s own FIXT-02 conformance describe block (plan 39.1-01),
- * generalized to every one of the 17 registered templates instead of the
+ * generalized to every one of the 18 registered templates instead of the
  * whole-registry aggregate.
  */
 
@@ -50,8 +50,38 @@ function characterScope(fighterId: number = SUBJECT_FIGHTER_ID): InsightScope {
   };
 }
 
-/** The scope a template's own declared `scopeKind` is meaningfully invoked at — every template in the closed registry is EITHER account- or character-scoped today (D-09 discipline: the caller supplies scope identity, never the engine). */
-function scopeFor(template: InsightTemplate): InsightScope {
+/**
+ * `tierGap`'s scope: the tier cohorts a Tournaments page would resolve, built
+ * deterministically from the fixture (even-indexed games are cohort A, odd
+ * cohort B), so every conformance assertion, the thin fixtures and the 8k
+ * non-vacuity fixture really exercise it. `knownEvents` is 0 over an empty
+ * fixture, which is the designed `noTiers` result.
+ */
+function tierScope(matches: Match[]): InsightScope {
+  const a = matches.filter((_, index) => index % 2 === 0);
+  const b = matches.filter((_, index) => index % 2 === 1);
+  const ids = new Set(matches.map((m) => m.id));
+  return {
+    kind: 'account',
+    key: 'tier:side-excluded',
+    axes: {},
+    filter: (all) => all.filter((m) => ids.has(m.id)),
+    tierCohorts: {
+      a,
+      b,
+      aEvents: a.length > 0 ? 1 : 0,
+      bEvents: b.length > 0 ? 1 : 0,
+      estimatedEvents: 0,
+      knownEvents: matches.length > 0 ? 2 : 0,
+    },
+  };
+}
+
+/** The scope a template's own declared `scopeKind` is meaningfully invoked at — every template in the closed registry is EITHER account- or character-scoped today (D-09 discipline: the caller supplies scope identity, never the engine). `tierGap` is account-scoped but additionally needs its tier cohorts (Phase 39.2). */
+function scopeFor(template: InsightTemplate, matches: Match[]): InsightScope {
+  if (template.id === 'tierGap') {
+    return tierScope(matches);
+  }
   return template.scopeKind === 'character' ? characterScope() : ACCOUNT_SCOPE;
 }
 
@@ -87,10 +117,12 @@ const MAX_COPY_VALUE_STRING_LENGTH = 40;
  * UI-SPEC §13.13a's non-window-expressible list, review finding C1-H2 plus
  * CR-A05 (`settingGap` added — a same-scope matchType PARTITION, not a
  * contiguous window; `DrillDownAxes` has no online/offline axis to
- * reconstruct it from): the seven templates whose games are a non-contiguous
+ * reconstruct it from) and Phase 39.2 (`tierGap` — a partition by an event's
+ * resolved tier): the eight templates whose games are a non-contiguous
  * subset or an unexpressible partition (post-streak spots, in-session
  * buckets, high-volume months, a pooled pocket group, a main-vs-secondary
- * pairing, one opponent's share of losses, an online/offline split). Named
+ * pairing, one opponent's share of losses, an online/offline split, a
+ * majors-vs-smaller-events split). Named
  * here ONCE, used only to cross-check the MEASURED split below — never to
  * skip a template inside the iteration loops (every assertion loop below
  * iterates `INSIGHT_TEMPLATES` unconditionally).
@@ -103,6 +135,7 @@ const DOCUMENTED_NON_WINDOW_EXPRESSIBLE_IDS: readonly InsightTemplateId[] = [
   'pocketCost',
   'matchupOrPlayer',
   'settingGap',
+  'tierGap',
 ];
 
 const THIN_FIXTURES: ReadonlyArray<readonly [string, () => Match[]]> = [
@@ -142,7 +175,7 @@ function collectAllResults(): ResultEntry[] {
     for (const template of INSIGHT_TEMPLATES) {
       const results = template.build({
         matches,
-        scope: scopeFor(template),
+        scope: scopeFor(template, matches),
         horizon: 'last30',
         nowMs: NOW_MS,
       });
@@ -170,8 +203,8 @@ describe('assertion 1: closed set', () => {
     );
   });
 
-  it('MEASURES the registry length at 17 (recorded in the SUMMARY, not recalled)', () => {
-    expect(INSIGHT_TEMPLATES.length).toBe(17);
+  it('MEASURES the registry length at 18 (recorded in the SUMMARY, not recalled)', () => {
+    expect(INSIGHT_TEMPLATES.length).toBe(18);
   });
 });
 
@@ -190,7 +223,7 @@ describe('assertion 2/3: thin-data conformance and never an empty frame', () => 
       invokedTemplateIds.add(template.id);
       const results = template.build({
         matches,
-        scope: scopeFor(template),
+        scope: scopeFor(template, matches),
         horizon: 'last30',
         nowMs: NOW_MS,
       });
@@ -200,7 +233,7 @@ describe('assertion 2/3: thin-data conformance and never an empty frame', () => 
     }
   }
 
-  it('every one of the 17 templates was actually invoked (coverage), proven by a per-template call tally', () => {
+  it('every one of the 18 templates was actually invoked (coverage), proven by a per-template call tally', () => {
     expect(invokedTemplateIds.size).toBe(INSIGHT_TEMPLATES.length);
   });
 
@@ -278,7 +311,7 @@ describe('assertion 6: doors are honest', () => {
     }
   });
 
-  it('DOCUMENTATION ONLY: windowExpressible metadata still names the same seven ids as non-expressible (it no longer decides door behavior — see the countedMatchIds invariant below)', () => {
+  it('DOCUMENTATION ONLY: windowExpressible metadata still names the same eight ids as non-expressible (it no longer decides door behavior — see the countedMatchIds invariant below)', () => {
     const falseIds = INSIGHT_TEMPLATES.filter((t) => t.windowExpressible === false)
       .map((t) => t.id)
       .sort();
@@ -332,7 +365,7 @@ describe('assertion 7: non-vacuity — the 8k fixture', () => {
     for (const template of INSIGHT_TEMPLATES) {
       const built = template.build({
         matches,
-        scope: scopeFor(template),
+        scope: scopeFor(template, matches),
         horizon: 'last30',
         nowMs: NOW_MS,
       });
@@ -362,7 +395,7 @@ describe('assertion 7: non-vacuity — the 8k fixture', () => {
     for (const template of INSIGHT_TEMPLATES) {
       const built = template.build({
         matches,
-        scope: scopeFor(template),
+        scope: scopeFor(template, matches),
         horizon: 'last30',
         nowMs: NOW_MS,
       });

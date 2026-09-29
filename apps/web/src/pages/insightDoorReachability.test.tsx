@@ -14,6 +14,7 @@ import { FighterAnalysisPage } from './FighterAnalysis/FighterAnalysisPage';
 import { MatchDataPage } from './MatchData/MatchDataPage';
 import { MatchupsPage } from './Matchups/MatchupsPage';
 import { TrendsPage } from './Trends/TrendsPage';
+import { TournamentsPage } from './Tournaments/TournamentsPage';
 import { OpponentHubPage } from './Opponents/OpponentHubPage';
 import { useProfile } from '@/hooks/useProfile';
 import {
@@ -58,8 +59,8 @@ vi.mock('@/lib/firebase', async () => {
   return mock.firebaseLibMock();
 });
 
-// Union of every `api.*` call site reached by the five host pages this
-// suite mounts (FighterAnalysis, MatchData, Matchups, Trends, OpponentHub) —
+// Union of every `api.*` call site reached by the six host pages this
+// suite mounts (FighterAnalysis, MatchData, Matchups, Trends, OpponentHub, Tournaments) —
 // mirrors `insightCoachParity.test.tsx`'s own union mock.
 const getFighters = vi.fn();
 const listMatches = vi.fn();
@@ -203,6 +204,7 @@ function renderHostRoute(initialEntry: string) {
                   element={<OpponentHubPage />}
                 />
                 <Route path="/trends" element={<TrendsPage />} />
+                <Route path="/tournaments" element={<TournamentsPage />} />
               </Routes>
             </TooltipProvider>
           </AnalyticsFilterProvider>
@@ -267,6 +269,7 @@ function seedDismissals(uid: string, clientId: string | null, ids: string[] | un
 function applyMocks(fixture: InsightDoorHostFixture) {
   getFighters.mockResolvedValue({ primary: [fixture.primaryFighterId], secondary: [] });
   listMatches.mockResolvedValue(fixture.matches);
+  listTournaments.mockResolvedValue(fixture.tournaments ?? []);
 }
 
 /**
@@ -388,7 +391,7 @@ beforeEach(() => {
 
 describe('registry coverage', () => {
   it('INSIGHT_DOOR_HOSTS covers exactly the registry INSIGHT_TEMPLATES ids, every entry non-empty', () => {
-    expect(INSIGHT_TEMPLATES).toHaveLength(17);
+    expect(INSIGHT_TEMPLATES).toHaveLength(18);
     expect(new Set(Object.keys(INSIGHT_DOOR_HOSTS))).toEqual(
       new Set(INSIGHT_TEMPLATES.map((t) => t.id)),
     );
@@ -406,7 +409,7 @@ describe('T-39.1-29: formNow on the Fighter hero (personal) — the round trip',
 });
 
 // ---------------------------------------------------------------------------
-// Every (template, host) pair — personal mount. 23 pairs (see must_haves).
+// Every (template, host) pair — personal mount. 24 pairs (see must_haves).
 // ---------------------------------------------------------------------------
 
 const ALL_PAIRS: { templateId: InsightTemplateId; host: InsightDoorHost }[] = Object.entries(

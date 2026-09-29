@@ -3267,7 +3267,8 @@
       "openStage": "Abrir escenario",
       "openEvent": "Abrir evento",
       "findVods": "Buscar VODs",
-      "ratingModelNote": "Nota sobre el modelo de clasificación"
+      "ratingModelNote": "Nota sobre el modelo de clasificación",
+      "showEvents": "Mostrar estos eventos"
     },
     "chip": {
       "up": "Sube",
@@ -3490,6 +3491,17 @@
     "worstMatchup": {
       "locked": "Marca más difícil — aún no hay suficientes partidas para nombrar una.",
       "fact": "Marca más difícil — vs {{vs}}, {{record}} en {{count, grouped}}."
+    },
+    "tierGap": {
+      "up": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas frente a {{bRate}} en eventos más pequeños.",
+      "down": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas, por debajo del {{bRate}} en eventos más pequeños.",
+      "steady": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas; sin diferencia notable frente a los eventos más pequeños ({{bRate}}).",
+      "abstained": "No hay suficientes partidas en majors ({{count, grouped}}).",
+      "abstainedSmaller": "No hay suficientes partidas en eventos más pequeños ({{count, grouped}}).",
+      "noTiers": "Nivel — ningún evento tiene aún un nivel conocido.",
+      "evidence": "{{aRecord}} en majors y superiores · {{bRecord}} en eventos más pequeños · {{cue}}",
+      "estimatedNote_one": "1 de esos eventos tiene un nivel estimado.",
+      "estimatedNote_other": "{{count, grouped}} de esos eventos tienen un nivel estimado."
     }
   },
   "analytics": {

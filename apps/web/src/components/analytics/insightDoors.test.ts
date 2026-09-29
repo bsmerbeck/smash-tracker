@@ -15,7 +15,7 @@ import { buildInsightDoors, resolveInsightClaim, DD09_CLAIM_AXIS_ACCEPTED } from
  * Plan 39.1-22 (gap closure, orchestrator Finding 8): rewritten for the
  * countedMatchIds door predicate — `buildInsightDoors`/`resolveInsightClaim`
  * no longer read `windowExpressible` at all; a games door is exact by
- * construction whenever `Insight.countedMatchIds` is non-empty, for ALL 17
+ * construction whenever `Insight.countedMatchIds` is non-empty, for ALL 18
  * templates, not just the 10 that were `windowExpressible: true`.
  */
 

@@ -26,6 +26,7 @@ const KNOWN_TEMPLATE_IDS: readonly InsightTemplateId[] = [
   'matchupOrPlayer',
   'bestMatchup',
   'worstMatchup',
+  'tierGap',
 ];
 
 describe('COHORT_TEMPLATES (plan 39.1-04 fills this segment)', () => {

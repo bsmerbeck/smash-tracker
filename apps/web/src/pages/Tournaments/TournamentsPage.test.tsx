@@ -616,13 +616,16 @@ describe('TournamentsPage', () => {
       );
     });
 
-    it('sits above the events table as Row A, alone at span 12', async () => {
+    it('sits above the events table as Row A, beside the tier insight (8 + 4)', async () => {
       const { container } = await renderNineteen();
       const card = container.querySelector('[data-slot="by-tier-card"]')!;
       const table = container.querySelector('table')!;
       expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(card.closest('.col-span-12')).not.toBeNull();
-      expect(card.closest('.lg\\:col-span-8')).toBeNull();
+      const cardCell = card.closest('[data-span]')!;
+      expect(cardCell.getAttribute('data-span')).toBe('8');
+      expect(cardCell.className).toContain('xl:col-span-8');
+      // 1024-1279: the card takes the whole row and the insight sits above it.
+      expect(cardCell.className).toContain('lg:col-span-12');
     });
 
     it('a by-tier row is a filter door: it keeps setting and never lands a game list', async () => {
@@ -684,6 +687,161 @@ describe('TournamentsPage', () => {
       expect(container.querySelector('[data-slot="tier-coverage"]')?.textContent).toBe(
         'Tier known for 0 of 2 events · 0 recorded · 0 estimated · 2 unknown',
       );
+    });
+
+    describe('the tier insight (TIER-03, D-14, D-16)', () => {
+      function insightCell(container: HTMLElement) {
+        return container
+          .querySelector('[data-slot="tier-insight-card"]')
+          ?.closest('[data-span]') as HTMLElement | null;
+      }
+
+      it('renders the tier insight in a 4-column cell beside the card at 1280+, and above it below', async () => {
+        const { container } = await renderNineteen();
+        const cell = insightCell(container)!;
+        expect(cell.getAttribute('data-span')).toBe('4');
+        expect(cell.className).toContain('xl:col-span-4');
+        // 1024-1279 the insight is its own 12-column row, first; from 1280 it is back in DOM order.
+        expect(cell.className).toContain('lg:col-span-12');
+        expect(cell.className).toContain('order-first');
+        expect(cell.className).toContain('xl:order-none');
+        expect(
+          screen.getByText(
+            'Majors and above — 79% over 33; no notable gap vs smaller events (80%).',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it("the counted-games door lands on #games with exactly the insight's games", async () => {
+        HTMLElement.prototype.scrollIntoView = vi.fn();
+        const { container } = await renderNineteen();
+        const door = within(insightCell(container)!).getByRole('link', {
+          name: 'See the 43 games',
+        });
+        await userEvent.click(door);
+        const terminus = await waitFor(() => {
+          const el = container.querySelector('#games');
+          if (!el) throw new Error('#games did not mount');
+          return el as HTMLElement;
+        });
+        await waitFor(() =>
+          expect(within(terminus).getByRole('table').getAttribute('data-total-rows')).toBe('43'),
+        );
+        // The list holds the cohorts' games and none of the 10 Unknown-tier weekly games.
+        expect(terminus.querySelector('[data-slot="claim-not-applied"]')).toBeNull();
+      });
+
+      it('Show these events filters the table to majors and above without landing a game list', async () => {
+        const { container } = await renderNineteen();
+        await userEvent.click(
+          within(insightCell(container)!).getByRole('link', { name: 'Show these events' }),
+        );
+        await waitFor(() =>
+          expect(
+            Array.from(container.querySelectorAll('[data-slot="by-tier-row"]')).map((row) =>
+              row.getAttribute('data-tier'),
+            ),
+          ).toEqual(['supermajor']),
+        );
+        expect(container.querySelector('#games')).toBeNull();
+      });
+
+      it('dismissing the insight gives the By-tier card all 12 columns', async () => {
+        const { container } = await renderNineteen();
+        await userEvent.click(
+          within(insightCell(container)!).getByRole('button', { name: 'Dismiss' }),
+        );
+        await waitFor(() =>
+          expect(container.querySelector('[data-slot="tier-insight-card"]')).toBeNull(),
+        );
+        const cardCell = container
+          .querySelector('[data-slot="by-tier-card"]')!
+          .closest('[data-span]')!;
+        expect(cardCell.getAttribute('data-span')).toBe('12');
+      });
+
+      it('an all-unknown account gets the noTiers Fact with no door', async () => {
+        listTournaments.mockResolvedValue([
+          eventAt(1, 'Weekly One', 0, { numEntrants: 40, isOnline: true }),
+          eventAt(2, 'Weekly Two', 7, { numEntrants: 44, isOnline: true }),
+        ]);
+        listMatches.mockResolvedValue(
+          linked('Weekly One', 0, 2, 1, { matchType: 'online-tourney' }),
+        );
+        const { container } = renderPage();
+        await screen.findByRole('heading', { name: 'By tier' });
+        const cell = insightCell(container)!;
+        expect(within(cell).getByText('Tier — no event has a known tier yet.')).toBeInTheDocument();
+        expect(within(cell).queryAllByRole('link')).toHaveLength(0);
+      });
+
+      it('an unresolvable claim id is announced, never silently the whole history', async () => {
+        const { container } = await renderNineteen('/tournaments?claim=tierGap:other:last30#games');
+        await waitFor(() =>
+          expect(container.querySelector('[data-slot="claim-not-applied"]')).not.toBeNull(),
+        );
+      });
+
+      it('a claim from the side-included cohort does not resolve on the side-excluded one (T-39.2-38)', async () => {
+        const { container } = await renderNineteen(
+          '/tournaments?claim=tierGap:tier:side-included:last30#games',
+        );
+        await waitFor(() =>
+          expect(container.querySelector('[data-slot="claim-not-applied"]')).not.toBeNull(),
+        );
+      });
+
+      it('side=include switches the scope key, so the door claim changes with the cohort', async () => {
+        const entries = [
+          eventAt(1, 'Supernova 2026', 0, { numEntrants: 2048, isOnline: false }),
+          eventAt(2, 'Local Weekly', 10, { numEntrants: 20, isOnline: false }),
+          eventAt(3, 'Side Bracket', 20, {
+            eventName: 'Squad Strike',
+            numEntrants: 300,
+            isOnline: false,
+            tierOverride: { contractVersion: 1, tier: 'supermajor', setAtMs: 1 },
+          }),
+        ];
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue([
+          ...linked('Supernova 2026', 0, 12, 2),
+          ...linked('Local Weekly', 10, 6, 6),
+          ...linked('Side Bracket', 20, 4, 0, { eventName: 'Squad Strike' }),
+        ]);
+        const { container } = renderPage('/tournaments?side=include');
+        await screen.findByRole('heading', { name: 'By tier' });
+        const cell = insightCell(container)!;
+        const door = within(cell).getByRole('link', { name: /^See the \d+ games$/ });
+        expect(door.textContent).toBe('See the 30 games');
+        const href = new URL(door.getAttribute('href')!, 'http://x/tournaments');
+        expect(href.searchParams.get('claim')).toBe('tierGap:tier:side-included:last30');
+        expect(href.searchParams.get('side')).toBe('include');
+      });
+    });
+
+    describe('one resolution for the card and the table (39.2-08 open item)', () => {
+      it('a filter that hides a same-named event never hands its games to the one that stays', async () => {
+        // Two same-named events a day apart: the online one (Unknown tier) is filtered out by
+        // ?tier=supermajor, and its games sit inside the supermajor event's padded window.
+        const entries = [
+          eventAt(1, 'Same Open', 0, { numEntrants: 2048, isOnline: false }),
+          eventAt(2, 'Same Open', 1, { numEntrants: 40, isOnline: true }),
+        ];
+        listTournaments.mockResolvedValue(entries);
+        listMatches.mockResolvedValue([
+          // `linked` ids are name-based, so the second event's games are re-keyed.
+          ...linked('Same Open', 0, 7, 3),
+          ...linked('Same Open', 1, 6, 0, { matchType: 'online-tourney' }).map((game, i) => ({
+            ...game,
+            id: `online-${i}`,
+          })),
+        ]);
+        const { container } = renderPage('/tournaments?tier=supermajor');
+        await screen.findByRole('heading', { name: 'By tier' });
+        const row = container.querySelector('[data-slot="by-tier-row"][data-tier="supermajor"]')!;
+        expect(row.textContent).toContain('7–3');
+        expect(row.textContent).not.toContain('13–3');
+      });
     });
 
     describe('side events (T-06)', () => {

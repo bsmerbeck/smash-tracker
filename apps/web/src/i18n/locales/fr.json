@@ -3267,7 +3267,8 @@
       "openStage": "Ouvrir le stage",
       "openEvent": "Ouvrir l'événement",
       "findVods": "Trouver des VODs",
-      "ratingModelNote": "Note sur le modèle de classement"
+      "ratingModelNote": "Note sur le modèle de classement",
+      "showEvents": "Afficher ces événements"
     },
     "chip": {
       "up": "En hausse",
@@ -3490,6 +3491,17 @@
     "worstMatchup": {
       "locked": "Bilan le plus difficile — pas encore assez de matchs pour en nommer un.",
       "fact": "Bilan le plus difficile — vs {{vs}}, {{record}} sur {{count, grouped}}."
+    },
+    "tierGap": {
+      "up": "Majors et au-dessus — {{aRate}} sur {{aGames, grouped}} matchs contre {{bRate}} dans les événements plus modestes.",
+      "down": "Majors et au-dessus — {{aRate}} sur {{aGames, grouped}} matchs, en dessous des {{bRate}} dans les événements plus modestes.",
+      "steady": "Majors et au-dessus — {{aRate}} sur {{aGames, grouped}} matchs ; aucun écart notable avec les événements plus modestes ({{bRate}}).",
+      "abstained": "Pas assez de matchs en majors ({{count, grouped}}).",
+      "abstainedSmaller": "Pas assez de matchs dans les événements plus modestes ({{count, grouped}}).",
+      "noTiers": "Niveau — aucun événement n'a encore de niveau connu.",
+      "evidence": "{{aRecord}} en majors et au-dessus · {{bRecord}} dans les événements plus modestes · {{cue}}",
+      "estimatedNote_one": "1 de ces événements a un niveau estimé.",
+      "estimatedNote_other": "{{count, grouped}} de ces événements ont un niveau estimé."
     }
   },
   "analytics": {

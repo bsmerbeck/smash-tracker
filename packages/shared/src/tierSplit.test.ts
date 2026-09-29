@@ -4,6 +4,7 @@ import { ABSTENTION_FLOOR_GAMES } from './evidence/policy.js';
 import {
   assignMatchesToEntries,
   buildTierSplitStats,
+  buildTierSplitStatsFromResolved,
   observedOnlineFor,
   resolveEntryTiers,
   type TierSplitEntry,
@@ -298,5 +299,83 @@ describe('buildTierSplitStats', () => {
       sideExcluded: 0,
     });
     expect(stats.cohorts).toEqual({ a: [], b: [], aEvents: 0, bEvents: 0, estimatedEvents: 0 });
+  });
+});
+
+describe('buildTierSplitStatsFromResolved — one attribution per game however the list is filtered', () => {
+  // Two same-named events a day apart. Every online game of `onlineEvent` also
+  // sits inside `offlineEvent`'s padded 24h window, so resolving the surviving
+  // event ALONE hands those games to it. The tier itself cannot move (only an
+  // entry with no stored `isOnline` reads its games, and a missing setting never
+  // reads as offline), but the games, and so every record and rate, would.
+  const offlineEvent = makeEntry({
+    entryKey: 'offline',
+    tournamentName: null,
+    numEntrants: 2000,
+    isOnline: false,
+    firstSetAt: T0,
+    lastSetAt: T0 + 60_000,
+  });
+  const onlineEvent = makeEntry({
+    entryKey: 'online',
+    tournamentName: null,
+    numEntrants: 40,
+    isOnline: true,
+    firstSetAt: T0 + DAY_MS,
+    lastSetAt: T0 + DAY_MS + 60_000,
+  });
+
+  function twoEventMatches(): Match[] {
+    return [
+      ...gamesFor(4, 3, { tournamentName: undefined, time: T0 + 30_000 }),
+      ...gamesFor(3, 1, {
+        tournamentName: undefined,
+        matchType: 'online-tourney',
+        time: T0 + DAY_MS + 30_000,
+      }),
+    ];
+  }
+
+  it('the pre-fix path disagrees: resolving only the surviving event absorbs the filtered-out event games', () => {
+    const matches = twoEventMatches();
+    const [full] = resolveEntryTiers([offlineEvent, onlineEvent], matches);
+    const [alone] = resolveEntryTiers([offlineEvent], matches);
+    expect(full?.resolution.tier).toBe('supermajor');
+    expect(alone?.resolution.tier).toBe('supermajor');
+    expect(full?.matches).toHaveLength(4);
+    expect(alone?.matches).toHaveLength(7);
+  });
+
+  it('a split over the surviving entry, resolved once over all of them, counts only that entry games', () => {
+    const matches = twoEventMatches();
+    const resolvedAll = resolveEntryTiers([offlineEvent, onlineEvent], matches);
+    const surviving = resolvedAll.filter((item) => item.entry === offlineEvent);
+
+    const stats = buildTierSplitStatsFromResolved({
+      resolved: surviving,
+      includeSideEvents: false,
+    });
+
+    expect(stats.rows.map((row) => row.tier)).toEqual(['supermajor']);
+    expect(stats.rows[0]?.total).toBe(4);
+    expect(stats.cohorts.aEvents).toBe(1);
+    expect(stats.cohorts.a).toHaveLength(4);
+    expect(stats.unknown).toBeNull();
+    // The by-tier input the old path built would have counted all seven.
+    expect(
+      buildTierSplitStats({ entries: [offlineEvent], matches, includeSideEvents: false }).rows[0]
+        ?.total,
+    ).toBe(7);
+  });
+
+  it('agrees with buildTierSplitStats when nothing is filtered out', () => {
+    const matches = twoEventMatches();
+    const entries = [offlineEvent, onlineEvent];
+    expect(
+      buildTierSplitStatsFromResolved({
+        resolved: resolveEntryTiers(entries, matches),
+        includeSideEvents: false,
+      }),
+    ).toEqual(buildTierSplitStats({ entries, matches, includeSideEvents: false }));
   });
 });

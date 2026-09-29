@@ -3267,7 +3267,8 @@
       "openStage": "Stage öffnen",
       "openEvent": "Event öffnen",
       "findVods": "VODs finden",
-      "ratingModelNote": "Hinweis zum Wertungsmodell"
+      "ratingModelNote": "Hinweis zum Wertungsmodell",
+      "showEvents": "Diese Events anzeigen"
     },
     "chip": {
       "up": "Steigt",
@@ -3490,6 +3491,17 @@
     "worstMatchup": {
       "locked": "Schwerste Bilanz — noch nicht genug Matches, um eine zu nennen.",
       "fact": "Schwerste Bilanz — vs. {{vs}}, {{record}} über {{count, grouped}}."
+    },
+    "tierGap": {
+      "up": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches vs. {{bRate}} bei kleineren Events.",
+      "down": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches, unter den {{bRate}} bei kleineren Events.",
+      "steady": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches; kein nennenswerter Unterschied zu kleineren Events ({{bRate}}).",
+      "abstained": "Nicht genug Matches bei Majors ({{count, grouped}}).",
+      "abstainedSmaller": "Nicht genug Matches bei kleineren Events ({{count, grouped}}).",
+      "noTiers": "Stufe — noch kein Event hat eine bekannte Stufe.",
+      "evidence": "{{aRecord}} bei Majors und darüber · {{bRecord}} bei kleineren Events · {{cue}}",
+      "estimatedNote_one": "1 dieser Events hat eine geschätzte Stufe.",
+      "estimatedNote_other": "{{count, grouped}} dieser Events haben eine geschätzte Stufe."
     }
   },
   "analytics": {

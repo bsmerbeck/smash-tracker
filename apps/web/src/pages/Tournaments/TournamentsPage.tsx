@@ -1,12 +1,11 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   ABSTENTION_FLOOR_GAMES,
-  buildTierSplitStats,
+  buildTierSplitStatsFromResolved,
   resolveEntryTiers,
   toRateValue,
-  type Insight,
   type Match,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -19,8 +18,11 @@ import { PageShell } from '@/components/analytics/PageShell';
 import { INLINE_LINK_TONE } from '@/components/analytics/linkTone';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
+import { TierInsightCard } from '@/components/analytics/tier/TierInsightCard';
+import { buildTierGapInsight } from '@/components/analytics/tier/tierGapInsight';
 import { TierFilterChips } from '@/components/analytics/tier/TierFilterChips';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
+import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { filterEntriesByRange, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { useMatches } from '@/hooks/useMatches';
@@ -70,15 +72,6 @@ const DRILL_AXIS_PARAMS = [
 ] as const;
 
 /**
- * The insights this page computed, which a `claim=` door may name. Empty until
- * the tier insight (plan 39.2-09) registers into it: an id no insight owns
- * resolves to `undefined`, so `FilteredMatchList` announces the unresolved
- * claim instead of silently widening to every game. A module constant so the
- * `resolveClaim` callback below keeps one identity across renders.
- */
-const PAGE_INSIGHTS: Insight[] = [];
-
-/**
  * `/tournaments` — the tier-aware tournament list (TIER-02 / T-08). Every row
  * shows its tier AND how that tier was established, placement, seed delta and
  * record, grouped by year; the tier / setting / side-event filters live only
@@ -125,9 +118,16 @@ export function TournamentsPage() {
   const filters = useMemo(() => readTierFilterParams(searchParams), [searchParams]);
   const allEntries = useMemo(() => entries ?? [], [entries]);
 
-  const resolutionByEntry = useMemo(
-    () => new Map(resolveEntryTiers(allEntries, allMatches).map((r) => [r.entry, r.resolution])),
+  // Every entry resolves ONCE, over ALL entries and ALL matches: the card and the
+  // table read this one resolution, so a filter that hides a same-named event can
+  // never hand its games to the one that stays.
+  const resolvedEntries = useMemo(
+    () => resolveEntryTiers(allEntries, allMatches),
     [allEntries, allMatches],
+  );
+  const resolutionByEntry = useMemo(
+    () => new Map(resolvedEntries.map((r) => [r.entry, r.resolution])),
+    [resolvedEntries],
   );
 
   const visibleEntries = useMemo(
@@ -158,11 +158,13 @@ export function TournamentsPage() {
   // the subject's matches (the evidence must not move with the date filter,
   // exactly as the per-row tier above). Side events join only on `side=include`.
   const includeSideEvents = filters.side === 'include';
-  const splitEntries = useMemo(() => rows.map(({ entry }) => entry), [rows]);
-  const tierStats = useMemo(
-    () => buildTierSplitStats({ entries: splitEntries, matches: allMatches, includeSideEvents }),
-    [splitEntries, allMatches, includeSideEvents],
-  );
+  const tierStats = useMemo(() => {
+    const shown = new Set<object>(rows.map(({ entry }) => entry));
+    return buildTierSplitStatsFromResolved({
+      resolved: resolvedEntries.filter((item) => shown.has(item.entry)),
+      includeSideEvents,
+    });
+  }, [rows, resolvedEntries, includeSideEvents]);
   const sideEventCount = useMemo(
     () => rows.filter(({ resolution }) => resolution.eventKind === 'side-event').length,
     [rows],
@@ -172,6 +174,20 @@ export function TournamentsPage() {
     const overall = toRateValue(allMatches);
     return overall.total >= ABSTENTION_FLOOR_GAMES ? overall.rate : null;
   }, [allMatches]);
+
+  // TIER-03: the tier insight, computed once and shared by its card and by the
+  // `#games` terminus, so a rendered door's `claim=` id and the resolved list are
+  // one object's `countedMatchIds`. React Compiler forbids a bare `Date.now()` in
+  // render; the lazy state initializer is the codebase's one-time-read hatch.
+  const [nowMs] = useState(() => Date.now());
+  const tierInsight = useMemo(
+    () => buildTierGapInsight({ stats: tierStats, matches: allMatches, includeSideEvents, nowMs }),
+    [tierStats, allMatches, includeSideEvents, nowMs],
+  );
+  const pageInsights = useMemo(() => (tierInsight ? [tierInsight] : []), [tierInsight]);
+  const { dismissedIds, dismiss } = useInsightDismissals();
+  const shownTierInsight =
+    tierInsight != null && !dismissedIds.includes(tierInsight.id) ? tierInsight : null;
 
   // D-05: a tolerant read of every drill-down axis in the URL. This page's
   // by-tier rows write none (they are filters, DD-12); the `#games` terminus is
@@ -212,12 +228,27 @@ export function TournamentsPage() {
       axesFromUrl.claimId,
     ],
   );
-  const sortedMatches = useMemo(() => sortMatchesNewestFirst(matches), [matches]);
+  // A claim resolves against ALL of the subject's matches: the insight counted
+  // from them (the tier evidence does not move with the date or source filter),
+  // so the list must hold exactly the games its door promised. Every other axis
+  // still narrows the globally filtered set.
+  const claimInUrl = axesFromUrl.claimId != null;
+  const sortedMatches = useMemo(
+    () => sortMatchesNewestFirst(claimInUrl ? allMatches : matches),
+    [claimInUrl, allMatches, matches],
+  );
   const resolveClaimForTerminus = useCallback(
     (claimId: string, ms: Match[]) =>
-      resolveInsightClaim({ claimId, insights: PAGE_INSIGHTS, matches: ms }),
-    [],
+      resolveInsightClaim({ claimId, insights: pageInsights, matches: ms }),
+    [pageInsights],
   );
+  const claimedInsight =
+    axesFromUrl.claimId != null
+      ? pageInsights.find((insight) => insight.id === axesFromUrl.claimId)
+      : undefined;
+  const claimSummary = claimedInsight
+    ? t(claimedInsight.copy.key, claimedInsight.copy.values)
+    : undefined;
   // `BrowserRouter` performs no hash scroll of its own and the terminus mounts
   // conditionally, so an effect once the data has landed is the only place the
   // scroll can happen (WR-02, 39.1-REVIEW).
@@ -349,18 +380,35 @@ export function TournamentsPage() {
           data-slot="tournaments-results"
           className="flex animate-in flex-col gap-8 fade-in-0 duration-[120ms] motion-reduce:animate-none"
         >
-          {/* Row A: the By-tier card alone at span 12; the tier insight (plan
-              39.2-09) lands beside it and re-spans the card to 8. Rendered only
-              while rows are visible: no card computes over nothing (§8.1). */}
+          {/* Row A (D-14): the By-tier card at 8 columns with the tier insight at 4
+              from 1280px up. From 1024 to 1279 the insight is its own 12-column row
+              ABOVE the card; below that everything is 12 and the insight comes
+              first. Rendered only while rows are visible: no card computes over
+              nothing (§8.1); a dismissed or absent insight gives the card all 12. */}
           {rows.length > 0 && (
             <PageGrid>
-              <GridCell span={12}>
+              <GridCell
+                span={shownTierInsight ? 8 : 12}
+                className={shownTierInsight ? 'lg:col-span-12 xl:col-span-8' : undefined}
+              >
                 <ByTierCard
                   stats={tierStats}
                   sideEventCount={sideEventCount}
                   overallRate={overallRate}
                 />
               </GridCell>
+              {shownTierInsight && (
+                <GridCell
+                  span={4}
+                  className="order-first lg:col-span-12 xl:order-none xl:col-span-4"
+                >
+                  <TierInsightCard
+                    insight={shownTierInsight}
+                    coverage={tierStats.coverage}
+                    onDismiss={() => dismiss(shownTierInsight.id)}
+                  />
+                </GridCell>
+              )}
             </PageGrid>
           )}
           <div className="flex flex-col gap-4">
@@ -387,6 +435,7 @@ export function TournamentsPage() {
                         matches={sortedMatches}
                         axes={terminusAxes}
                         resolveClaim={resolveClaimForTerminus}
+                        claimSummary={claimSummary}
                         onClearFilters={handleClearDrillFilters}
                         showDelete
                       />

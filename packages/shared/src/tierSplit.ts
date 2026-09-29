@@ -224,7 +224,25 @@ export function buildTierSplitStats(input: {
   matches: Match[];
   includeSideEvents: boolean;
 }): TierSplitStats {
-  const resolved = resolveEntryTiers(input.entries, input.matches);
+  return buildTierSplitStatsFromResolved({
+    resolved: resolveEntryTiers(input.entries, input.matches),
+    includeSideEvents: input.includeSideEvents,
+  });
+}
+
+/**
+ * The split over entries ALREADY resolved by `resolveEntryTiers`. A caller
+ * that shows a filtered subset of its entries resolves ONCE over ALL of them
+ * and hands this only the subset's resolved items: resolving the subset alone
+ * lets a match that belongs to a filtered-out same-named event fall back onto
+ * the surviving one, which can change that survivor's observed setting and so
+ * its tier, making a card disagree with the table it sits beside.
+ */
+export function buildTierSplitStatsFromResolved(input: {
+  resolved: ResolvedTierEntry[];
+  includeSideEvents: boolean;
+}): TierSplitStats {
+  const { resolved } = input;
   const counted = resolved.filter(
     (item) => input.includeSideEvents || item.resolution.eventKind !== 'side-event',
   );

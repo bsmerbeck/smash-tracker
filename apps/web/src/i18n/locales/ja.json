@@ -3267,7 +3267,8 @@
       "openStage": "ステージを開く",
       "openEvent": "イベントを開く",
       "findVods": "VODを探す",
-      "ratingModelNote": "レーティングモデルについての注記"
+      "ratingModelNote": "レーティングモデルについての注記",
+      "showEvents": "これらのイベントを表示"
     },
     "chip": {
       "up": "上昇",
@@ -3490,6 +3491,17 @@
     "worstMatchup": {
       "locked": "最も苦手な相性 — まだ名前を挙げられるだけの試合数がありません。",
       "fact": "最も苦手な相性 — vs {{vs}}、{{count, grouped}}戦{{record}}。"
+    },
+    "tierGap": {
+      "up": "メジャー以上 — {{aGames, grouped}}戦で{{aRate}}、小規模イベントでは{{bRate}}です。",
+      "down": "メジャー以上 — {{aGames, grouped}}戦で{{aRate}}、小規模イベントの{{bRate}}を下回っています。",
+      "steady": "メジャー以上 — {{aGames, grouped}}戦で{{aRate}}。小規模イベント（{{bRate}}）と有意な差はありません。",
+      "abstained": "メジャーでの試合数が不足しています（{{count, grouped}}）。",
+      "abstainedSmaller": "小規模イベントでの試合数が不足しています（{{count, grouped}}）。",
+      "noTiers": "ティア — ティアが判明しているイベントはまだありません。",
+      "evidence": "メジャー以上 {{aRecord}} · 小規模イベント {{bRecord}} · {{cue}}",
+      "estimatedNote_one": "これらのイベントのうち1件はティアが推定です。",
+      "estimatedNote_other": "これらのイベントのうち{{count, grouped}}件はティアが推定です。"
     }
   },
   "analytics": {
