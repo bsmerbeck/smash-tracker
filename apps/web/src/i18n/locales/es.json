@@ -911,7 +911,6 @@
       "cellAria4": "{{row}} en {{col}}: {{wins}}-{{losses}}"
     },
     "insights": {
-      "title": "Análisis del enfrentamiento",
       "minMatches": "Mín. de partidas por escenario",
       "empty": "Aún no hay partidas registradas para este enfrentamiento.",
       "currentStreak": "Racha actual",
@@ -923,11 +922,15 @@
       },
       "longestWin": "Mayor racha de victorias",
       "longestLoss": "Mayor racha de derrotas",
-      "recentForm": "Forma reciente (primero la más nueva)",
       "bestStage": "Mejor escenario",
       "worstStage": "Peor escenario",
       "singleStageOnly": "Aún no hay suficientes escenarios distintos: juega este enfrentamiento en otro escenario para ver una advertencia del peor escenario.",
-      "byMatchType": "Por tipo de partida"
+      "meta": "Análisis del enfrentamiento · histórico",
+      "stagesHead_one": "Escenarios · mín. {{count}} partida",
+      "stagesHead_other": "Escenarios · mín. {{count}} partidas",
+      "change": "cambiar",
+      "bestLabel": "Mejor · {{stage}}",
+      "worstLabel": "Peor · {{stage}}"
     },
     "stageTable": {
       "title": "Desglose por escenario",

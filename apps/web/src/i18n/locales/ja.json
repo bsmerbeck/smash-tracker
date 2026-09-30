@@ -911,7 +911,6 @@
       "cellAria4": "{{row}}（{{col}}）: {{wins}}-{{losses}}"
     },
     "insights": {
-      "title": "相性の分析",
       "minMatches": "ステージごとの最低対戦数",
       "empty": "この相性の対戦はまだ記録されていません。",
       "currentStreak": "現在の連続記録",
@@ -923,11 +922,15 @@
       },
       "longestWin": "最長連勝",
       "longestLoss": "最長連敗",
-      "recentForm": "最近の調子（新しい順）",
       "bestStage": "得意ステージ",
       "worstStage": "苦手ステージ",
       "singleStageOnly": "まだ異なるステージが十分にありません。別のステージでこの相性を対戦すると、苦手ステージの警告が表示されます。",
-      "byMatchType": "対戦の種類別"
+      "meta": "相性の分析 · 全期間",
+      "stagesHead_one": "ステージ · 最低{{count}}試合",
+      "stagesHead_other": "ステージ · 最低{{count}}試合",
+      "change": "変更",
+      "bestLabel": "最良 · {{stage}}",
+      "worstLabel": "最悪 · {{stage}}"
     },
     "stageTable": {
       "title": "ステージ別集計",

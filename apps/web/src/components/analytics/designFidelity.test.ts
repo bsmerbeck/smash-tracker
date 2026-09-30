@@ -531,7 +531,7 @@ describe('design fidelity — hero hosts build no private horizon figures or sha
  * and its comments mention the colour words without any class literal.
  */
 const MATCHUPS_DIR_PREFIX = 'apps/web/src/pages/Matchups/';
-const PIP_COMPONENT_PATTERN = /\bWinLossPips\b/;
+const PIP_COMPONENT_PATTERN = /from\s+['"][^'"]*WinLossPips['"]|<WinLossPips\b/;
 const STATUS_COLOUR_CLASS_PATTERN =
   /(?<![\w-])(?:[\w-]+:)*(?:text|bg|border|fill|stroke|ring|from|to|via|outline|divide|decoration)-(?:emerald|destructive)(?:-\d{2,3})?(?:\/\d{1,3})?(?![\w-])/;
 const KNOWN_STATUS_COLOUR_FILES: readonly string[] = [
@@ -578,6 +578,9 @@ describe('design fidelity — Matchups carries no pips and no alarm-colour class
     expect(matchupsOffences('const noTextDestructive = 1; // text-destructive-ish')).toEqual([]);
     expect(matchupsOffences('className="text-muted-foreground"')).toEqual([]);
     expect(matchupsOffences('const WinLossPipsLegend = 1')).toEqual([]);
+    expect(
+      matchupsOffences('/** emerald-500, used elsewhere in the app (WinLossPips, X) */'),
+    ).toEqual([]);
   });
 
   it('the scanned set is non-empty and covers the rail cards', () => {

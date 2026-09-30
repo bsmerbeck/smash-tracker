@@ -348,7 +348,9 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Matchup Insights · all time')).toBeInTheDocument(),
+    );
     // Current streak: 1 loss (most recent match lost). Plan 39.1-32 (item
     // 10): the count and unit word render as two separate StatFigure
     // elements now (a fixedColumns StatRow), and the non-plural
@@ -1440,7 +1442,7 @@ describe('MatchupsPage', () => {
         'stage-breakdown',
       ]);
       const order = [
-        within(rail).getByText('Matchup Insights'),
+        within(rail).getByText('Matchup Insights · all time'),
         rail.querySelector('[data-slot="insight-card"]')!,
         within(rail).getByText('Counterpick Advisor'),
         within(rail).getByText('Stage breakdown'),

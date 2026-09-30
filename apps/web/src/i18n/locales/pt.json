@@ -911,7 +911,6 @@
       "cellAria4": "{{row}} em {{col}}: {{wins}}-{{losses}}"
     },
     "insights": {
-      "title": "Insights do confronto",
       "minMatches": "Mín. de partidas por stage",
       "empty": "Nenhuma partida registrada para este confronto ainda.",
       "currentStreak": "Sequência atual",
@@ -923,11 +922,15 @@
       },
       "longestWin": "Maior sequência de vitórias",
       "longestLoss": "Maior sequência de derrotas",
-      "recentForm": "Forma recente (mais recente primeiro)",
       "bestStage": "Melhor stage",
       "worstStage": "Pior stage",
       "singleStageOnly": "Ainda não há stages distintos suficientes — jogue este confronto em outro stage para ver um aviso de pior stage.",
-      "byMatchType": "Por tipo de partida"
+      "meta": "Insights do confronto · histórico",
+      "stagesHead_one": "Stages · mín. {{count}} partida",
+      "stagesHead_other": "Stages · mín. {{count}} partidas",
+      "change": "alterar",
+      "bestLabel": "Melhor · {{stage}}",
+      "worstLabel": "Pior · {{stage}}"
     },
     "stageTable": {
       "title": "Detalhamento por stage",

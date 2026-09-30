@@ -107,6 +107,13 @@ function deepMatches(): Match[] {
   ];
 }
 
+/** The Best / Worst row labels as printed (the prefix sits in its own muted span, so getByText cannot match the whole). */
+function labelTexts(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('[data-slot="comparison-bar-label"]')).map(
+    (node) => node.textContent ?? '',
+  );
+}
+
 afterEach(() => {
   setDrillDownMock.mockClear();
 });
@@ -149,7 +156,11 @@ describe('MatchupInsights — the rail card as sketch 003 A (plan 39.1-46, insig
     expect(screen.queryByText('Recent Form (newest first)')).not.toBeInTheDocument();
     expect(screen.queryByText('By Match Type')).not.toBeInTheDocument();
     expect(screen.queryByText('Best Stage')).not.toBeInTheDocument();
-    expect(container.innerHTML).not.toMatch(/emerald|destructive/);
+    expect(
+      container.querySelector(
+        '[class*="text-emerald"], [class*="text-destructive"], [class*="bg-emerald"], [class*="bg-destructive"]',
+      ),
+    ).toBeNull();
   });
 
   it('insights-card: the streak block is one fixedColumns StatRow — 3 figures, overline labels, no colour token', () => {
@@ -222,12 +233,11 @@ describe('MatchupInsights — Stages head, the threshold behind "change", Best /
 
   it('insights-card: changing the threshold in the popover re-ranks the rows (same shared useMinStageMatches value)', async () => {
     const user = userEvent.setup();
-    renderInsights([
+    const { container } = renderInsights([
       ...matchesOnStage(BATTLEFIELD, 3, 0), // exactly 3 games — drops out at a 5-game floor
       ...matchesOnStage(FINAL_DESTINATION, 3, 2), // 5 games — qualifies at both
     ]);
-    expect(screen.getByText('Best · Battlefield')).toBeInTheDocument();
-    expect(screen.getByText('Worst · Final Destination')).toBeInTheDocument();
+    expect(labelTexts(container)).toEqual(['Best · Battlefield', 'Worst · Final Destination']);
 
     await user.click(screen.getByRole('button', { name: 'change' }));
     await user.click(await screen.findByRole('combobox', { name: 'Min matches per stage' }));
@@ -235,8 +245,7 @@ describe('MatchupInsights — Stages head, the threshold behind "change", Best /
 
     // Battlefield no longer qualifies: only Final Destination remains (the
     // single-qualifying-stage case).
-    expect(screen.queryByText('Best · Battlefield')).not.toBeInTheDocument();
-    expect(screen.getByText('Best · Final Destination')).toBeInTheDocument();
+    expect(labelTexts(container)).toEqual(['Best · Final Destination']);
     expect(screen.getByText('Stages · min 5 games')).toBeInTheDocument();
   });
 
@@ -267,9 +276,9 @@ describe('MatchupInsights — Stages head, the threshold behind "change", Best /
     anchor.id = MATCHUP_TABLE_ANCHOR_ID;
     document.body.appendChild(anchor);
     renderInsights(deepMatches());
-    await user.click(screen.getByRole('button', { name: /Best · Smashville/ }));
+    await user.click(screen.getByRole('button', { name: /Best ·\s*Smashville/ }));
     expect(setDrillDownMock).toHaveBeenLastCalledWith({ stageId: 83 });
-    await user.click(screen.getByRole('button', { name: /Worst · Small Battlefield/ }));
+    await user.click(screen.getByRole('button', { name: /Worst ·\s*Small Battlefield/ }));
     expect(setDrillDownMock).toHaveBeenLastCalledWith({ stageId: 113 });
     anchor.remove();
   });
@@ -285,14 +294,13 @@ describe('MatchupInsights — Stages head, the threshold behind "change", Best /
   });
 
   it('WR-02: the dedicated "not enough distinct stages" copy stands in for the Worst row, the Best row renders normally', () => {
-    renderInsights(matchesOnStage(BATTLEFIELD, 2, 1));
+    const { container } = renderInsights(matchesOnStage(BATTLEFIELD, 2, 1));
     expect(
       screen.getByText(
         'Not enough distinct stages yet — play this matchup on another stage to see a worst-stage warning.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Best · Battlefield')).toBeInTheDocument();
-    expect(screen.queryByText(/^Worst ·/)).not.toBeInTheDocument();
+    expect(labelTexts(container)).toEqual(['Best · Battlefield']);
   });
 
   it('thin data: the abstained sentence renders ONCE (not per cell), with its genuine gamesNeeded count, and the unstaged line follows', () => {

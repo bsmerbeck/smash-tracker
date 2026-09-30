@@ -911,7 +911,6 @@
       "cellAria4": "{{row}} on {{col}}: {{wins}}-{{losses}}"
     },
     "insights": {
-      "title": "Matchup Insights",
       "minMatches": "Min matches per stage",
       "empty": "No matches recorded for this matchup yet.",
       "currentStreak": "Current Streak",
@@ -923,11 +922,15 @@
       },
       "longestWin": "Longest Win Streak",
       "longestLoss": "Longest Loss Streak",
-      "recentForm": "Recent Form (newest first)",
       "bestStage": "Best Stage",
       "worstStage": "Worst Stage",
       "singleStageOnly": "Not enough distinct stages yet — play this matchup on another stage to see a worst-stage warning.",
-      "byMatchType": "By Match Type"
+      "meta": "Matchup Insights · all time",
+      "stagesHead_one": "Stage · min {{count}} game",
+      "stagesHead_other": "Stages · min {{count}} games",
+      "change": "change",
+      "bestLabel": "Best · {{stage}}",
+      "worstLabel": "Worst · {{stage}}"
     },
     "stageTable": {
       "title": "Stage breakdown",

@@ -215,7 +215,7 @@ function SeriesRows({
               className={`min-w-0 truncate font-medium${row.subFloor ? ' text-muted-foreground' : ''}`}
             >
               {row.label}
-            </span>
+            </span>{' '}
             <span className="text-right text-sm whitespace-nowrap text-muted-foreground">
               {row.valueNode ? (
                 <>

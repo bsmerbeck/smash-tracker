@@ -911,7 +911,6 @@
       "cellAria4": "{{row}} sur {{col}} : {{wins}}-{{losses}}"
     },
     "insights": {
-      "title": "Analyse du matchup",
       "minMatches": "Min. de matchs par stage",
       "empty": "Aucun match enregistré pour ce matchup pour l'instant.",
       "currentStreak": "Série en cours",
@@ -923,11 +922,15 @@
       },
       "longestWin": "Plus longue série de victoires",
       "longestLoss": "Plus longue série de défaites",
-      "recentForm": "Forme récente (du plus récent au plus ancien)",
       "bestStage": "Meilleur stage",
       "worstStage": "Pire stage",
       "singleStageOnly": "Pas encore assez de stages différents — jouez ce matchup sur un autre stage pour voir un avertissement de pire stage.",
-      "byMatchType": "Par type de match"
+      "meta": "Analyse du matchup · historique",
+      "stagesHead_one": "Stages · min. {{count}} partie",
+      "stagesHead_other": "Stages · min. {{count}} parties",
+      "change": "modifier",
+      "bestLabel": "Meilleur · {{stage}}",
+      "worstLabel": "Pire · {{stage}}"
     },
     "stageTable": {
       "title": "Détail par stage",
