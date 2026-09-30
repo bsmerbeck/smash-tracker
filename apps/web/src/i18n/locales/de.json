@@ -935,7 +935,10 @@
       "record": "Bilanz",
       "winRate": "Winrate",
       "noStage_one": "{{count}} Spiel ohne erfassten Stage",
-      "noStage_other": "{{count}} Spiele ohne erfassten Stage"
+      "noStage_other": "{{count}} Spiele ohne erfassten Stage",
+      "meta": "meiste Spiele zuerst · gesamt",
+      "legendSubFloor_one": "graue Leiste = unter {{count}} Spiel",
+      "legendSubFloor_other": "graue Leiste = unter {{count}} Spielen"
     },
     "counterpick": {
       "title": "Counterpick-Berater",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "{{count}} Match aus dem Diagramm wird angezeigt.",
       "selectionNotice_other": "{{count}} Matches aus dem Diagramm werden angezeigt.",
       "clearSelection": "Alle Matches anzeigen"
+    },
+    "mop": {
+      "vsPlayer": "gegen {{opponent}}",
+      "everyoneElse": "alle anderen"
     }
   },
   "fighterAnalysis": {

@@ -367,7 +367,7 @@ describe('MatchupsPage', () => {
     // is exactly what this redesign removes).
     expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(1);
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
-    expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('Stage breakdown')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
     // The pairing record (2-1) shows up in multiple places now (matrix cell,
     // insights, stage table) — assert on the win-loss card specifically.
@@ -1446,7 +1446,7 @@ describe('MatchupsPage', () => {
         within(rail).getByText('Matchup Insights'),
         rail.querySelector('[data-slot="insight-card"]')!,
         within(rail).getByText('Counterpick Advisor'),
-        within(rail).getByText('Stage Breakdown'),
+        within(rail).getByText('Stage breakdown'),
       ];
       for (let i = 1; i < order.length; i += 1) {
         expect(
@@ -1459,7 +1459,7 @@ describe('MatchupsPage', () => {
       await renderLoadedPairing();
       const stack = document.querySelector('[data-slot="page-grid"]')!.children[0] as HTMLElement;
       expect(within(stack).getByText('By opponent')).toBeInTheDocument();
-      expect(within(stack).queryByText('Stage Breakdown')).not.toBeInTheDocument();
+      expect(within(stack).queryByText('Stage breakdown')).not.toBeInTheDocument();
     });
 
     it("the rail is a flex column of cards at every width — sketch A's auto-fit row orphans unequal-height cards at 1024 (measured), so UI-SPEC 6.1 wins", async () => {

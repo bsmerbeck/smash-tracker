@@ -935,7 +935,10 @@
       "record": "Bilan",
       "winRate": "Taux de victoire",
       "noStage_one": "{{count}} partie sans stage enregistré",
-      "noStage_other": "{{count}} parties sans stage enregistré"
+      "noStage_other": "{{count}} parties sans stage enregistré",
+      "meta": "plus de parties d'abord · historique",
+      "legendSubFloor_one": "barre grise = moins de {{count}} partie",
+      "legendSubFloor_other": "barre grise = moins de {{count}} parties"
     },
     "counterpick": {
       "title": "Conseiller de counterpick",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "Affichage de {{count}} match du graphique.",
       "selectionNotice_other": "Affichage de {{count}} matchs du graphique.",
       "clearSelection": "Afficher tous les matchs"
+    },
+    "mop": {
+      "vsPlayer": "contre {{opponent}}",
+      "everyoneElse": "tous les autres"
     }
   },
   "fighterAnalysis": {

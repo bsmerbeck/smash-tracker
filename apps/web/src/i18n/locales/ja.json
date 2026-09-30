@@ -935,7 +935,10 @@
       "record": "戦績",
       "winRate": "勝率",
       "noStage_one": "ステージが未記録の試合が{{count}}戦あります",
-      "noStage_other": "ステージが未記録の試合が{{count}}戦あります"
+      "noStage_other": "ステージが未記録の試合が{{count}}戦あります",
+      "meta": "試合数の多い順 · 全期間",
+      "legendSubFloor_one": "グレーの棒 = {{count}}試合未満",
+      "legendSubFloor_other": "グレーの棒 = {{count}}試合未満"
     },
     "counterpick": {
       "title": "カウンターピック指南",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "チャートから{{count}}件の対戦を表示しています。",
       "selectionNotice_other": "チャートから{{count}}件の対戦を表示しています。",
       "clearSelection": "すべての対戦を表示"
+    },
+    "mop": {
+      "vsPlayer": "{{opponent}}戦",
+      "everyoneElse": "それ以外の全員"
     }
   },
   "fighterAnalysis": {

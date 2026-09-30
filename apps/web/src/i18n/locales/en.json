@@ -930,12 +930,15 @@
       "byMatchType": "By Match Type"
     },
     "stageTable": {
-      "title": "Stage Breakdown",
+      "title": "Stage breakdown",
       "stage": "Stage",
       "record": "Record",
       "winRate": "Win Rate",
       "noStage_one": "{{count}} game with no stage recorded",
-      "noStage_other": "{{count}} games with no stage recorded"
+      "noStage_other": "{{count}} games with no stage recorded",
+      "meta": "most games first · all time",
+      "legendSubFloor_one": "grey bar = under {{count}} game",
+      "legendSubFloor_other": "grey bar = under {{count}} games"
     },
     "counterpick": {
       "title": "Counterpick Advisor",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "Showing {{count}} match from the chart.",
       "selectionNotice_other": "Showing {{count}} matches from the chart.",
       "clearSelection": "Show all matches"
+    },
+    "mop": {
+      "vsPlayer": "vs {{opponent}}",
+      "everyoneElse": "everyone else"
     }
   },
   "fighterAnalysis": {

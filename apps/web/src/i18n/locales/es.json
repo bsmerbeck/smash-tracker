@@ -935,7 +935,10 @@
       "record": "Historial",
       "winRate": "% de victorias",
       "noStage_one": "{{count}} partida sin escenario registrado",
-      "noStage_other": "{{count}} partidas sin escenario registrado"
+      "noStage_other": "{{count}} partidas sin escenario registrado",
+      "meta": "más partidas primero · histórico",
+      "legendSubFloor_one": "barra gris = menos de {{count}} partida",
+      "legendSubFloor_other": "barra gris = menos de {{count}} partidas"
     },
     "counterpick": {
       "title": "Asesor de counterpicks",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "Mostrando {{count}} partida del gráfico.",
       "selectionNotice_other": "Mostrando {{count}} partidas del gráfico.",
       "clearSelection": "Mostrar todas las partidas"
+    },
+    "mop": {
+      "vsPlayer": "vs {{opponent}}",
+      "everyoneElse": "todos los demás"
     }
   },
   "fighterAnalysis": {

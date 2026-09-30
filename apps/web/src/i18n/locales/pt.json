@@ -935,7 +935,10 @@
       "record": "Retrospecto",
       "winRate": "Taxa de vitórias",
       "noStage_one": "{{count}} partida sem stage registrado",
-      "noStage_other": "{{count}} partidas sem stage registrado"
+      "noStage_other": "{{count}} partidas sem stage registrado",
+      "meta": "mais partidas primeiro · histórico",
+      "legendSubFloor_one": "barra cinza = menos de {{count}} partida",
+      "legendSubFloor_other": "barra cinza = menos de {{count}} partidas"
     },
     "counterpick": {
       "title": "Conselheiro de counterpick",
@@ -987,6 +990,10 @@
       "selectionNotice_one": "Mostrando {{count}} partida do gráfico.",
       "selectionNotice_other": "Mostrando {{count}} partidas do gráfico.",
       "clearSelection": "Mostrar todas as partidas"
+    },
+    "mop": {
+      "vsPlayer": "contra {{opponent}}",
+      "everyoneElse": "todos os outros"
     }
   },
   "fighterAnalysis": {

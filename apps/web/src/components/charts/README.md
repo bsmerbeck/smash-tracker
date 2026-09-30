@@ -195,6 +195,18 @@ to files that render a Recharts element; a CSS meter is outside its scope). Test
 `value` as an inline width percentage; `CounterpickAdvisor.tsx` supplies the `ChartCard` frame it
 renders inside — see `CounterpickAdvisor.tsx`'s Pick/Ban groups for the shipped call site.
 
+**Comparison bars, `series` tone** (plan 39.1-46, PD-46-1, sketch 003 A `.cmp` rows) — the neutral
+evidence tone of the same member, not a new one: `tone="series"` draws the identity series token
+(`--viz-series-1`) on a muted 6px track, in a two-column row (truncating label with a `labelTitle`
+tooltip | value, the track spanning both). `referenceRate` (0-100) draws one 2px de-emphasis tick —
+the all-time rate — on every row's track, poking 2px past it above and below; a row's `subFloor`
+fills with the strong de-emphasis token and mutes its label (a bar under the 3-game floor is grey,
+never a judgement); `valueNode` replaces the printed `valueLabel` (which stays as screen-reader text);
+`divided` adds hairlines between rows. Rows given `onSelectRow` are buttons with a hover wash — the
+Matchups Stage breakdown and Insights rows are stage drills. No status colour appears in this tone;
+the `emerald` / `destructive` tones remain only for the Counterpick Advisor's pick / ban judgement
+until plan 39.1-47 replaces them.
+
 **Sparkline / stat tile** (`StatTile.tsx`, shipped plan 37-03) — a `ChartCard` used as a compact
 tile rather than a full chart body. Props: `stats: { label: string; value: string | number }[]`,
 `trend?: ReactNode`. Sets no height of its own (a stat tile's job is to be small — a forced height
