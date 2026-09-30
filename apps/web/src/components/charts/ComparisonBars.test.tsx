@@ -63,6 +63,118 @@ describe('ComparisonBars', () => {
   });
 });
 
+describe('ComparisonBars tone="series" (plan 39.1-46, PD-46-1: sketch 003 A .cmp rows)', () => {
+  function seriesRows() {
+    return [
+      {
+        key: 'a',
+        label: 'Smashville',
+        labelTitle: 'Smashville',
+        value: 80,
+        valueLabel: '4–1 · 80% · 5',
+        valueNode: <b data-testid="node-a">4–1</b>,
+      },
+      {
+        key: 'b',
+        label: 'Battlefield',
+        value: 50,
+        valueLabel: '1–1 · 2',
+        subFloor: true,
+      },
+    ];
+  }
+
+  it('series-rows: fills with the identity series token on a muted 6px track', () => {
+    const { container } = render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    const tracks = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-track"]');
+    const fills = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-fill"]');
+    expect(tracks).toHaveLength(2);
+    expect(tracks[0]!.className).toContain('bg-muted');
+    expect(tracks[0]!.className).toContain('h-1.5');
+    expect(fills[0]!.style.backgroundColor).toBe('var(--viz-series-1)');
+    expect(fills[0]!.style.width).toBe('80%');
+    // No status colour anywhere in the neutral tone.
+    expect(container.innerHTML).not.toMatch(/emerald|destructive/);
+  });
+
+  it('series-rows: referenceRate draws one 2px all-time tick per row at that percentage', () => {
+    const { container } = render(
+      <ComparisonBars tone="series" referenceRate={63} rows={seriesRows()} />,
+    );
+    const ticks = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-reference"]');
+    expect(ticks).toHaveLength(2);
+    expect(ticks[0]!.style.left).toBe('63%');
+    expect(ticks[0]!.style.width).toBe('2px');
+    expect(ticks[0]!.style.backgroundColor).toBe('var(--viz-context)');
+  });
+
+  it('series-rows: no referenceRate draws no tick', () => {
+    const { container } = render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    expect(container.querySelector('[data-slot="comparison-bar-reference"]')).toBeNull();
+  });
+
+  it('series-rows: a subFloor row fills with the strong de-emphasis token and mutes its label', () => {
+    const { container } = render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    const fills = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-fill"]');
+    expect(fills[1]!.style.backgroundColor).toBe('var(--viz-context-strong)');
+    const labels = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-label"]');
+    expect(labels[0]!.className).not.toContain('text-muted-foreground');
+    expect(labels[1]!.className).toContain('text-muted-foreground');
+  });
+
+  it('series-rows: valueNode renders in place of valueLabel, which stays the accessible text', () => {
+    render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    const node = screen.getByTestId('node-a');
+    expect(node.closest('[aria-hidden="true"]')).not.toBeNull();
+    // The accessible sentence is still in the DOM (screen-reader only).
+    const sr = screen.getByText('4–1 · 80% · 5');
+    expect(sr.className).toContain('sr-only');
+    // A row without a valueNode prints its valueLabel visibly.
+    expect(screen.getByText('1–1 · 2').className).not.toContain('sr-only');
+  });
+
+  it('series-rows: a long label truncates and carries its full text as a title', () => {
+    const { container } = render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    const label = container.querySelector<HTMLElement>('[data-slot="comparison-bar-label"]')!;
+    expect(label.className).toContain('truncate');
+    expect(label.className).toContain('min-w-0');
+    expect(label.getAttribute('title')).toBe('Smashville');
+  });
+
+  it('series-rows: clickable rows are buttons carrying the hover wash; static rows are not', async () => {
+    const user = userEvent.setup();
+    const onSelectRow = vi.fn();
+    const { rerender } = render(
+      <ComparisonBars tone="series" rows={seriesRows()} onSelectRow={onSelectRow} />,
+    );
+    const buttons = screen.getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.className).toContain('hover:bg-muted/40');
+    await user.click(buttons[0]!);
+    expect(onSelectRow).toHaveBeenCalledWith(expect.objectContaining({ key: 'a' }));
+    rerender(<ComparisonBars tone="series" rows={seriesRows()} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('series-rows: divided draws hairlines between rows; the default does not', () => {
+    const { container, rerender } = render(<ComparisonBars tone="series" rows={seriesRows()} />);
+    expect(container.querySelector('ul')!.className).not.toContain('divide-y');
+    rerender(<ComparisonBars tone="series" divided rows={seriesRows()} />);
+    expect(container.querySelector('ul')!.className).toContain('divide-y');
+  });
+
+  it('series-rows: the status tones keep their byte-identical layout (no series slots)', () => {
+    const { container } = render(
+      <ComparisonBars
+        tone="emerald"
+        rows={[{ key: 'a', label: <span>x</span>, value: 10, valueLabel: '1-0' }]}
+      />,
+    );
+    expect(container.querySelector('[data-slot="comparison-bar-label"]')).toBeNull();
+    expect(container.querySelector('[data-slot="comparison-bar-reference"]')).toBeNull();
+  });
+});
+
 function dumbbellRow(
   overrides: Partial<ComparisonBarsDumbbellRow> = {},
 ): ComparisonBarsDumbbellRow {

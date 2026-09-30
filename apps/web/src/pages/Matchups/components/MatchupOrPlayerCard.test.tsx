@@ -82,6 +82,33 @@ function renderCard(
   );
 }
 
+/**
+ * The engine's PLAYER branch (plan 39.1-46, sketch 003 A `mopCard`): one
+ * opponent ("mkleo") took 9 of the pairing's 15 losses in 10 games; the other
+ * 30 games (three more players) hold the other 6 losses. 40 games, 25-15.
+ */
+function playerFixture(): Match[] {
+  const now = Date.now();
+  const games: Match[] = [];
+  for (let i = 0; i < 10; i++) {
+    games.push(
+      makeMatch({ id: `k${i}`, time: now - i * 3_600_000, opponent: 'mkleo', win: i === 0 }),
+    );
+  }
+  const others = ['shuton', 'cosmos', 'jin'];
+  for (let i = 0; i < 30; i++) {
+    games.push(
+      makeMatch({
+        id: `o${i}`,
+        time: now - (20 + i) * 3_600_000,
+        opponent: others[i % others.length],
+        win: i >= 6,
+      }),
+    );
+  }
+  return games;
+}
+
 describe('MatchupOrPlayerCard', () => {
   it('renders nothing (an empty container) when the engine reports the read hidden', () => {
     const { container } = renderCard(tinyFixture());
@@ -99,6 +126,42 @@ describe('MatchupOrPlayerCard', () => {
     // is the OPPONENT CHARACTER name, never the free-text `match.opponent`
     // tag (that free-text field names the human, not the pairing).
     expect(screen.getAllByText(/vs Luigi/).length).toBeGreaterThan(0);
+  });
+
+  describe('plan 39.1-46 (series-rows): the player-branch mark', () => {
+    it('series-rows: a player-driven verdict carries the mark — "vs <top>" against "everyone else", both from the insight copy values', () => {
+      const { container } = renderCard(playerFixture());
+      const mark = container.querySelector('[data-slot="insight-card-mark"]');
+      expect(mark).not.toBeNull();
+      const labels = Array.from(mark!.querySelectorAll('[data-slot="comparison-bar-label"]')).map(
+        (node) => node.textContent,
+      );
+      expect(labels).toEqual(['vs mkleo', 'everyone else']);
+      // (opponentGames - lossShare)–lossShare = 1–9 ; everyone else = 24–6.
+      const rows = Array.from(mark!.querySelectorAll('li'));
+      expect(rows[0]!.textContent).toContain('1–9');
+      expect(rows[1]!.textContent).toContain('24–6');
+      // Neutral rows: no status colour, no click target (evidence, not a list).
+      expect(within(mark as HTMLElement).queryByRole('button')).toBeNull();
+      expect(mark!.innerHTML).not.toMatch(/emerald|destructive/);
+    });
+
+    it('series-rows: the mark draws the pairing all-time rate as the reference tick and names it in a one-item legend', () => {
+      const { container } = renderCard(playerFixture());
+      const mark = container.querySelector('[data-slot="insight-card-mark"]')!;
+      const ticks = mark.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-reference"]');
+      expect(ticks).toHaveLength(2);
+      // 25 wins of 40 games = 62.5%.
+      expect(parseFloat(ticks[0]!.style.left)).toBeCloseTo(62.5, 1);
+      const legend = mark.querySelector('[data-slot="mop-legend"]')!;
+      expect(legend.textContent).toBe('63% all time');
+    });
+
+    it('series-rows: a matchup-driven (fact) insight renders no mark', () => {
+      const { container } = renderCard(largeFixture());
+      expect(container.querySelector('[data-slot="insight-card"]')).not.toBeNull();
+      expect(container.querySelector('[data-slot="insight-card-mark"]')).toBeNull();
+    });
   });
 
   describe('T-39.1-24 (gap closure, DD-09 reachability): counted-games + opponent doors', () => {
