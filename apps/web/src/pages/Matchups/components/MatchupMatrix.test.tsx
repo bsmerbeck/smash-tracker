@@ -190,4 +190,139 @@ describe('MatchupMatrix', () => {
     const destination = mockNavigate.mock.calls[0]?.[0] as string;
     expect(destination).toBe(`/coach/test-client/matchups?fighter=${mario.id}&vs=${luigi.id}`);
   });
+
+  // ---- plan 39.1-47 (matrix-sketch-a, sketch 003 A `matrixCard`, PD-47-5) ----
+
+  it('matrix-sketch-a: the card header is the title "Matchup matrix" with the sketch meta line', () => {
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
+    expect(screen.getByText('Matchup matrix')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'your mains × their characters · fill = win rate · pick a cell to re-scope this page',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('matrix-sketch-a: each cell prints the record and a "rate · n" sub line (keeps its aria-label)', () => {
+    renderMatrix([
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+    ]);
+    const cell = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 2-1` });
+    expect(cell.querySelectorAll('span')).toHaveLength(2);
+    expect(cell.querySelectorAll('span')[0]).toHaveTextContent('2-1');
+    expect(cell.querySelectorAll('span')[1]).toHaveTextContent('67% · 3');
+  });
+
+  it('matrix-sketch-a: a cell at the 3-game floor is heat-filled in the identity blue scaled by win rate; a sub-floor cell has no heat and a 1px outline', () => {
+    renderMatrix(
+      [
+        // 2-1 over 3 games: at the floor -> heat 8 + (2/3) x 50 = 41%.
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+        // 1-0 over 1 game: under the floor -> transparent, outlined.
+        makeMatch({ id: 'm4', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+      ],
+      { opponent: undefined },
+    );
+    const heated = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 2-1` });
+    expect(heated.style.backgroundColor).toBe(
+      'color-mix(in oklch, var(--viz-series-1) 41%, transparent)',
+    );
+    expect(heated.className).not.toMatch(/ring-border/);
+    const sub = screen.getByRole('button', { name: `${mario.name} vs ${sonic.name}: 1-0` });
+    expect(sub.style.backgroundColor).toBe('transparent');
+    expect(sub.className).toMatch(/ring-1/);
+    expect(sub.className).toMatch(/ring-border/);
+  });
+
+  it('matrix-sketch-a: no red / emerald heat anywhere — every cell background is the series token mix or transparent', () => {
+    renderMatrix(
+      [
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+        makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+        makeMatch({ id: 'm4', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+        makeMatch({ id: 'm5', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+        makeMatch({ id: 'm6', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+      ],
+      { opponent: undefined },
+    );
+    for (const cell of screen.getAllByRole('button', { name: /vs .*: \d+-\d+$/ })) {
+      expect(cell.style.backgroundColor).toMatch(
+        /^color-mix\(in oklch, var\(--viz-series-1\) \d+%, transparent\)$/,
+      );
+      expect(cell.outerHTML).not.toMatch(/rgba?\(|emerald|destructive/);
+    }
+  });
+
+  it('matrix-sketch-a: the effective pairing cell is aria-current with the foreground ring; no other cell is', () => {
+    renderMatrix(
+      [
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+      ],
+      { fighter: mario, opponent: luigi },
+    );
+    const current = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` });
+    expect(current).toHaveAttribute('aria-current', 'true');
+    expect(current.className).toMatch(/ring-foreground/);
+    const other = screen.getByRole('button', { name: `${mario.name} vs ${sonic.name}: 1-0` });
+    expect(other).not.toHaveAttribute('aria-current');
+    expect(other.className).not.toMatch(/ring-foreground/);
+  });
+
+  it('matrix-sketch-a: with no effective pairing no cell is marked current', () => {
+    renderMatrix(
+      [makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })],
+      { fighter: undefined, opponent: undefined },
+    );
+    expect(document.querySelectorAll('[aria-current]')).toHaveLength(0);
+  });
+
+  it('matrix-sketch-a: the column toggle is a muted link and the grid is a separated-spacing table', () => {
+    const manyOpponents = SpriteList.slice(0, 15);
+    renderMatrix(
+      manyOpponents.map((opp, i) =>
+        makeMatch({ id: `m${i}`, fighter_id: mario.id, opponent_id: opp.id, win: true }),
+      ),
+      { fighterSprites: [mario] },
+    );
+    const toggle = screen.getByRole('button', { name: /Show all 15/ });
+    expect(toggle).toHaveAttribute('data-variant', 'link');
+    expect(toggle.className).toMatch(/text-muted-foreground/);
+    expect(screen.getByRole('table').className).toMatch(/border-separate/);
+    expect(screen.getByRole('table').className).toMatch(/border-spacing-1/);
+  });
+
+  it('matrix-sketch-a: the sprites and the sticky row header are kept (PD-47-5)', () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/matchups']}>
+        <MatchupsContext.Provider
+          value={{
+            fighterSprites: [mario],
+            fighter: mario,
+            setFighter: vi.fn(),
+            opponent: luigi,
+            setOpponent: vi.fn(),
+            fighterUsageById: new Map(),
+            opponentUsage: [],
+            drillDownAxes: {},
+            setDrillDown: vi.fn(),
+          }}
+        >
+          <MatchupMatrix
+            matches={[
+              makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+            ]}
+          />
+        </MatchupsContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(container.querySelectorAll('table img').length).toBeGreaterThanOrEqual(2);
+    const rowHeader = container.querySelector('tbody th[scope="row"]') as HTMLElement;
+    expect(rowHeader.className).toMatch(/\bsticky\b/);
+  });
 });

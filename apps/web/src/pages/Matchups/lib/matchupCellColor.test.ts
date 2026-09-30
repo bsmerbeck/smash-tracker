@@ -1,111 +1,93 @@
 import { describe, expect, it } from 'vitest';
-import {
-  FULL_SAMPLE_SIZE,
-  matchupCellBackground,
-  sampleSizeToOpacity,
-  rateToRgb,
-} from './matchupCellColor';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
+import { matchupCellBackground } from './matchupCellColor';
 
-describe('rateToRgb', () => {
-  it('returns the destructive red endpoint at wilson=0', () => {
-    expect(rateToRgb(0)).toEqual([217, 62, 52]);
+/**
+ * Plan 39.1-47 (matrix-sketch-a, sketch 003 A `matrixCard`, brief §5 M13 /
+ * M15): the matrix heat is the identity series-1 hue — `color-mix(in oklch,
+ * var(--viz-series-1) N%, transparent)` with N = 8 + win rate (0-100) x 0.5 —
+ * and NOTHING under the abstention floor. Replaces the red -> grey -> emerald
+ * interpolation and its sample-size opacity band (`rateToRgb`,
+ * `sampleSizeToOpacity`, `FULL_SAMPLE_SIZE`): win / loss colour belongs to
+ * win / loss marks only, and confidence is the sub-floor outline, not opacity.
+ */
+
+const MIX = /^color-mix\(in oklch, var\(--viz-series-1\) (\d+)%, transparent\)$/;
+
+function mixPercent(css: string): number {
+  const match = MIX.exec(css);
+  if (!match) throw new Error(`not a series-1 colour mix: ${css}`);
+  return Number(match[1]);
+}
+
+describe('matchupCellBackground (matrix-sketch-a)', () => {
+  it('mixes the series-1 token by win rate: 8% at a 0% rate, 58% at a 100% rate', () => {
+    expect(matchupCellBackground(0, 10)).toBe(
+      'color-mix(in oklch, var(--viz-series-1) 8%, transparent)',
+    );
+    expect(matchupCellBackground(1, 10)).toBe(
+      'color-mix(in oklch, var(--viz-series-1) 58%, transparent)',
+    );
+    expect(matchupCellBackground(0.5, 10)).toBe(
+      'color-mix(in oklch, var(--viz-series-1) 33%, transparent)',
+    );
   });
 
-  it('returns the emerald endpoint at wilson=1', () => {
-    expect(rateToRgb(1)).toEqual([16, 185, 129]);
+  it('rounds the percentage to an integer, like the sketch', () => {
+    // 2 of 3: 8 + 66.67 x 0.5 = 41.33 -> 41.
+    expect(mixPercent(matchupCellBackground(2 / 3, 3))).toBe(41);
+    // 7 of 9: 8 + 77.78 x 0.5 = 46.89 -> 47.
+    expect(mixPercent(matchupCellBackground(7 / 9, 9))).toBe(47);
   });
 
-  it('returns the neutral grey midpoint at wilson=0.5', () => {
-    expect(rateToRgb(0.5)).toEqual([113, 113, 122]);
-  });
-
-  it('interpolates monotonically from red to grey in the lower half', () => {
-    const quarter = rateToRgb(0.25);
-    // Halfway between red and grey on each channel.
-    expect(quarter[0]).toBeCloseTo((217 + 113) / 2, 0);
-    expect(quarter[1]).toBeCloseTo((62 + 113) / 2, 0);
-    expect(quarter[2]).toBeCloseTo((52 + 122) / 2, 0);
-  });
-
-  it('interpolates monotonically from grey to emerald in the upper half', () => {
-    const threeQuarter = rateToRgb(0.75);
-    expect(threeQuarter[0]).toBeCloseTo((113 + 16) / 2, 0);
-    expect(threeQuarter[1]).toBeCloseTo((113 + 185) / 2, 0);
-    expect(threeQuarter[2]).toBeCloseTo((122 + 129) / 2, 0);
-  });
-
-  it('clamps out-of-range inputs to the valid endpoints', () => {
-    expect(rateToRgb(-1)).toEqual(rateToRgb(0));
-    expect(rateToRgb(2)).toEqual(rateToRgb(1));
-  });
-});
-
-describe('sampleSizeToOpacity', () => {
-  it('is faint (but not invisible) at a single game', () => {
-    const opacity = sampleSizeToOpacity(1);
-    expect(opacity).toBeGreaterThan(0);
-    expect(opacity).toBeLessThan(0.5);
-  });
-
-  /**
-   * Plan 39.1-31 (item 4): the opacity ceiling moved from 1 (100%) to 0.5
-   * (50%), mirroring `MatrixHeat.tsx`'s own highest tint tier — see this
-   * file's module doc comment. Pinned at exactly `0.15`/`0.5` (not merely
-   * "faint"/"below 1") per the plan's own behavior spec.
-   */
-  it('is exactly 0.15 at a single game', () => {
-    expect(sampleSizeToOpacity(1)).toBe(0.15);
-  });
-
-  it('reaches exactly 0.5 at the full-sample threshold', () => {
-    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE)).toBe(0.5);
-  });
-
-  it('stays at 0.5 beyond the threshold', () => {
-    expect(sampleSizeToOpacity(FULL_SAMPLE_SIZE + 50)).toBe(0.5);
-  });
-
-  it('increases monotonically with sample size between 1 and the threshold', () => {
-    const samples = [1, 2, 4, 6, 8, FULL_SAMPLE_SIZE];
-    const opacities = samples.map(sampleSizeToOpacity);
-    for (let i = 1; i < opacities.length; i++) {
-      expect(opacities[i]).toBeGreaterThan(opacities[i - 1]!);
+  it('increases monotonically with win rate at a fixed sample', () => {
+    const rates = [0, 0.2, 0.4, 0.6, 0.8, 1];
+    const percents = rates.map((rate) => mixPercent(matchupCellBackground(rate, 20)));
+    for (let i = 1; i < percents.length; i++) {
+      expect(percents[i]).toBeGreaterThan(percents[i - 1]!);
     }
   });
 
-  it('clamps zero/negative sample sizes to exactly the 0.15 minimum opacity', () => {
-    expect(sampleSizeToOpacity(0)).toBe(0.15);
-    expect(sampleSizeToOpacity(-5)).toBe(0.15);
-    expect(sampleSizeToOpacity(0)).toBe(sampleSizeToOpacity(1));
-    expect(sampleSizeToOpacity(-5)).toBe(sampleSizeToOpacity(1));
-  });
-});
-
-describe('matchupCellBackground', () => {
-  it('renders an rgba() string combining the wilson color and sample-size opacity, ending in the new 0.500 ceiling at the full-sample threshold', () => {
-    const css = matchupCellBackground(1, FULL_SAMPLE_SIZE);
-    expect(css).toBe('rgba(16, 185, 129, 0.500)');
+  it('does not depend on the sample size at or above the floor (confidence is not an opacity here)', () => {
+    expect(matchupCellBackground(0.75, ABSTENTION_FLOOR_GAMES)).toBe(
+      matchupCellBackground(0.75, 200),
+    );
   });
 
-  it('produces a faint low-sample cell', () => {
-    const css = matchupCellBackground(0, 1);
-    expect(css).toMatch(/^rgba\(217, 62, 52, 0\.\d+\)$/);
+  it('is transparent — no heat — under the 3-game floor, whatever the rate', () => {
+    expect(ABSTENTION_FLOOR_GAMES).toBe(3);
+    for (const total of [0, 1, 2]) {
+      expect(matchupCellBackground(1, total)).toBe('transparent');
+      expect(matchupCellBackground(0, total)).toBe('transparent');
+    }
+    expect(matchupCellBackground(1, 3)).not.toBe('transparent');
+  });
+
+  it('clamps an out-of-range rate to the 8-58% band', () => {
+    expect(mixPercent(matchupCellBackground(-1, 10))).toBe(8);
+    expect(mixPercent(matchupCellBackground(2, 10))).toBe(58);
+  });
+
+  it('draws only the series token — no rgb() literal and no status hue', () => {
+    const css = matchupCellBackground(0.3, 12);
+    expect(css).not.toMatch(/rgba?\(|#[0-9a-f]{3,8}|emerald|destructive|red|green/i);
   });
 });
 
 /**
- * Plan 39.1-31 (item 4, UI-SPEC §4.3 rule 2): `MatchupMatrix.tsx`'s cell
- * button renders its record text in `text-foreground` over this module's
- * `background-color` composited on top of the card surface. WCAG 2.1
- * relative-luminance contrast, computed independently here (not imported
- * from the component) so this oracle can never accidentally share a bug
- * with the code it's checking.
+ * `MatchupMatrix.tsx`'s cell button renders its record text in
+ * `text-foreground` over this heat composited on the card surface. WCAG 2.1
+ * relative-luminance contrast, computed independently here (not imported from
+ * the component) so this oracle can never share a bug with the code it
+ * checks. The series-1 blue and the card / foreground surfaces are the sRGB
+ * values of `--viz-series-1` (`oklch(0.62 0.17 255)`), `--card`
+ * (`oklch(0.205 0.006 285)`) and `--foreground` (`oklch(0.97 0 0)`) from
+ * `index.css`, resolved with `guardPaletteCore.oklchToHex`.
  */
-describe('WCAG contrast: text-foreground over a composited matrix cell (39.1-31, item 4)', () => {
-  /** `--card` (index.css) in sRGB, per the plan context's own citation. */
-  const CARD_SRGB: [number, number, number] = [23, 23, 26];
-  /** `--foreground` (index.css, oklch(0.97 0 0)) in sRGB, per the plan context's own citation. */
-  const FOREGROUND_SRGB: [number, number, number] = [245, 245, 245];
+describe('WCAG contrast: text-foreground over the composited series heat (matrix-sketch-a)', () => {
+  const SERIES_SRGB: [number, number, number] = [0x31, 0x86, 0xe9];
+  const CARD_SRGB: [number, number, number] = [0x17, 0x17, 0x1a];
+  const FOREGROUND_SRGB: [number, number, number] = [0xf5, 0xf5, 0xf5];
 
   function srgbChannelToLinear(channel: number): number {
     const c = channel / 255;
@@ -125,26 +107,26 @@ describe('WCAG contrast: text-foreground over a composited matrix cell (39.1-31,
     return (lighter! + 0.05) / (darker! + 0.05);
   }
 
-  /** Alpha-composites `matchupCellBackground(rate, total)`'s rgba fill over `CARD_SRGB`. */
   function compositedCell(rate: number, total: number): [number, number, number] {
-    const css = matchupCellBackground(rate, total);
-    const match = css.match(/^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/);
-    if (!match) throw new Error(`unparseable rgba(): ${css}`);
-    const [, r, g, b, a] = match.map(Number) as [number, number, number, number, number];
-    const alpha = a!;
+    const alpha = mixPercent(matchupCellBackground(rate, total)) / 100;
     return [
-      r! * alpha + CARD_SRGB[0] * (1 - alpha),
-      g! * alpha + CARD_SRGB[1] * (1 - alpha),
-      b! * alpha + CARD_SRGB[2] * (1 - alpha),
+      SERIES_SRGB[0] * alpha + CARD_SRGB[0] * (1 - alpha),
+      SERIES_SRGB[1] * alpha + CARD_SRGB[1] * (1 - alpha),
+      SERIES_SRGB[2] * alpha + CARD_SRGB[2] * (1 - alpha),
     ];
   }
 
   for (const rate of [0, 0.25, 0.5, 0.75, 1]) {
-    for (const total of [1, 5, 10, 50]) {
+    for (const total of [3, 5, 10, 50]) {
       it(`clears 4.5:1 at rate=${rate} total=${total}`, () => {
-        const ratio = contrastRatio(FOREGROUND_SRGB, compositedCell(rate, total));
-        expect(ratio).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(FOREGROUND_SRGB, compositedCell(rate, total))).toBeGreaterThanOrEqual(
+          4.5,
+        );
       });
     }
   }
+
+  it('the oracle is not vacuous: the same ink on a saturated series fill would fail 4.5:1', () => {
+    expect(contrastRatio(FOREGROUND_SRGB, SERIES_SRGB)).toBeLessThan(4.5);
+  });
 });
