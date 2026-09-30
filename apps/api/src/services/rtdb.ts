@@ -420,6 +420,18 @@ export class WatchlistFullError extends ConflictError {
   }
 }
 
+/**
+ * True when `getWatchlist` lists this stored child: its key and its value both
+ * parse. The track cap counts exactly these (39.2 code review API-WR-03), so a
+ * child the list hides can never hold a slot the user cannot see or remove.
+ */
+function isListedWatchlistChild(itemKey: string, value: unknown): boolean {
+  return (
+    watchlistItemKeySchema.safeParse(itemKey).success &&
+    watchlistItemStoredSchema.safeParse(value).success
+  );
+}
+
 /** Thrown for a 403-worthy write: the caller is at/over a per-user cap (e.g. the 50-playlist limit). */
 export class ForbiddenError extends Error {
   constructor(message: string) {
@@ -1677,8 +1689,15 @@ export class RtdbService {
         existing = stored.data;
         return current;
       }
-      // A corrupt child under this key is replaced (repair), not counted twice.
-      if (!(itemKey in current) && Object.keys(current).length >= WATCHLIST_MAX_ITEMS) {
+      // 39.2 code review API-WR-03: the cap counts exactly the children
+      // `getWatchlist` lists. A child it hides as corrupt (including a corrupt
+      // child under THIS key, which the write below repairs in place) is
+      // neither counted nor deleted, so the user is never refused at fewer
+      // than WATCHLIST_MAX_ITEMS visible items.
+      const listedCount = Object.entries(current).filter(([key, value]) =>
+        isListedWatchlistChild(key, value),
+      ).length;
+      if (listedCount >= WATCHLIST_MAX_ITEMS) {
         full = true;
         return undefined;
       }
