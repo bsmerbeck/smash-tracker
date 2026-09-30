@@ -394,6 +394,26 @@ describe('TrackedSection', () => {
     // Both stored items remain: the count is the stored list, the display is deduped.
     expect(document.getElementById('tracked')).toHaveTextContent('2 of 25');
   });
+  it('a failed background refetch keeps the loaded list visible and says so (39.2-REVIEW WEB-WR-05)', async () => {
+    serverItems = [MKLEO_ITEM, MATCHUP_ITEM];
+    const { queryClient } = renderSection();
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="tracked-row"]')).toHaveLength(2),
+    );
+    getResponse = () => jsonResponse({ error: 'x', message: 'boom', statusCode: 500 }, 500);
+    await queryClient.refetchQueries();
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="tracked-refresh-error"]')).not.toBeNull(),
+    );
+    // The rows and the count stay; the full load-error body is only for a list that never loaded.
+    expect(document.querySelectorAll('[data-slot="tracked-row"]')).toHaveLength(2);
+    expect(document.getElementById('tracked')).toHaveTextContent('2 of 25');
+    expect(document.querySelector('[data-slot="tracked-error"]')).toBeNull();
+    expect(document.querySelector('[data-slot="tracked-refresh-error"]')).toHaveTextContent(
+      "Couldn't refresh tracked items. Showing the last loaded list.",
+    );
+  });
+
   describe('untracking a row that folds several stored keys (39.2-REVIEW WEB-IN multi-key untrack)', () => {
     const MERGED = [
       item('opponent', 'mkleo2', 'opponent:mkleo2', 500),
