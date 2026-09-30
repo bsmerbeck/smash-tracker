@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WATCHLIST_MAX_ITEMS } from '@smash-tracker/shared';
 import { createClient } from '../coaching/tenants.js';
-import { RtdbService } from '../services/rtdb.js';
+import { RtdbService, ValidationError } from '../services/rtdb.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 
@@ -403,6 +403,38 @@ describe('watchlist cap, idempotency and input hardening', () => {
     }
 
     expect(database.dump()).toEqual(before);
+  });
+
+  // 39.2 code review API-IN-04: ValidationError had no HTTP mapping, so the
+  // global handler answered 500 for it.
+  it('a ValidationError from the service answers 400, never 500', async () => {
+    const { app } = buildTestApp();
+    const spy = vi
+      .spyOn(RtdbService.prototype, 'untrackWatchlistItem')
+      .mockRejectedValueOnce(new ValidationError('Invalid watchlist item key'));
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/watchlist/items/stage:3',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      statusCode: 400,
+      message: 'Invalid watchlist item key',
+    });
+    spy.mockRestore();
+  });
+
+  it('the service refuses an item its stored schema rejects with a ValidationError, not a raw ZodError', async () => {
+    const { database } = buildTestApp();
+    const service = new RtdbService(database as never);
+
+    await expect(
+      service.trackWatchlistItem('u1', { kind: 'opponent', ref: 'a\u007fb' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(subjectTree(database, 'u1')).toEqual({});
   });
 
   it('refuses an unknown kind and a non-positive stage with 400', async () => {
