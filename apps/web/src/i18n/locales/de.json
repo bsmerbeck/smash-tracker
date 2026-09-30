@@ -3883,6 +3883,7 @@
     "andMore_other": "und {{count}} weitere →",
     "noneMoved": "Kein verfolgter Eintrag hat sich verändert.",
     "quiet": "Nichts Neues seit {{date}}.",
-    "start": "Die Übersicht beginnt jetzt — Änderungen seit diesem Besuch erscheinen hier."
+    "start": "Die Übersicht beginnt jetzt — Änderungen seit diesem Besuch erscheinen hier.",
+    "loadError": "Die Spiele konnten nicht geladen werden, daher kann die Übersicht keine Neuigkeiten zeigen. Zum erneuten Versuch neu laden."
   }
 }

@@ -3883,6 +3883,7 @@
     "andMore_other": "and {{count}} more →",
     "noneMoved": "No tracked item moved.",
     "quiet": "Nothing new since {{date}}.",
-    "start": "Digest starts now — changes since this visit will show here."
+    "start": "Digest starts now — changes since this visit will show here.",
+    "loadError": "Your matches couldn't be loaded, so the digest can't show what's new. Reload to try again."
   }
 }

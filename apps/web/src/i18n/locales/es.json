@@ -3883,6 +3883,7 @@
     "andMore_other": "y {{count}} más →",
     "noneMoved": "Ningún elemento seguido ha cambiado.",
     "quiet": "Nada nuevo desde el {{date}}.",
-    "start": "El resumen empieza ahora — los cambios desde esta visita aparecerán aquí."
+    "start": "El resumen empieza ahora — los cambios desde esta visita aparecerán aquí.",
+    "loadError": "No se pudieron cargar tus partidas, así que el resumen no puede mostrar las novedades. Recargar para reintentar."
   }
 }

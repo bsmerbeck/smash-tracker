@@ -62,7 +62,15 @@ export function DigestCard({ digest, nudge }: DigestCardProps) {
   }
 
   let body: ReactNode;
-  if (digest.status === 'start') {
+  if (digest.status === 'failed') {
+    // 39.2-REVIEW R2-IN-04: the match query failed before this visit seeded — say so, never a
+    // skeleton that spins for as long as the error lasts.
+    body = (
+      <p data-slot="digest-error" role="alert" className="text-sm leading-5 text-muted-foreground">
+        {t('digest.loadError')}
+      </p>
+    );
+  } else if (digest.status === 'start') {
     body = <InsightLine tone="steady" text={t('digest.start')} />;
   } else if (digest.status === 'quiet') {
     body = <InsightLine tone="steady" text={t('digest.quiet', { date: date ?? '' })} />;

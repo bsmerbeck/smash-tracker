@@ -26,8 +26,12 @@ import {
   writeStoredDigest,
 } from '@/lib/analyticsDigest';
 
-/** `loading`: matches (or, with nothing else new, the tracked list) not settled. `start`: first visit on this device. `quiet`: nothing new. `expanded`: something to say. */
-export type DigestStatus = 'loading' | 'start' | 'quiet' | 'expanded';
+/**
+ * `loading`: matches (or, with nothing else new, the tracked list) not settled. `failed`: the match
+ * query failed before this visit ever seeded, so there is nothing to compare (39.2-REVIEW R2-IN-04).
+ * `start`: first visit on this device. `quiet`: nothing new. `expanded`: something to say.
+ */
+export type DigestStatus = 'loading' | 'failed' | 'start' | 'quiet' | 'expanded';
 
 export interface UseDigestOptions {
   /**
@@ -238,7 +242,11 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
 
   if (isLoading || !seeded) {
     return {
-      status: 'loading',
+      // A query that failed before the visit seeded never settles on its own; saying so beats a
+      // skeleton that spins for as long as the error lasts. Every write gate above is unchanged:
+      // an unseeded visit has nothing to write. A refetch that fails AFTER seeding keeps the
+      // visit (and its shown data) rather than landing here.
+      status: !isLoading && matchesError ? 'failed' : 'loading',
       newGames: 0,
       newEvents: 0,
       movedCount: null,

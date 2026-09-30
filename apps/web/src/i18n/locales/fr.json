@@ -3883,6 +3883,7 @@
     "andMore_other": "et {{count}} de plus →",
     "noneMoved": "Aucun élément suivi n'a évolué.",
     "quiet": "Rien de nouveau depuis le {{date}}.",
-    "start": "Le résumé démarre maintenant — les changements depuis cette visite s'afficheront ici."
+    "start": "Le résumé démarre maintenant — les changements depuis cette visite s'afficheront ici.",
+    "loadError": "Les parties n'ont pas pu être chargées, le résumé ne peut donc pas afficher les nouveautés. Recharger la page pour réessayer."
   }
 }
