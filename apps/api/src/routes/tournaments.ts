@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
+import type { Reference } from 'firebase-admin/database';
 import {
   entryKeyInputSchema,
   manualTournamentEntryInputSchema,
@@ -45,6 +46,42 @@ function deriveManualEntryKey(eventName: string): string {
   const cleaned = eventName.trim().toLowerCase().replace(/\s+/g, '-').replace(RTDB_ILLEGAL, '');
   const base = cleaned.length > 0 ? cleaned : 'event';
   return `manual-${base}-${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * Sets one override member on an EXISTING entry: the existence check and the
+ * write are one transaction on the entry (39.2 code review API-IN-05). A
+ * separate `get()` then `update()` let an entry removed in between (a
+ * reconcile orphan removal, for one) come back as an override-only stub that
+ * GET skips as corrupt and reconcile reports as a foreign collision forever.
+ *
+ * Null-first-safe: the SDK's first run sees `null` and returns `null` (a
+ * no-op delete), which only commits when the node is truly absent; when it
+ * exists the SDK re-runs with the stored value and the member is replaced
+ * wholesale. Clears stay a child `.remove()` in the routes — removing a child
+ * of an absent entry cannot create one.
+ */
+async function writeOverrideIfEntryExists(
+  entryRef: Reference,
+  entryKey: string,
+  member: { tierOverride: TierOverrideStored } | { rulesetOverride: RulesetOverrideStored },
+): Promise<void> {
+  let found = false;
+  await entryRef.transaction((current: unknown) => {
+    // Reset per run: only the run that commits decides the outcome.
+    found = false;
+    if (current === null || current === undefined) {
+      return null; // absent — nothing to write onto
+    }
+    if (typeof current !== 'object' || Array.isArray(current)) {
+      return undefined; // not an entry — abort, never overwrite
+    }
+    found = true;
+    return { ...(current as Record<string, unknown>), ...member };
+  });
+  if (!found) {
+    throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+  }
 }
 
 /**
@@ -210,14 +247,13 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const { entryKey } = request.params;
       const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
-      const existing = await entryRef.get();
-      if (!existing.exists()) {
-        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
-      }
-
       const { rulesetOverride } = request.body;
 
       if (rulesetOverride === null) {
+        const existing = await entryRef.get();
+        if (!existing.exists()) {
+          throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+        }
         // Clearing removes the child outright rather than writing a null
         // into an update payload — the exact pattern this codebase's
         // documented `260725-juj` outage was caused by omitting.
@@ -248,10 +284,10 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
           : {}),
         ...(rulesetOverride.setFormat != null ? { setFormat: rulesetOverride.setFormat } : {}),
       };
-      // A single named child of an update() call replaces that child
-      // wholesale, so a member the editor dropped this time does not linger
-      // from a previous write.
-      await entryRef.update({ rulesetOverride: stored });
+      // Replaces the member wholesale, so a member the editor dropped this
+      // time does not linger from a previous write; the existence check and
+      // the write are one transaction (API-IN-05).
+      await writeOverrideIfEntryExists(entryRef, entryKey, { rulesetOverride: stored });
       return { entryKey, rulesetOverride: stored };
     },
   );
@@ -265,8 +301,9 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
   //
   // WR-02 ("saving never freezes untouched members") holds here because the
   // override has exactly ONE user-editable member (`tier`): the write
-  // replaces only the named `tierOverride` child, so no sibling member of
-  // the entry is rewritten. Any future member (for example a reason note)
+  // replaces only the `tierOverride` member, and the transaction re-writes
+  // every sibling with the value stored at commit time, so none is changed.
+  // Any future member (for example a reason note)
   // must adopt `RulesetOverrideSection`'s baseline-diff payload before it
   // ships. The resolved tier, basis and estimate are read-time only and are
   // never written (TIER-01).
@@ -284,14 +321,13 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const { entryKey } = request.params;
       const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
-      const existing = await entryRef.get();
-      if (!existing.exists()) {
-        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
-      }
-
       const { tierOverride } = request.body;
 
       if (tierOverride === null) {
+        const existing = await entryRef.get();
+        if (!existing.exists()) {
+          throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+        }
         // Child `.remove()`, never a null inside an update payload (RTDB
         // null-stripping house rule).
         await app.firebase.database
@@ -307,7 +343,7 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
         tier: tierOverride.tier,
         setAtMs: Date.now(),
       };
-      await entryRef.update({ tierOverride: stored });
+      await writeOverrideIfEntryExists(entryRef, entryKey, { tierOverride: stored });
       return { entryKey, tierOverride: stored };
     },
   );
