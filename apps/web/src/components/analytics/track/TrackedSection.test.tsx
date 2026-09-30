@@ -11,6 +11,7 @@ import {
   type HorizonKey,
   type Match,
 } from '@smash-tracker/shared';
+import { toast } from 'sonner';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { TrackedSection } from './TrackedSection';
 
@@ -393,6 +394,54 @@ describe('TrackedSection', () => {
     // Both stored items remain: the count is the stored list, the display is deduped.
     expect(document.getElementById('tracked')).toHaveTextContent('2 of 25');
   });
+  describe('untracking a row that folds several stored keys (39.2-REVIEW WEB-IN multi-key untrack)', () => {
+    const MERGED = [
+      item('opponent', 'mkleo2', 'opponent:mkleo2', 500),
+      item('opponent', 'mkleo', 'opponent:mkleo', 1000),
+    ];
+
+    it('deletes every folded key and announces the row ONCE', async () => {
+      aliasMap = { mkleo2: 'mkleo' };
+      serverItems = [...MERGED];
+      const user = userEvent.setup();
+      renderSection();
+      await user.click(await screen.findByRole('button', { name: 'Stop tracking mkleo' }));
+      await waitFor(() => expect(requests('DELETE')).toHaveLength(2));
+      await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled());
+      expect(vi.mocked(toast.success)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    });
+
+    it('a delete that fails rolls back only its own key, never one that already succeeded, with one error toast', async () => {
+      aliasMap = { mkleo2: 'mkleo' };
+      serverItems = [...MERGED];
+      const base = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation((url: string, init: RequestInit) => {
+        const method = String(init.method);
+        if (method === 'DELETE' && decodeURIComponent(String(url)).endsWith('opponent:mkleo2')) {
+          return Promise.resolve(
+            jsonResponse({ error: 'x', message: 'boom', statusCode: 500 }, 500),
+          );
+        }
+        return base(url, init);
+      });
+      const user = userEvent.setup();
+      renderSection();
+      await user.click(await screen.findByRole('button', { name: 'Stop tracking mkleo' }));
+      // Hold the post-mutation refetch so the cache shows exactly what the mutation left.
+      getResponse = () => new Promise<Response>(() => undefined);
+      await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+      expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
+      // opponent:mkleo was deleted on the server: it must not come back; mkleo2 is restored.
+      await waitFor(() => expect(document.getElementById('tracked')).toHaveTextContent('1 of 25'));
+      expect(document.querySelector('[data-slot="tracked-row"]')).toHaveAttribute(
+        'data-item-key',
+        'opponent:mkleo2',
+      );
+    });
+  });
+
   it('plan 39.2-12: a moved item sorts above a higher-volume unmoved one, shows its token, and the header states the order', async () => {
     serverItems = [MKLEO_ITEM, STAGE_ITEM];
     const moved = new Map([['stage:1', { token: 'down' as const, salience: 3 }]]);
