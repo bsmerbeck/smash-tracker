@@ -101,10 +101,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
             {/* Plan 39.1-31 (item 4): no `mx-auto` — the table starts at the
                 card's own content edge like every other card body, instead
                 of auto-centering inside the full-width card. */}
-            <table className="w-max border-separate border-spacing-1 text-sm">
+            <table className="w-full min-w-[480px] border-separate border-spacing-1 text-sm">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left align-bottom">
+                  <th className="sticky left-0 z-10 w-28 min-w-28 max-w-28 border-r border-border bg-card p-2 text-left align-bottom">
                     <span className="sr-only">{t('matchups.matrix.yourFighterSr')}</span>
                   </th>
                   {columnIds.map((opponentId) => {
@@ -136,7 +136,7 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                     <tr key={fighterId}>
                       <th
                         scope="row"
-                        className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left font-normal"
+                        className="sticky left-0 z-10 w-28 min-w-28 max-w-28 border-r border-border bg-card p-2 text-left font-normal"
                       >
                         <div className="flex items-center gap-2">
                           {fighter?.url && (
