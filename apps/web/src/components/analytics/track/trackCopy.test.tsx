@@ -324,6 +324,21 @@ describe('Digest copy through the real locale files (G4)', () => {
         expect(start.container.querySelector('button')).toBeNull();
       });
 
+      it('failed: the load-error line is translated in this locale and carries no placeholder', async () => {
+        await i18n.changeLanguage(locale);
+        // Read from THIS locale's bundle: a missing key would fall back to English and still render.
+        const own = i18n.getResource(locale, 'translation', 'digest.loadError') as unknown;
+        expect(typeof own, `${locale} digest.loadError`).toBe('string');
+        expect((own as string).length).toBeGreaterThan(0);
+        const failed = renderDigest(
+          digestOf({ status: 'failed', since: null, movedCount: null, canMarkAsRead: false }),
+        );
+        const alert = failed.container.querySelector('[role="alert"]');
+        expect(alert?.textContent?.trim()).toBe(own);
+        expect(visibleAndAccessibleText(failed.container)).not.toContain('{{');
+        expect(failed.container.querySelector('button')).toBeNull();
+      });
+
       it('plural forms of "and N more" carry the count in this locale', async () => {
         await i18n.changeLanguage(locale);
         for (const count of [1, 2, 20]) {

@@ -391,6 +391,30 @@ describe('useDigest write discipline (T-03, UI-SPEC G9)', () => {
       expect(set).toHaveBeenCalledTimes(0);
     });
 
+    // 39.2-REVIEW R2-IN-04: a query that fails before the visit ever seeded has nothing to show;
+    // it reads as `failed` (the card's error line), never `loading` for as long as the error lasts.
+    it('a match query that fails on first load reads as failed, not loading forever', () => {
+      matchesState = { allMatches: [], isLoading: false, isFetching: false, isError: true };
+      const { result } = renderHook(() => useDigest(), { wrapper });
+      expect(result.current.status).toBe('failed');
+      expect(result.current.snapshotReady).toBe(false);
+      expect(result.current.canMarkAsRead).toBe(false);
+      expect(result.current.movedCount).toBeNull();
+    });
+
+    it('a query still loading reads as loading, and a failed refetch after seeding keeps the visit', () => {
+      matchesState = { allMatches: [], isLoading: true, isFetching: true, isError: false };
+      const { result, rerender } = renderHook(() => useDigest(), { wrapper });
+      expect(result.current.status).toBe('loading');
+      matchesState = { allMatches: games(51), isLoading: false, isFetching: false, isError: false };
+      rerender();
+      const seededStatus = result.current.status;
+      expect(seededStatus).not.toBe('loading');
+      matchesState = { ...matchesState, isError: true };
+      rerender();
+      expect(result.current.status).toBe(seededStatus);
+    });
+
     it('FAILING CONTROL: the same harness with the query settled on an empty history DOES write', async () => {
       matchesState = { allMatches: [], isLoading: false, isFetching: false, isError: false };
       const set = vi.spyOn(Storage.prototype, 'setItem');

@@ -105,6 +105,32 @@ describe('DigestCard states', () => {
     ).toBeInTheDocument();
   });
 
+  // 39.2-REVIEW R2-IN-04: a first-load match failure shows the error line, never the skeleton.
+  it('failed: the load-error line as an alert, no skeleton, no counts, no button', () => {
+    const { container } = renderCard(
+      digest({
+        status: 'failed',
+        newGames: 0,
+        newEvents: 0,
+        movedCount: null,
+        since: null,
+        snapshotReady: false,
+        canMarkAsRead: false,
+      }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Your matches couldn't be loaded, so the digest can't show what's new. Reload to try again.",
+    );
+    expect(container.querySelector('[data-slot="digest-card"]')).toHaveAttribute(
+      'data-state',
+      'failed',
+    );
+    expect(container.querySelector('[data-slot="skeleton-block"]')).toBeNull();
+    expect(container.querySelector('[data-slot="stat-row"]')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByText('Since last visit')).toBeInTheDocument();
+  });
+
   it('loading: a skeleton, never zeros', () => {
     const { container } = renderCard(digest({ status: 'loading', newGames: 0, newEvents: 0 }));
     expect(container.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
