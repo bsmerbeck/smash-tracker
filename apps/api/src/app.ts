@@ -59,7 +59,7 @@ import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import researchTenantsRoutes from './routes/research.js';
 import deploymentIdentityRoutes from './routes/deploymentIdentity.js';
-import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   ClaimCodeConfig,
@@ -382,6 +382,18 @@ export function buildApp(options: BuildAppOptions) {
         error: 'Not Found',
         message: error.message,
         statusCode: 404,
+      });
+      return;
+    }
+
+    // 39.2 code review API-IN-04: a service-level ValidationError is a 400.
+    // Routes that already catch it locally keep their own mapping; this covers
+    // every caller that does not, which previously fell through to the 500 branch.
+    if (error instanceof ValidationError) {
+      reply.code(400).send({
+        error: 'Bad Request',
+        message: error.message,
+        statusCode: 400,
       });
       return;
     }

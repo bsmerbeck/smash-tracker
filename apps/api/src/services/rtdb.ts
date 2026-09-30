@@ -1667,11 +1667,17 @@ export class RtdbService {
     input: WatchlistTrackInput,
   ): Promise<WatchlistTrackResponse> {
     const itemKey = buildWatchlistItemKey(input);
-    const fresh: WatchlistItem = watchlistItemStoredSchema.parse({
+    // safeParse, never parse (API-IN-04): an input the stored schema refuses is
+    // the caller's 400, not an unmapped ZodError 500.
+    const freshResult = watchlistItemStoredSchema.safeParse({
       kind: input.kind,
       ref: input.ref,
       createdAt: Date.now(),
     });
+    if (!freshResult.success) {
+      throw new ValidationError('Invalid watchlist item');
+    }
+    const fresh: WatchlistItem = freshResult.data;
 
     let full = false;
     let existing: WatchlistItem | undefined;
