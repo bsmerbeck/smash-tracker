@@ -42,6 +42,14 @@ export interface FakeRtdbServer {
   hold: ((kind: WireWriteKind, path: string, data: Json) => boolean) | null;
   /** Called before every write the server applies — a competing writer in another process can land here. */
   beforeWrite: ((kind: WireWriteKind, path: string, data: Json) => void) | null;
+  /**
+   * When it returns a promise for a write, the server answers that write only
+   * once the promise settles (a slow reply), while it keeps serving every
+   * other request meanwhile. The client holds the write as SENT for the whole
+   * window, which is when a same-process `set`/`remove` at an ancestor or
+   * descendant path aborts a transaction (39.2 code review R2-WR-01).
+   */
+  defer: ((kind: WireWriteKind, path: string, data: Json) => Promise<void> | null) | null;
   /** A direct server-side write (another process), pushed to listeners. */
   serverSet(path: string, value: Json): void;
   /** Destroys every open client socket; the SDK sees a disconnect and reconnects. */
@@ -318,6 +326,7 @@ export async function startFakeRtdbServer(seed: Json = {}): Promise<FakeRtdbServ
     log,
     hold: null,
     beforeWrite: null,
+    defer: null,
     serverSet(path, value) {
       setAt(path, value);
       notify(path);
@@ -368,16 +377,27 @@ export async function startFakeRtdbServer(seed: Json = {}): Promise<FakeRtdbServ
           log.push(`HELD ${kind} ${path} ${JSON.stringify(body.d)}`);
           return;
         }
-        fake.beforeWrite?.(kind, path, body.d);
-        if (kind === 'tx' && body.h !== nodeHash(valueAt(root.value, path))) {
-          log.push(`tx ${path} DATASTALE (client guessed ${JSON.stringify(body.d)})`);
-          socket.sendText(JSON.stringify({ t: 'd', d: { r, b: { s: 'datastale', d: 'stale' } } }));
+        const apply = (): void => {
+          fake.beforeWrite?.(kind, path, body.d);
+          if (kind === 'tx' && body.h !== nodeHash(valueAt(root.value, path))) {
+            log.push(`tx ${path} DATASTALE (client guessed ${JSON.stringify(body.d)})`);
+            socket.sendText(
+              JSON.stringify({ t: 'd', d: { r, b: { s: 'datastale', d: 'stale' } } }),
+            );
+            return;
+          }
+          log.push(`${kind} ${path} ${JSON.stringify(body.d)}`);
+          setAt(path, body.d);
+          ok();
+          notify(path);
+        };
+        const deferred = fake.defer?.(kind, path, body.d);
+        if (deferred) {
+          log.push(`DEFERRED ${kind} ${path}`);
+          void deferred.then(apply, apply);
           return;
         }
-        log.push(`${kind} ${path} ${JSON.stringify(body.d)}`);
-        setAt(path, body.d);
-        ok();
-        notify(path);
+        apply();
         return;
       }
       case 'm': {
