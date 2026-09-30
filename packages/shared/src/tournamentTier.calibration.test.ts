@@ -111,6 +111,54 @@ describe('D-01 calibration oracle — proven failing direction', () => {
   });
 });
 
+describe('D-01 calibration oracle — sub-major over-rating (39.2-REVIEW SH-WR-01)', () => {
+  /** The reviewer's reproduction: every rung below major collapsed to 0, major nudged past MomoCon. */
+  const SUB_MAJOR_COLLAPSED_LADDER = [
+    { tier: 'local' as const, minEntrants: 0 },
+    { tier: 'regional' as const, minEntrants: 0 },
+    { tier: 'minor' as const, minEntrants: 0 },
+    { tier: 'major' as const, minEntrants: 454 },
+    { tier: 'supermajor' as const, minEntrants: 1024 },
+  ];
+
+  const ALL_ROWS = [...TIER_CALIBRATION_FIXTURE, ...TIER_CALIBRATION_CONTROL_ROWS];
+
+  it('(h) a ladder that calls a tiny local a minor is caught; the real ladder over-rates nothing', () => {
+    expect(findOverRatedEvents(ALL_ROWS, TIER_ESTIMATE_LADDER)).toEqual([]);
+    const overRated = findOverRatedEvents(ALL_ROWS, SUB_MAJOR_COLLAPSED_LADDER).map((r) => r.id);
+    expect(overRated).toContain('control-local-3-offline');
+    expect(overRated).toContain('control-local-40-offline');
+    expect(overRated).toContain('control-regional-200-offline');
+  });
+
+  it('(i) lowering ANY single rung (halving it) over-rates at least one row', () => {
+    for (let index = 1; index < TIER_ESTIMATE_LADDER.length; index += 1) {
+      const lowered = TIER_ESTIMATE_LADDER.map((rung, i) =>
+        i === index ? { ...rung, minEntrants: Math.floor(rung.minEntrants / 2) } : rung,
+      );
+      const rung = TIER_ESTIMATE_LADDER[index]!.tier;
+      expect(
+        findOverRatedEvents(ALL_ROWS, lowered).length,
+        `lowered rung: ${rung}`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('every sub-major control is labelled synthetic and offline', () => {
+    for (const id of [
+      'control-local-3-offline',
+      'control-local-40-offline',
+      'control-regional-200-offline',
+      'control-minor-400-offline',
+      'control-major-800-offline',
+    ]) {
+      const row = controlRow(id);
+      expect(row.recordedSource).toBe('synthetic-control');
+      expect(row.setting).toBe('offline');
+    }
+  });
+});
+
 describe('D-01 calibration oracle — skipped rows', () => {
   it('(f) no fixture row is awaiting the owner probe any more — the oracle skips nothing', () => {
     expect(skippedCalibrationRows(TIER_CALIBRATION_FIXTURE)).toEqual([]);
