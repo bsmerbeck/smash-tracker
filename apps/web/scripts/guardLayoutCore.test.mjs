@@ -3979,3 +3979,100 @@ test('section-order: matchups and both sketch routes opt into section-order and 
     '390x844': { budget: MATCHUPS_SCROLL_BUDGET_390X844, until: '39.1-48' },
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-45 (sketch 003 C `renderC` ledger rows, CSS 278-289): the
+// ledger-rows family. One row per By-opponent `[data-slot="pairing-opponent-row"]`
+// (today's rows are measured through their tag's closest li): its scroll /
+// client widths, its right edge, the widest descendant right edge, its
+// `[data-slot="set-strip"]` tick count and the tag's own width against the
+// row's content width. Every case reads the module through the namespace so a
+// missing export fails that case alone (the `ledger-oracle` RED).
+// ---------------------------------------------------------------------------
+
+/** A sketch-shaped ledger row at a card-content width: nothing past the right edge, a strip of ticks. */
+function ledgerRow(overrides = {}) {
+  return {
+    selectorPath: 'li[data-slot="pairing-opponent-row"]',
+    scrollWidth: 326,
+    clientWidth: 326,
+    rowRight: 344,
+    descendantMaxRight: 344,
+    tickCount: 8,
+    tagWidth: 120,
+    rowContentWidth: 314,
+    ...overrides,
+  };
+}
+
+function ledgerTypes(rows) {
+  return guardLayoutCoreNs.evaluateLedgerRows(rows).map((v) => v.type);
+}
+
+test('ledger-rows: a sketch-shaped row set passes at 390 and at 1440', () => {
+  assert.deepEqual(ledgerTypes([ledgerRow(), ledgerRow({ tickCount: 1 })]), []);
+  const wide = ledgerRow({
+    scrollWidth: 720,
+    clientWidth: 720,
+    rowRight: 760,
+    descendantMaxRight: 758,
+    tagWidth: 160,
+    rowContentWidth: 708,
+  });
+  assert.deepEqual(ledgerTypes([wide, wide]), []);
+});
+
+test('ledger-rows: an opted route with no row is exactly ledger-rows-unmeasured', () => {
+  assert.deepEqual(ledgerTypes([]), ['ledger-rows-unmeasured']);
+});
+
+test('ledger-rows: a row whose scrollWidth exceeds clientWidth by more than 1px is ledger-row-overflow; exactly 1px passes', () => {
+  assert.deepEqual(ledgerTypes([ledgerRow({ scrollWidth: 328 })]), ['ledger-row-overflow']);
+  assert.deepEqual(ledgerTypes([ledgerRow({ scrollWidth: 327 })]), []);
+});
+
+test('ledger-rows: a descendant right edge past the row right edge by more than 1px is ledger-row-overflow; exactly 1px passes', () => {
+  assert.deepEqual(ledgerTypes([ledgerRow({ descendantMaxRight: 345.5 })]), [
+    'ledger-row-overflow',
+  ]);
+  assert.deepEqual(ledgerTypes([ledgerRow({ descendantMaxRight: 345 })]), []);
+});
+
+test('ledger-rows: a row with no set tick is ledger-strip-missing, once per offending row', () => {
+  assert.deepEqual(
+    ledgerTypes([ledgerRow({ tickCount: 0 }), ledgerRow(), ledgerRow({ tickCount: 0 })]),
+    ['ledger-strip-missing', 'ledger-strip-missing'],
+  );
+});
+
+test('ledger-rows: every offender is reported, overflow and a missing strip on one row both', () => {
+  assert.deepEqual(ledgerTypes([ledgerRow({ scrollWidth: 400, tickCount: 0 })]), [
+    'ledger-row-overflow',
+    'ledger-strip-missing',
+  ]);
+});
+
+test('ledger-rows: the LEDGER line prints the row count and the smallest tag share', () => {
+  assert.equal(
+    guardLayoutCoreNs.formatLedgerLine('matchups-sketch-deep', '390x844', [
+      ledgerRow({ tagWidth: 157, rowContentWidth: 314 }),
+      ledgerRow({ tagWidth: 94.2, rowContentWidth: 314 }),
+    ]),
+    'LEDGER route=matchups-sketch-deep viewport=390x844 rows=2 minTagShare=0.30',
+  );
+  assert.equal(
+    guardLayoutCoreNs.formatLedgerLine('matchups', '1440x900', []),
+    'LEDGER route=matchups viewport=1440x900 rows=0 minTagShare=none',
+  );
+});
+
+test('ledger-rows: matchups and the deep sketch route opt in, and the deep route checks tag legibility at 390', async () => {
+  const { LAYOUT_ORACLE_ROUTES } = await import('./guardLayout.mjs');
+  for (const id of ['matchups', 'matchups-sketch-deep']) {
+    const route = LAYOUT_ORACLE_ROUTES.find((item) => item.id === id);
+    assert.ok(route, `${id} declared`);
+    assert.ok(route.checks.includes('ledger-rows'), `${id} ledger-rows`);
+  }
+  const deep = LAYOUT_ORACLE_ROUTES.find((item) => item.id === 'matchups-sketch-deep');
+  assert.ok(deep.narrowChecks.includes('row-tag-legibility'));
+});
