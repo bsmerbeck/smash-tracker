@@ -87,14 +87,15 @@ interface PendingLeaveWrite {
  * WRITE. "Last seen" advances in exactly two places, both only from settled
  * data and a resolved tracked list, so an unresolved read can never overwrite
  * the snapshot: `markAsRead`, and ONE effect that writes when the Dashboard is
- * left. Nothing is written while the match query is loading or fetching.
+ * left. Nothing is written while the match query is loading, fetching or
+ * failed (39.2-REVIEW WEB-CR-02).
  */
 export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestResult {
   const { t } = useTranslation();
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const { clientId } = useEffectiveSubject();
-  const { allMatches, isLoading, isFetching } = useFilteredMatches();
+  const { allMatches, isLoading, isFetching, isError: matchesError } = useFilteredMatches();
   const watchlist = useWatchlist();
   const aliases = useOpponentAliases();
   // The one clock the digest reads, captured once as the hero's and the Tracked section's are
@@ -110,13 +111,21 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
   // The `lastSeenAt` a Mark as read wrote this visit; non-null flips the card to quiet.
   const [markedAt, setMarkedAt] = useState<number | null>(null);
 
-  if (!isLoading && seededKey !== storageKey) {
+  // 39.2-REVIEW WEB-CR-02: a FAILED match query is never settled. It reads as zero games with
+  // neither loading nor fetching set, and treating that as data would store an empty history
+  // (every game "new" next visit, every tracked item "unlocked"). So a failed query never seeds
+  // the visit, and — because `matchesError` stays true through a failed background refetch,
+  // whose kept data is still shown — never lets a write or Mark as read through either.
+  const matchesSettled = !isLoading && !matchesError;
+  if (matchesSettled && seededKey !== storageKey) {
     setSeededKey(storageKey);
     setStored(readStoredDigest(uid, clientId));
     setMarkedAt(null);
   }
 
   const seeded = !isLoading && seededKey === storageKey;
+  /** Settled data this visit may persist: seeded, and the match query not failed. */
+  const writable = seeded && !matchesError;
   const entries = watchlist.data?.items;
   const aliasMap = aliases.data;
 
@@ -177,7 +186,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
   const pendingLeaveWrite = useRef<PendingLeaveWrite | null>(null);
   const matchCount = allMatches.length;
   const leaveWriteEligible =
-    enabled && seeded && !isFetching && currentTracked !== null && markedAt === null;
+    enabled && writable && !isFetching && currentTracked !== null && markedAt === null;
 
   useEffect(() => {
     const pending = pendingLeaveWrite.current;
@@ -248,7 +257,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
     status = 'quiet';
   }
 
-  const canMarkAsRead = status === 'expanded' && !isFetching && currentTracked !== null;
+  const canMarkAsRead = status === 'expanded' && writable && !isFetching && currentTracked !== null;
 
   function markAsRead(): void {
     if (!canMarkAsRead || currentTracked === null) return;

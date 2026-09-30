@@ -214,6 +214,13 @@ export interface UseFilteredMatchesResult {
    * (UI-SPEC §7.2/§10.5) without re-deriving it from a second query call.
    */
   isFetching: boolean;
+  /**
+   * 39.2-REVIEW WEB-CR-02: true when the matches query has FAILED (react-query `isError`,
+   * including a failed background refetch). A failed query reads as `allMatches = []` with
+   * `isLoading` and `isFetching` both false, so a consumer that persists anything derived from
+   * the matches must treat this as unsettled rather than as an empty history.
+   */
+  isError: boolean;
   /** True when the active filters exclude at least one record the user actually has. */
   filterActive: boolean;
 }
@@ -230,7 +237,7 @@ export interface UseFilteredMatchesResult {
  * just want to show opponent names quickly and re-render once aliases land.
  */
 export function useFilteredMatches(): UseFilteredMatchesResult {
-  const { data: rawMatches = [], isLoading, isFetching } = useMatches();
+  const { data: rawMatches = [], isLoading, isFetching, isError } = useMatches();
   const { data: aliasMap } = useOpponentAliases();
   const { source, range } = useAnalyticsFilter();
 
@@ -252,6 +259,7 @@ export function useFilteredMatches(): UseFilteredMatchesResult {
     timeFilteredMatches,
     isLoading,
     isFetching,
+    isError,
     filterActive: matches.length !== allMatches.length,
   };
 }
