@@ -28,7 +28,8 @@
  * recordable.
  */
 import puppeteer from 'puppeteer';
-import { startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildRecentScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildGuardDigestSeed } from './digestGuardFixture.mjs';
 import {
   evaluateStretch,
   evaluateScrollBudget,
@@ -128,6 +129,24 @@ function periodTrendAxisExpectFor(domain) {
   };
 }
 
+/**
+ * Plan 39.2-12 (UI-SPEC G1): the Dashboard routes are measured with an EXPANDED
+ * digest and 25 tracked items. The digest's device-local snapshot is seeded before
+ * the app boots (`storageSeed`), and the prepare steps PROVE the seed took by
+ * waiting on the expanded card, its moved rows and "and N more", then open the
+ * Tracked list to all 25 — a route where any of them never appears is UNMEASURED,
+ * never a pass over a quiet card.
+ */
+const DASHBOARD_DIGEST_SEED = buildGuardDigestSeed(buildRecentScale().matches);
+const DASHBOARD_DIGEST_PREPARE = [
+  { type: 'wait', selector: '#digest[data-state="expanded"]' },
+  { type: 'wait', selector: '#digest [data-slot="digest-moved-list"] > li' },
+  { type: 'wait', selector: '#digest [data-slot="digest-more"]' },
+  { type: 'wait', selector: '#tracked [data-slot="tracked-row"]' },
+  { type: 'click', selector: '#tracked [data-slot="bounded-list"] > button' },
+  { type: 'wait', selector: '#tracked [data-slot="collapsible-content"][data-state="open"]' },
+];
+
 export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'stretched-card-fixture',
@@ -145,6 +164,13 @@ export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'dashboard',
     loadedMarker: '[data-slot="dashboard-body"]',
+    // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
+    // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
+    // last-30 horizon and nothing can have MOVED. A current account is what the digest
+    // and the Tracked section exist for.
+    scale: 'recent',
+    storageSeed: DASHBOARD_DIGEST_SEED,
+    prepare: DASHBOARD_DIGEST_PREPARE,
     // Plan 39.1-38: the toolbar is the one unboxed filter row (no page h1 —
     // the Dashboard has none); phone StatRows collapse to two columns.
     // Plan 39.1-39: record-fit (the split cards' two records never
@@ -159,6 +185,13 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the Casual vs Competitive / Online vs Offline record overprint.
     id: 'dashboard-app',
     loadedMarker: '[data-slot="dashboard-body"]',
+    // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
+    // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
+    // last-30 horizon and nothing can have MOVED. A current account is what the digest
+    // and the Tracked section exist for.
+    scale: 'recent',
+    storageSeed: DASHBOARD_DIGEST_SEED,
+    prepare: DASHBOARD_DIGEST_PREPARE,
     checks: ['record-fit', 'brand-red-text'],
   },
   {
@@ -2121,6 +2154,22 @@ function collectTextFit(targetSelectors) {
 }
 
 /**
+ * Plan 39.2-12: a route declaring `storageSeed` ({ key, value }) gets that
+ * localStorage entry written before any page script runs, so a device-local
+ * store (the Dashboard digest) is in the state the route measures.
+ */
+async function seedRouteStorage(page, route) {
+  if (!route.storageSeed) return;
+  await page.evaluateOnNewDocument(
+    (key, value) => {
+      window.localStorage.setItem(key, value);
+    },
+    route.storageSeed.key,
+    route.storageSeed.value,
+  );
+}
+
+/**
  * Plan 39.1-49: one shell=app page load (production geometry — the harness's
  * MainLayout-geometry shell, what capture:design shoots) for the narrow
  * passes. Runs the route's prepare steps, waits for its loaded marker, then
@@ -2134,6 +2183,7 @@ async function measureShellPasses(browser, baseUrl, route, viewport, { sweep, fi
     if (route.scale) {
       await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
     }
+    await seedRouteStorage(page, route);
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}&shell=app`, {
       waitUntil: 'networkidle0',
     });
@@ -2197,6 +2247,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     if (route.scale) {
       await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
     }
+    await seedRouteStorage(page, route);
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}`, {
       waitUntil: 'networkidle0',
     });

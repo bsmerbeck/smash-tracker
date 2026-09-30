@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
-import type { Match } from '@smash-tracker/shared';
+import type { DigestMovedToken, Match } from '@smash-tracker/shared';
 import i18n from '@/i18n';
+import type { UseDigestResult } from '@/hooks/useDigest';
+import { DigestCard } from './DigestCard';
+import type { TrackedRowModel } from './trackedRowModel';
 import { TrackedSection } from './TrackedSection';
 
 /**
@@ -197,6 +200,112 @@ describe('Tracked section copy through the real locale files (G4)', () => {
         for (const count of [0, 1, 7, 25]) {
           const value = i18n.t('watchlist.section.count', { count });
           expect(value, `${locale} count ${count}`).toContain(String(count));
+          expect(value).not.toContain('{{');
+        }
+      });
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Plan 39.2-12 (G4): the digest's copy through the same six real locale files.
+// ---------------------------------------------------------------------------------------------
+
+const MOVED_TOKENS: DigestMovedToken[] = ['up', 'down', 'steady', 'unlocked', 'asserting'];
+
+function movedModel(index: number, token: DigestMovedToken): TrackedRowModel {
+  return {
+    itemKey: `opponent:rival${index}`,
+    itemKeys: [`opponent:rival${index}`],
+    kind: 'opponent',
+    name: `Rival${index}`,
+    href: `/opponents/rival${index}`,
+    stageThumbUrl: null,
+    stageName: null,
+    wins: 14,
+    losses: 22,
+    total: 36,
+    chip: null,
+    recentWins: 8,
+    recentLosses: 4,
+    strip: [],
+    movedToken: token,
+  };
+}
+
+function digestOf(overrides: Partial<UseDigestResult>): UseDigestResult {
+  return {
+    status: 'expanded',
+    newGames: 41,
+    newEvents: 2,
+    movedCount: 7,
+    movedRows: MOVED_TOKENS.map((token, i) => movedModel(i + 1, token)),
+    moreCount: 2,
+    movedByItemKey: new Map(),
+    since: Date.UTC(2026, 8, 21, 12),
+    canMarkAsRead: true,
+    markAsRead: () => undefined,
+    ...overrides,
+  };
+}
+
+function renderDigest(value: UseDigestResult) {
+  return render(
+    <MemoryRouter>
+      <DigestCard digest={value} />
+    </MemoryRouter>,
+  );
+}
+
+describe('Digest copy through the real locale files (G4)', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  for (const locale of LOCALES) {
+    describe(locale, () => {
+      it('expanded: counts, moved tokens, "and N more" and the device note carry no placeholder and no raw key', async () => {
+        await i18n.changeLanguage(locale);
+        const { container } = renderDigest(digestOf({}));
+        const text = visibleAndAccessibleText(container);
+        expect(text).not.toContain('{{');
+        expect(text).not.toContain('}}');
+        expect(text).not.toContain('undefined');
+        expect(text).not.toContain('opponent:rival');
+        for (const token of MOVED_TOKENS) {
+          expect(text, `${locale} moved.${token}`).toContain(i18n.t(`watchlist.moved.${token}`));
+        }
+        expect(text).toContain(i18n.t('digest.andMore', { count: 2 }));
+        expect(text).toContain(i18n.t('digest.deviceNote'));
+        expect(text).toContain(i18n.t('digest.markRead'));
+        expect(text).toContain('41');
+      });
+
+      it('quiet and start: the line reads as written, the date is filled in, and there is no button', async () => {
+        await i18n.changeLanguage(locale);
+        const quiet = renderDigest(digestOf({ status: 'quiet', canMarkAsRead: false }));
+        const quietText = visibleAndAccessibleText(quiet.container);
+        expect(quietText).not.toContain('{{');
+        expect(
+          quiet.container.querySelector('[data-slot="insight-line"]')?.textContent,
+        ).not.toMatch(/\{\{|NaN|Invalid/);
+        expect(quiet.container.querySelector('button')).toBeNull();
+        quiet.unmount();
+
+        const start = renderDigest(
+          digestOf({ status: 'start', since: null, canMarkAsRead: false }),
+        );
+        expect(
+          start.container.querySelector('[data-slot="insight-line"]')?.textContent?.trim(),
+        ).toBe(i18n.t('digest.start'));
+        expect(start.container.querySelector('button')).toBeNull();
+      });
+
+      it('plural forms of "and N more" carry the count in this locale', async () => {
+        await i18n.changeLanguage(locale);
+        for (const count of [1, 2, 20]) {
+          const value = i18n.t('digest.andMore', { count });
+          expect(value, `${locale} andMore ${count}`).toContain(String(count === 1 ? '1' : count));
           expect(value).not.toContain('{{');
         }
       });

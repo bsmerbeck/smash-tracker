@@ -28,6 +28,7 @@
  */
 
 import { buildScoutGuardReport } from './scoutGuardFixture.mjs';
+import { buildGuardWatchlist } from './digestGuardFixture.mjs';
 
 /**
  * @param {object} [options]
@@ -93,6 +94,14 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
         if (url === '/opponents/aliases') {
           res.statusCode = 200;
           res.end(JSON.stringify(dataset?.aliases ?? {}));
+          return;
+        }
+        // Plan 39.2-12: the Dashboard's Tracked section reads the subject's watchlist. The
+        // catch-all's bare `{}` fails its response schema, so this is served explicitly:
+        // 25 items drawn from the active dataset's own games (opponents, matchups, stages).
+        if (url === '/watchlist') {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ items: buildGuardWatchlist(dataset?.matches ?? []) }));
           return;
         }
         if (url === '/opponent-notes') {

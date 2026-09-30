@@ -49,6 +49,8 @@ import {
 } from '@/pages/Tournaments/components/TournamentsTable';
 import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
 import { TrackedRow } from '@/components/analytics/track/TrackedRow';
+import { DigestCard } from '@/components/analytics/track/DigestCard';
+import type { UseDigestResult } from '@/hooks/useDigest';
 import { buildTrackedRows } from '@/components/analytics/track/trackedRowModel';
 import i18n from '@/i18n';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
@@ -258,7 +260,9 @@ function accessibleInteractiveDescendant(row: HTMLElement): HTMLElement | null {
  * a small history, built through the same `buildTrackedRows` the Dashboard's
  * section uses, so the enumerated rows are the real rows.
  */
-function trackedRowModelsFixture() {
+function trackedRowModelsFixture(
+  moved?: ReadonlyMap<string, { token: 'up' | 'down' | 'unlocked'; salience: number }>,
+) {
   const day = 24 * 60 * 60 * 1000;
   const now = Date.now();
   const matches = Array.from({ length: 6 }, (_, i) =>
@@ -283,7 +287,31 @@ function trackedRowModelsFixture() {
     horizon: 'last30',
     nowMs: now,
     t: i18n.t.bind(i18n),
+    moved,
   });
+}
+
+/** Plan 39.2-12: the digest as the Dashboard mounts it — expanded, with the three fixture items all moved. */
+function expandedDigestFixture(): UseDigestResult {
+  const movedRows = trackedRowModelsFixture(
+    new Map([
+      ['opponent:rival', { token: 'down' as const, salience: 3 }],
+      [`matchup:${mario.id}-${luigi.id}`, { token: 'up' as const, salience: 2 }],
+      ['stage:1', { token: 'unlocked' as const, salience: 1 }],
+    ]),
+  );
+  return {
+    status: 'expanded',
+    newGames: 41,
+    newEvents: 2,
+    movedCount: movedRows.length,
+    movedRows,
+    moreCount: 2,
+    movedByItemKey: new Map(),
+    since: Date.now(),
+    canMarkAsRead: true,
+    markAsRead: () => undefined,
+  };
 }
 
 interface Surface {
@@ -1019,6 +1047,19 @@ const SURFACES: Surface[] = [
     rows: (result) =>
       Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tracked-row"]')),
   },
+  // Plan 39.2-12 (UI-SPEC §13 G6): the digest's moved rows as DigestCard mounts them, each
+  // carrying its moved token, plus the "and N more" door to #tracked.
+  {
+    name: "Digest moved rows (DigestCard's compact TrackedRows with moved tokens)",
+    file: 'apps/web/src/components/analytics/track/DigestCard.tsx',
+    render: () => withRouter(<DigestCard digest={expandedDigestFixture()} />),
+    rows: (result) =>
+      Array.from(
+        result.container.querySelectorAll<HTMLElement>(
+          '[data-slot="digest-moved-list"] > [data-slot="tracked-row"]',
+        ),
+      ),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1161,8 +1202,24 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-FIVE entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants)", () => {
-    expect(SURFACES.length).toBe(35);
+  it("the surface enumeration has the stated THIRTY-SIX entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants + 39.2-12's digest moved rows)", () => {
+    expect(SURFACES.length).toBe(36);
+  });
+
+  it("the digest's moved rows are each a door to their own surface, carry a moved token, and 'and N more' leads to #tracked (plan 39.2-12 non-vacuity)", async () => {
+    const surface = SURFACES.find((s) => s.name.startsWith('Digest moved rows'))!;
+    const result = await renderReady(surface);
+    const rows = surface.rows(result);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.querySelector('a')?.getAttribute('href')).toBeTruthy();
+      expect(row.querySelector('[data-slot="tracked-row-moved"]')?.textContent).toMatch(/^moved/);
+    }
+    expect(result.container.querySelector('[data-slot="digest-more"]')).toHaveAttribute(
+      'href',
+      '/dashboard#tracked',
+    );
+    result.unmount();
   });
 
   it('the Tracked entries enumerate one row per kind and each is a door to its own surface (plan 39.2-11 non-vacuity)', async () => {
