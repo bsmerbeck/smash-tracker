@@ -17,6 +17,21 @@ import { useMatchupsContext } from '../MatchupsContext';
 
 const VISIBLE_COLUMN_CAP = 12;
 
+/** Tailwind's `sm` breakpoint (640px): below it the matrix reads as stacked rows (UI-SPEC section 6.6), the same query `FilteredMatchList` and `MatrixHeat` use. */
+const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
+
+export type MatchupMatrixLayout = 'table' | 'stack';
+
+/** Read-once `matchMedia` check (guard-before-use); jsdom has none, so tests get the table unless they stub it. */
+function useIsNarrowViewport(): boolean {
+  const [isNarrow] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(NARROW_LAYOUT_QUERY).matches
+      : false,
+  );
+  return isNarrow;
+}
+
 /** Scroll target the detail section below the matrix; set on the wrapping div by MatchupsPage. */
 export const MATCHUP_DETAIL_ANCHOR_ID = 'matchup-detail';
 
@@ -40,7 +55,14 @@ export const MATCHUP_DETAIL_ANCHOR_ID = 'matchup-detail';
  * composition (`URL axis ?? persisted selection`) is what makes this
  * actually change the rendered detail block, not just the URL.
  */
-export function MatchupMatrix({ matches }: { matches: Match[] }) {
+export function MatchupMatrix({
+  matches,
+  layout,
+}: {
+  matches: Match[];
+  /** Test / host affordance forcing the form, bypassing the `matchMedia` check. */
+  layout?: MatchupMatrixLayout;
+}) {
   const { t } = useTranslation();
   const {
     fighterSprites,
@@ -50,6 +72,8 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   const [showAllColumns, setShowAllColumns] = useState(false);
+  const isNarrowViewport = useIsNarrowViewport();
+  const resolvedLayout: MatchupMatrixLayout = layout ?? (isNarrowViewport ? 'stack' : 'table');
 
   const matrix = getMatchupMatrix(matches);
   const cellByKey = new Map<string, MatchupMatrixCell>(
@@ -71,6 +95,76 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
     document
       .getElementById(MATCHUP_DETAIL_ANCHOR_ID)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /**
+   * One matrix cell button: the record, then "rate - n", on the series-1 heat
+   * (`matchupCellBackground`), outlined under the 3-game floor, ringed when it
+   * is the page's own pairing. The stacked (phone) form carries its opponent's
+   * sprite and name on the cell, because it has no column header to read it from.
+   */
+  function renderCell(
+    fighterId: number,
+    opponentId: number,
+    cell: MatchupMatrixCell,
+    form: MatchupMatrixLayout,
+  ) {
+    const opponent = getFighterById(opponentId);
+    const opponentName = opponent ? localizedFighterName(opponentId, t) : t('common.unknown');
+    const fighterName = getFighterById(fighterId)
+      ? localizedFighterName(fighterId, t)
+      : t('common.unknown');
+    const isCurrent = currentFighter?.id === fighterId && currentOpponent?.id === opponentId;
+    const isSubFloor = cell.total < ABSTENTION_FLOOR_GAMES;
+    return (
+      <button
+        type="button"
+        onClick={() => selectPairing(fighterId, opponentId)}
+        aria-label={t('matchups.matrix.cellAria', {
+          fighter: fighterName,
+          opponent: opponentName,
+          wins: cell.wins,
+          losses: cell.losses,
+        })}
+        aria-current={isCurrent ? 'true' : undefined}
+        title={`${cell.wins}-${cell.losses} ${t('common.rateOverSample', { rate: cell.winRate, total: cell.total })}`}
+        className={cn(
+          'relative flex w-full flex-col items-start gap-px rounded-md px-2.5 py-1.5 text-left text-foreground transition-[filter] duration-150 hover:brightness-110 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+          form === 'table' ? 'min-w-16' : 'min-w-0',
+          isSubFloor && 'ring-1 ring-border ring-inset',
+          isCurrent && 'ring-[1.5px] ring-foreground ring-inset',
+        )}
+        style={{
+          backgroundColor: matchupCellBackground(
+            cell.total > 0 ? cell.wins / cell.total : 0,
+            cell.total,
+          ),
+        }}
+      >
+        {form === 'stack' && (
+          <span className="flex w-full min-w-0 items-center gap-1">
+            {opponent?.url && (
+              <img
+                src={opponent.url}
+                alt=""
+                className="size-4 shrink-0 object-contain"
+                loading="lazy"
+              />
+            )}
+            <span className="truncate text-xs leading-4 text-muted-foreground">{opponentName}</span>
+          </span>
+        )}
+        <span className="text-[13px] leading-[18px] font-semibold whitespace-nowrap tabular-nums">
+          {cell.wins}-{cell.losses}
+        </span>
+        <span className="text-xs leading-[14px] whitespace-nowrap text-muted-foreground tabular-nums">
+          {t('matchups.matrix.cellSub', {
+            rate: `${cell.winRate}%`,
+            count: cell.total,
+          })}
+        </span>
+      </button>
+    );
   }
 
   return (
@@ -96,6 +190,45 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
       <CardContent>
         {rowIds.length === 0 || columnIds.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('matchups.matrix.empty')}</p>
+        ) : resolvedLayout === 'stack' ? (
+          /* Plan 39.1-48 (matrix-stacked-phone, UI-SPEC section 6.6 "tables become
+             stacked rows"): below 640px a 5-column grid scrolled inside a 308px
+             card, which the enforced table-clip sweep reports. One labelled group
+             per fighter of yours; its played pairings wrap on a 3-up grid, each
+             cell naming its opponent. The page never scrolls sideways. */
+          <div data-slot="matchup-matrix-stack" className="flex flex-col gap-3">
+            {rowIds.map((fighterId) => {
+              const fighter = fighterSprites.find((f) => f.id === fighterId);
+              const fighterName = fighter
+                ? localizedFighterName(fighterId, t)
+                : t('common.unknown');
+              return (
+                <div key={fighterId} role="group" aria-label={fighterName} className="min-w-0">
+                  <div className="mb-1 flex items-center gap-2">
+                    {fighter?.url && (
+                      <img
+                        src={fighter.url}
+                        alt=""
+                        className="size-6 object-contain"
+                        loading="lazy"
+                      />
+                    )}
+                    <span className="truncate text-sm font-medium">{fighterName}</span>
+                  </div>
+                  <ul className="grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-1">
+                    {columnIds.map((opponentId) => {
+                      const cell = cellByKey.get(`${fighterId}:${opponentId}`);
+                      return cell ? (
+                        <li key={opponentId} className="min-w-0">
+                          {renderCell(fighterId, opponentId, cell, 'stack')}
+                        </li>
+                      ) : null;
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             {/* Plan 39.1-31 (item 4): no `mx-auto` — the table starts at the
@@ -159,52 +292,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                       </th>
                       {columnIds.map((opponentId) => {
                         const cell = cellByKey.get(`${fighterId}:${opponentId}`);
-                        const opponentName = getFighterById(opponentId)
-                          ? localizedFighterName(opponentId, t)
-                          : t('common.unknown');
-                        const fighterName = fighter
-                          ? localizedFighterName(fighterId, t)
-                          : t('common.unknown');
-                        const isCurrent =
-                          currentFighter?.id === fighterId && currentOpponent?.id === opponentId;
-                        const isSubFloor =
-                          cell !== undefined && cell.total < ABSTENTION_FLOOR_GAMES;
                         return (
                           <td key={opponentId} className="p-0">
                             {cell ? (
-                              <button
-                                type="button"
-                                onClick={() => selectPairing(fighterId, opponentId)}
-                                aria-label={t('matchups.matrix.cellAria', {
-                                  fighter: fighterName,
-                                  opponent: opponentName,
-                                  wins: cell.wins,
-                                  losses: cell.losses,
-                                })}
-                                aria-current={isCurrent ? 'true' : undefined}
-                                title={`${cell.wins}-${cell.losses} ${t('common.rateOverSample', { rate: cell.winRate, total: cell.total })}`}
-                                className={cn(
-                                  'relative flex w-full min-w-16 flex-col items-start gap-px rounded-md px-2.5 py-1.5 text-left text-foreground transition-[filter] duration-150 hover:brightness-110 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-                                  isSubFloor && 'ring-1 ring-border ring-inset',
-                                  isCurrent && 'ring-[1.5px] ring-foreground ring-inset',
-                                )}
-                                style={{
-                                  backgroundColor: matchupCellBackground(
-                                    cell.total > 0 ? cell.wins / cell.total : 0,
-                                    cell.total,
-                                  ),
-                                }}
-                              >
-                                <span className="text-[13px] leading-[18px] font-semibold whitespace-nowrap tabular-nums">
-                                  {cell.wins}-{cell.losses}
-                                </span>
-                                <span className="text-xs leading-[14px] whitespace-nowrap text-muted-foreground tabular-nums">
-                                  {t('matchups.matrix.cellSub', {
-                                    rate: `${cell.winRate}%`,
-                                    count: cell.total,
-                                  })}
-                                </span>
-                              </button>
+                              renderCell(fighterId, opponentId, cell, 'table')
                             ) : (
                               <div className="h-10 min-w-16" aria-hidden="true" />
                             )}

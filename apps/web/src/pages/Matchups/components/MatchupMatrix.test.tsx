@@ -379,8 +379,11 @@ describe('MatchupMatrix', () => {
       expect(cell).toHaveTextContent(luigi.name);
       expect(cell).toHaveAttribute('aria-current', 'true');
       expect(cell.className).toMatch(/\btext-foreground\b/);
-      // One game under the 3-game floor: outlined, no heat.
-      expect(cell.className).toMatch(/\bring-1\b/);
+      expect(cell.className).toMatch(/\bring-\[1\.5px\]/);
+      // A different pairing under the 3-game floor (one game): outlined, not ringed.
+      const other = screen.getByRole('button', { name: `${mario.name} vs ${sonic.name}: 1-0` });
+      expect(other).not.toHaveAttribute('aria-current');
+      expect(other.className).toMatch(/\bring-1\b/);
     });
 
     it('a stacked cell navigates exactly like a table cell', async () => {
