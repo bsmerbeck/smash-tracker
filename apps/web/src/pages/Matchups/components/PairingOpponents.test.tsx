@@ -280,6 +280,18 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     expect(rowOf('rival').querySelector('[data-slot="delta-chip"]')).toBeNull();
   });
 
+  it("every row after the first carries sketch C's hairline divider (centred in the row gap)", () => {
+    renderPairing([
+      setGame('a', 1, NOW_MS - 20 * DAY_MS, true, 'first'),
+      setGame('a2', 1, NOW_MS - 19 * DAY_MS, true, 'first'),
+      setGame('b', 1, NOW_MS - 18 * DAY_MS, true, 'second'),
+    ]);
+    const [first, second] = screen.getAllByRole('listitem');
+    expect(first!.className).not.toMatch(/before:h-px/);
+    expect(second!.className).toMatch(/before:h-px/);
+    expect(second!.className).toMatch(/before:bg-border/);
+  });
+
   it('orders rows most games first, tag ascending on ties', () => {
     const matches = [
       ...Array.from({ length: 3 }, (_, i) => setGame(`b${i}`, 1, 1000 + i, true, 'beta')),

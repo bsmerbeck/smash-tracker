@@ -11,6 +11,7 @@ import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
 import { SetStrip, type SetStripItem } from '@/components/charts/FormStrip';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { cn } from '@/lib/utils';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
 import { formatMonthSpan } from '@/lib/dateSpan';
 import {
@@ -25,6 +26,8 @@ interface LedgerRowProps {
   opponentFighterId: number;
   t: TFunction;
   locale: string;
+  /** Every row after the list's first carries sketch C's hairline divider. */
+  divided: boolean;
   subjectPath: (personalPath: string) => string;
 }
 
@@ -40,7 +43,15 @@ interface LedgerRowProps {
  * grid is one column: the chip sits under line 1, left-aligned, and an empty
  * chip cell is hidden so it never holds a phantom row gap.
  */
-function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }: LedgerRowProps) {
+function LedgerRow({
+  row,
+  fighterId,
+  opponentFighterId,
+  t,
+  locale,
+  divided,
+  subjectPath,
+}: LedgerRowProps) {
   const search = buildDrillDownSearch({
     fighterId,
     vsFighterId: opponentFighterId,
@@ -82,7 +93,12 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
   return (
     <li
       data-slot="pairing-opponent-row"
-      className="@container/pairing-opponent-row relative rounded-md px-1.5 py-2 hover:bg-accent"
+      className={cn(
+        '@container/pairing-opponent-row relative rounded-md px-1.5 py-2 hover:bg-accent',
+        // Sketch C `.divide`: a hairline centred in the list's row gap (no layout cost).
+        divided &&
+          'before:pointer-events-none before:absolute before:inset-x-1.5 before:-top-1 before:h-px before:bg-border',
+      )}
     >
       <DrillableRow
         as="overlay"
@@ -222,9 +238,10 @@ export function PairingOpponents({
         ) : (
           <BoundedList
             cap={LIST_CAP}
-            rows={ledger.map((row) => (
+            rows={ledger.map((row, index) => (
               <LedgerRow
                 key={row.tag}
+                divided={index > 0}
                 row={row}
                 fighterId={fighterId}
                 opponentFighterId={opponentFighterId}
