@@ -314,6 +314,37 @@ describe('resolveTournamentTier — manual override and the reserved external ru
   });
 });
 
+describe('resolveTournamentTier — a side event never inherits a recorded tier (39.2-REVIEW SH-WR-02, T-06)', () => {
+  it('a side event with an external tier row resolves unknown / sideEvent', () => {
+    const r = resolveTournamentTier({
+      entry: { eventName: 'Squad Strike', numEntrants: 64, isOnline: false },
+      externalTierRow: { tier: 'supermajor', source: 'liquipedia' },
+    });
+    expect(r).toMatchObject({ tier: 'unknown', basis: 'unknown', reason: 'sideEvent' });
+  });
+
+  it('control: the main event under the same external row is recorded', () => {
+    const r = resolveTournamentTier({
+      entry: { eventName: 'Ultimate Singles', numEntrants: 1600, isOnline: false },
+      externalTierRow: { tier: 'supermajor', source: 'liquipedia' },
+    });
+    expect(r).toMatchObject({ tier: 'supermajor', basis: 'recorded', source: 'liquipedia' });
+  });
+
+  it('a manual override on a side event still wins over everything', () => {
+    const r = resolveTournamentTier({
+      entry: {
+        eventName: 'Squad Strike',
+        numEntrants: 64,
+        isOnline: false,
+        tierOverride: { contractVersion: 1, tier: 'regional', setAtMs: 1 },
+      },
+      externalTierRow: { tier: 'supermajor', source: 'liquipedia' },
+    });
+    expect(r).toMatchObject({ tier: 'regional', basis: 'manual' });
+  });
+});
+
 describe('override schemas', () => {
   it('stores contractVersion, tier and setAtMs; rejects an unknown tier word', () => {
     expect(
