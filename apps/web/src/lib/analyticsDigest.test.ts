@@ -80,3 +80,17 @@ describe('countNewEvents', () => {
     expect(countNewEvents([], 0)).toBe(0);
   });
 });
+
+describe('countNewEvents event identity (39.2-REVIEW WEB-CR-01)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('three same-named weeklies a week apart, last seen between the second and third: 1 new event, not 0', () => {
+    const matches = [0, 7, 14].flatMap((day, i) =>
+      [0, 1, 2].map((g) =>
+        game(`w${i}-${g}`, day * DAY + g * 60_000, 'Ultimate Singles', `Weekly #${i}`),
+      ),
+    );
+    expect(countNewEvents(matches, 10 * DAY)).toBe(1);
+    expect(countNewEvents(matches, -1)).toBe(3);
+  });
+});

@@ -262,3 +262,97 @@ describe('selectNewestEvent', () => {
     expect(selectNewestEvent([game('a', 1), game('b', 2)])).toBeNull();
   });
 });
+
+describe('event identity (39.2-REVIEW WEB-CR-01): an event is never a bare event name', () => {
+  /** Six games of a weekly named "Ultimate Singles" at its own tournament, ending `endedAgoMs` before NOW. */
+  function weekly(index: number, endedAgoMs: number): Match[] {
+    return Array.from({ length: 6 }, (_, i) => ({
+      id: `weekly-${index}-${i}`,
+      time: NOW - endedAgoMs - (5 - i) * HOUR,
+      win: index % 2 === 0,
+      fighter_id: 1,
+      opponent_id: 2,
+      eventName: 'Ultimate Singles',
+      tournamentName: `Weekly #${index}`,
+    })) as Match[];
+  }
+
+  function tenWeeklies(): Match[] {
+    return Array.from({ length: 10 }, (_, i) => weekly(i, (9 - i) * 7 * DAY + 2 * DAY)).flat();
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    window.localStorage.clear();
+    sink.latest = null;
+    matchesState = { allMatches: [], isLoading: false, isFetching: false };
+    entriesState = { data: [], isPending: false, isError: false };
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('selectNewestEvent over ten same-named weeklies returns the newest weekly only', () => {
+    const picked = selectNewestEvent(tenWeeklies());
+    expect(picked?.games).toHaveLength(6);
+    expect(picked?.games.every((g) => g.id.startsWith('weekly-9-'))).toBe(true);
+  });
+
+  it('two same-named events on one weekend at different tournaments are two events', () => {
+    const picked = selectNewestEvent([...weekly(1, 2 * DAY), ...weekly(2, 1 * DAY)]);
+    expect(picked?.games.map((g) => g.id)).toEqual(weekly(2, 1 * DAY).map((g) => g.id));
+  });
+
+  it('the matches-only dismissal id names ONE event: two same-named weeklies never share it', () => {
+    const older = selectNewestEvent(weekly(1, 9 * DAY))!;
+    const newer = selectNewestEvent([...weekly(1, 9 * DAY), ...weekly(2, 2 * DAY)])!;
+    const idOf = (event: NonNullable<ReturnType<typeof selectNewestEvent>>) =>
+      evaluateRecapCandidate({ event, lastSeenAt: null, nowMs: NOW, dismissedIds: [], entry: null })
+        ?.dismissalId;
+    expect(idOf(older)).toBeDefined();
+    expect(idOf(newer)).toBeDefined();
+    expect(idOf(newer)).not.toBe(idOf(older));
+    // Dismissing the older weekly never suppresses the newer one.
+    expect(
+      evaluateRecapCandidate({
+        event: newer,
+        lastSeenAt: null,
+        nowMs: NOW,
+        dismissedIds: [idOf(older)!],
+        entry: null,
+      }),
+    ).not.toBeNull();
+  });
+
+  it('a coach subject recaps the newest weekly only (6 games, not 60)', () => {
+    matchesState.allMatches = tenWeeklies();
+    mount('/coach/client-1/dashboard', null);
+    expect(sink.latest?.status).toBe('ready');
+    expect(sink.latest?.candidate?.games).toHaveLength(6);
+  });
+
+  it("the own account's card reads the resolved registry entry's own games", () => {
+    matchesState.allMatches = tenWeeklies();
+    entriesState.data = [
+      {
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly #9',
+        entryKey: 'w9',
+        firstSetAt: NOW - 2 * DAY - 6 * HOUR,
+        lastSetAt: NOW - 2 * DAY,
+        setsPlayed: 2,
+      } as TournamentEntry,
+    ];
+    mount('/dashboard', null);
+    expect(sink.latest?.status).toBe('ready');
+    expect(sink.latest?.candidate?.entry?.entryKey).toBe('w9');
+    expect(sink.latest?.candidate?.games.map((g) => g.id).sort()).toEqual(
+      weekly(9, 2 * DAY)
+        .map((g) => g.id)
+        .sort(),
+    );
+  });
+});

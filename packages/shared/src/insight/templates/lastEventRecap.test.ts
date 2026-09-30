@@ -395,3 +395,70 @@ describe('lastEventRecap Phase 39.2 extension (plan 39.2-13: structural entry, t
     });
   });
 });
+
+describe('lastEventRecap event identity (39.2-REVIEW SH-CR-01): an event is never a bare name', () => {
+  const ONE_DAY_MS = 24 * ONE_HOUR_MS;
+
+  /** Six games of one weekly named "Ultimate Singles" at a distinct tournament, `daysAgo` before NOW. */
+  function weekly(index: number, daysAgo: number, win: boolean): Match[] {
+    return Array.from({ length: 6 }, (_, g) => ({
+      id: `weekly-${index}-g${g}`,
+      fighter_id: SUBJECT_FIGHTER_ID,
+      opponent_id: 2,
+      time: NOW_MS - daysAgo * ONE_DAY_MS + g * ONE_HOUR_MS,
+      win,
+      matchType: 'offline-tourney' as const,
+      eventName: 'Ultimate Singles',
+      tournamentName: `Weekly #${index}`,
+      externalId: `sgg:weekly-${index}-set${Math.floor(g / 3)}:g${(g % 3) + 1}`,
+    }));
+  }
+
+  it('ten same-named weeklies: the recap reads the newest weekly only (0–6), never the 60-game pool', () => {
+    // Nine won weeklies, a week apart, then a 0–6 at the newest one.
+    const matches: Match[] = [];
+    for (let i = 0; i < 9; i += 1) {
+      matches.push(...weekly(i, 7 * (10 - i), true));
+    }
+    matches.push(...weekly(9, 1, false));
+    const insight = buildLastEventRecapInsight({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+      registryEntry: { placement: 3, numEntrants: 32 },
+    });
+    expect(insight.copy.values.gameRecord).toBe('0–6');
+    expect(insight.copy.values.gameCount).toBe(6);
+    expect(insight.countedMatchIds).toHaveLength(6);
+    expect(insight.countedMatchIds.every((id) => id.startsWith('weekly-9-'))).toBe(true);
+    expect(insight.window.games).toBe(6);
+  });
+
+  it('two same-named events at different tournaments on one weekend stay two events', () => {
+    const saturday = weekly(1, 2, true);
+    const sunday = weekly(2, 1, false);
+    const insight = buildLastEventRecapInsight({
+      matches: [...saturday, ...sunday],
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insight.copy.values.gameRecord).toBe('0–6');
+    expect(insight.countedMatchIds).toHaveLength(6);
+  });
+
+  it('the event door names the block window, so it can never widen to another same-named event', () => {
+    const matches = [...weekly(0, 14, true), ...weekly(1, 1, false)];
+    const insight = buildLastEventRecapInsight({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    const eventDoor = insight.doors.find((door) => door.kind === 'event');
+    expect(eventDoor?.count).toBe(6);
+    expect(eventDoor?.axes.from).toBe(insight.window.fromMs);
+    expect(eventDoor?.axes.to).toBe(insight.window.toMs);
+  });
+});
