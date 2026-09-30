@@ -187,6 +187,9 @@ describe('movedTransition (D-05 table; anything unlisted is not a move)', () => 
       return next as DigestMovedToken;
     }
     if (prev === 'locked' && next !== 'locked' && next !== 'none') return 'unlocked';
+    // 39.2-REVIEW SH-WR-05 (D-05 interpretation): out of `none` counts only into a read that
+    // asserts a class (steady/up/down); none -> locked/thin/thinRecent/collapsed is not a move.
+    if (prev === 'none' && direction.includes(next)) return 'unlocked';
     if (nonAssertive.includes(prev) && (next === 'up' || next === 'down')) return 'asserting';
     return null;
   }
@@ -200,8 +203,8 @@ describe('movedTransition (D-05 table; anything unlisted is not a move)', () => 
         if (got !== null) moved += 1;
       }
     }
-    // 6 direction pairs + locked -> 6 non-locked/non-none + 3 x 2 asserting.
-    expect(moved).toBe(6 + 6 + 6);
+    // 6 direction pairs + locked -> 6 non-locked/non-none + 3 x 2 asserting + none -> 3 direction.
+    expect(moved).toBe(6 + 6 + 6 + 3);
   });
 
   it('spot checks the documented examples', () => {
@@ -214,6 +217,15 @@ describe('movedTransition (D-05 table; anything unlisted is not a move)', () => 
     expect(movedTransition('up', 'down')).toBe('down');
     expect(movedTransition('down', 'steady')).toBe('steady');
     expect(movedTransition('steady', 'steady')).toBeNull();
+  });
+
+  it('SH-WR-05: a never-played item that now asserts a class moved; one that is merely locked did not', () => {
+    expect(movedTransition('none', 'steady')).toBe('unlocked');
+    expect(movedTransition('none', 'up')).toBe('unlocked');
+    expect(movedTransition('none', 'down')).toBe('unlocked');
+    expect(movedTransition('none', 'locked')).toBeNull();
+    expect(movedTransition('none', 'thinRecent')).toBeNull();
+    expect(movedTransition('none', 'none')).toBeNull();
   });
 });
 
