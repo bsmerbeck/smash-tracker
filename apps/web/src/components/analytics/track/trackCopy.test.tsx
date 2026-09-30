@@ -396,6 +396,7 @@ function renderRecap(candidate: RecapCandidate, allMatches: Match[]) {
         <RecapCard
           recap={{ status: 'ready', candidate, dismiss: vi.fn() }}
           allMatches={allMatches}
+          terminusMatches={allMatches}
           horizon="last30"
         />
       </TooltipProvider>

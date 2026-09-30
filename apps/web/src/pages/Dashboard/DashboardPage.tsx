@@ -332,7 +332,12 @@ export function DashboardPage() {
                     </GridCell>
                     {recapCell && (
                       <GridCell span={12} className="order-first xl:order-none xl:col-span-4">
-                        <RecapCard recap={recap} allMatches={allMatches} horizon={horizon} />
+                        <RecapCard
+                          recap={recap}
+                          allMatches={allMatches}
+                          terminusMatches={matches}
+                          horizon={horizon}
+                        />
                       </GridCell>
                     )}
                     {/* Plan 39.2-11 (TRK-02, DD-10): the Tracked section sits directly above the

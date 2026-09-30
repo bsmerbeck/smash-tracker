@@ -34,6 +34,12 @@ export interface RecapCardProps {
   recap: RecapCandidateResult;
   /** Every game of the subject: the "all time" side of the event's two-horizon read. */
   allMatches: Match[];
+  /**
+   * 39.2-REVIEW WEB-WR-03: the games Match Data lists — the subject's games with the global
+   * source and range filter applied (`useFilteredMatches().matches`) — so the games door's
+   * printed count is checked against the rows its destination will actually show.
+   */
+  terminusMatches: Match[];
   /** The page horizon, which names the insight's id (`lastEventRecap:account:<horizon>`). */
   horizon: HorizonKey;
 }
@@ -88,11 +94,13 @@ function buildSetStrip(insight: Insight, t: TFunction): ReactNode {
 function RecapCardBody({
   candidate,
   allMatches,
+  terminusMatches,
   horizon,
   onDismiss,
 }: {
   candidate: RecapCandidate;
   allMatches: Match[];
+  terminusMatches: Match[];
   horizon: HorizonKey;
   onDismiss: () => void;
 }) {
@@ -182,7 +190,8 @@ function RecapCardBody({
   // subject family. Same-n (DD-06): the door prints the event's game count, so it is offered
   // only when that window holds exactly those games; a stray game inside it drops the door
   // rather than promising a count the terminus would not show.
-  const gamesDoorHref = buildGamesDoorHref(candidate.games, allMatches, subjectPath);
+  // WEB-WR-03: checked against Match Data's own (source- and range-filtered) population.
+  const gamesDoorHref = buildGamesDoorHref(candidate.games, terminusMatches, subjectPath);
   const doorNodes: ReactNode[] = [];
   if (debriefOpen && debriefKey) {
     const debriefLabel = t('insights.door.debrief');
@@ -263,7 +272,7 @@ function noop(): void {
  * nothing when no candidate is due, so the Dashboard never shows an empty 4-column frame. Nothing
  * paid is reachable from here: no report or billing module is imported and no sparkle icon renders.
  */
-export function RecapCard({ recap, allMatches, horizon }: RecapCardProps) {
+export function RecapCard({ recap, allMatches, terminusMatches, horizon }: RecapCardProps) {
   const { t } = useTranslation();
   if (recap.status === 'loading') {
     return <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />;
@@ -275,6 +284,7 @@ export function RecapCard({ recap, allMatches, horizon }: RecapCardProps) {
         <RecapCardBody
           candidate={recap.candidate}
           allMatches={allMatches}
+          terminusMatches={terminusMatches}
           horizon={horizon}
           onDismiss={recap.dismiss}
         />
