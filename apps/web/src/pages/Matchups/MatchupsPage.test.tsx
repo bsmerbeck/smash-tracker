@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -1538,6 +1540,87 @@ describe('MatchupsPage', () => {
       expect(Array.from(children[0]!.children)).toHaveLength(2);
       expect(Array.from(children[1]!.children)).toHaveLength(4);
     });
+  });
+
+  describe("composition-mirror (plan 39.1-48): the capture's structure on sketch 003's own deep pairing, through the real page", () => {
+    /** Loads the approved sketch's deep pairing (Cloud vs Pyra/Mythra, 102 games, 11 players) from the harness fixture. */
+    async function renderSketchDeep() {
+      const url = pathToFileURL(path.resolve(__dirname, '../../../scripts/sketch003Fixture.mjs'));
+      const fixture = (await import(/* @vite-ignore */ url.href)) as {
+        buildSketch003Scale: () => { matches: unknown[]; fighters: { primary: number[] } };
+      };
+      const scale = fixture.buildSketch003Scale();
+      getFighters.mockResolvedValue({ primary: scale.fighters.primary, secondary: [] });
+      listMatches.mockResolvedValue(scale.matches);
+      renderMatchups();
+      await waitFor(
+        () =>
+          expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+        { timeout: 10_000 },
+      );
+    }
+
+    it('composition-mirror: section order, hero anatomy, ledger, rail, matrix after the pairing, results first page', async () => {
+      await renderSketchDeep();
+
+      // Section order (brief M7): hero, By opponent, then the rail cards, matrix, results.
+      const slots = [
+        'pairing-hero',
+        'pairing-opponents',
+        'matchup-insights',
+        'matchup-or-player',
+        'counterpick-advisor',
+        'stage-breakdown',
+        'matchup-matrix',
+        'matchup-results',
+      ];
+      const present = slots.filter((slot) => document.querySelector(`[data-slot="${slot}"]`));
+      // MatchupOrPlayer is conditional (engine-driven, D-07); every other slot must render on the deep pairing.
+      for (const slot of slots.filter((s) => s !== 'matchup-or-player')) {
+        expect(document.querySelector(`[data-slot="${slot}"]`), `${slot} renders`).not.toBeNull();
+      }
+      for (let i = 1; i < present.length; i += 1) {
+        const before = document.querySelector(`[data-slot="${present[i - 1]}"]`)!;
+        const after = document.querySelector(`[data-slot="${present[i]}"]`)!;
+        expect(
+          before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+          `${present[i]} follows ${present[i - 1]}`,
+        ).toBeTruthy();
+      }
+
+      // Hero (M3/M4): the page h1, the StatRow's four figures, the 60-game strip, the quarterly trend head.
+      const hero = pairingHero();
+      expect(within(hero).getByRole('heading', { level: 1 }).textContent).toBe(
+        'Cloud vs Pyra/Mythra',
+      );
+      expect(hero.querySelector('[data-slot="stat-row"]')!.children).toHaveLength(4);
+      expect(within(hero).getByText('Form · last 60 games, by event')).toBeInTheDocument();
+      expect(within(hero).getByText('Win rate by quarter')).toBeInTheDocument();
+
+      // By opponent (M8): eight ledger rows of the eleven players, then the terminus.
+      const opponents = document.querySelector('[data-slot="pairing-opponents"]') as HTMLElement;
+      expect(opponents.querySelectorAll('[data-slot="pairing-opponent-row"]')).toHaveLength(8);
+      expect(within(opponents).getByText('Show all 11')).toBeInTheDocument();
+
+      // The rail (M9-M12) keeps its four-card order whenever MatchupOrPlayer renders.
+      const rail = document.querySelector('[data-slot="matchups-rail"]') as HTMLElement;
+      const railSlots = Array.from(rail.children).map((child) => child.getAttribute('data-slot'));
+      expect(railSlots).toEqual(
+        ['matchup-insights', 'matchup-or-player', 'counterpick-advisor', 'stage-breakdown'].filter(
+          (slot) => slot !== 'matchup-or-player' || railSlots.includes(slot),
+        ),
+      );
+
+      // Matrix after the pairing (M13); results last, first page 100 rows in the table layout (M14).
+      const grid = document.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const matrix = document.getElementById('matchup-matrix') as HTMLElement;
+      expect(grid.compareDocumentPosition(matrix) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const results = document.querySelector('[data-slot="matchup-results"]') as HTMLElement;
+      const table = results.querySelector('[data-slot="filtered-match-table"]') as HTMLElement;
+      expect(table).not.toBeNull();
+      expect(table.querySelectorAll('tbody tr')).toHaveLength(100);
+      expect(within(results).getByRole('button', { name: 'Show 2 more' })).toBeInTheDocument();
+    }, 60_000);
   });
 
   describe('Task 2 (plan 39.1-32, item 9): aligned pairing picker grid', () => {
