@@ -5,6 +5,7 @@ import { getUserMatches, type ParryggClients, type ParryggMatchContext } from '.
 import { parryggCharacterSlugToFighterId } from './characters.js';
 import { resolveParryggStage } from './stages.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
+import { carriedOverrides, withoutOverrides } from '../services/tournamentOverrides.js';
 
 /**
  * The Smash Ultimate `Game.slug` on parry.gg, determined empirically from
@@ -483,19 +484,11 @@ export async function importParryggMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
-    // The closing `.update()` replaces each event's whole child node, so any
-    // user-authored member not rebuilt here is deleted by every re-sync
-    // (Phase 39.2 F1, the same defect fixed for start.gg in 39.2-03). Read the
-    // stored registry once and carry the per-event overrides forward.
-    const existingRegistrySnapshot = await database.ref(`tournamentEntries/${uid}`).get();
-    const existingRegistry = (existingRegistrySnapshot.val() ?? {}) as Record<
-      string,
-      TournamentEntry | undefined
-    >;
-
+    // The commit below replaces each event's whole child node, so any
+    // user-authored member not rebuilt here would be deleted by every re-sync
+    // (Phase 39.2 F1, the same defect fixed for start.gg in 39.2-03).
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [entryKey, acc] of registry) {
-      const existingEntry = existingRegistry[entryKey];
       registryUpdates[entryKey] = {
         eventName: acc.eventName,
         ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
@@ -507,16 +500,22 @@ export async function importParryggMatches(
         setsPlayed: acc.setsPlayed,
         source: 'parrygg',
         entryKey,
-        // Copied verbatim when present, no key when absent (never a null write).
-        ...(existingEntry?.tierOverride != null
-          ? { tierOverride: existingEntry.tierOverride }
-          : {}),
-        ...(existingEntry?.rulesetOverride != null
-          ? { rulesetOverride: existingEntry.rulesetOverride }
-          : {}),
       };
     }
-    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
+    // One transaction per event (39.2 code review API-CR-01): the per-event
+    // overrides are carried from the value stored AT COMMIT TIME, so a
+    // tier/ruleset PATCH that lands while this sync runs is neither deleted
+    // (set) nor brought back (cleared). The first run of every transaction
+    // sees `null` and returns the bare rebuilt row, which only commits when the
+    // node is truly absent; otherwise the SDK re-runs with the stored value.
+    await Promise.all(
+      Object.entries(registryUpdates).map(([entryKey, rebuilt]) =>
+        database.ref(`tournamentEntries/${uid}/${entryKey}`).transaction((current: unknown) => ({
+          ...withoutOverrides(rebuilt),
+          ...carriedOverrides(current),
+        })),
+      ),
+    );
   }
   await database.ref(`parryggLinks/${uid}/lastSyncAt`).set(Date.now());
 

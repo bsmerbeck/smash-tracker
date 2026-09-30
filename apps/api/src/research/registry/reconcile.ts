@@ -2,13 +2,12 @@ import type { Database } from 'firebase-admin/database';
 import {
   isTournamentRegistryOwnedRow,
   researchSourceSetRecordSchema,
-  rulesetOverrideStoredSchema,
   TOURNAMENT_REGISTRY_ENTRY_ID_PREFIX,
-  tierOverrideStoredSchema,
   tournamentRegistryRowSchema,
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
 import { isPathSafeTenantId } from '../subjectKind.js';
+import { carriedOverrides } from '../../services/tournamentOverrides.js';
 import { recordsDeepEqual } from '../migration/manifest.js';
 import { deriveTournamentRegistryFromResearchSource } from './derive.js';
 import { withRegistryDeadline, type RegistryDeadlineOptions } from './deadline.js';
@@ -135,30 +134,6 @@ export interface TournamentRegistryPlan {
   skippedExcludedClassification: number;
   /** The full derived row set (importedAtMs already resolved), sorted by entryId. */
   derivedRows: TournamentRegistryRow[];
-}
-
-/**
- * User-owned per-event members (39.2 tierOverride, 37-04 rulesetOverride).
- * The derive step can never produce them, so both reconcile paths carry the
- * STORED value onto the row they write: without the copy every overridden row
- * would be a perpetual "update" and the apply would delete the override
- * (RESEARCH F1). Conditional spreads only — a null is never persisted.
- */
-function carriedOverrides(
-  stored: unknown,
-): Pick<TournamentRegistryRow, 'tierOverride' | 'rulesetOverride'> {
-  if (stored === null || typeof stored !== 'object') {
-    return {};
-  }
-  // Each member is validated on its own so an unrelated defect elsewhere in
-  // the stored row can never cost the user their override.
-  const record = stored as Record<string, unknown>;
-  const tier = tierOverrideStoredSchema.safeParse(record.tierOverride);
-  const ruleset = rulesetOverrideStoredSchema.safeParse(record.rulesetOverride);
-  return {
-    ...(tier.success ? { tierOverride: tier.data } : {}),
-    ...(ruleset.success ? { rulesetOverride: ruleset.data } : {}),
-  };
 }
 
 function readOwnedImportedAtMs(value: unknown): number | null {

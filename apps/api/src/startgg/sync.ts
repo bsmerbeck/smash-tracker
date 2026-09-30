@@ -14,6 +14,7 @@ import {
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStage } from './stageMap.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
+import { carriedOverrides, withoutOverrides } from '../services/tournamentOverrides.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
@@ -307,6 +308,38 @@ export function accumulateRegistry(
 }
 
 /**
+ * The row one event's commit writes: this run's rebuilt sync-owned members,
+ * plus what the run cannot rebuild, read from `stored` — the value in RTDB at
+ * commit time (the transaction's current value).
+ *
+ * - Enrichment baseline (walkthrough amendment 07-10): an event outside this
+ *   run's `MAX_EVENT_DETAIL_FETCHES` window, or whose detail fetch failed,
+ *   keeps its already-fetched slug/eventSlug/topStandings; otherwise a recap's
+ *   "View bracket on start.gg" link would break until the event re-entered
+ *   the top N. A value fetched this run wins.
+ * - User-authored overrides (39.2 F1 `tierOverride`, 37-04 `rulesetOverride`):
+ *   carried from `stored` only, so any override on `rebuilt` is ignored.
+ */
+function rebuildOverStoredEntry(rebuilt: TournamentEntry, stored: unknown): TournamentEntry {
+  const existing: Partial<TournamentEntry> =
+    stored !== null && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Partial<TournamentEntry>)
+      : {};
+  const base = withoutOverrides(rebuilt);
+  return {
+    ...base,
+    ...(!base.slug && existing.slug ? { slug: existing.slug } : {}),
+    ...(!base.eventSlug && existing.eventSlug ? { eventSlug: existing.eventSlug } : {}),
+    ...(!(base.topStandings && base.topStandings.length > 0) &&
+    existing.topStandings &&
+    existing.topStandings.length > 0
+      ? { topStandings: existing.topStandings }
+      : {}),
+    ...carriedOverrides(stored),
+  };
+}
+
+/**
  * Imports all of a player's SSBU tournament games as matches under
  * matches/{uid}. Idempotent: records use stable child keys derived from the
  * set id + game number, so re-syncs overwrite in place. Manual matches
@@ -370,27 +403,14 @@ export async function importPlayerMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
-    // Walkthrough amendment (07-10): read the CURRENT registry first so
-    // previously-fetched enrichment fields (slug/eventSlug/topStandings) can
-    // be carried forward as a baseline below. Every sync re-derives
-    // registryUpdates from scratch off THIS run's own paginated sets (not an
-    // incremental diff), and the closing `.update()` REPLACES each event's
-    // whole node — without this read-and-merge step, an event that drops out
-    // of this run's `MAX_EVENT_DETAIL_FETCHES` most-recently-active window
-    // (or whose `fetchEventDetails` call transiently fails) would have its
-    // ALREADY-FETCHED slug/eventSlug/topStandings silently wiped by this
-    // sync, permanently breaking a recap's "View bracket on start.gg" link
-    // for that tournament until it happens to re-enter the top N and
-    // re-fetch successfully again.
-    const existingRegistrySnapshot = await database.ref(`tournamentEntries/${uid}`).get();
-    const existingRegistry = (existingRegistrySnapshot.val() ?? {}) as Record<
-      string,
-      TournamentEntry | undefined
-    >;
-
+    // Every sync re-derives each event's sync-owned members from scratch off
+    // THIS run's own paginated sets (not an incremental diff), and the commit
+    // below REPLACES each event's whole node. Members this run cannot rebuild
+    // are merged from the value stored AT COMMIT TIME (see
+    // `rebuildOverStoredEntry`), never from a read taken before the network
+    // phase below.
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [eventId, acc] of registry) {
-      const existingEntry = existingRegistry[String(eventId)];
       registryUpdates[String(eventId)] = {
         eventId: acc.eventId,
         eventName: acc.eventName,
@@ -405,26 +425,6 @@ export async function importPlayerMatches(
         firstSetAt: acc.firstSetAt,
         lastSetAt: acc.lastSetAt,
         setsPlayed: acc.setsPlayed,
-        // Baseline carried forward from the existing stored entry — the
-        // enrichment loop below overwrites these with fresh values for any
-        // event it successfully re-fetches this sync.
-        ...(existingEntry?.slug ? { slug: existingEntry.slug } : {}),
-        ...(existingEntry?.eventSlug ? { eventSlug: existingEntry.eventSlug } : {}),
-        ...(existingEntry?.topStandings && existingEntry.topStandings.length > 0
-          ? { topStandings: existingEntry.topStandings }
-          : {}),
-        // User-authored per-event overrides. The closing `.update()` replaces
-        // each event's whole node, so anything not carried forward here is
-        // deleted by every re-sync. Phase 39.2 (F1) carries `tierOverride`;
-        // it also fixes a live 37-04 defect where every re-sync silently
-        // deleted the per-event `rulesetOverride`. Copied verbatim when
-        // present, no key when absent (never a null write).
-        ...(existingEntry?.tierOverride != null
-          ? { tierOverride: existingEntry.tierOverride }
-          : {}),
-        ...(existingEntry?.rulesetOverride != null
-          ? { rulesetOverride: existingEntry.rulesetOverride }
-          : {}),
       };
     }
 
@@ -458,7 +458,20 @@ export async function importPlayerMatches(
       }
     }
 
-    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
+    // One transaction per event (39.2 code review API-CR-01): each commit
+    // merges the user-owned overrides and the enrichment baseline from the
+    // value stored NOW, so a tier/ruleset PATCH that lands during the
+    // enrichment loop above is neither deleted (set) nor brought back
+    // (cleared). The first run of every transaction sees `null` and returns
+    // the bare rebuilt row, which only commits when the node is truly absent;
+    // otherwise the SDK re-runs the merge with the real stored value.
+    await Promise.all(
+      Object.entries(registryUpdates).map(([eventKey, rebuilt]) =>
+        database
+          .ref(`tournamentEntries/${uid}/${eventKey}`)
+          .transaction((current: unknown) => rebuildOverStoredEntry(rebuilt, current)),
+      ),
+    );
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
 
