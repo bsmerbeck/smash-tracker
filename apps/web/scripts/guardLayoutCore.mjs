@@ -665,6 +665,55 @@ export function evaluateRowTagLegibility(tags, minShare = TAG_MIN_ROW_SHARE) {
   return violations;
 }
 
+/** Plan 39.1-45: sub-pixel slack a ledger row's scroll width and descendant edges may exceed their box by. */
+export const LEDGER_ROW_OVERFLOW_TOLERANCE_PX = 1;
+
+/**
+ * Plan 39.1-45 (sketch 003 C ledger rows, UI-SPEC §6.5): every By-opponent
+ * row must hold its content and carry its per-set strip. Each `row` is
+ * `{ selectorPath, scrollWidth, clientWidth, rowRight, descendantMaxRight,
+ * tickCount, tagWidth, rowContentWidth }`. Every offender is returned:
+ * - `ledger-rows-unmeasured`: an opted route rendered no row;
+ * - `ledger-row-overflow`: the row scrolls wider than it is, or a descendant's
+ *   right edge lies past the row's right edge (more than 1px each);
+ * - `ledger-strip-missing`: a row with no set tick.
+ */
+export function evaluateLedgerRows(rows) {
+  if (rows.length === 0) {
+    return [{ type: 'ledger-rows-unmeasured' }];
+  }
+  const violations = [];
+  for (const row of rows) {
+    const { selectorPath, scrollWidth, clientWidth, rowRight, descendantMaxRight, tickCount } = row;
+    if (
+      scrollWidth > clientWidth + LEDGER_ROW_OVERFLOW_TOLERANCE_PX ||
+      descendantMaxRight > rowRight + LEDGER_ROW_OVERFLOW_TOLERANCE_PX
+    ) {
+      violations.push({
+        type: 'ledger-row-overflow',
+        selectorPath,
+        scrollWidth,
+        clientWidth,
+        rowRight,
+        descendantMaxRight,
+      });
+    }
+    if (!(tickCount > 0)) {
+      violations.push({ type: 'ledger-strip-missing', selectorPath });
+    }
+  }
+  return violations;
+}
+
+/** Plan 39.1-45: the one LEDGER line per measured surface — the row count and the smallest tag share of a row's content width. */
+export function formatLedgerLine(routeId, viewportName, rows) {
+  const shares = rows
+    .filter((row) => row.rowContentWidth > 0)
+    .map((row) => row.tagWidth / row.rowContentWidth);
+  const min = shares.length > 0 ? Math.min(...shares).toFixed(2) : 'none';
+  return `LEDGER route=${routeId} viewport=${viewportName} rows=${rows.length} minTagShare=${min}`;
+}
+
 /**
  * UI-SPEC §6.4: a nested vertical scroller (an element that scrolls its own
  * content, inside the page's own scroll) is banned below 640px. Each

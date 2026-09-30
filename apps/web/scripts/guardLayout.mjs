@@ -45,6 +45,8 @@ import {
   evaluatePickerAlignment,
   evaluateRowCohesion,
   evaluateRowTagLegibility,
+  evaluateLedgerRows,
+  formatLedgerLine,
   evaluateNestedScrollers,
   evaluateCardHeightCeilings,
   evaluateFormStripFit,
@@ -293,6 +295,8 @@ export const LAYOUT_ORACLE_ROUTES = [
       // unboxed, untitled filter row.
       'section-order',
       'filter-row',
+      // Plan 39.1-45: sketch 003 C's ledger rows hold their content and strip.
+      'ledger-rows',
     ],
     // The rail's MatchupOrPlayer mark is an `insight-card`, not a `card`: count
     // it, or the rail's dead-gap check would read across it.
@@ -338,10 +342,13 @@ export const LAYOUT_ORACLE_ROUTES = [
       // Plan 39.1-44: sketch A's composition, filter row, phone hero ceiling.
       'section-order',
       'filter-row',
+      // Plan 39.1-45: sketch 003 C's ledger rows hold their content and strip.
+      'ledger-rows',
     ],
     sectionOrder: MATCHUPS_SECTION_ORDER,
     filterRow: MATCHUPS_FILTER_ROW,
-    narrowChecks: ['card-height-ceiling'],
+    // Plan 39.1-45: the 11-player pairing's rows keep a readable tag at 390.
+    narrowChecks: ['card-height-ceiling', 'row-tag-legibility'],
     cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
     // Plan 39.1-44 (PD-44-5): the deep pairing's 390 page is NOT yet within the
     // sketch-derived budget — measured 8.79 viewport heights against 7.72 —
@@ -694,6 +701,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantPickerAlignment = checks.includes('picker-alignment');
   const wantRowCohesion = checks.includes('row-cohesion');
   const wantRowTagLegibility = checks.includes('row-tag-legibility');
+  // Plan 39.1-45: the By-opponent ledger rows (sketch 003 C).
+  const wantLedgerRows = checks.includes('ledger-rows');
   const wantNestedScroll = checks.includes('nested-scroll');
   const wantCardHeightCeiling = checks.includes('card-height-ceiling');
   const wantFormStripFit = checks.includes('form-strip-fit');
@@ -1108,6 +1117,45 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         scrollWidth: tagEl.scrollWidth,
         clientWidth: tagEl.clientWidth,
         rowContentWidth,
+      });
+    }
+  }
+
+  // Plan 39.1-45: every By-opponent ledger row — the row slot, else the closest
+  // li of each tag so the shipped (pre-ledger) rows are measured, not skipped.
+  const ledgerRowsFound = [];
+  if (wantLedgerRows) {
+    const rowEls = new Set(document.querySelectorAll('[data-slot="pairing-opponent-row"]'));
+    if (rowEls.size === 0) {
+      for (const tagEl of document.querySelectorAll('[data-slot="pairing-opponent-tag"]')) {
+        const li = tagEl.closest('li');
+        if (li) rowEls.add(li);
+      }
+    }
+    for (const rowEl of rowEls) {
+      const rowRect = rowEl.getBoundingClientRect();
+      let descendantMaxRight = rowRect.right;
+      for (const child of rowEl.getElementsByTagName('*')) {
+        const r = child.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.right > descendantMaxRight) descendantMaxRight = r.right;
+      }
+      const rowStyle = window.getComputedStyle(rowEl);
+      const tagEl = rowEl.querySelector('[data-slot="pairing-opponent-tag"]');
+      ledgerRowsFound.push({
+        selectorPath: describeElement(rowEl),
+        scrollWidth: rowEl.scrollWidth,
+        clientWidth: rowEl.clientWidth,
+        rowRight: rowRect.right,
+        descendantMaxRight,
+        tickCount: rowEl.querySelectorAll(
+          '[data-slot="set-strip-tick-win"], [data-slot="set-strip-tick-loss"]',
+        ).length,
+        tagWidth: tagEl ? tagEl.getBoundingClientRect().width : 0,
+        rowContentWidth:
+          rowEl.clientWidth -
+          (parseFloat(rowStyle.paddingLeft) || 0) -
+          (parseFloat(rowStyle.paddingRight) || 0),
       });
     }
   }
@@ -1922,6 +1970,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     pickers,
     rowCohesionRows,
     rowTags,
+    ledgerRowsFound,
     nestedScrollers,
     nestedScrollPresenceList: nestedScrollPresenceList.length,
     cardHeightCards,
@@ -2383,6 +2432,10 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       violations.push(...evaluateRowTagLegibility(measurements.rowTags));
       violations.push(...evaluateFamilyPresence('row-tag-legibility', measurements.rowTags));
     }
+    // Plan 39.1-45: the evaluator carries its own -unmeasured path.
+    if (checks.includes('ledger-rows')) {
+      violations.push(...evaluateLedgerRows(measurements.ledgerRowsFound));
+    }
     if (checks.includes('nested-scroll')) {
       violations.push(...evaluateNestedScrollers(measurements.nestedScrollers));
       violations.push(
@@ -2566,6 +2619,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       lastRows,
       cardHeightCards: measurements.cardHeightCards,
       sectionOrderFound: checks.includes('section-order') ? measurements.sectionOrderFound : null,
+      ledgerRows: checks.includes('ledger-rows') ? measurements.ledgerRowsFound : null,
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
@@ -2899,6 +2953,10 @@ async function main() {
               console.log(
                 formatSectionOrderLine(route.id, viewport.name, result.sectionOrderFound),
               );
+            }
+            // Plan 39.1-45: one LEDGER line per opted-in surface.
+            if (result.ledgerRows) {
+              console.log(formatLedgerLine(route.id, viewport.name, result.ledgerRows));
             }
             // Plan 39.1-42: one FORM_STRIP line per measured strip root.
             for (const strip of result.formStripLabelStrips ?? []) {
