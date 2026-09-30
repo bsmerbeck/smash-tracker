@@ -608,6 +608,29 @@ describe('CounterpickAdvisor', () => {
       expect((ticks[0] as HTMLElement).style.left).toBe('60%');
     });
 
+    it('segmented-set-state: Pick / Ban rows are text-only like the sketch and the Stage breakdown (PD-46-3) — no stage thumbnail, the name truncates with a full-name tooltip', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+        ...matchesOnStage(SMALL_BATTLEFIELD, 0, 5),
+      ];
+      const { container } = renderAdvisor(matches);
+      const lists = container.querySelectorAll('[data-slot="comparison-bars-series"]');
+      expect(lists).toHaveLength(2);
+      for (const list of lists) {
+        expect(list.querySelectorAll('img')).toHaveLength(0);
+      }
+      const labels = container.querySelectorAll('[data-slot="comparison-bar-label"]');
+      expect(Array.from(labels).map((label) => label.textContent)).toEqual([
+        'Battlefield',
+        'Town and City',
+        'Smashville',
+        'Small Battlefield',
+      ]);
+      expect((labels[3] as HTMLElement).title).toBe('Small Battlefield');
+    });
+
     it('a counterpick stage with a fully qualifying record is absent at game one and present from game two', async () => {
       const user = userEvent.setup();
       const matches = [
