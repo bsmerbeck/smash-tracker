@@ -6,13 +6,13 @@ import {
   WATCHLIST_ITEM_KINDS,
   WATCHLIST_MAX_ITEMS,
   buildWatchlistItemKey,
-  trackedItemScope,
   watchlistItemKeySchema,
   watchlistItemStoredSchema,
   watchlistResponseSchema,
   watchlistTrackInputSchema,
   watchlistTrackResponseSchema,
 } from './watchlist.js';
+import { trackedItemScope } from './watchlistScope.js';
 
 const RTDB_ILLEGAL = ['.', '#', '$', '[', ']', '/'];
 

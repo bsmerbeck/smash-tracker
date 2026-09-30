@@ -5,12 +5,8 @@ import { classify, type ClassifyResult } from './insight/ladder.js';
 import { scoreInsight } from './insight/salience.js';
 import { formNowTemplate } from './insight/templates/formNow.js';
 import type { HorizonKey, RateValue } from './insight/types.js';
-import {
-  WATCHLIST_MAX_ITEMS,
-  trackedItemScope,
-  watchlistItemKeySchema,
-  type WatchlistItem,
-} from './watchlist.js';
+import { WATCHLIST_MAX_ITEMS, watchlistItemKeySchema, type WatchlistItem } from './watchlist.js';
+import { trackedItemScope } from './watchlistScope.js';
 
 /**
  * Phase 39.2 (D-05, D-06, T-03): the since-last-visit digest's pure core — the
