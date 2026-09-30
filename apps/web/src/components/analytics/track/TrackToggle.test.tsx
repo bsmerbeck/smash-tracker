@@ -43,9 +43,19 @@ let serverItems: StoredItem[] = [];
 let putResponse: () => Response = () => jsonResponse({}, 500);
 let getResponse: () => Response | Promise<Response> = () => jsonResponse({ items: serverItems });
 
+/** The subject's alias map and games, served for the identity hop (39.2-REVIEW WEB-WR-04). */
+let aliasMap: Record<string, string> = {};
+let serverMatches: unknown[] = [];
+
 function installServer() {
   fetchMock.mockImplementation((url: string, init: RequestInit) => {
     const method = String(init.method);
+    if (method === 'GET' && String(url).includes('/api/opponents/aliases')) {
+      return Promise.resolve(jsonResponse(aliasMap));
+    }
+    if (method === 'GET' && String(url).includes('/api/matches')) {
+      return Promise.resolve(jsonResponse(serverMatches));
+    }
     if (method === 'GET') {
       return Promise.resolve(getResponse());
     }
@@ -92,6 +102,8 @@ describe('TrackToggle', () => {
     vi.clearAllMocks();
     vi.stubGlobal('fetch', fetchMock);
     serverItems = [];
+    aliasMap = {};
+    serverMatches = [];
     putResponse = () => jsonResponse({}, 500);
     getResponse = () => jsonResponse({ items: serverItems });
     installServer();
@@ -284,5 +296,50 @@ describe('TrackToggle', () => {
     renderToggle({ ...props, name: 'x' });
     await waitFor(() => expect(requests('GET')).toHaveLength(1));
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  describe('an alias-merged identity (39.2-REVIEW WEB-WR-04)', () => {
+    it('reads Tracked for the resolved identity when the item was stored under a since-merged tag', async () => {
+      aliasMap = { leo: 'mkleo' };
+      serverItems = [
+        { itemKey: 'opponent:leo', item: { kind: 'opponent', ref: 'leo', createdAt: 1 } },
+      ];
+      renderToggle(MKLEO);
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking MkLeo' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('untracking from the hub deletes every stored key of the identity, so no Dashboard row survives', async () => {
+      aliasMap = { leo: 'mkleo' };
+      serverItems = [
+        { itemKey: 'opponent:leo', item: { kind: 'opponent', ref: 'leo', createdAt: 1 } },
+        { itemKey: 'opponent:mkleo', item: { kind: 'opponent', ref: 'mkleo', createdAt: 2 } },
+      ];
+      const user = userEvent.setup();
+      renderToggle(MKLEO);
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking MkLeo' });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
+      await waitFor(() => expect(requests('DELETE')).toHaveLength(2));
+      const deleted = requests('DELETE')
+        .map((request) => decodeURIComponent(request.url.split('/api/watchlist/items/')[1] ?? ''))
+        .sort();
+      expect(deleted).toEqual(['opponent:leo', 'opponent:mkleo']);
+      expect(requests('PUT')).toHaveLength(0);
+    });
+
+    it('never spends a second slot: pressing after a merge sends no PUT', async () => {
+      aliasMap = { leo: 'mkleo' };
+      serverItems = [
+        { itemKey: 'opponent:leo', item: { kind: 'opponent', ref: 'leo', createdAt: 1 } },
+      ];
+      const user = userEvent.setup();
+      renderToggle(MKLEO);
+      const toggle = await screen.findByRole('button', { name: /MkLeo/ });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
+      await waitFor(() => expect(requests('DELETE').length + requests('PUT').length).toBe(1));
+      expect(requests('PUT')).toHaveLength(0);
+    });
   });
 });
