@@ -14,7 +14,11 @@ import {
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStage } from './stageMap.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
-import { carriedOverrides, withoutOverrides } from '../services/tournamentOverrides.js';
+import {
+  carriedOverrides,
+  withoutOverrides,
+  type UserOwnedOverrideMember,
+} from '../services/tournamentOverrides.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
@@ -318,9 +322,15 @@ export function accumulateRegistry(
  *   "View bracket on start.gg" link would break until the event re-entered
  *   the top N. A value fetched this run wins.
  * - User-authored overrides (39.2 F1 `tierOverride`, 37-04 `rulesetOverride`):
- *   carried from `stored` only, so any override on `rebuilt` is ignored.
+ *   carried from `stored` only, so any override on `rebuilt` is ignored. A
+ *   corrupt stored override is not copied forward (API-WR-02 policy, see
+ *   `services/tournamentOverrides.ts`); `onDroppedOverride` reports it.
  */
-function rebuildOverStoredEntry(rebuilt: TournamentEntry, stored: unknown): TournamentEntry {
+function rebuildOverStoredEntry(
+  rebuilt: TournamentEntry,
+  stored: unknown,
+  onDroppedOverride: (member: UserOwnedOverrideMember) => void,
+): TournamentEntry {
   const existing: Partial<TournamentEntry> =
     stored !== null && typeof stored === 'object' && !Array.isArray(stored)
       ? (stored as Partial<TournamentEntry>)
@@ -335,7 +345,7 @@ function rebuildOverStoredEntry(rebuilt: TournamentEntry, stored: unknown): Tour
     existing.topStandings.length > 0
       ? { topStandings: existing.topStandings }
       : {}),
-    ...carriedOverrides(stored),
+    ...carriedOverrides(stored, onDroppedOverride),
   };
 }
 
@@ -466,11 +476,22 @@ export async function importPlayerMatches(
     // the bare rebuilt row, which only commits when the node is truly absent;
     // otherwise the SDK re-runs the merge with the real stored value.
     await Promise.all(
-      Object.entries(registryUpdates).map(([eventKey, rebuilt]) =>
-        database
+      Object.entries(registryUpdates).map(async ([eventKey, rebuilt]) => {
+        let dropped: UserOwnedOverrideMember[] = [];
+        await database
           .ref(`tournamentEntries/${uid}/${eventKey}`)
-          .transaction((current: unknown) => rebuildOverStoredEntry(rebuilt, current)),
-      ),
+          .transaction((current: unknown) => {
+            // Reset per run: only the run that commits decides what was dropped.
+            dropped = [];
+            return rebuildOverStoredEntry(rebuilt, current, (member) => dropped.push(member));
+          });
+        for (const member of dropped) {
+          logger?.warn(
+            { eventId: eventKey, member },
+            'start.gg sync: dropped a schema-invalid stored override (not copied forward)',
+          );
+        }
+      }),
     );
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());

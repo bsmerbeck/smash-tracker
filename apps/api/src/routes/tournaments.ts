@@ -22,6 +22,7 @@ import {
 } from '@smash-tracker/shared';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
 import { NotFoundError } from '../services/rtdb.js';
+import { withoutUnreadableOverrides } from '../services/tournamentOverrides.js';
 
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f\u007f]/g;
@@ -106,10 +107,19 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
             entry !== null &&
             typeof entry === 'object' &&
             (entry as Record<string, unknown>).origin === TOURNAMENT_REGISTRY_ORIGIN;
+          // 39.2 code review API-WR-02: an override member this build cannot
+          // read is treated as absent instead of failing the whole row, so
+          // the event stays listed and its page can replace or clear it.
+          const { row, omitted } = withoutUnreadableOverrides(entry);
+          for (const { member, status } of omitted) {
+            request.log.warn(
+              `tournaments: ignoring an unreadable ${member} on entry ${childKey} (${status})`,
+            );
+          }
           const parsed = (
             isRegistryRow ? tournamentRegistryRowSchema : tournamentEntrySchema
           ).safeParse({
-            ...(entry as object),
+            ...(row as object),
             entryKey: childKey,
           });
           if (!parsed.success) {

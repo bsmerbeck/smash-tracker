@@ -7,7 +7,11 @@ import {
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
 import { isPathSafeTenantId } from '../subjectKind.js';
-import { carriedOverrides, withoutOverrides } from '../../services/tournamentOverrides.js';
+import {
+  carriedOverrides,
+  withoutOverrides,
+  withoutUnreadableOverrides,
+} from '../../services/tournamentOverrides.js';
 import { recordsDeepEqual } from '../migration/manifest.js';
 import { deriveTournamentRegistryFromResearchSource } from './derive.js';
 import { withRegistryDeadline, type RegistryDeadlineOptions } from './deadline.js';
@@ -139,7 +143,10 @@ export interface TournamentRegistryPlan {
 function readOwnedImportedAtMs(value: unknown): number | null {
   // Only called for values that already passed `isTournamentRegistryOwnedRow`;
   // the schema parse still guards against a structurally-owned but corrupt row.
-  const parsed = tournamentRegistryRowSchema.safeParse(value);
+  // The user-owned override members are left out of the parse (API-WR-02): an
+  // override this build cannot read must not cost the row its first-import
+  // stamp, or every refresh would re-stamp it and the row would never settle.
+  const parsed = tournamentRegistryRowSchema.safeParse(withoutUnreadableOverrides(value).row);
   return parsed.success ? parsed.data.provenance.importedAtMs : null;
 }
 
