@@ -1006,7 +1006,9 @@ describe('MatchupsPage', () => {
         const table = within(gamesCard).getByRole('table');
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
       });
-      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+      expect(
+        within(gamesCard).getByText(new RegExp(`^${expectedCount} games? ·`)),
+      ).toBeInTheDocument();
     });
   });
 
