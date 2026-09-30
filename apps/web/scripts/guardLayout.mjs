@@ -75,6 +75,8 @@ import {
   PERIOD_TREND_TICK_GAP_PX,
   evaluateFormStripLabels,
   formatFormStripLine,
+  evaluateSectionOrder,
+  formatSectionOrderLine,
   terminusBudgetExcessPx,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
@@ -86,7 +88,7 @@ import {
   TABLE_CLIP_SCAN_SELECTOR,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
-  WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
+  PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
   LAYOUT_ORACLE_VIEWPORTS,
   EXTRA_ORACLE_VIEWPORTS,
   NARROW_VIEWPORT_MAX_WIDTH_PX,
@@ -127,6 +129,40 @@ function periodTrendAxisExpectFor(domain) {
     strayHairlines: 0,
   };
 }
+
+/**
+ * Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1): the Matchups sections in the
+ * DOM order every width keeps — the hero, then By opponent, the four rail
+ * cards, the matrix, the results. `matchup-or-player` is optional (the engine
+ * may hide it); every other slot is required, so a page drifting away from its
+ * slots is `section-order-unmeasured`, never a silent pass.
+ */
+const MATCHUPS_SECTION_ORDER = {
+  slots: [
+    { slot: 'pairing-hero' },
+    { slot: 'pairing-opponents' },
+    { slot: 'matchup-insights' },
+    { slot: 'matchup-or-player', optional: true },
+    { slot: 'counterpick-advisor' },
+    { slot: 'stage-breakdown' },
+    { slot: 'matchup-matrix' },
+    { slot: 'matchup-results' },
+  ],
+};
+
+/**
+ * Plan 39.1-44 (PD-44-4): Matchups' filter row carries no title (the pairing
+ * hero's heading is the page h1), so its owner is the HorizonSwitch alone.
+ */
+const MATCHUPS_FILTER_ROW = { maxHeightPx: 72, owns: ['[data-slot="horizon-switch"]'] };
+
+/** Plan 39.1-44: the pairing hero is the phone card-height ceiling's card (PD-44-5). */
+const PAIRING_HERO_CARD_CEILINGS = [
+  {
+    marker: '[data-slot="pairing-hero"]',
+    maxViewportHeights: PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
+  },
+];
 
 export const LAYOUT_ORACLE_ROUTES = [
   {
@@ -244,26 +280,26 @@ export const LAYOUT_ORACLE_ROUTES = [
       // Plan 39.1-51 (OOS-8): the results list's last row is whole, inside no
       // vertical scroller.
       'last-row-visible',
+      // Plan 39.1-44 (PD-44-1 / PD-44-4): sketch A's composition and its
+      // unboxed, untitled filter row.
+      'section-order',
+      'filter-row',
     ],
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
     extraViewports: ['1024x768', '1280x800'],
     // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
     // wide (UI-SPEC §6.6 "below 640") — every other route's `narrowChecks` is
     // `undefined`, so `measureRouteAtViewport` requests none for them.
-    // Plan 39.1-33 adds card-height-ceiling (the Win Rate Trend card, a
-    // phone-only ceiling).
+    // Plan 39.1-33 adds card-height-ceiling, a phone-only ceiling (plan
+    // 39.1-44 moves it from the Win Rate Trend card to the pairing hero).
     narrowChecks: ['row-tag-legibility', 'nested-scroll', 'card-height-ceiling'],
     // Plan 39.1-33: Matchups' own phone scroll budget, merged over
     // DEFAULT_SCROLL_BUDGETS — see evaluateScrollBudget's doc comment.
     scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
-    // Plan 39.1-33: the Win Rate Trend ChartCard is the closest
-    // [data-slot="card"] ancestor of the route's own loaded marker — no new
-    // hook needed.
-    cardHeightCeilings: [
-      {
-        marker: '[data-slot="matchup-chart-body"]',
-        maxViewportHeights: WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
-      },
-    ],
+    // Plan 39.1-44 (PD-44-5): the pairing hero's card, from sketch A's
+    // measured hero height.
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
   },
   {
     // Plan 39.1-41 (sketch 003 tracer, PD-41-1): the Matchups page on sketch
@@ -287,7 +323,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       'axis-ticks',
       // Plan 39.1-43b: the trend's axis against sketch 003 A's CSS.
       'period-trend-axis',
+      // Plan 39.1-44: sketch A's composition, filter row, phone hero ceiling.
+      'section-order',
+      'filter-row',
     ],
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
+    narrowChecks: ['card-height-ceiling'],
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
+    scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
     // Plan 39.1-43b: sketch 003 A deep draws 20 / 40 / 60 / 80 / 100.
     periodTrendAxisExpect: periodTrendAxisExpectFor([20, 100]),
     periodTrendExpect: {
@@ -313,7 +357,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       'form-strip-labels',
       'brand-red-text',
       'content-overflow',
+      // Plan 39.1-44: sketch A's composition, filter row, phone hero ceiling.
+      'section-order',
+      'filter-row',
     ],
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
+    narrowChecks: ['card-height-ceiling'],
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
+    scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
     periodTrendExpect: { state: 'locked' },
   },
   {
@@ -649,6 +701,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantPeriodTrendAxis = checks.includes('period-trend-axis');
   // Plan 39.1-42: the strip's labelled events (sketch 003 `formStrip`).
   const wantFormStripLabels = checks.includes('form-strip-labels');
+  // Plan 39.1-44: the Matchups sections' DOM order and geometry.
+  const wantSectionOrder = checks.includes('section-order');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1253,6 +1307,19 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-44: each declared section's DOM index (among every slotted
+  // element) and rect; an unresolved slot is simply absent (the evaluator
+  // reports a required one as unmeasured).
+  const sectionOrderFound = [];
+  if (wantSectionOrder) {
+    const slotted = Array.from(document.querySelectorAll('[data-slot]'));
+    for (const { slot } of (familyConfig.sectionOrder && familyConfig.sectionOrder.slots) || []) {
+      const el = document.querySelector(`[data-slot="${slot}"]`);
+      if (!el) continue;
+      sectionOrderFound.push({ slot, domIndex: slotted.indexOf(el), rect: plainRect(el) });
+    }
+  }
+
   const statRows = [];
   if (wantStatRowColumns) {
     for (const rowEl of document.querySelectorAll('[data-slot="stat-row"]')) {
@@ -1802,6 +1869,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   }
 
   return {
+    sectionOrderFound,
     periodTrends,
     terminusFlowsPx,
     terminusLists,
@@ -2210,6 +2278,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     // Plan 39.1-38: the page-frame families' per-route declarations.
     const familyConfig = {
       filterRow: route.filterRow ?? null,
+      sectionOrder: route.sectionOrder ?? null,
       placement: route.placement ?? [],
       orderPairs: route.orderPairs ?? [],
       clipTargets: route.clipTargets ?? [],
@@ -2344,6 +2413,16 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
         }),
       );
     }
+    // Plan 39.1-44: section-order (its required-slot check is inside the evaluator).
+    if (checks.includes('section-order')) {
+      violations.push(
+        ...evaluateSectionOrder({
+          viewportWidth: viewport.width,
+          expected: route.sectionOrder?.slots ?? [],
+          found: measurements.sectionOrderFound,
+        }),
+      );
+    }
     if (checks.includes('stat-row-columns')) {
       violations.push(...evaluateStatRowColumns(measurements.statRows));
     }
@@ -2452,6 +2531,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       terminusBudget,
       lastRows,
       cardHeightCards: measurements.cardHeightCards,
+      sectionOrderFound: checks.includes('section-order') ? measurements.sectionOrderFound : null,
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
@@ -2772,6 +2852,12 @@ async function main() {
             // Plan 39.1-43b: one PERIOD_TREND_AXIS line per drawn period trend.
             for (const surface of result.periodTrendAxes ?? []) {
               console.log(formatPeriodTrendAxisLine(route.id, viewport.name, surface));
+            }
+            // Plan 39.1-44: one SECTION_ORDER line per opted-in surface.
+            if (result.sectionOrderFound) {
+              console.log(
+                formatSectionOrderLine(route.id, viewport.name, result.sectionOrderFound),
+              );
             }
             // Plan 39.1-42: one FORM_STRIP line per measured strip root.
             for (const strip of result.formStripLabelStrips ?? []) {

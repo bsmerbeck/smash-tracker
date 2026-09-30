@@ -673,25 +673,31 @@ export function evaluateNestedScrollers(scrollers) {
 // ---------------------------------------------------------------------------
 
 /**
- * Plan 39.1-33: a Matchups regression tripwire, not a design target —
- * UI-SPEC §6.3's own budgets and every other route are unchanged. Derived
- * from the measured projection of a single-row form strip + a 20-row phone
- * results page (7.127 viewport heights, ~6015px) plus ~0.37 (~315px, ~3.5
- * rows) of headroom: 5.611 at 9abcac76 and 6.063 after plan 31 both had the
- * list confined to the (now-banned) 500px nested scroller; 13.793 at
- * 494216ed with neither fix; 7.767 with only the form strip fixed; 13.153
- * with only the results list bounded. 7.5 sits below every single-regression
- * state and below a stacked cap drifting past ~23 rows.
+ * Plan 39.1-44 (PD-44-5): the Matchups phone scroll budget, re-derived from the
+ * APPROVED SKETCH's measured page height (design-audit/matchups-fidelity/
+ * after-39.1-43/metrics.json, sketch 003 A at 390x844): thin 4405px / 844 =
+ * 5.219 viewport heights, deep 6176px / 844 = 7.318. The budget is the larger
+ * page ratio + 0.4 (~340px of headroom, ~3 stacked result rows) = 7.718,
+ * rounded up to 7.72 (and never below 7.5 — plan 39.1-33's floor). Plan
+ * 39.1-33's first derivation (7.5: a single-row strip + a 20-row phone results
+ * page, 7.127 heights measured on the old composition, with 0.37 headroom)
+ * is superseded — the composition it measured is gone. The
+ * plan 39.1-33 regression states (13.793 with neither fix, 7.767 with only the
+ * form strip fixed, 13.153 with only the results list bounded) all still
+ * exceed 7.72.
  */
-export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.5;
+export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.72;
 
 /**
- * Plan 39.1-33: one phone screen — a card taller than the viewport can never
- * be seen whole. 1204px (1.427 viewport heights) on 494216ed fails by 360px;
- * the projected single-row-strip card (~664px, ~0.787) passes with ~180px
- * headroom.
+ * Plan 39.1-44 (PD-44-5): one phone screen cannot hold the pairing hero, but
+ * its card height is bounded by the approved design: the sketch's hero region
+ * at 390x844 is 1022px thin / 1219px deep (after-39.1-43 metrics.json), i.e.
+ * 1.211 / 1.444 viewport heights; the ceiling is the taller (deep) x 1.10 =
+ * 1.588, rounded up to 1.59 (~1342px). It replaces plan 39.1-33's Win Rate
+ * Trend card ceiling (1.0), whose card no longer exists (the trend lives in
+ * the hero).
  */
-export const WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS = 1;
+export const PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS = 1.59;
 
 /** Plan 39.1-33: the FormStrip row's own set-top spread tolerance, px. */
 export const FORM_STRIP_ROW_TOP_TOLERANCE_PX = 2;
@@ -724,6 +730,139 @@ export function evaluateCardHeightCeilings({ innerHeight, cards }) {
     }
   }
   return violations;
+}
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-44: the section-order family — sketch 003 A's composition (hero +
+// By opponent beside the rail at 1280+, the matrix below the whole pairing,
+// results last, one reading order at every width).
+// ---------------------------------------------------------------------------
+
+/** Plan 39.1-44: rect comparisons tolerate this many px of sub-pixel rounding. */
+export const SECTION_ORDER_TOLERANCE_PX = 1;
+/** Plan 39.1-44: the rail sits beside the hero from this viewport width up (UI-SPEC 6.6). */
+export const SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX = 1280;
+/** Plan 39.1-44: the first rail section's top may differ from the hero's by at most this many px. */
+export const SECTION_ORDER_RAIL_TOP_TOLERANCE_PX = 2;
+
+/** The pairing sections the matrix must sit below (declared DOM order, hero first). */
+const SECTION_ORDER_PAIRING_SLOTS = [
+  'pairing-hero',
+  'pairing-opponents',
+  'matchup-insights',
+  'matchup-or-player',
+  'counterpick-advisor',
+  'stage-breakdown',
+];
+/** The rail's sections, in rail order. */
+const SECTION_ORDER_RAIL_SLOTS = [
+  'matchup-insights',
+  'matchup-or-player',
+  'counterpick-advisor',
+  'stage-breakdown',
+];
+
+/**
+ * Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1): the declared sections, in the
+ * DOM order every width must keep. Input:
+ * `{ viewportWidth, expected: [{ slot, optional? }], found: [{ slot, domIndex,
+ * rect: { left, right, top, bottom } }] }`, `found` holding only the slots
+ * that resolved. A required slot that is absent is `section-order-unmeasured`
+ * (never a silent pass — the page drifting away from its slots must fail);
+ * an absent optional slot is skipped.
+ *
+ * - `section-order-dom`: the found slots' DOM order differs from `expected`.
+ * - `section-order-matrix-above`: the matrix's top is above the bottom of any
+ *   pairing section.
+ * - From 1280px: `section-order-rail-not-beside` — a rail section's left edge
+ *   is left of the hero's right edge, or the first rail section's top differs
+ *   from the hero's by more than 2px.
+ * - At 639px and narrower: `section-order-stacked` — a section's top is above
+ *   the previous section's bottom (minus 1px).
+ */
+export function evaluateSectionOrder({ viewportWidth, expected, found }) {
+  const violations = [];
+  const bySlot = new Map(found.map((item) => [item.slot, item]));
+  for (const { slot, optional } of expected) {
+    if (!bySlot.has(slot) && !optional) {
+      violations.push({ type: 'section-order-unmeasured', slot });
+    }
+  }
+  const present = expected.filter(({ slot }) => bySlot.has(slot)).map(({ slot }) => slot);
+
+  const domOrder = [...present].sort((a, b) => bySlot.get(a).domIndex - bySlot.get(b).domIndex);
+  if (domOrder.some((slot, i) => slot !== present[i])) {
+    violations.push({ type: 'section-order-dom', expected: present, actual: domOrder });
+  }
+
+  const matrix = bySlot.get('matchup-matrix');
+  if (matrix) {
+    for (const slot of SECTION_ORDER_PAIRING_SLOTS) {
+      const section = bySlot.get(slot);
+      if (section && matrix.rect.top < section.rect.bottom - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-matrix-above',
+          slot,
+          matrixTop: matrix.rect.top,
+          sectionBottom: section.rect.bottom,
+        });
+      }
+    }
+  }
+
+  const hero = bySlot.get('pairing-hero');
+  if (hero && viewportWidth >= SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX) {
+    const railSections = SECTION_ORDER_RAIL_SLOTS.filter((slot) => bySlot.has(slot));
+    for (const slot of railSections) {
+      const section = bySlot.get(slot);
+      if (section.rect.left < hero.rect.right - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-rail-not-beside',
+          slot,
+          left: section.rect.left,
+          heroRight: hero.rect.right,
+        });
+      }
+    }
+    const firstRail = railSections[0] ? bySlot.get(railSections[0]) : null;
+    if (
+      firstRail &&
+      Math.abs(firstRail.rect.top - hero.rect.top) > SECTION_ORDER_RAIL_TOP_TOLERANCE_PX
+    ) {
+      violations.push({
+        type: 'section-order-rail-not-beside',
+        slot: railSections[0],
+        top: firstRail.rect.top,
+        heroTop: hero.rect.top,
+      });
+    }
+  }
+
+  if (viewportWidth <= NARROW_VIEWPORT_MAX_WIDTH_PX) {
+    for (let i = 1; i < present.length; i++) {
+      const previous = bySlot.get(present[i - 1]);
+      const current = bySlot.get(present[i]);
+      if (current.rect.top < previous.rect.bottom - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-stacked',
+          slot: present[i],
+          previous: present[i - 1],
+          top: current.rect.top,
+          previousBottom: previous.rect.bottom,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/** Plan 39.1-44: the one SECTION_ORDER line per measured surface — the found slots in DOM order. */
+export function formatSectionOrderLine(routeId, viewportName, found) {
+  const order = [...found]
+    .sort((a, b) => a.domIndex - b.domIndex)
+    .map((item) => item.slot)
+    .join('>');
+  return `SECTION_ORDER route=${routeId} viewport=${viewportName} order=${order}`;
 }
 
 /**

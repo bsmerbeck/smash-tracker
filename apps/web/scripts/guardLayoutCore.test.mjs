@@ -25,7 +25,12 @@ import {
   TAG_MIN_ROW_SHARE,
   NARROW_VIEWPORT_MAX_WIDTH_PX,
   MATCHUPS_SCROLL_BUDGET_390X844,
-  WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
+  PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
+  SECTION_ORDER_TOLERANCE_PX,
+  SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX,
+  SECTION_ORDER_RAIL_TOP_TOLERANCE_PX,
+  evaluateSectionOrder,
+  formatSectionOrderLine,
   FORM_STRIP_ROW_TOP_TOLERANCE_PX,
   evaluateStretch,
   evaluateScrollBudget,
@@ -132,7 +137,11 @@ test('DEFAULT_SCROLL_BUDGETS is exactly the pre-39.1-33 map', () => {
   assert.deepEqual(DEFAULT_SCROLL_BUDGETS, { '2560x1440': 3, '1440x900': 5 });
 });
 
-test('scroll-budget: a merged 390x844 budget of 7.5, scrollHeight 11641 / innerHeight 844 -> one violation with budget 7.5', () => {
+// REWRITTEN by plan 39.1-44 (PD-44-5): the 390x844 budget is re-derived from the
+// approved sketch (7.5 -> 7.72, see the constant's doc comment), so the three
+// boundary cases below moved from 6330 / 6331 to 6515 / 6516 (7.719 / 7.720
+// viewport heights) and the failing case names the new budget.
+test('scroll-budget: a merged 390x844 budget of 7.72, scrollHeight 11641 / innerHeight 844 -> one violation with budget 7.72', () => {
   const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
   const violations = evaluateScrollBudget(
     { scrollHeight: 11641, innerHeight: 844, viewportName: '390x844' },
@@ -140,7 +149,7 @@ test('scroll-budget: a merged 390x844 budget of 7.5, scrollHeight 11641 / innerH
   );
   assert.equal(violations.length, 1);
   assert.equal(violations[0].type, 'scroll-budget');
-  assert.equal(violations[0].budget, 7.5);
+  assert.equal(violations[0].budget, 7.72);
 });
 
 test('scroll-budget: 6015 / 844 at the merged 390x844 budget passes', () => {
@@ -152,19 +161,19 @@ test('scroll-budget: 6015 / 844 at the merged 390x844 budget passes', () => {
   assert.equal(violations.length, 0);
 });
 
-test('scroll-budget: exactly 7.5 viewport heights (6330 / 844) at the merged 390x844 budget passes', () => {
+test('scroll-budget: just under 7.72 viewport heights (6515 / 844) at the merged 390x844 budget passes', () => {
   const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
   const violations = evaluateScrollBudget(
-    { scrollHeight: 6330, innerHeight: 844, viewportName: '390x844' },
+    { scrollHeight: 6515, innerHeight: 844, viewportName: '390x844' },
     budgets,
   );
   assert.equal(violations.length, 0);
 });
 
-test('scroll-budget: 6331 / 844 (0.01 over 7.5) at the merged 390x844 budget fails', () => {
+test('scroll-budget: 6516 / 844 (just over 7.72) at the merged 390x844 budget fails', () => {
   const budgets = { ...DEFAULT_SCROLL_BUDGETS, '390x844': MATCHUPS_SCROLL_BUDGET_390X844 };
   const violations = evaluateScrollBudget(
-    { scrollHeight: 6331, innerHeight: 844, viewportName: '390x844' },
+    { scrollHeight: 6516, innerHeight: 844, viewportName: '390x844' },
     budgets,
   );
   assert.equal(violations.length, 1);
@@ -970,10 +979,22 @@ test('evaluateFamilyPresence: a one-scroller nested-scroll list passes', () => {
 // (form-strip-fit) + their family-presence non-vacuity cases.
 // ---------------------------------------------------------------------------
 
-test('the plan 39.1-33 family constants are exactly the documented values', () => {
-  assert.equal(MATCHUPS_SCROLL_BUDGET_390X844, 7.5);
-  assert.equal(WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS, 1);
+// REWRITTEN by plan 39.1-44 (PD-44-5): the budget and the card ceiling are
+// derived from the APPROVED sketch's measured 390x844 heights, never guessed.
+// Inputs (after-39.1-43 metrics.json, sketch side): page 4405px thin / 6176px
+// deep, hero region 1022px thin / 1219px deep, innerHeight 844.
+test('the plan 39.1-33 / 39.1-44 family constants are exactly the documented values', () => {
+  assert.equal(MATCHUPS_SCROLL_BUDGET_390X844, 7.72);
+  assert.equal(PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS, 1.59);
   assert.equal(FORM_STRIP_ROW_TOP_TOLERANCE_PX, 2);
+});
+
+test('section-order: the 390 budget is the sketch page ratio + 0.4 (never below 7.5) and the hero ceiling is the sketch hero x 1.10', () => {
+  const pageRatios = [4405 / 844, 6176 / 844];
+  const derivedBudget = Math.max(7.5, Math.ceil((Math.max(...pageRatios) + 0.4) * 100) / 100);
+  assert.equal(derivedBudget, MATCHUPS_SCROLL_BUDGET_390X844);
+  const derivedCeiling = Math.ceil((Math.max(1022, 1219) / 844) * 1.1 * 100) / 100;
+  assert.equal(derivedCeiling, PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS);
 });
 
 // --- card-height-ceiling ---
@@ -3629,5 +3650,245 @@ test('period-trend-axis: the PERIOD_TREND_AXIS line prints every measured value'
   assert.equal(
     fn('matchups-sketch-deep', '1440x900', sketchAxisSurface()),
     'PERIOD_TREND_AXIS route=matchups-sketch-deep viewport=1440x900 state=drawn step=20 ticks=20,40,60,80,100 count=5 tickFont=10 tickColor=muted-foreground xFont=10 xColor=muted-foreground valueFont=10 valueWeight=600 valueColor=foreground refFont=10 gutter=26.0 tickGap=6.0 vgrid=0 axisLines=0 strayHairlines=0',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-44: the section-order family (sketch 003 A composition, PD-44-1).
+// ---------------------------------------------------------------------------
+
+const SECTION_SLOTS = [
+  { slot: 'pairing-hero' },
+  { slot: 'pairing-opponents' },
+  { slot: 'matchup-insights' },
+  { slot: 'matchup-or-player', optional: true },
+  { slot: 'counterpick-advisor' },
+  { slot: 'stage-breakdown' },
+  { slot: 'matchup-matrix' },
+  { slot: 'matchup-results' },
+];
+
+function rectOf(left, top, width, height) {
+  return { left, right: left + width, top, bottom: top + height };
+}
+
+/** Sketch A deep at 1440 (after-39.1-43 metrics.json): hero + By opponent left, the four rail cards right, matrix, results. */
+function sketchAFound1440() {
+  return [
+    { slot: 'pairing-hero', domIndex: 0, rect: rectOf(80, 148, 885, 817) },
+    { slot: 'pairing-opponents', domIndex: 1, rect: rectOf(80, 981, 885, 194) },
+    { slot: 'matchup-insights', domIndex: 2, rect: rectOf(981, 148, 435, 246) },
+    { slot: 'matchup-or-player', domIndex: 3, rect: rectOf(981, 410, 435, 302) },
+    { slot: 'counterpick-advisor', domIndex: 4, rect: rectOf(981, 728, 435, 354) },
+    { slot: 'stage-breakdown', domIndex: 5, rect: rectOf(981, 1098, 435, 401) },
+    { slot: 'matchup-matrix', domIndex: 6, rect: rectOf(80, 1523, 1336, 210) },
+    { slot: 'matchup-results', domIndex: 7, rect: rectOf(80, 1757, 1336, 617) },
+  ];
+}
+
+/** The same sections stacked on a phone: one column, 16px gaps. */
+function stackedFound390() {
+  let top = 100;
+  return SECTION_SLOTS.map(({ slot }, domIndex) => {
+    const rect = rectOf(16, top, 358, 400);
+    top += 416;
+    return { slot, domIndex, rect };
+  });
+}
+
+function sectionTypes(violations) {
+  return violations.map((v) => v.type);
+}
+
+test('section-order: sketch A geometry passes at 1440 (hero beside the rail, matrix below, results last)', () => {
+  const violations = evaluateSectionOrder({
+    viewportWidth: 1440,
+    expected: SECTION_SLOTS,
+    found: sketchAFound1440(),
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('section-order: sketch A geometry passes at 390 (every section stacked in reading order)', () => {
+  const violations = evaluateSectionOrder({
+    viewportWidth: 390,
+    expected: SECTION_SLOTS,
+    found: stackedFound390(),
+  });
+  assert.deepEqual(violations, []);
+});
+
+test('section-order: an optional slot that is absent (the engine hid MatchupOrPlayer) is skipped, not unmeasured', () => {
+  const found = sketchAFound1440().filter((item) => item.slot !== 'matchup-or-player');
+  assert.deepEqual(
+    evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found }),
+    [],
+  );
+});
+
+test('section-order: a missing required slot is section-order-unmeasured, naming the slot', () => {
+  const found = sketchAFound1440().filter((item) => item.slot !== 'pairing-hero');
+  const violations = evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found });
+  assert.deepEqual(
+    violations.filter((v) => v.type === 'section-order-unmeasured'),
+    [{ type: 'section-order-unmeasured', slot: 'pairing-hero' }],
+  );
+});
+
+test('section-order: no slot found at all is one unmeasured violation per required slot', () => {
+  const violations = evaluateSectionOrder({
+    viewportWidth: 1440,
+    expected: SECTION_SLOTS,
+    found: [],
+  });
+  assert.equal(violations.length, 7);
+  assert.ok(violations.every((v) => v.type === 'section-order-unmeasured'));
+});
+
+test('section-order: a DOM order that differs from the declared order is section-order-dom', () => {
+  const found = sketchAFound1440().map((item) =>
+    item.slot === 'matchup-insights'
+      ? { ...item, domIndex: -1 }
+      : item.slot === 'pairing-hero'
+        ? { ...item, domIndex: 0 }
+        : item,
+  );
+  const violations = evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found });
+  const dom = violations.find((v) => v.type === 'section-order-dom');
+  assert.ok(dom, 'a rail-first DOM is reported');
+  assert.equal(dom.actual[0], 'matchup-insights');
+});
+
+test('section-order: a matrix whose top is above the bottom of any pairing section is section-order-matrix-above', () => {
+  const found = sketchAFound1440().map((item) =>
+    item.slot === 'matchup-matrix' ? { ...item, rect: rectOf(80, 1000, 1336, 210) } : item,
+  );
+  const violations = evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found });
+  const above = violations.filter((v) => v.type === 'section-order-matrix-above');
+  assert.ok(above.length >= 1);
+  assert.ok(above.some((v) => v.slot === 'stage-breakdown'));
+});
+
+test('section-order: the matrix exactly at a pairing section bottom passes; 2px above it fails', () => {
+  const at = sketchAFound1440().map((item) =>
+    item.slot === 'matchup-matrix' ? { ...item, rect: rectOf(80, 1499, 1336, 210) } : item,
+  );
+  assert.deepEqual(
+    evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found: at }),
+    [],
+  );
+  const above = sketchAFound1440().map((item) =>
+    item.slot === 'matchup-matrix' ? { ...item, rect: rectOf(80, 1497, 1336, 210) } : item,
+  );
+  assert.ok(
+    sectionTypes(
+      evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found: above }),
+    ).includes('section-order-matrix-above'),
+  );
+});
+
+test('section-order: at 1280 or wider a rail section left of the hero right edge is section-order-rail-not-beside', () => {
+  const found = sketchAFound1440().map((item) =>
+    item.slot === 'counterpick-advisor' ? { ...item, rect: rectOf(80, 728, 435, 354) } : item,
+  );
+  const violations = evaluateSectionOrder({ viewportWidth: 1280, expected: SECTION_SLOTS, found });
+  assert.ok(
+    violations.some(
+      (v) => v.type === 'section-order-rail-not-beside' && v.slot === 'counterpick-advisor',
+    ),
+  );
+  assert.equal(SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX, 1280);
+});
+
+test('section-order: the first rail section top may differ from the hero top by 2px, not 3px', () => {
+  const shifted = (dy) =>
+    sketchAFound1440().map((item) =>
+      item.slot === 'matchup-insights' ? { ...item, rect: rectOf(981, 148 + dy, 435, 246) } : item,
+    );
+  assert.equal(SECTION_ORDER_RAIL_TOP_TOLERANCE_PX, 2);
+  assert.deepEqual(
+    evaluateSectionOrder({ viewportWidth: 1440, expected: SECTION_SLOTS, found: shifted(2) }),
+    [],
+  );
+  const violations = evaluateSectionOrder({
+    viewportWidth: 1440,
+    expected: SECTION_SLOTS,
+    found: shifted(3),
+  });
+  assert.ok(
+    violations.some((v) => v.type === 'section-order-rail-not-beside' && v.heroTop === 148),
+  );
+});
+
+test('section-order: the rail-beside rule does not apply below 1280 (1279 stacks the rail under the hero)', () => {
+  const found = stackedFound390();
+  const violations = evaluateSectionOrder({ viewportWidth: 1279, expected: SECTION_SLOTS, found });
+  assert.deepEqual(violations, []);
+});
+
+test('section-order: at 639 or narrower a section whose top is above the previous bottom - 1 is section-order-stacked', () => {
+  const found = stackedFound390().map((item) =>
+    item.slot === 'pairing-opponents' ? { ...item, rect: rectOf(16, 300, 358, 400) } : item,
+  );
+  const violations = evaluateSectionOrder({ viewportWidth: 639, expected: SECTION_SLOTS, found });
+  assert.ok(
+    violations.some((v) => v.type === 'section-order-stacked' && v.slot === 'pairing-opponents'),
+  );
+  // 640 is out of the phone tier: the same geometry is not a stacking violation.
+  assert.ok(
+    !sectionTypes(
+      evaluateSectionOrder({ viewportWidth: 640, expected: SECTION_SLOTS, found }),
+    ).includes('section-order-stacked'),
+  );
+});
+
+test('section-order: one pixel of overlap is tolerated when stacked; two is not', () => {
+  const overlap = (px) =>
+    stackedFound390().map((item) =>
+      item.slot === 'matchup-matrix'
+        ? { ...item, rect: rectOf(16, item.rect.top - 16 - px, 358, 400) }
+        : item,
+    );
+  assert.equal(SECTION_ORDER_TOLERANCE_PX, 1);
+  assert.deepEqual(
+    evaluateSectionOrder({ viewportWidth: 390, expected: SECTION_SLOTS, found: overlap(1) }),
+    [],
+  );
+  assert.ok(
+    sectionTypes(
+      evaluateSectionOrder({ viewportWidth: 390, expected: SECTION_SLOTS, found: overlap(2) }),
+    ).includes('section-order-stacked'),
+  );
+});
+
+test('section-order: the SHIPPED layout (rail first in the DOM, the matrix above the pairing) fails on DOM order, matrix position and rail placement', () => {
+  // plan 30's composition at 1440: matrix first, then the rail cards, then the hero stack.
+  const shipped = [
+    { slot: 'matchup-matrix', domIndex: 0, rect: rectOf(80, 120, 1336, 210) },
+    { slot: 'matchup-insights', domIndex: 1, rect: rectOf(981, 400, 435, 246) },
+    { slot: 'counterpick-advisor', domIndex: 2, rect: rectOf(981, 660, 435, 354) },
+    { slot: 'pairing-hero', domIndex: 3, rect: rectOf(80, 400, 885, 600) },
+    { slot: 'pairing-opponents', domIndex: 4, rect: rectOf(80, 1016, 885, 194) },
+    { slot: 'stage-breakdown', domIndex: 5, rect: rectOf(80, 1226, 885, 401) },
+    { slot: 'matchup-results', domIndex: 6, rect: rectOf(80, 1700, 1336, 617) },
+  ];
+  const violations = evaluateSectionOrder({
+    viewportWidth: 1440,
+    expected: SECTION_SLOTS,
+    found: shipped,
+  });
+  const types = new Set(sectionTypes(violations));
+  assert.ok(types.has('section-order-dom'));
+  assert.ok(types.has('section-order-matrix-above'));
+  assert.ok(types.has('section-order-rail-not-beside'));
+});
+
+test('section-order: formatSectionOrderLine prints the found slots in DOM order, joined by >', () => {
+  const found = sketchAFound1440()
+    .filter((item) => item.slot !== 'matchup-or-player')
+    .reverse();
+  assert.equal(
+    formatSectionOrderLine('matchups', '1440x900', found),
+    'SECTION_ORDER route=matchups viewport=1440x900 order=pairing-hero>pairing-opponents>matchup-insights>counterpick-advisor>stage-breakdown>matchup-matrix>matchup-results',
   );
 });
