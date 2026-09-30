@@ -195,10 +195,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                                   ),
                                 }}
                               >
-                                <span className="text-[13px] leading-[18px] font-semibold tabular-nums">
+                                <span className="text-[13px] leading-[18px] font-semibold whitespace-nowrap tabular-nums">
                                   {cell.wins}-{cell.losses}
                                 </span>
-                                <span className="text-xs leading-[14px] text-muted-foreground tabular-nums">
+                                <span className="text-xs leading-[14px] whitespace-nowrap text-muted-foreground tabular-nums">
                                   {t('matchups.matrix.cellSub', {
                                     rate: `${cell.winRate}%`,
                                     count: cell.total,
