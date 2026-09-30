@@ -45,9 +45,14 @@ const listCoachingClients = vi.fn();
 // `<SelfDataCoveragePanel />`) — mocked here so every existing Dashboard
 // test keeps passing with the benign empty default.
 const coverage = vi.fn();
+// Plan 39.2-13: the recap reads the own-account registry and the prep slot reads brief status.
+const listTournaments = vi.fn();
+const getPrepStatus = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
+    tournaments: { list: (...args: unknown[]) => listTournaments(...args) },
+    prep: { get: (...args: unknown[]) => getPrepStatus(...args) },
     // Plan 39.2-10: every Track host reads the subject's watchlist.
     watchlist: {
       list: vi.fn().mockResolvedValue({ items: [] }),
@@ -141,6 +146,8 @@ describe('DashboardPage', () => {
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     listOpponents.mockResolvedValue([]);
+    listTournaments.mockResolvedValue([]);
+    getPrepStatus.mockResolvedValue({ activated: false });
     getMe.mockResolvedValue(defaultProfile());
     getOnboardingProgress.mockResolvedValue({
       analytics: false,
@@ -704,6 +711,96 @@ describe('DashboardPage', () => {
       expect(written).toHaveLength(1);
       expect(container.querySelector('#digest')?.getAttribute('data-state')).toBe('quiet');
       set.mockRestore();
+    });
+  });
+
+  describe('Recap beside the digest (plan 39.2-13, DD-10)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    /** Twelve games of one named event that ended three days ago. */
+    function recentEventGames() {
+      const end = Date.now() - 3 * DAY;
+      return Array.from({ length: 12 }, (_, i) => ({
+        id: `rc-${i}`,
+        fighter_id: 1,
+        opponent_id: 2,
+        win: i % 3 !== 0,
+        time: end - (11 - i) * 60 * 1000,
+        opponent: 'rival',
+        eventName: 'Local Weekly',
+        tournamentName: 'Local Weekly',
+      }));
+    }
+
+    it('shares the row with the digest, 8 + 4 from 1280, the recap above the digest below it', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      const recapCell = recapCard.closest('[data-span]') as HTMLElement;
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.className).toContain('xl:col-span-8');
+      expect(recapCell.className).toContain('xl:col-span-4');
+      expect(recapCell.className).toContain('order-first');
+      // Same grid row: the digest first in the DOM, the recap right after it.
+      expect(recapCell.previousElementSibling).toBe(digestCell);
+      expect(within(recapCard).getByText(/Local Weekly — /)).toBeInTheDocument();
+    });
+
+    it('the digest spans the full 12 when no recap is due, and no 4-col frame is left behind', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      // An event from 1970: far outside the fourteen-day window.
+      listMatches.mockResolvedValue(
+        Array.from({ length: 12 }, (_, i) => ({
+          id: `old-${i}`,
+          fighter_id: 1,
+          opponent_id: 2,
+          win: true,
+          time: 10_000 + i,
+          eventName: 'Ancient Weekly',
+        })),
+      );
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.getAttribute('data-span')).toBe('12');
+      expect(digestCell.className).not.toContain('xl:col-span-8');
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      expect(container.querySelector('[data-span="4"]')).toBeNull();
+    });
+
+    it('a recap dismissed on this device is gone, and the digest returns to 12', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      await userEvent.click(within(recapCard).getByRole('button', { name: 'Dismiss' }));
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.className).not.toContain('xl:col-span-8');
+    });
+
+    it('under a coach subject the recap derives from the matches and the registry is never read', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+      listTournaments.mockClear();
+
+      const { container } = renderDashboard('/coach/client-1/dashboard');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="recap-card"]')).not.toBeNull(),
+      );
+      expect(container.querySelector('[data-slot="tier-badge"]')).toBeNull();
+      expect(listTournaments).not.toHaveBeenCalled();
     });
   });
 

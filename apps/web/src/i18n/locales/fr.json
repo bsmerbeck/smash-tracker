@@ -3268,7 +3268,8 @@
       "openEvent": "Ouvrir l'événement",
       "findVods": "Trouver des VODs",
       "ratingModelNote": "Note sur le modèle de classement",
-      "showEvents": "Afficher ces événements"
+      "showEvents": "Afficher ces événements",
+      "debrief": "Faire le bilan de cet événement"
     },
     "chip": {
       "up": "En hausse",
@@ -3413,7 +3414,8 @@
       "factPlacementGamesOnly": "{{event}} — {{placement}} sur {{entrants}} ; {{gameRecord}} en matchs.",
       "noSetLosses": "Aucun set perdu.",
       "setLosses_one": "Set perdu — {{named}}.",
-      "setLosses_other": "Sets perdus — {{named}}."
+      "setLosses_other": "Sets perdus — {{named}}.",
+      "evidence": "{{eventRecord}} à l'événement · {{baselineRate}} au total sur {{baselineGames, grouped}} · {{cue}}"
     },
     "ratingMove": {
       "up": "Classement — en hausse de {{points}} sur les {{count, grouped}} derniers matchs ({{startRating}} → {{endRating}} ±{{band}}).",

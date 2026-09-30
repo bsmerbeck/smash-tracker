@@ -3268,7 +3268,8 @@
       "openEvent": "Event öffnen",
       "findVods": "VODs finden",
       "ratingModelNote": "Hinweis zum Wertungsmodell",
-      "showEvents": "Diese Events anzeigen"
+      "showEvents": "Diese Events anzeigen",
+      "debrief": "Dieses Event auswerten"
     },
     "chip": {
       "up": "Steigt",
@@ -3409,11 +3410,12 @@
       "hidden": "Noch kein Event erfasst.",
       "fact": "{{event}} — {{gameRecord}} in Matches, {{setRecord}} in Sets.",
       "factGamesOnly": "{{event}} — {{gameRecord}} in Matches.",
-      "factPlacement": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches, {{setRecord}} in Sets.",
-      "factPlacementGamesOnly": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches.",
+      "factPlacement": "{{event}} — {{placement}} von {{entrants}}; {{gameRecord}} in Matches, {{setRecord}} in Sets.",
+      "factPlacementGamesOnly": "{{event}} — {{placement}} von {{entrants}}; {{gameRecord}} in Matches.",
       "noSetLosses": "Keine verlorenen Sets.",
       "setLosses_one": "Verlorener Satz — {{named}}.",
-      "setLosses_other": "Verlorene Sätze — {{named}}."
+      "setLosses_other": "Verlorene Sätze — {{named}}.",
+      "evidence": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}} · {{cue}}"
     },
     "ratingMove": {
       "up": "Wertung — um {{points}} gestiegen in den letzten {{count, grouped}} Matches ({{startRating}} → {{endRating}} ±{{band}}).",

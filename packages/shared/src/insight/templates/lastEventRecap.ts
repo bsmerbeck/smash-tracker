@@ -1,7 +1,8 @@
 import type { Match } from '../../match.js';
 import { buildSetTimeline } from '../../tournamentAggregation.js';
-import type { TournamentRegistryRow } from '../../tournamentRegistry.js';
+import type { TierBasis, TierWord } from '../../tournamentTier.js';
 import { toRateValue, buildRateClaim, matchDateRange, countedMatchIdsOf } from '../horizon.js';
+import { classify, type ClassifyResult } from '../ladder.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 import { buildSetStripMark } from '../marks.js';
@@ -43,6 +44,46 @@ function mostRecentEventGames(matches: Match[]): { eventKey: string; games: Matc
     return null;
   }
   return { eventKey: latestKey, games: matches.filter((m) => eventKeyOf(m) === latestKey) };
+}
+
+/**
+ * The registry fields the recap reads, as a STRUCTURAL subset: a live `TournamentEntry` (the
+ * `GET /api/tournaments` row) and a `TournamentRegistryRow` both satisfy it, so a caller passes
+ * whichever it holds and the template never imports either schema (F10).
+ */
+export interface RecapRegistryFields {
+  placement?: number | null;
+  numEntrants?: number | null;
+  tournamentName?: string | null;
+}
+
+/** The resolved tier a caller attaches so the card can name it; the engine stays locale-free. */
+export interface RecapTier {
+  tier: TierWord;
+  basis: TierBasis;
+}
+
+/** The D-10 two-horizon read of one event: the engine's own `classify` over the event's games against all games. */
+export interface EventHorizonRead extends ClassifyResult {
+  /** The event's games. */
+  recent: RateValue;
+  /** All of the subject's games (the event's own included, as the horizon reads everywhere else). */
+  baseline: RateValue;
+}
+
+/**
+ * D-10: how the event compares with the player's norm, through the ONE honesty ladder
+ * (`classify`) and never an ad-hoc rule. A small event reads `thin` or `locked` (no direction);
+ * an event that IS most of the history reads `collapsed`. `scoped: false` and `hasAction:
+ * false`: the event window is not a D-15 scoped read and the recap recommends nothing.
+ */
+export function buildEventHorizonRead(input: {
+  eventMatches: Match[];
+  baselineMatches: Match[];
+}): EventHorizonRead {
+  const recent = toRateValue(input.eventMatches);
+  const baseline = toRateValue(input.baselineMatches);
+  return { ...classify({ recent, baseline, scoped: false, hasAction: false }), recent, baseline };
 }
 
 function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: number): Insight {
@@ -111,9 +152,11 @@ export function buildLastEventRecapInsight(input: {
   scope: InsightScope;
   horizon: HorizonKey;
   nowMs: number;
-  registryEntry?: TournamentRegistryRow;
+  registryEntry?: RecapRegistryFields;
+  /** Plan 39.2-13: the entry's resolved tier, carried as two short strings for the card's badge. */
+  tier?: RecapTier;
 }): Insight {
-  const { matches, scope, horizon, nowMs, registryEntry } = input;
+  const { matches, scope, horizon, nowMs, registryEntry, tier } = input;
   const scopedMatches = scope.filter(matches);
   const found = mostRecentEventGames(scopedMatches);
   if (found === null) {
@@ -145,6 +188,10 @@ export function buildLastEventRecapInsight(input: {
   if (hasSets) {
     values.setRecord = `${setsWon}–${setsLost}`;
     values.setCount = sets.length;
+  }
+  if (tier !== undefined) {
+    values.tier = tier.tier;
+    values.tierBasis = tier.basis;
   }
   if (hasPlacement) {
     values.placement = registryEntry!.placement!;

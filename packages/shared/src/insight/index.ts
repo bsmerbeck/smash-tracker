@@ -26,6 +26,8 @@ export * from './trendsReads.js';
 // Plan 39.1-40: the Trends read cards' mark payloads and validating readers.
 export * from './marks.js';
 export * from './templates/registry.js';
+// Plan 39.2-13: the recap's builder, its structural registry subset and the two-horizon read.
+export * from './templates/lastEventRecap.js';
 // #T-39.1-16: `buildRosterModel` and the roster thresholds (`ROSTER_MAIN_MIN_GAMES`,
 // `ROSTER_SECONDARY_MIN_SHARE`, `ROSTER_SECONDARY_MIN_GAMES`) were defined in plan
 // 39.1-05 with the explicit intent that this plan's Match Data card import them from

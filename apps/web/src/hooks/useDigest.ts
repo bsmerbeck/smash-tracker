@@ -47,6 +47,14 @@ export interface UseDigestResult {
   movedByItemKey: ReadonlyMap<string, TrackedMovedEntry>;
   /** The `lastSeenAt` the card names ("since Sep 21"), or `null` on a first visit. */
   since: number | null;
+  /**
+   * Plan 39.2-13: the stored `lastSeenAt` exactly as it was when this visit's snapshot was read
+   * (`null` on a first visit on this device). Unlike `since` it never moves on Mark as read, so
+   * the recap card, which keys "synced since last seen" on it, survives the digest going quiet.
+   */
+  visitLastSeenAt: number | null;
+  /** True once this visit's snapshot has been read (the match query settled); `visitLastSeenAt` is meaningful only then. */
+  snapshotReady: boolean;
   /** Mark as read is offered only while expanded, the match query is settled and the tracked list resolved. */
   canMarkAsRead: boolean;
   markAsRead: () => void;
@@ -213,6 +221,8 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
       moreCount: 0,
       movedByItemKey: NO_MOVED,
       since: null,
+      visitLastSeenAt: null,
+      snapshotReady: false,
       canMarkAsRead: false,
       markAsRead: () => {},
     };
@@ -260,6 +270,8 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
     moreCount: moved?.moreCount ?? 0,
     movedByItemKey,
     since: markedAt ?? stored?.lastSeenAt ?? null,
+    visitLastSeenAt: stored?.lastSeenAt ?? null,
+    snapshotReady: true,
     canMarkAsRead,
     markAsRead,
   };

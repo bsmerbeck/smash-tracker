@@ -29,13 +29,22 @@ import { PrepManualEntryDialog } from '@/pages/Tournaments/components/PrepManual
  * helper); under a coach or workspace route the inner slot never mounts, so
  * no tournament, profile or prep request is issued at all.
  */
-export function DashboardPrepActionSlot() {
+export function DashboardPrepActionSlot({
+  suppressReviewForEntryKey = null,
+}: {
+  /**
+   * Plan 39.2-13 (DD-07): the entry key of the recap card currently on screen. The recap
+   * carries its own door into this event, so the review state yields for that one entry and
+   * the slot falls through to its next state. Null (no recap, or a dismissed one) changes nothing.
+   */
+  suppressReviewForEntryKey?: string | null;
+}) {
   const { clientId } = useActiveSubject();
   const { tenantId } = useOwnedWorkspaceSubject();
   if (clientId || tenantId) {
     return null;
   }
-  return <OwnAccountPrepActionSlot />;
+  return <OwnAccountPrepActionSlot suppressReviewForEntryKey={suppressReviewForEntryKey} />;
 }
 
 /**
@@ -62,7 +71,11 @@ export function DashboardPrepActionSlot() {
  *    exactly as it was; recovery chrome only appears where preparation is
  *    contextually relevant (D-16).
  */
-function OwnAccountPrepActionSlot() {
+function OwnAccountPrepActionSlot({
+  suppressReviewForEntryKey,
+}: {
+  suppressReviewForEntryKey: string | null;
+}) {
   const { t, i18n } = useTranslation();
   const {
     data: entries,
@@ -135,7 +148,12 @@ function OwnAccountPrepActionSlot() {
     return null;
   }
 
-  if (reviewCandidate && reviewQuery.isSuccess && isDebriefWindowOpen(reviewQuery.data, now)) {
+  if (
+    reviewCandidate &&
+    reviewCandidate.entry.entryKey !== suppressReviewForEntryKey &&
+    reviewQuery.isSuccess &&
+    isDebriefWindowOpen(reviewQuery.data, now)
+  ) {
     return (
       <Card className="border-dashed" data-testid="dashboard-prep-action-slot" data-state="review">
         <CardContent className="flex flex-wrap items-center justify-between gap-3">

@@ -31,6 +31,8 @@ function digest(overrides: Partial<UseDigestResult> = {}): UseDigestResult {
     moreCount: 0,
     movedByItemKey: new Map(),
     since: Date.UTC(2026, 8, 21, 12),
+    visitLastSeenAt: null,
+    snapshotReady: true,
     canMarkAsRead: true,
     markAsRead: vi.fn(),
     ...overrides,

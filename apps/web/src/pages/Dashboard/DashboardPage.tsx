@@ -30,6 +30,8 @@ import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
 import { DigestCard } from '@/components/analytics/track/DigestCard';
+import { RecapCandidateGate } from '@/components/analytics/track/RecapCandidateGate';
+import { RecapCard } from '@/components/analytics/track/RecapCard';
 import { TRACKED_SECTION_ID, TrackedSection } from '@/components/analytics/track/TrackedSection';
 import { useDigest } from '@/hooks/useDigest';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
@@ -293,69 +295,92 @@ export function DashboardPage() {
           every other 39.1 page's "one filter row above everything it
           scopes" contract. */}
       <PageShell filterRow={<DashboardToolbar />}>
-        <SelfDataCoveragePanel />
-        <DashboardNextBestAction />
-        <DashboardPrepActionSlot />
-        <RatingModelNote />
-        {/* data-slot="dashboard-body" (plan 39.1-20): a `display: contents`
+        <RecapCandidateGate
+          lastSeenAt={digest.visitLastSeenAt}
+          ready={digest.snapshotReady}
+          enabled={digestVisible}
+        >
+          {(recap) => {
+            // DD-07: while a recap for an entry is on screen the prep slot yields its review state.
+            const suppressReviewForEntryKey =
+              recap.status === 'ready' ? (recap.candidate?.entry?.entryKey ?? null) : null;
+            const recapCell = recap.status !== 'none';
+            return (
+              <>
+                <SelfDataCoveragePanel />
+                <DashboardNextBestAction />
+                <DashboardPrepActionSlot suppressReviewForEntryKey={suppressReviewForEntryKey} />
+                <RatingModelNote />
+                {/* data-slot="dashboard-body" (plan 39.1-20): a `display: contents`
             marker that exists only once the loading gate above has cleared —
             never during the skeleton, never a skeleton block itself. Used as
             the layout oracle's page-loaded marker for this route. */}
-        <div className="contents" data-slot="dashboard-body">
-          <PageGrid
-            className={cn(
-              isRefetching &&
-                'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
-            )}
-          >
-            {/* Plan 39.2-12 (TRK-01, DD-10): the since-last-visit digest, directly above
-                Tracked. Plan 39.2-13 adds the 4-col recap beside it and re-spans it to 8. */}
-            <GridCell span={12}>
-              <DigestCard digest={digest} />
-            </GridCell>
-            {/* Plan 39.2-11 (TRK-02, DD-10): the Tracked section sits directly above the
+                <div className="contents" data-slot="dashboard-body">
+                  <PageGrid
+                    className={cn(
+                      isRefetching &&
+                        'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+                    )}
+                  >
+                    {/* Plan 39.2-12 (TRK-01, DD-10): the since-last-visit digest, directly above
+                Tracked. Plan 39.2-13 (TRK-03): with a recap due it shares the row, 8 + 4 from
+                1280; below 1280 the recap is the full-width row above it. With no recap the
+                digest spans the whole row, never beside an empty 4-col frame. */}
+                    <GridCell span={12} className={recapCell ? 'xl:col-span-8' : undefined}>
+                      <DigestCard digest={digest} />
+                    </GridCell>
+                    {recapCell && (
+                      <GridCell span={12} className="order-first xl:order-none xl:col-span-4">
+                        <RecapCard recap={recap} allMatches={allMatches} horizon={horizon} />
+                      </GridCell>
+                    )}
+                    {/* Plan 39.2-11 (TRK-02, DD-10): the Tracked section sits directly above the
                 hero stat row. It reads the subject's watchlist and games only (D-17) and
                 owns its own loading and error states, so the hero never waits for it. */}
-            <GridCell span={12}>
-              <TrackedSection
-                matches={allMatches}
-                horizon={horizon}
-                moved={digest.movedByItemKey}
-              />
-            </GridCell>
-            <HeroStats
-              matches={matches}
-              timeFilteredMatches={timeFilteredMatches}
-              horizon={horizon}
-            />
-            {/* Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the selected fighter's
+                    <GridCell span={12}>
+                      <TrackedSection
+                        matches={allMatches}
+                        horizon={horizon}
+                        moved={digest.movedByItemKey}
+                      />
+                    </GridCell>
+                    <HeroStats
+                      matches={matches}
+                      timeFilteredMatches={timeFilteredMatches}
+                      horizon={horizon}
+                    />
+                    {/* Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the selected fighter's
                 record is the hero row's sixth 3-span tile, on the page horizon. */}
-            <GridCell span={3}>
-              <WinLossTracker matches={matches} horizon={horizon} />
-            </GridCell>
-            {filterActive && allMatches.length > 0 && matches.length === 0 && (
-              <GridCell span={12}>
-                <FilteredEmptyNotice />
-              </GridCell>
-            )}
-            {/* Plan 39.1-50: the Form Curve starts its own row at lg — the
+                    <GridCell span={3}>
+                      <WinLossTracker matches={matches} horizon={horizon} />
+                    </GridCell>
+                    {filterActive && allMatches.length > 0 && matches.length === 0 && (
+                      <GridCell span={12}>
+                        <FilteredEmptyNotice />
+                      </GridCell>
+                    )}
+                    {/* Plan 39.1-50: the Form Curve starts its own row at lg — the
                 second hero row already holds Rating and the fighter tile, and a
                 6-span card packed beside them would orphan Previous Matches
                 (UI-SPEC §6.1 "no orphan half"). */}
-            <GridCell span={6} className="lg:col-start-1">
-              <LastMatchesChart matches={matches} horizon={horizon} />
-            </GridCell>
-            <GridCell span={6}>
-              <PreviousMatches matches={matches} horizon={horizon} />
-            </GridCell>
-            <GridCell span={12}>
-              <StageTiles matches={matches} />
-            </GridCell>
-            <GridCell span={12}>
-              <MatchupSnapshot matches={matches} />
-            </GridCell>
-          </PageGrid>
-        </div>
+                    <GridCell span={6} className="lg:col-start-1">
+                      <LastMatchesChart matches={matches} horizon={horizon} />
+                    </GridCell>
+                    <GridCell span={6}>
+                      <PreviousMatches matches={matches} horizon={horizon} />
+                    </GridCell>
+                    <GridCell span={12}>
+                      <StageTiles matches={matches} />
+                    </GridCell>
+                    <GridCell span={12}>
+                      <MatchupSnapshot matches={matches} />
+                    </GridCell>
+                  </PageGrid>
+                </div>
+              </>
+            );
+          }}
+        </RecapCandidateGate>
       </PageShell>
     </DashboardContext.Provider>
   );

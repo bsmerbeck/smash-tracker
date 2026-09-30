@@ -3268,7 +3268,8 @@
       "openEvent": "Open event",
       "findVods": "Find VODs",
       "ratingModelNote": "Rating model note",
-      "showEvents": "Show these events"
+      "showEvents": "Show these events",
+      "debrief": "Debrief this event"
     },
     "chip": {
       "up": "Up",
@@ -3413,7 +3414,8 @@
       "factPlacementGamesOnly": "{{event}} — {{placement}} of {{entrants}}; {{gameRecord}} in games.",
       "noSetLosses": "No set losses.",
       "setLosses_one": "Set loss — {{named}}.",
-      "setLosses_other": "Set losses — {{named}}."
+      "setLosses_other": "Set losses — {{named}}.",
+      "evidence": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}"
     },
     "ratingMove": {
       "up": "Rating — up {{points}} over the last {{count, grouped}} games ({{startRating}} → {{endRating}} ±{{band}}).",

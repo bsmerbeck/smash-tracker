@@ -243,6 +243,8 @@ function digestOf(overrides: Partial<UseDigestResult>): UseDigestResult {
     moreCount: 2,
     movedByItemKey: new Map(),
     since: Date.UTC(2026, 8, 21, 12),
+    visitLastSeenAt: null,
+    snapshotReady: true,
     canMarkAsRead: true,
     markAsRead: () => undefined,
     ...overrides,

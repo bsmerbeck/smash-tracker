@@ -632,7 +632,9 @@ describe('insight namespace covers every registered template id (INS-03, Plan 39
  * - `lastEventRecap.ts`: `hidden`, `fact`, `factGamesOnly`,
  *   `factPlacement`, `factPlacementGamesOnly` (the `hasSets`/`hasPlacement`
  *   2×2 in `buildLastEventRecapInsight`), plus `noSetLosses`/`setLosses`
- *   (`_one`/`_other`) from `setLossSubLine`.
+ *   (`_one`/`_other`) from `setLossSubLine`; `evidence` is the Dashboard recap
+ *   card's companion line (event record, all-time rate, sample cue; plan
+ *   39.2-13), authored beside the verdicts like `tierGap.evidence`.
  * - `ratingMove.ts`: `gate.state` funnels `locked`/`collapsed`/`thin` to a
  *   bare key; `steady` and `up`/`down` (trend) are also bare (no horizon
  *   suffix appended anywhere in this file). `thinRecent` is excluded here
@@ -703,6 +705,7 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
     'noSetLosses',
     'setLosses_one',
     'setLosses_other',
+    'evidence',
   ],
   ratingMove: ['up', 'down', 'steady', 'thin', 'collapsed', 'locked_one', 'locked_other'],
   tiltCost: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],

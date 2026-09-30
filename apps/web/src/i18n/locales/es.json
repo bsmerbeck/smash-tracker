@@ -3268,7 +3268,8 @@
       "openEvent": "Abrir evento",
       "findVods": "Buscar VODs",
       "ratingModelNote": "Nota sobre el modelo de clasificación",
-      "showEvents": "Mostrar estos eventos"
+      "showEvents": "Mostrar estos eventos",
+      "debrief": "Analizar este evento"
     },
     "chip": {
       "up": "Sube",
@@ -3413,7 +3414,8 @@
       "factPlacementGamesOnly": "{{event}} — {{placement}} de {{entrants}}; {{gameRecord}} en partidas.",
       "noSetLosses": "Sin sets perdidos.",
       "setLosses_one": "Set perdido — {{named}}.",
-      "setLosses_other": "Sets perdidos — {{named}}."
+      "setLosses_other": "Sets perdidos — {{named}}.",
+      "evidence": "{{eventRecord}} en el evento · {{baselineRate}} histórico en {{baselineGames, grouped}} · {{cue}}"
     },
     "ratingMove": {
       "up": "Clasificación — sube {{points}} en las últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",

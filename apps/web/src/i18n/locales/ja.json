@@ -3268,7 +3268,8 @@
       "openEvent": "イベントを開く",
       "findVods": "VODを探す",
       "ratingModelNote": "レーティングモデルについての注記",
-      "showEvents": "これらのイベントを表示"
+      "showEvents": "これらのイベントを表示",
+      "debrief": "このイベントを振り返る"
     },
     "chip": {
       "up": "上昇",
@@ -3409,11 +3410,12 @@
       "hidden": "まだイベントが記録されていません。",
       "fact": "{{event}} — 試合成績{{gameRecord}}、セット成績{{setRecord}}。",
       "factGamesOnly": "{{event}} — 試合成績{{gameRecord}}。",
-      "factPlacement": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}、セット成績{{setRecord}}。",
-      "factPlacementGamesOnly": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}。",
+      "factPlacement": "{{event}} — {{entrants}}人中{{placement}}、試合成績{{gameRecord}}、セット成績{{setRecord}}。",
+      "factPlacementGamesOnly": "{{event}} — {{entrants}}人中{{placement}}、試合成績{{gameRecord}}。",
       "noSetLosses": "セットの負けはありません。",
       "setLosses_one": "セット負け — {{named}}。",
-      "setLosses_other": "セット負け — {{named}}。"
+      "setLosses_other": "セット負け — {{named}}。",
+      "evidence": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）· {{cue}}"
     },
     "ratingMove": {
       "up": "レーティング — 直近{{count, grouped}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",
