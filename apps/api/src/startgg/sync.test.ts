@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StartggSyncSummary } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import {
   accumulateRegistry,
   gamesFromSet,
@@ -1148,6 +1149,113 @@ describe('importPlayerMatches — per-event override carry-forward', () => {
     expect(entry).toBeDefined();
     expect('tierOverride' in entry).toBe(false);
     expect('rulesetOverride' in entry).toBe(false);
+  });
+});
+
+// 39.2 code review API-CR-01: the user's PATCH can commit while a sync is in
+// its enrichment loop (up to MAX_EVENT_DETAIL_FETCHES sequential network
+// calls). The fetch stub below performs that PATCH through the REAL route in
+// the middle of the REAL sync, so the override the sync commits must be the
+// one stored at commit time — a set made mid-sync survives, a clear made
+// mid-sync stays cleared.
+describe('importPlayerMatches — an override PATCHed mid-sync (API-CR-01)', () => {
+  type TestApp = ReturnType<typeof buildTestApp>['app'];
+  type Patch = { url: string; payload: object };
+
+  /** PlayerSets answers one page; the FIRST event-detail call runs `midSync` (the user's PATCH) before failing. */
+  function fetchPatchingMidSync(sets: StartggSet[], midSync: () => Promise<void>): typeof fetch {
+    let fired = false;
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      if (!fired) {
+        fired = true;
+        await midSync();
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  async function patchAll(app: TestApp, patches: Patch[]): Promise<void> {
+    for (const { url, payload } of patches) {
+      const response = await app.inject({ method: 'PATCH', url, headers: authHeader(), payload });
+      expect(response.statusCode).toBe(200);
+    }
+  }
+
+  function sync(database: FakeDatabase, fetchImpl: typeof fetch) {
+    return importPlayerMatches(database as never, TEST_UID, PLAYER_ID, 'server-token', fetchImpl, {
+      warn: vi.fn(),
+    });
+  }
+
+  function storedRow(database: FakeDatabase): Record<string, unknown> {
+    const tree = structuredClone(database.dump()) as Record<
+      string,
+      Record<string, Record<string, Record<string, unknown>>>
+    >;
+    return tree['tournamentEntries']?.[TEST_UID]?.['987'] ?? {};
+  }
+
+  const SET_TIER: Patch = {
+    url: '/api/tournaments/987/tier',
+    payload: { tierOverride: { tier: 'major' } },
+  };
+  const SET_RULESET: Patch = {
+    url: '/api/tournaments/987/ruleset',
+    payload: { rulesetOverride: { contractVersion: 1, dsr: 'none' } },
+  };
+  const CLEAR_TIER: Patch = { url: '/api/tournaments/987/tier', payload: { tierOverride: null } };
+  const CLEAR_RULESET: Patch = {
+    url: '/api/tournaments/987/ruleset',
+    payload: { rulesetOverride: null },
+  };
+
+  it('an override SET while the sync is enriching survives the sync commit', async () => {
+    const { app, database } = buildTestApp();
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], async () => undefined),
+    );
+    expect(storedRow(database)).not.toHaveProperty('tierOverride');
+
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], () => patchAll(app, [SET_TIER, SET_RULESET])),
+    );
+
+    const row = storedRow(database);
+    // The sync really committed this run's rebuilt row...
+    expect(row['numEntrants']).toBe(512);
+    // ...without deleting the override the user set during it.
+    expect(row['tierOverride']).toMatchObject({ contractVersion: 1, tier: 'major' });
+    expect(row['rulesetOverride']).toEqual({ contractVersion: 1, dsr: 'none' });
+  });
+
+  it('an override CLEARED while the sync is enriching stays cleared after the sync commit', async () => {
+    const { app, database } = buildTestApp();
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], async () => undefined),
+    );
+    await patchAll(app, [SET_TIER, SET_RULESET]);
+    expect(storedRow(database)).toHaveProperty('tierOverride');
+
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], () => patchAll(app, [CLEAR_TIER, CLEAR_RULESET])),
+    );
+
+    const row = storedRow(database);
+    expect(row['numEntrants']).toBe(512);
+    expect(row).not.toHaveProperty('tierOverride');
+    expect(row).not.toHaveProperty('rulesetOverride');
   });
 });
 
