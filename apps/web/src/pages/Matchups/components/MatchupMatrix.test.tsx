@@ -325,4 +325,15 @@ describe('MatchupMatrix', () => {
     const rowHeader = container.querySelector('tbody th[scope="row"]') as HTMLElement;
     expect(rowHeader.className).toMatch(/\bsticky\b/);
   });
+
+  it('matrix-sketch-a: the grid fills the card (w-full, 480px floor) and the sticky row header is narrow enough to leave room for columns on a phone', () => {
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
+    const table = screen.getByRole('table');
+    expect(table.className).toMatch(/\bw-full\b/);
+    expect(table.className).toMatch(/min-w-\[480px\]/);
+    expect(table.className).not.toMatch(/\bw-max\b/);
+    const rowHeader = document.querySelector('tbody th[scope="row"]') as HTMLElement;
+    expect(rowHeader.className).toMatch(/\bw-28\b/);
+    expect(rowHeader.className).not.toMatch(/\bw-40\b/);
+  });
 });
