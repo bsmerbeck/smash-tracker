@@ -885,6 +885,11 @@
     "opponent": "Opponent",
     "vs": "vs",
     "pairingHeading": "{{fighter}} vs {{opponent}}",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}} game · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}} games · {{span}} · {{confidence}}",
+      "otherPairings": "Other pairings"
+    },
     "winRateTrend": "Win Rate Trend",
     "results": "Matchup Results",
     "selectFighterAria": "Select your fighter",

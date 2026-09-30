@@ -12,7 +12,6 @@ import type {
   PeriodSeries,
 } from '@smash-tracker/shared';
 import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
-import { Button } from '@/components/ui/button';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
 import { FormStrip } from '@/components/charts/FormStrip';
@@ -82,14 +81,18 @@ function buildPairingScope(fighterId: number, opponentId: number): InsightScope 
 export function useMatchupFormNow({
   matchupMatches,
   horizon,
+  nowMs: hostNowMs,
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
+  /** Plan 39.1-44: the host's ONE clock, so the page's FormNow insight and its horizon figures resolve the same windows (D-06 / D-12); omitted, the hook reads its own. */
+  nowMs?: number;
 }): Insight | null {
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — the lazy `useState` initializer is this codebase's established
   // one-time-read escape hatch (see `MatchupInsights.tsx`, `useHorizon.ts`).
-  const [nowMs] = useState(() => Date.now());
+  const [ownNowMs] = useState(() => Date.now());
+  const nowMs = hostNowMs ?? ownNowMs;
   const fighterId = matchupMatches[0]?.fighter_id;
   const opponentId = matchupMatches[0]?.opponent_id;
 
@@ -206,23 +209,24 @@ function buildFormNowEvidence(insight: Insight, t: TFunction, locale: string): s
 }
 
 /**
- * The insight slot's content (UI-SPEC §7.9): `InsightCard`'s head — claim
- * chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
- * wrapper, no dismiss). Called by `MatchupsPage.tsx` to build `ChartCard`'s
- * `insight` prop — `MatchupChart.tsx` itself never renders `ChartCard`.
+ * The pairing hero's verdict block (UI-SPEC §7.9): `InsightCard`'s head —
+ * claim chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
+ * wrapper, no dismiss). Called by `PairingHero.tsx` (and by
+ * `MatchupChart.test.tsx`'s frame wrapper) — `MatchupChart.tsx` itself never
+ * renders a card frame.
  *
- * Plan 39.1-26 (gap closure): gains an optional trailing `door` — the
- * counted-games door `MatchupsPage.tsx` builds via `buildInsightDoors`,
- * rendered as a `Button asChild` wrapping the host's own `<Link>` inside
- * `data-slot="matchup-form-now-doors"`. `undefined` renders no doors row at
- * all (a zero-game window never prints "See the 0 games").
+ * Plan 39.1-44 (PD-44-3): the counted-games door plan 39.1-26 gave this head
+ * moved out — the hero owns the card's LAST row (`matchup-form-now-doors`:
+ * "See the N games" + "Other pairings"). The head instead takes an optional
+ * `meta` node shown beside the claim chip (sketch 003 `leadHtml`'s
+ * "FormNow · <horizon> vs lifetime").
  */
 export function renderFormNowHead(
   insight: Insight,
   opponentId: number,
   t: TFunction,
   locale: string,
-  door?: ReactNode,
+  meta?: ReactNode,
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildFormNowVerdict(insight, opponentId, t);
@@ -230,7 +234,12 @@ export function renderFormNowHead(
 
   return (
     <div className="flex flex-col gap-2" data-slot="matchup-form-now">
-      <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
+      <div className="flex flex-wrap items-center gap-2">
+        <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
+        {meta && (
+          <span className="text-xs leading-4 text-muted-foreground tabular-nums">{meta}</span>
+        )}
+      </div>
       <p
         className="line-clamp-3 text-base leading-6 font-medium text-pretty"
         data-slot="matchup-form-now-verdict"
@@ -244,13 +253,6 @@ export function renderFormNowHead(
         >
           {evidence}
         </p>
-      )}
-      {door && (
-        <div className="flex flex-wrap gap-2" data-slot="matchup-form-now-doors">
-          <Button asChild size="sm">
-            {door}
-          </Button>
-        </div>
       )}
     </div>
   );
@@ -284,11 +286,14 @@ export function MatchupChart({
   matchupMatches,
   horizon,
   periodSeries,
+  nowMs,
   width,
   height,
 }: {
   matchupMatches: Match[];
   horizon: HorizonKey;
+  /** Plan 39.1-44: the host's ONE clock, handed to the FormNow hook this body reads. */
+  nowMs?: number;
   /** CR-02 (39.1-REVIEW): the host's ONE `buildMatchupPeriodSeries` (`../lib/matchupPeriodSeries`) result over `matchupMatches` — plotted here, resolved by the host's terminus. */
   periodSeries: PeriodSeries;
   width?: number;
@@ -298,7 +303,7 @@ export function MatchupChart({
   const { t, i18n } = useTranslation();
   const { setDrillDown } = useMatchupsContext();
 
-  const insight = useMatchupFormNow({ matchupMatches, horizon });
+  const insight = useMatchupFormNow({ matchupMatches, horizon, nowMs });
 
   const overallRate = useMemo(() => toRateValue(matchupMatches).rate * 100, [matchupMatches]);
 

@@ -885,6 +885,11 @@
     "opponent": "相手",
     "vs": "vs",
     "pairingHeading": "{{fighter}} vs {{opponent}}",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}}試合 · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}}試合 · {{span}} · {{confidence}}",
+      "otherPairings": "他の組み合わせ"
+    },
     "winRateTrend": "勝率の推移",
     "results": "対戦結果",
     "selectFighterAria": "自分のファイターを選択",

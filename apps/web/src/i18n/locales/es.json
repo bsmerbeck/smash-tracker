@@ -885,6 +885,11 @@
     "opponent": "Rival",
     "vs": "vs",
     "pairingHeading": "{{fighter}} vs {{opponent}}",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}} partida · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}} partidas · {{span}} · {{confidence}}",
+      "otherPairings": "Otros emparejamientos"
+    },
     "winRateTrend": "Tendencia del % de victorias",
     "results": "Resultados del enfrentamiento",
     "selectFighterAria": "Seleccionar tu luchador",
