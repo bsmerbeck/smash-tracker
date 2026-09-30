@@ -76,6 +76,11 @@ function requests(method: string): { url: string; body: unknown }[] {
     });
 }
 
+/** The watchlist reads only: the toggle also reads the games and alias map for the identity hop. */
+function watchlistGets(): { url: string }[] {
+  return requests('GET').filter((request) => request.url.includes('/api/watchlist'));
+}
+
 function fullList(): StoredItem[] {
   return Array.from({ length: WATCHLIST_MAX_ITEMS }, (_, index) => ({
     itemKey: `stage:${index + 1}`,
@@ -140,7 +145,7 @@ describe('TrackToggle', () => {
     const user = userEvent.setup();
     renderToggle(MKLEO);
     const toggle = await screen.findByRole('button', { name: 'Track MkLeo' });
-    await waitFor(() => expect(requests('GET')).toHaveLength(1));
+    await waitFor(() => expect(watchlistGets()).toHaveLength(1));
     await waitFor(() => expect(toggle).toBeDisabled());
 
     await user.click(toggle);
@@ -294,7 +299,7 @@ describe('TrackToggle', () => {
     ['a missing ref', { kind: 'stage', itemRef: undefined }],
   ] as const)('renders nothing for %s', async (_label, props) => {
     renderToggle({ ...props, name: 'x' });
-    await waitFor(() => expect(requests('GET')).toHaveLength(1));
+    await waitFor(() => expect(watchlistGets()).toHaveLength(1));
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

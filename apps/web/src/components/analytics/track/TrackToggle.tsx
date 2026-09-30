@@ -6,7 +6,7 @@ import {
   parseTrackInput,
   useIsTracked,
   useTrackWatchlistItem,
-  useUntrackWatchlistItem,
+  useUntrackWatchlistItems,
 } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
 
@@ -30,13 +30,15 @@ export interface TrackToggleProps {
  * SUBJECT's list, so in coach view it curates the client's. It is disabled
  * and inert until the list query has succeeded (production-gap #8), and while
  * its own request is in flight. Renders nothing for a ref the server would
- * refuse (an opponent tag holding an RTDB path character, stage id 0).
+ * refuse (an opponent tag holding an RTDB path character, stage id 0). An
+ * opponent is matched by resolved identity, like the Tracked section
+ * (39.2-REVIEW WEB-WR-04).
  */
 export function TrackToggle({ kind, itemRef, name, className }: TrackToggleProps) {
   const { t } = useTranslation();
-  const { ready, tracked, itemKey } = useIsTracked(kind, itemRef);
+  const { ready, tracked, itemKey, itemKeys } = useIsTracked(kind, itemRef);
   const track = useTrackWatchlistItem();
-  const untrack = useUntrackWatchlistItem();
+  const untrack = useUntrackWatchlistItems();
   const input = parseTrackInput(kind, itemRef);
   if (!input || itemKey == null) {
     return null;
@@ -55,7 +57,8 @@ export function TrackToggle({ kind, itemRef, name, className }: TrackToggleProps
     if (next) {
       track.mutate({ input, name });
     } else {
-      untrack.mutate({ itemKey, name });
+      // WEB-WR-04: every stored key the resolved identity folds, so the Dashboard row goes too.
+      untrack.mutate({ itemKeys, name });
     }
   }
 

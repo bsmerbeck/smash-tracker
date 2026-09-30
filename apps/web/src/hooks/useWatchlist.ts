@@ -1,16 +1,22 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   buildWatchlistItemKey,
+  resolveOpponentIdentities,
   watchlistTrackInputSchema,
   type WatchlistItemKind,
   type WatchlistResponse,
   type WatchlistTrackInput,
 } from '@smash-tracker/shared';
+import { dedupeTrackedEntries } from '@/components/analytics/track/trackedRowModel';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
+import { applyOpponentAliases } from './useFilteredMatches';
+import { useMatches } from './useMatches';
+import { useOpponentAliases } from './useOpponentAliases';
 import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
 import { useEffectiveSubject } from './useEffectiveSubject';
@@ -68,17 +74,51 @@ export function useWatchlist() {
  * Whether one item is tracked. `ready` is true ONLY once the list query has
  * succeeded (production-gap #8): a toggle must never act on an unloaded or
  * errored list, and an unloaded list must not read as "not tracked".
+ *
+ * 39.2-REVIEW WEB-WR-04: an opponent is matched by its RESOLVED identity, the
+ * same grouping the Tracked section displays (`dedupeTrackedEntries` over the
+ * subject's alias-applied games and alias map) — so an item stored under a tag
+ * since merged into this identity reads Tracked, and `itemKeys` names every
+ * stored key the identity folds (the untrack removes them all). For an
+ * opponent, `ready` also waits for the alias map and the games, so the toggle
+ * never reads "untracked" for an identity it cannot resolve yet.
  */
 export function useIsTracked(
   kind: WatchlistItemKind,
   ref: WatchlistTrackInput['ref'] | null | undefined,
-): { ready: boolean; tracked: boolean; itemKey: string | null } {
+): { ready: boolean; tracked: boolean; itemKey: string | null; itemKeys: string[] } {
   const { data, isSuccess } = useWatchlist();
+  const matchesQuery = useMatches();
+  const aliasesQuery = useOpponentAliases();
   const input = parseTrackInput(kind, ref);
   const itemKey = input ? buildWatchlistItemKey(input) : null;
-  const tracked =
-    itemKey != null && isSuccess && data.items.some((entry) => entry.itemKey === itemKey);
-  return { ready: isSuccess && itemKey != null, tracked, itemKey };
+  const isOpponent = input?.kind === 'opponent';
+  const identityReady = !isOpponent || (!matchesQuery.isPending && !aliasesQuery.isPending);
+  const rawMatches = matchesQuery.data;
+  const aliasMap = aliasesQuery.data;
+  const opponentRef = input?.kind === 'opponent' ? input.ref : null;
+  const items = isSuccess ? data.items : null;
+
+  const itemKeys = useMemo<string[]>(() => {
+    if (itemKey == null || items === null) return [];
+    if (opponentRef === null) {
+      return items.some((entry) => entry.itemKey === itemKey) ? [itemKey] : [];
+    }
+    const aliases = aliasMap ?? {};
+    const matches = applyOpponentAliases(rawMatches ?? [], aliases);
+    const identity = resolveOpponentIdentities(matches, aliases)({ opponent: opponentRef });
+    const group = dedupeTrackedEntries(items, matches, aliases).find(
+      (candidate) => candidate.entry.item.kind === 'opponent' && candidate.identity === identity,
+    );
+    return group?.itemKeys ?? [];
+  }, [itemKey, items, opponentRef, rawMatches, aliasMap]);
+
+  return {
+    ready: isSuccess && itemKey != null && identityReady,
+    tracked: itemKeys.length > 0,
+    itemKey,
+    itemKeys,
+  };
 }
 
 /** True for the 409 the server sends when the subject already tracks 25 items. */
