@@ -58,24 +58,51 @@ function eventKeyOf(match: Match): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/** The games belonging to whichever named event key has the most recent game in `matches` — the `lastEvent` horizon. A history with no named event anywhere (manual-only) yields `[]`, never a fabricated event. */
+/**
+ * Ported, not imported, from `evidence/eventBlocks.ts`'s `EVENT_ANCHOR_PROXIMITY_MS` (same
+ * rule, plan 39.1-44 M4 follow-up): two games of one event name + tournament name more than
+ * four days apart are two events.
+ */
+const EVENT_PROXIMITY_MS = 4 * MS_PER_DAY;
+
+/**
+ * The games of the ONE event holding the most recent event-named game in `matches` — the
+ * `lastEvent` horizon. An event is NEVER a bare event name (start.gg names nearly every
+ * bracket "Ultimate Singles", so a name alone pools years of unrelated weeklies): it is the
+ * name group — event name plus the parent tournament's name — split into proximity blocks,
+ * the same identity `evidence/eventBlocks.ts` uses for the recap and digest. A history with no
+ * named event anywhere (manual-only) yields `[]`, never a fabricated event.
+ */
 function lastEventGames(matches: Match[]): Match[] {
-  let latestKey: string | null = null;
-  let latestTime = Number.NEGATIVE_INFINITY;
+  let newest: Match | null = null;
   for (const match of matches) {
-    const key = eventKeyOf(match);
-    if (key === null) {
+    if (eventKeyOf(match) === null) {
       continue;
     }
-    if (match.time > latestTime) {
-      latestTime = match.time;
-      latestKey = key;
+    if (newest === null || match.time > newest.time) {
+      newest = match;
     }
   }
-  if (latestKey === null) {
+  if (newest === null) {
     return [];
   }
-  return matches.filter((match) => eventKeyOf(match) === latestKey);
+  const eventKey = eventKeyOf(newest);
+  const tournament = newest.tournamentName?.trim() ?? '';
+  const group = matches
+    .filter(
+      (match) =>
+        eventKeyOf(match) === eventKey && (match.tournamentName?.trim() ?? '') === tournament,
+    )
+    .sort((a, b) => a.time - b.time);
+  // The block holding the newest game: walk back from the newest until a gap exceeds the window.
+  let blockStart = group.length - 1;
+  while (
+    blockStart > 0 &&
+    group[blockStart]!.time - group[blockStart - 1]!.time <= EVENT_PROXIMITY_MS
+  ) {
+    blockStart -= 1;
+  }
+  return group.slice(blockStart).filter((match) => match.time <= newest.time);
 }
 
 /** D-15: intersects `matches` with the last `SCOPED_RECENCY_MONTHS` months relative to `nowMs`. */
