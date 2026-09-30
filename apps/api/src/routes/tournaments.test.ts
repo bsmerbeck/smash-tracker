@@ -348,6 +348,116 @@ describe('GET /api/tournaments', () => {
       expect(entries[0]).toMatchObject({ eventId: 987, entryKey: '987' });
     });
   });
+
+  // 39.2 code review API-WR-02: an override that fails its stored schema (a
+  // newer release's tier word, a hand edit) must not hide the whole event —
+  // the event stays listed with that override treated as absent, so the user
+  // can still reach the control that replaces or clears it.
+  describe('an unreadable stored override (API-WR-02)', () => {
+    const ENTRY = {
+      eventId: 987,
+      eventName: 'Ultimate Singles',
+      numEntrants: 512,
+      isOnline: false,
+      firstSetAt: 1_700_000_000_000,
+      lastSetAt: 1_700_000_500_000,
+      setsPlayed: 5,
+    };
+
+    async function listed(app: ReturnType<typeof buildTestApp>['app']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/tournaments',
+        headers: authHeader(),
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as Record<string, unknown>[];
+    }
+
+    it('keeps the event listed with an invalid tierOverride treated as absent', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}/987`, {
+        ...ENTRY,
+        tierOverride: { contractVersion: 2, tier: 'premier', setAtMs: 1, reason: 'x' },
+        rulesetOverride: { contractVersion: 1, dsr: 'none' },
+      });
+
+      const entries = await listed(app);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ eventId: 987, entryKey: '987', numEntrants: 512 });
+      expect(entries[0]).not.toHaveProperty('tierOverride');
+      // The sibling override that IS readable is still served.
+      expect(entries[0]!.rulesetOverride).toEqual({ contractVersion: 1, dsr: 'none' });
+    });
+
+    it('keeps the event listed with an invalid rulesetOverride treated as absent', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}/987`, {
+        ...ENTRY,
+        rulesetOverride: { contractVersion: 1, dsr: 'not-a-variant' },
+      });
+
+      const entries = await listed(app);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).not.toHaveProperty('rulesetOverride');
+    });
+
+    it('keeps an admin-imported registry row listed with an invalid tierOverride treated as absent', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}/histimport:100001`, {
+        entryId: 'histimport:100001',
+        origin: 'admin-imported',
+        provider: 'startgg',
+        startggEventId: '100001',
+        eventName: 'Ultimate Singles',
+        playedSetCount: 8,
+        provenance: {
+          source: 'research-import',
+          importedAtMs: 1_755_000_000_000,
+          asOfMs: 1_754_000_000_000,
+        },
+        registryWitness: 'research-import:v1:100001',
+        firstSetAt: 1_699_000_000_000,
+        lastSetAt: 1_699_000_500_000,
+        setsPlayed: 8,
+        tierOverride: { contractVersion: 1, tier: 'major' },
+      });
+
+      const entries = await listed(app);
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ entryKey: 'histimport:100001', origin: 'admin-imported' });
+      expect(entries[0]).not.toHaveProperty('tierOverride');
+    });
+
+    it('the user can replace, then clear, an invalid override through the tier PATCH', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}/987`, {
+        ...ENTRY,
+        tierOverride: { contractVersion: 1, tier: 'premier', setAtMs: 1 },
+      });
+
+      const replace = await app.inject({
+        method: 'PATCH',
+        url: '/api/tournaments/987/tier',
+        headers: authHeader(),
+        payload: { tierOverride: { tier: 'major' } },
+      });
+      expect(replace.statusCode).toBe(200);
+      expect((await listed(app))[0]!.tierOverride).toMatchObject({ tier: 'major' });
+
+      const clear = await app.inject({
+        method: 'PATCH',
+        url: '/api/tournaments/987/tier',
+        headers: authHeader(),
+        payload: { tierOverride: null },
+      });
+      expect(clear.statusCode).toBe(200);
+      expect((await listed(app))[0]).not.toHaveProperty('tierOverride');
+    });
+  });
 });
 
 function eventRows(dump: unknown): Array<{ eventName: string; actorId: string; payload: unknown }> {

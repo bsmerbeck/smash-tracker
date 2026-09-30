@@ -688,6 +688,28 @@ describe('importParryggMatches', () => {
       expect(tournamentEntrySchema.safeParse(row).success).toBe(true);
     });
 
+    // 39.2 code review API-WR-02: the same policy as start.gg — a newer
+    // contract version's override is carried byte-for-byte, a corrupt one is
+    // not copied forward.
+    it('carries a newer-contract override byte-for-byte and drops a corrupt one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      const future = { contractVersion: 2, tier: 'premier', setAtMs: 5, reason: 'r' };
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...registryOf(database)[entryKey!],
+        tierOverride: future,
+        rulesetOverride: { contractVersion: 1, dsr: 'not-a-variant' },
+      });
+
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.tierOverride).toEqual(future);
+      expect(row).not.toHaveProperty('rulesetOverride');
+    });
+
     it('adds no override, isOnline or eventType key to an entry that never had one', async () => {
       const database = new FakeDatabase();
       const clients = clientsReturning([slugContext()]);

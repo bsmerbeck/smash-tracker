@@ -1133,6 +1133,66 @@ describe('importPlayerMatches — per-event override carry-forward', () => {
     expect(entry['rulesetOverride']).toEqual(RULESET_OVERRIDE);
   });
 
+  // 39.2 code review API-WR-02: one policy for a stored override that is not
+  // plain v1 data. Readable → carried byte-for-byte (a newer writer's extra
+  // members are not stripped); a newer contract version's shape → carried
+  // byte-for-byte (a rollback never destroys it); otherwise corrupt → not
+  // copied forward, and the drop is logged without the value.
+  describe('an override that is not plain v1 data (API-WR-02)', () => {
+    async function resyncOver(stored: Record<string, unknown>) {
+      const database = new FakeDatabase();
+      database.seed('tournamentEntries/uid-1', {
+        '987': {
+          eventId: 987,
+          eventName: 'Ultimate Singles',
+          firstSetAt: 1,
+          lastSetAt: 2,
+          setsPlayed: 1,
+          ...stored,
+        },
+      });
+      const warn = vi.fn();
+      await importPlayerMatches(
+        database as never,
+        'uid-1',
+        PLAYER_ID,
+        'server-token',
+        pagesFetch([makeSet()]),
+        { warn },
+      );
+      return { entry: structuredClone(storedEntry(database)), warn };
+    }
+
+    it('carries a readable override with members a newer writer added byte-for-byte', async () => {
+      const tierOverride = { contractVersion: 2, tier: 'major', setAtMs: 5, reason: 'r' };
+      const { entry } = await resyncOver({ tierOverride });
+      expect(entry['tierOverride']).toEqual(tierOverride);
+    });
+
+    it('carries a newer contract version override it cannot read byte-for-byte', async () => {
+      const tierOverride = { contractVersion: 2, tier: 'premier', setAtMs: 5 };
+      const rulesetOverride = { contractVersion: 3, dsr: 'future-variant' };
+      const { entry } = await resyncOver({ tierOverride, rulesetOverride });
+      expect(entry['tierOverride']).toEqual(tierOverride);
+      expect(entry['rulesetOverride']).toEqual(rulesetOverride);
+    });
+
+    it('does not copy a corrupt override forward and logs the drop without the value', async () => {
+      const { entry, warn } = await resyncOver({
+        tierOverride: { contractVersion: 1, tier: 'premier', setAtMs: 5 },
+        rulesetOverride: 'garbage',
+      });
+      expect(entry['numEntrants']).toBe(512);
+      expect(entry).not.toHaveProperty('tierOverride');
+      expect(entry).not.toHaveProperty('rulesetOverride');
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain('tierOverride');
+      expect(logged).toContain('rulesetOverride');
+      expect(logged).not.toContain('premier');
+      expect(logged).not.toContain('garbage');
+    });
+  });
+
   it('writes neither override key when none was stored (never null, never empty)', async () => {
     const database = new FakeDatabase();
 

@@ -534,6 +534,58 @@ describe('per-event override carry-forward (39.2 F1)', () => {
     expect(row).not.toHaveProperty('rulesetOverride');
   });
 
+  // 39.2 code review API-WR-02: no churn. A readable override carrying members
+  // a newer writer added, and a newer contract version's override this build
+  // cannot read, are both carried byte-for-byte — the row stays "unchanged".
+  // A corrupt override is dropped by exactly one repair write, then stable.
+  it.each([
+    [
+      'a readable override with extra members',
+      { contractVersion: 2, tier: 'major', setAtMs: 1, reason: 'r' },
+    ],
+    [
+      'a newer-contract override it cannot read',
+      { contractVersion: 2, tier: 'premier', setAtMs: 1 },
+    ],
+  ])(
+    'classifies a row holding %s as unchanged, never a perpetual update',
+    async (_label, tierOverride) => {
+      const database = new FakeDatabase();
+      seedSources(database, [makeRecord('s1', '100')]);
+      await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+      database.seed(`tournamentEntries/${UID}/histimport:100/tierOverride`, tierOverride);
+      const before = structuredClone(database.dump());
+
+      const second = await projectTournamentRegistry(asDatabase(database), UID, LATER_MS);
+
+      expect(second.plan.unchanged).toEqual(['histimport:100']);
+      expect(second.apply.writesPerformed).toBe(0);
+      expect(database.dump()).toEqual(before);
+    },
+  );
+
+  it('drops a corrupt override with one repair write, then classifies the row unchanged', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    database.seed(`tournamentEntries/${UID}/histimport:100/tierOverride`, {
+      contractVersion: 1,
+      tier: 'premier',
+      setAtMs: 1,
+    });
+
+    const repair = await projectTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    expect(repair.plan.updates).toEqual(['histimport:100']);
+    const repaired = storedRow(database, 'histimport:100');
+    expect(repaired).not.toHaveProperty('tierOverride');
+    // The unreadable override must not cost the row its first-import stamp.
+    expect((repaired.provenance as { importedAtMs: number }).importedAtMs).toBe(NOW_MS);
+
+    const again = await projectTournamentRegistry(asDatabase(database), UID, LATER_MS + 1);
+    expect(again.plan.unchanged).toEqual(['histimport:100']);
+    expect(again.apply.writesPerformed).toBe(0);
+  });
+
   it('adds no override keys to a row that never had any', async () => {
     const database = new FakeDatabase();
     seedSources(database, [makeRecord('s1', '100')]);
