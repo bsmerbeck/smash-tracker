@@ -312,6 +312,34 @@ describe('TournamentDetailPage', () => {
       expect(within(block).queryByText('Side event')).not.toBeInTheDocument();
     });
 
+    it('resolves over ALL entries: a same-named online sibling a day earlier never hands this entry its games (39.2-REVIEW WEB-WR-02)', async () => {
+      const SAT = Date.UTC(2026, 8, 26, 10);
+      const SUN = Date.UTC(2026, 8, 27, 10);
+      const HOUR = 60 * 60 * 1000;
+      // Two legacy rows (no stored isOnline), both "Ultimate Singles", one day apart.
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 41, firstSetAt: SAT, lastSetAt: SAT + 6 * HOUR, numEntrants: 900 }),
+        makeEntry({ eventId: 42, firstSetAt: SUN, lastSetAt: SUN + 6 * HOUR, numEntrants: 180 }),
+      ]);
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'sat-1', time: SAT + 2 * HOUR, win: true, matchType: 'online-tourney' }),
+        makeMatch({ id: 'sat-2', time: SAT + 3 * HOUR, win: false, matchType: 'online-tourney' }),
+        makeMatch({ id: 'sun-1', time: SUN + 2 * HOUR, win: true, matchType: 'offline-tourney' }),
+        makeMatch({ id: 'sun-2', time: SUN + 3 * HOUR, win: true, matchType: 'offline-tourney' }),
+      ]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      // The ONE resolution (table, recap) gives Sunday only its own offline games: with no stored
+      // isOnline its setting is unknown. Resolving Sunday alone would absorb Saturday's online
+      // games and read it as an online event instead.
+      await waitFor(() => expect(within(block).getByText('Setting unknown')).toBeInTheDocument());
+      expect(within(block).queryByText("Online events aren't estimated")).not.toBeInTheDocument();
+      expect(within(block).queryByText('Online')).not.toBeInTheDocument();
+    });
+
     it('shows "Tier unknown" with the Online badge and its reason for an online entry, never an estimate', async () => {
       listTournaments.mockResolvedValue([
         makeEntry({
