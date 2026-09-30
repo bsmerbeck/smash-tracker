@@ -8,10 +8,8 @@ import { SegmentedControl } from '@/components/analytics/SegmentedControl';
 import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { RulesetDisclosure } from '@/components/RulesetDisclosure';
-import { StageOption } from '@/components/StageOption';
 import { Card } from '@/components/ui/card';
 import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats';
-import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { advisorThreshold } from '../lib/advisorThreshold';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
@@ -144,13 +142,9 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   }
 
   function toRow(stage: RankedStage): ComparisonBarsRow | null {
-    const stageData = stagesById.get(stage.stageId);
-    if (!stageData) return null;
-    return buildStageSeriesRow({
-      record: stage,
-      label: <StageOption stage={stageData} />,
-      labelTitle: stageData.name,
-    });
+    // Text-only like the sketch and the Stage breakdown (PD-46-3): a thumbnail
+    // made each row 56 px against the sketch's 38 px and truncated the name.
+    return buildStageSeriesRow({ record: stage });
   }
 
   function toRows(stages: RankedStage[]): ComparisonBarsRow[] {
