@@ -2485,11 +2485,22 @@ test('table-clip: sweep — TABLE_CLIP_SCAN_SELECTOR matches a [role="tablist"] 
   assert.equal(v[0].kind, 'tablist');
 });
 
-test('table-clip: mode — matchups and matchups-sketch-deep are routed; match-data, fighter-analysis, scout, stage-detail are enforced (the match prefix trap)', () => {
+// REWRITTEN by plan 39.1-48 (matchups-table-clip-enforced). Reason: orchestrator
+// decision 2026-09-25 (39.1-ORCHESTRATOR-NOTES.md) - "39.1-48's final gate MUST
+// switch the matchups-* routes from TABLE_CLIP_ROUTED to enforced (0 violations)".
+// The Matchups rebuild (plans 39.1-41..48) is done, so its routes are enforced
+// like every other route; the old case pinned 'routed' for the two Matchups ids.
+test('table-clip: mode — every route is enforced: matchups, matchups-sketch-deep, matchups-sketch-thin, match-data, fighter-analysis, scout, stage-detail (the routed hand-off to 39.1-41..48 is closed)', () => {
   const tableClipModeForRoute = fn38('tableClipModeForRoute');
-  assert.equal(tableClipModeForRoute('matchups'), 'routed');
-  assert.equal(tableClipModeForRoute('matchups-sketch-deep'), 'routed');
-  for (const id of ['match-data', 'fighter-analysis', 'scout', 'stage-detail']) {
+  for (const id of [
+    'matchups',
+    'matchups-sketch-deep',
+    'matchups-sketch-thin',
+    'match-data',
+    'fighter-analysis',
+    'scout',
+    'stage-detail',
+  ]) {
     assert.equal(tableClipModeForRoute(id), 'enforce', id);
   }
 });
