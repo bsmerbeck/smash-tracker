@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   resolveTournamentTier,
   RULESET_CONTRACT_VERSION,
@@ -8,6 +8,7 @@ import {
   type TierEntryFields,
 } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { importPlayerMatches } from '../startgg/sync.js';
 import type { StartggSet } from '../startgg/client.js';
 
@@ -1208,6 +1209,92 @@ describe('PATCH /api/tournaments/:entryKey/tier', () => {
 // Phase 39.2 tracer (TIER-04 + F1): an owner sets Major on a synced event, the
 // routine start.gg re-sync runs, and the real GET route still resolves Major
 // (Set manually) — on one database, through the real writer, RTDB and route.
+// 39.2 code review API-IN-05: the override PATCH routes checked existence,
+// then wrote with a plain update(). An entry removed in between (a reconcile
+// orphan removal, for one) came back as an override-only stub that GET skips
+// as corrupt and reconcile reports as a foreign collision forever.
+describe('override PATCH when the entry vanishes between the existence check and the write (API-IN-05)', () => {
+  const ENTRY = {
+    eventId: 987,
+    eventName: 'Ultimate Singles',
+    firstSetAt: 1_700_000_000_000,
+    lastSetAt: 1_700_000_500_000,
+    setsPlayed: 5,
+  };
+
+  /**
+   * One-shot: the entry is removed right after the route's first read of it
+   * resolves (the read it holds says "exists"), or right before its first
+   * transaction on it runs.
+   */
+  function removeEntryMidRequest(database: FakeDatabase, entryPath: string): void {
+    let fired = false;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      if (fired || path !== entryPath) {
+        return ref;
+      }
+      const { get, transaction } = ref;
+      ref.get = async () => {
+        const value = structuredClone((await get()).val());
+        fired = true;
+        await originalRef(entryPath).remove();
+        return { exists: () => value !== null, val: () => value };
+      };
+      ref.transaction = async (updateFn) => {
+        fired = true;
+        await originalRef(entryPath).remove();
+        return transaction(updateFn);
+      };
+      return ref;
+    });
+  }
+
+  it.each([
+    ['tier', { tierOverride: { tier: 'major' } }],
+    ['ruleset', { rulesetOverride: { contractVersion: 1, dsr: 'none' } }],
+  ])('a %s PATCH answers 404 and leaves no override-only stub', async (member, payload) => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}/987`, ENTRY);
+    removeEntryMidRequest(database, `tournamentEntries/${TEST_UID}/987`);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/tournaments/987/${member}`,
+      headers: authHeader(),
+      payload,
+    });
+
+    expect(response.statusCode).toBe(404);
+    const tree = database.dump() as { tournamentEntries?: Record<string, Record<string, unknown>> };
+    expect(tree.tournamentEntries?.[TEST_UID]?.['987']).toBeUndefined();
+  });
+
+  it.each([
+    ['tier', { tierOverride: { tier: 'major' } }, 'tierOverride'],
+    ['ruleset', { rulesetOverride: { contractVersion: 1, dsr: 'none' } }, 'rulesetOverride'],
+  ])('a %s PATCH on a present entry still writes only its member', async (member, payload, key) => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}/987`, ENTRY);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/tournaments/987/${member}`,
+      headers: authHeader(),
+      payload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const tree = structuredClone(database.dump()) as {
+      tournamentEntries: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const stored = tree.tournamentEntries[TEST_UID]!['987']!;
+    expect(stored).toMatchObject(ENTRY);
+    expect(Object.keys(stored).sort()).toEqual([...Object.keys(ENTRY), key].sort());
+  });
+});
+
 describe('tier override tracer: sync -> PATCH -> re-sync -> GET -> resolveTournamentTier', () => {
   const PLAYER_ID = 1802316;
 
