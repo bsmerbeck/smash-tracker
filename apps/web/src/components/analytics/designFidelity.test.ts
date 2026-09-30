@@ -58,25 +58,17 @@ const PRIVATE_CHIP_HELPER_PATTERN =
 /**
  * Measured by a real grep at plan-execution time (2026-09-25,
  * `grep -rlE "function (deltaChipStateFor|deltaValueLabel)\b" apps/web/src`),
- * never recalled. Shrink-only: an entry that no longer declares a private
- * helper fails the anti-rot assertion below.
+ * never recalled. Shrink-only, and now at its TERMINAL STATE: empty.
  *
- * Task 1 seeded seven entries (HeroStats, VsCharactersList, VsPlayersList,
- * SettingComparison, TrendsHero + the two below); Task 2 converted the five
- * hosts to `deltaChipView` and shrank the list to its terminal state:
- * - `MatchWinLossCard.tsx` and `PairingOpponents.tsx`: the Matchups record
- *   card and By-opponent rows, which plans 39.1-44/45 remove or rebuild on
- *   sketch 003-A and adopt `deltaChipView` there (coordinator instruction
- *   2026-09-25: this plan does not edit them).
- *
- * Plan 39.1-44 (PD-44-2) deleted `MatchWinLossCard.tsx` (the StatRow is the
- * record), so the list shrank to its last entry: `PairingOpponents.tsx`,
- * which plan 39.1-45 rebuilds on the rivalry-ledger rows and empties this
- * list.
+ * Task 1 of plan 39.1-36 seeded seven entries (HeroStats, VsCharactersList,
+ * VsPlayersList, SettingComparison, TrendsHero, MatchWinLossCard,
+ * PairingOpponents); its Task 2 converted the first five to `deltaChipView`;
+ * plan 39.1-44 (PD-44-2) deleted `MatchWinLossCard.tsx`; plan 39.1-45 rebuilt
+ * the last entry — `PairingOpponents.tsx`, the By-opponent rivalry-ledger
+ * rows — on `deltaChipView` and deleted its private helpers. The app has one
+ * ladder-to-chip owner; a new private helper anywhere fails the test below.
  */
-const KNOWN_PRIVATE_CHIP_HELPERS: readonly string[] = [
-  'apps/web/src/pages/Matchups/components/PairingOpponents.tsx',
-];
+const KNOWN_PRIVATE_CHIP_HELPERS: readonly string[] = [];
 
 /**
  * Named exemption, not an allowlist entry: `OpponentList.tsx` keeps its own
@@ -133,15 +125,16 @@ describe('design fidelity — source-tree guard (plan 39.1-36)', () => {
       expect(stale, `stale allowlist entries: ${stale.join(', ')}`).toEqual([]);
     });
 
-    it('has reached its terminal state: only PairingOpponents.tsx, which plan 39.1-45 rebuilds and empties', () => {
-      // Plan 39.1-36 Task 2 converted the five other hosts. REWRITTEN by plan
-      // 39.1-44: MatchWinLossCard (the record card) is deleted — the StatRow
-      // is the record (PD-44-2) — so only PairingOpponents (By-opponent rows)
-      // remains; plan 39.1-45 rebuilds it on deltaChipView and empties this
-      // list.
-      expect([...KNOWN_PRIVATE_CHIP_HELPERS].sort()).toEqual([
-        'apps/web/src/pages/Matchups/components/PairingOpponents.tsx',
-      ]);
+    it('has reached its terminal state: the allowlist is empty and NO non-test file under apps/web/src declares a private ladder-to-chip helper', () => {
+      // REWRITTEN by plan 39.1-45 (was: "only PairingOpponents.tsx"): the last
+      // entry is rebuilt on deltaChipView, so the allowlist is empty and the
+      // matcher — proven non-vacuous by its fixture strings above — finds zero
+      // declarations across EVERY non-test file, the mapping module included.
+      expect([...KNOWN_PRIVATE_CHIP_HELPERS]).toEqual([]);
+      const declaring = NON_TEST_FILES.filter((file) =>
+        PRIVATE_CHIP_HELPER_PATTERN.test(readRepoFile(file)),
+      );
+      expect(declaring).toEqual([]);
     });
 
     it('OpponentList is a named exemption (UI-SPEC §8.5: a DeltaChip only when notable) whose inline mapping emits up/down only', () => {
