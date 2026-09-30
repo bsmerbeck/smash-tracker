@@ -121,11 +121,17 @@ function renderCard(
   allMatches: Match[],
   path = '/dashboard',
   horizon: 'last30' | 'lastEvent' | 'last90' = 'last30',
+  terminusMatches: Match[] = allMatches,
 ) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <TooltipProvider>
-        <RecapCard recap={recap} allMatches={allMatches} horizon={horizon} />
+        <RecapCard
+          recap={recap}
+          allMatches={allMatches}
+          terminusMatches={terminusMatches}
+          horizon={horizon}
+        />
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -250,6 +256,28 @@ describe('RecapCard (plan 39.2-13, TRK-03)', () => {
       const games = supernovaGames();
       const stray = { ...games[4]!, id: 'stray', eventName: undefined, tournamentName: undefined };
       expect(buildGamesDoorHref(games, [...games, stray], subjectPath)).toBeNull();
+    });
+
+    it('WEB-WR-03: is dropped when the global source filter hides the event from Match Data', () => {
+      const games = supernovaGames();
+      const all = [...games, ...older(10)];
+      // Topbar source filter "Casual": Match Data lists only the manual games, none of the event's.
+      const manualOnly = older(10);
+      const { container } = renderCard(
+        recapOf(candidateOf(games, { entry: null })),
+        all,
+        '/dashboard',
+        'last30',
+        manualOnly,
+      );
+      expect(doorLinks(container).map((a) => a.textContent)).not.toContain('See the 9 games');
+    });
+
+    it('WEB-WR-03 control: the same card under the unfiltered terminus offers the door', () => {
+      const games = supernovaGames();
+      const all = [...games, ...older(10)];
+      const { container } = renderCard(recapOf(candidateOf(games, { entry: null })), all);
+      expect(doorLinks(container).map((a) => a.textContent)).toContain('See the 9 games');
     });
 
     it('keeps the subject prefix, so a coach never lands on the viewer own games', () => {
