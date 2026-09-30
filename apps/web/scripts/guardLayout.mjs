@@ -91,6 +91,7 @@ import {
   TABLE_CLIP_SCAN_SELECTOR,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
+  MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844,
   PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
   LAYOUT_ORACLE_VIEWPORTS,
   EXTRA_ORACLE_VIEWPORTS,
@@ -350,16 +351,10 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.1-45: the 11-player pairing's rows keep a readable tag at 390.
     narrowChecks: ['card-height-ceiling', 'row-tag-legibility'],
     cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
-    // Plan 39.1-44 (PD-44-5): the deep pairing's 390 page is NOT yet within the
-    // sketch-derived budget — measured 8.79 viewport heights against 7.72 —
-    // because the rail cards (Insights, Advisor, Stage breakdown: +693px vs the
-    // sketch) and the results list (+424px) keep their pre-sketch content until
-    // plans 39.1-46 / 47 rebuild them; this plan's own regions (hero +45px, By
-    // opponent -3px) are at the sketch's heights. The budget is recorded every
-    // run as SCROLL_BUDGET_DEFERRED and plan 39.1-48's final gate enforces it.
-    deferredScrollBudgets: {
-      '390x844': { budget: MATCHUPS_SCROLL_BUDGET_390X844, until: '39.1-48' },
-    },
+    // Plan 39.1-48 (PD-48-1, replaces plan 39.1-44's deferral): the deep
+    // pairing's 390 page is enforced at its own named constant — the measured
+    // page plus a tolerance — see MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844.
+    scrollBudgets: { '390x844': MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844 },
     // Plan 39.1-43b: sketch 003 A deep draws 20 / 40 / 60 / 80 / 100.
     periodTrendAxisExpect: periodTrendAxisExpectFor([20, 100]),
     periodTrendExpect: {

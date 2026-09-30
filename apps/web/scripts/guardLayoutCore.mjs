@@ -763,6 +763,22 @@ export function evaluateNestedScrollers(scrollers) {
 export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.72;
 
 /**
+ * Plan 39.1-48 (PD-48-1, reversible, the owner's first decision in
+ * MATCHUPS-FIDELITY.md): the sketch-deep 390 page could not reach 7.72. After
+ * plan 48 tightened the stacked results rows (118 -> 100 px, page 8.269 ->
+ * 7.866) and stacked the matrix below 640px so the enforced table-clip passes
+ * (the 5-column grid scrolled inside its card, 298 -> 450 px), the page
+ * measures 6791 px / 844 = 8.046. Its attribution against the sketch's 6176 px:
+ * matrix +212 px (sprite headers PD-47-5; stacked rows, UI-SPEC 6.6), advisor
+ * +144 (the engine's 3 Pick + 3 Ban rows and the ruleset control, PD-47-1/2),
+ * results +84 (the filter summary card the sketch omits), By opponent +62,
+ * hero +45, Stage breakdown +18, Insights +8, less MatchupOrPlayer -96 and the
+ * trend -46. The enforced value is that measurement plus a 0.03 (~25 px)
+ * tolerance; matchups and sketch-thin stay at MATCHUPS_SCROLL_BUDGET_390X844.
+ */
+export const MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844 = 8.08;
+
+/**
  * Plan 39.1-44 (PD-44-5): one phone screen cannot hold the pairing hero, but
  * its card height is bounded by the approved design: the sketch's hero region
  * at 390x844 is 1022px thin / 1219px deep (after-39.1-43 metrics.json), i.e.
