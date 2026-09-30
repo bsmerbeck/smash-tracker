@@ -243,7 +243,8 @@ export interface TierResolution {
  *    `contractVersion` exceeds `TIER_OVERRIDE_CONTRACT_VERSION` is ignored
  *    WHOLE and reported as `ignoredOverrideReason`. An override of `unknown`
  *    resolves `unknown` with reason `manual`.
- * 2. The reserved `externalTierRow` (basis `recorded`).
+ * 2. The reserved `externalTierRow` (basis `recorded`) — never for a
+ *    `side-event` (T-06): the row is keyed by tournament, not by event.
  * 3. The entrant-count estimate — ONLY when the setting is positively
  *    `offline`, the event is not a `side-event`, and the event's own
  *    `numEntrants` is present (F2/D-02).
@@ -296,7 +297,10 @@ export function resolveTournamentTier(input: {
     }
   }
 
-  if (externalTierRow) {
+  // 39.2-REVIEW SH-WR-02 (T-06): side events never inherit the parent tournament's tier. The
+  // external rung (Phase 42's Liquipedia join) is keyed by TOURNAMENT slug, so a side event under
+  // a tiered tournament falls through to unknown / sideEvent; only a manual override tiers it.
+  if (externalTierRow && eventKind !== 'side-event') {
     return {
       ...base,
       tier: externalTierRow.tier,
