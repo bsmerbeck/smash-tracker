@@ -129,12 +129,18 @@ export function TournamentDetailPage() {
   // resolver, from ALL of the subject's matches — never the range-filtered
   // set, because the evidence for an event's setting must not move with the
   // date filter. It is read-time only and never persisted.
+  //
+  // 39.2-REVIEW WEB-WR-02: resolved over ALL entries (the same one resolution
+  // the Tournaments table and the Dashboard recap run), then this entry picked
+  // out — never over `[entry]` alone, where a same-named sibling inside the
+  // ±24h attribution pad would hand this entry its games (and its setting).
   const tierResolution = useMemo(() => {
-    if (!entry) {
+    if (!entry || !entries) {
       return null;
     }
-    return resolveEntryTiers([entry], allMatches)[0]?.resolution ?? null;
-  }, [allMatches, entry]);
+    const index = entries.indexOf(entry);
+    return resolveEntryTiers(entries, allMatches)[index]?.resolution ?? null;
+  }, [allMatches, entries, entry]);
 
   /**
    * CR-03/WR-04 (38-REVIEW-FIX): a per-STAGE, per-PROXIMITY-BLOCK
