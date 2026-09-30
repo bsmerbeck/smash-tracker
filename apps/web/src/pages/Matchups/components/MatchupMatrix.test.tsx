@@ -336,4 +336,12 @@ describe('MatchupMatrix', () => {
     expect(rowHeader.className).toMatch(/\bw-28\b/);
     expect(rowHeader.className).not.toMatch(/\bw-40\b/);
   });
+
+  it('matrix-sketch-a: both cell lines are nowrap (the sketch .rec / .sub-l), so a wide record never wraps the rate line at 390', () => {
+    renderMatrix([makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true })]);
+    const cell = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-0` });
+    for (const line of cell.querySelectorAll('span')) {
+      expect(line.className).toMatch(/\bwhitespace-nowrap\b/);
+    }
+  });
 });
