@@ -61,11 +61,21 @@ export const watchlistItemKeySchema = z
     message: 'watchlist item key has a control character',
   });
 
-/** An opponent ref is the canonical tag: the SAME normalisation and illegal-character refusal `opponentNameInputSchema` applies, plus a length bound. */
-const watchlistOpponentRefSchema = opponentNameInputSchema.refine(
-  (tag) => tag.length <= WATCHLIST_OPPONENT_TAG_MAX_LENGTH,
-  { message: 'Opponent name is limited to 80 characters' },
-);
+/**
+ * An opponent ref is the canonical tag: the SAME normalisation and
+ * illegal-character refusal `opponentNameInputSchema` applies, plus a length
+ * bound and a DEL (U+007F) refusal. `opponentNameInputSchema` only refuses
+ * code points up to U+001F, while the stored and key schemas below also refuse
+ * DEL; without the extra check a DEL tag passed input validation and then
+ * failed the service's stored parse as a 500 (39.2 code review API-IN-02).
+ */
+const watchlistOpponentRefSchema = opponentNameInputSchema
+  .refine((tag) => tag.length <= WATCHLIST_OPPONENT_TAG_MAX_LENGTH, {
+    message: 'Opponent name is limited to 80 characters',
+  })
+  .refine((tag) => !hasControlCharacter(tag), {
+    message: 'Opponent name cannot contain control characters',
+  });
 
 /**
  * The STORED/wire opponent ref: the already-canonical tag `watchlistOpponentRefSchema`
