@@ -465,7 +465,7 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
+    expect(await screen.findByText(/^Counterpick Advisor · all time/)).toBeInTheDocument();
     expect(screen.getByText('By opponent')).toBeInTheDocument();
     // Phase 38-04: "alice" now legitimately appears twice — once in the
     // per-opponent split card, once in the FilteredMatchList terminus's
@@ -1446,7 +1446,8 @@ describe('MatchupsPage', () => {
       const order = [
         within(rail).getByText('Matchup Insights · all time'),
         rail.querySelector('[data-slot="insight-card"]')!,
-        within(rail).getByText('Counterpick Advisor'),
+        // Plan 39.1-47: the card's top line is the meta line (was the card title).
+        within(rail).getByText('Counterpick Advisor · all time · min 3 games per stage'),
         within(rail).getByText('Stage breakdown'),
       ];
       for (let i = 1; i < order.length; i += 1) {

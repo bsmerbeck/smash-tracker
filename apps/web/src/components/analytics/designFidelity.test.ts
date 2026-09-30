@@ -523,20 +523,19 @@ describe('design fidelity — hero hosts build no private horizon figures or sha
  * strip is the one form mark) or carries an emerald / destructive text,
  * background or border class (alarm colours on a neutral evidence card).
  *
- * `CounterpickAdvisor.tsx` is the ONE shrink-only allowlist entry: its pick /
- * ban headings are still coloured until plan 39.1-47 (segmented controls,
- * neutral Pick / Ban rows, ComparisonBars' status tones deleted) rebuilds the
- * card — that plan empties the list. The matrix's heat interpolation is an
- * inline `style` computed from numbers (`matchupCellColor.ts`), not a class,
- * and its comments mention the colour words without any class literal.
+ * `CounterpickAdvisor.tsx` was the ONE shrink-only allowlist entry (its pick /
+ * ban headings were coloured); plan 39.1-47 (segmented controls, neutral
+ * Pick / Ban rows, ComparisonBars' status tones deleted) rebuilt the card and
+ * emptied the list — the allowlist is at its TERMINAL STATE. The matrix's
+ * heat is an inline `style` computed from numbers (`matchupCellColor.ts`),
+ * not a class, and its comments mention the colour words without any class
+ * literal.
  */
 const MATCHUPS_DIR_PREFIX = 'apps/web/src/pages/Matchups/';
 const PIP_COMPONENT_PATTERN = /from\s+['"][^'"]*WinLossPips['"]|<WinLossPips\b/;
 const STATUS_COLOUR_CLASS_PATTERN =
   /(?<![\w-])(?:[\w-]+:)*(?:text|bg|border|fill|stroke|ring|from|to|via|outline|divide|decoration)-(?:emerald|destructive)(?:-\d{2,3})?(?:\/\d{1,3})?(?![\w-])/;
-const KNOWN_STATUS_COLOUR_FILES: readonly string[] = [
-  'apps/web/src/pages/Matchups/components/CounterpickAdvisor.tsx',
-];
+const KNOWN_STATUS_COLOUR_FILES: readonly string[] = [];
 
 function matchupsOffences(source: string): string[] {
   const offences: string[] = [];
@@ -603,7 +602,11 @@ describe('design fidelity — Matchups carries no pips and no alarm-colour class
     expect(offenders).toEqual([]);
   });
 
-  it('the allowlist cannot rot: every entry still exists and still carries an offence (plan 39.1-47 empties it)', () => {
+  it('the allowlist is at its terminal state: empty (plan 39.1-47)', () => {
+    expect(KNOWN_STATUS_COLOUR_FILES).toEqual([]);
+  });
+
+  it('the allowlist cannot rot: every entry still exists and still carries an offence', () => {
     for (const file of KNOWN_STATUS_COLOUR_FILES) {
       expect(fs.existsSync(path.join(REPO_ROOT, file)), `${file} no longer exists`).toBe(true);
       expect(
@@ -611,5 +614,109 @@ describe('design fidelity — Matchups carries no pips and no alarm-colour class
         `${file} is clean — remove it from KNOWN_STATUS_COLOUR_FILES`,
       ).not.toEqual([]);
     }
+  });
+});
+
+/**
+ * Plan 39.1-47 (segmented-set-state, PD-47-1 / PD-47-4, brief §5 M11 / M15):
+ *
+ * - `ComparisonBars` has ONE tone, `series`. A status tone (`emerald` /
+ *   `destructive`) passed to it anywhere under `apps/web/src` is a pick / ban
+ *   alarm colour on an evidence row (sketch README point 7).
+ * - ONE segmented single-choice implementation: a `ToggleGroup` import under
+ *   `components/analytics` or `pages/Matchups` is allowed only in
+ *   `SegmentedControl.tsx` — the page horizon switch and the advisor's
+ *   Phase / Role / Won-Lost controls render through it, never through a
+ *   second copy of its markup.
+ */
+const SEGMENTED_CONTROL_PATH = 'apps/web/src/components/analytics/SegmentedControl.tsx';
+const SEGMENTED_SCOPE_PREFIXES: readonly string[] = [
+  'apps/web/src/components/analytics/',
+  'apps/web/src/pages/Matchups/',
+];
+const COMPARISON_BARS_STATUS_TONE_PATTERN =
+  /\btone\s*(?:=\s*(?:\{\s*)?|:\s*)(["'`])(?:emerald|destructive)\1/;
+const TOGGLE_GROUP_IMPORT_PATTERN = /from\s+['"]@\/components\/ui\/toggle-group['"]/;
+
+function comparisonBarsStatusToneOffences(source: string): string[] {
+  return /\bComparisonBars\b/.test(source) && COMPARISON_BARS_STATUS_TONE_PATTERN.test(source)
+    ? ['passes a status tone to ComparisonBars']
+    : [];
+}
+
+function secondSegmentedOffences(file: string, source: string): string[] {
+  if (file === SEGMENTED_CONTROL_PATH) return [];
+  if (!SEGMENTED_SCOPE_PREFIXES.some((prefix) => file.startsWith(prefix))) return [];
+  return TOGGLE_GROUP_IMPORT_PATTERN.test(source)
+    ? ['imports ToggleGroup outside SegmentedControl']
+    : [];
+}
+
+describe('design fidelity — one ComparisonBars tone and one segmented control (plan 39.1-47)', () => {
+  it('the status-tone matcher detects a status tone and ignores look-alikes (non-vacuity)', () => {
+    expect(
+      comparisonBarsStatusToneOffences('<ComparisonBars tone="emerald" rows={rows} />'),
+    ).toHaveLength(1);
+    expect(
+      comparisonBarsStatusToneOffences("<ComparisonBars\n  tone='destructive'\n  rows={r}/>"),
+    ).toHaveLength(1);
+    expect(
+      comparisonBarsStatusToneOffences('<ComparisonBars tone={"emerald"} rows={rows} />'),
+    ).toHaveLength(1);
+    expect(
+      comparisonBarsStatusToneOffences(
+        "import { ComparisonBars } from 'x'; const p = { tone: 'destructive' };",
+      ),
+    ).toHaveLength(1);
+    // Look-alikes: the series tone, another component's tone, a file without ComparisonBars.
+    expect(comparisonBarsStatusToneOffences('<ComparisonBars tone="series" rows={r} />')).toEqual(
+      [],
+    );
+    expect(comparisonBarsStatusToneOffences('<ComparisonBars tone={tone} rows={r} />')).toEqual([]);
+    expect(comparisonBarsStatusToneOffences('<DeltaChip tone="emerald" />')).toEqual([]);
+    expect(
+      comparisonBarsStatusToneOffences('/* ComparisonBars once took tone emerald */ const x = 1;'),
+    ).toEqual([]);
+  });
+
+  it('the second-segmented matcher detects a ToggleGroup import in scope and ignores the primitive and out-of-scope files (non-vacuity)', () => {
+    const importLine =
+      "import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';";
+    expect(
+      secondSegmentedOffences('apps/web/src/components/analytics/Other.tsx', importLine),
+    ).toHaveLength(1);
+    expect(
+      secondSegmentedOffences('apps/web/src/pages/Matchups/components/Thing.tsx', importLine),
+    ).toHaveLength(1);
+    expect(secondSegmentedOffences(SEGMENTED_CONTROL_PATH, importLine)).toEqual([]);
+    expect(
+      secondSegmentedOffences('apps/web/src/pages/Gsp/components/QuickLogger.tsx', importLine),
+    ).toEqual([]);
+    expect(
+      secondSegmentedOffences(
+        'apps/web/src/components/analytics/Other.tsx',
+        "import { SegmentedControl } from '@/components/analytics/SegmentedControl';",
+      ),
+    ).toEqual([]);
+  });
+
+  it('no non-test file under apps/web/src passes a status tone to ComparisonBars', () => {
+    const offenders = NON_TEST_FILES.flatMap((file) =>
+      comparisonBarsStatusToneOffences(readRepoFile(file)).map((offence) => `${file}: ${offence}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('no file under components/analytics or pages/Matchups builds a second ToggleGroup segmented control', () => {
+    const scanned = NON_TEST_FILES.filter((file) =>
+      SEGMENTED_SCOPE_PREFIXES.some((prefix) => file.startsWith(prefix)),
+    );
+    // Non-vacuity: the primitive itself is in scope and does import ToggleGroup.
+    expect(scanned).toContain(SEGMENTED_CONTROL_PATH);
+    expect(TOGGLE_GROUP_IMPORT_PATTERN.test(readRepoFile(SEGMENTED_CONTROL_PATH))).toBe(true);
+    const offenders = scanned.flatMap((file) =>
+      secondSegmentedOffences(file, readRepoFile(file)).map((offence) => `${file}: ${offence}`),
+    );
+    expect(offenders).toEqual([]);
   });
 });

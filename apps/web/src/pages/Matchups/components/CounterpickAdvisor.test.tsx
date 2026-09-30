@@ -10,15 +10,16 @@ import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
-// Plan 39.1-30 (item 1): the trigger's accessible name is now its VISIBLE
-// label ("Change assumption", `matchups.counterpick.setState.editLabel`) —
-// WCAG 2.5.3, no explicit `aria-label` any more. The old sentence-length
-// `aria-label` still exists as the POPOVER TITLE text, not the trigger's
-// accessible name — so this constant's value changing is itself the RED
-// signal against the shipped 9abcac76 component (its trigger's accessible
-// name is still the sentence-length aria-label until Task 2's GREEN lands).
-const SET_STATE_EDIT_ARIA = 'Change assumption';
+// Plan 39.1-47 (segmented-set-state, PD-47-1, sketch 003 B `segControls`): the
+// "Change assumption" popover trigger is replaced by two segmented controls
+// (Phase, Role) plus a muted "stages played · bans" link that opens the
+// prior-stages / bans checklists. The link's accessible name is its visible
+// text (WCAG 2.5.3); the phase / role radios moved out of the popover.
+const PLAYED_BANS_LINK = 'stages played · bans';
+const ROLE_PICKING = 'Picking (you lost)';
+const ROLE_BANNING = 'Banning (you won)';
 
 /**
  * D-07/Phase 38-04: `CounterpickAdvisor` now reads `useMatchupsContext()` for
@@ -127,12 +128,14 @@ function renderAdvisor(
   contextOverrides: Partial<MatchupsContextValue> = {},
 ) {
   return render(
-    <MemoryRouter initialEntries={['/matchups']}>
-      <MatchupsContext.Provider value={baseMatchupsContextValue(contextOverrides)}>
-        <div id={MATCHUP_TABLE_ANCHOR_ID} />
-        <CounterpickAdvisor matchupMatches={matchupMatches} />
-      </MatchupsContext.Provider>
-    </MemoryRouter>,
+    <TooltipProvider>
+      <MemoryRouter initialEntries={['/matchups']}>
+        <MatchupsContext.Provider value={baseMatchupsContextValue(contextOverrides)}>
+          <div id={MATCHUP_TABLE_ANCHOR_ID} />
+          <CounterpickAdvisor matchupMatches={matchupMatches} />
+        </MatchupsContext.Provider>
+      </MemoryRouter>
+    </TooltipProvider>,
   );
 }
 
@@ -145,13 +148,15 @@ function renderAdvisorAsSignedInUser(matchupMatches: Match[]) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/matchups']}>
-        <AuthProvider>
-          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
-            <CounterpickAdvisor matchupMatches={matchupMatches} />
-          </MatchupsContext.Provider>
-        </AuthProvider>
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/matchups']}>
+          <AuthProvider>
+            <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+              <CounterpickAdvisor matchupMatches={matchupMatches} />
+            </MatchupsContext.Provider>
+          </AuthProvider>
+        </MemoryRouter>
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -298,7 +303,10 @@ describe('CounterpickAdvisor', () => {
   it('shows the record, rate, and sample size for each stage row', () => {
     const matches = matchesOnStage(BATTLEFIELD, 3, 2);
     renderAdvisor(matches);
-    expect(screen.getByText(/3-2 \(60% over 5\)/)).toBeInTheDocument();
+    // Plan 39.1-47: the row is a series row — its record, rate and sample are
+    // one screen-reader sentence (en dash, `W–L · rate% · n`) beside the
+    // drawn Record + confidence glyph (was the `3-2 (60% over 5)` label).
+    expect(screen.getByText('3–2 · 60% · 5')).toBeInTheDocument();
   });
 
   // Phase 36 (D-05/D-07 regression net): the owner's Town-and-City /
@@ -356,21 +364,27 @@ describe('CounterpickAdvisor', () => {
     expect(pickSection.querySelectorAll('li')).toHaveLength(3);
   });
 
-  it('renders exactly one sample cue element, in the card header, and zero per-row cue suffixes', () => {
+  it('segmented-set-state: the toolbar sample cue is gone (PD-47-3) — one confidence glyph per row, no "N games · confidence" chip', () => {
     const matches = matchesOnStage(BATTLEFIELD, 3, 2);
-    renderAdvisor(matches);
-    // The row's value label is EXACTLY the record/rate string — no
-    // " · N games · tier confidence" suffix appended inline any more (that
-    // moved to the frame's header slot, `SampleCue`, rendered once).
-    expect(screen.getByText('3-2 (60% over 5)')).toBeInTheDocument();
-    expect(screen.getAllByText(/games · .* confidence/)).toHaveLength(1);
+    const { container } = renderAdvisor(matches);
+    // REWRITTEN from "exactly one sample cue element in the toolbar": the
+    // SampleCue chip folded into the meta line; the evidence now lives on each
+    // row as the tier glyph, so no chip-shaped "5 games · medium confidence" text exists.
+    expect(screen.queryAllByText(/games? · .* confidence/)).toHaveLength(0);
+    expect(container.querySelectorAll('[data-slot="comparison-bars-series"] li')).toHaveLength(1);
+    expect(
+      container.querySelectorAll('[data-slot="comparison-bars-series"] [role="img"]'),
+    ).toHaveLength(1);
   });
 
   describe('D-13 regression: the displayed threshold and the computed threshold are one binding', () => {
     it('layer 2 — one binding, observed: the recorded minMatches equals the integer parsed out of the rendered threshold line', () => {
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
-      const thresholdEl = screen.getByText(/Min \d+ games? per stage/);
-      const parsed = Number(thresholdEl.textContent?.match(/\d+/)?.[0]);
+      // Plan 39.1-47 (PD-47-3): the threshold sentence folded into the card's meta
+      // line; the binding under test is unchanged (the rendered number IS the one
+      // the engine received).
+      const thresholdEl = screen.getByText(/min \d+ games? per stage/);
+      const parsed = Number(thresholdEl.textContent?.match(/min (\d+)/)?.[1]);
       expect(recordedMinMatches).toBe(parsed);
       expect(parsed).toBe(3);
     });
@@ -383,7 +397,9 @@ describe('CounterpickAdvisor', () => {
       ];
       renderAdvisor(matches);
 
-      expect(screen.getByText('Min 7 games per stage')).toBeInTheDocument();
+      expect(
+        screen.getByText('Counterpick Advisor · all time · min 7 games per stage'),
+      ).toBeInTheDocument();
       expect(recordedMinMatches).toBe(7);
       const pickSection = screen.getByText('Pick these').closest('div')!;
       expect(pickSection.textContent).toContain('Battlefield');
@@ -402,8 +418,10 @@ describe('CounterpickAdvisor', () => {
       // ONLY input where reading the hook raw and reading `advisorThreshold`
       // diverge, which is why it's the assertion that actually proves the
       // header is wired to the binding rather than to the hook.
-      expect(screen.getByText('Min 3 games per stage')).toBeInTheDocument();
-      expect(screen.queryByText('Min 1 game per stage')).not.toBeInTheDocument();
+      expect(
+        screen.getByText('Counterpick Advisor · all time · min 3 games per stage'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/min 1 game per stage/)).not.toBeInTheDocument();
       expect(recordedMinMatches).toBe(3);
       const pickSection = screen.getByText('Pick these').closest('div')!;
       expect(pickSection.textContent).toContain('Battlefield');
@@ -412,7 +430,9 @@ describe('CounterpickAdvisor', () => {
   });
 
   describe('Task 2: ruleset disclosure and editable set state (D-11, D-12, EVID-04, EVID-05)', () => {
-    it('renders the ruleset control in the header even when the claim is abstained', () => {
+    const ASSUMPTION_GAME1 = 'Assuming Game 1 · Striking · no stages played yet, no bans';
+
+    it('renders the ruleset control in the assumption line even when the claim is abstained', () => {
       renderAdvisor(matchesOnStage(BATTLEFIELD, 1, 0)); // abstained fixture
       expect(
         screen.getByRole('button', {
@@ -422,70 +442,164 @@ describe('CounterpickAdvisor', () => {
       expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
     });
 
-    it('REWRITTEN (plan 39.1-30 item 1): the trigger shows the short "Change assumption" label — the composed sentence is stated exactly once, on the always-visible under-title line, not duplicated on the trigger', () => {
-      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
-      // The trigger's accessible name equals its VISIBLE text (WCAG 2.5.3) —
-      // a short, constant label, never the composed sentence (that would
-      // restate it a second time, the exact duplication the owner audit
-      // flagged). The sentence lives ONLY on the always-visible under-title
-      // line.
-      const trigger = screen.getByRole('button', { name: SET_STATE_EDIT_ARIA });
-      expect(trigger.textContent).toContain('Change assumption');
-      expect(trigger.textContent).not.toContain('Assuming');
-      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
-        'Assuming Game 1 · Striking · no stages played yet, no bans',
-      );
-      // Exactly once anywhere in the document — never a duplicate copy on
-      // the trigger or anywhere else.
-      expect(
-        screen.getAllByText('Assuming Game 1 · Striking · no stages played yet, no bans'),
-      ).toHaveLength(1);
+    it('segmented-set-state: ONE assumption line holds the ruleset control and the composed sentence, stated exactly once', () => {
+      const { container } = renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      // REWRITTEN from "the trigger shows the short 'Change assumption' label":
+      // there is no assumption trigger any more — the sentence is the always-
+      // visible line, sitting beside the ruleset disclosure, never on a control.
+      const line = screen.getByTestId('set-state-assumption-line');
+      expect(line.textContent).toBe(ASSUMPTION_GAME1);
+      expect(screen.getAllByText(ASSUMPTION_GAME1)).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: 'Change assumption' })).toBeNull();
+      const rulesetButton = screen.getByRole('button', {
+        name: 'View the ruleset assumption behind these stage recommendations',
+      });
+      const assumptionRow = line.parentElement!;
+      expect(assumptionRow.contains(rulesetButton)).toBe(true);
+      expect(assumptionRow.closest('[data-slot="set-state-segments"]')).toBeNull();
+      expect(container.querySelector('[data-slot="counterpick-controls"]')).toBeNull();
     });
 
-    it('plan 39.1-30 item 1: the trigger is described by the assumption line (aria-describedby)', () => {
+    it('segmented-set-state: the card is a region named by its top line — suggestion chip plus the meta line', () => {
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
-      const trigger = screen.getByRole('button', { name: SET_STATE_EDIT_ARIA });
+      const region = screen.getByRole('region', {
+        name: 'Counterpick Advisor · all time · min 3 games per stage',
+      });
+      expect(within(region).getByText('Suggestion')).toBeInTheDocument();
+    });
+
+    it('segmented-set-state: an abstained card keeps the dashed locked chip, the sentence and a count meter', () => {
+      const { container } = renderAdvisor(matchesOnStage(BATTLEFIELD, 2, 0));
+      expect(screen.getByText(/Suggestion · Locked/)).toBeInTheDocument();
+      expect(screen.getByText(/Not enough data yet.*1 more game needed\./)).toBeInTheDocument();
+      const meter = container.querySelector('[role="img"][aria-label="2 of 3 games"]');
+      expect(meter).not.toBeNull();
+      // The controls still render (EVID-05 always-visible): the assumption is what
+      // computed the abstention.
+      expect(container.querySelector('[data-slot="set-state-segments"]')).not.toBeNull();
+      expect(screen.getByTestId('set-state-assumption-line')).toBeInTheDocument();
+    });
+
+    it('segmented-set-state: Phase and Role are two labelled radiogroups in [data-slot="set-state-segments"], with the popover link beside them', () => {
+      const { container } = renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      const segments = container.querySelector('[data-slot="set-state-segments"]') as HTMLElement;
+      expect(segments).not.toBeNull();
+      expect(within(segments).getAllByRole('radiogroup')).toHaveLength(2);
+      const phase = within(segments).getByRole('radiogroup', { name: 'Phase' });
+      const role = within(segments).getByRole('radiogroup', { name: 'Role' });
+      expect(within(phase).getByRole('radio', { name: 'Game 1' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      expect(within(phase).getByRole('radio', { name: 'Game 2+' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+      expect(within(role).getAllByRole('radio')).toHaveLength(2);
+      expect(within(segments).getByRole('button', { name: PLAYED_BANS_LINK })).toBeInTheDocument();
+    });
+
+    it('segmented-set-state: at Game 1 "Striking" is pressed and both role options are unavailable, with the reason on hover', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      const striking = screen.getByRole('radio', { name: 'Striking' });
+      const picking = screen.getByRole('radio', { name: ROLE_PICKING });
+      expect(striking).toHaveAttribute('aria-checked', 'true');
+      expect(striking).toHaveAttribute('aria-disabled', 'true');
+      expect(picking).toHaveAttribute('aria-disabled', 'true');
+      await user.click(picking);
+      expect(picking).toHaveAttribute('aria-checked', 'false');
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(ASSUMPTION_GAME1);
+      await user.hover(picking);
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Roles apply from Game 2');
+    });
+
+    it('segmented-set-state: at Game 2+ the roles read "Banning (you won)" (striking) and "Picking (you lost)" (picking) and are available', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
+      const banning = screen.getByRole('radio', { name: ROLE_BANNING });
+      const picking = screen.getByRole('radio', { name: ROLE_PICKING });
+      expect(banning).toHaveAttribute('aria-checked', 'true');
+      expect(banning).not.toHaveAttribute('aria-disabled');
+      expect(picking).not.toHaveAttribute('aria-disabled');
+      expect(screen.queryByRole('radio', { name: 'Striking' })).toBeNull();
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
+        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+      );
+      await user.click(picking);
+      expect(picking).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
+        'Assuming Game 2+ · Picking · no stages played yet, no bans',
+      );
+    });
+
+    it('segmented-set-state: choosing Game 1 again resets the role to striking', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
+      await user.click(screen.getByRole('radio', { name: ROLE_PICKING }));
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain('Picking');
+      await user.click(screen.getByRole('radio', { name: 'Game 1' }));
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(ASSUMPTION_GAME1);
+      expect(screen.getByRole('radio', { name: 'Striking' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+    });
+
+    it('segmented-set-state: "stages played · bans" opens ONLY the prior-stages and bans checklists — no phase or role radio is left in the popover', async () => {
+      const user = userEvent.setup();
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText('Stages played so far')).toBeInTheDocument();
+      expect(within(dialog).getByText('Stages banned so far')).toBeInTheDocument();
+      expect(within(dialog).queryAllByRole('radio')).toHaveLength(0);
+      expect(within(dialog).queryByLabelText('Game 2+')).toBeNull();
+      expect(within(dialog).queryByLabelText('Picking')).toBeNull();
+      expect(within(dialog).getAllByRole('checkbox').length).toBeGreaterThan(0);
+    });
+
+    it('segmented-set-state: the popover link is described by the assumption line (aria-describedby)', () => {
+      renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
+      const link = screen.getByRole('button', { name: PLAYED_BANS_LINK });
       const assumptionLine = screen.getByTestId('set-state-assumption-line');
       expect(assumptionLine.id).toBeTruthy();
-      expect(trigger.getAttribute('aria-describedby')).toBe(assumptionLine.id);
+      expect(link.getAttribute('aria-describedby')).toBe(assumptionLine.id);
     });
 
-    it('plan 39.1-30 item 1: the card header holds no button and no sample cue — controls live in a toolbar row below it', () => {
-      const { container } = render(
-        <MemoryRouter initialEntries={['/matchups']}>
-          <div id={MATCHUP_TABLE_ANCHOR_ID} />
-          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
-            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
-          </MatchupsContext.Provider>
-        </MemoryRouter>,
-      );
-      const header = container.querySelector('[data-slot="card-header"]');
-      expect(header).not.toBeNull();
-      expect(header!.querySelector('button')).not.toBeInTheDocument();
-      const toolbar = container.querySelector('[data-slot="chart-card-toolbar"]');
-      expect(toolbar).not.toBeNull();
-      expect(toolbar!.querySelector('[data-slot="counterpick-controls"]')).toBeInTheDocument();
-      expect(toolbar!.querySelectorAll('button').length).toBeGreaterThan(0);
+    it('segmented-set-state: no status colour and no bar colour outside blue series rows — neutral overlines, no emerald or destructive class', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+        ...matchesOnStage(SMALL_BATTLEFIELD, 0, 5),
+      ];
+      const { container } = renderAdvisor(matches);
+      expect(container.innerHTML).not.toMatch(/emerald|destructive/);
+      const pickHead = screen.getByText('Pick these');
+      const banHead = screen.getByText('Ban / avoid these');
+      expect(pickHead.className).toBe(banHead.className);
+      expect(pickHead.className).toMatch(/uppercase/);
+      expect(pickHead.className).toMatch(/text-muted-foreground/);
     });
 
-    it('plan 39.1-30 item 1: the toolbar (and the assumption sentence) still render when the claim is abstained — EVID-05 always-visible', () => {
-      const { container } = render(
-        <MemoryRouter initialEntries={['/matchups']}>
-          <div id={MATCHUP_TABLE_ANCHOR_ID} />
-          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
-            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 1, 0)} />
-          </MatchupsContext.Provider>
-        </MemoryRouter>,
-      );
-      expect(
-        container.querySelector(
-          '[data-slot="chart-card-toolbar"] [data-slot="counterpick-controls"]',
-        ),
-      ).toBeInTheDocument();
-      expect(screen.getByTestId('set-state-assumption-line')).toBeInTheDocument();
-      expect(
-        screen.getAllByText('Assuming Game 1 · Striking · no stages played yet, no bans'),
-      ).toHaveLength(1);
+    it('segmented-set-state: each Pick / Ban section is series rows against the pairing all-time reference, with one reference legend line', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+        ...matchesOnStage(SMALL_BATTLEFIELD, 0, 5),
+      ];
+      const { container } = renderAdvisor(matches);
+      const lists = container.querySelectorAll('[data-slot="comparison-bars-series"]');
+      expect(lists).toHaveLength(2);
+      // Pairing all-time rate: 12 wins of 25 games = 48%.
+      expect(screen.getAllByText('48% all time')).toHaveLength(1);
+      const ticks = container.querySelectorAll('[data-slot="comparison-bar-reference"]');
+      expect(ticks).toHaveLength(4);
+      expect((ticks[0] as HTMLElement).style.left).toBe('48%');
     });
 
     it('a counterpick stage with a fully qualifying record is absent at game one and present from game two', async () => {
@@ -498,14 +612,12 @@ describe('CounterpickAdvisor', () => {
 
       expect(screen.queryByText(/Lylat Cruise/)).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
-      await user.click(screen.getByLabelText('Game 2+'));
-      await user.keyboard('{Escape}'); // close the popover so the checklist rows stop shadowing the bar label
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
 
       expect(await screen.findByText('Lylat Cruise')).toBeInTheDocument();
     });
 
-    it('marking a prior stage as won under the modified repeat rule, with the picking role and a later game phase, removes that stage from both rendered groups', async () => {
+    it('choosing Picking at Game 2+ changes the legal-stage set exactly as the old radio: a stage won earlier under the modified repeat rule leaves both groups', async () => {
       const user = userEvent.setup();
       const matches = [
         ...matchesOnStage(BATTLEFIELD, 5, 0),
@@ -514,9 +626,9 @@ describe('CounterpickAdvisor', () => {
       ];
       renderAdvisor(matches);
 
-      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
-      await user.click(screen.getByLabelText('Game 2+'));
-      await user.click(screen.getByLabelText('Picking'));
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
+      await user.click(screen.getByRole('radio', { name: ROLE_PICKING }));
+      await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
 
       const priorSection = screen.getByText('Stages played so far').closest('div')!;
       await user.click(within(priorSection).getByLabelText('Battlefield'));
@@ -527,11 +639,30 @@ describe('CounterpickAdvisor', () => {
       expect(screen.getByText(/Town and City/)).toBeInTheDocument();
     });
 
+    it('the same prior-stage win at Game 2+ while BANNING (role striking) leaves that stage in place — the DSR clause applies only to the picking role', async () => {
+      const user = userEvent.setup();
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 3, 2),
+      ];
+      renderAdvisor(matches);
+
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
+      await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
+      const priorSection = screen.getByText('Stages played so far').closest('div')!;
+      await user.click(within(priorSection).getByLabelText('Battlefield'));
+      await user.click(within(priorSection).getByRole('radio', { name: 'Won' }));
+      await user.keyboard('{Escape}');
+
+      expect(screen.getByText(/Battlefield/)).toBeInTheDocument();
+    });
+
     it('banning every stage in the active ruleset renders the no-legal-stage message with zero bars and no abstention sentence', async () => {
       const user = userEvent.setup();
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
 
-      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
+      await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
       const bansSection = screen.getByText('Stages banned so far').closest('div')!;
       const banCheckboxes = within(bansSection).getAllByRole('checkbox');
       for (const checkbox of banCheckboxes) {
@@ -549,12 +680,12 @@ describe('CounterpickAdvisor', () => {
       const user = userEvent.setup();
       renderAdvisor(matchesOnStage(BATTLEFIELD, 5, 0));
 
-      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
-      await user.click(screen.getByLabelText('Game 2+'));
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
       expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
         'Assuming Game 2+ · Striking · no stages played yet, no bans',
       );
 
+      await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
       await user.keyboard('{Escape}');
       expect(screen.queryByText('Stages played so far')).not.toBeInTheDocument();
     });
@@ -562,17 +693,19 @@ describe('CounterpickAdvisor', () => {
     it('resets the set state to the default when the pairing changes', async () => {
       const user = userEvent.setup();
       const { rerender } = render(
-        <MemoryRouter initialEntries={['/matchups']}>
-          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
-            <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
-          </MatchupsContext.Provider>
-        </MemoryRouter>,
+        <TooltipProvider>
+          <MemoryRouter initialEntries={['/matchups']}>
+            <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+              <CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 5, 0)} />
+            </MatchupsContext.Provider>
+          </MemoryRouter>
+        </TooltipProvider>,
       );
 
-      await user.click(screen.getByRole('button', { name: SET_STATE_EDIT_ARIA }));
-      await user.click(screen.getByLabelText('Game 2+'));
+      await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
+      await user.click(screen.getByRole('radio', { name: ROLE_PICKING }));
       expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
-        'Assuming Game 2+',
+        'Assuming Game 2+ · Picking',
       );
 
       const differentPairing = matchesOnStage(BATTLEFIELD, 5, 0).map((m) => ({
@@ -580,19 +713,20 @@ describe('CounterpickAdvisor', () => {
         opponent_id: 99,
       }));
       rerender(
-        <MemoryRouter initialEntries={['/matchups']}>
-          <MatchupsContext.Provider value={baseMatchupsContextValue()}>
-            <CounterpickAdvisor matchupMatches={differentPairing} />
-          </MatchupsContext.Provider>
-        </MemoryRouter>,
+        <TooltipProvider>
+          <MemoryRouter initialEntries={['/matchups']}>
+            <MatchupsContext.Provider value={baseMatchupsContextValue()}>
+              <CounterpickAdvisor matchupMatches={differentPairing} />
+            </MatchupsContext.Provider>
+          </MemoryRouter>
+        </TooltipProvider>,
       );
 
-      expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
-        'Assuming Game 1',
-      );
+      expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(ASSUMPTION_GAME1);
+      expect(screen.getByRole('radio', { name: 'Game 1' })).toHaveAttribute('aria-checked', 'true');
     });
 
-    it('grep gate: SetStateControl never renders a TooltipContent — the assumption is never delivered through a hover surface', () => {
+    it('grep gate: the assumption sentence is never delivered through a hover surface — the only tooltip is the unavailable role reason, and only on hover', () => {
       // Mechanical statement mirrored from the plan's own acceptance grep;
       // asserted here too so a component-level regression is caught by the
       // default suite, not only by a shell command run by hand.

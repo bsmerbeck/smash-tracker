@@ -237,15 +237,22 @@ describe('HorizonSwitch', () => {
     const { container } = renderSwitch();
     await waitForSettled();
 
-    const accents = container.querySelectorAll('[data-slot="horizon-switch-accent"]');
+    // Plan 39.1-47 (PD-47-1): the accent is drawn by the shared SegmentedControl
+    // primitive, so its data-slot moved from `horizon-switch-accent` to
+    // `segmented-control-accent`; the behaviour (one accent, on the selected
+    // segment) is unchanged.
+    const accents = container.querySelectorAll('[data-slot="segmented-control-accent"]');
     expect(accents).toHaveLength(1);
     const last30 = screen.getByRole('radio', { name: 'Last 30 games' });
     expect(last30.contains(accents[0] ?? null)).toBe(true);
   });
 
   it('every transition utility in the source is paired with its reduced-motion counterpart', () => {
+    // Plan 39.1-47: the accent's transition lives in the shared primitive the
+    // switch now renders through (it moved with the markup); HorizonSwitch.tsx
+    // itself must carry none, so the pairing is asserted on the file that owns it.
     const source = readFileSync(
-      resolve(process.cwd(), 'src/components/analytics/HorizonSwitch.tsx'),
+      resolve(process.cwd(), 'src/components/analytics/SegmentedControl.tsx'),
       'utf8',
     );
     const transitionLines = source
@@ -255,6 +262,25 @@ describe('HorizonSwitch', () => {
     for (const line of transitionLines) {
       expect(line).toContain('motion-reduce:');
     }
+  });
+
+  it('renders through the one SegmentedControl primitive and keeps no ToggleGroup of its own (plan 39.1-47, PD-47-1)', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/analytics/HorizonSwitch.tsx'),
+      'utf8',
+    );
+    expect(source).toMatch(/<SegmentedControl\b/);
+    expect(source).not.toMatch(/ToggleGroup/);
+  });
+
+  it('keeps its page-level data-slot, data-horizon and the visible overline that names the group', async () => {
+    list.mockResolvedValue([manualMatch()]);
+    const { container } = renderSwitch();
+    await waitForSettled();
+    const root = container.querySelector('[data-slot="horizon-switch"]');
+    expect(root).not.toBeNull();
+    expect(root).toHaveAttribute('data-horizon', 'last30');
+    expect(screen.getByRole('radiogroup', { name: 'Recent window' })).toBeInTheDocument();
   });
 
   it('declares no local selected state — a source scan finds no useState holding a horizon value', () => {

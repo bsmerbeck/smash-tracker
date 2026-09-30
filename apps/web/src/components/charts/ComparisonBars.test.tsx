@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ComparisonBars, type ComparisonBarsDumbbellRow } from './ComparisonBars';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  ComparisonBars,
+  type ComparisonBarsDumbbellRow,
+  type ComparisonBarsTone,
+} from './ComparisonBars';
 
 describe('ComparisonBars', () => {
   it('renders one list item per row with a track and a filled meter sized to the value', () => {
     const { container } = render(
       <ComparisonBars
-        tone="emerald"
+        tone="series"
         rows={[
           { key: 'a', label: <span>Battlefield</span>, value: 80, valueLabel: '4-1 (80% over 5)' },
           { key: 'b', label: <span>Smashville</span>, value: 40, valueLabel: '2-3 (40% over 5)' },
@@ -29,7 +35,7 @@ describe('ComparisonBars', () => {
     const onSelectRow = vi.fn();
     render(
       <ComparisonBars
-        tone="destructive"
+        tone="series"
         rows={[
           {
             key: 'a',
@@ -48,7 +54,7 @@ describe('ComparisonBars', () => {
   it('renders no clickable button when no onSelectRow handler is given', () => {
     render(
       <ComparisonBars
-        tone="emerald"
+        tone="series"
         rows={[
           {
             key: 'a',
@@ -163,15 +169,37 @@ describe('ComparisonBars tone="series" (plan 39.1-46, PD-46-1: sketch 003 A .cmp
     expect(container.querySelector('ul')!.className).toContain('divide-y');
   });
 
-  it('series-rows: the status tones keep their byte-identical layout (no series slots)', () => {
+  it('segmented-set-state: the tone union is series only — the two status tones are gone (PD-47-4)', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/charts/ComparisonBars.tsx'),
+      'utf8',
+    );
+    // Comments may name the retired tones; code may not carry them.
+    const code = source
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\*|\/\/)/.test(line))
+      .join('\n');
+    expect(code).not.toMatch(/emerald/);
+    expect(code).not.toMatch(/destructive/);
+    expect(code).not.toMatch(/STATUS_TONE_CLASSES/);
+    const valid: ComparisonBarsTone = 'series';
+    // @ts-expect-error - 'emerald' is no longer a member of the ComparisonBarsTone union.
+    const retiredEmerald: ComparisonBarsTone = 'emerald';
+    // @ts-expect-error - 'destructive' is no longer a member of the ComparisonBarsTone union.
+    const retiredDestructive: ComparisonBarsTone = 'destructive';
+    expect([valid, retiredEmerald, retiredDestructive]).toHaveLength(3);
+  });
+
+  it('segmented-set-state: a series row with no reference and no sub-floor flag draws the plain blue fill on the muted track', () => {
     const { container } = render(
       <ComparisonBars
-        tone="emerald"
+        tone="series"
         rows={[{ key: 'a', label: <span>x</span>, value: 10, valueLabel: '1-0' }]}
       />,
     );
-    expect(container.querySelector('[data-slot="comparison-bar-label"]')).toBeNull();
+    expect(container.querySelector('[data-slot="comparison-bar-label"]')).not.toBeNull();
     expect(container.querySelector('[data-slot="comparison-bar-reference"]')).toBeNull();
+    expect(container.innerHTML).not.toMatch(/emerald|destructive/);
   });
 });
 
