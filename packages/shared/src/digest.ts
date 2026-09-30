@@ -147,6 +147,10 @@ export function stateClassFor(input: {
  * The D-05 transition table. A move is ONLY:
  * - `steady`/`up`/`down` to a different one of those three -> the new class;
  * - `locked` to any state that is neither `locked` nor `none` -> `unlocked`;
+ * - `none` to `steady`/`up`/`down` -> `unlocked` (39.2-REVIEW SH-WR-05, owner D-05
+ *   interpretation: a never-played item that now asserts a class moved; `none` to `locked` —
+ *   a single first game — is not a move, it already shows in the new-games line, and neither
+ *   is `none` to a thin/collapsed read);
  * - `thin`/`thinRecent`/`collapsed` to `up`/`down` -> `asserting`.
  * Everything else — thin to steady, collapsed to steady, thin to collapsed
  * (sample-size artefacts), an item with no snapshot entry (`prev` undefined,
@@ -166,6 +170,11 @@ export function movedTransition(
   }
   if (prev === 'locked') {
     return 'unlocked';
+  }
+  if (prev === 'none') {
+    // `unlocked`, never the direction itself: it is not a direction token, so the null-roster
+    // false-direction budget is unaffected.
+    return nextIsDirectional ? 'unlocked' : null;
   }
   if (
     (prev === 'thin' || prev === 'thinRecent' || prev === 'collapsed') &&
