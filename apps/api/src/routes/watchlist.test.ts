@@ -226,6 +226,95 @@ describe('watchlist cap, idempotency and input hardening', () => {
     expect(Object.keys(stored)).toHaveLength(WATCHLIST_MAX_ITEMS);
   });
 
+  // 39.2 code review API-WR-03: the cap counts only the items GET lists. A
+  // child the GET hides as corrupt (a bad value, or a key this build does not
+  // know, e.g. a newer kind after a rollback) is left untouched and uncounted,
+  // so the user is never refused at fewer than 25 visible items.
+  describe('corrupt stored children and the cap (API-WR-03)', () => {
+    const CORRUPT_VALUE = { 'stage:900': { kind: 'stage', ref: 'not-a-number', createdAt: 1 } };
+    const UNKNOWN_KEY = { 'tournament:1': { kind: 'tournament', ref: 1, createdAt: 1 } };
+
+    async function listedKeys(app: ReturnType<typeof buildTestApp>['app']): Promise<string[]> {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/watchlist',
+        headers: authHeader(),
+      });
+      return response.json().items.map((entry: { itemKey: string }) => entry.itemKey);
+    }
+
+    it.each([
+      ['a corrupt value', CORRUPT_VALUE],
+      ['an unknown key', UNKNOWN_KEY],
+    ])('24 listed items plus %s: tracking a 25th answers 200', async (_label, corrupt) => {
+      const { app, database } = buildTestApp();
+      database.seed(`watchlist/${TEST_UID}`, { ...stageMap(WATCHLIST_MAX_ITEMS - 1), ...corrupt });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      expect(await listedKeys(app)).toHaveLength(WATCHLIST_MAX_ITEMS - 1);
+      const response = await putItem(app, { kind: 'stage', ref: 500 });
+
+      expect(response.statusCode).toBe(200);
+      expect(await listedKeys(app)).toHaveLength(WATCHLIST_MAX_ITEMS);
+      // The hidden child is neither counted nor silently deleted.
+      expect(subjectTree(database, TEST_UID)).toMatchObject(corrupt);
+      warn.mockRestore();
+    });
+
+    it('25 listed items plus a corrupt child: a 26th distinct item is still refused with 409', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`watchlist/${TEST_UID}`, { ...stageMap(WATCHLIST_MAX_ITEMS), ...UNKNOWN_KEY });
+      const before = structuredClone(database.dump());
+
+      const response = await putItem(app, { kind: 'stage', ref: 500 });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: 'watchlist-full' });
+      expect(database.dump()).toEqual(before);
+    });
+
+    it('1 listed item plus 24 corrupt children: the user can still track', async () => {
+      const { app, database } = buildTestApp();
+      const corrupt: Record<string, unknown> = {};
+      for (let n = 1; n <= WATCHLIST_MAX_ITEMS - 1; n += 1) {
+        corrupt[`stage:${900 + n}`] = { kind: 'stage', ref: 'bad', createdAt: n };
+      }
+      database.seed(`watchlist/${TEST_UID}`, { ...stageMap(1), ...corrupt });
+
+      const response = await putItem(app, { kind: 'stage', ref: 500 });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('25 listed items: repairing a corrupt child under the requested key is refused, never a 26th listed item', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`watchlist/${TEST_UID}`, {
+        ...stageMap(WATCHLIST_MAX_ITEMS),
+        'stage:500': { kind: 'stage', ref: 'bad', createdAt: 1 },
+      });
+
+      const response = await putItem(app, { kind: 'stage', ref: 500 });
+
+      expect(response.statusCode).toBe(409);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      expect(await listedKeys(app)).toHaveLength(WATCHLIST_MAX_ITEMS);
+      warn.mockRestore();
+    });
+
+    it('24 listed items: a corrupt child under the requested key is repaired in place (200, 25 listed)', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`watchlist/${TEST_UID}`, {
+        ...stageMap(WATCHLIST_MAX_ITEMS - 1),
+        'stage:500': { kind: 'stage', ref: 'bad', createdAt: 1 },
+      });
+
+      const response = await putItem(app, { kind: 'stage', ref: 500 });
+
+      expect(response.statusCode).toBe(200);
+      expect(await listedKeys(app)).toHaveLength(WATCHLIST_MAX_ITEMS);
+    });
+  });
+
   it('the transaction body aborts (undefined) on a 25-item map and adds exactly one key to a 24-item map', async () => {
     const { database } = buildTestApp();
     const updateFns: Array<(current: unknown) => unknown> = [];
