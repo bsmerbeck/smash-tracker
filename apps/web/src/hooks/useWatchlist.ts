@@ -204,3 +204,79 @@ export function useUntrackWatchlistItem() {
     },
   });
 }
+
+interface UntrackManyVariables {
+  /** Every stored key the untrack removes (a Tracked row can fold several after an alias merge). */
+  itemKeys: readonly string[];
+  name: string;
+}
+
+/**
+ * A multi-key untrack in which at least one DELETE failed. `deleted` names the keys the server
+ * DID remove, so the rollback restores only the ones that are still stored.
+ */
+class PartialUntrackError extends Error {
+  readonly deleted: readonly string[];
+  readonly failure: unknown;
+
+  constructor(deleted: readonly string[], failure: unknown) {
+    super('One or more watchlist deletes failed');
+    this.name = 'PartialUntrackError';
+    this.deleted = deleted;
+    this.failure = failure;
+  }
+}
+
+/**
+ * Untracks EVERY stored key one displayed item folds (39.2-REVIEW WEB-IN multi-key untrack and
+ * WEB-WR-04): one DELETE per key, applied optimistically as one change, announced with ONE
+ * toast. If some DELETEs fail, the rollback restores only the keys the server still holds —
+ * never a key another DELETE of the same untrack already removed — and one error is reported.
+ */
+export function useUntrackWatchlistItems() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const subject = useEffectiveSubject();
+  const queryKey = watchlistQueryKey(subject);
+  const reportFailure = useReportWatchlistFailure();
+  return useMutation<readonly string[], unknown, UntrackManyVariables, OptimisticContext>({
+    mutationFn: async ({ itemKeys }) => {
+      const results = await Promise.allSettled(
+        itemKeys.map((itemKey) => api.watchlist.untrack(itemKey)),
+      );
+      const deleted = itemKeys.filter((_, index) => results[index]?.status === 'fulfilled');
+      const failed = results.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      if (failed) {
+        throw new PartialUntrackError(deleted, failed.reason);
+      }
+      return deleted;
+    },
+    onMutate: async ({ itemKeys }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<WatchlistResponse>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<WatchlistResponse>(queryKey, {
+          items: previous.items.filter((entry) => !itemKeys.includes(entry.itemKey)),
+        });
+      }
+      return { previous };
+    },
+    onError: (error, _variables, context) => {
+      const deleted = error instanceof PartialUntrackError ? error.deleted : [];
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData<WatchlistResponse>(queryKey, {
+          items: context.previous.items.filter((entry) => !deleted.includes(entry.itemKey)),
+        });
+      }
+      reportFailure(error instanceof PartialUntrackError ? error.failure : error);
+    },
+    onSuccess: (_result, { name }) => {
+      toast.success(t('watchlist.untrackedToast', { name }));
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey });
+    },
+  });
+}

@@ -11,7 +11,7 @@ import {
   type TrackedRowModel,
 } from '@/components/analytics/track/trackedRowModel';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
-import { useUntrackWatchlistItem, useWatchlist } from '@/hooks/useWatchlist';
+import { useUntrackWatchlistItems, useWatchlist } from '@/hooks/useWatchlist';
 
 /** The `overline` role (UI-SPEC 5). */
 const OVERLINE =
@@ -54,7 +54,7 @@ export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps)
   const { t } = useTranslation();
   const watchlist = useWatchlist();
   const aliases = useOpponentAliases();
-  const untrack = useUntrackWatchlistItem();
+  const untrack = useUntrackWatchlistItems();
   // React Compiler forbids a bare `Date.now()` call in the render body; the
   // one clock the section reads is captured once, as the hero's is.
   const [nowMs] = useState(() => Date.now());
@@ -94,9 +94,9 @@ export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps)
     const target = neighbour?.querySelector<HTMLElement>('a') ?? headingRef.current;
     // Move focus BEFORE the row unmounts so it is never dropped on the body.
     target?.focus();
-    for (const itemKey of model.itemKeys) {
-      untrack.mutate({ itemKey, name: model.name });
-    }
+    // Every stored key the row folds, as ONE untrack: one toast, and a partial failure never
+    // restores a key another DELETE already removed.
+    untrack.mutate({ itemKeys: model.itemKeys, name: model.name });
   }
 
   // Each label is resolved in its own statement (insightCopy guard: two
