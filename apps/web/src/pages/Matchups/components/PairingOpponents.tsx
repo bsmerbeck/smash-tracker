@@ -82,7 +82,7 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
   return (
     <li
       data-slot="pairing-opponent-row"
-      className="@container/pairing-opponent-row relative flex items-center gap-2 rounded-md px-1.5 py-2.5 hover:bg-accent"
+      className="@container/pairing-opponent-row relative rounded-md px-1.5 py-2 hover:bg-accent"
     >
       <DrillableRow
         as="overlay"
@@ -91,7 +91,7 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
       />
       <div
         data-slot="pairing-opponent-body"
-        className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @max-[419px]/pairing-opponent-row:grid-cols-[minmax(0,1fr)]"
+        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @max-[419px]/pairing-opponent-row:grid-cols-[minmax(0,1fr)]"
       >
         <div
           data-slot="pairing-opponent-who"
@@ -121,7 +121,7 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
             <span
               role="img"
               aria-label={cueLabel}
-              className="shrink-0 text-sm leading-5 whitespace-nowrap tabular-nums"
+              className="shrink-0 text-xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground"
             >
               {tier === 'high' ? '●●●' : tier === 'medium' ? '●●○' : '●○○'}
             </span>
@@ -149,7 +149,6 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
           <SetStrip
             sets={ticks}
             ariaLabel={t('matchups.ledger.setsAria', {
-              count: row.sets.length,
               won: shownWon,
               lost: row.sets.length - shownWon,
             })}
@@ -165,9 +164,11 @@ function LedgerRow({ row, fighterId, opponentFighterId, t, locale, subjectPath }
               {t('matchups.ledger.trimmed', { shown: LEDGER_MAX_SETS, total: row.setsTotal })}
             </span>
           )}
+          {/* The chevron rides the sets line's free right end (sketch C has none): a
+              beside-the-body chevron costs a phone row 24px and wraps the glyph. */}
+          <DrillableRowChevron className="ml-auto" />
         </div>
       </div>
-      <DrillableRowChevron />
     </li>
   );
 }
@@ -209,9 +210,9 @@ export function PairingOpponents({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <CardTitle>{t('matchups.opponentSplit.title')}</CardTitle>
-        <p className="text-xs leading-4 text-muted-foreground tabular-nums">
+        <p className="min-w-0 text-xs leading-4 text-muted-foreground tabular-nums">
           {t('matchups.ledger.meta')}
         </p>
       </CardHeader>

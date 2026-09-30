@@ -976,8 +976,7 @@
     "ledger": {
       "meta": "ein Strich pro Satz · oben = Satz gewonnen · meiste Spiele zuerst · Chip = letzte 12 Monate gegenüber Gesamt",
       "sets": "Sätze {{won}}–{{lost}}",
-      "setsAria_one": "{{count, grouped}} Satz — gewonnen: {{won}}, verloren: {{lost}}",
-      "setsAria_other": "{{count, grouped}} Sätze — gewonnen: {{won}}, verloren: {{lost}}",
+      "setsAria": "{{won}}–{{lost}} Sätze",
       "trimmed": "neueste {{shown, grouped}} von {{total, grouped}} Sätzen"
     },
     "table": {

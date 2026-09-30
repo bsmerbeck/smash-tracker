@@ -976,8 +976,7 @@
     "ledger": {
       "meta": "one tick per set · up = set won · most games first · chip = last 12 months vs all time",
       "sets": "sets {{won}}–{{lost}}",
-      "setsAria_one": "{{count, grouped}} set: {{won}} won, {{lost}} lost",
-      "setsAria_other": "{{count, grouped}} sets: {{won}} won, {{lost}} lost",
+      "setsAria": "{{won}}–{{lost}} sets",
       "trimmed": "newest {{shown, grouped}} of {{total, grouped}} sets"
     },
     "table": {

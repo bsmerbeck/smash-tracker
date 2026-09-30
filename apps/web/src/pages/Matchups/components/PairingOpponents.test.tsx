@@ -185,7 +185,7 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     expect(within(row).getByRole('img', { name: 'low confidence, 4 games' })).toBeInTheDocument();
   });
 
-  it('draws one set-strip tick per set, up = set won, with an aria-label counting sets won and lost', () => {
+  it('draws one set-strip tick per set, up = set won, with an aria-label naming sets won and lost', () => {
     const matches = [
       setGame('s1', 1, NOW_MS - 60 * DAY_MS, true),
       setGame('s1', 2, NOW_MS - 60 * DAY_MS + 600_000, true),
@@ -194,17 +194,15 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     ];
     renderPairing(matches);
     const row = rowOf('rival');
-    const strip = within(row).getByRole('img', { name: '3 sets: 2 won, 1 lost' });
+    const strip = within(row).getByRole('img', { name: '2–1 sets' });
     expect(strip).toHaveAttribute('data-slot', 'set-strip');
     expect(strip.querySelectorAll('[data-slot="set-strip-tick-win"]')).toHaveLength(2);
     expect(strip.querySelectorAll('[data-slot="set-strip-tick-loss"]')).toHaveLength(1);
   });
 
-  it('a single set reads with the singular aria', () => {
+  it('a single set reads "1–0 sets" (eager-budget fallback label)', () => {
     renderPairing([setGame('s1', 1, NOW_MS - 20 * DAY_MS, true)]);
-    expect(
-      within(rowOf('rival')).getByRole('img', { name: '1 set: 1 won, 0 lost' }),
-    ).toBeInTheDocument();
+    expect(within(rowOf('rival')).getByRole('img', { name: '1–0 sets' })).toBeInTheDocument();
   });
 
   it('a manual play session is one tick (buildFormStripSetKeys)', () => {
@@ -214,7 +212,7 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
       makeMatch({ id: 'c', time: NOW_MS - 30 * DAY_MS + 7_200_000, win: false }),
     ];
     renderPairing(matches);
-    const strip = within(rowOf('rival')).getByRole('img', { name: /sets?:/ });
+    const strip = within(rowOf('rival')).getByRole('img', { name: '1–0 sets' });
     expect(strip.querySelectorAll('[data-slot^="set-strip-tick"]')).toHaveLength(1);
   });
 
@@ -296,7 +294,7 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     expect(tags).toEqual(['most', 'alpha', 'beta', 'zeta-most']);
   });
 
-  it("the layout: the li is a row container; the body is the ledger grid (tag line, chip cell, sets line); the chevron is the li's last child", () => {
+  it("the layout: the li is a row container; the body is the ledger grid (tag line, chip cell, sets line); the chevron rides the sets line's right end", () => {
     renderPairing([setGame('s1', 1, NOW_MS - 20 * DAY_MS, true)]);
     const li = screen.getByRole('listitem');
     expect(li.className).toMatch(/@container\/pairing-opponent-row/);
@@ -323,8 +321,11 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     const sets = body.children[2] as HTMLElement;
     expect(sets.className).toMatch(/col-span-full/);
     expect(sets.querySelector('[data-slot="set-strip"]')).not.toBeNull();
-    // The chevron (a lucide ChevronRight <svg>, aria-hidden) is the li's last element child.
-    expect(li.lastElementChild?.tagName.toLowerCase()).toBe('svg');
-    expect(li.lastElementChild).toHaveAttribute('aria-hidden', 'true');
+    // The chevron (a lucide ChevronRight <svg>, aria-hidden) is the sets line's last element
+    // child, pushed to its right end — a beside-the-body chevron would cost a phone row 24px.
+    const chevron = sets.lastElementChild as HTMLElement;
+    expect(chevron.tagName.toLowerCase()).toBe('svg');
+    expect(chevron).toHaveAttribute('aria-hidden', 'true');
+    expect(chevron.getAttribute('class')).toMatch(/\bml-auto\b/);
   });
 });
