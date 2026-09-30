@@ -3844,6 +3844,7 @@
     "manage": "Gerenciar acompanhados",
     "error": "Não foi possível atualizar a lista de acompanhamento. Tente novamente.",
     "loadError": "Não foi possível carregar os itens acompanhados. Recarregar para tentar de novo.",
+    "refreshError": "Não foi possível atualizar os itens acompanhados. Mostrando a última lista carregada.",
     "section": {
       "title": "Acompanhados",
       "count_one": "{{count}} de 25",

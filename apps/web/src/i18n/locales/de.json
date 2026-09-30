@@ -3844,6 +3844,7 @@
     "manage": "Verfolgte verwalten",
     "error": "Die Liste konnte nicht aktualisiert werden. Bitte erneut versuchen.",
     "loadError": "Verfolgte Einträge konnten nicht geladen werden. Zum erneuten Versuch neu laden.",
+    "refreshError": "Verfolgte Einträge konnten nicht aktualisiert werden. Die zuletzt geladene Liste wird angezeigt.",
     "section": {
       "title": "Verfolgt",
       "count_one": "{{count}} von 25",

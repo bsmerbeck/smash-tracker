@@ -3844,6 +3844,7 @@
     "manage": "Gestionar seguidos",
     "error": "No se pudo actualizar la lista de seguidos. Inténtalo de nuevo.",
     "loadError": "No se pudieron cargar los elementos seguidos. Recargar para reintentar.",
+    "refreshError": "No se pudieron actualizar los elementos seguidos. Se muestra la última lista cargada.",
     "section": {
       "title": "Seguidos",
       "count_one": "{{count}} de 25",

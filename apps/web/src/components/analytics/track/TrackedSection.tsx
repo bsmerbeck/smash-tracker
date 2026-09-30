@@ -82,8 +82,14 @@ export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps)
 
   const count = entries?.length ?? 0;
   const title = t('watchlist.section.title');
-  const countLabel = watchlist.isError ? null : t('watchlist.section.count', { count });
-  const sortNote = watchlist.isError || count === 0 ? null : t('watchlist.section.sortNote');
+  // 39.2-REVIEW WEB-WR-05: react-query keeps `data` when a background refetch fails, with
+  // `isError` set. Only a list that never loaded is a load error; a failed refresh keeps the
+  // rows (the digest above keeps reading the same data) and says so in one muted line.
+  const loadFailed = watchlist.isError && entries === undefined;
+  const refreshFailed = watchlist.isError && entries !== undefined;
+  const countLabel = loadFailed ? null : t('watchlist.section.count', { count });
+  const sortNote = loadFailed || count === 0 ? null : t('watchlist.section.sortNote');
+  const refreshErrorLabel = refreshFailed ? t('watchlist.refreshError') : null;
 
   function handleUntrack(model: TrackedRowModel) {
     const items = Array.from(
@@ -116,7 +122,7 @@ export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps)
   ));
 
   let body;
-  if (watchlist.isError) {
+  if (loadFailed) {
     body = (
       <p data-slot="tracked-error" role="alert" className="text-sm text-muted-foreground">
         {t('watchlist.loadError')}
@@ -162,6 +168,15 @@ export function TrackedSection({ matches, horizon, moved }: TrackedSectionProps)
             </p>
           </div>
         </div>
+        {refreshErrorLabel && (
+          <p
+            data-slot="tracked-refresh-error"
+            role="status"
+            className="text-xs leading-4 text-muted-foreground"
+          >
+            {refreshErrorLabel}
+          </p>
+        )}
         {body}
       </Card>
     </section>

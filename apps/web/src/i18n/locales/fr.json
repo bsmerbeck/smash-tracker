@@ -3844,6 +3844,7 @@
     "manage": "Gérer les suivis",
     "error": "Impossible de mettre à jour la liste de suivi. Réessayer.",
     "loadError": "Les éléments suivis n'ont pas pu être chargés. Recharger la page pour réessayer.",
+    "refreshError": "Impossible d'actualiser les éléments suivis. Affichage de la dernière liste chargée.",
     "section": {
       "title": "Suivis",
       "count_one": "{{count}} sur 25",

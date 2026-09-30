@@ -3844,6 +3844,7 @@
     "manage": "Manage tracked",
     "error": "Couldn't update the tracked list. Try again.",
     "loadError": "Tracked items couldn't be loaded. Reload to try again.",
+    "refreshError": "Couldn't refresh tracked items. Showing the last loaded list.",
     "section": {
       "title": "Tracked",
       "count_one": "{{count}} of 25",
