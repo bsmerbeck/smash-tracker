@@ -7,7 +7,7 @@ import {
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
 import { isPathSafeTenantId } from '../subjectKind.js';
-import { carriedOverrides } from '../../services/tournamentOverrides.js';
+import { carriedOverrides, withoutOverrides } from '../../services/tournamentOverrides.js';
 import { recordsDeepEqual } from '../migration/manifest.js';
 import { deriveTournamentRegistryFromResearchSource } from './derive.js';
 import { withRegistryDeadline, type RegistryDeadlineOptions } from './deadline.js';
@@ -339,25 +339,29 @@ export async function applyTournamentRegistryPlan(
       throw new Error(`Refusing to write a non-registry entry key: ${entryId}`);
     }
     progress('write', entryId);
+    const base = withoutOverrides(row);
     const result = await withRegistryDeadline(
       `write tournamentEntries/${uid}/${entryId}`,
       () =>
         database.ref(`tournamentEntries/${uid}/${entryId}`).transaction((current) => {
           if (current === null || current === undefined) {
-            return row; // absent — create
+            // Absent — create. Never with an override: the plan row may carry
+            // one from a row that has since been removed (API-WR-01).
+            return base;
           }
           if (!isTournamentRegistryOwnedRow(current)) {
             return undefined; // foreign — abort, never clobber
           }
           // Owned — replace, but preserve the stored first-import stamp the
           // plan may not have seen (a concurrent first write is still ours).
-          // A per-event override set between plan and apply is still the
-          // user's: carry the value stored NOW, not the one the plan saw.
+          // The per-event overrides are the user's: take them from the value
+          // stored NOW, never from the plan row, so an override set between
+          // plan and apply survives and one cleared in between stays cleared.
           const storedImportedAtMs = readOwnedImportedAtMs(current);
           return {
             ...(storedImportedAtMs !== null
-              ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
-              : row),
+              ? { ...base, provenance: { ...base.provenance, importedAtMs: storedImportedAtMs } }
+              : base),
             ...carriedOverrides(current),
           };
         }),
