@@ -655,7 +655,7 @@ export function FilteredMatchList({
 
                 return (
                   <Fragment key={match.id}>
-                    <li className="relative flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 hover:bg-accent">
+                    <li className="relative flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md border p-2 hover:bg-accent">
                       <MatchRowOverlay
                         matchId={match.id}
                         facts={facts}
@@ -664,7 +664,7 @@ export function FilteredMatchList({
                         subjectPath={subjectPath}
                         t={t}
                       />
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                         <span className="text-sm text-muted-foreground">
                           {new Date(match.time).toLocaleDateString(i18n.language)}
                         </span>
