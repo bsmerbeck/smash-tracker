@@ -119,7 +119,7 @@ describe('DigestCard states', () => {
       }),
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      "Your matches couldn't be loaded, so the digest can't show what's new. Reload to try again.",
+      "Matches couldn't be loaded, so the digest can't show what's new. Reload to try again.",
     );
     expect(container.querySelector('[data-slot="digest-card"]')).toHaveAttribute(
       'data-state',
