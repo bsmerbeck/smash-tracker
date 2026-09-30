@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
@@ -37,6 +37,7 @@ function renderMatrix(
   matches: Match[],
   overrides: Partial<MatchupsContextValue> = {},
   initialEntry = '/matchups',
+  layout?: 'table' | 'stack',
 ) {
   const setFighter = vi.fn();
   const setOpponent = vi.fn();
@@ -57,7 +58,7 @@ function renderMatrix(
     <MemoryRouter initialEntries={[initialEntry]}>
       <MatchupsContext.Provider value={contextValue}>
         <div id={MATCHUP_DETAIL_ANCHOR_ID} />
-        <MatchupMatrix matches={matches} />
+        <MatchupMatrix matches={matches} layout={layout} />
       </MatchupsContext.Provider>
     </MemoryRouter>,
   );
@@ -343,5 +344,94 @@ describe('MatchupMatrix', () => {
     for (const line of cell.querySelectorAll('span')) {
       expect(line.className).toMatch(/\bwhitespace-nowrap\b/);
     }
+  });
+
+  // ---- plan 39.1-48 (matrix-stacked-phone): the final gate enforces table-clip on Matchups ----
+  // UI-SPEC 6.6 "< 640 tables become stacked rows": the 5-column matrix scrolled
+  // 480-507px inside a 308px card at 390, which the all-route table-clip sweep
+  // (enforced for Matchups from this plan) reports as a clipped table.
+
+  describe('matrix-stacked-phone (plan 39.1-48)', () => {
+    const lossesAndWins = [
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+      makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: sonic.id, win: true }),
+      makeMatch({ id: 'm4', fighter_id: luigi.id, opponent_id: sonic.id, win: true }),
+    ];
+
+    it('layout="stack" renders no table: one labelled group per fighter of yours, one cell button per played pairing', () => {
+      renderMatrix(lossesAndWins, {}, '/matchups', 'stack');
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+      const stack = document.querySelector('[data-slot="matchup-matrix-stack"]') as HTMLElement;
+      expect(stack).not.toBeNull();
+      const groups = within(stack).getAllByRole('group');
+      expect(groups).toHaveLength(2);
+      expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual([mario.name, luigi.name]);
+      expect(within(groups[0]!).getAllByRole('button')).toHaveLength(2);
+      expect(within(groups[1]!).getAllByRole('button')).toHaveLength(1);
+    });
+
+    it('a stacked cell keeps the aria label, the record, the rate line and the same ring / heat, and names its opponent on the cell', () => {
+      renderMatrix(lossesAndWins, {}, '/matchups', 'stack');
+      const cell = screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 1-1` });
+      expect(cell).toHaveTextContent('1-1');
+      expect(cell).toHaveTextContent('50% · 2');
+      expect(cell).toHaveTextContent(luigi.name);
+      expect(cell).toHaveAttribute('aria-current', 'true');
+      expect(cell.className).toMatch(/\btext-foreground\b/);
+      // One game under the 3-game floor: outlined, no heat.
+      expect(cell.className).toMatch(/\bring-1\b/);
+    });
+
+    it('a stacked cell navigates exactly like a table cell', async () => {
+      const user = userEvent.setup();
+      mockNavigate.mockClear();
+      renderMatrix(lossesAndWins, {}, '/matchups', 'stack');
+      await user.click(screen.getByRole('button', { name: `${mario.name} vs ${sonic.name}: 1-0` }));
+      expect(mockNavigate.mock.calls[0]?.[0]).toBe(`/matchups?fighter=${mario.id}&vs=${sonic.id}`);
+    });
+
+    it('the stack lays cells on a wrapping grid, never a horizontal scroller', () => {
+      renderMatrix(lossesAndWins, {}, '/matchups', 'stack');
+      const stack = document.querySelector('[data-slot="matchup-matrix-stack"]') as HTMLElement;
+      expect(stack.innerHTML).not.toMatch(/overflow-x-(auto|scroll)/);
+      const list = stack.querySelector('ul') as HTMLElement;
+      expect(list.className).toMatch(/\bgrid\b/);
+    });
+
+    it('under a phone matchMedia the default layout is the stack; without matchMedia (jsdom) it is the table', () => {
+      renderMatrix(lossesAndWins);
+      expect(screen.getByRole('table')).toBeInTheDocument();
+      cleanup();
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(max-width: 639px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+        onchange: null,
+      }));
+      try {
+        renderMatrix(lossesAndWins);
+        expect(screen.queryByRole('table')).not.toBeInTheDocument();
+        expect(document.querySelector('[data-slot="matchup-matrix-stack"]')).not.toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('the stacked form keeps the show-all toggle and the empty state', async () => {
+      const user = userEvent.setup();
+      const many = SpriteList.slice(0, 15).map((opp, i) =>
+        makeMatch({ id: `x${i}`, fighter_id: mario.id, opponent_id: opp.id, win: true }),
+      );
+      renderMatrix(many, { fighterSprites: [mario] }, '/matchups', 'stack');
+      const stack = () => document.querySelector('[data-slot="matchup-matrix-stack"]')!;
+      expect(within(stack() as HTMLElement).getAllByRole('button')).toHaveLength(12);
+      await user.click(screen.getByRole('button', { name: /Show all 15/ }));
+      expect(within(stack() as HTMLElement).getAllByRole('button')).toHaveLength(15);
+    });
   });
 });
