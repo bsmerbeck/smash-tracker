@@ -467,7 +467,7 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
-    expect(screen.getByText('By Opponent')).toBeInTheDocument();
+    expect(screen.getByText('By opponent')).toBeInTheDocument();
     // Phase 38-04: "alice" now legitimately appears twice — once in the
     // per-opponent split card, once in the FilteredMatchList terminus's
     // Opponent column — so this asserts presence, not uniqueness.
@@ -1455,10 +1455,10 @@ describe('MatchupsPage', () => {
       }
     });
 
-    it('By Opponent sits in the span-8 stack under the hero; Stage Breakdown is a rail card now', async () => {
+    it('By opponent sits in the span-8 stack under the hero; Stage Breakdown is a rail card now', async () => {
       await renderLoadedPairing();
       const stack = document.querySelector('[data-slot="page-grid"]')!.children[0] as HTMLElement;
-      expect(within(stack).getByText('By Opponent')).toBeInTheDocument();
+      expect(within(stack).getByText('By opponent')).toBeInTheDocument();
       expect(within(stack).queryByText('Stage Breakdown')).not.toBeInTheDocument();
     });
 

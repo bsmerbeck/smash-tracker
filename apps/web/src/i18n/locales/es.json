@@ -973,6 +973,13 @@
       "title": "Por rival",
       "empty": "Aún no hay rivales con nombre registrados para este enfrentamiento."
     },
+    "ledger": {
+      "meta": "una marca por set · arriba = set ganado · más partidas primero · chip = últimos 12 meses frente al total",
+      "sets": "sets {{won}}–{{lost}}",
+      "setsAria_one": "{{count, grouped}} set — ganados: {{won}}, perdidos: {{lost}}",
+      "setsAria_other": "{{count, grouped}} sets — ganados: {{won}}, perdidos: {{lost}}",
+      "trimmed": "los {{shown, grouped}} sets más recientes de {{total, grouped}}"
+    },
     "table": {
       "empty": "¡Aún no hay partidas registradas!",
       "date": "Fecha",

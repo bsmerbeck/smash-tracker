@@ -973,6 +973,13 @@
       "title": "相手プレイヤー別",
       "empty": "この相性で名前付きの相手はまだ記録されていません。"
     },
+    "ledger": {
+      "meta": "1目盛り = 1セット · 上 = セット勝ち · 試合数の多い順 · チップ = 直近12か月と通算の比較",
+      "sets": "セット {{won}}–{{lost}}",
+      "setsAria_one": "{{count, grouped}}セット：勝ち{{won}}、負け{{lost}}",
+      "setsAria_other": "{{count, grouped}}セット：勝ち{{won}}、負け{{lost}}",
+      "trimmed": "新しい{{shown, grouped}}セット（全{{total, grouped}}セット中）"
+    },
     "table": {
       "empty": "まだ対戦が記録されていません！",
       "date": "日時",

@@ -973,6 +973,13 @@
       "title": "Par adversaire",
       "empty": "Aucun adversaire nommé enregistré pour ce matchup pour l'instant."
     },
+    "ledger": {
+      "meta": "un repère par set · haut = set gagné · plus de parties d'abord · pastille = 12 derniers mois contre l'historique complet",
+      "sets": "sets {{won}}–{{lost}}",
+      "setsAria_one": "{{count, grouped}} set — gagnés : {{won}}, perdus : {{lost}}",
+      "setsAria_other": "{{count, grouped}} sets — gagnés : {{won}}, perdus : {{lost}}",
+      "trimmed": "{{shown, grouped}} derniers sets sur {{total, grouped}}"
+    },
     "table": {
       "empty": "Aucun match enregistré pour l'instant !",
       "date": "Date",

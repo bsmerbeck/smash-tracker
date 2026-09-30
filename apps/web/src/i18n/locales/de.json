@@ -973,6 +973,13 @@
       "title": "Nach Gegner",
       "empty": "Für dieses Matchup sind noch keine benannten Gegner erfasst."
     },
+    "ledger": {
+      "meta": "ein Strich pro Satz · oben = Satz gewonnen · meiste Spiele zuerst · Chip = letzte 12 Monate gegenüber Gesamt",
+      "sets": "Sätze {{won}}–{{lost}}",
+      "setsAria_one": "{{count, grouped}} Satz — gewonnen: {{won}}, verloren: {{lost}}",
+      "setsAria_other": "{{count, grouped}} Sätze — gewonnen: {{won}}, verloren: {{lost}}",
+      "trimmed": "neueste {{shown, grouped}} von {{total, grouped}} Sätzen"
+    },
     "table": {
       "empty": "Noch keine Matches erfasst!",
       "date": "Datum",

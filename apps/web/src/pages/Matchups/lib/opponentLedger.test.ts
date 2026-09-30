@@ -149,8 +149,10 @@ describe('buildOpponentLedger — the sketch deep pairing (rivalry-ledger)', () 
     const rows = buildOpponentLedger({ matches, nowMs });
     // 2 recent games is below the 3-game abstention floor.
     expect(rows.find((row) => row.tag === 'mkleo')!.classification.state).toBe('locked');
-    // jin's 5 games are ALL of his games: the recent window IS the record.
-    expect(rows.find((row) => row.tag === 'jin')!.classification.state).toBe('collapsed');
+    // jin's 5 games are ALL of his games but a scoped window below 8 games is thin.
+    const jin = rows.find((row) => row.tag === 'jin')!;
+    expect(jin.classification.state).toBe('thinRecent');
+    expect(jin.classification.deltaPoints).toBeNull();
   });
 });
 

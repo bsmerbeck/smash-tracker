@@ -273,9 +273,9 @@ describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003
     expect(chip.textContent).not.toMatch(/last 30/);
   });
 
-  it("a row whose recent window is ALL of that opponent's games renders no chip (collapsed)", () => {
+  it("a row whose recent window is most of that opponent's games (8 of 8, collapsed) renders no chip", () => {
     renderPairing(
-      Array.from({ length: 5 }, (_, i) =>
+      Array.from({ length: 8 }, (_, i) =>
         setGame(`s${i}`, 1, NOW_MS - (30 - i) * DAY_MS, i % 2 === 0),
       ),
     );

@@ -703,7 +703,10 @@ export interface SetStripItem {
 
 /**
  * `SetStrip` — one 12×24px tick per SET (up = set won), for the post-event
- * recap card. At 0 sets it renders nothing at all (never an empty frame).
+ * recap card and the Matchups rivalry ledger. At 0 sets it renders nothing at
+ * all (never an empty frame). The ticks wrap inside the host's width (plan
+ * 39.1-45: a ledger row holds up to 30 of them, more than a phone card is
+ * wide).
  */
 export function SetStrip({ sets, ariaLabel }: { sets: SetStripItem[]; ariaLabel: string }) {
   if (sets.length === 0) {
@@ -713,7 +716,7 @@ export function SetStrip({ sets, ariaLabel }: { sets: SetStripItem[]; ariaLabel:
     <span
       role="img"
       aria-label={ariaLabel}
-      className="inline-flex items-center gap-0.5"
+      className="inline-flex max-w-full flex-wrap items-center gap-0.5"
       data-slot="set-strip"
     >
       {sets.map((set) => (

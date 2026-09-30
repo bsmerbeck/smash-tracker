@@ -648,7 +648,7 @@ export function MatchupsPage() {
                   nowMs={nowMs}
                 />
                 <div data-slot="pairing-opponents">
-                  <PairingOpponents matchupMatches={matchupMatches} />
+                  <PairingOpponents matchupMatches={matchupMatches} nowMs={nowMs} />
                 </div>
               </GridCell>
               <GridCell span={4} slot="matchups-rail" className={RAIL_CELL_CLASS}>
