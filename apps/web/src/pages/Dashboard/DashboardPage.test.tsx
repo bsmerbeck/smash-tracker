@@ -790,6 +790,46 @@ describe('DashboardPage', () => {
       expect(digestCell.className).not.toContain('xl:col-span-8');
     });
 
+    it('DD-07: one debrief door per event: the recap carries it while shown, and the prep slot takes it back once the recap is dismissed', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      const games = recentEventGames();
+      listMatches.mockResolvedValue(games);
+      const newest = Math.max(...games.map((g) => g.time));
+      listTournaments.mockResolvedValue([
+        {
+          eventName: 'Local Weekly',
+          tournamentName: 'Local Weekly',
+          entryKey: 'local-weekly',
+          firstSetAt: newest - 60 * 60 * 1000,
+          lastSetAt: newest,
+          setsPlayed: 3,
+          source: 'startgg',
+        },
+      ]);
+      getPrepStatus.mockResolvedValue({ activated: true, reviewAt: Date.now() - DAY });
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      const debrief = await within(recapCard).findByRole('link', { name: 'Debrief this event' });
+      expect(debrief).toHaveAttribute('href', '/tournaments/local-weekly/prep');
+      // The slot's own review door for the same event yields while the recap is on screen.
+      expect(screen.queryByTestId('dashboard-prep-action-slot')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Review this event' })).toBeNull();
+
+      await userEvent.click(within(recapCard).getByRole('button', { name: 'Dismiss' }));
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      const slot = await screen.findByTestId('dashboard-prep-action-slot');
+      expect(slot.getAttribute('data-state')).toBe('review');
+      expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
+        'href',
+        '/tournaments/local-weekly/prep',
+      );
+    });
+
     it('under a coach subject the recap derives from the matches and the registry is never read', async () => {
       getFighters.mockResolvedValue({ primary: [1], secondary: [] });
       listMatches.mockResolvedValue(recentEventGames());

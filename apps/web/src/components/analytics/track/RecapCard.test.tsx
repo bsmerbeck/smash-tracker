@@ -1,3 +1,5 @@
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -259,5 +261,320 @@ describe('RecapCard (plan 39.2-13, TRK-03)', () => {
         /^\/coach\/client-1\/match-data\?from=\d+&to=\d+#games$/,
       );
     });
+  });
+});
+
+describe('the debrief door exists only when the debrief is really open (plan 39.2-13, D-11, D-18)', () => {
+  const OPEN: PrepBriefStatus = { activated: true, reviewAt: Date.now() - 2 * DAY };
+
+  function setPrep(state: 'open' | 'closed' | 'expired' | 'pending' | 'error') {
+    if (state === 'open') {
+      prepState = { isSuccess: true, isPending: false, data: OPEN };
+    } else if (state === 'closed') {
+      prepState = { isSuccess: true, isPending: false, data: { activated: false } };
+    } else if (state === 'expired') {
+      prepState = {
+        isSuccess: true,
+        isPending: false,
+        data: { activated: true, reviewAt: Date.now() - 20 * DAY },
+      };
+    } else if (state === 'error') {
+      prepState = { isSuccess: false, isPending: false, data: undefined };
+    } else {
+      prepState = { isSuccess: false, isPending: true, data: undefined };
+    }
+  }
+
+  beforeEach(() => {
+    usePrepBriefSpy.mockClear();
+  });
+  afterEach(cleanup);
+
+  it('an open debrief makes "Debrief this event" the first, primary door, then the games door, then Open event', () => {
+    setPrep('open');
+    const games = supernovaGames();
+    const { container } = renderCard(recapOf(candidateOf(games)), [...games, ...older(400)]);
+    const links = doorLinks(container);
+    expect(links.map((a) => a.textContent)).toEqual([
+      'Debrief this event',
+      'See the 9 games',
+      'Open event',
+    ]);
+    expect(links[0]!.getAttribute('href')).toBe('/tournaments/sn26/prep');
+    const variants = links.map((a) =>
+      a.closest('[data-slot="button"]')?.getAttribute('data-variant'),
+    );
+    expect(variants).toEqual(['default', 'outline', 'outline']);
+    expect(usePrepBriefSpy).toHaveBeenCalledWith('sn26');
+  });
+
+  it.each([
+    ['not activated', 'closed'],
+    ['past the fourteen-day debrief window', 'expired'],
+    ['still pending (never a door the settled render retracts)', 'pending'],
+    ['failed', 'error'],
+  ] as const)(
+    'no debrief door when the status is %s; the games door is primary',
+    (_label, state) => {
+      setPrep(state);
+      const games = supernovaGames();
+      const { container } = renderCard(recapOf(candidateOf(games)), [...games, ...older(400)]);
+      expect(screen.queryByText('Debrief this event')).toBeNull();
+      const links = doorLinks(container);
+      expect(links[0]!.textContent).toBe('See the 9 games');
+      expect(links[0]!.closest('[data-slot="button"]')?.getAttribute('data-variant')).toBe(
+        'default',
+      );
+      // Nothing is a stand-in for the debrief: no link lands in prep mode.
+      expect(links.some((a) => a.getAttribute('href')?.endsWith('/prep'))).toBe(false);
+    },
+  );
+
+  it('an admin-imported entry never offers a debrief, even when the server status is open, and is never read', () => {
+    setPrep('open');
+    const games = supernovaGames();
+    const { container } = renderCard(recapOf(candidateOf(games, { imported: true })), [
+      ...games,
+      ...older(400),
+    ]);
+    expect(screen.queryByText('Debrief this event')).toBeNull();
+    expect(doorLinks(container)[0]!.textContent).toBe('See the 9 games');
+    expect(usePrepBriefSpy).toHaveBeenCalledWith(undefined);
+    expect(usePrepBriefSpy).not.toHaveBeenCalledWith('sn26');
+  });
+
+  it('a coach subject (no entry) has the door structurally absent, whatever the status', () => {
+    setPrep('open');
+    const games = supernovaGames();
+    const { container } = renderCard(
+      recapOf(candidateOf(games, { entry: null })),
+      [...games, ...older(400)],
+      '/coach/client-1/dashboard',
+    );
+    expect(screen.queryByText('Debrief this event')).toBeNull();
+    expect(container.textContent).not.toMatch(/debrief/i);
+    expect(doorLinks(container).map((a) => a.textContent)).toEqual(['See the 9 games']);
+    expect(usePrepBriefSpy).not.toHaveBeenCalledWith('sn26');
+    expect(usePrepBriefSpy.mock.calls.every(([key]) => key === undefined)).toBe(true);
+  });
+});
+
+/**
+ * G16 (UI-SPEC section 13, D-11, T-39.2-55): nothing paid is reachable from the recap. Three
+ * independent proofs: the import graph, the rendered text of every state, and the absence of the
+ * sparkle icon that marks a paid affordance elsewhere in the app.
+ */
+const SRC_ROOT = resolve('src');
+const SOURCE_EXTENSIONS = ['.ts', '.tsx'];
+/** The plan's two directories plus the paid modules that live outside them. */
+const PAID_PATH =
+  /\/(reports|billing|prepPaid)\/|\/(useBilling|usePrepPaidReports|useScoutReports)\.tsx?$/i;
+/** Copied from `prepStructuralIntegrity.test.ts`; that file stays byte-unchanged. */
+const MONETIZATION_VOCABULARY =
+  /upgrade|unlock|paywall|pricing|price|checkout|stripe|coming soon|\$\d/i;
+
+interface ModuleIo {
+  read(path: string): string | undefined;
+  isFile(path: string): boolean;
+}
+
+const nodeIo: ModuleIo = {
+  read: (path) => readFileSync(path, 'utf8'),
+  isFile: (path) => existsSync(path) && statSync(path).isFile(),
+};
+
+function importSpecifiers(source: string): string[] {
+  const specifiers: string[] = [];
+  const pattern =
+    /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
+  for (const match of source.matchAll(pattern)) {
+    const specifier = match[1] ?? match[2] ?? match[3];
+    if (specifier) specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
+function resolveSpecifier(specifier: string, from: string, io: ModuleIo): string | null {
+  let base: string;
+  if (specifier.startsWith('@/')) base = resolve(SRC_ROOT, specifier.slice(2));
+  else if (specifier.startsWith('.')) base = resolve(dirname(from), specifier);
+  else return null; // a package import: the walk stops at the package boundary
+  const candidates = [
+    base,
+    ...SOURCE_EXTENSIONS.map((ext) => `${base}${ext}`),
+    ...SOURCE_EXTENSIONS.map((ext) => resolve(base, `index${ext}`)),
+  ];
+  return candidates.find((candidate) => io.isFile(candidate)) ?? null;
+}
+
+/** Every module reachable from `entry` through relative and `@/` imports (the entry included). */
+function reachableModules(entry: string, io: ModuleIo): Set<string> {
+  const seen = new Set<string>();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (!SOURCE_EXTENSIONS.some((ext) => current.endsWith(ext))) continue;
+    const source = io.read(current);
+    if (source === undefined) continue;
+    for (const specifier of importSpecifiers(source)) {
+      const resolved = resolveSpecifier(specifier, current, io);
+      if (resolved !== null && !seen.has(resolved)) queue.push(resolved);
+    }
+  }
+  return seen;
+}
+
+function paidModulesIn(modules: Set<string>): string[] {
+  return [...modules].filter((path) => PAID_PATH.test(path));
+}
+
+/** An in-memory module graph, so the walker can be shown to catch a paid import. */
+function virtualIo(files: Record<string, string>): ModuleIo {
+  const absolute = new Map(
+    Object.entries(files).map(([path, body]) => [resolve(SRC_ROOT, path), body]),
+  );
+  return {
+    read: (path) => absolute.get(path),
+    isFile: (path) => absolute.has(path),
+  };
+}
+
+function visibleStrings(container: HTMLElement): string {
+  const attributes = Array.from(container.querySelectorAll('[aria-label], [title]')).flatMap(
+    (node) => [node.getAttribute('aria-label') ?? '', node.getAttribute('title') ?? ''],
+  );
+  return [container.textContent ?? '', ...attributes].join('\n');
+}
+
+describe('G16: nothing paid is reachable from the recap (plan 39.2-13, D-11, T-39.2-55)', () => {
+  beforeEach(() => {
+    prepState = {
+      isSuccess: true,
+      isPending: false,
+      data: { activated: true, reviewAt: Date.now() - 2 * DAY },
+    };
+  });
+  afterEach(cleanup);
+
+  it('the import graph of RecapCard.tsx reaches no reports or billing module', () => {
+    const entry = resolve(SRC_ROOT, 'components/analytics/track/RecapCard.tsx');
+    const modules = reachableModules(entry, nodeIo);
+    // Non-vacuous: the walk reached the modules the card really uses, through both kinds of specifier.
+    const reached = [...modules].map((path) => path.slice(SRC_ROOT.length));
+    expect(reached).toEqual(
+      expect.arrayContaining([
+        '/components/analytics/InsightCard.tsx',
+        '/components/analytics/tier/TierBadge.tsx',
+        '/hooks/usePrepBrief.ts',
+        '/components/analytics/track/recapGamesDoor.ts',
+      ]),
+    );
+    expect(modules.size).toBeGreaterThan(25);
+    expect(paidModulesIn(modules)).toEqual([]);
+  });
+
+  it('the hook and gate the Dashboard mounts beside it reach none either', () => {
+    for (const file of [
+      'hooks/useRecapCandidate.ts',
+      'components/analytics/track/RecapCandidateGate.tsx',
+    ]) {
+      expect(paidModulesIn(reachableModules(resolve(SRC_ROOT, file), nodeIo))).toEqual([]);
+    }
+  });
+
+  it('negative control: the walker reports a synthetic graph that does reach a billing path', () => {
+    const io = virtualIo({
+      'card/Card.tsx': "import { helper } from './helper';\nexport const Card = helper;",
+      'card/helper.ts':
+        "import { Buy } from '@/components/billing/BuyCreditsDialog';\nexport const helper = Buy;",
+      'components/billing/BuyCreditsDialog.tsx': 'export const Buy = 1;',
+    });
+    const found = paidModulesIn(reachableModules(resolve(SRC_ROOT, 'card/Card.tsx'), io));
+    expect(found.map((path) => path.slice(SRC_ROOT.length))).toEqual([
+      '/components/billing/BuyCreditsDialog.tsx',
+    ]);
+    // ... and a dynamic import or a re-export is followed just the same.
+    const dynamic = virtualIo({
+      'card/Card.tsx': "export const load = () => import('./lazy');",
+      'card/lazy.ts': "export * from '../pages/Reports/ReportsPage';",
+      'pages/Reports/ReportsPage.tsx': 'export const Page = 1;',
+    });
+    expect(
+      paidModulesIn(reachableModules(resolve(SRC_ROOT, 'card/Card.tsx'), dynamic)),
+    ).toHaveLength(1);
+    // A clean graph reports nothing.
+    const clean = virtualIo({
+      'card/Card.tsx': "import './a';",
+      'card/a.ts': 'export const a = 1;',
+    });
+    expect(paidModulesIn(reachableModules(resolve(SRC_ROOT, 'card/Card.tsx'), clean))).toEqual([]);
+  });
+
+  it('negative control: the monetization regex catches the vocabulary it is copied for', () => {
+    for (const phrase of [
+      'Upgrade now',
+      'Unlock more',
+      'Pricing',
+      'Buy for $5',
+      'Checkout',
+      'Coming soon',
+    ]) {
+      expect(MONETIZATION_VOCABULARY.test(phrase)).toBe(true);
+    }
+    expect(MONETIZATION_VOCABULARY.test('Debrief this event')).toBe(false);
+  });
+
+  it('no state renders monetization vocabulary or a sparkle icon', async () => {
+    const games = supernovaGames();
+    const history = [...games, ...older(400)];
+    const states: [string, RecapCandidateResult, Match[], string][] = [
+      ['own-account, debrief open', recapOf(candidateOf(games)), history, '/dashboard'],
+      [
+        'own-account, imported',
+        recapOf(candidateOf(games, { imported: true })),
+        history,
+        '/dashboard',
+      ],
+      ['no registry entry', recapOf(candidateOf(games, { entry: null })), history, '/dashboard'],
+      [
+        'coach subject',
+        recapOf(candidateOf(games, { entry: null })),
+        history,
+        '/coach/client-1/dashboard',
+      ],
+      [
+        'thin event',
+        recapOf(candidateOf(games.slice(0, 5))),
+        [...games.slice(0, 5), ...older(400)],
+        '/dashboard',
+      ],
+      ['loading', { status: 'loading', candidate: null, dismiss: vi.fn() }, history, '/dashboard'],
+    ];
+    for (const [label, recap, matches, path] of states) {
+      const { container, unmount } = renderCard(recap, matches, path);
+      // Open the tier tooltip too, so its provenance text is part of what is scanned.
+      const badge = container.querySelector('[data-slot="tier-badge"]');
+      if (badge) await userEvent.hover(badge);
+      const text = visibleStrings(document.body);
+      expect(text, `state: ${label}`).not.toMatch(MONETIZATION_VOCABULARY);
+      expect(
+        document.body.querySelector('.lucide-sparkles, .lucide-sparkle'),
+        `state: ${label}`,
+      ).toBeNull();
+      unmount();
+      cleanup();
+    }
+  });
+
+  it('a coach-subject render contains no debrief door text at all', () => {
+    const games = supernovaGames();
+    const { container } = renderCard(
+      recapOf(candidateOf(games, { entry: null })),
+      [...games, ...older(400)],
+      '/coach/client-1/dashboard',
+    );
+    expect(within(container).queryByText('Debrief this event')).toBeNull();
   });
 });

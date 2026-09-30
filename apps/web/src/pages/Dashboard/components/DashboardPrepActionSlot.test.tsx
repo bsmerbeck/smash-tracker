@@ -401,5 +401,70 @@ describe('DashboardPrepActionSlot', () => {
       expect(container.textContent).not.toMatch(/Invalid Date|NaN/);
       expect(usePrepBrief).not.toHaveBeenCalledWith('undated');
     });
+
+    describe('one debrief door per event (plan 39.2-13, DD-07)', () => {
+      function renderSuppressed(suppress: string | null) {
+        const tree = (key: string | null) => (
+          <MemoryRouter>
+            <DashboardPrepActionSlot suppressReviewForEntryKey={key} />
+          </MemoryRouter>
+        );
+        const result = render(tree(suppress));
+        return { ...result, setSuppressed: (key: string | null) => result.rerender(tree(key)) };
+      }
+
+      it('yields the review state for the entry the recap card is showing, and falls through to its next state', () => {
+        withEntries([pastEntry], 'prepare');
+        mockBriefs({ past: inWindow });
+        renderSuppressed('past');
+
+        expect(slotState()).toBe('addEvent');
+        expect(screen.queryByRole('link', { name: 'Review this event' })).not.toBeInTheDocument();
+      });
+
+      it('falls through to nothing when there is no next state to fall to', () => {
+        withEntries([pastEntry], null);
+        mockBriefs({ past: inWindow });
+        renderSuppressed('past');
+
+        expect(slotState()).toBeNull();
+      });
+
+      it('restores the review state once the recap is dismissed (no suppressed key)', () => {
+        withEntries([pastEntry]);
+        mockBriefs({ past: inWindow });
+        const { setSuppressed } = renderSuppressed('past');
+        expect(slotState()).toBeNull();
+
+        setSuppressed(null);
+        expect(slotState()).toBe('review');
+        expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
+          'href',
+          '/tournaments/past/prep',
+        );
+      });
+
+      it('suppresses only the named entry: a recap for a different event leaves this review alone', () => {
+        withEntries([pastEntry]);
+        mockBriefs({ past: inWindow });
+        renderSuppressed('some-other-entry');
+
+        expect(slotState()).toBe('review');
+      });
+
+      it('the upcoming state is never suppressed', () => {
+        const future = makeEntry({
+          entryKey: 'future',
+          eventName: 'Next Major',
+          firstSetAt: NOW + DAY_MS,
+          lastSetAt: NOW + DAY_MS,
+        });
+        withEntries([future, pastEntry]);
+        mockBriefs({ past: inWindow });
+        renderSuppressed('future');
+
+        expect(slotState()).toBe('upcoming');
+      });
+    });
   });
 });
