@@ -159,3 +159,39 @@ export function withoutOverrides<T extends object>(row: T): Omit<T, UserOwnedOve
   }
   return copy as Omit<T, UserOwnedOverrideMember>;
 }
+
+/** One registry entry whose commit still failed after its retry (see `settleEntryCommits`). */
+export interface FailedEntryCommit {
+  entryKey: string;
+  /** The SDK's error message (`set`, `disconnect`, ...) — never a stored value. */
+  reason: string;
+}
+
+/**
+ * Runs one commit per registry entry and never lets one entry fail the rest
+ * (39.2 code review R2-WR-01). The Firebase SDK aborts a queued transaction
+ * whenever the same process writes (`set`/`update`/`remove`) at its path, an
+ * ancestor or a descendant, rejecting it with `Error('set')`; a `disconnect`
+ * aborts a SENT one the same way. Every entry is committed concurrently and
+ * settled, each rejected entry is retried once — a fresh transaction re-reads
+ * the value stored then, so the retry carries the user's overrides as they
+ * are now — and the entries that fail again are returned for the caller to
+ * log and count. The caller still stamps `lastSyncAt` and runs activation:
+ * everything else committed.
+ */
+export async function settleEntryCommits(
+  entryKeys: readonly string[],
+  commitOne: (entryKey: string) => Promise<void>,
+): Promise<FailedEntryCommit[]> {
+  const first = await Promise.allSettled(entryKeys.map((entryKey) => commitOne(entryKey)));
+  const retryKeys = entryKeys.filter((_, index) => first[index]!.status === 'rejected');
+  const second = await Promise.allSettled(retryKeys.map((entryKey) => commitOne(entryKey)));
+  const failed: FailedEntryCommit[] = [];
+  second.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      const reason = result.reason instanceof Error ? result.reason.message : 'unknown';
+      failed.push({ entryKey: retryKeys[index]!, reason });
+    }
+  });
+  return failed;
+}

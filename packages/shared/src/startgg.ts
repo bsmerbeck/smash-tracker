@@ -48,6 +48,13 @@ export const startggSyncSummarySchema = z.object({
   gamesUnknownStage: z.number().int().nonnegative(),
   /** Sets skipped outright because start.gg reported them as a DQ (`displayScore === 'DQ'`). */
   dqSets: z.number().int().nonnegative(),
+  /**
+   * 39.2 code review R2-WR-01: tournament-registry entries whose commit the
+   * database aborted twice (the first try and one retry). Present only when
+   * non-zero. Everything else the sync wrote — matches, the other entries,
+   * `lastSyncAt` — committed; the next sync rebuilds these entries.
+   */
+  registryEntriesFailed: z.number().int().positive().optional(),
 });
 export type StartggSyncSummary = z.infer<typeof startggSyncSummarySchema>;
 

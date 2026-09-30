@@ -7,6 +7,7 @@ import { resolveParryggStage } from './stages.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
 import {
   carriedOverrides,
+  settleEntryCommits,
   withoutOverrides,
   type UserOwnedOverrideMember,
 } from '../services/tournamentOverrides.js';
@@ -515,27 +516,36 @@ export async function importParryggMatches(
     // node is truly absent; otherwise the SDK re-runs with the stored value.
     // A corrupt stored override is not copied forward (API-WR-02 policy, see
     // `services/tournamentOverrides.ts`); the drop is logged without the value.
-    await Promise.all(
-      Object.entries(registryUpdates).map(async ([entryKey, rebuilt]) => {
-        let dropped: UserOwnedOverrideMember[] = [];
-        await database
-          .ref(`tournamentEntries/${uid}/${entryKey}`)
-          .transaction((current: unknown) => {
-            // Reset per run: only the run that commits decides what was dropped.
-            dropped = [];
-            return {
-              ...withoutOverrides(rebuilt),
-              ...carriedOverrides(current, (member) => dropped.push(member)),
-            };
-          });
-        for (const member of dropped) {
-          logger?.warn(
-            { entryKey, member },
-            'parry.gg sync: dropped a schema-invalid stored override (not copied forward)',
-          );
-        }
-      }),
-    );
+    //
+    // Settled with one retry, never `Promise.all` (R2-WR-01) — see
+    // `settleEntryCommits` and startgg/sync.ts's identical commit.
+    const failed = await settleEntryCommits(Object.keys(registryUpdates), async (entryKey) => {
+      const rebuilt = registryUpdates[entryKey]!;
+      let dropped: UserOwnedOverrideMember[] = [];
+      await database.ref(`tournamentEntries/${uid}/${entryKey}`).transaction((current: unknown) => {
+        // Reset per run: only the run that commits decides what was dropped.
+        dropped = [];
+        return {
+          ...withoutOverrides(rebuilt),
+          ...carriedOverrides(current, (member) => dropped.push(member)),
+        };
+      });
+      for (const member of dropped) {
+        logger?.warn(
+          { entryKey, member },
+          'parry.gg sync: dropped a schema-invalid stored override (not copied forward)',
+        );
+      }
+    });
+    for (const { entryKey, reason } of failed) {
+      logger?.warn(
+        { entryKey, reason },
+        'parry.gg sync: a registry entry did not commit after one retry; the next sync rebuilds it',
+      );
+    }
+    if (failed.length > 0) {
+      summary.registryEntriesFailed = failed.length;
+    }
   }
   await database.ref(`parryggLinks/${uid}/lastSyncAt`).set(Date.now());
 

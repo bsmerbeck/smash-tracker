@@ -16,6 +16,7 @@ import { resolveStage } from './stageMap.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
 import {
   carriedOverrides,
+  settleEntryCommits,
   withoutOverrides,
   type UserOwnedOverrideMember,
 } from '../services/tournamentOverrides.js';
@@ -475,24 +476,36 @@ export async function importPlayerMatches(
     // (cleared). The first run of every transaction sees `null` and returns
     // the bare rebuilt row, which only commits when the node is truly absent;
     // otherwise the SDK re-runs the merge with the real stored value.
-    await Promise.all(
-      Object.entries(registryUpdates).map(async ([eventKey, rebuilt]) => {
-        let dropped: UserOwnedOverrideMember[] = [];
-        await database
-          .ref(`tournamentEntries/${uid}/${eventKey}`)
-          .transaction((current: unknown) => {
-            // Reset per run: only the run that commits decides what was dropped.
-            dropped = [];
-            return rebuildOverStoredEntry(rebuilt, current, (member) => dropped.push(member));
-          });
-        for (const member of dropped) {
-          logger?.warn(
-            { eventId: eventKey, member },
-            'start.gg sync: dropped a schema-invalid stored override (not copied forward)',
-          );
-        }
-      }),
-    );
+    //
+    // Settled, never `Promise.all` (R2-WR-01): the SDK aborts a transaction
+    // when this process writes under the entry by any other means, so one
+    // aborted entry is retried once, and one that fails again is logged and
+    // counted in the summary — it never fails the sync, since every other
+    // write above and below still commits.
+    const failed = await settleEntryCommits(Object.keys(registryUpdates), async (eventKey) => {
+      const rebuilt = registryUpdates[eventKey]!;
+      let dropped: UserOwnedOverrideMember[] = [];
+      await database.ref(`tournamentEntries/${uid}/${eventKey}`).transaction((current: unknown) => {
+        // Reset per run: only the run that commits decides what was dropped.
+        dropped = [];
+        return rebuildOverStoredEntry(rebuilt, current, (member) => dropped.push(member));
+      });
+      for (const member of dropped) {
+        logger?.warn(
+          { eventId: eventKey, member },
+          'start.gg sync: dropped a schema-invalid stored override (not copied forward)',
+        );
+      }
+    });
+    for (const { entryKey, reason } of failed) {
+      logger?.warn(
+        { eventId: entryKey, reason },
+        'start.gg sync: a registry entry did not commit after one retry; the next sync rebuilds it',
+      );
+    }
+    if (failed.length > 0) {
+      summary.registryEntriesFailed = failed.length;
+    }
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
 

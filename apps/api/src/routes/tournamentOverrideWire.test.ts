@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import type { Auth } from 'firebase-admin/auth';
-import { getDatabase, type Database } from 'firebase-admin/database';
+import { getDatabase } from 'firebase-admin/database';
 import {
   Entrant,
   EventEntrant,
@@ -497,12 +497,19 @@ describe('a sync survives an entry transaction the SDK aborts (R2-WR-01)', () =>
           },
         },
       });
-      // Abort the entry's first transaction AND its retry.
+      // Abort the entry's first transaction AND its retry. A transaction
+      // listens on its path, so the retry already knows the stored value and
+      // would otherwise commit on its first send (an `ok` completes even a
+      // transaction marked for abort); another process's write under the
+      // entry makes that send stale too, so the abort lands.
+      let foreignWrites = 0;
       deferFirstTx(
         fake,
         `tournamentEntries/${UID}/987`,
         `tournamentEntries/${UID}/987/`,
         () => {
+          foreignWrites += 1;
+          fake.serverSet(`tournamentEntries/${UID}/987/setsPlayed`, 100 + foreignWrites);
           void database.ref(`tournamentEntries/${UID}/987/tierOverride`).remove();
         },
         2,
@@ -520,7 +527,7 @@ describe('a sync survives an entry transaction the SDK aborts (R2-WR-01)', () =>
 
       // The route answers 200 with the summary: the failed entry is counted,
       // never hidden behind a 500 while the rest of the sync committed.
-      expect(summary.registryEntriesFailed).toBe(1);
+      expect(summary.registryEntriesFailed, fake.log.join('\n')).toBe(1);
       expect(summary.imported).toBe(2);
       expect(row(fake, '988')['numEntrants'], fake.log.join('\n')).toBe(512);
       expect(row(fake, '987')).not.toHaveProperty('numEntrants');
