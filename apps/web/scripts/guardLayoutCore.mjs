@@ -772,8 +772,9 @@ export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.72;
  * matrix +212 px (sprite headers PD-47-5; stacked rows, UI-SPEC 6.6), advisor
  * +144 (the engine's 3 Pick + 3 Ban rows and the ruleset control, PD-47-1/2),
  * results +84 (the filter summary card the sketch omits), By opponent +62,
- * hero +45, Stage breakdown +18, Insights +8, less MatchupOrPlayer -96 and the
- * trend -46. The enforced value is that measurement plus a 0.03 (~25 px)
+ * hero +45, Stage breakdown +18, Insights +8, the stacked pickers and filter
+ * row +122, section gaps and remainder +62, less MatchupOrPlayer -96 and the
+ * trend -46 (sum +615 px). The enforced value is that measurement plus a 0.03 (~25 px)
  * tolerance; matchups and sketch-thin stay at MATCHUPS_SCROLL_BUDGET_390X844.
  */
 export const MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844 = 8.08;
