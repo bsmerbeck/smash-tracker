@@ -2832,7 +2832,7 @@ async function main() {
   // most NARROW_VIEWPORT_MAX_WIDTH_PX wide) and the text-fit targets the
   // route declares for that viewport. Always prints its TABLE_CLIP /
   // TEXT_FIT line; enforce-mode offenders are ordinary VIOLATION lines,
-  // Matchups' routed ones TABLE_CLIP_ROUTED lines (exit code untouched).
+  // routed ones (none since plan 39.1-48) TABLE_CLIP_ROUTED lines.
   const sweptIds = new Set(tableClipSweepRoutes(LAYOUT_ORACLE_ROUTES).map((route) => route.id));
   async function runShellPasses(route, viewport) {
     const sweep = viewport.width <= NARROW_VIEWPORT_MAX_WIDTH_PX && sweptIds.has(route.id);

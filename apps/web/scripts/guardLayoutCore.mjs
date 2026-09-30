@@ -1765,13 +1765,17 @@ export const TABLE_CLIP_SCAN_SELECTOR =
   'table, [role="table"], [role="grid"], [role="tablist"], ul, ol, [role="list"]';
 
 /**
- * Matchups (and every `matchups-*` route plan 39.1-41 adds) is rebuilt by
- * plans 39.1-41..48: its clips are printed, never enforced here. An exact id
- * or the `matchups-` prefix only — `match-data` shares the `match` prefix
- * and stays enforced.
+ * Every route is enforced. Plans 39.1-41..48 rebuilt Matchups (and every
+ * `matchups-*` oracle route) and printed its clips as routed
+ * `TABLE_CLIP_ROUTED` lines meanwhile; plan 39.1-48's final gate closes that
+ * hand-off (orchestrator decision 2026-09-25), so the Matchups routes answer
+ * `enforce` like `match-data`, `fighter-analysis`, `scout` and `stage-detail`.
+ * The pure evaluator keeps its `mode` parameter; this function is the only
+ * place a route could be routed again, and none is.
  */
 export function tableClipModeForRoute(id) {
-  return id === 'matchups' || String(id).startsWith('matchups-') ? 'routed' : 'enforce';
+  void id;
+  return 'enforce';
 }
 
 /** Every oracle route the sweep visits: all of them except the synthetic `-fixture` routes, in input order. */
