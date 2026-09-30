@@ -38,6 +38,68 @@ describe('resolveWindow', () => {
     expect(window.games).toBe(2);
   });
 
+  // 39.2 code review R2-WR-02: the horizon uses the ONE event-identity rule
+  // (`evidence/eventBlocks.ts`), never a bare event name — start.gg names
+  // nearly every bracket "Ultimate Singles", so a name alone pools every
+  // weekly the user ever played.
+  it('lastEvent over 10 same-named weeklies reads only the newest weekly', () => {
+    const weeklies: Match[] = [];
+    for (let week = 0; week < 10; week += 1) {
+      for (let game = 0; game < 6; game += 1) {
+        weeklies.push(
+          makeMatch({
+            id: `w${week}-g${game}`,
+            time: NOW_MS - (9 - week) * 7 * DAY_MS - (5 - game) * 60_000,
+            eventName: 'Ultimate Singles',
+            tournamentName: `Weekly #${week + 1}`,
+          }),
+        );
+      }
+    }
+    const { window, matches } = resolveWindow({
+      matches: weeklies,
+      horizon: 'lastEvent',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    expect(window.games).toBe(6);
+    expect(matches.map((m) => m.id)).toEqual([
+      'w9-g0',
+      'w9-g1',
+      'w9-g2',
+      'w9-g3',
+      'w9-g4',
+      'w9-g5',
+    ]);
+  });
+
+  it('lastEvent splits one event and tournament name into proximity blocks', () => {
+    const lastMonth = [1, 2].map((n) =>
+      makeMatch({
+        id: `old-${n}`,
+        time: NOW_MS - 30 * DAY_MS + n * 60_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Monthly',
+      }),
+    );
+    const thisMonth = [1, 2, 3].map((n) =>
+      makeMatch({
+        id: `new-${n}`,
+        time: NOW_MS - DAY_MS + n * 60_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Monthly',
+      }),
+    );
+    const { window, matches } = resolveWindow({
+      matches: [...thisMonth, ...lastMonth],
+      horizon: 'lastEvent',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    expect(window.games).toBe(3);
+    expect(matches.map((m) => m.id)).toEqual(['new-1', 'new-2', 'new-3']);
+  });
+
   it('lastEvent returns [] over a history with no named event anywhere', () => {
     const { matches } = resolveWindow({
       matches: [makeMatch({ id: 'manual-1' }), makeMatch({ id: 'manual-2' })],
