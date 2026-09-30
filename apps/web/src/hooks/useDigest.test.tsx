@@ -12,6 +12,7 @@ interface MatchesState {
   allMatches: Match[];
   isLoading: boolean;
   isFetching: boolean;
+  isError?: boolean;
 }
 let matchesState: MatchesState;
 vi.mock('@/hooks/useFilteredMatches', () => ({ useFilteredMatches: () => matchesState }));
@@ -358,6 +359,41 @@ describe('useDigest write discipline (T-03, UI-SPEC G9)', () => {
     unmount();
     await tick();
     expect(set).not.toHaveBeenCalled();
+  });
+
+  describe('a FAILED match query is never settled (39.2-REVIEW WEB-CR-02)', () => {
+    it('an errored match query writes nothing on leave and offers no Mark as read', async () => {
+      // A failed query surfaces as `data = []`, not loading and not fetching.
+      matchesState = { allMatches: [], isLoading: false, isFetching: false, isError: true };
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      const { result, unmount } = renderHook(() => useDigest(), { wrapper });
+      expect(result.current.canMarkAsRead).toBe(false);
+      act(() => result.current.markAsRead());
+      unmount();
+      await tick();
+      expect(set).toHaveBeenCalledTimes(0);
+    });
+
+    it('a refetch that fails after the visit seeded writes nothing on leave either', async () => {
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      const { result, rerender, unmount } = renderHook(() => useDigest(), { wrapper });
+      expect(result.current.status).toBe('expanded');
+      matchesState = { allMatches: [], isLoading: false, isFetching: false, isError: true };
+      rerender();
+      expect(result.current.canMarkAsRead).toBe(false);
+      unmount();
+      await tick();
+      expect(set).toHaveBeenCalledTimes(0);
+    });
+
+    it('FAILING CONTROL: the same harness with the query settled on an empty history DOES write', async () => {
+      matchesState = { allMatches: [], isLoading: false, isFetching: false, isError: false };
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      const { unmount } = renderHook(() => useDigest(), { wrapper });
+      unmount();
+      await tick();
+      expect(set).toHaveBeenCalledTimes(1);
+    });
   });
 
   function DigestHost() {
