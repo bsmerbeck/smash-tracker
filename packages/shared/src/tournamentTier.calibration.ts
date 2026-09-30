@@ -103,6 +103,15 @@ export const TIER_CALIBRATION_FIXTURE: readonly TierCalibrationRow[] = [
  * over-rates the first), that the F2 gate holds (the second is online and
  * must resolve unknown), and that the designed direction is under-rating (the
  * third).
+ *
+ * 39.2-REVIEW SH-WR-01: the recorded rows are all major or above, so on their
+ * own they cannot catch over-rating at the local / regional / minor rungs —
+ * where nearly every real event resolves. The sub-major controls below sit
+ * under each rung's threshold (a 3- and a 40-entrant local, a 200-entrant
+ * regional, a 400-entrant minor, an 800-entrant major), so a ladder that
+ * lowers ANY rung over-rates at least one of them. They stand in until
+ * recorded low-rung rows (UltRank C/D regionals, Liquipedia-tiered locals)
+ * are read from committed bytes.
  */
 export const TIER_CALIBRATION_CONTROL_ROWS: readonly TierCalibrationRow[] = [
   {
@@ -123,6 +132,56 @@ export const TIER_CALIBRATION_CONTROL_ROWS: readonly TierCalibrationRow[] = [
     evidence: 'synthetic control — no external source',
     setting: 'online',
     numEntrants: 8000,
+    status: 'active',
+  },
+  {
+    id: 'control-local-3-offline',
+    eventLabel: 'Synthetic control local at 3 offline',
+    recordedTier: 'local',
+    recordedSource: 'synthetic-control',
+    evidence: 'synthetic control — no external source',
+    setting: 'offline',
+    numEntrants: 3,
+    status: 'active',
+  },
+  {
+    id: 'control-local-40-offline',
+    eventLabel: 'Synthetic control local at 40 offline',
+    recordedTier: 'local',
+    recordedSource: 'synthetic-control',
+    evidence: 'synthetic control — no external source',
+    setting: 'offline',
+    numEntrants: 40,
+    status: 'active',
+  },
+  {
+    id: 'control-regional-200-offline',
+    eventLabel: 'Synthetic control regional at 200 offline',
+    recordedTier: 'regional',
+    recordedSource: 'synthetic-control',
+    evidence: 'synthetic control — no external source',
+    setting: 'offline',
+    numEntrants: 200,
+    status: 'active',
+  },
+  {
+    id: 'control-minor-400-offline',
+    eventLabel: 'Synthetic control minor at 400 offline',
+    recordedTier: 'minor',
+    recordedSource: 'synthetic-control',
+    evidence: 'synthetic control — no external source',
+    setting: 'offline',
+    numEntrants: 400,
+    status: 'active',
+  },
+  {
+    id: 'control-major-800-offline',
+    eventLabel: 'Synthetic control major at 800 offline',
+    recordedTier: 'major',
+    recordedSource: 'synthetic-control',
+    evidence: 'synthetic control — no external source',
+    setting: 'offline',
+    numEntrants: 800,
     status: 'active',
   },
   {
