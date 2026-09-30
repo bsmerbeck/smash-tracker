@@ -180,12 +180,15 @@ describe('useRecapCandidate (plan 39.2-13: visibility, enrichment, dismissal)', 
     expect(sink.latest?.status).toBe('none');
   });
 
-  it('an event with no registry entry dismisses under its event key', () => {
+  it('an event with no registry entry dismisses under its event identity, never its bare name', () => {
     matchesState.allMatches = eventGames('Local Weekly', 2 * DAY);
     mount('/dashboard', null);
-    expect(sink.latest?.candidate?.entry).toBeNull();
-    expect(sink.latest?.candidate?.dismissalId).toBe(recapDismissalId(null, 'Local Weekly'));
-    expect(sink.latest?.candidate?.dismissalId).toBe('recap:Local Weekly');
+    const candidate = sink.latest?.candidate;
+    expect(candidate?.entry).toBeNull();
+    // 39.2-REVIEW WEB-CR-01: a bare name would suppress every future same-named weekly.
+    expect(candidate?.dismissalId).toBe(recapDismissalId(null, candidate!.eventId));
+    expect(candidate?.dismissalId).not.toBe('recap:Local Weekly');
+    expect(candidate?.eventId).toContain('Local Weekly');
   });
 
   it('holds as loading while the registry resolves for an event that could qualify', () => {
@@ -227,7 +230,9 @@ describe('useRecapCandidate (plan 39.2-13: visibility, enrichment, dismissal)', 
       mount('/coach/client-1/dashboard', null);
       expect(sink.latest?.status).toBe('ready');
       expect(sink.latest?.candidate?.entry).toBeNull();
-      expect(sink.latest?.candidate?.dismissalId).toBe('recap:Supernova 2026');
+      expect(sink.latest?.candidate?.dismissalId).toBe(
+        recapDismissalId(null, sink.latest!.candidate!.eventId),
+      );
       expect(useTournamentEntriesSpy).not.toHaveBeenCalled();
     });
 

@@ -6,44 +6,25 @@ import { classify, type ClassifyResult } from '../ladder.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 import { buildSetStripMark } from '../marks.js';
+import { newestEventBlock } from '../../evidence/eventBlocks.js';
 
 const TEMPLATE_ID = 'lastEventRecap' as const;
 /** How many lost sets the sub line names before falling back to a count-only phrasing. */
 const MAX_SET_LOSSES_NAMED = 3;
 
 /**
- * Ported, not imported, from `insight/horizon.ts`'s private `eventKeyOf` — that function isn't
- * exported, and duplicating the (tiny) precedence rule here keeps this template self-contained
- * rather than reaching into another module's internals. `eventName` takes priority,
- * `tournamentName` is the fallback; an empty/whitespace name reads as "no event".
+ * 39.2-REVIEW SH-CR-01: the games of the subject's newest EVENT — the event-identity rule's
+ * block holding the newest event-named game — or `null` when no game carries an event name.
+ * Never every game that shares a bare event name: start.gg calls nearly every bracket
+ * "Ultimate Singles". The rule lives in the leaf `evidence/eventBlocks.ts` (no engine imports),
+ * which this directory may read like `predicate.ts` or `policy.ts`.
  */
-function eventKeyOf(match: Match): string | null {
-  const raw = match.eventName ?? match.tournamentName;
-  if (raw == null) {
-    return null;
-  }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-/** The games belonging to whichever named event key has the most recent game in `matches`, or `null` when no game carries an event name at all. */
 function mostRecentEventGames(matches: Match[]): { eventKey: string; games: Match[] } | null {
-  let latestKey: string | null = null;
-  let latestTime = Number.NEGATIVE_INFINITY;
-  for (const match of matches) {
-    const key = eventKeyOf(match);
-    if (key === null) {
-      continue;
-    }
-    if (match.time > latestTime) {
-      latestTime = match.time;
-      latestKey = key;
-    }
-  }
-  if (latestKey === null) {
+  const newest = newestEventBlock(matches);
+  if (newest === null) {
     return null;
   }
-  return { eventKey: latestKey, games: matches.filter((m) => eventKeyOf(m) === latestKey) };
+  return { eventKey: newest.block.eventKey, games: newest.block.games };
 }
 
 /**
@@ -108,6 +89,15 @@ function buildHiddenInsight(scope: InsightScope, horizon: HorizonKey, nowMs: num
     copy: { key: `insights.${TEMPLATE_ID}.hidden`, values: {} },
     doors: [],
     countedMatchIds: [],
+  };
+}
+
+/** The event block's inclusive `from`/`to` drill-down window. */
+function eventWindowAxes(games: Match[]): Record<string, number> {
+  const { fromMs, toMs } = matchDateRange(games);
+  return {
+    ...(fromMs !== null ? { from: fromMs } : {}),
+    ...(toMs !== null ? { to: toMs } : {}),
   };
 }
 
@@ -229,9 +219,19 @@ export function buildLastEventRecapInsight(input: {
     salience: 0,
     copy: { key: copyKey, values },
     // DD-01: no `Track` door. DD-02: no debrief door — 39.1 ships the link-less factual card only.
+    // 39.2-REVIEW SH-CR-01: the `event` axis is a bare name, so the block's own inclusive window
+    // rides with it — a same-named event outside this block can never widen the door.
     doors: [
-      { kind: 'event', axes: { ...(scope.axes ?? {}), event: eventKey }, count: games.length },
-      { kind: 'games', axes: { ...(scope.axes ?? {}), event: eventKey }, count: gameRecord.total },
+      {
+        kind: 'event',
+        axes: { ...(scope.axes ?? {}), event: eventKey, ...eventWindowAxes(games) },
+        count: games.length,
+      },
+      {
+        kind: 'games',
+        axes: { ...(scope.axes ?? {}), event: eventKey, ...eventWindowAxes(games) },
+        count: gameRecord.total,
+      },
     ],
     // Plan 39.1-22: the one named event's own games — the same set `gameRecord.total` counts.
     countedMatchIds: countedMatchIdsOf(games),
@@ -259,7 +259,8 @@ export function buildLastEventRecapInsight(input: {
  * recent tournament event's game and set record, degrading to W–L only when the registry has
  * nothing to add, and reporting itself `hidden` (never `locked`, never an empty card) when the
  * subject has no tournament event at all. `windowExpressible: true`: its games are exactly one
- * named event's games, reproducible from the `event` drill-down axis.
+ * event's games (one proximity block of one event name at one tournament), reproducible from
+ * the `event` drill-down axis bounded by the block's `from`/`to` window.
  */
 export const lastEventRecapTemplate: InsightTemplate = {
   id: TEMPLATE_ID,

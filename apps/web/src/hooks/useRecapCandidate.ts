@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
+  newestEventBlock,
   resolveEntryTiers,
-  trimmedEventKey,
   type Match,
   type TierResolution,
   type TournamentEntry,
@@ -24,17 +24,27 @@ export interface RecapEntry {
   resolution: TierResolution;
   /** An admin-imported historical row: no debrief door is ever offered for it. */
   isAdminImported: boolean;
+  /**
+   * 39.2-REVIEW WEB-CR-01: the entry's OWN attributed games from the one shared resolution
+   * (`resolveEntryTiers`), which the card reads instead of any name-grouped set.
+   */
+  games: Match[];
 }
 
 export interface RecapCandidate {
-  /** The event's trimmed key (`eventName ?? tournamentName`), the same rule the template groups by. */
+  /** The event's display name (`eventName ?? tournamentName`, trimmed). Never its identity. */
   eventKey: string;
-  /** The event's games, from the SUBJECT's matches only. */
+  /**
+   * 39.2-REVIEW WEB-CR-01: the event's identity — its proximity block's key (event name,
+   * tournament name, first game) — so two same-named brackets are never one event.
+   */
+  eventId: string;
+  /** The event's games, from the SUBJECT's matches only: the registry entry's own when one matched. */
   games: Match[];
   newestGameAt: number;
   /** When the event ended: the registry's display end when one is known, else its newest game. */
   endMs: number;
-  /** `recap:<entryKey ?? eventKey>`: the id in the device-local dismissal store, independent of any horizon. */
+  /** `recap:<entryKey ?? eventId>`: the id in the device-local dismissal store, independent of any horizon. */
   dismissalId: string;
   entry: RecapEntry | null;
 }
@@ -62,28 +72,37 @@ export interface UseRecapCandidateInput {
 
 const NO_CANDIDATE: RecapCandidateResult = { status: 'none', candidate: null, dismiss: () => {} };
 
-/** The dismissal id for a recap: the entry key when the registry has one, else the event key. */
-export function recapDismissalId(entryKey: string | null, eventKey: string): string {
-  return `recap:${entryKey ?? eventKey}`;
+/**
+ * The dismissal id for a recap: the entry key when the registry has one, else the event's
+ * identity (`eventId`, one proximity block) — never a bare event name, which every same-named
+ * weekly would share (39.2-REVIEW WEB-CR-01).
+ */
+export function recapDismissalId(entryKey: string | null, eventId: string): string {
+  return `recap:${entryKey ?? eventId}`;
 }
 
-/** The event with the newest game among the subject's named events, with all of its games; `null` when no game names an event. */
-export function selectNewestEvent(
-  matches: readonly Match[],
-): { eventKey: string; games: Match[]; newestGame: Match } | null {
-  let newest: Match | null = null;
-  let newestKey: string | null = null;
-  for (const match of matches) {
-    const key = trimmedEventKey(match);
-    if (key === null) continue;
-    if (newest === null || match.time > newest.time) {
-      newest = match;
-      newestKey = key;
-    }
-  }
-  if (newest === null || newestKey === null) return null;
-  const games = matches.filter((match) => trimmedEventKey(match) === newestKey);
-  return { eventKey: newestKey, games, newestGame: newest };
+/** The newest event the recap considers, as `selectNewestEvent` returns it. */
+export interface NewestEvent {
+  eventKey: string;
+  eventId: string;
+  games: Match[];
+  newestGame: Match;
+}
+
+/**
+ * The event holding the subject's newest event-named game, with that event's games only; `null`
+ * when no game names an event. An event is one proximity block of one event name at one
+ * tournament (shared `newestEventBlock`), so ten "Ultimate Singles" weeklies are ten events.
+ */
+export function selectNewestEvent(matches: readonly Match[]): NewestEvent | null {
+  const newest = newestEventBlock(matches);
+  if (newest === null) return null;
+  return {
+    eventKey: newest.block.eventKey,
+    eventId: newest.block.key,
+    games: newest.block.games,
+    newestGame: newest.newestGame,
+  };
 }
 
 /**
@@ -93,7 +112,7 @@ export function selectNewestEvent(
  * been dismissed on this device. Pure.
  */
 export function evaluateRecapCandidate(input: {
-  event: { eventKey: string; games: Match[]; newestGame: Match };
+  event: NewestEvent;
   lastSeenAt: number | null;
   nowMs: number;
   dismissedIds: readonly string[];
@@ -105,11 +124,12 @@ export function evaluateRecapCandidate(input: {
   const endMs = (entry ? entryDisplayDateRange(entry.entry)?.endMs : undefined) ?? newestGameAt;
   if (endMs > nowMs) return null;
   if (nowMs - endMs > FOURTEEN_DAYS_MS) return null;
-  const dismissalId = recapDismissalId(entry?.entryKey ?? null, event.eventKey);
+  const dismissalId = recapDismissalId(entry?.entryKey ?? null, event.eventId);
   if (dismissedIds.includes(dismissalId)) return null;
   return {
     eventKey: event.eventKey,
-    games: event.games,
+    eventId: event.eventId,
+    games: entry?.games ?? event.games,
     newestGameAt,
     endMs,
     dismissalId,
@@ -165,7 +185,8 @@ export function useSubjectRecapCandidate(input: UseRecapCandidateInput): RecapCa
 
 /**
  * The own-account recap source: the same selection, enriched with the registry row whose
- * attributed games include the event's newest game (the one shared `resolveEntryTiers` the
+ * attributed games include the event's newest game — and the card then reads that entry's own
+ * attributed games, never a name-grouped set (the one shared `resolveEntryTiers` the
  * Tournaments page resolves with, so the card and the table can never disagree on a tier).
  * While the registry is still pending and an event could qualify the status is `loading`, so
  * the Dashboard can hold the recap's cell instead of resizing the digest when it lands. A
@@ -191,6 +212,7 @@ export function useOwnAccountRecapCandidate(input: UseRecapCandidateInput): Reca
       entryKey: source.entryKey ?? null,
       resolution: item.resolution,
       isAdminImported: isAdminImportedEntry(source),
+      games: item.matches,
     };
   }, [event, entries, allMatches]);
 

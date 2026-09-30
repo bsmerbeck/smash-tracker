@@ -1,9 +1,9 @@
 import {
+  eventBlocksOf,
   movedTransition,
   parseDigestSnapshot,
   readTrackedItem,
   selectMovedItems,
-  trimmedEventKey,
   type DigestMovedToken,
   type DigestSnapshot,
   type DigestStateClass,
@@ -76,25 +76,14 @@ export function writeStoredDigest(
  * D-17 / F3b: how many distinct events are new since `lastSeenAt`, derived from
  * the SUBJECT's games only (never the account-scoped tournament registry,
  * which would show the viewer's own events under a coach route). An event is
- * a distinct `trimmedEventKey` — the one event-name rule the evidence engine
- * and the Tournaments page share — and is new when its FIRST game is later
- * than `lastSeenAt`. Games with no event name belong to no event.
+ * one block of the shared event-identity rule (`eventBlocksOf`: event name and
+ * tournament name, split by proximity) — never a bare event name, which every
+ * "Ultimate Singles" weekly shares (39.2-REVIEW WEB-CR-01) — and is new when
+ * its FIRST game is later than `lastSeenAt`. Games with no event name belong
+ * to no event.
  */
 export function countNewEvents(matches: readonly Match[], lastSeenAt: number): number {
-  const firstGameByEvent = new Map<string, number>();
-  for (const match of matches) {
-    const key = trimmedEventKey(match);
-    if (key === null) continue;
-    const seen = firstGameByEvent.get(key);
-    if (seen === undefined || match.time < seen) {
-      firstGameByEvent.set(key, match.time);
-    }
-  }
-  let count = 0;
-  for (const first of firstGameByEvent.values()) {
-    if (first > lastSeenAt) count += 1;
-  }
-  return count;
+  return eventBlocksOf(matches).filter((block) => block.startMs > lastSeenAt).length;
 }
 
 /** One tracked item's read at the digest's fixed horizon (`DIGEST_HORIZON`), never the page's switch. */

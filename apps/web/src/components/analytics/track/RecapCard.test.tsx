@@ -92,10 +92,11 @@ function candidateOf(
   const newestGameAt = Math.max(...games.map((g) => g.time));
   return {
     eventKey: 'Supernova 2026',
+    eventId: `event:["Supernova 2026","Supernova 2026"]@${Math.min(...games.map((g) => g.time))}`,
     games,
     newestGameAt,
     endMs: newestGameAt,
-    dismissalId: entry ? 'recap:sn26' : 'recap:Supernova 2026',
+    dismissalId: entry ? 'recap:sn26' : 'recap:event:Supernova 2026',
     entry: entry
       ? {
           entry,
@@ -105,6 +106,7 @@ function candidateOf(
             observedOnline: false,
           }),
           isAdminImported: options.imported ?? false,
+          games,
         }
       : null,
   };

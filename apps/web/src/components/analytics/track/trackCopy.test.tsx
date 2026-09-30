@@ -368,6 +368,7 @@ function recapCandidate(games: Match[], withEntry: boolean): RecapCandidate {
   } as TournamentEntry;
   return {
     eventKey: 'Supernova 2026',
+    eventId: `event:["Supernova 2026","Supernova 2026"]@${Math.min(...games.map((g) => g.time))}`,
     games,
     newestGameAt: newest,
     endMs: newest,
@@ -381,6 +382,7 @@ function recapCandidate(games: Match[], withEntry: boolean): RecapCandidate {
             observedOnline: false,
           }),
           isAdminImported: false,
+          games,
         }
       : null,
   };
