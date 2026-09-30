@@ -31,7 +31,16 @@ export interface TierCalibrationRow {
   status: 'active' | 'awaiting-owner-probe';
 }
 
-/** Rows with a verified count (ACTIVE) and rows awaiting the owner's probe (plan 39.2-14 fills them). */
+/**
+ * Rows with a verified count (ACTIVE). Evidence is either a committed fixture path or an
+ * `owner start.gg probe <date>: <event slug> …` string (plan 39.2-14).
+ *
+ * competitionTier finding (owner probe 2026-09-30): start.gg `Event.competitionTier` read 5 on EVERY
+ * event probed, including other games' side events (a 12-entrant GOML side event, a 20-entrant
+ * basketball event). It does not discriminate tier and is unusable as a tier source (Phase 42 input;
+ * no code reads it). Also probed, not calibration rows: The Cashbox #28 tournament/the-cashbox-28/event/ultimate-singles
+ * (494 entrants, isOnline TRUE, type 1) and El Dojo Masters #3 Ultimate Master Singles PRO (40) / Amateur (34), offline.
+ */
 export const TIER_CALIBRATION_FIXTURE: readonly TierCalibrationRow[] = [
   {
     id: 'supernova-2026-ultimate',
@@ -58,30 +67,33 @@ export const TIER_CALIBRATION_FIXTURE: readonly TierCalibrationRow[] = [
     eventLabel: 'S Factor X3 Ultimate Singles',
     recordedTier: 'supermajor',
     recordedSource: 'ultrank',
-    evidence: 'UltRank S+; entrant count awaiting the owner probe (plan 39.2-14)',
+    evidence:
+      'owner start.gg probe 2026-09-30: tournament/s-factor-x3/event/smash-bros-ultimate-singles numEntrants 1325 isOnline false type 1 competitionTier 5 (recorded tier: UltRank S+)',
     setting: 'offline',
-    numEntrants: null,
-    status: 'awaiting-owner-probe',
+    numEntrants: 1325,
+    status: 'active',
   },
   {
     id: 'getonmylevel-2026',
     eventLabel: 'Get On My Level 2026 Ultimate Singles',
     recordedTier: 'supermajor',
     recordedSource: 'ultrank',
-    evidence: 'UltRank S; entrant count awaiting the owner probe (plan 39.2-14)',
+    evidence:
+      'owner start.gg probe 2026-09-30: tournament/get-on-my-level-2026-canadian-fighting-game-championships/event/super-smash-bros-ultimate-singles numEntrants 512 isOnline false type 1 competitionTier 5 (recorded tier: UltRank S)',
     setting: 'offline',
-    numEntrants: null,
-    status: 'awaiting-owner-probe',
+    numEntrants: 512,
+    status: 'active',
   },
   {
     id: 'momocon-2026',
     eventLabel: 'MomoCon 2026 Ultimate Singles',
     recordedTier: 'major',
     recordedSource: 'ultrank',
-    evidence: 'UltRank A; entrant count awaiting the owner probe (plan 39.2-14)',
+    evidence:
+      'owner start.gg probe 2026-09-30: tournament/momocon-2026-5/event/super-smash-bros-ultimate-singles numEntrants 453 isOnline false type 1 competitionTier 5 (recorded tier: UltRank A)',
     setting: 'offline',
-    numEntrants: null,
-    status: 'awaiting-owner-probe',
+    numEntrants: 453,
+    status: 'active',
   },
 ];
 

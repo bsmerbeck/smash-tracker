@@ -28,21 +28,44 @@ function controlRow(id: string) {
   return row;
 }
 
+/** Owner-probe rows cite a dated start.gg probe and event slug instead of a committed file. */
+function isOwnerProbeRow(row: { evidence: string }): boolean {
+  return row.evidence.startsWith('owner start.gg probe ');
+}
+
 describe('D-01 calibration oracle — acceptance: the ladder never over-rates an externally-tiered event', () => {
   it('(a) the real ladder over-rates no ACTIVE fixture row', () => {
     expect(findOverRatedEvents(TIER_CALIBRATION_FIXTURE)).toEqual([]);
   });
 
-  it('(b) anti-vacuous: at least 2 ACTIVE rows, each entrant count read back from its committed evidence bytes', () => {
+  it('(b) anti-vacuous: at least 2 file-backed ACTIVE rows, each entrant count read back from its committed evidence bytes', () => {
     const active = TIER_CALIBRATION_FIXTURE.filter((row) => row.status === 'active');
-    expect(active.length).toBeGreaterThanOrEqual(2);
-    for (const row of active) {
+    const fileBacked = active.filter((row) => !isOwnerProbeRow(row));
+    expect(fileBacked.length).toBeGreaterThanOrEqual(2);
+    for (const row of fileBacked) {
       expect(row.numEntrants).not.toBeNull();
       const bytes = readFileSync(join(REPO_ROOT, row.evidence), 'utf8');
       const count = row.numEntrants as number;
       const plain = String(count);
       const withComma = count.toLocaleString('en-US');
       expect(bytes).toMatch(new RegExp(`player_number=(${plain}|${withComma})\\b`));
+    }
+  });
+
+  it('(b2) every ACTIVE owner-probe row has a positive integer count and cites the probe date and an event slug', () => {
+    const probed = TIER_CALIBRATION_FIXTURE.filter(isOwnerProbeRow);
+    expect(probed.map((row) => row.id).sort()).toEqual(
+      ['getonmylevel-2026', 'momocon-2026', 'sfactor-x3'].sort(),
+    );
+    for (const row of probed) {
+      expect(row.status).toBe('active');
+      expect(Number.isInteger(row.numEntrants)).toBe(true);
+      expect(row.numEntrants as number).toBeGreaterThan(0);
+      expect(row.setting).toBe('offline');
+      expect(row.evidence).toMatch(
+        /probe 2026-09-30: tournament\/[a-z0-9-]+\/event\/[a-z0-9-]+ numEntrants /,
+      );
+      expect(row.evidence).toContain(`numEntrants ${row.numEntrants} `);
     }
   });
 
@@ -89,16 +112,36 @@ describe('D-01 calibration oracle — proven failing direction', () => {
 });
 
 describe('D-01 calibration oracle — skipped rows', () => {
-  it('(f) reports exactly the three awaiting rows by id', () => {
-    expect(skippedCalibrationRows(TIER_CALIBRATION_FIXTURE).sort()).toEqual(
-      ['getonmylevel-2026', 'momocon-2026', 'sfactor-x3'].sort(),
-    );
+  it('(f) no fixture row is awaiting the owner probe any more — the oracle skips nothing', () => {
+    expect(skippedCalibrationRows(TIER_CALIBRATION_FIXTURE)).toEqual([]);
+  });
+
+  it('(g) the owner-probed rows resolve per the real ladder: S Factor X3 exact, GOML and MomoCon under-rated one rung, none over-rated', () => {
+    const byId = (id: string) => TIER_CALIBRATION_FIXTURE.filter((row) => row.id === id);
+    // S Factor X3 (1325 >= 1024) reaches its recorded supermajor: neither over- nor under-rated.
+    expect(findOverRatedEvents(byId('sfactor-x3'))).toEqual([]);
+    expect(findUnderRatedEvents(byId('sfactor-x3'))).toEqual([]);
+    // GOML (512 -> major vs recorded supermajor) and MomoCon (453 -> minor vs recorded major).
+    expect(
+      findUnderRatedEvents(TIER_CALIBRATION_FIXTURE)
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(['getonmylevel-2026', 'momocon-2026']);
+    expect(findOverRatedEvents(TIER_CALIBRATION_FIXTURE)).toEqual([]);
   });
 
   it('reports the active row ids it evaluated', () => {
     const active = TIER_CALIBRATION_FIXTURE.filter((row) => row.status === 'active').map(
       (row) => row.id,
     );
-    expect(active.sort()).toEqual(['ssc-2019-ultimate', 'supernova-2026-ultimate'].sort());
+    expect(active.sort()).toEqual(
+      [
+        'getonmylevel-2026',
+        'momocon-2026',
+        'sfactor-x3',
+        'ssc-2019-ultimate',
+        'supernova-2026-ultimate',
+      ].sort(),
+    );
   });
 });
