@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
+  hasEventSyncedSince,
   newestEventBlock,
   resolveEntryTiers,
+  type DigestSeenEvents,
+  type EventBlock,
   type Match,
   type TierResolution,
   type TournamentEntry,
@@ -64,6 +67,12 @@ export interface UseRecapCandidateInput {
    * event qualifies). Mark as read on the digest does not move it.
    */
   lastSeenAt: number | null;
+  /**
+   * 39.2-REVIEW WEB-WR-01: the events the last visit saw (the digest's frozen seen set), so
+   * "synced since last seen" is tested on sync order, not play time. `null`/absent for a first
+   * visit or a snapshot written before the set existed (the play-time rule then applies).
+   */
+  seenEvents?: DigestSeenEvents | null;
   /** The digest's snapshot has been read; until then nothing is decided. */
   ready: boolean;
   /** False when the page is not showing the card (no fighters chosen): nothing is selected. */
@@ -87,6 +96,8 @@ export interface NewestEvent {
   eventId: string;
   games: Match[];
   newestGame: Match;
+  /** The shared event-identity block the event is. */
+  block: EventBlock;
 }
 
 /**
@@ -102,25 +113,44 @@ export function selectNewestEvent(matches: readonly Match[]): NewestEvent | null
     eventId: newest.block.key,
     games: newest.block.games,
     newestGame: newest.newestGame,
+    block: newest.block,
   };
+}
+
+/**
+ * 39.2-REVIEW WEB-WR-01: the event has games synced since the last visit — it is absent from that
+ * visit's seen set, or holds more games than it did then (the shared `hasEventSyncedSince`).
+ * Without a stored seen set, its newest game is later than `lastSeenAt` (the pre-fix rule). A
+ * first visit on this device (`lastSeenAt === null`) lets any event qualify.
+ */
+function syncedSinceLastSeen(
+  event: NewestEvent,
+  lastSeenAt: number | null,
+  seenEvents: DigestSeenEvents | null | undefined,
+): boolean {
+  if (lastSeenAt === null) return true;
+  const block: EventBlock = { ...event.block, endMs: event.newestGame.time };
+  return hasEventSyncedSince(block, { lastSeenAt, events: seenEvents ?? undefined });
 }
 
 /**
  * D-12 as amended by D-18: the newest event shows its recap when it is complete, its end is
  * within the last fourteen days (a DATE test on the shared `FOURTEEN_DAYS_MS`, never the
- * server's debrief window), its games are newer than the frozen `lastSeenAt`, and it has not
- * been dismissed on this device. Pure.
+ * server's debrief window), it has games SYNCED since the last visit (39.2-REVIEW WEB-WR-01:
+ * sync order through the frozen seen set, not play time), and it has not been dismissed on this
+ * device. Pure.
  */
 export function evaluateRecapCandidate(input: {
   event: NewestEvent;
   lastSeenAt: number | null;
+  seenEvents?: DigestSeenEvents | null;
   nowMs: number;
   dismissedIds: readonly string[];
   entry: RecapEntry | null;
 }): RecapCandidate | null {
-  const { event, lastSeenAt, nowMs, dismissedIds, entry } = input;
+  const { event, lastSeenAt, seenEvents, nowMs, dismissedIds, entry } = input;
   const newestGameAt = event.newestGame.time;
-  if (lastSeenAt !== null && newestGameAt <= lastSeenAt) return null;
+  if (!syncedSinceLastSeen(event, lastSeenAt, seenEvents)) return null;
   const endMs = (entry ? entryDisplayDateRange(entry.entry)?.endMs : undefined) ?? newestGameAt;
   if (endMs > nowMs) return null;
   if (nowMs - endMs > FOURTEEN_DAYS_MS) return null;
@@ -138,7 +168,12 @@ export function evaluateRecapCandidate(input: {
 }
 
 /** The shared reads both subject paths need: the subject's games, its dismissals and one clock. */
-function useRecapInputs({ lastSeenAt, ready, enabled = true }: UseRecapCandidateInput) {
+function useRecapInputs({
+  lastSeenAt,
+  seenEvents = null,
+  ready,
+  enabled = true,
+}: UseRecapCandidateInput) {
   const { allMatches } = useFilteredMatches();
   const dismissals = useInsightDismissals();
   // The clock is read once (the React Compiler forbids a bare `Date.now()` in the render body).
@@ -147,7 +182,7 @@ function useRecapInputs({ lastSeenAt, ready, enabled = true }: UseRecapCandidate
     () => (ready && enabled ? selectNewestEvent(allMatches) : null),
     [allMatches, ready, enabled],
   );
-  return { allMatches, dismissals, nowMs, event, lastSeenAt };
+  return { allMatches, dismissals, nowMs, event, lastSeenAt, seenEvents };
 }
 
 function finish(
@@ -166,19 +201,20 @@ function finish(
  * the two at the component level.
  */
 export function useSubjectRecapCandidate(input: UseRecapCandidateInput): RecapCandidateResult {
-  const { dismissals, nowMs, event, lastSeenAt } = useRecapInputs(input);
+  const { dismissals, nowMs, event, lastSeenAt, seenEvents } = useRecapInputs(input);
   const candidate = useMemo(
     () =>
       event
         ? evaluateRecapCandidate({
             event,
             lastSeenAt,
+            seenEvents,
             nowMs,
             dismissedIds: dismissals.dismissedIds,
             entry: null,
           })
         : null,
-    [event, lastSeenAt, nowMs, dismissals.dismissedIds],
+    [event, lastSeenAt, seenEvents, nowMs, dismissals.dismissedIds],
   );
   return finish(candidate, dismissals.dismiss);
 }
@@ -193,7 +229,7 @@ export function useSubjectRecapCandidate(input: UseRecapCandidateInput): RecapCa
  * failed registry read degrades to the matches-only candidate.
  */
 export function useOwnAccountRecapCandidate(input: UseRecapCandidateInput): RecapCandidateResult {
-  const { allMatches, dismissals, nowMs, event, lastSeenAt } = useRecapInputs(input);
+  const { allMatches, dismissals, nowMs, event, lastSeenAt, seenEvents } = useRecapInputs(input);
   const entriesQuery = useTournamentEntries();
   const entries = entriesQuery.data;
   const entriesPending = entriesQuery.isPending;
@@ -222,20 +258,22 @@ export function useOwnAccountRecapCandidate(input: UseRecapCandidateInput): Reca
         ? evaluateRecapCandidate({
             event,
             lastSeenAt,
+            seenEvents,
             nowMs,
             dismissedIds: dismissals.dismissedIds,
             entry,
           })
         : null,
-    [event, entriesPending, lastSeenAt, nowMs, dismissals.dismissedIds, entry],
+    [event, entriesPending, lastSeenAt, seenEvents, nowMs, dismissals.dismissedIds, entry],
   );
 
   if (event && entriesPending) {
     // Could this event qualify once the registry lands? The registry's end is never earlier than
-    // the newest game, so a game newer than last seen and inside the window is the cheap test.
+    // the newest game, so games synced since last seen and a newest game inside the window is
+    // the cheap test.
     const newestGameAt = event.newestGame.time;
     const possible =
-      (lastSeenAt === null || newestGameAt > lastSeenAt) &&
+      syncedSinceLastSeen(event, lastSeenAt, seenEvents) &&
       newestGameAt <= nowMs &&
       nowMs - newestGameAt <= FOURTEEN_DAYS_MS;
     return possible ? { status: 'loading', candidate: null, dismiss: () => {} } : NO_CANDIDATE;

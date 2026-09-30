@@ -297,6 +297,7 @@ export function DashboardPage() {
       <PageShell filterRow={<DashboardToolbar />}>
         <RecapCandidateGate
           lastSeenAt={digest.visitLastSeenAt}
+          seenEvents={digest.visitSeenEvents}
           ready={digest.snapshotReady}
           enabled={digestVisible}
         >

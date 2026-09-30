@@ -310,6 +310,7 @@ function expandedDigestFixture(): UseDigestResult {
     movedByItemKey: new Map(),
     since: Date.now(),
     visitLastSeenAt: null,
+    visitSeenEvents: null,
     snapshotReady: true,
     canMarkAsRead: true,
     markAsRead: () => undefined,

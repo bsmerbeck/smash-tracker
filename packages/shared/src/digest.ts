@@ -5,6 +5,7 @@ import { classify, type ClassifyResult } from './insight/ladder.js';
 import { scoreInsight } from './insight/salience.js';
 import { formNowTemplate } from './insight/templates/formNow.js';
 import type { HorizonKey, RateValue } from './insight/types.js';
+import { eventBlocksOf, type EventBlock } from './evidence/eventBlocks.js';
 import { WATCHLIST_MAX_ITEMS, watchlistItemKeySchema, type WatchlistItem } from './watchlist.js';
 import { trackedItemScope } from './watchlistScope.js';
 
@@ -175,10 +176,34 @@ export function movedTransition(
   return null;
 }
 
+/** The most events a snapshot's seen set remembers (newest by end); older ones fall under `truncatedAtMs`. */
+export const DIGEST_SEEN_EVENTS_CAP = 50;
+/** An event identity (`EventBlock.key`) is bounded so a tampered store cannot grow the parse. */
+const SEEN_EVENT_KEY_MAX_LENGTH = 512;
+
+/**
+ * 39.2-REVIEW WEB-WR-01: the events a visit saw, so "new since last visit" is measured on SYNC
+ * order, not play time. Matches carry no import timestamp, so this is the per-event form of the
+ * match-count delta the snapshot already keeps: each seen event's identity (`EventBlock.key`)
+ * with its game count at the time. `truncatedAtMs` is present only when more events existed
+ * than the cap: an unseen event that ended at or before it may simply have been dropped from
+ * the set, so it is treated as seen (a back-sync of an old event is not "new", RESEARCH A5).
+ */
+export const digestSeenEventsSchema = z.object({
+  seen: z
+    .record(z.string().min(1).max(SEEN_EVENT_KEY_MAX_LENGTH), z.number().int().nonnegative())
+    .refine((seen) => Object.keys(seen).length <= DIGEST_SEEN_EVENTS_CAP, {
+      message: 'seen holds at most DIGEST_SEEN_EVENTS_CAP events',
+    }),
+  truncatedAtMs: z.number().int().nonnegative().optional(),
+});
+export type DigestSeenEvents = z.infer<typeof digestSeenEventsSchema>;
+
 /**
  * T-03: the device-local snapshot at `smash-tracker.analyticsDigest.<uid>.<subject>`.
  * `tracked` holds only whitelisted state classes under valid item keys and at
- * most `WATCHLIST_MAX_ITEMS` of them.
+ * most `WATCHLIST_MAX_ITEMS` of them. `events` (39.2-REVIEW WEB-WR-01) is optional: a snapshot
+ * written before it existed still parses, and its readers fall back to the play-time rule.
  */
 export const digestSnapshotSchema = z.object({
   lastSeenAt: z.number().int().nonnegative(),
@@ -188,6 +213,7 @@ export const digestSnapshotSchema = z.object({
     .refine((tracked) => Object.keys(tracked).length <= WATCHLIST_MAX_ITEMS, {
       message: 'tracked holds at most 25 items (WATCHLIST_MAX_ITEMS)',
     }),
+  events: digestSeenEventsSchema.optional(),
 });
 export type DigestSnapshot = z.infer<typeof digestSnapshotSchema>;
 
@@ -237,4 +263,63 @@ export function selectMovedItems<T extends DigestMovedEntry>(
     shown: ordered.slice(0, DIGEST_MOVED_ROW_CAP),
     moreCount: Math.max(0, ordered.length - DIGEST_MOVED_ROW_CAP),
   };
+}
+
+/**
+ * The seen set a snapshot stores for `matches`: the newest `DIGEST_SEEN_EVENTS_CAP` events (by
+ * end, then identity) with their game counts, plus `truncatedAtMs` when older events were left
+ * out. Pure; the events are the shared event-identity rule's blocks (`eventBlocksOf`).
+ */
+export function seenEventsOf(matches: readonly Match[]): DigestSeenEvents {
+  const blocks = eventBlocksOf(matches).sort((a, b) =>
+    a.endMs !== b.endMs ? b.endMs - a.endMs : a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+  );
+  const kept = blocks
+    .slice(0, DIGEST_SEEN_EVENTS_CAP)
+    .filter((block) => block.key.length <= SEEN_EVENT_KEY_MAX_LENGTH);
+  const seen = Object.fromEntries(kept.map((block) => [block.key, block.games.length]));
+  if (blocks.length <= DIGEST_SEEN_EVENTS_CAP) {
+    return { seen };
+  }
+  // The newest dropped event's end: anything unseen at or before it may have been dropped.
+  return { seen, truncatedAtMs: Math.max(0, blocks[DIGEST_SEEN_EVENTS_CAP]!.endMs) };
+}
+
+/** What the digest remembers about the last visit: when it was and, when stored, what it saw. */
+export interface DigestLastVisit {
+  lastSeenAt: number;
+  events?: DigestSeenEvents;
+}
+
+/**
+ * 39.2-REVIEW WEB-WR-01: an event is NEW since the last visit when that visit's seen set lacks
+ * it (and it is not older than a truncated set's cut-off). A snapshot without a seen set (written
+ * before one existed) falls back to the play-time rule: the event's first game is later than
+ * `lastSeenAt`.
+ */
+export function isEventNewSince(block: EventBlock, visit: DigestLastVisit): boolean {
+  const { events } = visit;
+  if (events === undefined) {
+    return block.startMs > visit.lastSeenAt;
+  }
+  if (Object.prototype.hasOwnProperty.call(events.seen, block.key)) {
+    return false;
+  }
+  return events.truncatedAtMs === undefined || block.endMs > events.truncatedAtMs;
+}
+
+/**
+ * 39.2-REVIEW WEB-WR-01: an event has games SYNCED since the last visit when it is new, or when
+ * it holds more games than that visit saw (a sync that finished an event the player had already
+ * seen part of). Without a seen set: its newest game is later than `lastSeenAt`.
+ */
+export function hasEventSyncedSince(block: EventBlock, visit: DigestLastVisit): boolean {
+  const { events } = visit;
+  if (events === undefined) {
+    return block.endMs > visit.lastSeenAt;
+  }
+  if (Object.prototype.hasOwnProperty.call(events.seen, block.key)) {
+    return block.games.length > (events.seen[block.key] ?? 0);
+  }
+  return isEventNewSince(block, visit);
 }

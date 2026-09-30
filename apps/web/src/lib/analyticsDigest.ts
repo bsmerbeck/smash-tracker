@@ -1,9 +1,11 @@
 import {
   eventBlocksOf,
+  isEventNewSince,
   movedTransition,
   parseDigestSnapshot,
   readTrackedItem,
   selectMovedItems,
+  type DigestLastVisit,
   type DigestMovedToken,
   type DigestSnapshot,
   type DigestStateClass,
@@ -73,17 +75,18 @@ export function writeStoredDigest(
 }
 
 /**
- * D-17 / F3b: how many distinct events are new since `lastSeenAt`, derived from
+ * D-17 / F3b: how many distinct events are new since the last visit, derived from
  * the SUBJECT's games only (never the account-scoped tournament registry,
  * which would show the viewer's own events under a coach route). An event is
  * one block of the shared event-identity rule (`eventBlocksOf`: event name and
  * tournament name, split by proximity) — never a bare event name, which every
- * "Ultimate Singles" weekly shares (39.2-REVIEW WEB-CR-01) — and is new when
- * its FIRST game is later than `lastSeenAt`. Games with no event name belong
- * to no event.
+ * "Ultimate Singles" weekly shares (39.2-REVIEW WEB-CR-01). "New" is measured on
+ * SYNC order (39.2-REVIEW WEB-WR-01): the last visit's seen set lacks the event
+ * (`isEventNewSince`), so an event played before that visit but synced after it
+ * still counts. Games with no event name belong to no event.
  */
-export function countNewEvents(matches: readonly Match[], lastSeenAt: number): number {
-  return eventBlocksOf(matches).filter((block) => block.startMs > lastSeenAt).length;
+export function countNewEvents(matches: readonly Match[], visit: DigestLastVisit): number {
+  return eventBlocksOf(matches).filter((block) => isEventNewSince(block, visit)).length;
 }
 
 /** One tracked item's read at the digest's fixed horizon (`DIGEST_HORIZON`), never the page's switch. */

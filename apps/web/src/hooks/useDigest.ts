@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DIGEST_HORIZON, type DigestSnapshot } from '@smash-tracker/shared';
+import {
+  DIGEST_HORIZON,
+  seenEventsOf,
+  type DigestSeenEvents,
+  type DigestSnapshot,
+} from '@smash-tracker/shared';
 import {
   buildTrackedRows,
   type TrackedMovedEntry,
@@ -53,6 +58,12 @@ export interface UseDigestResult {
    * the recap card, which keys "synced since last seen" on it, survives the digest going quiet.
    */
   visitLastSeenAt: number | null;
+  /**
+   * 39.2-REVIEW WEB-WR-01: the events the last visit saw (the stored snapshot's seen set, frozen
+   * like `visitLastSeenAt`), or `null` on a first visit or for a snapshot written before the set
+   * existed. The recap tests "synced since last seen" on it, not on play time.
+   */
+  visitSeenEvents: DigestSeenEvents | null;
   /** True once this visit's snapshot has been read (the match query settled); `visitLastSeenAt` is meaningful only then. */
   snapshotReady: boolean;
   /** Mark as read is offered only while expanded, the match query is settled and the tracked list resolved. */
@@ -185,6 +196,9 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
   // (the card showed "nothing new"; later data was not shown and must stay unseen).
   const pendingLeaveWrite = useRef<PendingLeaveWrite | null>(null);
   const matchCount = allMatches.length;
+  // 39.2-REVIEW WEB-WR-01: the events this visit saw, stored so the next visit measures "new" on
+  // sync order. Derived from the same settled `allMatches` the count is.
+  const currentEvents = useMemo(() => seenEventsOf(allMatches), [allMatches]);
   const leaveWriteEligible =
     enabled && writable && !isFetching && currentTracked !== null && markedAt === null;
 
@@ -205,12 +219,14 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
     const capturedClientId = clientId;
     const capturedCount = matchCount;
     const capturedTracked = currentTracked;
+    const capturedEvents = currentEvents;
     return () => {
       const write = () =>
         writeStoredDigest(capturedUid, capturedClientId, {
           lastSeenAt: Date.now(),
           lastSeenMatchCount: capturedCount,
           tracked: capturedTracked,
+          events: capturedEvents,
         });
       const timer = setTimeout(() => {
         pendingLeaveWrite.current = null;
@@ -218,7 +234,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
       }, 0);
       pendingLeaveWrite.current = { storageKey: capturedKey, timer, write };
     };
-  }, [leaveWriteEligible, storageKey, uid, clientId, matchCount, currentTracked]);
+  }, [leaveWriteEligible, storageKey, uid, clientId, matchCount, currentTracked, currentEvents]);
 
   if (isLoading || !seeded) {
     return {
@@ -231,6 +247,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
       movedByItemKey: NO_MOVED,
       since: null,
       visitLastSeenAt: null,
+      visitSeenEvents: null,
       snapshotReady: false,
       canMarkAsRead: false,
       markAsRead: () => {},
@@ -238,7 +255,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
   }
 
   const newGames = stored ? Math.max(0, allMatches.length - stored.lastSeenMatchCount) : 0;
-  const newEvents = stored ? countNewEvents(allMatches, stored.lastSeenAt) : 0;
+  const newEvents = stored ? countNewEvents(allMatches, stored) : 0;
   // A failed tracked list cannot say anything moved; an unresolved one cannot say yet.
   const movedCount =
     markedAt !== null ? 0 : moved ? moved.all.length : watchlist.isError ? 0 : null;
@@ -266,6 +283,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
       lastSeenAt: now,
       lastSeenMatchCount: allMatches.length,
       tracked: currentTracked,
+      events: currentEvents,
     });
     setMarkedAt(now);
   }
@@ -280,6 +298,7 @@ export function useDigest({ enabled = true }: UseDigestOptions = {}): UseDigestR
     movedByItemKey,
     since: markedAt ?? stored?.lastSeenAt ?? null,
     visitLastSeenAt: stored?.lastSeenAt ?? null,
+    visitSeenEvents: stored?.events ?? null,
     snapshotReady: true,
     canMarkAsRead,
     markAsRead,
