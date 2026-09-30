@@ -472,6 +472,68 @@ describe('per-event override carry-forward (39.2 F1)', () => {
     expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
   });
 
+  // 39.2 code review API-WR-01: the plan row carries the plan-time override,
+  // so the apply must take the members from the value stored at commit time.
+  it('keeps an override CLEARED between plan and apply cleared (transaction replace branch)', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    setOverrides(database, 'histimport:100');
+
+    // The plan sees both overrides and carries them onto the row it plans.
+    seedSources(database, [withPlacement(2)]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    expect(plan.updates).toEqual(['histimport:100']);
+    expect(plan.writes['histimport:100']).toHaveProperty('tierOverride');
+
+    // The user clears both after the plan was read (the PATCH clear is a child remove).
+    await database.ref(`tournamentEntries/${UID}/histimport:100/tierOverride`).remove();
+    await database.ref(`tournamentEntries/${UID}/histimport:100/rulesetOverride`).remove();
+    const result = await applyTournamentRegistryPlan(asDatabase(database), plan);
+
+    expect(result.written).toEqual(['histimport:100']);
+    const row = storedRow(database, 'histimport:100');
+    expect(row.placement).toBe(2);
+    expect(row).not.toHaveProperty('tierOverride');
+    expect(row).not.toHaveProperty('rulesetOverride');
+  });
+
+  it('carries the override value stored at apply time when it CHANGED between plan and apply', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    setOverrides(database, 'histimport:100');
+
+    seedSources(database, [withPlacement(2)]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    const changed = { contractVersion: 1, tier: 'minor', setAtMs: 2 };
+    database.seed(`tournamentEntries/${UID}/histimport:100/tierOverride`, changed);
+    await applyTournamentRegistryPlan(asDatabase(database), plan);
+
+    const row = storedRow(database, 'histimport:100');
+    expect(row.tierOverride).toEqual(changed);
+    expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
+  });
+
+  it('a row removed between plan and apply is re-created WITHOUT the plan-time override (create branch)', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    setOverrides(database, 'histimport:100');
+
+    seedSources(database, [withPlacement(2)]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    expect(plan.writes['histimport:100']).toHaveProperty('tierOverride');
+
+    await database.ref(`tournamentEntries/${UID}/histimport:100`).remove();
+    await applyTournamentRegistryPlan(asDatabase(database), plan);
+
+    const row = storedRow(database, 'histimport:100');
+    expect(row.placement).toBe(2);
+    expect(row).not.toHaveProperty('tierOverride');
+    expect(row).not.toHaveProperty('rulesetOverride');
+  });
+
   it('adds no override keys to a row that never had any', async () => {
     const database = new FakeDatabase();
     seedSources(database, [makeRecord('s1', '100')]);
