@@ -903,6 +903,9 @@
     },
     "matrix": {
       "title": "Matriz de enfrentamientos",
+      "cardTitle": "Matriz de enfrentamientos",
+      "meta": "tus principales × sus personajes · relleno = tasa de victorias · elige una celda para reenfocar esta página",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Mostrar top {{count}}",
       "showAll": "Mostrar los {{count}}",
       "empty": "Aún no hay partidas registradas — juega algunas para construir tu matriz de enfrentamientos.",

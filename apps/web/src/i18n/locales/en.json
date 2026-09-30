@@ -903,6 +903,9 @@
     },
     "matrix": {
       "title": "Matchup Matrix",
+      "cardTitle": "Matchup matrix",
+      "meta": "your mains × their characters · fill = win rate · pick a cell to re-scope this page",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Show top {{count}}",
       "showAll": "Show all {{count}}",
       "empty": "No matches recorded yet — play some matches to build your matchup matrix.",

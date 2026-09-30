@@ -416,14 +416,14 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    expect(await screen.findByText('Matchup Matrix')).toBeInTheDocument();
+    expect(await screen.findByText('Matchup matrix')).toBeInTheDocument();
     // A cell exists for the Mario vs Luigi pairing recorded above.
     expect(
       screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 0-1` }),
     ).toBeInTheDocument();
     const matrix = document.getElementById('matchup-matrix')!;
     expect(matrix.getAttribute('data-slot')).toBe('matchup-matrix');
-    expect(matrix).toContainElement(screen.getByText('Matchup Matrix'));
+    expect(matrix).toContainElement(screen.getByText('Matchup matrix'));
     const grid = document.querySelector('[data-slot="page-grid"]')!;
     const results = document.getElementById('matchup-table')!;
     expect(grid.compareDocumentPosition(matrix) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -1674,7 +1674,7 @@ describe('MatchupsPage', () => {
       listMatches.mockResolvedValue(threePairingMatches());
 
       const { container } = renderMatchups();
-      await screen.findByText('Matchup Matrix');
+      await screen.findByText('Matchup matrix');
       await waitFor(() =>
         expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
       );
@@ -1687,7 +1687,7 @@ describe('MatchupsPage', () => {
       listMatches.mockResolvedValue(threePairingMatches());
 
       const { container, queryClient } = renderMatchups();
-      await screen.findByText('Matchup Matrix');
+      await screen.findByText('Matchup matrix');
       await waitFor(() =>
         expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
       );
@@ -1706,7 +1706,7 @@ describe('MatchupsPage', () => {
         const detail = document.getElementById('matchup-detail');
         expect(detail?.className).toMatch(/opacity-60/);
       });
-      expect(screen.getByText('Matchup Matrix')).toBeInTheDocument();
+      expect(screen.getByText('Matchup matrix')).toBeInTheDocument();
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
 
       resolveSecondFetch(threePairingMatches());

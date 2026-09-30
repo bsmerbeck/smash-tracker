@@ -903,6 +903,9 @@
     },
     "matrix": {
       "title": "Matriz de confrontos",
+      "cardTitle": "Matriz de confrontos",
+      "meta": "seus mains × os personagens deles · preenchimento = taxa de vitórias · escolha uma célula para reenquadrar esta página",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Mostrar top {{count}}",
       "showAll": "Mostrar todos ({{count}})",
       "empty": "Nenhuma partida registrada ainda — jogue algumas para montar sua matriz de confrontos.",

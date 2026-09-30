@@ -903,6 +903,9 @@
     },
     "matrix": {
       "title": "Matrice des matchups",
+      "cardTitle": "Matrice des matchups",
+      "meta": "vos mains × leurs personnages · remplissage = taux de victoire · choisir une cellule pour recentrer cette page",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Top {{count}}",
       "showAll": "Tout afficher ({{count}})",
       "empty": "Aucun match enregistré — jouez quelques matchs pour construire votre matrice de matchups.",

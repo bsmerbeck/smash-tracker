@@ -903,6 +903,9 @@
     },
     "matrix": {
       "title": "Matchup-Matrix",
+      "cardTitle": "Matchup-Matrix",
+      "meta": "deine Mains × ihre Charaktere · Füllung = Siegquote · Zelle wählen, um diese Seite neu auszurichten",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Top {{count}} anzeigen",
       "showAll": "Alle {{count}} anzeigen",
       "empty": "Noch keine Matches erfasst — spiele ein paar Matches, um deine Matchup-Matrix aufzubauen.",
