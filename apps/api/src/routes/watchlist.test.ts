@@ -391,6 +391,20 @@ describe('watchlist cap, idempotency and input hardening', () => {
     expect(database.dump()).toEqual(before);
   });
 
+  // 39.2 code review API-IN-02: a DEL passed the input schema but failed the
+  // stored parse inside the service, which surfaced as an unmapped 500.
+  it('refuses an opponent ref containing a DEL (U+007F) with 400 and writes nothing', async () => {
+    const { app, database } = buildTestApp();
+    const before = structuredClone(database.dump());
+
+    for (const ref of ['a\u007fb', 'mkleo\u007f']) {
+      const response = await putItem(app, { kind: 'opponent', ref });
+      expect(response.statusCode, JSON.stringify(ref)).toBe(400);
+    }
+
+    expect(database.dump()).toEqual(before);
+  });
+
   it('refuses an unknown kind and a non-positive stage with 400', async () => {
     const { app } = buildTestApp();
 

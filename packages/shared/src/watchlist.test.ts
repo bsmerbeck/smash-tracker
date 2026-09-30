@@ -123,6 +123,42 @@ describe('watchlistTrackInputSchema (client sends kind + ref only)', () => {
     }
   });
 
+  // 39.2 code review API-IN-02 / SH-WR-03: the input schema must refuse every
+  // tag the stored and key schemas refuse, or the service's stored parse
+  // throws after validation passed and the request 500s.
+  it('rejects a DEL (U+007F) anywhere in an opponent tag, like the stored and key schemas', () => {
+    for (const ref of ['a\u007fb', '\u007fmkleo', 'mkleo\u007f', '\u007f']) {
+      expect(
+        watchlistTrackInputSchema.safeParse({ kind: 'opponent', ref }).success,
+        JSON.stringify(ref),
+      ).toBe(false);
+    }
+  });
+
+  it('every opponent tag the input schema accepts yields a stored item and key that parse', () => {
+    const candidates = [
+      'MkLeo',
+      ' Sparg0 ',
+      'a b',
+      'éclair',
+      'x'.repeat(80),
+      'a\u007fb',
+      'a\u001fb',
+    ];
+    for (let code = 0x20; code <= 0x7f; code += 1) {
+      candidates.push(`a${String.fromCharCode(code)}b`);
+    }
+    for (const ref of candidates) {
+      const input = watchlistTrackInputSchema.safeParse({ kind: 'opponent', ref });
+      if (!input.success) {
+        continue;
+      }
+      const stored = watchlistItemStoredSchema.safeParse({ ...input.data, createdAt: 1 });
+      const key = watchlistItemKeySchema.safeParse(buildWatchlistItemKey(input.data));
+      expect(stored.success && key.success, JSON.stringify(ref)).toBe(true);
+    }
+  });
+
   it('rejects an over-long opponent tag', () => {
     expect(
       watchlistTrackInputSchema.safeParse({ kind: 'opponent', ref: 'x'.repeat(81) }).success,
