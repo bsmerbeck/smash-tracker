@@ -43,6 +43,7 @@ import { FullAnalysisSection } from '@/pages/Scout/components/FullAnalysisSectio
 import { SetTimeline } from '@/pages/Tournaments/components/SetTimeline';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
 import { MatchupStageTable } from '@/pages/Matchups/components/MatchupStageTable';
+import { MatchupInsights } from '@/pages/Matchups/components/MatchupInsights';
 import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
 import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
 import { VsCharactersList } from '@/pages/FighterAnalysis/components/VsCharactersList';
@@ -412,6 +413,41 @@ const SURFACES: Surface[] = [
       return withRouter(
         <MatchupsContext.Provider value={contextValue}>
           <MatchupStageTable matchupMatches={matches} />
+        </MatchupsContext.Provider>,
+      );
+    },
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll('[data-slot="comparison-bars-series"] > li')),
+  },
+  {
+    // Plan 39.1-46 (sketch 003 A `insightsCard`): the Insights card's Best /
+    // Worst stage rows are stage drills (buttons) on the same series idiom.
+    name: 'Matchups insights best / worst stage rows (MatchupInsights)',
+    file: 'apps/web/src/pages/Matchups/components/MatchupInsights.tsx',
+    render: () => {
+      const stage = (id: number, name: string) => ({ id, name });
+      const matches = [
+        ...[true, true, true].map((win, i) =>
+          makeMatch({ id: `bi${i}`, time: i, win, map: stage(1, 'Battlefield') }),
+        ),
+        ...[false, false, true].map((win, i) =>
+          makeMatch({ id: `wi${i}`, time: 10 + i, win, map: stage(83, 'Smashville') }),
+        ),
+      ];
+      const contextValue: MatchupsContextValue = {
+        fighterSprites: [mario],
+        fighter: mario,
+        setFighter: vi.fn(),
+        opponent: luigi,
+        setOpponent: vi.fn(),
+        fighterUsageById: new Map(),
+        opponentUsage: [],
+        drillDownAxes: {},
+        setDrillDown: vi.fn(),
+      };
+      return withRouter(
+        <MatchupsContext.Provider value={contextValue}>
+          <MatchupInsights matchupMatches={matches} />
         </MatchupsContext.Provider>,
       );
     },
@@ -985,8 +1021,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-ONE entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.1-46's stage breakdown)", () => {
-    expect(SURFACES.length).toBe(31);
+  it("the surface enumeration has the stated THIRTY-TWO entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.1-46's stage breakdown and insights rows)", () => {
+    expect(SURFACES.length).toBe(32);
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

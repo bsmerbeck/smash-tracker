@@ -514,3 +514,99 @@ describe('design fidelity — hero hosts build no private horizon figures or sha
     }
   });
 });
+
+/**
+ * Plan 39.1-46 Task 2 (sketch 003 A, brief §5 M15 "colour discipline: blue
+ * data ink, win / loss only on win / loss marks"): no non-test file under
+ * `pages/Matchups` imports / renders the pip component (`WinLossPips` — the
+ * second Recent Form row the sketch's Insights card does not draw; the hero's
+ * strip is the one form mark) or carries an emerald / destructive text,
+ * background or border class (alarm colours on a neutral evidence card).
+ *
+ * `CounterpickAdvisor.tsx` is the ONE shrink-only allowlist entry: its pick /
+ * ban headings are still coloured until plan 39.1-47 (segmented controls,
+ * neutral Pick / Ban rows, ComparisonBars' status tones deleted) rebuilds the
+ * card — that plan empties the list. The matrix's heat interpolation is an
+ * inline `style` computed from numbers (`matchupCellColor.ts`), not a class,
+ * and its comments mention the colour words without any class literal.
+ */
+const MATCHUPS_DIR_PREFIX = 'apps/web/src/pages/Matchups/';
+const PIP_COMPONENT_PATTERN = /\bWinLossPips\b/;
+const STATUS_COLOUR_CLASS_PATTERN =
+  /(?<![\w-])(?:[\w-]+:)*(?:text|bg|border|fill|stroke|ring|from|to|via|outline|divide|decoration)-(?:emerald|destructive)(?:-\d{2,3})?(?:\/\d{1,3})?(?![\w-])/;
+const KNOWN_STATUS_COLOUR_FILES: readonly string[] = [
+  'apps/web/src/pages/Matchups/components/CounterpickAdvisor.tsx',
+];
+
+function matchupsOffences(source: string): string[] {
+  const offences: string[] = [];
+  if (PIP_COMPONENT_PATTERN.test(source)) offences.push('uses the pip component');
+  if (STATUS_COLOUR_CLASS_PATTERN.test(source))
+    offences.push('uses an emerald / destructive class');
+  return offences;
+}
+
+const MATCHUPS_NON_TEST_FILES = NON_TEST_FILES.filter((file) =>
+  file.startsWith(MATCHUPS_DIR_PREFIX),
+);
+
+describe('design fidelity — Matchups carries no pips and no alarm-colour class (plan 39.1-46)', () => {
+  it('each matcher detects its idiom and ignores look-alikes (non-vacuity)', () => {
+    expect(matchupsOffences("import { WinLossPips } from '@/components/WinLossPips';")).toEqual([
+      'uses the pip component',
+    ]);
+    expect(matchupsOffences('<WinLossPips matches={m} limit={10} />')).toEqual([
+      'uses the pip component',
+    ]);
+    expect(matchupsOffences('<h2 className="text-sm font-medium text-emerald-500">')).toEqual([
+      'uses an emerald / destructive class',
+    ]);
+    expect(matchupsOffences('<h2 className="text-sm font-medium text-destructive">')).toEqual([
+      'uses an emerald / destructive class',
+    ]);
+    expect(matchupsOffences('className="bg-emerald-500/15 hover:bg-destructive/20"')).toEqual([
+      'uses an emerald / destructive class',
+    ]);
+    expect(matchupsOffences('className="dark:text-destructive"')).toEqual([
+      'uses an emerald / destructive class',
+    ]);
+    // Look-alikes: prose, a colour word in a comment, a token name, a longer identifier.
+    expect(matchupsOffences('/** emerald-500, used elsewhere in the app */')).toEqual([]);
+    expect(matchupsOffences('interpolated between the theme destructive red and emerald')).toEqual(
+      [],
+    );
+    expect(matchupsOffences('const noTextDestructive = 1; // text-destructive-ish')).toEqual([]);
+    expect(matchupsOffences('className="text-muted-foreground"')).toEqual([]);
+    expect(matchupsOffences('const WinLossPipsLegend = 1')).toEqual([]);
+  });
+
+  it('the scanned set is non-empty and covers the rail cards', () => {
+    expect(MATCHUPS_NON_TEST_FILES.length).toBeGreaterThan(5);
+    expect(MATCHUPS_NON_TEST_FILES).toEqual(
+      expect.arrayContaining([
+        'apps/web/src/pages/Matchups/components/MatchupInsights.tsx',
+        'apps/web/src/pages/Matchups/components/MatchupStageTable.tsx',
+        'apps/web/src/pages/Matchups/components/MatchupOrPlayerCard.tsx',
+      ]),
+    );
+  });
+
+  it('no non-test file under pages/Matchups uses the pip component or an emerald / destructive class, except the allowlist', () => {
+    const offenders = MATCHUPS_NON_TEST_FILES.filter(
+      (file) => !KNOWN_STATUS_COLOUR_FILES.includes(file),
+    ).flatMap((file) =>
+      matchupsOffences(readRepoFile(file)).map((offence) => `${file}: ${offence}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('the allowlist cannot rot: every entry still exists and still carries an offence (plan 39.1-47 empties it)', () => {
+    for (const file of KNOWN_STATUS_COLOUR_FILES) {
+      expect(fs.existsSync(path.join(REPO_ROOT, file)), `${file} no longer exists`).toBe(true);
+      expect(
+        matchupsOffences(readRepoFile(file)),
+        `${file} is clean — remove it from KNOWN_STATUS_COLOUR_FILES`,
+      ).not.toEqual([]);
+    }
+  });
+});

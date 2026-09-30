@@ -359,13 +359,10 @@ describe('MatchupsPage', () => {
     expect(currentStreakFigure).toHaveTextContent('1');
     expect(currentStreakFigure).toHaveTextContent('loss');
     expect(currentStreakFigure).not.toHaveTextContent('losses');
-    // Plan 39.1-13 (UIX-04): the record card's trend row is now a `MiniStrip`
-    // (role="img", a different accessible-name shape), not `WinLossPips` —
-    // `WinLossPips`'s "Last N results" aria-label survives only on
-    // `MatchupInsights`' own unchanged "Recent form" row, so this label now
-    // legitimately appears exactly ONCE (the duplication plan 37-03 created
-    // is exactly what this redesign removes).
-    expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(1);
+    // Plan 39.1-46 (sketch 003 A): the Insights card's own second Recent Form
+    // pip row is gone (the hero's form strip is the one form mark), so
+    // `WinLossPips`' "Last N results" label appears NOWHERE on the page.
+    expect(screen.queryAllByLabelText('Last 3 results, newest first')).toHaveLength(0);
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
     expect(screen.getByText('Stage breakdown')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);

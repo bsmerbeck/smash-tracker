@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { MatchupInsights } from './MatchupInsights';
+import { MatchupsContext, type MatchupsContextValue } from '../MatchupsContext';
+import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 
 /**
  * `useMinStageMatches` is a no-op on write when unauthenticated
@@ -19,30 +22,41 @@ vi.mock('@/hooks/useMinStageMatches', () => ({
   useMinStageMatches: () => useState(3),
 }));
 
-/**
- * WR-02 regression: `MatchupInsights` reused the generic
- * `shared.evidence.abstained` sentence (with a fabricated `gamesNeeded: 0`)
- * for the worst-stage cell whenever a matchup's games sit entirely on ONE
- * qualifying stage — `getBestWorstStages` deliberately reports `worst: null`
- * in that case ("a single stage can't be both the recommendation and the
- * warning"), even though the query itself is fully evidenced. This produced
- * "Not enough data yet — 0 more games needed", which is both untrue (the
- * query isn't abstained) and impossible to act on (0 more games can never
- * satisfy a message that never resolves). Reachable any time a user has
- * recorded games against an opponent on only one stage — a common
- * early-tracking state.
- */
+const setDrillDownMock = vi.fn();
+
+function contextValue(): MatchupsContextValue {
+  return {
+    fighterSprites: [],
+    fighter: undefined,
+    setFighter: vi.fn(),
+    opponent: undefined,
+    setOpponent: vi.fn(),
+    fighterUsageById: new Map(),
+    opponentUsage: [],
+    drillDownAxes: {},
+    setDrillDown: setDrillDownMock,
+  };
+}
 
 function renderInsights(matchupMatches: Match[]) {
   return render(
     <MemoryRouter initialEntries={['/matchups']}>
-      <MatchupInsights matchupMatches={matchupMatches} />
+      <TooltipProvider>
+        <MatchupsContext.Provider value={contextValue()}>
+          <MatchupInsights matchupMatches={matchupMatches} />
+        </MatchupsContext.Provider>
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
 
 const BATTLEFIELD = { id: 1, name: 'Battlefield' };
 const FINAL_DESTINATION = { id: 3, name: 'Final Destination' };
+const POKEMON_STADIUM_2 = { id: 59, name: 'Pokémon Stadium 2' };
+const SMASHVILLE = { id: 83, name: 'Smashville' };
+const TOWN_AND_CITY = { id: 85, name: 'Town and City' };
+const SMALL_BATTLEFIELD = { id: 113, name: 'Small Battlefield' };
+const HOLLOW_BASTION = { id: 118, name: 'Hollow Bastion' };
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -74,110 +88,72 @@ function matchesOnStage(
   return result;
 }
 
-describe('MatchupInsights — WR-02 single-qualifying-stage worst-stage copy', () => {
-  it('never renders "0 more game(s) needed" when the matchup is fully evidenced but only one stage qualifies', () => {
-    // Three games on ONE stage — clears the default floor (3), so the
-    // overall claim is 'evidenced', but only one stage qualifies, so
-    // `getBestWorstStages` reports `best` = Battlefield, `worst` = null.
-    const matches = matchesOnStage(BATTLEFIELD, 2, 1);
-    renderInsights(matches);
+/** Sketch 003 DEEP (brief section 4): seven stages + 30 unstaged games, 64-38 overall (62.7%). */
+function deepMatches(): Match[] {
+  return [
+    ...matchesOnStage(BATTLEFIELD, 12, 6),
+    ...matchesOnStage(POKEMON_STADIUM_2, 11, 4),
+    ...matchesOnStage(TOWN_AND_CITY, 9, 6),
+    ...matchesOnStage(FINAL_DESTINATION, 5, 3),
+    ...matchesOnStage(SMALL_BATTLEFIELD, 3, 5),
+    ...matchesOnStage(SMASHVILLE, 4, 1),
+    ...matchesOnStage(HOLLOW_BASTION, 2, 1),
+    ...Array.from({ length: 18 }, (_, i) =>
+      makeMatch({ id: `ns-w${i}`, map: undefined, win: true }),
+    ),
+    ...Array.from({ length: 12 }, (_, i) =>
+      makeMatch({ id: `ns-l${i}`, map: undefined, win: false }),
+    ),
+  ];
+}
 
-    // The bug: this string must never appear.
-    expect(screen.queryByText(/0 more games? needed/i)).not.toBeInTheDocument();
-  });
+afterEach(() => {
+  setDrillDownMock.mockClear();
+});
 
-  it('renders the dedicated "not enough distinct stages" copy for the worst-stage cell in the single-qualifying-stage case', () => {
-    const matches = matchesOnStage(BATTLEFIELD, 2, 1);
-    renderInsights(matches);
-
+describe('MatchupInsights — the rail card as sketch 003 A (plan 39.1-46, insights-card)', () => {
+  it('insights-card: ONE top line — the Fact chip, "Matchup Insights · all time" and the confidence glyph — names the card region', () => {
+    const { container } = renderInsights(deepMatches());
+    const region = screen.getByRole('region', { name: 'Matchup Insights · all time' });
+    expect(region).toBeInTheDocument();
+    const top = within(region).getByText('Matchup Insights · all time').parentElement!;
+    expect(within(top).getByText('Fact')).toBeInTheDocument();
+    // 102 games: high confidence, exposed as the glyph's sentence.
     expect(
-      screen.getByText(
-        'Not enough distinct stages yet — play this matchup on another stage to see a worst-stage warning.',
-      ),
+      within(top).getByRole('img', { name: 'high confidence, 102 games' }),
     ).toBeInTheDocument();
-    // The best-stage cell still renders normally.
-    expect(screen.getByText('Battlefield')).toBeInTheDocument();
+    // One top line: no separate card title / description block any more.
+    expect(container.querySelector('[data-slot="card-header"]')).toBeNull();
+    expect(screen.queryByText('Statistical inference from your recorded games.')).toBeNull();
+    // Not mixed: no badge.
+    expect(screen.queryByText('Mixed context')).not.toBeInTheDocument();
   });
 
-  it('still renders the real abstained sentence (with a genuine gamesNeeded count) when the whole query is below the floor', () => {
-    // Two games total — below the default floor of 3, so the OVERALL claim
-    // is genuinely 'abstained' (not the single-stage case above).
-    const matches = matchesOnStage(BATTLEFIELD, 1, 1);
-    renderInsights(matches);
-
-    expect(screen.getAllByText(/Not enough data yet — 1 more game needed\./)).toHaveLength(2);
-  });
-
-  it('renders both best and worst stage normally when two or more stages qualify', () => {
-    const matches = [
-      ...matchesOnStage(BATTLEFIELD, 3, 0),
-      ...matchesOnStage(FINAL_DESTINATION, 0, 3),
+  it('insights-card: the mixed-context badge joins the top line only when the cohort is mixed', () => {
+    const mixed = [
+      ...Array.from({ length: 9 }, (_, i) =>
+        makeMatch({ id: `on${i}`, matchType: 'online-tourney', win: i % 2 === 0 }),
+      ),
+      ...Array.from({ length: 9 }, (_, i) =>
+        makeMatch({ id: `off${i}`, matchType: 'offline-tourney', win: i % 2 === 0 }),
+      ),
     ];
-    renderInsights(matches);
-
-    expect(screen.getByText('Battlefield')).toBeInTheDocument();
-    expect(screen.getByText('Final Destination')).toBeInTheDocument();
-    expect(screen.queryByText(/not enough distinct stages/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/more games? needed/i)).not.toBeInTheDocument();
-  });
-});
-
-describe('MatchupInsights — Min matches control placement (plan 39.1-30, item 6)', () => {
-  it('the card header holds no combobox — the Min matches per stage control is not in [data-slot="card-header"]', () => {
-    const matches = [
-      ...matchesOnStage(BATTLEFIELD, 3, 0),
-      ...matchesOnStage(FINAL_DESTINATION, 3, 2),
-    ];
-    const { container } = renderInsights(matches);
-    const header = container.querySelector('[data-slot="card-header"]');
-    expect(header).not.toBeNull();
-    expect(header!.querySelector('[role="combobox"]')).not.toBeInTheDocument();
+    renderInsights(mixed);
+    const region = screen.getByRole('region', { name: 'Matchup Insights · all time' });
+    expect(within(region).getByText('Mixed context')).toBeInTheDocument();
   });
 
-  it('the Min matches per stage select is labelled by a visible label, sits before the best/worst stage list, and changing it changes the best-stage line (same shared useMinStageMatches value)', async () => {
-    const user = userEvent.setup();
-    const matches = [
-      ...matchesOnStage(BATTLEFIELD, 3, 0), // exactly 3 games — drops out once threshold rises to 5
-      ...matchesOnStage(FINAL_DESTINATION, 3, 2), // 5 games — qualifies at both thresholds
-    ];
-    const { container } = renderInsights(matches);
-
-    const label = screen.getByText('Min matches per stage');
-    // WR-05 (39.1-REVIEW.md): the visible <label for> IS the accessible name
-    // (WCAG 2.5.3 label in name) — no aria-label overriding it.
-    const select = screen.getByRole('combobox', { name: 'Min matches per stage' });
-    expect(select).not.toHaveAttribute('aria-label');
-    expect(label.tagName.toLowerCase()).toBe('label');
-    expect(label.getAttribute('for')).toBe(select.id);
-
-    // The control sits in the card BODY, before the best/worst stage list —
-    // never in the header.
-    const content = container.querySelector('[data-slot="card-content"]');
-    expect(content).not.toBeNull();
-    expect(content!.contains(select)).toBe(true);
-    const bestHeading = screen.getByText('Best Stage');
-    const bestHeadingFollowsSelect =
-      select.compareDocumentPosition(bestHeading) & Node.DOCUMENT_POSITION_FOLLOWING;
-    expect(bestHeadingFollowsSelect).not.toBe(0);
-
-    expect(screen.getByText('Battlefield')).toBeInTheDocument();
-
-    await user.click(select);
-    await user.click(await screen.findByRole('option', { name: '5' }));
-
-    // Battlefield (3 games) no longer qualifies at the 5-game floor — only
-    // Final Destination remains, which is the single-qualifying-stage case
-    // (best-stage line shows Final Destination, worst shows the dedicated
-    // "not enough distinct stages" copy).
-    expect(screen.queryByText('Battlefield')).not.toBeInTheDocument();
-    expect(screen.getByText('Final Destination')).toBeInTheDocument();
+  it('insights-card: no pip row, no By Match Type list, no coloured Best / Worst headings', () => {
+    const { container } = renderInsights(deepMatches());
+    expect(container.querySelector('[aria-label^="Last"]')).toBeNull();
+    expect(screen.queryByText('Recent Form (newest first)')).not.toBeInTheDocument();
+    expect(screen.queryByText('By Match Type')).not.toBeInTheDocument();
+    expect(screen.queryByText('Best Stage')).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toMatch(/emerald|destructive/);
   });
-});
 
-describe('MatchupInsights — streak StatRow (plan 39.1-32, item 10)', () => {
-  it('the streak block is one fixedColumns StatRow carrying grid-cols-3, with the three labels at the overline role', () => {
-    const matches = matchesOnStage(BATTLEFIELD, 3, 0);
-    const { container } = renderInsights(matches);
+  it('insights-card: the streak block is one fixedColumns StatRow — 3 figures, overline labels, no colour token', () => {
+    const { container } = renderInsights(matchesOnStage(BATTLEFIELD, 3, 0));
     const statRow = container.querySelector('[data-slot="stat-row"][data-fixed-columns]');
     expect(statRow).not.toBeNull();
     expect((statRow as HTMLElement).className).toContain('grid-cols-3');
@@ -202,7 +178,6 @@ describe('MatchupInsights — streak StatRow (plan 39.1-32, item 10)', () => {
   });
 
   it('a single win after a loss renders the current streak as "1" with unit "win"; no streak element carries a colour token', () => {
-    // Newest-first: a win (id 'w1'), then a loss — current streak is 1 win.
     const matches = [
       makeMatch({ id: 'w1', time: 2000, win: true }),
       makeMatch({ id: 'l1', time: 1000, win: false }),
@@ -229,5 +204,112 @@ describe('MatchupInsights — streak StatRow (plan 39.1-32, item 10)', () => {
     expect(currentStreakFigure.textContent).toContain('losses');
     expect(statRow.querySelector('.text-emerald-500')).toBeNull();
     expect(statRow.querySelector('.text-destructive')).toBeNull();
+  });
+});
+
+describe('MatchupInsights — Stages head, the threshold behind "change", Best / Worst rows (plan 39.1-46)', () => {
+  it('insights-card: the stages head names the threshold and offers a "change" link; no select sits in the card until it is opened', async () => {
+    const user = userEvent.setup();
+    renderInsights(deepMatches());
+    expect(screen.getByText('Stages · min 3 games')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'change' }));
+    // The existing select, labelled by the visible label, now lives in the popover.
+    const select = await screen.findByRole('combobox', { name: 'Min matches per stage' });
+    expect(select).not.toHaveAttribute('aria-label');
+    expect(screen.getByText('Min matches per stage').getAttribute('for')).toBe(select.id);
+  });
+
+  it('insights-card: changing the threshold in the popover re-ranks the rows (same shared useMinStageMatches value)', async () => {
+    const user = userEvent.setup();
+    renderInsights([
+      ...matchesOnStage(BATTLEFIELD, 3, 0), // exactly 3 games — drops out at a 5-game floor
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2), // 5 games — qualifies at both
+    ]);
+    expect(screen.getByText('Best · Battlefield')).toBeInTheDocument();
+    expect(screen.getByText('Worst · Final Destination')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'change' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Min matches per stage' }));
+    await user.click(await screen.findByRole('option', { name: '5' }));
+
+    // Battlefield no longer qualifies: only Final Destination remains (the
+    // single-qualifying-stage case).
+    expect(screen.queryByText('Best · Battlefield')).not.toBeInTheDocument();
+    expect(screen.getByText('Best · Final Destination')).toBeInTheDocument();
+    expect(screen.getByText('Stages · min 5 games')).toBeInTheDocument();
+  });
+
+  it('insights-card: deep data — Best = Smashville 4–1, Worst = Small Battlefield 3–5, both series rows against the 63% reference', () => {
+    const { container } = renderInsights(deepMatches());
+    const rows = Array.from(
+      container.querySelectorAll('[data-slot="comparison-bars-series"] > li'),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain('Best · Smashville');
+    expect(rows[0]!.textContent).toContain('4–1');
+    expect(rows[1]!.textContent).toContain('Worst · Small Battlefield');
+    expect(rows[1]!.textContent).toContain('3–5');
+    const ticks = container.querySelectorAll<HTMLElement>('[data-slot="comparison-bar-reference"]');
+    expect(ticks).toHaveLength(2);
+    expect(parseFloat(ticks[0]!.style.left)).toBeCloseTo(62.7, 1);
+    // The prefix is meta-toned, the stage name is not; the title carries the whole label.
+    const label = rows[0]!.querySelector<HTMLElement>('[data-slot="comparison-bar-label"]')!;
+    expect(label.getAttribute('title')).toBe('Best · Smashville');
+    expect(within(label).getByText('Best ·', { exact: false }).className).toContain(
+      'text-muted-foreground',
+    );
+  });
+
+  it('insights-card: each Best / Worst row is a stage drill', async () => {
+    const user = userEvent.setup();
+    const anchor = document.createElement('div');
+    anchor.id = MATCHUP_TABLE_ANCHOR_ID;
+    document.body.appendChild(anchor);
+    renderInsights(deepMatches());
+    await user.click(screen.getByRole('button', { name: /Best · Smashville/ }));
+    expect(setDrillDownMock).toHaveBeenLastCalledWith({ stageId: 83 });
+    await user.click(screen.getByRole('button', { name: /Worst · Small Battlefield/ }));
+    expect(setDrillDownMock).toHaveBeenLastCalledWith({ stageId: 113 });
+    anchor.remove();
+  });
+
+  it('insights-card: the unstaged games are disclosed as one muted line', () => {
+    renderInsights(deepMatches());
+    expect(screen.getByText('Unknown (30 games, excluded)')).toBeInTheDocument();
+  });
+
+  it('WR-02: never renders "0 more game(s) needed" when fully evidenced but only one stage qualifies', () => {
+    renderInsights(matchesOnStage(BATTLEFIELD, 2, 1));
+    expect(screen.queryByText(/0 more games? needed/i)).not.toBeInTheDocument();
+  });
+
+  it('WR-02: the dedicated "not enough distinct stages" copy stands in for the Worst row, the Best row renders normally', () => {
+    renderInsights(matchesOnStage(BATTLEFIELD, 2, 1));
+    expect(
+      screen.getByText(
+        'Not enough distinct stages yet — play this matchup on another stage to see a worst-stage warning.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Best · Battlefield')).toBeInTheDocument();
+    expect(screen.queryByText(/^Worst ·/)).not.toBeInTheDocument();
+  });
+
+  it('thin data: the abstained sentence renders ONCE (not per cell), with its genuine gamesNeeded count, and the unstaged line follows', () => {
+    const { container } = renderInsights([
+      ...matchesOnStage(BATTLEFIELD, 1, 1),
+      makeMatch({ id: 'n1', map: undefined }),
+      makeMatch({ id: 'n2', map: undefined }),
+    ]);
+    expect(screen.getAllByText(/Not enough data yet — 1 more game needed\./)).toHaveLength(1);
+    expect(container.querySelector('[data-slot="comparison-bars-series"]')).toBeNull();
+    expect(screen.getByText('Unknown (2 games, excluded)')).toBeInTheDocument();
+  });
+
+  it('renders the empty copy and no stage section for a pairing with no games', () => {
+    const { container } = renderInsights([]);
+    expect(screen.getByText('No matches recorded for this matchup yet.')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="comparison-bars-series"]')).toBeNull();
+    expect(screen.queryByText(/^Stages ·/)).not.toBeInTheDocument();
   });
 });
