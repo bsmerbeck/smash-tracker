@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}} partidas · {{span}} · {{confidence}}",
       "otherPairings": "Otros emparejamientos"
     },
-    "winRateTrend": "Tendencia del % de victorias",
     "results": "Resultados del enfrentamiento",
     "selectFighterAria": "Seleccionar tu luchador",
     "selectOpponentAria": "Seleccionar luchador rival",
@@ -900,9 +899,7 @@
       "unfacedGroup": "Aún no enfrentados"
     },
     "record": {
-      "title": "Récord",
-      "empty": "No hay partidas registradas contra este luchador",
-      "totalMatches": "Partidas totales"
+      "empty": "No hay partidas registradas contra este luchador"
     },
     "matrix": {
       "title": "Matriz de enfrentamientos",
@@ -912,9 +909,6 @@
       "yourFighterSr": "Tu luchador",
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} en {{col}}: {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "% de victorias"
     },
     "insights": {
       "title": "Análisis del enfrentamiento",

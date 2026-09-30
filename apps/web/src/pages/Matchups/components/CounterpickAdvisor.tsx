@@ -181,9 +181,9 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
               {t('matchups.counterpick.threshold', { count: threshold })}
             </p>
             <div>
-              <h3 className="mb-2 text-sm font-medium text-emerald-500">
+              <h2 className="mb-2 text-sm font-medium text-emerald-500">
                 {t('matchups.counterpick.pickThese')}
-              </h3>
+              </h2>
               <ComparisonBars
                 tone="emerald"
                 rows={picks.map(toRow)}
@@ -192,9 +192,9 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
             </div>
             {bans.length > 0 && (
               <div>
-                <h3 className="mb-2 text-sm font-medium text-destructive">
+                <h2 className="mb-2 text-sm font-medium text-destructive">
                   {t('matchups.counterpick.banThese')}
-                </h3>
+                </h2>
                 <ComparisonBars
                   tone="destructive"
                   rows={bans.map(toRow)}

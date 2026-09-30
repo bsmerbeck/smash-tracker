@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}} partidas · {{span}} · {{confidence}}",
       "otherPairings": "Outros confrontos"
     },
-    "winRateTrend": "Tendência da taxa de vitórias",
     "results": "Resultados do confronto",
     "selectFighterAria": "Selecionar seu lutador",
     "selectOpponentAria": "Selecionar lutador do oponente",
@@ -900,9 +899,7 @@
       "unfacedGroup": "Ainda não enfrentados"
     },
     "record": {
-      "title": "Retrospecto",
-      "empty": "Nenhuma partida registrada contra este lutador",
-      "totalMatches": "Partidas no total"
+      "empty": "Nenhuma partida registrada contra este lutador"
     },
     "matrix": {
       "title": "Matriz de confrontos",
@@ -912,9 +909,6 @@
       "yourFighterSr": "Seu lutador",
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} em {{col}}: {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "Taxa de vitórias"
     },
     "insights": {
       "title": "Insights do confronto",

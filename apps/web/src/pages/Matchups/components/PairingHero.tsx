@@ -53,6 +53,10 @@ export interface PairingHeroProps {
  * ("See the N games" primary, "Other pairings" to the matrix). There is no
  * separate record card: the StatRow is the record (PD-44-2).
  *
+ * The region is a `<section data-slot="pairing-hero">` wrapping the one card,
+ * so the region's box IS the card's (the capture crop, the section-order
+ * oracle and the phone height ceiling all measure it).
+ *
  * No hooks other than `useTranslation` / one `useMemo` — both run before the
  * zero-game branch, so the hook order never changes.
  */
@@ -121,29 +125,21 @@ export function PairingHero({
 
   if (total === 0) {
     return (
-      <Card>
-        <CardContent>
-          <section
-            data-slot="pairing-hero"
-            aria-labelledby={headingId}
-            className="flex min-w-0 flex-col gap-4"
-          >
+      <section data-slot="pairing-hero" aria-labelledby={headingId} className="min-w-0">
+        <Card>
+          <CardContent className="flex min-w-0 flex-col gap-4">
             {identity}
             <p className="text-sm text-muted-foreground">{t('matchups.record.empty')}</p>
-          </section>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </section>
     );
   }
 
   return (
-    <Card>
-      <CardContent>
-        <section
-          data-slot="pairing-hero"
-          aria-labelledby={headingId}
-          className="flex min-w-0 flex-col gap-4"
-        >
+    <section data-slot="pairing-hero" aria-labelledby={headingId} className="min-w-0">
+      <Card>
+        <CardContent className="flex min-w-0 flex-col gap-4">
           {identity}
 
           {formNowInsight && (
@@ -187,8 +183,8 @@ export function PairingHero({
               <a href={`#${MATCHUP_MATRIX_ANCHOR_ID}`}>{t('matchups.hero.otherPairings')}</a>
             </Button>
           </div>
-        </section>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </section>
   );
 }

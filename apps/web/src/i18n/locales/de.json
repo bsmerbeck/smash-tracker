@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}} Matches · {{span}} · {{confidence}}",
       "otherPairings": "Andere Paarungen"
     },
-    "winRateTrend": "Winrate-Verlauf",
     "results": "Matchup-Ergebnisse",
     "selectFighterAria": "Deinen Kämpfer auswählen",
     "selectOpponentAria": "Gegnerischen Kämpfer auswählen",
@@ -900,9 +899,7 @@
       "unfacedGroup": "Noch nicht gespielt"
     },
     "record": {
-      "title": "Bilanz",
-      "empty": "Keine erfassten Matches gegen diesen Kämpfer",
-      "totalMatches": "Matches gesamt"
+      "empty": "Keine erfassten Matches gegen diesen Kämpfer"
     },
     "matrix": {
       "title": "Matchup-Matrix",
@@ -912,9 +909,6 @@
       "yourFighterSr": "Dein Kämpfer",
       "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} auf {{col}}: {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "Winrate"
     },
     "insights": {
       "title": "Matchup-Einblicke",

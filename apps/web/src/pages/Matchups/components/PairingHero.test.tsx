@@ -119,9 +119,12 @@ describe('PairingHero', () => {
     ]);
   });
 
-  it('the hero sits inside one card (the ceiling and stretch oracles measure the card)', () => {
+  it('the hero region wraps exactly one card (its box is the card box the ceiling and stretch oracles measure)', () => {
     const { container } = render(<Harness matches={thirtyGames()} />);
-    expect(heroOf(container).closest('[data-slot="card"]')).not.toBeNull();
+    const hero = heroOf(container);
+    expect(hero.tagName.toLowerCase()).toBe('section');
+    expect(hero.children).toHaveLength(1);
+    expect(hero.firstElementChild?.getAttribute('data-slot')).toBe('card');
   });
 
   it('prints the meta "30 games · <month span> · <confidence>" with the tier glyph', () => {
@@ -201,7 +204,8 @@ describe('PairingHero', () => {
     const { container } = render(<Harness matches={thirtyGames()} />);
     const hero = heroOf(container);
     const doors = hero.querySelector('[data-slot="matchup-form-now-doors"]')!;
-    expect(hero.lastElementChild).toBe(doors);
+    const body = hero.querySelector('[data-slot="card-content"]')!;
+    expect(body.lastElementChild).toBe(doors);
     const links = within(doors as HTMLElement).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual(['See the 30 games', 'Other pairings']);
     expect(links[0]!.getAttribute('href')).toBe('/matchups?fighter=1&vs=10#matchup-table');

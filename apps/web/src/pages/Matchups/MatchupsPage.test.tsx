@@ -1462,17 +1462,18 @@ describe('MatchupsPage', () => {
       expect(within(stack).queryByText('Stage Breakdown')).not.toBeInTheDocument();
     });
 
-    it('the rail is an auto-fit card row below 1280 and a flex column from xl; below 640 it is one column (the auto-fit track minimum)', async () => {
+    it("the rail is a flex column of cards at every width — sketch A's auto-fit row orphans unequal-height cards at 1024 (measured), so UI-SPEC 6.1 wins", async () => {
       await renderLoadedPairing();
       const rail = document.querySelector('[data-slot="matchups-rail"]') as HTMLElement;
-      expect(rail.className).toMatch(/grid-cols-\[repeat\(auto-fit,minmax\(264px,1fr\)\)\]/);
-      expect(rail.className).toMatch(/\bitems-start\b/);
+      expect(rail.className).toMatch(/\bflex\b/);
+      expect(rail.className).toMatch(/\bflex-col\b/);
       expect(rail.className).toMatch(/\bgap-4\b/);
-      expect(rail.className).toMatch(/xl:flex/);
-      expect(rail.className).toMatch(/xl:flex-col/);
+      expect(rail.className).not.toMatch(/\bgrid\b/);
+      expect(rail.className).toMatch(/lg:col-span-12/);
+      expect(rail.className).toMatch(/xl:col-span-4/);
     });
 
-    it('no other grid inside #matchup-detail holds two card-bearing children besides the page-grid and the rail', async () => {
+    it('no other grid inside #matchup-detail holds two card-bearing children besides the page-grid', async () => {
       await renderLoadedPairing();
       const detail = document.getElementById('matchup-detail')!;
       const cardBearingGrids: Element[] = [];
@@ -1485,10 +1486,7 @@ describe('MatchupsPage', () => {
         );
         if (cardBearingChildren.length >= 2) cardBearingGrids.push(el);
       }
-      expect(cardBearingGrids.map((el) => el.getAttribute('data-slot'))).toEqual([
-        'page-grid',
-        'matchups-rail',
-      ]);
+      expect(cardBearingGrids.map((el) => el.getAttribute('data-slot'))).toEqual(['page-grid']);
     });
 
     it('the matrix wrapper carries id matchup-matrix (the hero "Other pairings" target) and follows the grid; the results card follows the matrix', async () => {

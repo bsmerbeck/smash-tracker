@@ -71,12 +71,13 @@ function buildPairingScope(fighterId: number, opponentId: number): InsightScope 
 
 /**
  * Plan 39.1-13: `formNow` at pairing (character) scope, resolved once and
- * shared by the insight-slot head (`renderFormNowHead`, called by the HOST —
- * `MatchupsPage.tsx` owns `ChartCard`, per the Phase 37 structural frame
- * rule `chartKitBoundary.test.ts` enforces: `MatchupChart.tsx` never imports
- * `ChartCard`) and by `MatchupChart` itself (the form strip's recent-window
- * highlight and the trend's emphasis band both read the SAME resolved
- * window, never a second, independently-resolved one).
+ * shared by the verdict head (`renderFormNowHead`, called by the pairing hero
+ * — plan 39.1-44 — which, like every host, owns the card frame: the Phase 37
+ * structural rule `chartKitBoundary.test.ts` enforces is that
+ * `MatchupChart.tsx` never imports `ChartCard`) and by `MatchupChart` itself
+ * (the form strip's recent-window highlight and the trend's emphasis band
+ * both read the SAME resolved window, never a second, independently-resolved
+ * one).
  */
 export function useMatchupFormNow({
   matchupMatches,
@@ -265,9 +266,9 @@ export function renderFormNowHead(
  * `Select` is gone with NO replacement control (the horizon comes from the
  * page's single `HorizonSwitch`, passed in as the `horizon` prop). This
  * component still owns no card and never imports `ChartCard` (the Phase 37
- * structural split `chartKitBoundary.test.ts` enforces) — `MatchupsPage.tsx`
- * supplies the frame, reading `useMatchupFormNow`/`renderFormNowHead` above
- * to build the `insight` prop.
+ * structural split `chartKitBoundary.test.ts` enforces) — `PairingHero.tsx`
+ * (plan 39.1-44) supplies the card, rendering `renderFormNowHead` above the
+ * stat row and this body (strip + trend) below it.
  *
  * D-07/CHRT-02/Phase 38-04: a click on a trend point writes that point's
  * own `PeriodPoint.key` as the `eventKey` axis (CR-02, 39.1-REVIEW — never

@@ -47,6 +47,12 @@ export interface GridCellProps {
    * beside one tall sibling instead of each being stretched to it.
    */
   stack?: boolean;
+  /**
+   * Plan 39.1-44: an optional `data-slot` for a cell the layout oracle or the
+   * capture tool must find by name (Matchups' rail). Absent, the cell carries
+   * none, exactly as before.
+   */
+  slot?: string;
   children?: ReactNode;
   className?: string;
 }
@@ -58,10 +64,11 @@ export interface GridCellProps {
  * never stretches its row siblings, because `PageGrid`'s `items-start` never
  * grows any cell to match another.
  */
-export function GridCell({ span, stack = false, children, className }: GridCellProps) {
+export function GridCell({ span, stack = false, slot, children, className }: GridCellProps) {
   return (
     <div
       data-span={span}
+      data-slot={slot}
       className={cn('min-w-0', SPAN_CLASSES[span], stack && 'flex flex-col gap-4', className)}
     >
       {children}

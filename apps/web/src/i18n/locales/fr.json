@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}} matchs · {{span}} · {{confidence}}",
       "otherPairings": "Autres duels"
     },
-    "winRateTrend": "Évolution du taux de victoire",
     "results": "Résultats du matchup",
     "selectFighterAria": "Sélectionner votre combattant",
     "selectOpponentAria": "Sélectionner le combattant adverse",
@@ -900,9 +899,7 @@
       "unfacedGroup": "Pas encore affrontés"
     },
     "record": {
-      "title": "Bilan",
-      "empty": "Aucun match enregistré contre ce combattant",
-      "totalMatches": "Matchs au total"
+      "empty": "Aucun match enregistré contre ce combattant"
     },
     "matrix": {
       "title": "Matrice des matchups",
@@ -912,9 +909,6 @@
       "yourFighterSr": "Votre combattant",
       "cellAria": "{{fighter}} vs {{opponent}} : {{wins}}-{{losses}}",
       "cellAria4": "{{row}} sur {{col}} : {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "Taux de victoire"
     },
     "insights": {
       "title": "Analyse du matchup",

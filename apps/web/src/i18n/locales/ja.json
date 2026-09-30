@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}}試合 · {{span}} · {{confidence}}",
       "otherPairings": "他の組み合わせ"
     },
-    "winRateTrend": "勝率の推移",
     "results": "対戦結果",
     "selectFighterAria": "自分のファイターを選択",
     "selectOpponentAria": "相手のファイターを選択",
@@ -900,9 +899,7 @@
       "unfacedGroup": "未対戦"
     },
     "record": {
-      "title": "戦績",
-      "empty": "このファイターとの対戦記録はありません",
-      "totalMatches": "総対戦数"
+      "empty": "このファイターとの対戦記録はありません"
     },
     "matrix": {
       "title": "相性マトリクス",
@@ -912,9 +909,6 @@
       "yourFighterSr": "自分のファイター",
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}}（{{col}}）: {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "勝率"
     },
     "insights": {
       "title": "相性の分析",

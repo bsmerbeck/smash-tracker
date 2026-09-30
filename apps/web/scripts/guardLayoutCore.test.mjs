@@ -31,6 +31,7 @@ import {
   SECTION_ORDER_RAIL_TOP_TOLERANCE_PX,
   evaluateSectionOrder,
   formatSectionOrderLine,
+  describeDeferredScrollBudget,
   FORM_STRIP_ROW_TOP_TOLERANCE_PX,
   evaluateStretch,
   evaluateScrollBudget,
@@ -3891,4 +3892,90 @@ test('section-order: formatSectionOrderLine prints the found slots in DOM order,
     formatSectionOrderLine('matchups', '1440x900', found),
     'SECTION_ORDER route=matchups viewport=1440x900 order=pairing-hero>pairing-opponents>matchup-insights>counterpick-advisor>stage-breakdown>matchup-matrix>matchup-results',
   );
+});
+
+// --- plan 39.1-44: the deferred 390 scroll budget and the route declarations ---
+
+test('section-order: a deferred scroll budget reports the ratio, the budget, the owner and whether the page is still over', () => {
+  const deferred = { '390x844': { budget: 7.72, until: '39.1-48' } };
+  assert.deepEqual(
+    describeDeferredScrollBudget(
+      { scrollHeight: 7417, innerHeight: 844, viewportName: '390x844' },
+      deferred,
+    ),
+    {
+      viewportName: '390x844',
+      ratio: 7417 / 844,
+      budget: 7.72,
+      until: '39.1-48',
+      over: true,
+    },
+  );
+  assert.equal(
+    describeDeferredScrollBudget(
+      { scrollHeight: 6515, innerHeight: 844, viewportName: '390x844' },
+      deferred,
+    ).over,
+    false,
+  );
+});
+
+test('section-order: a viewport with no deferred entry (or a route with none) reports nothing', () => {
+  const deferred = { '390x844': { budget: 7.72, until: '39.1-48' } };
+  assert.equal(
+    describeDeferredScrollBudget(
+      { scrollHeight: 9000, innerHeight: 900, viewportName: '1440x900' },
+      deferred,
+    ),
+    null,
+  );
+  assert.equal(
+    describeDeferredScrollBudget(
+      { scrollHeight: 9000, innerHeight: 844, viewportName: '390x844' },
+      undefined,
+    ),
+    null,
+  );
+});
+
+test('section-order: matchups and both sketch routes opt into section-order and filter-row with the same declared slots, and the pairing hero is their phone ceiling marker', async () => {
+  const { LAYOUT_ORACLE_ROUTES } = await import('./guardLayout.mjs');
+  const ids = ['matchups', 'matchups-sketch-deep', 'matchups-sketch-thin'];
+  const routes = ids.map((id) => LAYOUT_ORACLE_ROUTES.find((route) => route.id === id));
+  for (const route of routes) {
+    assert.ok(route, 'route declared');
+    assert.ok(route.checks.includes('section-order'), `${route.id} section-order`);
+    assert.ok(route.checks.includes('filter-row'), `${route.id} filter-row`);
+    assert.deepEqual(
+      route.sectionOrder.slots.map((item) => item.slot),
+      [
+        'pairing-hero',
+        'pairing-opponents',
+        'matchup-insights',
+        'matchup-or-player',
+        'counterpick-advisor',
+        'stage-breakdown',
+        'matchup-matrix',
+        'matchup-results',
+      ],
+    );
+    assert.deepEqual(
+      route.sectionOrder.slots.filter((item) => item.optional).map((item) => item.slot),
+      ['matchup-or-player'],
+    );
+    assert.deepEqual(route.filterRow.owns, ['[data-slot="horizon-switch"]']);
+    assert.deepEqual(route.cardHeightCeilings, [
+      {
+        marker: '[data-slot="pairing-hero"]',
+        maxViewportHeights: PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
+      },
+    ]);
+  }
+  // The enforced 390 budget stays on matchups and sketch-thin; sketch-deep's is deferred to 39.1-48, never dropped.
+  assert.equal(routes[0].scrollBudgets['390x844'], MATCHUPS_SCROLL_BUDGET_390X844);
+  assert.equal(routes[2].scrollBudgets['390x844'], MATCHUPS_SCROLL_BUDGET_390X844);
+  assert.equal(routes[1].scrollBudgets, undefined);
+  assert.deepEqual(routes[1].deferredScrollBudgets, {
+    '390x844': { budget: MATCHUPS_SCROLL_BUDGET_390X844, until: '39.1-48' },
+  });
 });

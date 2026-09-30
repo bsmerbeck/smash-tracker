@@ -890,7 +890,6 @@
       "identityMeta_other": "{{count, grouped}} games · {{span}} · {{confidence}}",
       "otherPairings": "Other pairings"
     },
-    "winRateTrend": "Win Rate Trend",
     "results": "Matchup Results",
     "selectFighterAria": "Select your fighter",
     "selectOpponentAria": "Select opponent fighter",
@@ -900,9 +899,7 @@
       "unfacedGroup": "Not yet faced"
     },
     "record": {
-      "title": "Record",
-      "empty": "No reported matches against this fighter",
-      "totalMatches": "Total Matches"
+      "empty": "No reported matches against this fighter"
     },
     "matrix": {
       "title": "Matchup Matrix",
@@ -912,9 +909,6 @@
       "yourFighterSr": "Your fighter",
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} on {{col}}: {{wins}}-{{losses}}"
-    },
-    "chart": {
-      "winRate": "Win Rate"
     },
     "insights": {
       "title": "Matchup Insights",

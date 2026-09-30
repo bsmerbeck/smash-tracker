@@ -130,9 +130,9 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
             />
 
             <div>
-              <h3 className="mb-2 text-sm font-medium text-muted-foreground">
+              <h2 className="mb-2 text-sm font-medium text-muted-foreground">
                 {t('matchups.insights.recentForm')}
-              </h3>
+              </h2>
               <WinLossPips matches={matchupMatches} limit={10} />
             </div>
 
@@ -157,9 +157,9 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
 
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <li>
-                <h3 className="text-sm font-medium text-emerald-500">
+                <h2 className="text-sm font-medium text-emerald-500">
                   {t('matchups.insights.bestStage')}
-                </h3>
+                </h2>
                 <p className="text-sm">
                   {bestName ? (
                     <>
@@ -177,9 +177,9 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
                 </p>
               </li>
               <li>
-                <h3 className="text-sm font-medium text-destructive">
+                <h2 className="text-sm font-medium text-destructive">
                   {t('matchups.insights.worstStage')}
-                </h3>
+                </h2>
                 <p className="text-sm">
                   {worstName ? (
                     <>
@@ -215,9 +215,9 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
 
             {typeRecords.length > 0 && (
               <div>
-                <h3 className="mb-2 text-sm font-medium text-muted-foreground">
+                <h2 className="mb-2 text-sm font-medium text-muted-foreground">
                   {t('matchups.insights.byMatchType')}
-                </h3>
+                </h2>
                 <ul className="flex flex-col gap-1 text-sm">
                   {typeRecords.map((record) => (
                     <li key={record.matchType} className="flex justify-between">

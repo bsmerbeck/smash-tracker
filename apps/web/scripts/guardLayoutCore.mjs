@@ -118,6 +118,31 @@ export function evaluateScrollBudget(
   return [];
 }
 
+/**
+ * Plan 39.1-44: a scroll budget a route has NOT enforced yet. `deferred` is
+ * `{ budget, until }` (the budget the route must meet and the plan that owns
+ * turning it on). Returns `null` when the viewport has no deferred entry, else
+ * `{ viewportName, ratio, budget, until, over }` — recorded by the runner as a
+ * `SCROLL_BUDGET_DEFERRED` line every run (never a violation, never silent), so
+ * the deferral cannot rot unseen and the owning plan sees exactly how far over
+ * the budget the page still is.
+ */
+export function describeDeferredScrollBudget(
+  { scrollHeight, innerHeight, viewportName },
+  deferredBudgets = {},
+) {
+  const deferred = deferredBudgets[viewportName];
+  if (deferred === undefined) return null;
+  const ratio = scrollHeight / innerHeight;
+  return {
+    viewportName,
+    ratio,
+    budget: deferred.budget,
+    until: deferred.until,
+    over: ratio > deferred.budget,
+  };
+}
+
 /** UI-SPEC §6.3: no horizontal page scroll at any viewport (390px is where it actually bites). */
 export function evaluateHorizontalOverflow({ scrollWidth, innerWidth }) {
   if (scrollWidth > innerWidth) {
