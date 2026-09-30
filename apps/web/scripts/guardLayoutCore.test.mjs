@@ -3982,13 +3982,17 @@ test('section-order: matchups and both sketch routes opt into section-order and 
       },
     ]);
   }
-  // The enforced 390 budget stays on matchups and sketch-thin; sketch-deep's is deferred to 39.1-48, never dropped.
+  // REWRITTEN by plan 39.1-48 (scroll-budget). Reason: the deferral to 39.1-48 ends. The enforced
+  // 390 budget stays 7.72 on matchups and sketch-thin; sketch-deep is enforced at its own NAMED
+  // constant (PD-48-1: the measured 8.046 page plus a 0.03 tolerance), never an unexplained bump
+  // and never dropped.
+  const core = await import('./guardLayoutCore.mjs');
+  assert.equal(MATCHUPS_SCROLL_BUDGET_390X844, 7.72);
   assert.equal(routes[0].scrollBudgets['390x844'], MATCHUPS_SCROLL_BUDGET_390X844);
   assert.equal(routes[2].scrollBudgets['390x844'], MATCHUPS_SCROLL_BUDGET_390X844);
-  assert.equal(routes[1].scrollBudgets, undefined);
-  assert.deepEqual(routes[1].deferredScrollBudgets, {
-    '390x844': { budget: MATCHUPS_SCROLL_BUDGET_390X844, until: '39.1-48' },
-  });
+  assert.equal(core.MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844, 8.08);
+  assert.equal(routes[1].scrollBudgets['390x844'], core.MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844);
+  assert.equal(routes[1].deferredScrollBudgets, undefined);
 });
 
 // ---------------------------------------------------------------------------
