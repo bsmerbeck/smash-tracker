@@ -225,6 +225,69 @@ export function buildRecentScale() {
   };
 }
 
+/** The registry key of the Dashboard recap's event; the fixture plugin answers `GET /api/prep/<key>` for it. */
+export const DASHBOARD_RECAP_ENTRY_KEY = 'fixture-harbor-clash-2026';
+
+/**
+ * Plan 39.2-13 (UI-SPEC section 13 G1, section 8.3): the Dashboard oracle's dataset: the wall-clock
+ * `recent` scale plus one just-finished named event, its registry entry and an open debrief, so the
+ * measured page carries the 8 + 4 row with the widest recap card (tier badge and provenance, the
+ * event's two-horizon chip, a four-set strip, and the debrief, games and event doors) rather than a
+ * digest spanning the row.
+ *
+ * DELIBERATELY anchored to the wall clock like `recent`: the recap exists only for an event that
+ * ended inside the last 14 days. The event's twelve games end six hours before the run, AFTER the
+ * dense segment's last game (one day before it), so the card's games door (an inclusive date window)
+ * holds exactly the event. The tournament name is 40 characters, the long-name stress case. Invented
+ * names and integer arithmetic only; nothing is copied from an owner manifest.
+ */
+export function buildDashboardScale() {
+  const base = buildRecentScale();
+  const endMs = Date.now() - 6 * HOUR_MS;
+  const gameCount = 12;
+  const tournamentName = 'Harbor Clash Community Championship 2026';
+  const eventGames = Array.from({ length: gameCount }, (_, i) => {
+    const set = Math.floor(i / 3);
+    return {
+      id: `dashboard-recap-${i}`,
+      fighter_id: HARNESS_FIGHTER_A_ID,
+      opponent_id: i % 2 === 0 ? 1 : 10,
+      time: endMs - (gameCount - 1 - i) * 25 * 60 * 1000,
+      win: set === 2 ? i % 3 === 0 : i % 4 !== 3,
+      matchType: 'offline-tourney',
+      map: { id: 1, name: 'Battlefield' },
+      opponent: `synthopp${1 + set}`,
+      eventName: 'Ultimate Singles',
+      tournamentName,
+      externalId: `sgg:dashboard-recap-set${set}:g${(i % 3) + 1}`,
+    };
+  });
+  const firstSetAt = eventGames[0].time;
+  return {
+    ...base,
+    matches: [...base.matches, ...eventGames],
+    tournaments: [
+      {
+        eventId: 9_900,
+        entryKey: DASHBOARD_RECAP_ENTRY_KEY,
+        eventName: 'Ultimate Singles',
+        tournamentName,
+        firstSetAt,
+        lastSetAt: endMs,
+        setsPlayed: 4,
+        numEntrants: 1_583,
+        placement: 3,
+        isOnline: false,
+        source: 'startgg',
+      },
+    ],
+    // `GET /api/prep/<entryKey>`: activated, with the debrief moment already passed.
+    prepStatuses: {
+      [DASHBOARD_RECAP_ENTRY_KEY]: { activated: true, reviewAt: endMs + HOUR_MS },
+    },
+  };
+}
+
 /**
  * Plan 39.2-07 (UI-SPEC §13 G1, T-39.2-32): the Tournaments oracle's
  * registry fixture. ILLUSTRATIVE and deterministic — invented tournament
@@ -423,6 +486,8 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     career: buildCareerScale(),
     casual: buildCasualScale(),
     recent: buildRecentScale(),
+    // Plan 39.2-13: the Dashboard's recap row (see `buildDashboardScale`).
+    dashboard: buildDashboardScale(),
     gsp: buildGspScale(),
     // Plan 39.2-07: the Tournaments oracle's 19-row and 100-row registries.
     tournaments: buildTournamentsScale(19),

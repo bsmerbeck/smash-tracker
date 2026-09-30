@@ -28,7 +28,7 @@
  * recordable.
  */
 import puppeteer from 'puppeteer';
-import { buildRecentScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildDashboardScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
 import { buildGuardDigestSeed } from './digestGuardFixture.mjs';
 import {
   evaluateStretch,
@@ -131,18 +131,27 @@ function periodTrendAxisExpectFor(domain) {
 
 /**
  * Plan 39.2-12 (UI-SPEC G1): the Dashboard routes are measured with an EXPANDED
- * digest and 25 tracked items. The digest's device-local snapshot is seeded before
+ * digest and 25 tracked items (plan 39.2-13: and the recap beside it). The digest's device-local snapshot is seeded before
  * the app boots (`storageSeed`), and the prepare steps PROVE the seed took by
  * waiting on the expanded card, its moved rows and "and N more", then open the
  * Tracked list to all 25 — a route where any of them never appears is UNMEASURED,
  * never a pass over a quiet card.
  */
-const DASHBOARD_DIGEST_SEED = buildGuardDigestSeed(buildRecentScale().matches);
+const DASHBOARD_DIGEST_SEED = buildGuardDigestSeed(buildDashboardScale().matches);
 const DASHBOARD_DIGEST_PREPARE = [
   { type: 'wait', selector: '#digest[data-state="expanded"]' },
   { type: 'wait', selector: '#digest [data-slot="digest-moved-list"] > li' },
   { type: 'wait', selector: '#digest [data-slot="digest-more"]' },
   { type: 'wait', selector: '#tracked [data-slot="tracked-row"]' },
+  // Plan 39.2-13: the recap shares the digest's row, with its tier badge, the chip, the
+  // set strip and all three doors (debrief, games, event) — the widest form of the card.
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="tier-badge"]' },
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="delta-chip"]' },
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="set-strip"]' },
+  {
+    type: 'wait',
+    selector: '[data-slot="recap-card"] [data-slot="insight-card-doors"] a:nth-of-type(3)',
+  },
   { type: 'click', selector: '#tracked [data-slot="bounded-list"] > button' },
   { type: 'wait', selector: '#tracked [data-slot="collapsible-content"][data-state="open"]' },
 ];
@@ -167,8 +176,9 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
     // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
     // last-30 horizon and nothing can have MOVED. A current account is what the digest
-    // and the Tracked section exist for.
-    scale: 'recent',
+    // and the Tracked section exist for. Plan 39.2-13: the `dashboard` scale is that same
+    // account plus one just-finished event, so the 8 + 4 digest-and-recap row is measured.
+    scale: 'dashboard',
     storageSeed: DASHBOARD_DIGEST_SEED,
     prepare: DASHBOARD_DIGEST_PREPARE,
     // Plan 39.1-38: the toolbar is the one unboxed filter row (no page h1 —
@@ -188,8 +198,9 @@ export const LAYOUT_ORACLE_ROUTES = [
     // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
     // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
     // last-30 horizon and nothing can have MOVED. A current account is what the digest
-    // and the Tracked section exist for.
-    scale: 'recent',
+    // and the Tracked section exist for. Plan 39.2-13: the `dashboard` scale is that same
+    // account plus one just-finished event, so the 8 + 4 digest-and-recap row is measured.
+    scale: 'dashboard',
     storageSeed: DASHBOARD_DIGEST_SEED,
     prepare: DASHBOARD_DIGEST_PREPARE,
     checks: ['record-fit', 'brand-red-text'],

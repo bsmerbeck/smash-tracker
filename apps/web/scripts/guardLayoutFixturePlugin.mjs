@@ -114,6 +114,16 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
           res.end(JSON.stringify(dataset?.tournaments ?? []));
           return;
         }
+        // Plan 39.2-13: the Dashboard recap's debrief door reads `GET /api/prep/<entryKey>`. Answered
+        // ONLY for a key the active dataset names, so every other scale's responses are unchanged.
+        if (url.startsWith('/prep/')) {
+          const status = dataset?.prepStatuses?.[decodeURIComponent(url.slice('/prep/'.length))];
+          if (status !== undefined) {
+            res.statusCode = 200;
+            res.end(JSON.stringify(status));
+            return;
+          }
+        }
         if (url === '/users/me') {
           res.statusCode = 200;
           res.end(

@@ -94,6 +94,8 @@ const createNote = vi.fn();
 const updateNote = vi.fn();
 const deleteNote = vi.fn();
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
+// Plan 39.2-13: the recap's debrief door reads the prep-brief status.
+const getPrepStatus = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -133,6 +135,9 @@ vi.mock('@/lib/api', () => ({
     },
     tournaments: {
       list: (...args: unknown[]) => listTournaments(...args),
+    },
+    prep: {
+      get: (...args: unknown[]) => getPrepStatus(...args),
     },
     onboarding: {
       getProgress: (...args: unknown[]) => getOnboardingProgress(...args),
@@ -483,6 +488,7 @@ beforeEach(() => {
   listMatches.mockResolvedValue(analyticsFixture());
   listOpponents.mockResolvedValue([]);
   listTournaments.mockResolvedValue([]);
+  getPrepStatus.mockResolvedValue({ activated: false });
   listAliases.mockResolvedValue({});
   upsertAlias.mockResolvedValue({});
   removeAlias.mockResolvedValue(undefined);
@@ -1025,6 +1031,162 @@ describe('Store isolation — horizon and dismissals (INS-06, T-39.1-21-02)', ()
     writeStoredDismissals('test-uid', clientA, ['formNow:account:last30']);
     expect(readStoredDismissals('test-uid', clientAExtended)).toEqual([]);
     expect(readStoredDismissals('test-uid', clientA)).toEqual(['formNow:account:last30']);
+  });
+});
+
+/**
+ * Plan 39.2-13 (TRK-03, UI-SPEC G11, D-17, F3b): the whole return loop under the three route
+ * families. One fixture whose newest event carries NO registry entry: the digest, the Tracked
+ * section and the recap card must have an identical DOM structure under the own-account,
+ * coach and workspace routes. A second fixture puts that event in the VIEWER's registry with an
+ * open debrief: only the own-account card may use it.
+ */
+describe('Return loop coach parity: digest, tracked section and recap (plan 39.2-13)', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const DAY_MS = 24 * HOUR_MS;
+
+  /** The synthetic history, cleared of anything near the event, plus nine games of one named event two days before "now". */
+  function returnLoopFixture(): Match[] {
+    const history = analyticsFixture().filter((match) => match.time < FIXTURE_NOW_MS - 20 * DAY_MS);
+    const eventEnd = FIXTURE_NOW_MS - 2 * DAY_MS;
+    const event = Array.from({ length: 9 }, (_, i) => ({
+      id: `parity-open-${i}`,
+      fighter_id: mario.id,
+      opponent_id: luigi.id,
+      time: eventEnd - (8 - i) * 10 * 60 * 1000,
+      win: i % 3 !== 0,
+      matchType: 'offline-tourney',
+      eventName: 'Parity Open',
+      tournamentName: 'Parity Open',
+      externalId: `sgg:parity-set${Math.floor(i / 3)}:g${(i % 3) + 1}`,
+    })) as Match[];
+    return [...history, ...event];
+  }
+
+  const registryEntry = () => ({
+    eventName: 'Parity Open',
+    tournamentName: 'Parity Open',
+    entryKey: 'parity-open',
+    firstSetAt: FIXTURE_NOW_MS - 2 * DAY_MS - HOUR_MS,
+    lastSetAt: FIXTURE_NOW_MS - 2 * DAY_MS,
+    setsPlayed: 3,
+    placement: 3,
+    numEntrants: 2048,
+    source: 'startgg',
+  });
+
+  async function settledDashboard(path: string) {
+    const rendered = renderDashboardAt(path);
+    await waitFor(() =>
+      expect(rendered.container.querySelector('[data-slot="dashboard-body"]')).not.toBeNull(),
+    );
+    await waitFor(() =>
+      expect(rendered.container.querySelector('[data-slot="recap-card"]')).not.toBeNull(),
+    );
+    return rendered;
+  }
+
+  /**
+   * A settled Dashboard writes its digest on a real unmount through a zero-delay timer, stamping
+   * `lastSeenAt` with the frozen clock, which would hide the next mount's recap (its games are
+   * not newer than that). Unmount, let the timer fire, then clear the store: every mount here is
+   * a fresh device.
+   */
+  async function leave(rendered: { unmount: () => void }) {
+    rendered.unmount();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    window.localStorage.clear();
+  }
+
+  /** The three return-loop regions, each by its own landmark. */
+  function regions(container: HTMLElement) {
+    return {
+      digest: container.querySelector<HTMLElement>('#digest')!,
+      tracked: container.querySelector<HTMLElement>('#tracked')!,
+      recap: container.querySelector<HTMLElement>('[data-slot="recap-card"]')!,
+    };
+  }
+
+  it('a recap event with no registry entry renders identical digest, tracked and recap structure under all three route families', async () => {
+    listMatches.mockResolvedValue(returnLoopFixture());
+
+    const own = await settledDashboard('/dashboard');
+    const ownRegions = regions(own.container);
+    const ownSignatures = {
+      digest: domSignature(ownRegions.digest),
+      tracked: domSignature(ownRegions.tracked),
+      recap: domSignature(ownRegions.recap),
+    };
+    const ownRecapText = normalisedText(ownRegions.recap);
+    await leave(own);
+    // Non-vacuity: a real recap with a games door, and no enrichment to differ by.
+    expect(ownSignatures.recap.length).toBeGreaterThan(10);
+    expect(ownRecapText).toContain('Parity Open');
+    expect(ownRecapText).not.toMatch(/Debrief/);
+    expect(ownRegions.recap.querySelector('[data-slot="tier-badge"]')).toBeNull();
+    expect(ownRegions.recap.querySelector('[data-slot="insight-card-doors"] a')).not.toBeNull();
+
+    for (const path of ['/coach/test-client/dashboard', '/workspace/test-tenant/dashboard']) {
+      const other = await settledDashboard(path);
+      const otherRegions = regions(other.container);
+      expect(domSignature(otherRegions.digest), path).toEqual(ownSignatures.digest);
+      expect(domSignature(otherRegions.tracked), path).toEqual(ownSignatures.tracked);
+      expect(domSignature(otherRegions.recap), path).toEqual(ownSignatures.recap);
+      expect(normalisedText(otherRegions.recap), path).toBe(ownRecapText);
+      await leave(other);
+    }
+  });
+
+  it('the coach render never reads the viewer registry and never shows its tier, placement, entry door or debrief door', async () => {
+    listMatches.mockResolvedValue(returnLoopFixture());
+    // The VIEWER's own registry holds the event, with a debrief that is open.
+    listTournaments.mockResolvedValue([registryEntry()]);
+    getPrepStatus.mockResolvedValue({ activated: true, reviewAt: FIXTURE_NOW_MS - DAY_MS });
+
+    const own = await settledDashboard('/dashboard');
+    const ownRecap = regions(own.container).recap;
+    // Control: the own account DOES use its registry, so the absence below is not a dead fixture.
+    expect(ownRecap.querySelector('[data-slot="tier-badge"]')).not.toBeNull();
+    expect(normalisedText(ownRecap)).toContain('3rd of 2,048');
+    await waitFor(() =>
+      expect(within(ownRecap).queryByRole('link', { name: 'Debrief this event' })).not.toBeNull(),
+    );
+    expect(within(ownRecap).getByRole('link', { name: 'Open event' })).toBeInTheDocument();
+    expect(listTournaments).toHaveBeenCalled();
+    await leave(own);
+
+    for (const path of ['/coach/test-client/dashboard', '/workspace/test-tenant/dashboard']) {
+      listTournaments.mockClear();
+      getPrepStatus.mockClear();
+      const other = await settledDashboard(path);
+      const recap = regions(other.container).recap;
+      expect(listTournaments, path).not.toHaveBeenCalled();
+      expect(getPrepStatus, path).not.toHaveBeenCalled();
+      expect(recap.querySelector('[data-slot="tier-badge"]'), path).toBeNull();
+      expect(normalisedText(recap), path).not.toMatch(/3rd|2,048|Debrief|Open event/);
+      expect(within(recap).queryByRole('link', { name: 'Debrief this event' }), path).toBeNull();
+      expect(within(recap).queryByRole('link', { name: 'Open event' }), path).toBeNull();
+      await leave(other);
+    }
+  });
+
+  it('the recap sits beside the digest in the same grid row under every route family', async () => {
+    listMatches.mockResolvedValue(returnLoopFixture());
+    for (const path of [
+      '/dashboard',
+      '/coach/test-client/dashboard',
+      '/workspace/test-tenant/dashboard',
+    ]) {
+      const rendered = await settledDashboard(path);
+      const { container } = rendered;
+      const { digest, recap } = regions(container);
+      const digestCell = digest.closest('[data-span]') as HTMLElement;
+      const recapCell = recap.closest('[data-span]') as HTMLElement;
+      expect(digestCell.className, path).toContain('xl:col-span-8');
+      expect(recapCell.className, path).toContain('xl:col-span-4');
+      expect(recapCell.previousElementSibling, path).toBe(digestCell);
+      await leave(rendered);
+    }
   });
 });
 
