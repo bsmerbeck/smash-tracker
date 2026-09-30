@@ -948,13 +948,17 @@
       "pickThese": "Pick these",
       "banThese": "Ban / avoid these",
       "unknownStage": "Unknown stage",
-      "threshold_one": "Min {{count}} game per stage",
-      "threshold_other": "Min {{count}} games per stage",
+      "meta_one": "Counterpick Advisor · all time · min {{count}} game per stage",
+      "meta_other": "Counterpick Advisor · all time · min {{count}} games per stage",
+      "suggestionLocked": "Suggestion · Locked",
       "noLegalStages": "No stage is legal under this ruleset and set state.",
       "setState": {
         "summary": "Assuming {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Change the game-phase, role, prior-stages and bans assumption",
-        "editLabel": "Change assumption",
+        "editAria": "Change the stages played so far and the bans assumed",
+        "playedBans": "stages played · bans",
+        "phaseLabel": "Phase",
+        "roleLabel": "Role",
+        "roleUnavailable": "Roles apply from Game 2",
         "phase": {
           "game1": "Game 1",
           "game2plus": "Game 2+"
@@ -962,6 +966,10 @@
         "role": {
           "striking": "Striking",
           "picking": "Picking"
+        },
+        "roleGame2": {
+          "banning": "Banning (you won)",
+          "picking": "Picking (you lost)"
         },
         "priorSummary_one": "{{count}} stage played",
         "priorSummary_other": "{{count}} stages played",
@@ -972,7 +980,8 @@
         "priorStagesLabel": "Stages played so far",
         "bansLabel": "Stages banned so far",
         "wonLabel": "Won",
-        "lostLabel": "Lost"
+        "lostLabel": "Lost",
+        "priorResultLabel": "Result on {{stage}}"
       }
     },
     "opponentSplit": {

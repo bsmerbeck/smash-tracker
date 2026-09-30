@@ -103,10 +103,11 @@ describe('SegmentedControl (plan 39.1-47, segmented-set-state)', () => {
     const { onChange } = renderControl();
     const gamma = screen.getByRole('radio', { name: 'Gamma option' });
     expect(gamma).toHaveAttribute('aria-disabled', 'true');
-    await user.click(gamma);
-    expect(onChange).not.toHaveBeenCalled();
     await user.hover(gamma);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Gamma is not available yet');
+    await user.click(gamma);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(gamma).toHaveAttribute('aria-checked', 'false');
   });
 
   it('an option without a reason is still guarded when unavailable, and no tooltip is mounted for it', async () => {

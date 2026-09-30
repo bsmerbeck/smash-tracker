@@ -948,13 +948,17 @@
       "pickThese": "Escolha estes",
       "banThese": "Bana / evite estes",
       "unknownStage": "Stage desconhecido",
-      "threshold_one": "Mín. {{count}} partida por stage",
-      "threshold_other": "Mín. {{count}} partidas por stage",
+      "meta_one": "Conselheiro de counterpick · histórico · mín. {{count}} partida por stage",
+      "meta_other": "Conselheiro de counterpick · histórico · mín. {{count}} partidas por stage",
+      "suggestionLocked": "Sugestão · Bloqueado",
       "noLegalStages": "Nenhum stage é legal sob este regulamento e este estado de jogo.",
       "setState": {
         "summary": "Assumindo {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Alterar a fase do jogo, o papel, os stages anteriores e os banimentos assumidos",
-        "editLabel": "Alterar suposição",
+        "editAria": "Alterar os stages já jogados e os banimentos assumidos",
+        "playedBans": "stages jogados · banimentos",
+        "phaseLabel": "Fase",
+        "roleLabel": "Papel",
+        "roleUnavailable": "Os papéis valem a partir do Jogo 2",
         "phase": {
           "game1": "Jogo 1",
           "game2plus": "Jogo 2+"
@@ -962,6 +966,10 @@
         "role": {
           "striking": "Banindo",
           "picking": "Escolhendo"
+        },
+        "roleGame2": {
+          "banning": "Banindo (você venceu)",
+          "picking": "Escolhendo (você perdeu)"
         },
         "priorSummary_one": "{{count}} stage jogado",
         "priorSummary_other": "{{count}} stages jogados",
@@ -972,7 +980,8 @@
         "priorStagesLabel": "Stages jogados até agora",
         "bansLabel": "Stages banidos até agora",
         "wonLabel": "Venceu",
-        "lostLabel": "Perdeu"
+        "lostLabel": "Perdeu",
+        "priorResultLabel": "Resultado em {{stage}}"
       }
     },
     "opponentSplit": {

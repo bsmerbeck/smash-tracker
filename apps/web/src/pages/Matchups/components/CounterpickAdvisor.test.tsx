@@ -470,7 +470,7 @@ describe('CounterpickAdvisor', () => {
 
     it('segmented-set-state: an abstained card keeps the dashed locked chip, the sentence and a count meter', () => {
       const { container } = renderAdvisor(matchesOnStage(BATTLEFIELD, 2, 0));
-      expect(screen.getByText(/Suggestion · Locked/)).toBeInTheDocument();
+      expect(screen.getByText('Suggestion · Locked')).toBeInTheDocument();
       expect(screen.getByText(/Not enough data yet.*1 more game needed\./)).toBeInTheDocument();
       const meter = container.querySelector('[role="img"][aria-label="2 of 3 games"]');
       expect(meter).not.toBeNull();
@@ -507,11 +507,11 @@ describe('CounterpickAdvisor', () => {
       expect(striking).toHaveAttribute('aria-checked', 'true');
       expect(striking).toHaveAttribute('aria-disabled', 'true');
       expect(picking).toHaveAttribute('aria-disabled', 'true');
+      await user.hover(picking);
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Roles apply from Game 2');
       await user.click(picking);
       expect(picking).toHaveAttribute('aria-checked', 'false');
       expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(ASSUMPTION_GAME1);
-      await user.hover(picking);
-      expect(await screen.findByRole('tooltip')).toHaveTextContent('Roles apply from Game 2');
     });
 
     it('segmented-set-state: at Game 2+ the roles read "Banning (you won)" (striking) and "Picking (you lost)" (picking) and are available', async () => {
@@ -577,7 +577,13 @@ describe('CounterpickAdvisor', () => {
         ...matchesOnStage(SMALL_BATTLEFIELD, 0, 5),
       ];
       const { container } = renderAdvisor(matches);
-      expect(container.innerHTML).not.toMatch(/emerald|destructive/);
+      // The rows and overlines carry no status colour (the toggle primitive's own
+      // `aria-invalid:border-destructive` base class is not a data mark).
+      for (const slot of ['counterpick-pick', 'counterpick-ban']) {
+        const section = container.querySelector(`[data-slot="${slot}"]`) as HTMLElement;
+        expect(section, slot).not.toBeNull();
+        expect(section.innerHTML).not.toMatch(/emerald|destructive/);
+      }
       const pickHead = screen.getByText('Pick these');
       const banHead = screen.getByText('Ban / avoid these');
       expect(pickHead.className).toBe(banHead.className);
@@ -595,11 +601,11 @@ describe('CounterpickAdvisor', () => {
       const { container } = renderAdvisor(matches);
       const lists = container.querySelectorAll('[data-slot="comparison-bars-series"]');
       expect(lists).toHaveLength(2);
-      // Pairing all-time rate: 12 wins of 25 games = 48%.
-      expect(screen.getAllByText('48% all time')).toHaveLength(1);
+      // Pairing all-time rate: 12 wins of 20 games = 60%.
+      expect(screen.getAllByText('60% all time')).toHaveLength(1);
       const ticks = container.querySelectorAll('[data-slot="comparison-bar-reference"]');
       expect(ticks).toHaveLength(4);
-      expect((ticks[0] as HTMLElement).style.left).toBe('48%');
+      expect((ticks[0] as HTMLElement).style.left).toBe('60%');
     });
 
     it('a counterpick stage with a fully qualifying record is absent at game one and present from game two', async () => {

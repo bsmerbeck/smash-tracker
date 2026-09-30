@@ -1,19 +1,28 @@
 import { useId, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveRuleset, legalStagesFor, DEFAULT_SET_STATE } from '@smash-tracker/shared';
 import type { Match, SetState } from '@smash-tracker/shared';
-import { ChartCard } from '@/components/charts/ChartCard';
+import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { SegmentedControl } from '@/components/analytics/SegmentedControl';
 import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
-import { SampleCue } from '@/components/EvidenceCues';
+import { CHART_TOKENS } from '@/components/charts/tokens';
 import { RulesetDisclosure } from '@/components/RulesetDisclosure';
 import { StageOption } from '@/components/StageOption';
+import { Card } from '@/components/ui/card';
 import { buildStageEvidence, pickBanSplit, type RankedStage } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 import { advisorThreshold } from '../lib/advisorThreshold';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
+import { buildStageSeriesRow, pairingWinRate } from '../lib/stageSeries';
 import { useMatchupsContext } from '../MatchupsContext';
+import { ReferenceSwatch } from './StageSeries';
 import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
+
+/** The overline role (StatFigure's label): the Pick / Ban heads read as the Insights card's heads do. */
+const OVERLINE_CLASS =
+  'text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase';
 
 /**
  * Stage counterpick advisor for the selected pairing (D-05, D-07, D-11,
@@ -50,17 +59,24 @@ import { SetStateControl, describeSetStateAssumption } from './SetStateControl';
  * can never silently carry into the next.
  *
  * D-12/EVID-05: the ruleset control and the set-state assumption are BOTH
- * always visible — the sample cue, ruleset control and set-state control sit
- * together in one whole-token-wrapping toolbar row (`ChartCard`'s `toolbar`
- * slot, plan 39.1-30 item 1) that renders in BOTH the abstained and the
- * populated branch, and the composed assumption sentence renders once, as
- * plain muted text directly under that row (never inside a tooltip or a
- * hover-only surface, and never restated on the set-state trigger itself —
- * the trigger's own accessible name is a short constant label, described by
- * the sentence via `aria-describedby`). When the active ruleset+set-state
- * combination leaves NO stage legal, the card says exactly that
- * (`noLegalStages`) instead of the generic abstention sentence, which would
- * misdescribe a full sample as a thin one.
+ * always visible, in the abstained and the populated branch alike. Plan
+ * 39.1-47 (sketch 003 B, PD-47-1..3) rebuilt the card as an insight card: one
+ * top line (suggestion chip + "Counterpick Advisor · all time · min N games
+ * per stage" — the threshold and the evidence type folded into it, no toolbar
+ * SampleCue chip), ONE assumption line (the ruleset disclosure plus the
+ * composed "Assuming …" sentence, plain muted text, never inside a tooltip),
+ * the `set-state-segments` row (Phase and Role as two `SegmentedControl`s
+ * plus the "stages played · bans" popover link), then the body. The Role
+ * segments are unavailable at Game 1 (there is no pick / ban role before a
+ * game has been played); at Game 2+ "Banning (you won)" is role `striking`
+ * and "Picking (you lost)" is role `picking`, the only role the DSR clause of
+ * `legalStagesFor` narrows. When the active ruleset+set-state combination
+ * leaves NO stage legal, the card says exactly that (`noLegalStages`)
+ * instead of the generic abstention sentence, which would misdescribe a full
+ * sample as a thin one. Pick / Ban are neutral overlines over blue series
+ * rows against the pairing's all-time rate — never a status colour: the
+ * ranking is the engine's own `pickBanSplit` (PD-47-2), and a hue would read
+ * as a verdict the evidence does not carry.
  *
  * D-07/Phase 38-04: clicking a Pick or Ban row writes the stage axis to the
  * URL (via the Matchups context's `setDrillDown`) and scrolls to the
@@ -85,6 +101,7 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   // describes it, so the trigger's own accessible name can stay a short
   // constant label without losing the association (plan 39.1-30 item 1).
   const assumptionLineId = useId();
+  const topLineId = useId();
 
   const resolvedRuleset = resolveRuleset(undefined);
 
@@ -117,7 +134,7 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   const { picks, bans } = pickBanSplit(ranked);
 
   // Numeric stage id comparison only (never a localized stage name) —
-  // `row.key` is `String(stage.stageId)` (set in `toRow` below).
+  // `row.key` is `String(stage.stageId)` (set by `buildStageSeriesRow`).
   function handleSelectRow(row: ComparisonBarsRow) {
     const stageId = Number(row.key);
     setDrillDown({ stageId });
@@ -126,85 +143,187 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function toRow(stage: RankedStage): ComparisonBarsRow {
+  function toRow(stage: RankedStage): ComparisonBarsRow | null {
     const stageData = stagesById.get(stage.stageId);
-    return {
-      key: String(stage.stageId),
-      label: stageData ? (
-        <StageOption stage={stageData} />
-      ) : (
-        <span className="text-sm">{t('matchups.counterpick.unknownStage')}</span>
-      ),
-      value: stage.winRate,
-      valueLabel: `${stage.wins}-${stage.losses} ${t('common.rateOverSample', {
-        rate: stage.winRate,
-        total: stage.total,
-      })}`,
-    };
+    if (!stageData) return null;
+    return buildStageSeriesRow({
+      record: stage,
+      label: <StageOption stage={stageData} />,
+      labelTitle: stageData.name,
+    });
+  }
+
+  function toRows(stages: RankedStage[]): ComparisonBarsRow[] {
+    return stages.map(toRow).filter((row): row is ComparisonBarsRow => row !== null);
+  }
+
+  // Game 1 has no pick / ban role yet: both role options are unavailable and
+  // "Striking" is what stands. From Game 2+ the roles read as who won.
+  const isGame1 = setState.phase === 'game1';
+  const roleValue = isGame1 ? 'striking' : setState.role;
+  const roleOptions = isGame1
+    ? [
+        {
+          value: 'striking',
+          label: t('matchups.counterpick.setState.role.striking'),
+          unavailable: true,
+          unavailableReason: t('matchups.counterpick.setState.roleUnavailable'),
+          className: 'opacity-60',
+        },
+        {
+          value: 'picking',
+          label: t('matchups.counterpick.setState.roleGame2.picking'),
+          unavailable: true,
+          unavailableReason: t('matchups.counterpick.setState.roleUnavailable'),
+          className: 'opacity-60',
+        },
+      ]
+    : [
+        { value: 'striking', label: t('matchups.counterpick.setState.roleGame2.banning') },
+        { value: 'picking', label: t('matchups.counterpick.setState.roleGame2.picking') },
+      ];
+
+  function handlePhaseChange(next: string) {
+    const phase = next as SetState['phase'];
+    // Choosing Game 1 resets the role: before Game 2 nobody has won or lost yet.
+    setSetState({ ...setState, phase, role: phase === 'game1' ? 'striking' : setState.role });
+  }
+
+  function handleRoleChange(next: string) {
+    setSetState({ ...setState, role: next as SetState['role'] });
+  }
+
+  const abstained = !noLegalStages && claim.kind === 'abstained';
+  const referenceRate = pairingWinRate(matchupMatches);
+  const pickRows = toRows(picks);
+  const banRows = toRows(bans);
+
+  let body: ReactNode;
+  if (noLegalStages) {
+    body = (
+      <p className="text-sm text-muted-foreground">{t('matchups.counterpick.noLegalStages')}</p>
+    );
+  } else if (abstained) {
+    // The kit's one locked idiom (the period trend's locked inset): the shared
+    // sentence, then a 6px meter and its count label sharing one wrapping row.
+    const gamesNeeded = claim.kind === 'abstained' ? claim.gamesNeeded : 0;
+    const have = Math.max(0, threshold - gamesNeeded);
+    const countLabel = t('analytics.timeline.lockedCount', { have, need: threshold });
+    body = (
+      <div
+        data-slot="counterpick-locked"
+        className="flex flex-col gap-1.5 rounded-md bg-muted/40 p-3"
+      >
+        <p className="text-sm leading-5">
+          {t('shared.evidence.abstained', { count: gamesNeeded })}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <div
+            role="img"
+            aria-label={countLabel}
+            className="h-1.5 min-w-[60px] flex-[1_1_80px] overflow-hidden rounded-full bg-muted"
+          >
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.min(100, Math.round((have / threshold) * 100))}%`,
+                backgroundColor: CHART_TOKENS.steady,
+              }}
+            />
+          </div>
+          <span className="text-xs leading-4 whitespace-nowrap text-muted-foreground tabular-nums">
+            {countLabel}
+          </span>
+        </div>
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        <div data-slot="counterpick-pick" className="flex min-w-0 flex-col gap-1">
+          <h2 className={OVERLINE_CLASS}>{t('matchups.counterpick.pickThese')}</h2>
+          <ComparisonBars
+            tone="series"
+            rows={pickRows}
+            referenceRate={referenceRate}
+            onSelectRow={handleSelectRow}
+          />
+        </div>
+        {banRows.length > 0 && (
+          <div data-slot="counterpick-ban" className="flex min-w-0 flex-col gap-1">
+            <h2 className={OVERLINE_CLASS}>{t('matchups.counterpick.banThese')}</h2>
+            <ComparisonBars
+              tone="series"
+              rows={banRows}
+              referenceRate={referenceRate}
+              onSelectRow={handleSelectRow}
+            />
+          </div>
+        )}
+        <p
+          data-slot="counterpick-legend"
+          className="flex flex-wrap items-center gap-x-1.5 text-xs leading-4 text-muted-foreground"
+        >
+          <ReferenceSwatch />
+          <span>
+            {t('analytics.trend.legend.reference', { rate: `${Math.round(referenceRate)}%` })}
+          </span>
+        </p>
+      </>
+    );
   }
 
   return (
-    <ChartCard
-      title={t('matchups.counterpick.title')}
-      caption={t('shared.evidence.type.recommendation')}
-      toolbar={
-        <div className="flex flex-col gap-2">
-          <div data-slot="counterpick-controls" className="flex flex-wrap items-center gap-2">
-            <SampleCue sample={claim.sample} />
-            <RulesetDisclosure resolved={resolvedRuleset} />
-            <SetStateControl
-              ruleset={resolvedRuleset.ruleset}
-              setState={setState}
-              onChange={setSetState}
-              describedById={assumptionLineId}
-            />
-          </div>
-          <p
-            id={assumptionLineId}
-            className="text-sm text-muted-foreground"
-            data-testid="set-state-assumption-line"
-          >
-            {describeSetStateAssumption(t, setState)}
-          </p>
-        </div>
-      }
-      abstained={
-        !noLegalStages && claim.kind === 'abstained' ? { gamesNeeded: claim.gamesNeeded } : null
-      }
-    >
-      <div className="flex flex-col gap-4">
-        {noLegalStages ? (
-          <p className="text-sm text-muted-foreground">{t('matchups.counterpick.noLegalStages')}</p>
-        ) : (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {t('matchups.counterpick.threshold', { count: threshold })}
-            </p>
-            <div>
-              <h2 className="mb-2 text-sm font-medium text-emerald-500">
-                {t('matchups.counterpick.pickThese')}
-              </h2>
-              <ComparisonBars
-                tone="emerald"
-                rows={picks.map(toRow)}
-                onSelectRow={handleSelectRow}
-              />
-            </div>
-            {bans.length > 0 && (
-              <div>
-                <h2 className="mb-2 text-sm font-medium text-destructive">
-                  {t('matchups.counterpick.banThese')}
-                </h2>
-                <ComparisonBars
-                  tone="destructive"
-                  rows={bans.map(toRow)}
-                  onSelectRow={handleSelectRow}
-                />
-              </div>
-            )}
-          </>
-        )}
+    <Card role="region" aria-labelledby={topLineId} className="gap-3 p-5 shadow-none">
+      <div className="flex flex-wrap items-center gap-2">
+        <ClaimChip
+          kind="suggestion"
+          locked={abstained}
+          label={
+            abstained ? t('matchups.counterpick.suggestionLocked') : t('insights.kind.suggestion')
+          }
+        />
+        <span id={topLineId} className="text-xs leading-4 text-muted-foreground tabular-nums">
+          {t('matchups.counterpick.meta', { count: threshold })}
+        </span>
       </div>
-    </ChartCard>
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <RulesetDisclosure resolved={resolvedRuleset} />
+        <p
+          id={assumptionLineId}
+          className="min-w-0 text-sm text-muted-foreground"
+          data-testid="set-state-assumption-line"
+        >
+          {describeSetStateAssumption(t, setState)}
+        </p>
+      </div>
+
+      <div data-slot="set-state-segments" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SegmentedControl
+          label={t('matchups.counterpick.setState.phaseLabel')}
+          value={setState.phase}
+          onChange={handlePhaseChange}
+          options={[
+            { value: 'game1', label: t('matchups.counterpick.setState.phase.game1') },
+            { value: 'game2plus', label: t('matchups.counterpick.setState.phase.game2plus') },
+          ]}
+        />
+        <SegmentedControl
+          label={t('matchups.counterpick.setState.roleLabel')}
+          value={roleValue}
+          onChange={handleRoleChange}
+          options={roleOptions}
+        />
+        <SetStateControl
+          ruleset={resolvedRuleset.ruleset}
+          setState={setState}
+          onChange={setSetState}
+          describedById={assumptionLineId}
+        />
+      </div>
+
+      {body}
+    </Card>
   );
 }

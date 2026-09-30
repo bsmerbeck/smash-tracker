@@ -948,13 +948,17 @@
       "pickThese": "À prendre",
       "banThese": "À bannir / éviter",
       "unknownStage": "Stage inconnu",
-      "threshold_one": "Min. {{count}} partie par stage",
-      "threshold_other": "Min. {{count}} parties par stage",
+      "meta_one": "Conseiller de counterpick · historique · min. {{count}} partie par stage",
+      "meta_other": "Conseiller de counterpick · historique · min. {{count}} parties par stage",
+      "suggestionLocked": "Suggestion · Verrouillé",
       "noLegalStages": "Aucun stage n'est légal avec ce règlement et cet état de la manche.",
       "setState": {
         "summary": "En supposant {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Modifier la phase de jeu, le rôle, les stages précédents et les bans supposés",
-        "editLabel": "Modifier l'hypothèse",
+        "editAria": "Modifier les stages déjà joués et les bans supposés",
+        "playedBans": "stages joués · bans",
+        "phaseLabel": "Phase",
+        "roleLabel": "Rôle",
+        "roleUnavailable": "Les rôles s'appliquent à partir de la manche 2",
         "phase": {
           "game1": "Manche 1",
           "game2plus": "Manche 2+"
@@ -962,6 +966,10 @@
         "role": {
           "striking": "Strike",
           "picking": "Choix"
+        },
+        "roleGame2": {
+          "banning": "Ban (vous avez gagné)",
+          "picking": "Choix (vous avez perdu)"
         },
         "priorSummary_one": "{{count}} stage joué",
         "priorSummary_other": "{{count}} stages joués",
@@ -972,7 +980,8 @@
         "priorStagesLabel": "Stages joués jusqu'ici",
         "bansLabel": "Stages bannis jusqu'ici",
         "wonLabel": "Gagné",
-        "lostLabel": "Perdu"
+        "lostLabel": "Perdu",
+        "priorResultLabel": "Résultat sur {{stage}}"
       }
     },
     "opponentSplit": {

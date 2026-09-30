@@ -1,8 +1,10 @@
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey } from '@smash-tracker/shared';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from '@/components/analytics/SegmentedControl';
 import { useHorizon } from '@/hooks/useHorizon';
 import { cn } from '@/lib/utils';
 
@@ -21,10 +23,11 @@ export interface HorizonSwitchProps {
  * Plan 39.1-12 (INS-02, D-06, UI-SPEC §7.7): the ONE page-level horizon
  * control — never a per-chart twin (verified by a grep gate under
  * `components/charts/` at the plan-verification level, mirrored inline by
- * this file's own test). Composes the installed `ToggleGroup` in `single`
- * mode, which Radix already renders with `role="radiogroup"` / per-item
- * `role="radio"`, roving-focus arrow-key navigation, and Space-to-select —
- * no custom keyboard handling needed here.
+ * this file's own test). Renders through the one `SegmentedControl` primitive
+ * (plan 39.1-47, PD-47-1 — the markup moved there unchanged, so the advisor's
+ * Phase / Role controls share it): a Radix single-choice group with
+ * `role="radiogroup"` / per-item `role="radio"`, roving-focus arrow keys and
+ * Space-to-select, no custom keyboard handling here.
  *
  * Reads `useHorizon` directly and holds NO local selected state — a second
  * copy of "which horizon is selected" here could drift from the hook's own
@@ -45,17 +48,25 @@ export function HorizonSwitch({ className }: HorizonSwitchProps) {
   const labelId = useId();
 
   function handleValueChange(next: string): void {
-    // A deselect activation reports '' (Radix's single-mode "no value"
-    // signal) — ignored, one value is always selected.
-    if (!next) return;
     const nextHorizon = next as HorizonKey;
-    // The disabled option is not made a real `disabled` button (that would
-    // block the tooltip's hover/focus trigger) — the guard lives here
-    // instead, so clicking or space-selecting it while unavailable performs
-    // no write, matching `useHorizon`'s own read-side fallback.
+    // The primitive already ignores a deselect ('') and an unavailable option
+    // (no `disabled` button — that would block the tooltip's hover / focus
+    // trigger); this second guard keeps "no write while last event is
+    // unavailable" true at the write site too, matching `useHorizon`'s own
+    // read-side fallback.
     if (nextHorizon === 'lastEvent' && !isLastEventAvailable) return;
     setHorizon(nextHorizon);
   }
+
+  const options: SegmentedControlOption[] = HORIZON_ORDER.map((key) => {
+    const label = t(`insights.horizon.${key}`);
+    const shortLabel = t(`insights.horizon.short.${key}`);
+    const unavailable = key === 'lastEvent' && !isLastEventAvailable;
+    return { value: key, label, shortLabel, unavailable };
+  });
+  // Only last event can be unavailable; its reason is the existing tooltip copy.
+  const lastEvent = options.find((option) => option.value === 'lastEvent');
+  if (lastEvent) lastEvent.unavailableReason = t('insights.horizon.lastEventDisabled');
 
   return (
     <div
@@ -69,63 +80,12 @@ export function HorizonSwitch({ className }: HorizonSwitchProps) {
       >
         {t('insights.horizon.label')}
       </span>
-      <ToggleGroup
-        type="single"
+      <SegmentedControl
+        ariaLabelledBy={labelId}
         value={horizon}
-        onValueChange={handleValueChange}
-        aria-labelledby={labelId}
-        className="w-full rounded-md border bg-card p-0.5 sm:w-fit"
-      >
-        {HORIZON_ORDER.map((key) => {
-          const isSelected = horizon === key;
-          const isDisabled = key === 'lastEvent' && !isLastEventAvailable;
-
-          const fullLabel = t(`insights.horizon.${key}`);
-
-          const item = (
-            <ToggleGroupItem
-              key={key}
-              value={key}
-              // The accessible name is pinned to the FULL label regardless
-              // of which of the two CSS-toggled spans below is visually
-              // shown at a given viewport width — both spans are marked
-              // `aria-hidden` so their text never enters the accname
-              // computation (a CSS-only `sm:hidden` toggle is invisible to
-              // jsdom/dom-accessibility-api, which never loads the
-              // stylesheet, so without this override BOTH spans would
-              // contribute their text to the accessible name at once).
-              aria-label={fullLabel}
-              aria-disabled={isDisabled || undefined}
-              className="relative h-8 flex-1 px-3 text-sm data-[state=on]:bg-muted data-[state=on]:text-foreground sm:flex-none"
-            >
-              <span aria-hidden="true" className="sm:hidden">
-                {t(`insights.horizon.short.${key}`)}
-              </span>
-              <span aria-hidden="true" className="hidden sm:inline">
-                {fullLabel}
-              </span>
-              {isSelected && (
-                <span
-                  aria-hidden="true"
-                  data-slot="horizon-switch-accent"
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-primary transition-opacity duration-[120ms] motion-reduce:transition-none"
-                />
-              )}
-            </ToggleGroupItem>
-          );
-
-          if (!isDisabled) {
-            return item;
-          }
-
-          return (
-            <Tooltip key={key}>
-              <TooltipTrigger asChild>{item}</TooltipTrigger>
-              <TooltipContent>{t('insights.horizon.lastEventDisabled')}</TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </ToggleGroup>
+        onChange={handleValueChange}
+        options={options}
+      />
     </div>
   );
 }

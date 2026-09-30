@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
-import { CHART_BAR_MAX_THICKNESS_PX, CHART_BAR_ROW_HEIGHT_PX, CHART_TOKENS } from './tokens';
+import { CHART_TOKENS } from './tokens';
 
 export interface ComparisonBarsRow {
   key: string;
@@ -22,12 +22,15 @@ export interface ComparisonBarsRow {
 }
 
 /**
- * `emerald` / `destructive` are the two status tones (the pick / ban meaning);
  * `series` (plan 39.1-46, PD-46-1, sketch 003 A `.cmp` rows) is the neutral
  * evidence tone: identity-blue fill, muted track, an optional all-time
- * reference tick — a tone of this member, not a new member.
+ * reference tick. Since plan 39.1-47 (PD-47-4) it is the ONLY tone — the two
+ * status tones that once carried the advisor's pick / ban judgement were
+ * deleted with their last caller (an alarm colour on an evidence row breaks
+ * the sketch's "blue data ink" rule; `designFidelity.test.ts` fails a status
+ * tone passed to this member).
  */
-export type ComparisonBarsTone = 'emerald' | 'destructive' | 'series';
+export type ComparisonBarsTone = 'series';
 
 interface ComparisonBarsDefaultProps {
   mode?: undefined;
@@ -167,20 +170,6 @@ function DumbbellRow({ row }: { row: ComparisonBarsDumbbellRow }) {
   );
 }
 
-/**
- * Status-colour classes for each tone (CHRT-01 kit README, "the collision
- * rule"): a series that means good/bad wears the app's existing status
- * tokens, never `--chart-*` categorical tokens. `emerald` is the pick tone,
- * `destructive` the ban tone.
- */
-const STATUS_TONE_CLASSES: Record<
-  Exclude<ComparisonBarsTone, 'series'>,
-  { track: string; fill: string }
-> = {
-  emerald: { track: 'bg-emerald-500/15', fill: 'bg-emerald-500' },
-  destructive: { track: 'bg-destructive/15', fill: 'bg-destructive' },
-};
-
 /** Sketch 003 `.cmp-track .ref`: the tick is 2px wide and pokes 2px past the track above and below. */
 const SERIES_REFERENCE_WIDTH_PX = 2;
 const SERIES_REFERENCE_OVERHANG_PX = 2;
@@ -291,9 +280,10 @@ function SeriesRows({
  * `KIT_CHART_PRIMITIVES` — that list enumerates kit files that render a
  * Recharts element for the structural frame rule (every member must nest
  * inside a `ChartCard`); a CSS meter renders no Recharts element, so it is
- * outside that rule's scope. `CounterpickAdvisor.tsx` supplies the
- * `ChartCard` frame this component renders inside, the same split
- * `MatchupChart.tsx`/`TrendLine.tsx` already establish.
+ * outside that rule's scope. The host supplies the card frame (the Matchups
+ * rail cards render it inside their own `Card`, the stage rows of the
+ * Insights card, Stage breakdown, MatchupOrPlayer mark and Counterpick
+ * Advisor alike).
  *
  * `mode: 'dumbbell'` (39.1-08, VIZ-02/DD-04) is a THIRD variant of this same
  * member, added the exact way `TrendLine.tsx` gained its `'event'` mode: the
@@ -315,60 +305,12 @@ export function ComparisonBars(props: ComparisonBarsProps) {
       </ul>
     );
   }
-  const { rows, tone, onSelectRow } = props;
-  if (tone === 'series') {
-    return (
-      <SeriesRows
-        rows={rows}
-        onSelectRow={onSelectRow}
-        referenceRate={props.referenceRate}
-        divided={props.divided}
-      />
-    );
-  }
-  const toneClasses = STATUS_TONE_CLASSES[tone];
-
   return (
-    <ul className="flex flex-col gap-2">
-      {rows.map((row) => {
-        const widthPct = Math.max(0, Math.min(100, row.value));
-        const rowContent = (
-          <>
-            <div className="flex items-center justify-between gap-2 text-sm">
-              {row.label}
-              <span className="shrink-0 whitespace-nowrap text-muted-foreground">
-                {row.valueLabel}
-              </span>
-            </div>
-            <div
-              data-slot="comparison-bar-track"
-              className={`relative w-full overflow-hidden rounded-full ${toneClasses.track}`}
-              style={{ height: CHART_BAR_MAX_THICKNESS_PX }}
-            >
-              <div
-                data-slot="comparison-bar-fill"
-                className={`h-full rounded-full ${toneClasses.fill}`}
-                style={{ width: `${widthPct}%` }}
-              />
-            </div>
-          </>
-        );
-        return (
-          <li key={row.key} style={{ minHeight: CHART_BAR_ROW_HEIGHT_PX }}>
-            {onSelectRow ? (
-              <button
-                type="button"
-                className="flex w-full flex-col gap-1 text-left"
-                onClick={() => onSelectRow(row)}
-              >
-                {rowContent}
-              </button>
-            ) : (
-              <div className="flex flex-col gap-1">{rowContent}</div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <SeriesRows
+      rows={props.rows}
+      onSelectRow={props.onSelectRow}
+      referenceRate={props.referenceRate}
+      divided={props.divided}
+    />
   );
 }
