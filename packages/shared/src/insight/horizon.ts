@@ -6,6 +6,7 @@ import {
   RECENCY_TREATMENT,
 } from '../evidence/policy.js';
 import type { EvidenceClaim, SampleMeta } from '../evidence/types.js';
+import { newestEventBlock } from '../evidence/eventBlocks.js';
 import { RECENT_GAME_WINDOW, RECENT_DAY_WINDOW, SCOPED_RECENCY_MONTHS } from './policy.js';
 import type { HorizonKey, InsightWindow, RateValue } from './types.js';
 
@@ -42,40 +43,18 @@ export function matchDateRange(matches: Match[]): { fromMs: number | null; toMs:
 }
 
 /**
- * Ported, not imported, from `evidence/eventSeries.ts`'s `trimmedEventKey` —
- * kept isolated inside this new module so `insight/` never depends on
- * `evidence/eventSeries.ts` (39.1-PATTERNS.md §1's "ported, not imported"
- * convention, applied here to keep the whole insight engine self-contained
- * in its own directory). `eventName` takes priority, `tournamentName` is the
- * fallback; an empty/whitespace name reads as "no event".
+ * The `lastEvent` horizon: the games of the newest EVENT — a name group (event
+ * name plus parent tournament name) split into proximity blocks — by the ONE
+ * event-identity rule in `evidence/eventBlocks.ts` (39.2 code review
+ * R2-WR-02). Never a bare event name: start.gg names nearly every bracket
+ * "Ultimate Singles", so a name alone pooled every weekly the user ever
+ * played. `eventBlocks.ts` is a leaf module with no runtime imports, so the
+ * insight engine reads it without pulling the rest of the evidence engine.
+ * Oldest first; a history with no named event anywhere (manual-only) yields
+ * `[]`, never a fabricated event.
  */
-function eventKeyOf(match: Match): string | null {
-  const raw = match.eventName ?? match.tournamentName;
-  if (raw == null) {
-    return null;
-  }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-/** The games belonging to whichever named event key has the most recent game in `matches` — the `lastEvent` horizon. A history with no named event anywhere (manual-only) yields `[]`, never a fabricated event. */
 function lastEventGames(matches: Match[]): Match[] {
-  let latestKey: string | null = null;
-  let latestTime = Number.NEGATIVE_INFINITY;
-  for (const match of matches) {
-    const key = eventKeyOf(match);
-    if (key === null) {
-      continue;
-    }
-    if (match.time > latestTime) {
-      latestTime = match.time;
-      latestKey = key;
-    }
-  }
-  if (latestKey === null) {
-    return [];
-  }
-  return matches.filter((match) => eventKeyOf(match) === latestKey);
+  return newestEventBlock(matches)?.block.games ?? [];
 }
 
 /** D-15: intersects `matches` with the last `SCOPED_RECENCY_MONTHS` months relative to `nowMs`. */
@@ -87,7 +66,7 @@ function withinScopedRecency(matches: Match[], nowMs: number): Match[] {
 /**
  * Resolves one `HorizonKey` window over `matches` (D-06). `last30` = the
  * most recent `RECENT_GAME_WINDOW` countable games in scope; `lastEvent` =
- * the games of the most recent tournament event key in scope; `last90` =
+ * the games of the newest event block in scope (`lastEventGames`); `last90` =
  * games inside `RECENT_DAY_WINDOW` days of `nowMs`. When `scoped` is true,
  * the last `SCOPED_RECENCY_MONTHS` months are intersected FIRST (D-15),
  * before any horizon-specific slicing. `matches` need not already be sorted
