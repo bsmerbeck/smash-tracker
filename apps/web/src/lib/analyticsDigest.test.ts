@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DigestSnapshot, Match } from '@smash-tracker/shared';
+import { eventBlocksOf, type DigestSnapshot, type Match } from '@smash-tracker/shared';
 import {
   ANALYTICS_DIGEST_KEY_PREFIX,
   analyticsDigestStorageKey,
@@ -74,10 +74,10 @@ describe('countNewEvents', () => {
       game('d1', 500), // no event name: belongs to no event
       game('e1', 600, '   '), // whitespace reads as no event
     ];
-    expect(countNewEvents(matches, 200)).toBe(2);
-    expect(countNewEvents(matches, 0)).toBe(3);
-    expect(countNewEvents(matches, 1000)).toBe(0);
-    expect(countNewEvents([], 0)).toBe(0);
+    expect(countNewEvents(matches, { lastSeenAt: 200 })).toBe(2);
+    expect(countNewEvents(matches, { lastSeenAt: 0 })).toBe(3);
+    expect(countNewEvents(matches, { lastSeenAt: 1000 })).toBe(0);
+    expect(countNewEvents([], { lastSeenAt: 0 })).toBe(0);
   });
 });
 
@@ -90,7 +90,37 @@ describe('countNewEvents event identity (39.2-REVIEW WEB-CR-01)', () => {
         game(`w${i}-${g}`, day * DAY + g * 60_000, 'Ultimate Singles', `Weekly #${i}`),
       ),
     );
-    expect(countNewEvents(matches, 10 * DAY)).toBe(1);
-    expect(countNewEvents(matches, -1)).toBe(3);
+    expect(countNewEvents(matches, { lastSeenAt: 10 * DAY })).toBe(1);
+    expect(countNewEvents(matches, { lastSeenAt: -1 })).toBe(3);
+  });
+});
+
+describe('countNewEvents on sync time, not play time (39.2-REVIEW WEB-WR-01)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const played = [0, 1, 2].map((g) => game(`e-${g}`, 18 * HOUR + g * 60_000, 'Singles', 'Local'));
+  const older = [0, 1].map((g) => game(`o-${g}`, g * 60_000, 'Singles', 'Older Local'));
+
+  it('an event played BEFORE the last visit but synced after it (absent from the seen set) is new', () => {
+    // Visit at 21:00 before syncing: the snapshot saw only the older event.
+    const seenAtVisit = eventBlocksOf(older);
+    const snapshot = {
+      lastSeenAt: 21 * HOUR,
+      events: { seen: Object.fromEntries(seenAtVisit.map((b) => [b.key, b.games.length])) },
+    };
+    expect(countNewEvents([...older, ...played], snapshot)).toBe(1);
+  });
+
+  it('an event the last visit already saw is not new, whatever its play time', () => {
+    const all = [...older, ...played];
+    const snapshot = {
+      lastSeenAt: 0,
+      events: { seen: Object.fromEntries(eventBlocksOf(all).map((b) => [b.key, b.games.length])) },
+    };
+    expect(countNewEvents(all, snapshot)).toBe(0);
+  });
+
+  it('a legacy snapshot with no seen set falls back to the play-time rule', () => {
+    expect(countNewEvents([...older, ...played], { lastSeenAt: 10 * HOUR })).toBe(1);
+    expect(countNewEvents([...older, ...played], { lastSeenAt: 21 * HOUR })).toBe(0);
   });
 });

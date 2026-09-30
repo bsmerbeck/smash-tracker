@@ -361,3 +361,47 @@ describe('event identity (39.2-REVIEW WEB-CR-01): an event is never a bare event
     );
   });
 });
+
+describe('recap "synced since last seen" on sync time, not play time (39.2-REVIEW WEB-WR-01)', () => {
+  const played = eventGames('Evening Local', 3 * HOUR);
+  const event = selectNewestEvent(played)!;
+
+  it('an event played before the last visit but absent from its seen set is a candidate', () => {
+    // The player opened the Dashboard after playing but before syncing.
+    const candidate = evaluateRecapCandidate({
+      event,
+      lastSeenAt: NOW - 1 * HOUR,
+      seenEvents: { seen: {} },
+      nowMs: NOW,
+      dismissedIds: [],
+      entry: null,
+    });
+    expect(candidate).not.toBeNull();
+  });
+
+  it('an event the last visit saw in full is not a candidate again', () => {
+    expect(
+      evaluateRecapCandidate({
+        event,
+        lastSeenAt: 0,
+        seenEvents: { seen: { [event.eventId]: event.games.length } },
+        nowMs: NOW,
+        dismissedIds: [],
+        entry: null,
+      }),
+    ).toBeNull();
+  });
+
+  it('an event that gained games since the last visit (synced mid-event) is a candidate again', () => {
+    expect(
+      evaluateRecapCandidate({
+        event,
+        lastSeenAt: NOW,
+        seenEvents: { seen: { [event.eventId]: event.games.length - 3 } },
+        nowMs: NOW,
+        dismissedIds: [],
+        entry: null,
+      }),
+    ).not.toBeNull();
+  });
+});

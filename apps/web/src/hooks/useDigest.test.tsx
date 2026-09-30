@@ -2,7 +2,12 @@ import { StrictMode, useEffect, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router';
-import { stateClassFor, type DigestStateClass, type Match } from '@smash-tracker/shared';
+import {
+  eventBlocksOf,
+  stateClassFor,
+  type DigestStateClass,
+  type Match,
+} from '@smash-tracker/shared';
 import { analyticsDigestStorageKey, writeStoredDigest } from '@/lib/analyticsDigest';
 import { useDigest } from './useDigest';
 
@@ -493,5 +498,47 @@ describe('useDigest write discipline (T-03, UI-SPEC G9)', () => {
         { key: KEY_B, count: 30 },
       ]);
     });
+  });
+});
+
+describe('useDigest on sync time, not play time (39.2-REVIEW WEB-WR-01)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    watchlistState = watchlistOf();
+  });
+
+  it('an event played before the last visit but synced after it counts as a new event', () => {
+    const older = games(5, () => 'Older Local', 1_000);
+    const synced = games(4, () => 'Evening Local', 2_000).map((g, i) => ({ ...g, id: `s-${i}` }));
+    // The last visit happened AFTER the evening event was played, before it was synced.
+    writeStoredDigest('u1', null, {
+      lastSeenAt: 9_000,
+      lastSeenMatchCount: older.length,
+      tracked: {},
+      events: {
+        seen: Object.fromEntries(eventBlocksOf(older).map((b) => [b.key, b.games.length])),
+      },
+    } as never);
+    matchesState = { allMatches: [...older, ...synced], isLoading: false, isFetching: false };
+    const { result } = renderHook(() => useDigest(), { wrapper });
+    expect(result.current.newGames).toBe(4);
+    expect(result.current.newEvents).toBe(1);
+    expect(result.current.status).toBe('expanded');
+  });
+
+  it('the leave-write stores the events this visit saw', async () => {
+    writeStoredDigest('u1', null, { lastSeenAt: 5, lastSeenMatchCount: 0, tracked: {} });
+    const matches = games(5, () => 'Older Local', 1_000);
+    matchesState = { allMatches: matches, isLoading: false, isFetching: false };
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+    const { unmount } = renderHook(() => useDigest(), { wrapper });
+    unmount();
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(set).toHaveBeenCalledTimes(1);
+    const written = JSON.parse(String(set.mock.calls[0]![1])) as {
+      events?: { seen: Record<string, number> };
+    };
+    const [block] = eventBlocksOf(matches);
+    expect(written.events?.seen).toEqual({ [block!.key]: 5 });
   });
 });
