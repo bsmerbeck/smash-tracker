@@ -94,10 +94,24 @@ function rateOfClaim(claim: EvidenceClaim<RateValue>): RateValue {
   return { wins: 0, losses: total, total, rate: 0 };
 }
 
+/**
+ * 39.2-REVIEW SH-WR-04: the digest's own re-classified read of an item — the ladder result at
+ * `MOVED_NOTABLE_Z` over the `DIGEST_HORIZON` window, with that window's record — so a row that
+ * shows a moved token can show the chip of the SAME read instead of a second read at another z
+ * and horizon that could contradict it.
+ */
+export interface DigestChipRead {
+  state: ClassifyResult['state'];
+  deltaPoints: number | null;
+  recent: RateValue;
+}
+
 export interface DigestItemRead {
   stateClass: DigestStateClass;
   /** The engine's own salience for this read (never rendered), used only to order moved rows. */
   salience: number;
+  /** The read the class came from; `null` when the item has no read at all (`none`). */
+  chipRead: DigestChipRead | null;
 }
 
 /**
@@ -117,10 +131,11 @@ export function readTrackedItem(input: {
   const scope = trackedItemScope(item, { opponentAliases });
   const insight = formNowTemplate.build({ matches, scope, horizon: DIGEST_HORIZON, nowMs })[0];
   if (insight === undefined) {
-    return { stateClass: 'none', salience: 0 };
+    return { stateClass: 'none', salience: 0, chipRead: null };
   }
+  const recent = rateOfClaim(insight.recent);
   const result = classify({
-    recent: rateOfClaim(insight.recent),
+    recent,
     baseline: rateOfClaim(insight.baseline),
     scoped: true,
     hasAction: false,
@@ -130,7 +145,11 @@ export function readTrackedItem(input: {
     { ...insight, state: result.state, kind: result.kind, deltaPoints: result.deltaPoints },
     nowMs,
   );
-  return { stateClass: stateClassFromClassify(result), salience };
+  return {
+    stateClass: stateClassFromClassify(result),
+    salience,
+    chipRead: { state: result.state, deltaPoints: result.deltaPoints, recent },
+  };
 }
 
 /** The state class of one tracked item at the digest's fixed horizon and stricter z. */

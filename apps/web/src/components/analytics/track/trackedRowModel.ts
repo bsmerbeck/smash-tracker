@@ -1,9 +1,11 @@
 import type { TFunction } from 'i18next';
 import {
+  DIGEST_HORIZON,
   INSIGHT_TEMPLATES,
   resolveOpponentIdentities,
   toRateValue,
   trackedItemScope,
+  type DigestChipRead,
   type DigestMovedToken,
   type HorizonKey,
   type Match,
@@ -64,6 +66,11 @@ export interface TrackedRowModel {
 export interface TrackedMovedEntry {
   token: DigestMovedToken;
   salience: number;
+  /**
+   * 39.2-REVIEW SH-WR-04: the digest read behind the token. A row showing the token renders its
+   * chip from this read (at `DIGEST_HORIZON`, named on the chip), so the two never disagree.
+   */
+  chipRead?: DigestChipRead | null;
 }
 
 export interface BuildTrackedRowsInput {
@@ -135,7 +142,9 @@ function fighterLabel(id: number, t: TFunction): string {
  * Builds the sorted Tracked rows: one per display identity, moved items first
  * (engine salience, plan 39.2-12) and then most games in scope. Direction is NEVER computed
  * here (D-05): the chip is `deltaChipView` over the engine's own `formNow` read
- * at the item's `trackedItemScope`, at the page's horizon.
+ * at the item's `trackedItemScope`, at the page's horizon — except on a row that
+ * shows a moved token, whose chip is the digest read behind that token
+ * (39.2-REVIEW SH-WR-04), so the two can never disagree.
  */
 export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[] {
   const {
@@ -156,22 +165,40 @@ export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[
       const scope = trackedItemScope(item);
       const scoped = scope.filter(matches);
       const rate = toRateValue(scoped);
-      const insight = FORM_NOW_TEMPLATE.build({ matches, scope, horizon, nowMs })[0];
-      const recentGames = insight?.window.games ?? 0;
-      const chip = deltaChipView({
-        state: insight?.state ?? 'locked',
-        deltaPoints: insight?.deltaPoints ?? null,
-        recentGames,
-        horizon,
-        // The page's one HorizonSwitch names the horizon for every row (UI-SPEC 7.8).
-        horizonOwnedByParent,
-        t,
-      });
-      const recent = insight?.recent;
-      const recentRecord =
-        recent?.kind === 'evidenced'
-          ? { wins: recent.value.wins, losses: recent.value.losses }
-          : { wins: 0, losses: 0 };
+      const movedEntry = moved?.get(entry.itemKey);
+      const digestRead = movedEntry?.chipRead ?? null;
+      let chip: DeltaChipView | null;
+      let recentRecord: { wins: number; losses: number };
+      if (digestRead !== null) {
+        // SH-WR-04: the token and the chip are ONE read — the digest's own class change at
+        // `DIGEST_HORIZON` and the moved z — never a second read at another z or horizon that
+        // could call the same games a trend. The chip names its fixed horizon itself.
+        chip = deltaChipView({
+          state: digestRead.state,
+          deltaPoints: digestRead.deltaPoints,
+          recentGames: digestRead.recent.total,
+          horizon: DIGEST_HORIZON,
+          horizonOwnedByParent: horizonOwnedByParent && horizon === DIGEST_HORIZON,
+          t,
+        });
+        recentRecord = { wins: digestRead.recent.wins, losses: digestRead.recent.losses };
+      } else {
+        const insight = FORM_NOW_TEMPLATE.build({ matches, scope, horizon, nowMs })[0];
+        chip = deltaChipView({
+          state: insight?.state ?? 'locked',
+          deltaPoints: insight?.deltaPoints ?? null,
+          recentGames: insight?.window.games ?? 0,
+          horizon,
+          // The page's one HorizonSwitch names the horizon for every row (UI-SPEC 7.8).
+          horizonOwnedByParent,
+          t,
+        });
+        const recent = insight?.recent;
+        recentRecord =
+          recent?.kind === 'evidenced'
+            ? { wins: recent.value.wins, losses: recent.value.losses }
+            : { wins: 0, losses: 0 };
+      }
       const strip = [...scoped]
         .sort((a, b) => (a.time !== b.time ? a.time - b.time : a.id.localeCompare(b.id)))
         .slice(-TRACKED_STRIP_GAMES)
@@ -219,7 +246,7 @@ export function buildTrackedRows(input: BuildTrackedRowsInput): TrackedRowModel[
         recentWins: recentRecord.wins,
         recentLosses: recentRecord.losses,
         strip,
-        movedToken: moved?.get(entry.itemKey)?.token ?? null,
+        movedToken: movedEntry?.token ?? null,
       };
     },
   );

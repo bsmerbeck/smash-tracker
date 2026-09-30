@@ -6,6 +6,7 @@ import {
   readTrackedItem,
   selectMovedItems,
   type DigestLastVisit,
+  type DigestChipRead,
   type DigestMovedToken,
   type DigestSnapshot,
   type DigestStateClass,
@@ -96,6 +97,8 @@ export interface DigestItemState {
   stateClass: DigestStateClass;
   /** The engine's own salience for the read; orders moved rows, never rendered. */
   salience: number;
+  /** The read the class came from (39.2-REVIEW SH-WR-04), for a moved row's chip. */
+  chipRead: DigestChipRead | null;
 }
 
 /**
@@ -116,7 +119,12 @@ export function readDigestItems(input: {
     const item: WatchlistItem =
       entry.item.kind === 'opponent' ? { ...entry.item, ref: identity } : entry.item;
     const read = readTrackedItem({ matches, item, nowMs });
-    return { itemKey: entry.itemKey, stateClass: read.stateClass, salience: read.salience };
+    return {
+      itemKey: entry.itemKey,
+      stateClass: read.stateClass,
+      salience: read.salience,
+      chipRead: read.chipRead,
+    };
   });
 }
 
@@ -136,6 +144,8 @@ export interface DigestMoved {
   itemKey: string;
   token: DigestMovedToken;
   salience: number;
+  /** The digest read behind the token: the row's chip renders THIS read (39.2-REVIEW SH-WR-04). */
+  chipRead: DigestChipRead | null;
 }
 
 /**
@@ -152,7 +162,7 @@ export function movedItemsOf(
   for (const item of items) {
     const token = movedTransition(previous[item.itemKey], item.stateClass);
     if (token !== null) {
-      all.push({ itemKey: item.itemKey, token, salience: item.salience });
+      all.push({ itemKey: item.itemKey, token, salience: item.salience, chipRead: item.chipRead });
     }
   }
   const { shown, moreCount } = selectMovedItems(all);
