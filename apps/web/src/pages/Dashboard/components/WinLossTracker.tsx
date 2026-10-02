@@ -9,9 +9,10 @@ import { HorizonRecordCard } from './HeroStats';
  * Ports legacy/src/screens/Dashboard/components/WinLossTracker.
  *
  * Plan 39.1-50 (OOS-12a, UI-SPEC §8.7 / §6.1): the selected fighter's record
- * is the hero row's sixth 3-span tile — no longer a separately titled,
- * centred, width-capped card whose "Overall Record" title collided with the
- * account-wide tile. It renders the Overall Record tile's own body
+ * is a hero tile — rendered by DashboardPage as HeroStats' `fighterTile`,
+ * directly under the Form tile in hero stack B (quick 261002-leg) — no longer
+ * a separately titled, centred, width-capped card whose "Overall Record"
+ * title collided with the account-wide tile. It renders the Overall Record tile's own body
  * (`HorizonRecordCard`: one win-rate lead, a `Record` support line and a
  * DeltaChip on the page's ONE HorizonSwitch) over the selected fighter's
  * games, under an overline naming the fighter.

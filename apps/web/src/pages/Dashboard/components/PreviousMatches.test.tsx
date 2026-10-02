@@ -90,13 +90,13 @@ describe('PreviousMatches (plan 39.1-50, OOS-12b: the page horizon, the kit list
     expect(screen.queryByText('Limit')).toBeNull();
   });
 
-  it('last30 on 50 games: 8 rows newest first, then Show all 30', () => {
+  it('last30 on 50 games: 5 rows newest first, then Show all 30', () => {
     const games = fiftyGames();
     const { container } = renderList(games, 'last30');
     const shown = rows(container);
-    expect(shown).toHaveLength(8);
+    expect(shown).toHaveLength(5);
     expect(shown.map((row) => row.getAttribute('data-match-id'))).toEqual(
-      games.slice(0, 8).map((game) => game.id),
+      games.slice(0, 5).map((game) => game.id),
     );
     expect(screen.getByRole('button', { name: 'Show all 30' })).toBeInTheDocument();
   });
@@ -140,7 +140,7 @@ describe('PreviousMatches (plan 39.1-50, OOS-12b: the page horizon, the kit list
     expect(link).toHaveTextContent('All 31 games →');
   });
 
-  it('last90 with 12 games inside 90 days: 8 rows, Show all 12, expands inline with no terminus', async () => {
+  it('last90 with 12 games inside 90 days: 5 rows, Show all 12, expands inline with no terminus', async () => {
     const now = Date.now();
     const games = [
       ...Array.from({ length: 12 }, (_, i) =>
@@ -151,11 +151,25 @@ describe('PreviousMatches (plan 39.1-50, OOS-12b: the page horizon, the kit list
       ),
     ];
     const { container } = renderList(games, 'last90');
-    expect(rows(container)).toHaveLength(8);
+    expect(rows(container)).toHaveLength(5);
     await userEvent.click(screen.getByRole('button', { name: 'Show all 12' }));
     expect(rows(container)).toHaveLength(12);
     expect(screen.queryByRole('link', { name: /games →$/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Show fewer' })).toBeInTheDocument();
+  });
+
+  // Quick 261002-leg (DESIGN §4): the ladder collapses back to the 5-row default.
+  it('Show fewer collapses an expanded list back to 5 rows', async () => {
+    const now = Date.now();
+    const games = Array.from({ length: 12 }, (_, i) =>
+      makeMatch({ id: `n${i}`, time: now - (i + 1) * 5 * DAY_MS, win: true }),
+    );
+    const { container } = renderList(games, 'last90');
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 12' }));
+    expect(rows(container)).toHaveLength(12);
+    await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(rows(container)).toHaveLength(5);
+    expect(screen.getByRole('button', { name: 'Show all 12' })).toBeInTheDocument();
   });
 
   it('last90 with no game inside 90 days but older games: the window-empty line', () => {

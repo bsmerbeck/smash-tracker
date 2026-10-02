@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { classify, confidenceTierFor, resolveWindow, toRateValue } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { WinLossPips } from '@/components/WinLossPips';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
 import {
+  getLastNMatches,
   getOnlineOfflineSplit,
   getStreakSummary,
   getWinLossRecord,
@@ -19,36 +21,50 @@ import { StatFigure, StatRow } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import {
+  TILE_CARD_CLASS,
+  TILE_CONTENT_CLASS,
+  TILE_HEADER_CLASS,
+} from '@/components/analytics/cardDensity';
 
 /**
- * Account-wide hero row: overall record, recent form, casual-vs-competitive
- * delta, online/offline split, and (session-based) Glicko-2 rating. Unlike
- * the fighter-scoped widgets below it on the dashboard, every card here is
- * computed across ALL of the user's fighters (docs/analytics-vision.md Phase
- * C).
+ * Dashboard hero tiles: 4-up at xl, 2x2 at lg (3-span tiles are ~170px wide at
+ * 1024 — too narrow for a split StatRow). `cn`/twMerge drops `GridCell`'s own
+ * `lg:col-span-3`; `data-span` stays `"3"` (the content class is "stat tile").
+ */
+export const HERO_TILE_CLASS = 'lg:col-span-6 xl:col-span-3';
+
+/** Recent-form pips shown in the Form tile. */
+const FORM_PIP_LIMIT = 10;
+
+/**
+ * Account-wide hero: overall record, rating, recent form, the selected
+ * fighter's record, casual-vs-competitive and online/offline. Unlike the
+ * fighter-scoped widgets below it on the dashboard, every card here except
+ * the injected `fighterTile` is computed across ALL of the user's fighters
+ * (docs/analytics-vision.md Phase C).
  *
- * Plan 39.1-17 (INS-02/DD-03): the overall-record card is this phase's
- * hero-row scope — a win rate lead with a recent-vs-baseline delta chip
- * under the page's ONE horizon switch, both horizon figures resolved
- * through the engine (`resolveWindow`/`toRateValue`/`classify`), never a
- * component-side window computation.
+ * Plan 39.1-17 (INS-02/DD-03): the overall-record card is a win rate lead
+ * with a recent-vs-baseline delta chip under the page's ONE horizon switch,
+ * both horizon figures resolved through the engine (`resolveWindow` /
+ * `toRateValue` / `classify`), never a component-side window computation.
  *
- * Plan 39.1-17 Task 3 (UI-SPEC §8.7 placement table): returns a FRAGMENT of
- * five `GridCell span={3}` cells — not its own wrapping `<div>` grid — so
- * `DashboardPage.tsx`'s single `PageGrid` places these five cells directly
- * (a fragment contributes no DOM wrapper, so `<HeroStats/>`'s five children
- * become real siblings of every "below the hero row" cell in that one grid).
- * At the widest breakpoint this is four tiles per row with the fifth
- * wrapping to a second row, left-aligned — `PageGrid`'s hardcoded
- * `items-start` never stretches it to a sibling's height. Not in this
- * task's own `<files>` sub-list (only the plan-level `files_modified`) —
- * recorded as a deviation: the fifth-tile-wraps contract Task 3 owns is
- * literally this component's OWN grid shape, unreachable without touching it.
+ * Quick 261002-leg (DESIGN §2): returns a FRAGMENT of FOUR `GridCell
+ * span={3}` cells — no wrapping `<div>` grid — so `DashboardPage.tsx`'s single
+ * `PageGrid` places them directly. Stack A is Overall Record over Rating;
+ * stack B is Form over `fighterTile`; then Casual vs Competitive and Online vs
+ * Offline. Each cell carries `HERO_TILE_CLASS`, so the hero is one row of four
+ * at xl, a 2x2 at lg (stacks on row 1, split tiles on row 2), and one column
+ * below lg. This SUPERSEDES UI-SPEC §8.7's five-tile placement table.
+ * `PageGrid`'s hardcoded `items-start` never stretches a tile; stacks are
+ * `flex flex-col gap-4`, so nothing in a stack is stretched either.
  */
 export function HeroStats({
   matches,
   timeFilteredMatches,
   horizon = DEFAULT_HORIZON,
+  fighterTile,
+  sourceFilterActive = false,
 }: {
   /** Matches with the full global filter (source + time range) applied. */
   matches: Match[];
@@ -61,23 +77,29 @@ export function HeroStats({
    * `DashboardPage.tsx`'s own `useHorizon()` call is the eventual source.
    */
   horizon?: HorizonKey;
+  /** The selected fighter's record tile (`WinLossTracker`); rendered under Form in stack B. Absent in unit tests and on surfaces with no fighter context. */
+  fighterTile?: ReactNode;
+  /** True when the global SOURCE filter is not 'all' — shows the Casual vs Competitive caveat footnote. */
+  sourceFilterActive?: boolean;
 }) {
   return (
     <>
-      <GridCell span={3}>
+      <GridCell span={3} stack className={HERO_TILE_CLASS}>
         <OverallRecordCard matches={matches} horizon={horizon} />
-      </GridCell>
-      <GridCell span={3}>
-        <FormCard matches={matches} />
-      </GridCell>
-      <GridCell span={3}>
-        <CasualVsCompetitiveCard matches={timeFilteredMatches} />
-      </GridCell>
-      <GridCell span={3}>
-        <OnlineOfflineCard matches={matches} />
-      </GridCell>
-      <GridCell span={3}>
         <RatingCard matches={matches} />
+      </GridCell>
+      <GridCell span={3} stack className={HERO_TILE_CLASS}>
+        <FormCard matches={matches} />
+        {fighterTile}
+      </GridCell>
+      <GridCell span={3} className={HERO_TILE_CLASS}>
+        <CasualVsCompetitiveCard
+          matches={timeFilteredMatches}
+          sourceFilterActive={sourceFilterActive}
+        />
+      </GridCell>
+      <GridCell span={3} className={HERO_TILE_CLASS}>
+        <OnlineOfflineCard matches={matches} />
       </GridCell>
     </>
   );
@@ -143,8 +165,8 @@ export function HorizonRecordCard({
   const allTimeTier = confidenceTierFor(baseline.total);
 
   return (
-    <Card>
-      <CardContent>
+    <Card className={TILE_CARD_CLASS}>
+      <CardContent className={TILE_CONTENT_CLASS}>
         {children}
         {hasMatches ? (
           <StatFigure
@@ -186,30 +208,43 @@ export function HorizonRecordCard({
   );
 }
 
+/**
+ * Quick 261002-leg (DESIGN §3.1): the Form tile is built on the stat idiom
+ * (overline / figure / meta) so it is the same tile shape as its stack-mate.
+ * The pips are the figure, the streak chip is its delta, and the visible
+ * "Last N results" line is the sighted twin of the pips' own aria-label.
+ */
 function FormCard({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
   const { currentStreak, currentStreakIsWin } = getStreakSummary(matches);
   const hasMatches = matches.length > 0;
+  const recentCount = getLastNMatches(matches, FORM_PIP_LIMIT).length;
+  const label = t('dashboard.hero.form');
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('dashboard.hero.form')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <WinLossPips matches={matches} limit={10} />
-        {hasMatches && (
-          <span
-            className={`w-fit rounded-full px-2 py-0.5 text-sm font-semibold ${
-              currentStreakIsWin
-                ? 'bg-emerald-500/15 text-emerald-500'
-                : 'bg-destructive/15 text-destructive'
-            }`}
-          >
-            {currentStreakIsWin
-              ? t('dashboard.hero.streakWin', { count: currentStreak })
-              : t('dashboard.hero.streakLoss', { count: currentStreak })}
-          </span>
+    <Card className={TILE_CARD_CLASS}>
+      <CardContent className={TILE_CONTENT_CLASS}>
+        {hasMatches ? (
+          <StatFigure
+            label={label}
+            value={<WinLossPips matches={matches} limit={FORM_PIP_LIMIT} />}
+            support={t('shared.pips.recentResults', { count: recentCount })}
+            delta={
+              <span
+                className={`w-fit rounded-full px-2 py-0.5 text-sm font-semibold ${
+                  currentStreakIsWin
+                    ? 'bg-emerald-500/15 text-emerald-500'
+                    : 'bg-destructive/15 text-destructive'
+                }`}
+              >
+                {currentStreakIsWin
+                  ? t('dashboard.hero.streakWin', { count: currentStreak })
+                  : t('dashboard.hero.streakLoss', { count: currentStreak })}
+              </span>
+            }
+          />
+        ) : (
+          <StatFigure label={label} state="empty" emptyCaption={t('shared.pips.empty')} />
         )}
       </CardContent>
     </Card>
@@ -222,7 +257,13 @@ function FormCard({ matches }: { matches: Match[] }) {
  * `timeFilteredMatches` so the time range still applies but the source
  * split isn't collapsed by it.
  */
-function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
+function CasualVsCompetitiveCard({
+  matches,
+  sourceFilterActive,
+}: {
+  matches: Match[];
+  sourceFilterActive: boolean;
+}) {
   const { t } = useTranslation();
   const casual = getWinLossRecord(filterBySource(matches, 'manual'));
   const competitive = getWinLossRecord(filterBySource(matches, 'startgg'));
@@ -230,12 +271,11 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
   const delta = bothHaveData ? competitive.winRate - casual.winRate : null;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={TILE_CARD_CLASS}>
+      <CardHeader className={TILE_HEADER_CLASS}>
         <CardTitle>{t('dashboard.hero.casualVsCompetitive')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">{t('dashboard.hero.ignoresSourceFilter')}</p>
+      <CardContent className={cn(TILE_CONTENT_CLASS, 'flex flex-col gap-2')}>
         {/* Plan 39.1-39 (UI-SPEC §7.3): the one stat idiom — one StatRow,
             never a hand-rolled two-column grid; each record wraps whole. */}
         <StatRow
@@ -253,6 +293,13 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
               {t('dashboard.hero.deltaValue', { value: `${delta >= 0 ? '+' : ''}${delta}` })}
             </span>
             <span className="text-muted-foreground"> {t('dashboard.hero.deltaCaption')}</span>
+          </p>
+        )}
+        {/* Quick 261002-leg: the caveat explains why this tile may disagree
+            with the active source filter, so it only renders while one is on. */}
+        {sourceFilterActive && (
+          <p className="text-xs leading-4 text-muted-foreground">
+            {t('dashboard.hero.ignoresSourceFilter')}
           </p>
         )}
       </CardContent>
@@ -287,11 +334,11 @@ function OnlineOfflineCard({ matches }: { matches: Match[] }) {
   const hasAny = online.total > 0 || offline.total > 0;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={TILE_CARD_CLASS}>
+      <CardHeader className={TILE_HEADER_CLASS}>
         <CardTitle>{t('dashboard.hero.onlineVsOffline')}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className={TILE_CONTENT_CLASS}>
         {hasAny ? (
           <StatRow
             figures={[
@@ -312,9 +359,14 @@ const RATING_UNLOCK_THRESHOLD = 5;
 
 /**
  * Session-based Glicko-2 rating card. Computed over the same filtered
- * `matches` the rest of the hero row uses, so it stays consistent with the
+ * `matches` the rest of the hero uses, so it stays consistent with the
  * active source/time-range filters — cheap to recompute client-side per
  * render given typical match volumes.
+ *
+ * Quick 261002-leg (DESIGN §3.1): the same overline / figure / meta tile
+ * shape as Overall Record. It composes `StatFigure`'s class literals inline
+ * (via `RatingOverline`) because the label row carries the explainer
+ * trigger and the locked state needs that row without an em-dash figure.
  */
 function RatingCard({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
@@ -322,29 +374,28 @@ function RatingCard({ matches }: { matches: Match[] }) {
   const { periods, current } = computeRatingHistory(matches);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5">
-          {t('dashboard.hero.rating')}
-          <GlickoExplainer />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1">
+    <Card className={TILE_CARD_CLASS}>
+      <CardContent className={cn(TILE_CONTENT_CLASS, 'flex min-w-0 flex-col items-start gap-1')}>
+        <RatingOverline />
         {hasEnoughGames && current ? (
           <>
-            <div className="flex items-end gap-2">
-              <span className="text-3xl font-bold">
-                {current.rating} <span className="text-lg font-normal">&plusmn;{current.rd}</span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[1.75rem] leading-8 font-semibold tracking-tight tabular-nums">
+                {current.rating}
+              </span>
+              <span className="text-sm leading-5 font-medium text-muted-foreground">
+                &plusmn;{current.rd}
               </span>
               <RatingTrendArrow periods={periods} />
             </div>
-            <p className="text-sm text-muted-foreground">
-              {t('dashboard.hero.gamesSampled', { count: matches.length })}
-            </p>
-            <p className="text-xs text-muted-foreground">{t('dashboard.hero.ratingCaption')}</p>
+            {/* Two separate spans, never a joined string (§13.8). */}
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs leading-4 text-muted-foreground tabular-nums">
+              <span>{t('dashboard.hero.gamesSampled', { count: matches.length })}</span>
+              <span>{t('dashboard.hero.ratingCaption')}</span>
+            </div>
           </>
         ) : (
-          <>
+          <div className="flex flex-col gap-1">
             <p className="text-sm text-muted-foreground">
               {t('dashboard.hero.ratingLocked', { threshold: RATING_UNLOCK_THRESHOLD })}
             </p>
@@ -354,10 +405,31 @@ function RatingCard({ matches }: { matches: Match[] }) {
                 threshold: RATING_UNLOCK_THRESHOLD,
               })}
             </p>
-          </>
+          </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The Rating tile's overline row: StatFigure's exact label classes, then the
+ * Glicko explainer trigger. The trigger is a 24px `icon-xs` button, so it is
+ * pulled out of the row's height with `-my-1` (its hit area is unchanged); the
+ * row stays the 16px an overline row is, which is what DESIGN §3.1's tile
+ * heights (Rating 114 / 132) assume.
+ */
+function RatingOverline() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
+        {t('dashboard.hero.rating')}
+      </span>
+      <span className="-my-1 flex">
+        <GlickoExplainer />
+      </span>
+    </div>
   );
 }
 
