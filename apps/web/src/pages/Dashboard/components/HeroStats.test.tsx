@@ -282,7 +282,7 @@ describe('HeroStats', () => {
       // ± glyph appears alongside a numeric rating rather than pinning an
       // exact number (keeps this test decoupled from glicko.ts's internals).
       const ratingCard = screen.getByText('Rating').closest('[data-slot="card"]');
-      expect(ratingCard?.textContent).toMatch(/\d+\s*±\d+/);
+      expect(ratingCard?.textContent).toMatch(/\d+\s*±\s*\d+/);
     });
 
     it('singularizes the games-sampled caption for exactly 1 game', () => {
@@ -404,5 +404,153 @@ describe('HeroStats split cards — one StatRow, wrapping records (plan 39.1-39)
     expect(card.querySelector('[data-slot="stat-row"]')).not.toBeNull();
     expect(within(card).getByText('no data')).toBeInTheDocument();
     expect(screen.queryByText(/pts$/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Quick 261002-leg (DESIGN §2-§3): the hero is four 3-span cells — two
+ * stacks (Overall Record over Rating, Form over the fighter record) and the
+ * two split tiles — every card at UI-SPEC §6.2 compact density, and the
+ * Casual vs Competitive caveat only while a source filter is active.
+ */
+describe('HeroStats — four-cell hero, compact density, gated caveat (quick 261002-leg)', () => {
+  const CAVEAT = 'Ignores the source filter above (time range still applies).';
+  const matches = [
+    makeMatch({ id: '1', time: 1, win: false }),
+    makeMatch({ id: '2', time: 2, win: true }),
+    makeMatch({ id: '3', time: 3, win: true }),
+  ];
+  const tokens = (el: Element) => el.className.split(/\s+/);
+  const heroCells = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll<HTMLElement>('[data-span="3"]'));
+  const cardsOf = (cell: Element) =>
+    Array.from(cell.children).filter(
+      (c) => c.getAttribute('data-slot') === 'card',
+    ) as HTMLElement[];
+
+  it('renders exactly four span-3 cells: two stacks, then two plain split tiles, all overriding to lg:col-span-6 xl:col-span-3', () => {
+    const { container } = render(
+      <HeroStats
+        matches={matches}
+        timeFilteredMatches={matches}
+        fighterTile={<div data-testid="fighter-tile-stub" />}
+      />,
+    );
+    const cells = heroCells(container);
+    expect(cells).toHaveLength(4);
+    for (const stack of [cells[0]!, cells[1]!]) {
+      expect(tokens(stack)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'gap-4']));
+    }
+    for (const plain of [cells[2]!, cells[3]!]) {
+      expect(tokens(plain)).not.toContain('flex-col');
+    }
+    for (const cell of cells) {
+      expect(tokens(cell)).toContain('lg:col-span-6');
+      expect(tokens(cell)).toContain('xl:col-span-3');
+      // twMerge dropped GridCell's own lg:col-span-3.
+      expect(tokens(cell)).not.toContain('lg:col-span-3');
+    }
+    const [overall, rating] = cardsOf(cells[0]!);
+    expect(cardsOf(cells[0]!)).toHaveLength(2);
+    expect(within(overall!).getByText('Overall Record')).toBeInTheDocument();
+    expect(within(rating!).getByText('Rating')).toBeInTheDocument();
+    const stub = within(cells[1]!).getByTestId('fighter-tile-stub');
+    const formCard = stub.previousElementSibling as HTMLElement;
+    expect(formCard.getAttribute('data-slot')).toBe('card');
+    expect(within(formCard).getByText('Form')).toBeInTheDocument();
+  });
+
+  it('without a fighterTile, the Form stack holds exactly one card', () => {
+    const { container } = render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+    expect(cardsOf(heroCells(container)[1]!)).toHaveLength(1);
+  });
+
+  it('every hero card is at compact density (gap-4 py-4 sm:py-5 shadow-none, px-4 sm:px-5 header/content)', () => {
+    const { container } = render(
+      <HeroStats matches={matches} timeFilteredMatches={matches} fighterTile={<span />} />,
+    );
+    const cards = Array.from(container.querySelectorAll('[data-slot="card"]'));
+    expect(cards.length).toBeGreaterThanOrEqual(6);
+    for (const card of cards) {
+      expect(tokens(card)).toEqual(
+        expect.arrayContaining(['gap-4', 'py-4', 'sm:py-5', 'shadow-none']),
+      );
+      for (const dropped of ['py-6', 'gap-6', 'shadow-sm']) {
+        expect(tokens(card)).not.toContain(dropped);
+      }
+    }
+    const parts = Array.from(
+      container.querySelectorAll('[data-slot="card-content"], [data-slot="card-header"]'),
+    );
+    expect(parts.length).toBeGreaterThan(0);
+    for (const part of parts) {
+      expect(tokens(part)).toEqual(expect.arrayContaining(['px-4', 'sm:px-5']));
+      expect(tokens(part)).not.toContain('px-6');
+    }
+  });
+
+  describe('Casual vs Competitive caveat', () => {
+    const cvcContent = () =>
+      screen
+        .getByText('Casual vs Competitive')
+        .closest('[data-slot="card"]')!
+        .querySelector('[data-slot="card-content"]') as HTMLElement;
+
+    it('is absent while no source filter is active', () => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      expect(screen.queryByText(CAVEAT)).not.toBeInTheDocument();
+    });
+
+    it('shows as the LAST child of the card content when sourceFilterActive', () => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} sourceFilterActive />);
+      const caveat = screen.getByText(CAVEAT);
+      expect(cvcContent().lastElementChild).toBe(caveat);
+    });
+  });
+
+  describe('Form tile', () => {
+    it('puts the pips and the streak chip in one value row, with a visible meta line and no card header', () => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const formCard = screen.getByText('Form').closest('[data-slot="card"]') as HTMLElement;
+      expect(formCard.querySelector('[data-slot="card-header"]')).toBeNull();
+      const pips = formCard.querySelector('[aria-label^="Last"]') as HTMLElement;
+      const chip = within(formCard).getByText('2W');
+      expect(pips).not.toBeNull();
+      expect(chip.parentElement!.contains(pips)).toBe(true);
+      expect(within(formCard).getByText('Last 3 results, newest first')).toBeInTheDocument();
+    });
+
+    it('with zero matches shows an em dash and the empty caption, and no pips element', () => {
+      render(<HeroStats matches={[]} timeFilteredMatches={[]} />);
+      const formCard = screen.getByText('Form').closest('[data-slot="card"]') as HTMLElement;
+      expect(formCard.querySelector('[aria-label^="Last"]')).toBeNull();
+      expect(within(formCard).getByText('—')).toBeInTheDocument();
+      expect(within(formCard).getByText('No matches yet.')).toBeInTheDocument();
+    });
+  });
+
+  describe('Rating tile', () => {
+    const five = Array.from({ length: 5 }, (_, i) =>
+      makeMatch({ id: `${i}`, time: i * 1000, win: true }),
+    );
+
+    it('has no card header; the overline shares a row with the explainer trigger; meta is two separate spans', () => {
+      render(<HeroStats matches={five} timeFilteredMatches={five} />);
+      const overline = screen.getByText('Rating');
+      const ratingCard = overline.closest('[data-slot="card"]') as HTMLElement;
+      expect(ratingCard.querySelector('[data-slot="card-header"]')).toBeNull();
+      expect(within(overline.parentElement as HTMLElement).getByRole('button')).toBeInTheDocument();
+      const sampled = within(ratingCard).getByText('5 games sampled');
+      const caption = within(ratingCard).getByText('Glicko-2, session-based · unofficial');
+      expect(sampled).not.toBe(caption);
+      expect(sampled.parentElement).toBe(caption.parentElement);
+    });
+
+    it('keeps the overline + explainer in the locked state, with no header', () => {
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const ratingCard = screen.getByText('Rating').closest('[data-slot="card"]') as HTMLElement;
+      expect(ratingCard.querySelector('[data-slot="card-header"]')).toBeNull();
+      expect(within(ratingCard).getByText('Rating unlocks at 5 games')).toBeInTheDocument();
+    });
   });
 });
