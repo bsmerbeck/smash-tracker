@@ -24,7 +24,12 @@ import {
 } from '@/lib/drillDownParams';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
+import { BoundedList, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
+import {
+  TILE_CARD_CLASS,
+  TILE_CONTENT_CLASS,
+  TILE_HEADER_CLASS,
+} from '@/components/analytics/cardDensity';
 import { CHART_TOKENS } from '@/components/charts/tokens';
 import { useDashboardContext } from '../DashboardContext';
 
@@ -150,13 +155,15 @@ export function PreviousMatches({ matches, horizon }: { matches: Match[]; horizo
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={TILE_CARD_CLASS}>
+      <CardHeader className={TILE_HEADER_CLASS}>
         <CardTitle>{t('dashboard.previous.title')}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className={TILE_CONTENT_CLASS}>
+        {/* Quick 261002-leg (DESIGN §4): a 6-span list paired beside a
+            CHART_H_DEFAULT plot uses the 5-row rail cap (amends UI-SPEC §6.4). */}
         <BoundedList
-          cap={LIST_CAP}
+          cap={LIST_CAP_RAIL}
           rows={rows}
           labels={{
             showAll: t('analytics.list.showAll', { count: rows.length }),
