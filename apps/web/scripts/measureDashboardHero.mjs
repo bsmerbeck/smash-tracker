@@ -49,7 +49,6 @@ const PAIR_BOTTOM_MAX_DELTA_PX = 24;
 const SPLIT_CONTENT_MIN_PX = 300;
 const RATING_VALUE_ROW_MAX_PX = 34;
 const HEADER_CONTENT_MAX_GAP_PX = 16.5;
-const CAVEAT_TEXT = 'Ignores the source filter';
 
 /**
  * Runs in the page: collects ONLY rects and computed styles, never decisions.
