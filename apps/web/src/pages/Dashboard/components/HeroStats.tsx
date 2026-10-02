@@ -412,7 +412,13 @@ function RatingCard({ matches }: { matches: Match[] }) {
   );
 }
 
-/** The Rating tile's overline row: StatFigure's exact label classes, then the Glicko explainer trigger. */
+/**
+ * The Rating tile's overline row: StatFigure's exact label classes, then the
+ * Glicko explainer trigger. The trigger is a 24px `icon-xs` button, so it is
+ * pulled out of the row's height with `-my-1` (its hit area is unchanged); the
+ * row stays the 16px an overline row is, which is what DESIGN §3.1's tile
+ * heights (Rating 114 / 132) assume.
+ */
 function RatingOverline() {
   const { t } = useTranslation();
   return (
@@ -420,7 +426,9 @@ function RatingOverline() {
       <span className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
         {t('dashboard.hero.rating')}
       </span>
-      <GlickoExplainer />
+      <span className="-my-1 flex">
+        <GlickoExplainer />
+      </span>
     </div>
   );
 }
