@@ -9,3 +9,10 @@
  * circular dependency).
  */
 export const MATCHUP_TABLE_ANCHOR_ID = 'matchup-table';
+
+/**
+ * Plan 39.1-44 (PD-44-3): the matrix's in-page anchor — the pairing hero's
+ * "Other pairings" door targets it. Its own constant (not exported from the
+ * page or the matrix) so the hero and the page share it without a cycle.
+ */
+export const MATCHUP_MATRIX_ANCHOR_ID = 'matchup-matrix';

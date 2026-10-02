@@ -885,7 +885,11 @@
     "opponent": "Rival",
     "vs": "vs",
     "pairingHeading": "{{fighter}} vs {{opponent}}",
-    "winRateTrend": "Tendencia del % de victorias",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}} partida · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}} partidas · {{span}} · {{confidence}}",
+      "otherPairings": "Otros emparejamientos"
+    },
     "results": "Resultados del enfrentamiento",
     "selectFighterAria": "Seleccionar tu luchador",
     "selectOpponentAria": "Seleccionar luchador rival",
@@ -895,12 +899,13 @@
       "unfacedGroup": "Aún no enfrentados"
     },
     "record": {
-      "title": "Récord",
-      "empty": "No hay partidas registradas contra este luchador",
-      "totalMatches": "Partidas totales"
+      "empty": "No hay partidas registradas contra este luchador"
     },
     "matrix": {
       "title": "Matriz de enfrentamientos",
+      "cardTitle": "Matriz de enfrentamientos",
+      "meta": "tus principales × sus personajes · relleno = tasa de victorias · elige una celda para reenfocar esta página",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Mostrar top {{count}}",
       "showAll": "Mostrar los {{count}}",
       "empty": "Aún no hay partidas registradas — juega algunas para construir tu matriz de enfrentamientos.",
@@ -908,11 +913,7 @@
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} en {{col}}: {{wins}}-{{losses}}"
     },
-    "chart": {
-      "winRate": "% de victorias"
-    },
     "insights": {
-      "title": "Análisis del enfrentamiento",
       "minMatches": "Mín. de partidas por escenario",
       "empty": "Aún no hay partidas registradas para este enfrentamiento.",
       "currentStreak": "Racha actual",
@@ -924,11 +925,15 @@
       },
       "longestWin": "Mayor racha de victorias",
       "longestLoss": "Mayor racha de derrotas",
-      "recentForm": "Forma reciente (primero la más nueva)",
       "bestStage": "Mejor escenario",
       "worstStage": "Peor escenario",
       "singleStageOnly": "Aún no hay suficientes escenarios distintos: juega este enfrentamiento en otro escenario para ver una advertencia del peor escenario.",
-      "byMatchType": "Por tipo de partida"
+      "meta": "Análisis del enfrentamiento · histórico",
+      "stagesHead_one": "Escenarios · mín. {{count}} partida",
+      "stagesHead_other": "Escenarios · mín. {{count}} partidas",
+      "change": "cambiar",
+      "bestLabel": "Mejor · {{stage}}",
+      "worstLabel": "Peor · {{stage}}"
     },
     "stageTable": {
       "title": "Desglose por escenario",
@@ -936,20 +941,27 @@
       "record": "Historial",
       "winRate": "% de victorias",
       "noStage_one": "{{count}} partida sin escenario registrado",
-      "noStage_other": "{{count}} partidas sin escenario registrado"
+      "noStage_other": "{{count}} partidas sin escenario registrado",
+      "meta": "más partidas primero · histórico",
+      "legendSubFloor_one": "barra gris = menos de {{count}} partida",
+      "legendSubFloor_other": "barra gris = menos de {{count}} partidas"
     },
     "counterpick": {
       "title": "Asesor de counterpicks",
       "pickThese": "Elige estos",
       "banThese": "Banea / evita estos",
       "unknownStage": "Escenario desconocido",
-      "threshold_one": "Mín. {{count}} partida por escenario",
-      "threshold_other": "Mín. {{count}} partidas por escenario",
+      "meta_one": "Asesor de counterpicks · histórico · mín. {{count}} partida por escenario",
+      "meta_other": "Asesor de counterpicks · histórico · mín. {{count}} partidas por escenario",
+      "suggestionLocked": "Sugerencia · Bloqueado",
       "noLegalStages": "Ningún escenario es legal con este reglamento y este estado de partida.",
       "setState": {
         "summary": "Suponiendo {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Cambiar la fase de partida, el rol, los escenarios previos y los baneos asumidos",
-        "editLabel": "Cambiar la suposición",
+        "editAria": "Cambiar los escenarios ya jugados y los baneos asumidos",
+        "playedBans": "escenarios jugados · baneos",
+        "phaseLabel": "Fase",
+        "roleLabel": "Rol",
+        "roleUnavailable": "Los roles se aplican desde la Partida 2",
         "phase": {
           "game1": "Partida 1",
           "game2plus": "Partida 2+"
@@ -957,6 +969,10 @@
         "role": {
           "striking": "Striking",
           "picking": "Eligiendo"
+        },
+        "roleGame2": {
+          "banning": "Baneando (ganaste)",
+          "picking": "Eligiendo (perdiste)"
         },
         "priorSummary_one": "{{count}} escenario jugado",
         "priorSummary_other": "{{count}} escenarios jugados",
@@ -967,12 +983,19 @@
         "priorStagesLabel": "Escenarios jugados hasta ahora",
         "bansLabel": "Escenarios baneados hasta ahora",
         "wonLabel": "Ganado",
-        "lostLabel": "Perdido"
+        "lostLabel": "Perdido",
+        "priorResultLabel": "Resultado en {{stage}}"
       }
     },
     "opponentSplit": {
       "title": "Por rival",
       "empty": "Aún no hay rivales con nombre registrados para este enfrentamiento."
+    },
+    "ledger": {
+      "meta": "una marca por set · arriba = set ganado · más partidas primero · chip = últimos 12 meses frente al total",
+      "sets": "sets {{won}}–{{lost}}",
+      "setsAria": "{{won}}–{{lost}} sets",
+      "trimmed": "los {{shown, grouped}} sets más recientes de {{total, grouped}}"
     },
     "table": {
       "empty": "¡Aún no hay partidas registradas!",
@@ -982,6 +1005,10 @@
       "selectionNotice_one": "Mostrando {{count}} partida del gráfico.",
       "selectionNotice_other": "Mostrando {{count}} partidas del gráfico.",
       "clearSelection": "Mostrar todas las partidas"
+    },
+    "mop": {
+      "vsPlayer": "vs {{opponent}}",
+      "everyoneElse": "todos los demás"
     }
   },
   "fighterAnalysis": {

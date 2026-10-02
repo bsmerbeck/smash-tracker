@@ -1070,7 +1070,9 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
       const gamesCard = document.getElementById('games') as HTMLElement;
       const table = within(gamesCard).getByRole('table');
       expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
-      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+      expect(
+        within(gamesCard).getByText(new RegExp(`^${expectedCount} games? ·`)),
+      ).toBeInTheDocument();
     });
 
     // 39.1-REVIEW iteration 2 WR-01: Match Data had no claim-follows-horizon

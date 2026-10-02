@@ -1,214 +1,260 @@
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { InsightState, Match } from '@smash-tracker/shared';
-import { classify, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
-import { getOpponentRecords, type OpponentRecord } from '@/lib/stats';
+import type { Match } from '@smash-tracker/shared';
+import { confidenceTierFor } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { Record } from '@/components/analytics/Record';
-import { RecordBar } from '@/components/charts/inlineMarks';
-import { DeltaChip, type DeltaChipState } from '@/components/analytics/DeltaChip';
+import { DeltaChip } from '@/components/analytics/DeltaChip';
+import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { SetStrip, type SetStripItem } from '@/components/charts/FormStrip';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { cn } from '@/lib/utils';
 import { buildDrillDownSearch } from '@/lib/drillDownParams';
+import { formatMonthSpan } from '@/lib/dateSpan';
+import {
+  buildOpponentLedger,
+  LEDGER_MAX_SETS,
+  type OpponentLedgerRow,
+} from '../lib/opponentLedger';
 
-/** `classify`'s seven-state honesty ladder -> `DeltaChip`'s six-state union — the SAME mapping `MatchWinLossCard.tsx` uses, duplicated per this codebase's small-helper convention (see `bestWorstMatchup.ts`'s doc comment on `groupByOpponentCharacter`). */
-function deltaChipStateFor(state: InsightState, deltaPoints: number | null): DeltaChipState {
-  if (state === 'trend' || state === 'suggestion') {
-    return deltaPoints !== null && deltaPoints < 0 ? 'down' : 'up';
-  }
-  if (state === 'steady') return 'steady';
-  if (state === 'thin' || state === 'thinRecent') return 'thin';
-  if (state === 'collapsed') return 'collapsed';
-  return 'none';
-}
-
-function deltaValueLabel(state: DeltaChipState, deltaPoints: number | null, t: TFunction): string {
-  if (state === 'up') return t('analytics.record.deltaUp', { points: Math.abs(deltaPoints ?? 0) });
-  if (state === 'down') {
-    return t('analytics.record.deltaDown', { points: Math.abs(deltaPoints ?? 0) });
-  }
-  return t(`insights.chip.${state === 'none' ? 'thin' : state}`);
-}
-
-interface PairingOpponentRowProps {
-  record: OpponentRecord;
-  overallRate: { wins: number; losses: number; total: number; rate: number };
+interface LedgerRowProps {
+  row: OpponentLedgerRow;
   fighterId: number;
   opponentFighterId: number;
   t: TFunction;
+  locale: string;
+  /** Every row after the list's first carries sketch C's hairline divider. */
+  divided: boolean;
   subjectPath: (personalPath: string) => string;
 }
 
-function PairingOpponentRow({
-  record,
-  overallRate,
+/**
+ * Plan 39.1-45 (sketch 003 C `renderC` `led`, CSS 278-289; owner decision
+ * 2026-09-25): one rivalry-ledger row — line 1 is the tag, the record with
+ * the sets record and the confidence glyph, with the last-12-months chip in
+ * the right column; line 2 is the per-set strip (up = set won) and the first
+ * → last month span. The whole row is one Phase 38 `DrillableRow` to the
+ * opponent hub with `?fighter=&vs=` pre-applied.
+ *
+ * Below a 420px row container (sketch `@container led (max-width:419px)`) the
+ * grid is one column: the chip sits under line 1, left-aligned, and an empty
+ * chip cell is hidden so it never holds a phantom row gap.
+ */
+function LedgerRow({
+  row,
   fighterId,
   opponentFighterId,
   t,
+  locale,
+  divided,
   subjectPath,
-}: PairingOpponentRowProps) {
-  const thisOpponentRate = {
-    wins: record.wins,
-    losses: record.losses,
-    total: record.total,
-    rate: record.total > 0 ? record.wins / record.total : 0,
-  };
-  const { state, deltaPoints } = classify({
-    recent: thisOpponentRate,
-    baseline: overallRate,
-    scoped: false,
-    hasAction: false,
-  });
-  // WR-C01: `locked` (below the abstention floor) is a different honesty
-  // tier than `thin`/`thinRecent` and has no `DeltaChip` representation —
-  // omit the chip entirely rather than let it fall through to
-  // `deltaChipStateFor`'s `'none'` default, which reads "Thin".
-  const chipState = state === 'locked' ? null : deltaChipStateFor(state, deltaPoints);
-  const tier = confidenceTierFor(record.total);
-  const cueLabel = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: record.total }) : '';
-
+}: LedgerRowProps) {
   const search = buildDrillDownSearch({
     fighterId,
     vsFighterId: opponentFighterId,
   }).toString();
-  const to = subjectPath(
-    `/opponents/${encodeURIComponent(record.opponent)}${search ? `?${search}` : ''}`,
-  );
-  const recordText = `${record.wins}–${record.losses}`;
+  const to = subjectPath(`/opponents/${encodeURIComponent(row.tag)}${search ? `?${search}` : ''}`);
+  const recordText = `${row.record.wins}–${row.record.losses}`;
+  const tier = confidenceTierFor(row.record.total);
+  const cueLabel = tier
+    ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: row.record.total })
+    : '';
+
+  // PD-45-1: the chip is this opponent's D-15 window vs this opponent's all
+  // time — omitted (never invented) when the window holds no games, and by
+  // `deltaChipView` when the window IS the record (collapsed). The card meta
+  // names the window, so the chip does not repeat it (D-06).
+  const chip =
+    row.recent.total > 0
+      ? deltaChipView({
+          state: row.classification.state,
+          deltaPoints: row.classification.deltaPoints,
+          recentGames: row.recent.total,
+          horizon: 'last30',
+          horizonOwnedByParent: true,
+          t,
+        })
+      : null;
+
+  const shownWon = row.sets.filter((set) => set.won).length;
+  const ticks: SetStripItem[] = row.sets.map((set) => ({
+    key: set.key,
+    won: set.won,
+    label: `${t('analytics.strip.setAria', {
+      opponent: row.tag,
+      record: `${set.wins}–${set.losses}`,
+    })} · ${new Date(set.lastGameMs).toLocaleDateString(locale)}`,
+  }));
+  const trimmed = row.setsTotal > row.sets.length;
 
   return (
-    <li className="@container/pairing-opponent-row relative flex items-center gap-2 rounded-md p-2 hover:bg-accent">
+    <li
+      data-slot="pairing-opponent-row"
+      className={cn(
+        '@container/pairing-opponent-row relative rounded-md px-1.5 py-2 hover:bg-accent',
+        // Sketch C `.divide`: a hairline centred in the list's row gap (no layout cost).
+        divided &&
+          'before:pointer-events-none before:absolute before:inset-x-1.5 before:-top-1 before:h-px before:bg-border',
+      )}
+    >
       <DrillableRow
         as="overlay"
         to={to}
-        ariaLabel={t('shared.drillableRow.aria', { subject: record.opponent, context: recordText })}
+        ariaLabel={t('shared.drillableRow.aria', { subject: row.tag, context: recordText })}
       />
-      {/*
-        Plan 39.1-32 (item 12, UI-SPEC §6.5 rules 1-3, §8.5 two-line
-        precedent, §14.6 touch rows): below a 480px row container the tag
-        owns its own line above a whole-token-wrapping metrics line — chosen
-        over §8.3's literal "drop RecordBar then the record" because
-        stacking keeps the record visible, keeps the tag readable, and keeps
-        the touch row taller than 44px. The §6.5 priority drops (RecordBar
-        below 300px, Record below 220px) remain the last resort at narrower
-        row widths. Module-private to this file (not shared with Scout's
-        FullAnalysisSection, OpponentTable or WhatTheyPlayTable).
-      */}
       <div
         data-slot="pairing-opponent-body"
-        className="flex min-w-0 flex-1 flex-col gap-1 @min-[480px]/pairing-opponent-row:flex-row @min-[480px]/pairing-opponent-row:items-center @min-[480px]/pairing-opponent-row:gap-2"
+        className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @max-[419px]/pairing-opponent-row:grid-cols-[minmax(0,1fr)]"
       >
-        <span
-          className="min-w-0 truncate @min-[480px]/pairing-opponent-row:flex-1"
-          title={record.opponent.length > 0 ? record.opponent : undefined}
-          data-slot="pairing-opponent-tag"
-        >
-          {record.opponent}
-        </span>
         <div
-          data-slot="pairing-opponent-metrics"
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 @min-[480px]/pairing-opponent-row:shrink-0 @min-[480px]/pairing-opponent-row:flex-nowrap"
+          data-slot="pairing-opponent-who"
+          className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5"
         >
-          <span className="shrink-0 whitespace-nowrap @max-[300px]/pairing-opponent-row:hidden">
-            <RecordBar wins={record.wins} losses={record.losses} />
+          <span
+            className="min-w-0 truncate text-base leading-5 font-semibold"
+            title={row.tag.length > 0 ? row.tag : undefined}
+            data-slot="pairing-opponent-tag"
+          >
+            {row.tag}
           </span>
           <span
-            className="shrink-0 whitespace-nowrap @max-[220px]/pairing-opponent-row:hidden"
-            title={recordText}
+            data-slot="pairing-opponent-record"
+            className="text-sm leading-5 whitespace-nowrap tabular-nums text-muted-foreground"
           >
-            <Record wins={record.wins} losses={record.losses} cue="none" />
+            <Record
+              wins={row.record.wins}
+              losses={row.record.losses}
+              cue="none"
+              emphasis
+              className="[&>span:first-child]:text-foreground"
+            />
+            <span>{` · ${t('matchups.ledger.sets', { won: row.setsWon, lost: row.setsLost })}`}</span>
           </span>
-          {chipState !== null && chipState !== 'collapsed' && (
-            <span className="shrink-0 whitespace-nowrap">
-              <DeltaChip
-                state={chipState}
-                valueLabel={deltaValueLabel(chipState, deltaPoints, t)}
-                horizonOwnedByParent
-                ariaLabel={t('analytics.dumbbell.rowAria', {
-                  label: record.opponent,
-                  recentRecord: recordText,
-                  baselineRecord: `${overallRate.wins}–${overallRate.losses}`,
-                })}
-              />
-            </span>
-          )}
           {tier && (
             <span
               role="img"
               aria-label={cueLabel}
-              className="shrink-0 whitespace-nowrap tabular-nums"
+              className="shrink-0 text-xs leading-5 whitespace-nowrap tabular-nums text-muted-foreground"
             >
               {tier === 'high' ? '●●●' : tier === 'medium' ? '●●○' : '●○○'}
             </span>
           )}
         </div>
+        <span
+          data-slot="pairing-opponent-chip"
+          className="justify-self-end whitespace-nowrap empty:hidden @max-[419px]/pairing-opponent-row:justify-self-start"
+        >
+          {chip && (
+            <DeltaChip
+              {...chip}
+              ariaLabel={t('analytics.dumbbell.rowAria', {
+                label: row.tag,
+                recentRecord: `${row.recent.wins}–${row.recent.losses}`,
+                baselineRecord: recordText,
+              })}
+            />
+          )}
+        </span>
+        <div
+          data-slot="pairing-opponent-sets"
+          className="col-span-full flex flex-wrap items-center gap-x-2 gap-y-1"
+        >
+          <SetStrip
+            sets={ticks}
+            ariaLabel={t('matchups.ledger.setsAria', {
+              won: shownWon,
+              lost: row.sets.length - shownWon,
+            })}
+          />
+          <span
+            data-slot="pairing-opponent-span"
+            className="text-xs leading-4 tabular-nums text-muted-foreground"
+          >
+            {formatMonthSpan(row.firstMs, row.lastMs, locale, ' → ')}
+          </span>
+          {trimmed && (
+            <span className="text-xs leading-4 tabular-nums text-muted-foreground">
+              {t('matchups.ledger.trimmed', { shown: LEDGER_MAX_SETS, total: row.setsTotal })}
+            </span>
+          )}
+          {/* The chevron rides the sets line's free right end (sketch C has none): a
+              beside-the-body chevron costs a phone row 24px and wraps the glyph. */}
+          <DrillableRowChevron className="ml-auto" />
+        </div>
       </div>
-      <DrillableRowChevron />
     </li>
   );
 }
 
 /**
- * Ports the retired per-human-opponent split card (owner note 11, UI-SPEC
- * §8.3): the inert list becomes a bounded, drillable list. Every row wraps
- * in Phase 38's `DrillableRow` — the same affordance grammar every other
- * retrofitted analytics surface uses — rather than a bespoke link. The tag
- * renders exactly as recorded (the retired card's `capitalize` display
- * transform is removed, UI-SPEC §6.5 rule 5).
+ * The By-opponent card (owner note 11, UI-SPEC §8.3; rebuilt by plan 39.1-45
+ * on sketch 003 C's rivalry-ledger rows). Every row wraps in Phase 38's
+ * `DrillableRow` — the same affordance grammar every other retrofitted
+ * analytics surface uses — rather than a bespoke link. The tag renders
+ * exactly as recorded (no `capitalize`, UI-SPEC §6.5 rule 5).
  *
- * NOTE for plan 39.1-21: this surface must be added to Phase 38's
- * no-inert-row enumeration (`noInertRow.test.tsx`) — 39.1-13 does not fork
- * that test itself (per this plan's own `<action>` instruction).
+ * `nowMs` is the page's one clock (`MatchupsPage`), so the ledger's
+ * last-12-months window agrees with the hero's; absent, the card reads its
+ * own mount time.
  *
- * Plan 39.1-32 (item 12, UI-SPEC §6.5 rules 1-3, §8.5 two-line row
- * precedent): below a 480px row container the tag owns its own line above a
- * whole-token-wrapping metrics line (record, RecordBar, delta chip,
- * confidence glyph) — preferred over §8.3's literal "drop RecordBar then
- * the record" because stacking keeps the record visible on a phone while
- * still giving the tag room to read in full. The §6.5 priority drops remain
- * the last resort at narrower row widths (RecordBar below 300px, Record
- * below 220px).
+ * `noInertRow.test.tsx` enumerates this surface (plan 39.1-21).
  */
-export function PairingOpponents({ matchupMatches }: { matchupMatches: Match[] }) {
-  const { t } = useTranslation();
+export function PairingOpponents({
+  matchupMatches,
+  nowMs,
+}: {
+  matchupMatches: Match[];
+  nowMs?: number;
+}) {
+  const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
+  const [mountedAtMs] = useState(() => Date.now());
+  const clockMs = nowMs ?? mountedAtMs;
 
-  const records = getOpponentRecords(matchupMatches).sort((a, b) => b.total - a.total);
+  const ledger = useMemo(
+    () => buildOpponentLedger({ matches: matchupMatches, nowMs: clockMs }),
+    [matchupMatches, clockMs],
+  );
   const fighterId = matchupMatches[0]?.fighter_id;
   const opponentFighterId = matchupMatches[0]?.opponent_id;
-  const overallRate = toRateValue(matchupMatches);
   const empty = (
     <p className="text-sm text-muted-foreground">{t('matchups.opponentSplit.empty')}</p>
   );
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <CardTitle>{t('matchups.opponentSplit.title')}</CardTitle>
+        <p className="min-w-0 text-xs leading-4 text-muted-foreground tabular-nums">
+          {t('matchups.ledger.meta')}
+        </p>
       </CardHeader>
       <CardContent>
-        {records.length === 0 || fighterId == null || opponentFighterId == null ? (
+        {ledger.length === 0 || fighterId == null || opponentFighterId == null ? (
           empty
         ) : (
           <BoundedList
             cap={LIST_CAP}
-            rows={records.map((record) => (
-              <PairingOpponentRow
-                key={record.opponent}
-                record={record}
-                overallRate={overallRate}
+            rows={ledger.map((row, index) => (
+              <LedgerRow
+                key={row.tag}
+                divided={index > 0}
+                row={row}
                 fighterId={fighterId}
                 opponentFighterId={opponentFighterId}
                 t={t}
+                locale={i18n.language}
                 subjectPath={subjectPath}
               />
             ))}
             labels={{
-              showAll: t('analytics.list.showAll', { count: records.length }),
+              showAll: t('analytics.list.showAll', { count: ledger.length }),
               showFewer: t('analytics.list.showFewer'),
               showMore: t('analytics.list.showMore50'),
-              terminus: t('analytics.list.allOpponents', { count: records.length }),
+              terminus: t('analytics.list.allOpponents', { count: ledger.length }),
             }}
             empty={empty}
             terminusHref={subjectPath('/opponents')}

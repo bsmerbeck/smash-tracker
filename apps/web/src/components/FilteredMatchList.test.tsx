@@ -912,6 +912,23 @@ describe('FilteredMatchList — stacked layout pages by 20 rows, table unchanged
     expect(progress).toHaveTextContent(/Showing 20 of 150 games/);
   });
 
+  // Plan 39.1-48 (scroll-budget, PD-44-5): a phone row is wrapped lines, and a
+  // 12px flex gap between every wrapped line made each row about 118px tall
+  // against sketch 003's 98px, 424px over the page budget across 20 rows.
+  // Wrapped lines sit 4px apart; the gap between sibling clusters on one line
+  // stays 12px. A measured oracle (guard:layout's SCROLL_BUDGET line) backs it.
+  it('plan 39.1-48: a stacked row keeps tight vertical gaps between its wrapped lines', () => {
+    const matches = makeManyMatches(3);
+    const { container } = renderList({ matches, axes: { fighterId: mario.id }, layout: 'stack' });
+    const row = container.querySelector('[data-slot="filtered-match-stack"] > li') as HTMLElement;
+    expect(row.className).toMatch(/\bgap-x-3\b/);
+    expect(row.className).toMatch(/\bgap-y-1\b/);
+    expect(row.className).not.toMatch(/(^|\s)gap-3(\s|$)/);
+    const cluster = row.querySelector(':scope > div:not([data-slot])') as HTMLElement;
+    expect(cluster.className).toMatch(/\bgap-x-3\b/);
+    expect(cluster.className).toMatch(/\bgap-y-0\.5\b/);
+  });
+
   // Plan 39.1-51 (whole-page review, OOS-40-B on the terminus's own copy): the
   // summary and progress line printed '1720 games' / 'Showing 20 of 1720
   // games' ungrouped on the recent drill routes (UI-SPEC §5 thousands separators).

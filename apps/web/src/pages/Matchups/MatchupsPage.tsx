@@ -1,12 +1,12 @@
-import { useCallback, useId, useMemo } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, Insight, Match } from '@smash-tracker/shared';
-import { ABSTENTION_FLOOR_GAMES, periodPointMatchIdsForKey } from '@smash-tracker/shared';
+import { periodPointMatchIdsForKey } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartCard } from '@/components/charts/ChartCard';
 import { PageShell } from '@/components/analytics/PageShell';
+import { PageFilterRow } from '@/components/analytics/PageFilterRow';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { HorizonSwitch } from '@/components/analytics/HorizonSwitch';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
@@ -43,15 +43,10 @@ import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
-import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { buildMatchupPeriodSeries } from './lib/matchupPeriodSeries';
 import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
-import {
-  MatchupChart,
-  buildFormNowVerdict,
-  renderFormNowHead,
-  useMatchupFormNow,
-} from './components/MatchupChart';
+import { PairingHero } from './components/PairingHero';
+import { buildFormNowVerdict, useMatchupFormNow } from './components/MatchupChart';
 import {
   MatchupOrPlayerCard,
   buildMatchupOrPlayerVerdict,
@@ -59,10 +54,26 @@ import {
 } from './components/MatchupOrPlayerCard';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
-import { MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
+import { MATCHUP_MATRIX_ANCHOR_ID, MATCHUP_TABLE_ANCHOR_ID } from './lib/matchupAnchors';
 import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './components/MatchupMatrix';
 import { CounterpickAdvisor } from './components/CounterpickAdvisor';
 import { PairingOpponents } from './components/PairingOpponents';
+
+/**
+ * Plan 39.1-44 (sketch 003 A, UI-SPEC §6.1 / §6.6): the two grid cells'
+ * responsive classes, shared with the loading skeleton so the grid never
+ * reflows on load. The span-8 stack takes the full row below 1280px
+ * (`lg:col-span-12`). The span-4 rail is a card COLUMN at every width — beside
+ * the stack from xl, under it below. Sketch 003 draws an auto-fit card row
+ * between 640 and 1279px, but real-Chrome `guard:layout` (grid-balance,
+ * "No orphan half", UI-SPEC §6.1) measured it at 1024x768 as an orphan half
+ * (Matchup Insights 566px beside MatchupOrPlayer 222px, ratio 0.29) and a
+ * 510px dead gap: unequal-height cards cannot share a row without stretching
+ * (banned) or leaving holes, so the locked rule wins over the sketch at that
+ * tier (deviation recorded in 39.1-44-SUMMARY).
+ */
+const STACK_CELL_CLASS = 'lg:col-span-12 xl:col-span-8';
+const RAIL_CELL_CLASS = 'lg:col-span-12 xl:col-span-4 flex flex-col gap-4';
 
 /**
  * Ports legacy/src/screens/Matchups. Selecting "your fighter" (from the
@@ -79,7 +90,7 @@ import { PairingOpponents } from './components/PairingOpponents';
  * real content.
  */
 export function MatchupsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
@@ -92,9 +103,15 @@ export function MatchupsPage() {
   } = useFilteredMatches();
   const {
     horizon,
+    setHorizon,
     isLoading: horizonLoading,
     explicitChangeCount: horizonChangeCount,
   } = useHorizon();
+  // Plan 39.1-44: ONE clock for the page — the FormNow insight, the hero's
+  // horizon figures and its share bar resolve the same windows (D-06 / D-12).
+  // A lazy `useState` initializer is this codebase's sanctioned one-time read
+  // of `Date.now()` (React Compiler forbids a bare call in the render body).
+  const [nowMs] = useState(() => Date.now());
 
   // Plan 39.1-30 (item 5): stable across re-renders — attaches the pairing
   // identity heading to the grid it names via `aria-labelledby`.
@@ -290,7 +307,7 @@ export function MatchupsPage() {
     () => sortMatchesNewestFirst(matchupMatches),
     [matchupMatches],
   );
-  const formNowInsight = useMatchupFormNow({ matchupMatches, horizon });
+  const formNowInsight = useMatchupFormNow({ matchupMatches, horizon, nowMs });
 
   // CR-02 (39.1-REVIEW): the ONE period series `MatchupChart` plots AND this
   // page's terminus resolves a trend-point drill (`event=<point.key>`)
@@ -398,7 +415,8 @@ export function MatchupsPage() {
     rewriteClaim,
   });
 
-  // Plan 39.1-26 (gap closure, Task 1): the chart's counted-games door —
+  // Plan 39.1-26 (gap closure, Task 1): the hero's counted-games door (plan
+  // 39.1-44 moved it from the chart head to the hero's last row) —
   // built by `buildInsightDoors` from the SAME `formNowInsight` the
   // terminus above resolves against, anchored to `#matchup-table` (this
   // page's own terminus id, not the default `#games`) and carrying the
@@ -442,12 +460,12 @@ export function MatchupsPage() {
   };
 
   // Plan 39.1-30 (items 3/5, UI-SPEC §6.1/§6.6): the ONE loading pattern — a
-  // page skeleton echoing the loaded page's own section shapes (matrix, the
-  // single two-stack PageGrid at rail-4/chart-8, and the results table), so
-  // nothing shifts when data lands. Mirrors the loaded block's rail order
-  // (stat-row, insight, insight, list) and chart order (chart, list, list)
-  // — the SAME two GridCells the loaded branch below renders, same
-  // classNames, so the grid never reflows on load. The filter card (fighter
+  // page skeleton echoing the loaded page's own section shapes so nothing
+  // shifts when data lands. Plan 39.1-44 re-shapes it to sketch A: the single
+  // PageGrid's span-8 stack [hero chart, By opponent list] then the span-4
+  // rail (three insight cards + the stage list), then the matrix and results
+  // lists — the SAME two GridCells, classNames and order the loaded branch
+  // renders, so the grid never reflows on load. The filter row (fighter
   // pickers + HorizonSwitch) needs resolved fighter selections, so it is
   // intentionally omitted here too.
   if (fightersLoading || matchesLoading) {
@@ -455,28 +473,19 @@ export function MatchupsPage() {
       <PageShell>
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('matchups.loading')}</span>
-          <CardSkeleton variant="chart" statusLabel={t('matchups.loading')} />
           <PageGrid>
-            <GridCell
-              span={4}
-              stack
-              className="lg:col-span-12 xl:col-span-4 xl:col-start-9 xl:row-start-1"
-            >
-              <CardSkeleton variant="stat-row" rows={2} statusLabel={t('matchups.loading')} />
-              <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
-              <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
-              <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
-            </GridCell>
-            <GridCell
-              span={8}
-              stack
-              className="lg:col-span-12 xl:col-span-8 xl:col-start-1 xl:row-start-1"
-            >
+            <GridCell span={8} stack className={STACK_CELL_CLASS}>
               <CardSkeleton variant="chart" statusLabel={t('matchups.loading')} />
               <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
+            </GridCell>
+            <GridCell span={4} className={RAIL_CELL_CLASS}>
+              <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
+              <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
+              <CardSkeleton variant="insight" statusLabel={t('matchups.loading')} />
               <CardSkeleton variant="list" rows={4} statusLabel={t('matchups.loading')} />
             </GridCell>
           </PageGrid>
+          <CardSkeleton variant="list" rows={3} statusLabel={t('matchups.loading')} />
           <CardSkeleton variant="list" rows={5} statusLabel={t('matchups.loading')} />
         </div>
       </PageShell>
@@ -524,211 +533,171 @@ export function MatchupsPage() {
     );
   }
 
+  // Plan 39.1-44 (PD-44-4, sketch 003 `.filters`): ONE unboxed filter row with
+  // no visible title (the pairing hero's heading is the page h1) — the fighter
+  // picker, a spacer, then the page's single HorizonSwitch (INS-02). Never a
+  // per-chart control.
+  const filterRow = (
+    <PageFilterRow
+      leading={
+        /*
+          Plan 39.1-32 (item 9, UI-SPEC §10.4 one filter row, §6.6 below
+          640): a grid picker — one column below 640px (label over a
+          full-width control, 'vs' centred between), fixed EQUAL 15rem
+          tracks from 640px up (so both controls stay the same width
+          regardless of the selected fighter name's length), 'vs' in the
+          auto track between them on the controls' centre line.
+        */
+        <div
+          data-slot="matchup-pairing-picker"
+          className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[15rem_auto_15rem] sm:items-end sm:gap-x-3"
+        >
+          {/*
+            WR-07 (39.1-REVIEW.md): the captions are form LABELS tied to
+            their selects (which take their accessible names from them),
+            never h3 headings.
+          */}
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor={fighterSelectId}
+              data-slot="matchup-pairing-label"
+              className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+            >
+              {t('matchups.you')}
+            </label>
+            <SelectFighter id={fighterSelectId} />
+          </div>
+          <span
+            data-slot="matchup-pairing-vs"
+            className="justify-self-center text-sm text-muted-foreground sm:flex sm:h-9 sm:items-center sm:justify-self-auto"
+          >
+            {t('matchups.vs')}
+          </span>
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor={opponentSelectId}
+              data-slot="matchup-pairing-label"
+              className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
+            >
+              {t('matchups.opponent')}
+            </label>
+            <SelectOpponent id={opponentSelectId} />
+          </div>
+        </div>
+      }
+      trailing={<HorizonSwitch />}
+    />
+  );
+
+  // Mirrors `MatchupOrPlayerCard`'s own render rule (`!insight || state ===
+  // 'hidden'` renders nothing) so its slot wrapper exists only with the card.
+  const showsMatchupOrPlayer =
+    matchupOrPlayerInsight != null && matchupOrPlayerInsight.state !== 'hidden';
+
   return (
     <MatchupsContext.Provider value={contextValue}>
-      <PageShell>
-        <div className="flex flex-col gap-6">
-          {usingInferredFighters && <ChooseFavoritesPrompt />}
-          {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
+      <PageShell filterRow={filterRow}>
+        {usingInferredFighters && <ChooseFavoritesPrompt />}
+        {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-          {/* UI-SPEC §10.4: one filter row — the fighter picker, a spacer, then the
-              page's single HorizonSwitch (INS-02). Never a per-chart control. */}
-          <Card>
-            <CardContent className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pt-6">
-              {/*
-                Plan 39.1-32 (item 9, UI-SPEC §10.4 one filter row, §6.6 below
-                640): a grid picker — one column below 640px (label over a
-                full-width control, 'vs' centred between), fixed EQUAL 15rem
-                tracks from 640px up (so both controls stay the same width
-                regardless of the selected fighter name's length), 'vs' in the
-                auto track between them on the controls' centre line.
-              */}
-              <div
-                data-slot="matchup-pairing-picker"
-                className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-[15rem_auto_15rem] sm:items-end sm:gap-x-3"
-              >
-                {/*
-                  WR-07 (39.1-REVIEW.md): the captions are form LABELS tied to
-                  their selects (which take their accessible names from
-                  them), never h3 headings — two h3s ahead of the page's h2
-                  skipped a heading level and cluttered the outline.
-                */}
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label
-                    htmlFor={fighterSelectId}
-                    data-slot="matchup-pairing-label"
-                    className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
-                  >
-                    {t('matchups.you')}
-                  </label>
-                  <SelectFighter id={fighterSelectId} />
-                </div>
-                <span
-                  data-slot="matchup-pairing-vs"
-                  className="justify-self-center text-sm text-muted-foreground sm:flex sm:h-9 sm:items-center sm:justify-self-auto"
-                >
-                  {t('matchups.vs')}
-                </span>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <label
-                    htmlFor={opponentSelectId}
-                    data-slot="matchup-pairing-label"
-                    className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase"
-                  >
-                    {t('matchups.opponent')}
-                  </label>
-                  <SelectOpponent id={opponentSelectId} />
-                </div>
-              </div>
-              <HorizonSwitch />
-            </CardContent>
-          </Card>
-
-          <MatchupMatrix matches={matches} />
-
-          {/* Plan 39.1-20: a background refetch (matches already loaded once)
-              holds this whole detail block at reduced opacity instead of
-              flashing a skeleton — the page's PageGrid lives inside this same
-              wrapper, and MatchupChart's own `data-slot="matchup-chart-body"`
-              (which exists only once this branch is reached) doubles as this
-              route's layout-oracle loaded marker. */}
+        {/* Plan 39.1-20: a background refetch (matches already loaded once)
+            holds this whole detail block at reduced opacity instead of
+            flashing a skeleton — the hero's MatchupChart body
+            (`data-slot="matchup-chart-body"`, which exists only once this
+            branch is reached) doubles as this route's layout-oracle loaded
+            marker. */}
+        {/*
+          WR-06 (39.1-REVIEW.md): a <section>, not a div — ARIA prohibits
+          naming the generic role, so aria-labelledby on a div was never
+          exposed. A section becomes a named region exactly when the
+          pairing heading (the hero's h1) exists to name it.
+        */}
+        <section
+          id={MATCHUP_DETAIL_ANCHOR_ID}
+          aria-labelledby={effectiveFighter && effectiveOpponent ? pairingHeadingId : undefined}
+          className={cn(
+            'flex flex-col gap-6 scroll-mt-16',
+            isRefetching &&
+              'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+          )}
+        >
           {/*
-            WR-06 (39.1-REVIEW.md): a <section>, not a div — ARIA prohibits
-            naming the generic role, so aria-labelledby on a div was never
-            exposed. A section becomes a named region exactly when the
-            pairing heading exists to name it.
+            Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1, UI-SPEC §6.1 "No
+            orphan half", §6.6): ONE PageGrid — a span-8 stack [pairing hero,
+            By opponent] beside a span-4 rail [Matchup Insights,
+            MatchupOrPlayer, Counterpick Advisor, Stage breakdown] at
+            >= 1280px; below 1280 the stack spans 12 and the rail is an
+            auto-fit card row (one column on a phone). DOM order is the
+            reading order at EVERY width — the hero first — and no
+            placement utility (`col-start` / `row-start` / `order`) moves
+            anything: the side-by-side is a property of the grid. The
+            `section-order` oracle family proves it in a real browser.
           */}
-          <section
-            id={MATCHUP_DETAIL_ANCHOR_ID}
-            aria-labelledby={effectiveFighter && effectiveOpponent ? pairingHeadingId : undefined}
-            className={cn(
-              'flex flex-col gap-6 scroll-mt-16',
-              isRefetching &&
-                'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
-            )}
-          >
-            {/*
-              Plan 39.1-30 (item 5, UI-SPEC §5.1/§6.1): the identity row is no
-              longer a floating centred line between cards — it is a
-              left-aligned overline heading attached to (and directly above)
-              the grid it names, in one `flex flex-col gap-3` pair. A
-              left-aligned label reads as "this section is about X vs Y",
-              never as a decorative banner.
-            */}
-            {effectiveFighter && effectiveOpponent && (
-              <div className="flex flex-col gap-3">
-                {/*
-                  Plan 39.2-10 (T-04): the pairing heading shares a row with the
-                  Track toggle, right-aligned. The toggle sits OUTSIDE the h2 so
-                  the heading (and the section's aria-labelledby name) stays the
-                  bare pairing text.
-                */}
-                <div className="flex items-center justify-between gap-2">
-                  <h2
-                    id={pairingHeadingId}
-                    data-slot="matchup-detail-heading"
-                    className="flex items-center gap-2"
-                  >
-                    {effectiveFighter.url && (
-                      <img src={effectiveFighter.url} alt="" className="size-6 object-contain" />
-                    )}
-                    {effectiveOpponent.url && (
-                      <img src={effectiveOpponent.url} alt="" className="size-6 object-contain" />
-                    )}
-                    <span className="text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase">
-                      {t('matchups.pairingHeading', {
+          {effectiveFighter && effectiveOpponent && (
+            <PageGrid>
+              <GridCell span={8} stack className={STACK_CELL_CLASS}>
+                <PairingHero
+                  headingId={pairingHeadingId}
+                  fighter={effectiveFighter}
+                  opponent={effectiveOpponent}
+                  matchupMatches={matchupMatches}
+                  formNowInsight={formNowInsight}
+                  gamesDoor={formNowGamesDoor}
+                  periodSeries={periodSeries}
+                  horizon={horizon}
+                  setHorizon={setHorizon}
+                  isLoading={horizonLoading || matchesLoading}
+                  nowMs={nowMs}
+                  action={
+                    <TrackToggle
+                      kind="matchup"
+                      itemRef={{
+                        fighterId: effectiveFighter.id,
+                        vsFighterId: effectiveOpponent.id,
+                      }}
+                      name={t('matchups.pairingHeading', {
                         fighter: localizedFighterName(effectiveFighter.id, t),
                         opponent: localizedFighterName(effectiveOpponent.id, t),
                       })}
-                    </span>
-                  </h2>
-                  <TrackToggle
-                    kind="matchup"
-                    itemRef={{ fighterId: effectiveFighter.id, vsFighterId: effectiveOpponent.id }}
-                    name={t('matchups.pairingHeading', {
-                      fighter: localizedFighterName(effectiveFighter.id, t),
-                      opponent: localizedFighterName(effectiveOpponent.id, t),
-                    })}
-                  />
+                    />
+                  }
+                />
+                <div data-slot="pairing-opponents">
+                  <PairingOpponents matchupMatches={matchupMatches} nowMs={nowMs} />
                 </div>
-
-                {/*
-                  UI-SPEC §6.1 (GridCell stack, "No orphan half"), §8.3
-                  (advisor span 4 / stage table span 8), §6.6 (single column
-                  below 1280, chart cell spans 12 at 1024-1279). Plan 39.1-30
-                  replaces the old row-coupled 8+4 trend/stack row, the
-                  8+4 PairingOpponents/MatchupOrPlayer row and the separate
-                  advisor/stage-table 2-up with ONE PageGrid holding two
-                  column stacks, explicitly placed side by side at >=1280 via
-                  `xl:col-start`/`xl:row-start` — never a CSS `order` utility,
-                  so the visual placement is a property of the grid, not a
-                  DOM-order override. DOM stays rail-first at every width
-                  (UI-SPEC §14.5 tab order, §6.6 insight-before-chart): the
-                  rail (record, insights, matchup-or-player, advisor) always
-                  precedes the chart stack (trend, by-opponent, stage
-                  breakdown) in markup, which is also the narrow-width
-                  reading order — `xl:col-start-9` moves the rail to the
-                  right of the chart stack visually without touching DOM
-                  order.
-                */}
-                <PageGrid>
-                  <GridCell
-                    span={4}
-                    stack
-                    className="lg:col-span-12 xl:col-start-9 xl:row-start-1 xl:col-span-4"
-                  >
-                    <MatchWinLossCard matchupMatches={matchupMatches} horizon={horizon} />
-                    <MatchupInsights matchupMatches={matchupMatches} />
+              </GridCell>
+              <GridCell span={4} slot="matchups-rail" className={RAIL_CELL_CLASS}>
+                <div data-slot="matchup-insights">
+                  <MatchupInsights matchupMatches={matchupMatches} />
+                </div>
+                {showsMatchupOrPlayer && (
+                  <div data-slot="matchup-or-player">
                     <MatchupOrPlayerCard
                       matchupMatches={matchupMatches}
                       insight={matchupOrPlayerInsight}
                       doorCarry={pairingDoorCarry}
                     />
-                    <CounterpickAdvisor matchupMatches={matchupMatches} />
-                  </GridCell>
-                  <GridCell
-                    span={8}
-                    stack
-                    className="lg:col-span-12 xl:col-start-1 xl:row-start-1 xl:col-span-8"
-                  >
-                    <ChartCard
-                      title={t('matchups.winRateTrend')}
-                      caption={t('shared.evidence.type.fact')}
-                      abstained={
-                        matchupMatches.length < ABSTENTION_FLOOR_GAMES
-                          ? { gamesNeeded: ABSTENTION_FLOOR_GAMES - matchupMatches.length }
-                          : null
-                      }
-                      insight={
-                        formNowInsight && effectiveOpponent
-                          ? renderFormNowHead(
-                              formNowInsight,
-                              effectiveOpponent.id,
-                              t,
-                              i18n.language,
-                              formNowGamesDoor ? (
-                                <Link to={formNowGamesDoor.href}>
-                                  {t('insights.door.seeGames', { count: formNowGamesDoor.count })}
-                                </Link>
-                              ) : undefined,
-                            )
-                          : null
-                      }
-                    >
-                      <MatchupChart
-                        matchupMatches={matchupMatches}
-                        horizon={horizon}
-                        periodSeries={periodSeries}
-                      />
-                    </ChartCard>
-                    <PairingOpponents matchupMatches={matchupMatches} />
-                    <MatchupStageTable matchupMatches={matchupMatches} />
-                  </GridCell>
-                </PageGrid>
-              </div>
-            )}
+                  </div>
+                )}
+                <div data-slot="counterpick-advisor">
+                  <CounterpickAdvisor matchupMatches={matchupMatches} />
+                </div>
+                <div data-slot="stage-breakdown">
+                  <MatchupStageTable matchupMatches={matchupMatches} />
+                </div>
+              </GridCell>
+            </PageGrid>
+          )}
 
-            <Card id={MATCHUP_TABLE_ANCHOR_ID} className="scroll-mt-16">
+          {/* Plan 39.1-44 (PD-44-1, sketch 003 A): the matrix is navigation,
+              not the answer — demoted below the pairing; the hero's "Other
+              pairings" door targets it. */}
+          <div data-slot="matchup-matrix" id={MATCHUP_MATRIX_ANCHOR_ID} className="scroll-mt-16">
+            <MatchupMatrix matches={matches} />
+          </div>
+
+          <div data-slot="matchup-results" id={MATCHUP_TABLE_ANCHOR_ID} className="scroll-mt-16">
+            <Card>
               <CardHeader>
                 <CardTitle>{t('matchups.results')}</CardTitle>
               </CardHeader>
@@ -744,8 +713,8 @@ export function MatchupsPage() {
                 />
               </CardContent>
             </Card>
-          </section>
-        </div>
+          </div>
+        </section>
       </PageShell>
     </MatchupsContext.Provider>
   );

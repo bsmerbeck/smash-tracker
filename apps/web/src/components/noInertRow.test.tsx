@@ -54,6 +54,8 @@ import type { UseDigestResult } from '@/hooks/useDigest';
 import { buildTrackedRows } from '@/components/analytics/track/trackedRowModel';
 import i18n from '@/i18n';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
+import { MatchupStageTable } from '@/pages/Matchups/components/MatchupStageTable';
+import { MatchupInsights } from '@/pages/Matchups/components/MatchupInsights';
 import { RosterUsage } from '@/pages/MatchData/components/RosterUsage';
 import { StageBreakdown } from '@/pages/MatchData/components/StageBreakdown';
 import { VsCharactersList } from '@/pages/FighterAnalysis/components/VsCharactersList';
@@ -556,6 +558,74 @@ const SURFACES: Surface[] = [
       );
     },
     rows: (result) => within(result.container).getAllByRole('button'),
+  },
+  {
+    // Plan 39.1-46 (sketch 003 A `stageCard`, PD-46-3): every Stage breakdown
+    // series row is a text-only stage drill (a button), including the
+    // sub-floor (under 3 games) row.
+    name: 'Matchups stage breakdown rows (MatchupStageTable)',
+    file: 'apps/web/src/pages/Matchups/components/MatchupStageTable.tsx',
+    render: () => {
+      const matches = [
+        makeMatch({ id: 'sb1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'sb2', time: 2, win: true, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'sb3', time: 3, win: false, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({ id: 'sb4', time: 4, win: false, map: { id: 83, name: 'Smashville' } }),
+      ];
+      const contextValue: MatchupsContextValue = {
+        fighterSprites: [mario],
+        fighter: mario,
+        setFighter: vi.fn(),
+        opponent: luigi,
+        setOpponent: vi.fn(),
+        fighterUsageById: new Map(),
+        opponentUsage: [],
+        drillDownAxes: {},
+        setDrillDown: vi.fn(),
+      };
+      return withRouter(
+        <MatchupsContext.Provider value={contextValue}>
+          <MatchupStageTable matchupMatches={matches} />
+        </MatchupsContext.Provider>,
+      );
+    },
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll('[data-slot="comparison-bars-series"] > li')),
+  },
+  {
+    // Plan 39.1-46 (sketch 003 A `insightsCard`): the Insights card's Best /
+    // Worst stage rows are stage drills (buttons) on the same series idiom.
+    name: 'Matchups insights best / worst stage rows (MatchupInsights)',
+    file: 'apps/web/src/pages/Matchups/components/MatchupInsights.tsx',
+    render: () => {
+      const stage = (id: number, name: string) => ({ id, name });
+      const matches = [
+        ...[true, true, true].map((win, i) =>
+          makeMatch({ id: `bi${i}`, time: i, win, map: stage(1, 'Battlefield') }),
+        ),
+        ...[false, false, true].map((win, i) =>
+          makeMatch({ id: `wi${i}`, time: 10 + i, win, map: stage(83, 'Smashville') }),
+        ),
+      ];
+      const contextValue: MatchupsContextValue = {
+        fighterSprites: [mario],
+        fighter: mario,
+        setFighter: vi.fn(),
+        opponent: luigi,
+        setOpponent: vi.fn(),
+        fighterUsageById: new Map(),
+        opponentUsage: [],
+        drillDownAxes: {},
+        setDrillDown: vi.fn(),
+      };
+      return withRouter(
+        <MatchupsContext.Provider value={contextValue}>
+          <MatchupInsights matchupMatches={matches} />
+        </MatchupsContext.Provider>,
+      );
+    },
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll('[data-slot="comparison-bars-series"] > li')),
   },
   {
     name: "The hub's cross-tab matrix (MatrixHeat, as the hub configures it)",
@@ -1205,8 +1275,8 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-SIX entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants + 39.2-12's digest moved rows)", () => {
-    expect(SURFACES.length).toBe(36);
+  it("the surface enumeration has the stated THIRTY-EIGHT entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.1-46's stage breakdown and insights rows + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants + 39.2-12's digest moved rows)", () => {
+    expect(SURFACES.length).toBe(38);
   });
 
   it("the digest's moved rows are each a door to their own surface, carry a moved token, and 'and N more' leads to #tracked (plan 39.2-12 non-vacuity)", async () => {

@@ -557,7 +557,9 @@ describe('FighterAnalysisPage', () => {
       // The active-filter summary states the count and leads with the
       // insight's own claim summary (`buildInsightVerdict`), never a bare
       // "N games" line with no indication of WHICH claim narrowed the list.
-      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+      expect(
+        within(gamesCard).getByText(new RegExp(`^${expectedCount} games? ·`)),
+      ).toBeInTheDocument();
     });
 
     it('an unknown claim= id behaves exactly as with no claim axis (tolerant fallback, never a throw or not-found state)', async () => {
@@ -647,7 +649,9 @@ describe('FighterAnalysisPage', () => {
         const gamesCard = document.getElementById('games') as HTMLElement;
         const table = within(gamesCard).getByRole('table');
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
-        expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+        expect(
+          within(gamesCard).getByText(new RegExp(`^${expectedCount} games? ·`)),
+        ).toBeInTheDocument();
 
         expect(scrollIntoViewSpy).toHaveBeenCalled();
         const lastCallIndex = scrollIntoViewSpy.mock.contexts.length - 1;

@@ -37,7 +37,9 @@ function ChartCardWrapper({
   const opponentId = matchupMatches[0]?.opponent_id;
   return (
     <ChartCard
-      title={t('matchups.winRateTrend')}
+      // 39.1-44: `matchups.winRateTrend` is retired (the page's hero has no chart card);
+      // this test-only frame keeps a literal title.
+      title="Win rate over time"
       caption={t('shared.evidence.type.fact')}
       abstained={
         matchupMatches.length < ABSTENTION_FLOOR_GAMES
@@ -677,5 +679,40 @@ describe('MatchupChart — sketch 003 scoped trend (plan 39.1-41)', () => {
   it('MatchupChart.tsx carries no cumulative context series', () => {
     const source = fs.readFileSync(path.join(__dirname, 'MatchupChart.tsx'), 'utf8');
     expect(source).not.toMatch(/contextRatePercents|computeCumulativeContextPercents/);
+  });
+});
+
+describe('renderFormNowHead (plan 39.1-44, pairing-hero: the door row moved to the hero)', () => {
+  function renderHead(args: { meta?: string }) {
+    function Head() {
+      const { t, i18n } = useTranslation();
+      const matches = recentSequence(10);
+      const insight = useMatchupFormNow({ matchupMatches: matches, horizon: 'last30' });
+      return insight ? (
+        renderFormNowHead(insight, 10, t, i18n.language, args.meta)
+      ) : (
+        <span>no insight</span>
+      );
+    }
+    return render(<Head />);
+  }
+
+  it("never renders a doors row — the pairing hero owns the card's last row now", () => {
+    const { container } = renderHead({});
+    expect(container.querySelector('[data-slot="matchup-form-now-doors"]')).toBeNull();
+    expect(container.querySelectorAll('a, button').length).toBe(0);
+  });
+
+  it('shows an optional meta line beside the claim chip, before the verdict', () => {
+    const { container } = renderHead({ meta: 'FormNow · last 30 games vs all time' });
+    const head = container.querySelector('[data-slot="matchup-form-now"]')!;
+    const chipRow = head.firstElementChild!;
+    expect(chipRow.querySelector('[data-slot="badge"]')).not.toBeNull();
+    expect(chipRow.textContent).toContain('FormNow · last 30 games vs all time');
+    expect(
+      chipRow.compareDocumentPosition(
+        head.querySelector('[data-slot="matchup-form-now-verdict"]')!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

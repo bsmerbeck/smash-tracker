@@ -1,22 +1,46 @@
 import type { ReactNode } from 'react';
 import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
-import { CHART_BAR_MAX_THICKNESS_PX, CHART_BAR_ROW_HEIGHT_PX, CHART_TOKENS } from './tokens';
+import { CHART_TOKENS } from './tokens';
 
 export interface ComparisonBarsRow {
   key: string;
   label: ReactNode;
   /** 0-100. Rendered as the filled portion's width percentage. */
   value: number;
+  /** The row's value as one plain-text sentence — the accessible text even when `valueNode` replaces it visually. */
   valueLabel: string;
+  /**
+   * Plan 39.1-46 (`series` tone): host content drawn in place of `valueLabel`
+   * (a `Record` and a confidence glyph). `valueLabel` stays in the DOM,
+   * screen-reader only, so the row's accessible name never depends on markup.
+   */
+  valueNode?: ReactNode;
+  /** `series` tone: the row's full label text, shown as a native tooltip when `label` truncates. */
+  labelTitle?: string;
+  /** `series` tone: the row sits under the abstention floor — strong de-emphasis fill, muted label. */
+  subFloor?: boolean;
 }
 
-export type ComparisonBarsTone = 'emerald' | 'destructive';
+/**
+ * `series` (plan 39.1-46, PD-46-1, sketch 003 A `.cmp` rows) is the neutral
+ * evidence tone: identity-blue fill, muted track, an optional all-time
+ * reference tick. Since plan 39.1-47 (PD-47-4) it is the ONLY tone — the two
+ * status tones that once carried the advisor's pick / ban judgement were
+ * deleted with their last caller (an alarm colour on an evidence row breaks
+ * the sketch's "blue data ink" rule; `designFidelity.test.ts` fails a status
+ * tone passed to this member).
+ */
+export type ComparisonBarsTone = 'series';
 
 interface ComparisonBarsDefaultProps {
   mode?: undefined;
   rows: ComparisonBarsRow[];
   tone: ComparisonBarsTone;
   onSelectRow?: (row: ComparisonBarsRow) => void;
+  /** `series` tone: 0-100 position of the all-time reference tick drawn on every row's track. */
+  referenceRate?: number;
+  /** `series` tone: a hairline between rows (sketch `.cmp.divide`). */
+  divided?: boolean;
 }
 
 /**
@@ -146,16 +170,102 @@ function DumbbellRow({ row }: { row: ComparisonBarsDumbbellRow }) {
   );
 }
 
+/** Sketch 003 `.cmp-track .ref`: the tick is 2px wide and pokes 2px past the track above and below. */
+const SERIES_REFERENCE_WIDTH_PX = 2;
+const SERIES_REFERENCE_OVERHANG_PX = 2;
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
 /**
- * Status-colour classes for each tone (CHRT-01 kit README, "the collision
- * rule"): a series that means good/bad wears the app's existing status
- * tokens, never `--chart-*` categorical tokens. `emerald` is the pick tone,
- * `destructive` the ban tone.
+ * The `series` tone's rows (plan 39.1-46, sketch 003 A `.cmp-row`): a
+ * two-column grid — label | value — with the 6px track spanning both. The
+ * fill is the identity series token, or the strong de-emphasis token for a
+ * sub-floor row; the optional reference tick is drawn in the de-emphasis ink.
  */
-const TONE_CLASSES: Record<ComparisonBarsTone, { track: string; fill: string }> = {
-  emerald: { track: 'bg-emerald-500/15', fill: 'bg-emerald-500' },
-  destructive: { track: 'bg-destructive/15', fill: 'bg-destructive' },
-};
+function SeriesRows({
+  rows,
+  onSelectRow,
+  referenceRate,
+  divided,
+}: Pick<ComparisonBarsDefaultProps, 'rows' | 'onSelectRow' | 'referenceRate' | 'divided'>) {
+  return (
+    <ul
+      className={divided ? 'flex flex-col divide-y divide-border' : 'flex flex-col'}
+      data-slot="comparison-bars-series"
+    >
+      {rows.map((row) => {
+        const content = (
+          <>
+            <span
+              data-slot="comparison-bar-label"
+              title={row.labelTitle}
+              className={`min-w-0 truncate font-medium${row.subFloor ? ' text-muted-foreground' : ''}`}
+            >
+              {row.label}
+            </span>{' '}
+            <span className="text-right text-sm whitespace-nowrap text-muted-foreground">
+              {row.valueNode ? (
+                <>
+                  <span aria-hidden="true">{row.valueNode}</span>
+                  <span className="sr-only">{row.valueLabel}</span>
+                </>
+              ) : (
+                row.valueLabel
+              )}
+            </span>
+            <span
+              data-slot="comparison-bar-track"
+              className="relative col-span-2 h-1.5 w-full rounded-full bg-muted"
+            >
+              <span
+                data-slot="comparison-bar-fill"
+                className="block h-full rounded-full"
+                style={{
+                  width: `${clampPercent(row.value)}%`,
+                  backgroundColor: row.subFloor
+                    ? CHART_TOKENS.deemphasisStrong
+                    : CHART_TOKENS.series1,
+                }}
+              />
+              {typeof referenceRate === 'number' && (
+                <span
+                  data-slot="comparison-bar-reference"
+                  className="absolute"
+                  style={{
+                    left: `${clampPercent(referenceRate)}%`,
+                    top: -SERIES_REFERENCE_OVERHANG_PX,
+                    bottom: -SERIES_REFERENCE_OVERHANG_PX,
+                    width: SERIES_REFERENCE_WIDTH_PX,
+                    backgroundColor: CHART_TOKENS.deemphasis,
+                  }}
+                />
+              )}
+            </span>
+          </>
+        );
+        const rowClass =
+          '-mx-1.5 grid w-[calc(100%+0.75rem)] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-0.5 rounded-md px-1.5 py-1.5';
+        return (
+          <li key={row.key}>
+            {onSelectRow ? (
+              <button
+                type="button"
+                className={`${rowClass} cursor-pointer text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none`}
+                onClick={() => onSelectRow(row)}
+              >
+                {content}
+              </button>
+            ) : (
+              <div className={rowClass}>{content}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 /**
  * The comparison-bars chart-kit vocabulary member (kit README "Comparison
@@ -170,9 +280,10 @@ const TONE_CLASSES: Record<ComparisonBarsTone, { track: string; fill: string }> 
  * `KIT_CHART_PRIMITIVES` — that list enumerates kit files that render a
  * Recharts element for the structural frame rule (every member must nest
  * inside a `ChartCard`); a CSS meter renders no Recharts element, so it is
- * outside that rule's scope. `CounterpickAdvisor.tsx` supplies the
- * `ChartCard` frame this component renders inside, the same split
- * `MatchupChart.tsx`/`TrendLine.tsx` already establish.
+ * outside that rule's scope. The host supplies the card frame (the Matchups
+ * rail cards render it inside their own `Card`, the stage rows of the
+ * Insights card, Stage breakdown, MatchupOrPlayer mark and Counterpick
+ * Advisor alike).
  *
  * `mode: 'dumbbell'` (39.1-08, VIZ-02/DD-04) is a THIRD variant of this same
  * member, added the exact way `TrendLine.tsx` gained its `'event'` mode: the
@@ -194,50 +305,12 @@ export function ComparisonBars(props: ComparisonBarsProps) {
       </ul>
     );
   }
-  const { rows, tone, onSelectRow } = props;
-  const toneClasses = TONE_CLASSES[tone];
-
   return (
-    <ul className="flex flex-col gap-2">
-      {rows.map((row) => {
-        const widthPct = Math.max(0, Math.min(100, row.value));
-        const rowContent = (
-          <>
-            <div className="flex items-center justify-between gap-2 text-sm">
-              {row.label}
-              <span className="shrink-0 whitespace-nowrap text-muted-foreground">
-                {row.valueLabel}
-              </span>
-            </div>
-            <div
-              data-slot="comparison-bar-track"
-              className={`relative w-full overflow-hidden rounded-full ${toneClasses.track}`}
-              style={{ height: CHART_BAR_MAX_THICKNESS_PX }}
-            >
-              <div
-                data-slot="comparison-bar-fill"
-                className={`h-full rounded-full ${toneClasses.fill}`}
-                style={{ width: `${widthPct}%` }}
-              />
-            </div>
-          </>
-        );
-        return (
-          <li key={row.key} style={{ minHeight: CHART_BAR_ROW_HEIGHT_PX }}>
-            {onSelectRow ? (
-              <button
-                type="button"
-                className="flex w-full flex-col gap-1 text-left"
-                onClick={() => onSelectRow(row)}
-              >
-                {rowContent}
-              </button>
-            ) : (
-              <div className="flex flex-col gap-1">{rowContent}</div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <SeriesRows
+      rows={props.rows}
+      onSelectRow={props.onSelectRow}
+      referenceRate={props.referenceRate}
+      divided={props.divided}
+    />
   );
 }

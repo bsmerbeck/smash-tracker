@@ -754,7 +754,9 @@ const MATCHUPS_CHART_HOST: InsightDoorHost = {
   surface: 'matchups-chart',
   personalPath: `/matchups?fighter=${MARIO_ID}&vs=${LUIGI_ID}`,
   coachMountable: true,
-  doorRegion: '[data-slot="matchup-form-now"]',
+  // Plan 39.1-44: the counted-games door is the pairing hero's LAST row
+  // (`matchup-form-now-doors`), no longer inside the verdict head.
+  doorRegion: '[data-slot="matchup-form-now-doors"]',
   terminusAnchorId: 'matchup-table',
   fixture: () => formNowMatchupsChartFixture(MARIO_ID),
 };
