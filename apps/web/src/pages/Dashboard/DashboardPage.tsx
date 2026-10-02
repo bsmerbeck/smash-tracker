@@ -16,6 +16,7 @@ import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
@@ -26,7 +27,7 @@ import { WinLossTracker } from './components/WinLossTracker';
 import { MatchupSnapshot } from './components/MatchupSnapshot';
 import { PreviousMatches } from './components/PreviousMatches';
 import { LastMatchesChart } from './components/LastMatchesChart';
-import { HeroStats } from './components/HeroStats';
+import { HeroStats, HERO_TILE_CLASS } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
 import { SelfDataCoveragePanel } from '@/pages/Coaching/components/SelfDataCoveragePanel';
@@ -166,6 +167,9 @@ export function DashboardPage() {
   // setHorizon to all mounted calls on the same subject (39.1-REVIEW
   // iteration 2 CR-01) — localStorage alone is NOT a shared React state.
   const { horizon } = useHorizon();
+  // Quick 261002-leg: the global SOURCE filter gates the Casual vs Competitive
+  // caveat inside HeroStats. Called with useHorizon, above every early return.
+  const { source } = useAnalyticsFilter();
 
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -193,8 +197,8 @@ export function DashboardPage() {
   };
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
-  // skeleton built from the SAME PageGrid spans as the loaded hero row + the
-  // six cards below it, so nothing shifts when data lands. The filter row
+  // skeleton built from the SAME PageGrid spans as the loaded hero + the
+  // cards below it, so nothing shifts when data lands. The filter row
   // (DashboardToolbar) is intentionally not rendered here — it needs
   // fighter/matches-derived props the loading state doesn't have yet, and
   // `PageShell` renders it as an optional slot either way.
@@ -204,9 +208,17 @@ export function DashboardPage() {
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
           <span className="sr-only">{t('dashboard.loading')}</span>
           <PageGrid>
-            {/* Plan 39.1-50: six hero tiles (the fighter record is the sixth). */}
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <GridCell span={3} key={i}>
+            {/* Quick 261002-leg: mirrors the loaded hero — two stacks of two
+                stat tiles (Overall Record + Rating, Form + fighter record),
+                then the two split tiles — so nothing shifts when data lands. */}
+            {[0, 1].map((i) => (
+              <GridCell span={3} stack className={HERO_TILE_CLASS} key={`stack-${i}`}>
+                <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
+                <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
+              </GridCell>
+            ))}
+            {[2, 3].map((i) => (
+              <GridCell span={3} className={HERO_TILE_CLASS} key={`tile-${i}`}>
                 <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
               </GridCell>
             ))}
@@ -292,20 +304,19 @@ export function DashboardPage() {
               matches={matches}
               timeFilteredMatches={timeFilteredMatches}
               horizon={horizon}
+              // Quick 261002-leg (DESIGN §2.1): the selected fighter's record
+              // (plan 39.1-50 OOS-12a) sits under Form in hero stack B, on the page horizon.
+              fighterTile={<WinLossTracker matches={matches} horizon={horizon} />}
+              sourceFilterActive={source !== 'all'}
             />
-            {/* Plan 39.1-50 (OOS-12a, UI-SPEC §8.7): the selected fighter's
-                record is the hero row's sixth 3-span tile, on the page horizon. */}
-            <GridCell span={3}>
-              <WinLossTracker matches={matches} horizon={horizon} />
-            </GridCell>
             {filterActive && allMatches.length > 0 && matches.length === 0 && (
               <GridCell span={12}>
                 <FilteredEmptyNotice />
               </GridCell>
             )}
-            {/* Plan 39.1-50: the Form Curve starts its own row at lg — the
-                second hero row already holds Rating and the fighter tile, and a
-                6-span card packed beside them would orphan Previous Matches
+            {/* Plan 39.1-50 / quick 261002-leg: the hero now sums to exactly 12
+                columns at lg and xl, so `lg:col-start-1` is harmless; it stays
+                because the Form Curve + Previous Matches pairing test asserts it
                 (UI-SPEC §6.1 "no orphan half"). */}
             <GridCell span={6} className="lg:col-start-1">
               <LastMatchesChart matches={matches} horizon={horizon} />

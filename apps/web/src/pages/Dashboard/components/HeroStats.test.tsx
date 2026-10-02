@@ -470,7 +470,8 @@ describe('HeroStats — four-cell hero, compact density, gated caveat (quick 261
       <HeroStats matches={matches} timeFilteredMatches={matches} fighterTile={<span />} />,
     );
     const cards = Array.from(container.querySelectorAll('[data-slot="card"]'));
-    expect(cards.length).toBeGreaterThanOrEqual(6);
+    // Overall Record, Rating, Form, Casual vs Competitive, Online vs Offline.
+    expect(cards).toHaveLength(5);
     for (const card of cards) {
       expect(tokens(card)).toEqual(
         expect.arrayContaining(['gap-4', 'py-4', 'sm:py-5', 'shadow-none']),
