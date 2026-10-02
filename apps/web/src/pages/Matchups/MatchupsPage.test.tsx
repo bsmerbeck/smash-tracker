@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -107,21 +109,34 @@ function LocationSearchProbe() {
 }
 
 /**
- * Plan 39.1-13: the record card no longer carries a "Wins" label (UIX-04's
- * three-equal-numbers layout is gone) — its bare win-loss figure is scoped
- * by finding the `ChartCard` whose OWN title is "Record" (via `card-title`'s
- * `data-slot`, never a bare `getByText('Record')`, which also matches the
- * stage-breakdown table's "Record" column header).
+ * REWRITTEN by plan 39.1-44 (PD-44-2): the record card (`MatchWinLossCard`,
+ * a ChartCard titled "Record") is retired — the pairing hero's StatRow is the
+ * record. Its lead "All time" figure (the first child of the hero's stat row)
+ * carries the pairing's W–L `Record`; the helper scopes assertions to it.
  */
-function recordCard(): HTMLElement {
-  const cardTitle = screen
-    .getAllByText('Record')
-    .find((el) => el.getAttribute('data-slot') === 'card-title');
-  const card = cardTitle?.closest('[data-slot="card"]');
-  if (!card) {
-    throw new Error('Record ChartCard not found');
+function pairingHero(): HTMLElement {
+  const hero = document.querySelector<HTMLElement>('[data-slot="pairing-hero"]');
+  if (!hero) {
+    throw new Error('pairing hero not found');
   }
-  return card as HTMLElement;
+  return hero;
+}
+
+function allTimeFigure(): HTMLElement {
+  const figure = pairingHero().querySelector('[data-slot="stat-row"]')?.firstElementChild;
+  if (!figure) {
+    throw new Error('the hero StatRow all-time figure not found');
+  }
+  return figure as HTMLElement;
+}
+
+/** 39.1-44: the hero's "See the N games" door — the primary link of the doors row (the row's last link is "Other pairings"). */
+function seeGamesDoor(): HTMLElement {
+  const doors = document.querySelector<HTMLElement>('[data-slot="matchup-form-now-doors"]');
+  if (!doors) {
+    throw new Error('the hero doors row not found');
+  }
+  return within(doors).getByRole('link', { name: /^See the \d+ games?$/ });
 }
 
 function renderMatchups(initialEntry = '/matchups') {
@@ -213,21 +228,19 @@ describe('MatchupsPage', () => {
 
     // The real analytics render, defaulting to the inferred (only) fighter.
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
-    expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
+    expect(within(allTimeFigure()).getByText('1–0')).toBeInTheDocument();
     // Non-blocking prompt, not the gate.
     expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
     expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
   });
 
-  it('WR-B01 (39.1-REVIEW.md): the win-rate-trend card shows its evidence-type caption even while abstained (a low-volume pairing, insight slot always reserved)', async () => {
+  it('WR-B01 (39.1-REVIEW.md), rewritten by 39.1-44: a low-volume pairing still renders the hero board — h1, the locked verdict with its claim chip, and both doors', async () => {
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
     listMatches.mockResolvedValue([
-      // 1 recorded game < ABSTENTION_FLOOR_GAMES(3) -> the win-rate-trend
-      // ChartCard's own `abstained` prop is set. This page ALWAYS passes
-      // `insight={formNowInsight && effectiveOpponent ? ... : null}` —
-      // never `undefined` — so `ChartCard`'s `hasInsightSlot` is permanently
-      // true regardless of volume, exactly the call-site pattern WR-B01
-      // describes.
+      // 1 recorded game < ABSTENTION_FLOOR_GAMES(3): the old Win Rate Trend
+      // ChartCard swapped its body for an abstention placeholder and kept the
+      // evidence-type caption; the pairing hero has no such card — it renders
+      // the whole board, the verdict reading the engine's locked sentence.
       makeMatch({
         id: 'm1',
         fighter_id: mario.id,
@@ -239,11 +252,15 @@ describe('MatchupsPage', () => {
     renderMatchups();
 
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
-    const trendCardTitle = screen
-      .getAllByText('Win Rate Trend')
-      .find((el) => el.getAttribute('data-slot') === 'card-title');
-    const trendCard = trendCardTitle?.closest('[data-slot="card"]') as HTMLElement;
-    expect(within(trendCard).getByText('Recorded fact from your match log.')).toBeInTheDocument();
+    const hero = pairingHero();
+    expect(within(hero).getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(hero.querySelector('[data-slot="matchup-form-now-verdict"]')?.textContent).toBeTruthy();
+    expect(hero.querySelector('[data-slot="matchup-form-now"] [data-slot="badge"]')).not.toBeNull();
+    expect(
+      within(hero.querySelector('[data-slot="matchup-form-now-doors"]') as HTMLElement)
+        .getAllByRole('link')
+        .at(-1),
+    ).toHaveTextContent('Other pairings');
   });
 
   it('still gates on choose-fighters when there is neither a selection nor a match to infer from', async () => {
@@ -276,7 +293,7 @@ describe('MatchupsPage', () => {
 
     await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
     // Only the m1 match (vs the alphabetically-first opponent) should count.
-    expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
+    expect(within(allTimeFigure()).getByText('1–0')).toBeInTheDocument();
   });
 
   it('updates the matchup when a different opponent is selected', async () => {
@@ -298,7 +315,7 @@ describe('MatchupsPage', () => {
 
     await waitFor(() => {
       // Two wins recorded against Luigi.
-      expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
+      expect(within(allTimeFigure()).getByText('2–0')).toBeInTheDocument();
     });
   });
 
@@ -333,7 +350,9 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Matchup Insights · all time')).toBeInTheDocument(),
+    );
     // Current streak: 1 loss (most recent match lost). Plan 39.1-32 (item
     // 10): the count and unit word render as two separate StatFigure
     // elements now (a fixedColumns StatRow), and the non-plural
@@ -344,19 +363,16 @@ describe('MatchupsPage', () => {
     expect(currentStreakFigure).toHaveTextContent('1');
     expect(currentStreakFigure).toHaveTextContent('loss');
     expect(currentStreakFigure).not.toHaveTextContent('losses');
-    // Plan 39.1-13 (UIX-04): the record card's trend row is now a `MiniStrip`
-    // (role="img", a different accessible-name shape), not `WinLossPips` —
-    // `WinLossPips`'s "Last N results" aria-label survives only on
-    // `MatchupInsights`' own unchanged "Recent form" row, so this label now
-    // legitimately appears exactly ONCE (the duplication plan 37-03 created
-    // is exactly what this redesign removes).
-    expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(1);
+    // Plan 39.1-46 (sketch 003 A): the Insights card's own second Recent Form
+    // pip row is gone (the hero's form strip is the one form mark), so
+    // `WinLossPips`' "Last N results" label appears NOWHERE on the page.
+    expect(screen.queryAllByLabelText('Last 3 results, newest first')).toHaveLength(0);
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
-    expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('Stage breakdown')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
     // The pairing record (2-1) shows up in multiple places now (matrix cell,
     // insights, stage table) — assert on the win-loss card specifically.
-    expect(within(recordCard()).getByText('2–1')).toBeInTheDocument();
+    expect(within(allTimeFigure()).getByText('2–1')).toBeInTheDocument();
   });
 
   it('shows a no-matches message for the matchup table when the pairing has no matches', async () => {
@@ -386,7 +402,9 @@ describe('MatchupsPage', () => {
     expect(screen.getByText('No reported matches against this fighter')).toBeInTheDocument();
   });
 
-  it('renders the matchup matrix heatmap above the pairing detail section', async () => {
+  // REWRITTEN by plan 39.1-44 (PD-44-1, sketch 003 A): the matrix is demoted
+  // BELOW the pairing and above the results — it is navigation, not the answer.
+  it('renders the matchup matrix heatmap below the pairing and above the results', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({
@@ -400,11 +418,18 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    expect(await screen.findByText('Matchup Matrix')).toBeInTheDocument();
+    expect(await screen.findByText('Matchup matrix')).toBeInTheDocument();
     // A cell exists for the Mario vs Luigi pairing recorded above.
     expect(
       screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 0-1` }),
     ).toBeInTheDocument();
+    const matrix = document.getElementById('matchup-matrix')!;
+    expect(matrix.getAttribute('data-slot')).toBe('matchup-matrix');
+    expect(matrix).toContainElement(screen.getByText('Matchup matrix'));
+    const grid = document.querySelector('[data-slot="page-grid"]')!;
+    const results = document.getElementById('matchup-table')!;
+    expect(grid.compareDocumentPosition(matrix) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(matrix.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('clicking a matrix cell updates the pairing selection shown in the detail header', async () => {
@@ -424,7 +449,7 @@ describe('MatchupsPage', () => {
     await user.click(cell);
 
     await waitFor(() => {
-      expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
+      expect(within(allTimeFigure()).getByText('2–0')).toBeInTheDocument();
     });
   });
 
@@ -442,8 +467,8 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
-    expect(screen.getByText('By Opponent')).toBeInTheDocument();
+    expect(await screen.findByText(/^Counterpick Advisor · all time/)).toBeInTheDocument();
+    expect(screen.getByText('By opponent')).toBeInTheDocument();
     // Phase 38-04: "alice" now legitimately appears twice — once in the
     // per-opponent split card, once in the FilteredMatchList terminus's
     // Opponent column — so this asserts presence, not uniqueness.
@@ -482,7 +507,7 @@ describe('MatchupsPage', () => {
     expect(within(opponentTrigger).getByText(luigi.name)).toBeInTheDocument();
 
     // The Mario-vs-Luigi pairing (2 games, both wins) is the one actually rendered.
-    expect(within(recordCard()).getByText('2–0')).toBeInTheDocument();
+    expect(within(allTimeFigure()).getByText('2–0')).toBeInTheDocument();
   });
 
   /**
@@ -564,7 +589,7 @@ describe('MatchupsPage', () => {
         ).toBeInTheDocument(),
       );
       // The win-loss card also reflects Bowser's own 1-0 record, not Mario's.
-      expect(within(recordCard()).getByText('1–0')).toBeInTheDocument();
+      expect(within(allTimeFigure()).getByText('1–0')).toBeInTheDocument();
     });
 
     it('falls back to the persisted fighter, and still renders the detail block, when the URL fighter axis names no known fighter', async () => {
@@ -983,7 +1008,9 @@ describe('MatchupsPage', () => {
         const table = within(gamesCard).getByRole('table');
         expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
       });
-      expect(within(gamesCard).getByText(new RegExp(String(expectedCount)))).toBeInTheDocument();
+      expect(
+        within(gamesCard).getByText(new RegExp(`^${expectedCount} games? ·`)),
+      ).toBeInTheDocument();
     });
   });
 
@@ -1018,7 +1045,8 @@ describe('MatchupsPage', () => {
       );
       const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
       expect(formNowSlot).not.toBeNull();
-      const door = within(formNowSlot).getByRole('link');
+      // 39.1-44: the door moved from the verdict head to the hero's last row.
+      const door = seeGamesDoor();
       const doorLabel = door.textContent ?? '';
       const expectedCount = Number((doorLabel.match(/\d+/) ?? ['0'])[0]);
       expect(expectedCount).toBeGreaterThan(0);
@@ -1058,8 +1086,7 @@ describe('MatchupsPage', () => {
       await waitFor(() =>
         expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
       );
-      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
-      const door = within(formNowSlot).getByRole('link');
+      const door = seeGamesDoor();
       expect(door.getAttribute('href') ?? '').toContain(`fighter=${bowser.id}`);
       expect(door.getAttribute('href') ?? '').toContain(`vs=${luigi.id}`);
       const doorLabel = door.textContent ?? '';
@@ -1087,8 +1114,7 @@ describe('MatchupsPage', () => {
       await waitFor(() =>
         expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
       );
-      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
-      const door = within(formNowSlot).getByRole('link');
+      const door = seeGamesDoor();
       await user.click(door);
 
       await waitFor(() =>
@@ -1121,8 +1147,7 @@ describe('MatchupsPage', () => {
       await waitFor(() =>
         expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
       );
-      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
-      const door = within(formNowSlot).getByRole('link');
+      const door = seeGamesDoor();
       await user.click(door);
 
       const gamesCard = document.getElementById('matchup-table') as HTMLElement;
@@ -1165,8 +1190,7 @@ describe('MatchupsPage', () => {
       await waitFor(() =>
         expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
       );
-      const formNowSlot = document.querySelector('[data-slot="matchup-form-now"]') as HTMLElement;
-      const door = within(formNowSlot).getByRole('link');
+      const door = seeGamesDoor();
       const href = door.getAttribute('href') ?? '';
       await user.click(door);
       return href;
@@ -1280,7 +1304,12 @@ describe('MatchupsPage', () => {
     });
   });
 
-  describe('Task 3 (plan 39.1-30, items 3/5): PageShell + two-stack pairing block + section-label identity', () => {
+  // REWRITTEN by plan 39.1-44 (sketch 003 A, PD-44-1 / PD-44-2 / PD-44-4): the
+  // composition plan 30 pinned (rail-first DOM, a record card, a floating
+  // pairing h2, a boxed filter card) is replaced by one unboxed filter row, the
+  // pairing hero + By opponent beside a four-card rail, the matrix below, the
+  // results last — the same DOM order at every width.
+  describe('Task 2 (plan 39.1-44): sketch A composition — filter row, hero + By opponent beside the rail, matrix, results', () => {
     /** 40 games, Mario vs Luigi, 4 distinct opponent tags — clears MatchupOrPlayer's floors so the rail's fourth card actually renders. */
     function richPairingFixture() {
       const now = Date.now();
@@ -1315,79 +1344,140 @@ describe('MatchupsPage', () => {
       expect(shell).toBeTruthy();
     });
 
-    it('the pairing heading is a left-aligned h2 naming the pairing with 24px sprites, precedes the ONE page-grid inside #matchup-detail', async () => {
+    it('PageShell opens on the unboxed filter row: no Card around the picker or the HorizonSwitch, no visible title, picker slots kept', async () => {
       await renderLoadedPairing();
-      const detail = document.getElementById('matchup-detail')!;
-      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]');
-      expect(heading).not.toBeNull();
-      expect(heading!.tagName.toLowerCase()).toBe('h2');
-      expect(heading!.textContent).toContain('Mario');
-      expect(heading!.textContent).toContain('Luigi');
-      expect(heading!.className).not.toMatch(/justify-center/);
-      const sprites = heading!.querySelectorAll('img');
-      expect(sprites.length).toBeGreaterThan(0);
-      for (const sprite of Array.from(sprites)) {
-        expect(sprite.className).toMatch(/size-6/);
-      }
-
-      const grids = detail.querySelectorAll('[data-slot="page-grid"]');
-      expect(grids).toHaveLength(1);
-      const headingFollowedByGrid =
-        heading!.compareDocumentPosition(grids[0]!) & Node.DOCUMENT_POSITION_FOLLOWING;
-      expect(headingFollowedByGrid).not.toBe(0);
+      const shell = document.querySelector('[data-slot="page-shell"]')!;
+      const row = shell.firstElementChild as HTMLElement;
+      expect(row.getAttribute('data-slot')).toBe('page-filter-row');
+      expect(row.closest('[data-slot="card"]')).toBeNull();
+      expect(row.querySelector('h1, h2, h3')).toBeNull();
+      expect(row.querySelector('[data-slot="matchup-pairing-picker"]')).not.toBeNull();
+      expect(row.querySelector('[data-slot="horizon-switch"]')).not.toBeNull();
+      expect(
+        row.querySelector('[data-slot="horizon-switch"]')!.closest('[data-slot="card"]'),
+      ).toBeNull();
+      expect(row.querySelectorAll('[data-slot="matchup-pairing-label"]')).toHaveLength(2);
+      expect(row.querySelector('[data-slot="matchup-pairing-vs"]')).not.toBeNull();
     });
 
-    it('the page-grid holds exactly two direct children, data-span "4" then "8", each a column stack', async () => {
+    it('the section slots appear in DOM order: hero, By opponent, insights, MatchupOrPlayer, advisor, stage breakdown, matrix, results', async () => {
+      await renderLoadedPairing();
+      const slots = [
+        'pairing-hero',
+        'pairing-opponents',
+        'matchup-insights',
+        'matchup-or-player',
+        'counterpick-advisor',
+        'stage-breakdown',
+        'matchup-matrix',
+        'matchup-results',
+      ];
+      const found = slots.map((slot) => document.querySelector(`[data-slot="${slot}"]`));
+      found.forEach((el, i) => expect(el, `slot ${slots[i]} renders`).not.toBeNull());
+      for (let i = 1; i < found.length; i += 1) {
+        expect(
+          found[i - 1]!.compareDocumentPosition(found[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+          `${slots[i]} follows ${slots[i - 1]}`,
+        ).toBeTruthy();
+      }
+    });
+
+    it('the matchup-or-player wrapper renders only when its card renders', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+        makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+        makeMatch({ id: 'm3', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      ]);
+      renderMatchups();
+      await waitFor(() =>
+        expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+      );
+      expect(document.querySelector('[data-slot="matchup-or-player"]')).toBeNull();
+      for (const slot of ['matchup-insights', 'counterpick-advisor', 'stage-breakdown']) {
+        expect(document.querySelector(`[data-slot="${slot}"]`), slot).not.toBeNull();
+      }
+    });
+
+    it('the hero heading is the page h1 (no separate pairing h2, no record card, no Win Rate Trend card)', async () => {
+      await renderLoadedPairing();
+      const h1s = document.querySelectorAll('h1');
+      expect(h1s).toHaveLength(1);
+      expect(h1s[0]!.textContent).toBe('Mario vs Luigi');
+      expect(pairingHero().contains(h1s[0]!)).toBe(true);
+      expect(document.querySelector('[data-slot="matchup-detail-heading"]')).toBeNull();
+      expect(
+        screen
+          .queryAllByText('Record')
+          .filter((el) => el.getAttribute('data-slot') === 'card-title'),
+      ).toHaveLength(0);
+      expect(screen.queryByText('Win Rate Trend')).not.toBeInTheDocument();
+    });
+
+    it('the page-grid holds exactly two direct children, the span-8 stack [hero, By opponent] then the span-4 rail', async () => {
       await renderLoadedPairing();
       const detail = document.getElementById('matchup-detail')!;
       const grid = detail.querySelector('[data-slot="page-grid"]')!;
       const children = Array.from(grid.children);
       expect(children).toHaveLength(2);
-      expect(children[0]!.getAttribute('data-span')).toBe('4');
-      expect(children[1]!.getAttribute('data-span')).toBe('8');
-    });
-
-    it('the rail (span 4) holds Record, Matchup Insights, MatchupOrPlayer and Counterpick Advisor in document order', async () => {
-      await renderLoadedPairing();
-      const detail = document.getElementById('matchup-detail')!;
-      const grid = detail.querySelector('[data-slot="page-grid"]')!;
-      const rail = grid.children[0] as HTMLElement;
-
-      const recordTitle = within(rail)
-        .getAllByText('Record')
-        .find((el) => el.getAttribute('data-slot') === 'card-title')!;
-      const insightsHeading = within(rail).getByText('Matchup Insights');
-      const insightCard = rail.querySelector('[data-slot="insight-card"]')!;
-      const advisorHeading = within(rail).getByText('Counterpick Advisor');
-      expect(insightCard).not.toBeNull();
-
-      const order = [recordTitle, insightsHeading, insightCard, advisorHeading];
-      for (let i = 1; i < order.length; i += 1) {
-        const prev = order[i - 1]!;
-        const cur = order[i]!;
-        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      expect(children[0]!.getAttribute('data-span')).toBe('8');
+      expect(children[1]!.getAttribute('data-span')).toBe('4');
+      const stack = children[0] as HTMLElement;
+      const rail = children[1] as HTMLElement;
+      expect(stack.firstElementChild?.getAttribute('data-slot')).toBe('pairing-hero');
+      expect(
+        Array.from(stack.children).map((child) => child.getAttribute('data-slot') ?? child.tagName),
+      ).toEqual(['pairing-hero', 'pairing-opponents']);
+      expect(rail.getAttribute('data-slot')).toBe('matchups-rail');
+      // PD-44-1: no CSS placement utility reorders the DOM.
+      for (const el of [stack, rail]) {
+        expect(el.className).not.toMatch(/\b(?:xl:)?(?:col-start|row-start)-\d+/);
+        expect(el.className).not.toMatch(/\border-/);
       }
     });
 
-    it('the chart stack (span 8) holds Win Rate Trend, By Opponent and Stage Breakdown in document order', async () => {
+    it('the rail holds Matchup Insights, MatchupOrPlayer, Counterpick Advisor and Stage Breakdown in document order', async () => {
       await renderLoadedPairing();
-      const detail = document.getElementById('matchup-detail')!;
-      const grid = detail.querySelector('[data-slot="page-grid"]')!;
-      const chart = grid.children[1] as HTMLElement;
-
-      const trendTitle = within(chart).getByText('Win Rate Trend');
-      const byOpponentTitle = within(chart).getByText('By Opponent');
-      const stageBreakdownTitle = within(chart).getByText('Stage Breakdown');
-
-      const order = [trendTitle, byOpponentTitle, stageBreakdownTitle];
+      const rail = document.querySelector('[data-slot="matchups-rail"]') as HTMLElement;
+      expect(Array.from(rail.children).map((child) => child.getAttribute('data-slot'))).toEqual([
+        'matchup-insights',
+        'matchup-or-player',
+        'counterpick-advisor',
+        'stage-breakdown',
+      ]);
+      const order = [
+        within(rail).getByText('Matchup Insights · all time'),
+        rail.querySelector('[data-slot="insight-card"]')!,
+        // Plan 39.1-47: the card's top line is the meta line (was the card title).
+        within(rail).getByText('Counterpick Advisor · all time · min 3 games per stage'),
+        within(rail).getByText('Stage breakdown'),
+      ];
       for (let i = 1; i < order.length; i += 1) {
-        const prev = order[i - 1]!;
-        const cur = order[i]!;
-        expect(prev.compareDocumentPosition(cur) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(
+          order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).not.toBe(0);
       }
     });
 
-    it('no other grid inside #matchup-detail holds two card-bearing children — the old advisor/stage-table and record/insights 2-ups are gone', async () => {
+    it('By opponent sits in the span-8 stack under the hero; Stage Breakdown is a rail card now', async () => {
+      await renderLoadedPairing();
+      const stack = document.querySelector('[data-slot="page-grid"]')!.children[0] as HTMLElement;
+      expect(within(stack).getByText('By opponent')).toBeInTheDocument();
+      expect(within(stack).queryByText('Stage breakdown')).not.toBeInTheDocument();
+    });
+
+    it("the rail is a flex column of cards at every width — sketch A's auto-fit row orphans unequal-height cards at 1024 (measured), so UI-SPEC 6.1 wins", async () => {
+      await renderLoadedPairing();
+      const rail = document.querySelector('[data-slot="matchups-rail"]') as HTMLElement;
+      expect(rail.className).toMatch(/\bflex\b/);
+      expect(rail.className).toMatch(/\bflex-col\b/);
+      expect(rail.className).toMatch(/\bgap-4\b/);
+      expect(rail.className).not.toMatch(/\bgrid\b/);
+      expect(rail.className).toMatch(/lg:col-span-12/);
+      expect(rail.className).toMatch(/xl:col-span-4/);
+    });
+
+    it('no other grid inside #matchup-detail holds two card-bearing children besides the page-grid', async () => {
       await renderLoadedPairing();
       const detail = document.getElementById('matchup-detail')!;
       const cardBearingGrids: Element[] = [];
@@ -1400,13 +1490,36 @@ describe('MatchupsPage', () => {
         );
         if (cardBearingChildren.length >= 2) cardBearingGrids.push(el);
       }
-      // Exactly the one [data-slot="page-grid"] — its own two GridCell
-      // stacks are themselves card-bearing (they wrap multiple cards each).
-      expect(cardBearingGrids).toHaveLength(1);
-      expect(cardBearingGrids[0]!.getAttribute('data-slot')).toBe('page-grid');
+      expect(cardBearingGrids.map((el) => el.getAttribute('data-slot'))).toEqual(['page-grid']);
     });
 
-    it('mirrors the two-stack composition in the loading skeleton: PageGrid children carry data-span "4" then "8"', () => {
+    it('the matrix wrapper carries id matchup-matrix (the hero "Other pairings" target) and follows the grid; the results card follows the matrix', async () => {
+      await renderLoadedPairing();
+      const matrix = document.getElementById('matchup-matrix')!;
+      expect(matrix.getAttribute('data-slot')).toBe('matchup-matrix');
+      const otherPairings = within(pairingHero()).getByRole('link', { name: 'Other pairings' });
+      expect(otherPairings.getAttribute('href')).toBe('#matchup-matrix');
+      const results = document.querySelector('[data-slot="matchup-results"]') as HTMLElement;
+      expect(results.id).toBe('matchup-table');
+      expect(results.getAttribute('data-slot')).toBe('matchup-results');
+      expect(
+        matrix.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('one horizon source: a hero StatRow figure press changes the value the HorizonSwitch shows', async () => {
+      const user = userEvent.setup();
+      await renderLoadedPairing();
+      const switchEl = document.querySelector('[data-slot="horizon-switch"]') as HTMLElement;
+      expect(within(switchEl).getByRole('radio', { name: 'Last 30 games' })).toBeChecked();
+      await user.click(within(pairingHero()).getByRole('button', { name: /90 days/ }));
+      await waitFor(() =>
+        expect(within(switchEl).getByRole('radio', { name: 'Last 90 days' })).toBeChecked(),
+      );
+      expect(within(switchEl).getByRole('radio', { name: 'Last 30 games' })).not.toBeChecked();
+    });
+
+    it('mirrors the composition in the loading skeleton: PageGrid children carry data-span "8" (two list / chart skeletons) then "4" (three insight + one list), then two list skeletons', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
       listMatches.mockReturnValue(new Promise(() => {}));
 
@@ -1419,9 +1532,95 @@ describe('MatchupsPage', () => {
       expect(grid).not.toBeNull();
       const children = Array.from(grid.children);
       expect(children).toHaveLength(2);
-      expect(children[0]!.getAttribute('data-span')).toBe('4');
-      expect(children[1]!.getAttribute('data-span')).toBe('8');
+      expect(children[0]!.getAttribute('data-span')).toBe('8');
+      expect(children[1]!.getAttribute('data-span')).toBe('4');
+      expect(children[0]!.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(
+        0,
+      );
+      expect(Array.from(children[0]!.children)).toHaveLength(2);
+      expect(Array.from(children[1]!.children)).toHaveLength(4);
     });
+  });
+
+  describe("composition-mirror (plan 39.1-48): the capture's structure on sketch 003's own deep pairing, through the real page", () => {
+    /** Loads the approved sketch's deep pairing (Cloud vs Pyra/Mythra, 102 games, 11 players) from the harness fixture. */
+    async function renderSketchDeep() {
+      const url = pathToFileURL(path.resolve(__dirname, '../../../scripts/sketch003Fixture.mjs'));
+      const fixture = (await import(/* @vite-ignore */ url.href)) as {
+        buildSketch003Scale: () => { matches: unknown[]; fighters: { primary: number[] } };
+      };
+      const scale = fixture.buildSketch003Scale();
+      getFighters.mockResolvedValue({ primary: scale.fighters.primary, secondary: [] });
+      listMatches.mockResolvedValue(scale.matches);
+      renderMatchups();
+      await waitFor(
+        () =>
+          expect(document.querySelector('[data-slot="matchup-chart-body"]')).toBeInTheDocument(),
+        { timeout: 10_000 },
+      );
+    }
+
+    it('composition-mirror: section order, hero anatomy, ledger, rail, matrix after the pairing, results first page', async () => {
+      await renderSketchDeep();
+
+      // Section order (brief M7): hero, By opponent, then the rail cards, matrix, results.
+      const slots = [
+        'pairing-hero',
+        'pairing-opponents',
+        'matchup-insights',
+        'matchup-or-player',
+        'counterpick-advisor',
+        'stage-breakdown',
+        'matchup-matrix',
+        'matchup-results',
+      ];
+      const present = slots.filter((slot) => document.querySelector(`[data-slot="${slot}"]`));
+      // MatchupOrPlayer is conditional (engine-driven, D-07); every other slot must render on the deep pairing.
+      for (const slot of slots.filter((s) => s !== 'matchup-or-player')) {
+        expect(document.querySelector(`[data-slot="${slot}"]`), `${slot} renders`).not.toBeNull();
+      }
+      for (let i = 1; i < present.length; i += 1) {
+        const before = document.querySelector(`[data-slot="${present[i - 1]}"]`)!;
+        const after = document.querySelector(`[data-slot="${present[i]}"]`)!;
+        expect(
+          before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+          `${present[i]} follows ${present[i - 1]}`,
+        ).toBeTruthy();
+      }
+
+      // Hero (M3/M4): the page h1, the StatRow's four figures, the 60-game strip, the quarterly trend head.
+      const hero = pairingHero();
+      expect(within(hero).getByRole('heading', { level: 1 }).textContent).toBe(
+        'Cloud vs Pyra/Mythra',
+      );
+      expect(hero.querySelector('[data-slot="stat-row"]')!.children).toHaveLength(4);
+      expect(within(hero).getByText('Form · last 60 games, by event')).toBeInTheDocument();
+      expect(within(hero).getByText('Win rate by quarter')).toBeInTheDocument();
+
+      // By opponent (M8): eight ledger rows of the eleven players, then the terminus.
+      const opponents = document.querySelector('[data-slot="pairing-opponents"]') as HTMLElement;
+      expect(opponents.querySelectorAll('[data-slot="pairing-opponent-row"]')).toHaveLength(8);
+      expect(within(opponents).getByText('Show all 11')).toBeInTheDocument();
+
+      // The rail (M9-M12) keeps its four-card order whenever MatchupOrPlayer renders.
+      const rail = document.querySelector('[data-slot="matchups-rail"]') as HTMLElement;
+      const railSlots = Array.from(rail.children).map((child) => child.getAttribute('data-slot'));
+      expect(railSlots).toEqual(
+        ['matchup-insights', 'matchup-or-player', 'counterpick-advisor', 'stage-breakdown'].filter(
+          (slot) => slot !== 'matchup-or-player' || railSlots.includes(slot),
+        ),
+      );
+
+      // Matrix after the pairing (M13); results last, first page 100 rows in the table layout (M14).
+      const grid = document.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const matrix = document.getElementById('matchup-matrix') as HTMLElement;
+      expect(grid.compareDocumentPosition(matrix) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const results = document.querySelector('[data-slot="matchup-results"]') as HTMLElement;
+      const table = results.querySelector('[data-slot="filtered-match-table"]') as HTMLElement;
+      expect(table).not.toBeNull();
+      expect(table.querySelectorAll('tbody tr')).toHaveLength(100);
+      expect(within(results).getByRole('button', { name: 'Show 2 more' })).toBeInTheDocument();
+    }, 60_000);
   });
 
   describe('Task 2 (plan 39.1-32, item 9): aligned pairing picker grid', () => {
@@ -1458,17 +1657,12 @@ describe('MatchupsPage', () => {
       expect(screen.queryByRole('heading', { name: 'Opponent' })).not.toBeInTheDocument();
     });
 
-    it('WR-07: the heading outline never skips a level — nothing deeper than the pairing h2 precedes it, and each heading is at most one level below the previous', async () => {
+    it('WR-07 (rewritten by 39.1-44: the hero h1 replaces the pairing h2): the heading outline never skips a level — the page opens on the hero h1 and each heading is at most one level below the previous', async () => {
       await renderLoadedPairingForPicker();
       const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
       const levels = headings.map((el) => Number(el.tagName.slice(1)));
-      const pairingIndex = headings.findIndex(
-        (el) => el.getAttribute('data-slot') === 'matchup-detail-heading',
-      );
-      expect(pairingIndex).toBeGreaterThanOrEqual(0);
-      for (const level of levels.slice(0, pairingIndex)) {
-        expect(level).toBeLessThanOrEqual(2);
-      }
+      expect(levels[0]).toBe(1);
+      expect(levels.filter((level) => level === 1)).toHaveLength(1);
       for (let i = 1; i < levels.length; i += 1) {
         expect(levels[i]!, `heading ${i} after h${levels[i - 1]}`).toBeLessThanOrEqual(
           levels[i - 1]! + 1,
@@ -1476,16 +1670,20 @@ describe('MatchupsPage', () => {
       }
     });
 
-    it('WR-06: the pairing detail block is a region named by the pairing heading (a named section, never aria-labelledby on a generic div)', async () => {
+    it('WR-06: the pairing detail block and the hero are regions named by the pairing heading (named sections, never aria-labelledby on a generic div)', async () => {
       await renderLoadedPairingForPicker();
       const detail = document.getElementById('matchup-detail')!;
       expect(detail.tagName.toLowerCase()).toBe('section');
-      const heading = detail.querySelector('[data-slot="matchup-detail-heading"]')!;
+      const heading = pairingHero().querySelector('h1')!;
       expect(detail.getAttribute('aria-labelledby')).toBe(heading.id);
-      expect(screen.getByRole('region', { name: heading.textContent ?? '' })).toBe(detail);
+      expect(pairingHero().tagName.toLowerCase()).toBe('section');
+      expect(pairingHero().getAttribute('aria-labelledby')).toBe(heading.id);
+      const regions = screen.getAllByRole('region', { name: heading.textContent ?? '' });
+      expect(regions).toContain(detail);
+      expect(regions).toContain(pairingHero());
     });
 
-    it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same filter card, after the picker', async () => {
+    it('the picker is a fixed 3-column grid with overline labels and full-width comboboxes; HorizonSwitch renders in the same unboxed filter row, after the picker', async () => {
       await renderLoadedPairingForPicker();
       const picker = document.querySelector('[data-slot="matchup-pairing-picker"]');
       expect(picker).not.toBeNull();
@@ -1519,8 +1717,9 @@ describe('MatchupsPage', () => {
         expect(trigger!.className).not.toMatch(/w-\[220px\]/);
       }
 
-      const card = pickerEl.closest('[data-slot="card"]')!;
-      const horizonSwitch = card.querySelector('[data-slot="horizon-switch"]');
+      const row = pickerEl.closest('[data-slot="page-filter-row"]')!;
+      expect(row.closest('[data-slot="card"]')).toBeNull();
+      const horizonSwitch = row.querySelector('[data-slot="horizon-switch"]');
       expect(horizonSwitch).not.toBeNull();
       const pickerFollowedByHorizon =
         pickerEl.compareDocumentPosition(horizonSwitch!) & Node.DOCUMENT_POSITION_FOLLOWING;
@@ -1543,10 +1742,8 @@ describe('MatchupsPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
-    // ABSTENTION_FLOOR_GAMES (3) or more of the SAME pairing so ChartCard
-    // does not render its `abstained` placeholder in place of MatchupChart
-    // — `data-slot="matchup-chart-body"` only exists once real chart content
-    // is reached.
+    // Three games of the SAME pairing — the hero's `matchup-chart-body` only
+    // exists for a pairing with games.
     function threePairingMatches() {
       return [
         makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
@@ -1560,7 +1757,7 @@ describe('MatchupsPage', () => {
       listMatches.mockResolvedValue(threePairingMatches());
 
       const { container } = renderMatchups();
-      await screen.findByText('Matchup Matrix');
+      await screen.findByText('Matchup matrix');
       await waitFor(() =>
         expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
       );
@@ -1573,7 +1770,7 @@ describe('MatchupsPage', () => {
       listMatches.mockResolvedValue(threePairingMatches());
 
       const { container, queryClient } = renderMatchups();
-      await screen.findByText('Matchup Matrix');
+      await screen.findByText('Matchup matrix');
       await waitFor(() =>
         expect(container.querySelector('[data-slot="matchup-chart-body"]')).not.toBeNull(),
       );
@@ -1592,7 +1789,7 @@ describe('MatchupsPage', () => {
         const detail = document.getElementById('matchup-detail');
         expect(detail?.className).toMatch(/opacity-60/);
       });
-      expect(screen.getByText('Matchup Matrix')).toBeInTheDocument();
+      expect(screen.getByText('Matchup matrix')).toBeInTheDocument();
       expect(container.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(0);
 
       resolveSecondFetch(threePairingMatches());

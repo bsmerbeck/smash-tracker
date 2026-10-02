@@ -38,6 +38,102 @@ describe('resolveWindow', () => {
     expect(window.games).toBe(2);
   });
 
+  // Plan 39.1-44 (M4 follow-up, mirrors 39.2-review SH-CR-01): start.gg names nearly
+  // every bracket "Ultimate Singles", so an event is its name group (event name +
+  // tournament name) split into proximity blocks — never a bare event name.
+  it('lastEvent never pools same-named brackets of different tournaments', () => {
+    const older: Match[] = [
+      makeMatch({
+        id: 'a1',
+        time: NOW_MS - 20 * DAY_MS,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Collision 2026',
+      }),
+      makeMatch({
+        id: 'a2',
+        time: NOW_MS - 20 * DAY_MS + 3600_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Collision 2026',
+      }),
+    ];
+    const newer: Match[] = [
+      makeMatch({
+        id: 'b1',
+        time: NOW_MS - 1 * DAY_MS,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Battle of BC 8',
+      }),
+      makeMatch({
+        id: 'b2',
+        time: NOW_MS - 1 * DAY_MS + 3600_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Battle of BC 8',
+      }),
+    ];
+    const { window, matches } = resolveWindow({
+      matches: [...older, ...newer],
+      horizon: 'lastEvent',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    expect(matches.map((m) => m.id).sort()).toEqual(['b1', 'b2']);
+    expect(window.games).toBe(2);
+  });
+
+  it('lastEvent never pools the same tournament name months apart (proximity blocks)', () => {
+    const weeklyA: Match[] = [
+      makeMatch({
+        id: 'w1',
+        time: NOW_MS - 60 * DAY_MS,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly',
+      }),
+      makeMatch({
+        id: 'w2',
+        time: NOW_MS - 60 * DAY_MS + 1800_000,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly',
+      }),
+    ];
+    const weeklyB: Match[] = [
+      makeMatch({
+        id: 'w3',
+        time: NOW_MS - 2 * DAY_MS,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly',
+      }),
+    ];
+    const { matches } = resolveWindow({
+      matches: [...weeklyA, ...weeklyB],
+      horizon: 'lastEvent',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    expect(matches.map((m) => m.id)).toEqual(['w3']);
+  });
+
+  it('lastEvent keeps one event whole: same names inside the proximity window stay together', () => {
+    const day1 = makeMatch({
+      id: 'd1',
+      time: NOW_MS - 3 * DAY_MS,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Major',
+    });
+    const day2 = makeMatch({
+      id: 'd2',
+      time: NOW_MS - 2 * DAY_MS,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Major',
+    });
+    const { matches } = resolveWindow({
+      matches: [day1, day2],
+      horizon: 'lastEvent',
+      scoped: false,
+      nowMs: NOW_MS,
+    });
+    expect(matches.map((m) => m.id).sort()).toEqual(['d1', 'd2']);
+  });
+
   it('lastEvent returns [] over a history with no named event anywhere', () => {
     const { matches } = resolveWindow({
       matches: [makeMatch({ id: 'manual-1' }), makeMatch({ id: 'manual-2' })],

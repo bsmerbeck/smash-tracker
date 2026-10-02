@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -6,11 +6,14 @@ import type { HorizonKey, Insight, InsightScope, Match } from '@smash-tracker/sh
 import { INSIGHT_TEMPLATES, confidenceTierFor } from '@smash-tracker/shared';
 import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { Record } from '@/components/analytics/Record';
+import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { claimChipKindFor } from './MatchupChart';
+import { ReferenceSwatch } from './StageSeries';
 
 const MATCHUP_OR_PLAYER_TEMPLATE = INSIGHT_TEMPLATES.find(
   (template) => template.id === 'matchupOrPlayer',
@@ -118,6 +121,102 @@ function buildDoorNodes(
   return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
 }
 
+/** The engine's player-branch copy key (`matchupOrPlayer.ts`): the only state that carries the mark. */
+const PLAYER_COPY_KEY = 'insights.matchupOrPlayer.player';
+
+function markRow({
+  key,
+  label,
+  wins,
+  losses,
+}: {
+  key: string;
+  label: string;
+  wins: number;
+  losses: number;
+}): ComparisonBarsRow {
+  const total = wins + losses;
+  const rate = total > 0 ? Math.round((wins / total) * 100) : 0;
+  return {
+    key,
+    label,
+    labelTitle: label,
+    value: rate,
+    valueLabel: `${wins}–${losses} · ${rate}% · ${total}`,
+    valueNode: (
+      <Record
+        wins={wins}
+        losses={losses}
+        cue="none"
+        emphasis
+        className="[&>span:first-child]:text-foreground"
+      />
+    ),
+  };
+}
+
+/**
+ * Plan 39.1-46 (sketch 003 A `mopCard`, PD-46-2, T-39.1-46-01): the player
+ * branch's mark — "vs <top player>" against "everyone else" as reference rows.
+ * Both records come ONLY from the insight's own copy values (no host
+ * re-count of the matches): the player's record is (opponentGames −
+ * lossShare)–lossShare; everyone else's is the pairing's remainder. The
+ * reference is the pairing's all-time rate from the same values. No mark in
+ * any other state, and none when the values do not add up (never an invented
+ * figure). The "everyone else" row carries no player count — the insight
+ * does not expose one (PD-46-2).
+ */
+function buildPlayerMark(insight: Insight, t: TFunction): ReactNode | undefined {
+  if (insight.copy.key !== PLAYER_COPY_KEY) return undefined;
+  const { opponent, lossShare, totalLosses, opponentGames, totalGames } = insight.copy.values;
+  if (
+    typeof opponent !== 'string' ||
+    typeof lossShare !== 'number' ||
+    typeof totalLosses !== 'number' ||
+    typeof opponentGames !== 'number' ||
+    typeof totalGames !== 'number'
+  ) {
+    return undefined;
+  }
+  const playerWins = opponentGames - lossShare;
+  const restLosses = totalLosses - lossShare;
+  const restGames = totalGames - opponentGames;
+  const restWins = restGames - restLosses;
+  if (playerWins < 0 || restWins < 0 || restLosses < 0 || totalGames <= 0) return undefined;
+  const referenceRate = ((totalGames - totalLosses) / totalGames) * 100;
+  return (
+    <div className="flex flex-col gap-2">
+      <ComparisonBars
+        tone="series"
+        referenceRate={referenceRate}
+        rows={[
+          markRow({
+            key: 'player',
+            label: t('matchups.mop.vsPlayer', { opponent }),
+            wins: playerWins,
+            losses: lossShare,
+          }),
+          markRow({
+            key: 'rest',
+            label: t('matchups.mop.everyoneElse'),
+            wins: restWins,
+            losses: restLosses,
+          }),
+        ]}
+      />
+      <p
+        data-slot="mop-legend"
+        className="flex items-center gap-1.5 text-xs leading-4 text-muted-foreground"
+      >
+        <ReferenceSwatch />
+        <span>
+          {t('analytics.trend.legend.reference', { rate: `${Math.round(referenceRate)}%` })}
+        </span>
+      </p>
+    </div>
+  );
+}
+
 export interface MatchupOrPlayerCardProps {
   matchupMatches: Match[];
   /** The one shared computation — see `useMatchupOrPlayerInsight` above. */
@@ -170,6 +269,7 @@ export function MatchupOrPlayerCard({
       name={matchup}
       verdict={verdict}
       evidence={evidence}
+      mark={buildPlayerMark(insight, t)}
       doors={doors}
     />
   );

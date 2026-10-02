@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { ChevronDown } from 'lucide-react';
 import type { Ruleset, SetState } from '@smash-tracker/shared';
+import { SegmentedControl } from '@/components/analytics/SegmentedControl';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -12,9 +13,8 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { getStageById } from '@/data/stages';
+import { cn } from '@/lib/utils';
 
 /**
  * The composed "assuming X · Y · Z" sentence both this control's trigger
@@ -41,12 +41,15 @@ export function describeSetStateAssumption(t: TFunction, setState: SetState): st
 }
 
 /**
- * The D-11 set-state EDITOR (plan 37-05). Every clause here is entered
- * explicitly by the player — nothing is ever inferred from match data, and
- * nothing here is persisted: the state lives in `CounterpickAdvisor`'s
- * component state for the session only, and is reset whenever the pairing
- * changes. This is deliberate — it introduces no new storage surface, so
- * none of Phase 35's subject-scoped persistence rules are engaged.
+ * The D-11 set-state EDITOR for the two checklists (plan 37-05; plan 39.1-47
+ * moved the game-phase and role choices out into `CounterpickAdvisor`'s two
+ * segmented controls, sketch 003 B, so this popover holds only what cannot be
+ * a segment). Every clause is entered explicitly by the player — nothing is
+ * ever inferred from match data, and nothing here is persisted: the state
+ * lives in `CounterpickAdvisor`'s component state for the session only, and
+ * is reset whenever the pairing changes. This is deliberate — it introduces
+ * no new storage surface, so none of Phase 35's subject-scoped persistence
+ * rules are engaged.
  *
  * The two checklists ("prior stages played", "banned so far") are drawn from
  * every stage legal under the ACTIVE RULESET (starters + counterpicks
@@ -106,9 +109,14 @@ export function SetStateControl({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" aria-describedby={describedById}>
-          {t('matchups.counterpick.setState.editLabel')}
-          <ChevronDown className="size-3" />
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          aria-describedby={describedById}
+          className={cn(MUTED_LINK_TONE, 'h-auto px-1 py-0 text-xs underline')}
+        >
+          {t('matchups.counterpick.setState.playedBans')}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 text-sm">
@@ -116,44 +124,6 @@ export function SetStateControl({
           <PopoverTitle>{t('matchups.counterpick.setState.editAria')}</PopoverTitle>
         </PopoverHeader>
         <div className="mt-3 flex flex-col gap-4">
-          <RadioGroup
-            value={setState.phase}
-            onValueChange={(value) => onChange({ ...setState, phase: value as SetState['phase'] })}
-            className="flex flex-row gap-4"
-          >
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="set-state-phase-game1" value="game1" />
-              <Label htmlFor="set-state-phase-game1">
-                {t('matchups.counterpick.setState.phase.game1')}
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="set-state-phase-game2plus" value="game2plus" />
-              <Label htmlFor="set-state-phase-game2plus">
-                {t('matchups.counterpick.setState.phase.game2plus')}
-              </Label>
-            </div>
-          </RadioGroup>
-
-          <RadioGroup
-            value={setState.role}
-            onValueChange={(value) => onChange({ ...setState, role: value as SetState['role'] })}
-            className="flex flex-row gap-4"
-          >
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="set-state-role-striking" value="striking" />
-              <Label htmlFor="set-state-role-striking">
-                {t('matchups.counterpick.setState.role.striking')}
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="set-state-role-picking" value="picking" />
-              <Label htmlFor="set-state-role-picking">
-                {t('matchups.counterpick.setState.role.picking')}
-              </Label>
-            </div>
-          </RadioGroup>
-
           <div className="flex flex-col gap-2">
             <Label>{t('matchups.counterpick.setState.priorStagesLabel')}</Label>
             <div className="flex max-h-40 flex-col gap-2 overflow-y-auto">
@@ -173,24 +143,18 @@ export function SetStateControl({
                       </Label>
                     </div>
                     {prior != null && (
-                      <ToggleGroup
-                        type="single"
-                        variant="outline"
-                        size="sm"
+                      <SegmentedControl
+                        label={t('matchups.counterpick.setState.priorResultLabel', {
+                          stage: stageName,
+                        })}
                         value={prior.won ? 'won' : 'lost'}
-                        onValueChange={(value) => {
-                          if (!value) return;
-                          setPriorStageResult(stageId, value === 'won');
-                        }}
-                        className="ml-6"
-                      >
-                        <ToggleGroupItem value="won">
-                          {t('matchups.counterpick.setState.wonLabel')}
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="lost">
-                          {t('matchups.counterpick.setState.lostLabel')}
-                        </ToggleGroupItem>
-                      </ToggleGroup>
+                        onChange={(value) => setPriorStageResult(stageId, value === 'won')}
+                        options={[
+                          { value: 'won', label: t('matchups.counterpick.setState.wonLabel') },
+                          { value: 'lost', label: t('matchups.counterpick.setState.lostLabel') },
+                        ]}
+                        className="ml-6 w-fit"
+                      />
                     )}
                   </div>
                 );

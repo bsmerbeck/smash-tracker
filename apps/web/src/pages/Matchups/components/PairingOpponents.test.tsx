@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { PairingOpponents } from './PairingOpponents';
+
+/** A fixed as-of clock: every "last 12 months" window in these cases is measured from it. */
+const NOW_MS = Date.UTC(2026, 8, 25);
+const DAY_MS = 24 * 3_600_000;
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -34,12 +38,37 @@ function opponentsFixture(count: number): Match[] {
   return matches;
 }
 
-function renderPairing(matches: Match[]) {
+/** One start.gg-shaped game of set `setId` — a parsed set id keeps its own set. */
+function setGame(
+  setId: string,
+  game: number,
+  time: number,
+  win: boolean,
+  opponent = 'rival',
+): Match {
+  return makeMatch({
+    id: `${setId}-g${game}`,
+    externalId: `sgg:${setId}:g${game}`,
+    source: 'startgg',
+    time,
+    win,
+    opponent,
+  });
+}
+
+function renderPairing(matches: Match[], nowMs: number = NOW_MS) {
   return render(
     <MemoryRouter>
-      <PairingOpponents matchupMatches={matches} />
+      <PairingOpponents matchupMatches={matches} nowMs={nowMs} />
     </MemoryRouter>,
   );
+}
+
+function rowOf(tag: string): HTMLElement {
+  const tagEl = screen.getByText(tag);
+  const row = tagEl.closest('[data-slot="pairing-opponent-row"]');
+  expect(row, `a ledger row holds "${tag}"`).not.toBeNull();
+  return row as HTMLElement;
 }
 
 describe('PairingOpponents (owner note 11, UIX-02, INS-05)', () => {
@@ -72,17 +101,6 @@ describe('PairingOpponents (owner note 11, UIX-02, INS-05)', () => {
     expect(screen.getByRole('link', { name: /all 30 opponents/i })).toBeInTheDocument();
   });
 
-  it('WR-C01: a locked opponent row (below abstention floor) never renders "Thin" in its delta chip', () => {
-    // A single opponent tag with 2 recorded games -> record.total(2) <
-    // ABSTENTION_FLOOR_GAMES(3): the honesty ladder's `locked` state, a
-    // different tier than `thin`.
-    renderPairing([
-      makeMatch({ id: 'r1', opponent: 'rival', win: true }),
-      makeMatch({ id: 'r2', opponent: 'rival', win: false }),
-    ]);
-    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
-  });
-
   it('every rendered row is a link with a non-empty accessible name', () => {
     renderPairing(opponentsFixture(8));
     for (const link of screen.getAllByRole('link')) {
@@ -110,43 +128,216 @@ describe('PairingOpponents (owner note 11, UIX-02, INS-05)', () => {
     const tag = screen.getByText('a-fairly-long-opponent-tag-name');
     expect(tag).toHaveAttribute('title', 'a-fairly-long-opponent-tag-name');
   });
+});
 
-  describe('item 12 (plan 39.1-32): the tag owns its own line above a whole-token metrics line below a 480px row', () => {
-    it("every row's li holds one pairing-opponent-body whose children are, in order, the tag then the metrics group; the body is flex-col with the 480px row-cohesion breakpoint; the chevron is the li's last child", () => {
-      renderPairing([makeMatch({ opponent: 'onlyOne' })]);
-      const li = screen.getByRole('listitem');
-      const body = li.querySelector('[data-slot="pairing-opponent-body"]') as HTMLElement;
-      expect(body).not.toBeNull();
-      expect(body.className).toMatch(/\bflex-col\b/);
-      expect(body.className).toMatch(/@min-\[480px\]\/pairing-opponent-row:flex-row/);
+describe('PairingOpponents — the rivalry ledger rows (plan 39.1-45, sketch 003 C; rivalry-ledger)', () => {
+  it('titles the card "By opponent" and names the ledger scales in its meta line', () => {
+    renderPairing([makeMatch({ opponent: 'rival' })]);
+    expect(screen.getByText('By opponent')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'one tick per set · up = set won · most games first · chip = last 12 months vs all time',
+      ),
+    ).toBeInTheDocument();
+  });
 
-      const bodyChildren = Array.from(body.children) as HTMLElement[];
-      expect(bodyChildren).toHaveLength(2);
-      expect(bodyChildren[0]!.getAttribute('data-slot')).toBe('pairing-opponent-tag');
-      expect(bodyChildren[1]!.getAttribute('data-slot')).toBe('pairing-opponent-metrics');
+  it('every row is an li[data-slot=pairing-opponent-row] holding the drill overlay to /opponents/<tag>?fighter=&vs=', () => {
+    renderPairing([
+      makeMatch({ id: 'a', opponent: 'mkleo' }),
+      makeMatch({ id: 'b', opponent: 'shuton' }),
+    ]);
+    for (const tag of ['mkleo', 'shuton']) {
+      const row = rowOf(tag);
+      expect(row.tagName.toLowerCase()).toBe('li');
+      const link = within(row).getByRole('link');
+      expect(link.getAttribute('href')).toBe(`/opponents/${tag}?fighter=1&vs=10`);
+    }
+  });
 
-      const metrics = bodyChildren[1]!;
-      expect(metrics.className).toMatch(/\bflex-wrap\b/);
-      expect(metrics.textContent).toContain('1–0');
+  it('a tag with URL-significant characters is encoded in the hub path (T-39.1-45-01)', () => {
+    renderPairing([makeMatch({ opponent: 'a b/c?d' })]);
+    const href = screen.getByRole('link').getAttribute('href') ?? '';
+    expect(href).toMatch(/^\/opponents\/a%20b%2Fc%3Fd\?/);
+  });
 
-      expect(body.contains(bodyChildren[0]!)).toBe(true);
-      // The tag is not inside the metrics group.
-      expect(metrics.querySelector('[data-slot="pairing-opponent-tag"]')).toBeNull();
+  it('prints the record with the sets record and no RecordBar', () => {
+    // 2 sets: one won 2-0, one lost 0-1 -> games 2-1, sets 1-1.
+    const matches = [
+      setGame('s1', 1, NOW_MS - 40 * DAY_MS, true),
+      setGame('s1', 2, NOW_MS - 40 * DAY_MS + 600_000, true),
+      setGame('s2', 1, NOW_MS - 20 * DAY_MS, false),
+    ];
+    renderPairing(matches);
+    const row = rowOf('rival');
+    expect(row.textContent).toContain('2–1');
+    expect(row.textContent).toContain('sets 1–1');
+    // The shipped RecordBar drew a role=img win/loss bar inside the row.
+    expect(row.querySelector('[data-slot="record-bar"]')).toBeNull();
+  });
 
-      // The chevron (a lucide ChevronRight <svg>, aria-hidden) is the li's
-      // last element child.
-      expect(li.lastElementChild?.tagName.toLowerCase()).toBe('svg');
-      expect(li.lastElementChild).toHaveAttribute('aria-hidden', 'true');
-    });
+  it('carries the confidence glyph with its aria-label', () => {
+    renderPairing(
+      Array.from({ length: 4 }, (_, i) =>
+        setGame(`s${i}`, 1, NOW_MS - (50 - i) * DAY_MS, i % 2 === 0),
+      ),
+    );
+    const row = rowOf('rival');
+    expect(within(row).getByRole('img', { name: 'low confidence, 4 games' })).toBeInTheDocument();
+  });
 
-    it('the RecordBar wrapper drops below a 300px row and the Record wrapper drops below a 220px row (§6.5 rule 3 last-resort)', () => {
-      renderPairing([makeMatch({ opponent: 'onlyOne' })]);
-      const li = screen.getByRole('listitem');
-      const metrics = li.querySelector('[data-slot="pairing-opponent-metrics"]')!;
-      const recordBarWrapper = metrics.children[0] as HTMLElement;
-      const recordWrapper = metrics.children[1] as HTMLElement;
-      expect(recordBarWrapper.className).toMatch(/@max-\[300px\]\/pairing-opponent-row:hidden/);
-      expect(recordWrapper.className).toMatch(/@max-\[220px\]\/pairing-opponent-row:hidden/);
-    });
+  it('draws one set-strip tick per set, up = set won, with an aria-label naming sets won and lost', () => {
+    const matches = [
+      setGame('s1', 1, NOW_MS - 60 * DAY_MS, true),
+      setGame('s1', 2, NOW_MS - 60 * DAY_MS + 600_000, true),
+      setGame('s2', 1, NOW_MS - 40 * DAY_MS, false),
+      setGame('s3', 1, NOW_MS - 20 * DAY_MS, true),
+    ];
+    renderPairing(matches);
+    const row = rowOf('rival');
+    const strip = within(row).getByRole('img', { name: '2–1 sets' });
+    expect(strip).toHaveAttribute('data-slot', 'set-strip');
+    expect(strip.querySelectorAll('[data-slot="set-strip-tick-win"]')).toHaveLength(2);
+    expect(strip.querySelectorAll('[data-slot="set-strip-tick-loss"]')).toHaveLength(1);
+  });
+
+  it('a single set reads "1–0 sets" (eager-budget fallback label)', () => {
+    renderPairing([setGame('s1', 1, NOW_MS - 20 * DAY_MS, true)]);
+    expect(within(rowOf('rival')).getByRole('img', { name: '1–0 sets' })).toBeInTheDocument();
+  });
+
+  it('a manual play session is one tick (buildFormStripSetKeys)', () => {
+    const matches = [
+      makeMatch({ id: 'a', time: NOW_MS - 30 * DAY_MS, win: true }),
+      makeMatch({ id: 'b', time: NOW_MS - 30 * DAY_MS + 3_600_000, win: true }),
+      makeMatch({ id: 'c', time: NOW_MS - 30 * DAY_MS + 7_200_000, win: false }),
+    ];
+    renderPairing(matches);
+    const strip = within(rowOf('rival')).getByRole('img', { name: '1–0 sets' });
+    expect(strip.querySelectorAll('[data-slot^="set-strip-tick"]')).toHaveLength(1);
+  });
+
+  it('with more than 30 sets draws the newest 30 and says so; totals still describe every set', () => {
+    const matches = Array.from({ length: 35 }, (_, i) =>
+      setGame(`s${i}`, 1, NOW_MS - (400 - i) * DAY_MS, i % 2 === 0),
+    );
+    renderPairing(matches);
+    const row = rowOf('rival');
+    expect(row.querySelectorAll('[data-slot^="set-strip-tick"]')).toHaveLength(30);
+    expect(row.textContent).toContain('newest 30 of 35 sets');
+    // 18 of 35 sets won.
+    expect(row.textContent).toContain('sets 18–17');
+  });
+
+  it('prints the first → last month span', () => {
+    const matches = [
+      setGame('s1', 1, Date.UTC(2021, 3, 15, 12), true),
+      setGame('s2', 1, Date.UTC(2026, 5, 15, 12), false),
+    ];
+    renderPairing(matches);
+    expect(rowOf('rival').textContent).toContain('Apr 2021 → Jun 2026');
+  });
+
+  it('omits the chip when the opponent has no games in the last 12 months (PD-45-1)', () => {
+    // time 1000 is 1970 — outside the window from NOW_MS.
+    renderPairing([makeMatch({ opponent: 'rival' })]);
+    expect(within(rowOf('rival')).queryByText(/no games/i)).not.toBeInTheDocument();
+    expect(rowOf('rival').querySelector('[data-slot="delta-chip"]')).toBeNull();
+  });
+
+  it('WR-C01: a row with 2 games inside the window shows the no-direction count chip, never "Thin"', () => {
+    // 4 games all-time, 2 of them in the last 12 months: locked (below the floor).
+    renderPairing([
+      setGame('old1', 1, NOW_MS - 900 * DAY_MS, true),
+      setGame('old2', 1, NOW_MS - 800 * DAY_MS, false),
+      setGame('new1', 1, NOW_MS - 30 * DAY_MS, true),
+      setGame('new2', 1, NOW_MS - 10 * DAY_MS, false),
+    ]);
+    const row = rowOf('rival');
+    const chip = row.querySelector('[data-slot="delta-chip"]')!;
+    expect(chip).not.toBeNull();
+    expect(chip).toHaveAttribute('data-recent-games', '2');
+    expect(chip).toHaveAttribute('data-state', 'thin');
+    expect(chip.textContent).toContain('n 2 · no direction');
+    expect(screen.queryByText('Thin')).not.toBeInTheDocument();
+  });
+
+  it('the chip never names its own horizon — the card meta owns the window', () => {
+    renderPairing([
+      setGame('old1', 1, NOW_MS - 900 * DAY_MS, true),
+      setGame('new1', 1, NOW_MS - 30 * DAY_MS, true),
+      setGame('new2', 1, NOW_MS - 10 * DAY_MS, false),
+    ]);
+    const chip = rowOf('rival').querySelector('[data-slot="delta-chip"]')!;
+    expect(chip.textContent).not.toMatch(/last 30/);
+  });
+
+  it("a row whose recent window is most of that opponent's games (8 of 8, collapsed) renders no chip", () => {
+    renderPairing(
+      Array.from({ length: 8 }, (_, i) =>
+        setGame(`s${i}`, 1, NOW_MS - (30 - i) * DAY_MS, i % 2 === 0),
+      ),
+    );
+    expect(rowOf('rival').querySelector('[data-slot="delta-chip"]')).toBeNull();
+  });
+
+  it("every row after the first carries sketch C's hairline divider (centred in the row gap)", () => {
+    renderPairing([
+      setGame('a', 1, NOW_MS - 20 * DAY_MS, true, 'first'),
+      setGame('a2', 1, NOW_MS - 19 * DAY_MS, true, 'first'),
+      setGame('b', 1, NOW_MS - 18 * DAY_MS, true, 'second'),
+    ]);
+    const [first, second] = screen.getAllByRole('listitem');
+    expect(first!.className).not.toMatch(/before:h-px/);
+    expect(second!.className).toMatch(/before:h-px/);
+    expect(second!.className).toMatch(/before:bg-border/);
+  });
+
+  it('orders rows most games first, tag ascending on ties', () => {
+    const matches = [
+      ...Array.from({ length: 3 }, (_, i) => setGame(`b${i}`, 1, 1000 + i, true, 'beta')),
+      ...Array.from({ length: 3 }, (_, i) => setGame(`a${i}`, 1, 2000 + i, true, 'alpha')),
+      setGame('z', 1, 3000, true, 'zeta-most'),
+      ...Array.from({ length: 5 }, (_, i) => setGame(`m${i}`, 1, 4000 + i, true, 'most')),
+    ];
+    renderPairing(matches);
+    const tags = screen
+      .getAllByRole('listitem')
+      .map((li) => li.querySelector('[data-slot="pairing-opponent-tag"]')?.textContent);
+    expect(tags).toEqual(['most', 'alpha', 'beta', 'zeta-most']);
+  });
+
+  it("the layout: the li is a row container; the body is the ledger grid (tag line, chip cell, sets line); the chevron rides the sets line's right end", () => {
+    renderPairing([setGame('s1', 1, NOW_MS - 20 * DAY_MS, true)]);
+    const li = screen.getByRole('listitem');
+    expect(li.className).toMatch(/@container\/pairing-opponent-row/);
+    const body = li.querySelector('[data-slot="pairing-opponent-body"]') as HTMLElement;
+    expect(body).not.toBeNull();
+    expect(body.className).toMatch(/\bgrid\b/);
+    // One column below the 420px row container, the chip under line 1 left-aligned.
+    expect(body.className).toMatch(
+      /@max-\[419px\]\/pairing-opponent-row:grid-cols-\[minmax\(0,1fr\)\]/,
+    );
+    const slots = Array.from(body.children).map((child) => child.getAttribute('data-slot'));
+    expect(slots).toEqual([
+      'pairing-opponent-who',
+      'pairing-opponent-chip',
+      'pairing-opponent-sets',
+    ]);
+    const who = body.children[0] as HTMLElement;
+    expect(who.className).toMatch(/\bflex-wrap\b/);
+    expect(who.querySelector('[data-slot="pairing-opponent-tag"]')).not.toBeNull();
+    const chipCell = body.children[1] as HTMLElement;
+    // An empty chip cell is hidden so it cannot hold a phantom grid column or row gap.
+    expect(chipCell.className).toMatch(/\bempty:hidden\b/);
+    expect(chipCell.className).toMatch(/@max-\[419px\]\/pairing-opponent-row:justify-self-start/);
+    const sets = body.children[2] as HTMLElement;
+    expect(sets.className).toMatch(/col-span-full/);
+    expect(sets.querySelector('[data-slot="set-strip"]')).not.toBeNull();
+    // The chevron (a lucide ChevronRight <svg>, aria-hidden) is the sets line's last element
+    // child, pushed to its right end — a beside-the-body chevron would cost a phone row 24px.
+    const chevron = sets.lastElementChild as HTMLElement;
+    expect(chevron.tagName.toLowerCase()).toBe('svg');
+    expect(chevron).toHaveAttribute('aria-hidden', 'true');
+    expect(chevron.getAttribute('class')).toMatch(/\bml-auto\b/);
   });
 });

@@ -183,17 +183,29 @@ exports the tick-label truncation formatter (`formatEventTickLabel`) applied to 
 
 **Comparison bars** (`ComparisonBars.tsx`, shipped plan 37-05) — horizontal bars per
 stage/category, one `<li>` per row. Props: `rows: ComparisonBarsRow[]` (`{ key, label: ReactNode,
-value: number (0-100), valueLabel: string }`), `tone: 'emerald' | 'destructive'`, `onSelectRow?:
-(row) => void` (a full-width `<button>` row when given, a plain `<div>` row otherwise). Status-
-coloured — `emerald-500` for the pick tone, `--destructive` for the ban tone, never `--chart-*` —
-with the value label at the bar's tip and an unfilled track at ~15% opacity (the "meter"
-convention: state reads across the whole bar, not just the filled portion). Plain DOM, not a
-Recharts primitive: it renders no Recharts element, so it is intentionally NOT a member of
-`chartKitBoundary.test.ts`'s `KIT_CHART_PRIMITIVES` list (that list's structural frame rule scopes
-to files that render a Recharts element; a CSS meter is outside its scope). Test rule: colocated
-`ComparisonBars.test.tsx` asserts one list item and one track+fill element pair per row, sized to
-`value` as an inline width percentage; `CounterpickAdvisor.tsx` supplies the `ChartCard` frame it
-renders inside — see `CounterpickAdvisor.tsx`'s Pick/Ban groups for the shipped call site.
+value: number (0-100), valueLabel: string }`), `tone: 'series'`, `onSelectRow?: (row) => void` (a
+full-width `<button>` row when given, a plain `<div>` row otherwise). The original `emerald` /
+`destructive` status tones (the Counterpick Advisor's pick / ban judgement, plan 37-05) were
+**deleted in plan 39.1-47 (PD-47-4)** with their last caller: an alarm colour on an evidence row
+breaks the sketches' "blue data ink" rule, and `designFidelity.test.ts` fails a status tone passed to
+this member. Plain DOM, not a Recharts primitive: it renders no Recharts element, so it is
+intentionally NOT a member of `chartKitBoundary.test.ts`'s `KIT_CHART_PRIMITIVES` list (that list's
+structural frame rule scopes to files that render a Recharts element; a CSS meter is outside its
+scope). Test rule: colocated `ComparisonBars.test.tsx` asserts one list item and one track+fill
+element pair per row, sized to `value` as an inline width percentage, and that the tone union is
+`series` only; the Matchups rail cards (Insights, Stage breakdown, MatchupOrPlayer, Counterpick
+Advisor) are the shipped call sites.
+
+**Comparison bars, `series` tone** (plan 39.1-46, PD-46-1, sketch 003 A `.cmp` rows) — the neutral
+evidence tone of the same member, not a new one: `tone="series"` draws the identity series token
+(`--viz-series-1`) on a muted 6px track, in a two-column row (truncating label with a `labelTitle`
+tooltip | value, the track spanning both). `referenceRate` (0-100) draws one 2px de-emphasis tick —
+the all-time rate — on every row's track, poking 2px past it above and below; a row's `subFloor`
+fills with the strong de-emphasis token and mutes its label (a bar under the 3-game floor is grey,
+never a judgement); `valueNode` replaces the printed `valueLabel` (which stays as screen-reader text);
+`divided` adds hairlines between rows. Rows given `onSelectRow` are buttons with a hover wash — the
+Matchups Stage breakdown, Insights and Counterpick Advisor rows are stage drills. No status colour
+appears in this tone — and, since plan 39.1-47, no other tone exists.
 
 **Sparkline / stat tile** (`StatTile.tsx`, shipped plan 37-03) — a `ChartCard` used as a compact
 tile rather than a full chart body. Props: `stats: { label: string; value: string | number }[]`,
@@ -237,10 +249,9 @@ unknown-axis neutral treatment, the tiered win/loss/neutral tint, and cell activ
 **The collision rule, concretely, as it applies on Matchups today:** the win-rate trend line
 (`TrendLine.tsx`) wears the categorical identity token `--chart-1` — it is not read as good/bad, its
 Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and ban bars
-(`ComparisonBars.tsx`) wear the app's status colours instead — `emerald-500` and `--destructive` —
-because they ARE a good/bad judgement. The two never appear as marks in the same chart: the trend
-lives inside its own `ChartCard` on `MatchupChart`, the bars inside the Counterpick Advisor's own
-`ChartCard`, never combined into one chart body.
+(`ComparisonBars.tsx`) wear the same identity token as neutral `series` rows (plan 39.1-47): the
+ranking is the engine's pick / ban split and the heading says Pick or Ban, but a green / red bar
+would read as a verdict the evidence does not carry, so status colour stays on win / loss marks only.
 
 ### NOT implemented this phase — Phase 41 owns these (D-05)
 

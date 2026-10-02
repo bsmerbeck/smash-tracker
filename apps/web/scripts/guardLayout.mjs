@@ -32,6 +32,7 @@ import { startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
 import {
   evaluateStretch,
   evaluateScrollBudget,
+  describeDeferredScrollBudget,
   evaluateHorizontalOverflow,
   evaluateTruncation,
   evaluateCardContentOverflow,
@@ -44,6 +45,8 @@ import {
   evaluatePickerAlignment,
   evaluateRowCohesion,
   evaluateRowTagLegibility,
+  evaluateLedgerRows,
+  formatLedgerLine,
   evaluateNestedScrollers,
   evaluateCardHeightCeilings,
   evaluateFormStripFit,
@@ -75,6 +78,8 @@ import {
   PERIOD_TREND_TICK_GAP_PX,
   evaluateFormStripLabels,
   formatFormStripLine,
+  evaluateSectionOrder,
+  formatSectionOrderLine,
   terminusBudgetExcessPx,
   tableClipModeForRoute,
   headerSqueezeConfigForRoute,
@@ -86,7 +91,8 @@ import {
   TABLE_CLIP_SCAN_SELECTOR,
   DEFAULT_SCROLL_BUDGETS,
   MATCHUPS_SCROLL_BUDGET_390X844,
-  WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
+  MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844,
+  PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
   LAYOUT_ORACLE_VIEWPORTS,
   EXTRA_ORACLE_VIEWPORTS,
   NARROW_VIEWPORT_MAX_WIDTH_PX,
@@ -127,6 +133,48 @@ function periodTrendAxisExpectFor(domain) {
     strayHairlines: 0,
   };
 }
+
+/**
+ * Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1): the Matchups sections in the
+ * DOM order every width keeps — the hero, then By opponent, the four rail
+ * cards, the matrix, the results. `matchup-or-player` is optional (the engine
+ * may hide it); every other slot is required, so a page drifting away from its
+ * slots is `section-order-unmeasured`, never a silent pass.
+ */
+const MATCHUPS_SECTION_ORDER = {
+  slots: [
+    { slot: 'pairing-hero' },
+    { slot: 'pairing-opponents' },
+    { slot: 'matchup-insights' },
+    { slot: 'matchup-or-player', optional: true },
+    { slot: 'counterpick-advisor' },
+    { slot: 'stage-breakdown' },
+    { slot: 'matchup-matrix' },
+    { slot: 'matchup-results' },
+  ],
+};
+
+/**
+ * Plan 39.1-44 (PD-44-4): Matchups' filter row carries no title (the pairing
+ * hero's heading is the page h1), so its owner is the HorizonSwitch alone.
+ */
+const MATCHUPS_FILTER_ROW = {
+  maxHeightPx: 72,
+  // At the 1024 tier the content column is ~720px (the 256px sidebar): two
+  // 15rem pickers and the switch cannot share one line, so the row is two
+  // wrapped rows of ~56px (measured 122px at 39.1-44). Every other width
+  // keeps the one-row 72px ceiling.
+  maxHeightPxByViewport: { '1024x768': 128 },
+  owns: ['[data-slot="horizon-switch"]'],
+};
+
+/** Plan 39.1-44: the pairing hero is the phone card-height ceiling's card (PD-44-5). */
+const PAIRING_HERO_CARD_CEILINGS = [
+  {
+    marker: '[data-slot="pairing-hero"]',
+    maxViewportHeights: PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS,
+  },
+];
 
 export const LAYOUT_ORACLE_ROUTES = [
   {
@@ -244,26 +292,31 @@ export const LAYOUT_ORACLE_ROUTES = [
       // Plan 39.1-51 (OOS-8): the results list's last row is whole, inside no
       // vertical scroller.
       'last-row-visible',
+      // Plan 39.1-44 (PD-44-1 / PD-44-4): sketch A's composition and its
+      // unboxed, untitled filter row.
+      'section-order',
+      'filter-row',
+      // Plan 39.1-45: sketch 003 C's ledger rows hold their content and strip.
+      'ledger-rows',
     ],
+    // The rail's MatchupOrPlayer mark is an `insight-card`, not a `card`: count
+    // it, or the rail's dead-gap check would read across it.
+    gridBalance: { cardSelector: '[data-slot="card"], [data-slot="insight-card"]' },
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
     extraViewports: ['1024x768', '1280x800'],
     // Plan 39.1-32: evaluated ONLY at viewports up to NARROW_VIEWPORT_MAX_WIDTH_PX
     // wide (UI-SPEC §6.6 "below 640") — every other route's `narrowChecks` is
     // `undefined`, so `measureRouteAtViewport` requests none for them.
-    // Plan 39.1-33 adds card-height-ceiling (the Win Rate Trend card, a
-    // phone-only ceiling).
+    // Plan 39.1-33 adds card-height-ceiling, a phone-only ceiling (plan
+    // 39.1-44 moves it from the Win Rate Trend card to the pairing hero).
     narrowChecks: ['row-tag-legibility', 'nested-scroll', 'card-height-ceiling'],
     // Plan 39.1-33: Matchups' own phone scroll budget, merged over
     // DEFAULT_SCROLL_BUDGETS — see evaluateScrollBudget's doc comment.
     scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
-    // Plan 39.1-33: the Win Rate Trend ChartCard is the closest
-    // [data-slot="card"] ancestor of the route's own loaded marker — no new
-    // hook needed.
-    cardHeightCeilings: [
-      {
-        marker: '[data-slot="matchup-chart-body"]',
-        maxViewportHeights: WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS,
-      },
-    ],
+    // Plan 39.1-44 (PD-44-5): the pairing hero's card, from sketch A's
+    // measured hero height.
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
   },
   {
     // Plan 39.1-41 (sketch 003 tracer, PD-41-1): the Matchups page on sketch
@@ -287,7 +340,21 @@ export const LAYOUT_ORACLE_ROUTES = [
       'axis-ticks',
       // Plan 39.1-43b: the trend's axis against sketch 003 A's CSS.
       'period-trend-axis',
+      // Plan 39.1-44: sketch A's composition, filter row, phone hero ceiling.
+      'section-order',
+      'filter-row',
+      // Plan 39.1-45: sketch 003 C's ledger rows hold their content and strip.
+      'ledger-rows',
     ],
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
+    // Plan 39.1-45: the 11-player pairing's rows keep a readable tag at 390.
+    narrowChecks: ['card-height-ceiling', 'row-tag-legibility'],
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
+    // Plan 39.1-48 (PD-48-1, replaces plan 39.1-44's deferral): the deep
+    // pairing's 390 page is enforced at its own named constant — the measured
+    // page plus a tolerance — see MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844.
+    scrollBudgets: { '390x844': MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844 },
     // Plan 39.1-43b: sketch 003 A deep draws 20 / 40 / 60 / 80 / 100.
     periodTrendAxisExpect: periodTrendAxisExpectFor([20, 100]),
     periodTrendExpect: {
@@ -313,7 +380,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       'form-strip-labels',
       'brand-red-text',
       'content-overflow',
+      // Plan 39.1-44: sketch A's composition, filter row, phone hero ceiling.
+      'section-order',
+      'filter-row',
     ],
+    sectionOrder: MATCHUPS_SECTION_ORDER,
+    filterRow: MATCHUPS_FILTER_ROW,
+    narrowChecks: ['card-height-ceiling'],
+    cardHeightCeilings: PAIRING_HERO_CARD_CEILINGS,
+    scrollBudgets: { '390x844': MATCHUPS_SCROLL_BUDGET_390X844 },
     periodTrendExpect: { state: 'locked' },
   },
   {
@@ -621,6 +696,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantPickerAlignment = checks.includes('picker-alignment');
   const wantRowCohesion = checks.includes('row-cohesion');
   const wantRowTagLegibility = checks.includes('row-tag-legibility');
+  // Plan 39.1-45: the By-opponent ledger rows (sketch 003 C).
+  const wantLedgerRows = checks.includes('ledger-rows');
   const wantNestedScroll = checks.includes('nested-scroll');
   const wantCardHeightCeiling = checks.includes('card-height-ceiling');
   const wantFormStripFit = checks.includes('form-strip-fit');
@@ -649,6 +726,8 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   const wantPeriodTrendAxis = checks.includes('period-trend-axis');
   // Plan 39.1-42: the strip's labelled events (sketch 003 `formStrip`).
   const wantFormStripLabels = checks.includes('form-strip-labels');
+  // Plan 39.1-44: the Matchups sections' DOM order and geometry.
+  const wantSectionOrder = checks.includes('section-order');
 
   function describeElement(el) {
     if (el.getAttribute('data-testid')) {
@@ -1037,6 +1116,45 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     }
   }
 
+  // Plan 39.1-45: every By-opponent ledger row — the row slot, else the closest
+  // li of each tag so the shipped (pre-ledger) rows are measured, not skipped.
+  const ledgerRowsFound = [];
+  if (wantLedgerRows) {
+    const rowEls = new Set(document.querySelectorAll('[data-slot="pairing-opponent-row"]'));
+    if (rowEls.size === 0) {
+      for (const tagEl of document.querySelectorAll('[data-slot="pairing-opponent-tag"]')) {
+        const li = tagEl.closest('li');
+        if (li) rowEls.add(li);
+      }
+    }
+    for (const rowEl of rowEls) {
+      const rowRect = rowEl.getBoundingClientRect();
+      let descendantMaxRight = rowRect.right;
+      for (const child of rowEl.getElementsByTagName('*')) {
+        const r = child.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (r.right > descendantMaxRight) descendantMaxRight = r.right;
+      }
+      const rowStyle = window.getComputedStyle(rowEl);
+      const tagEl = rowEl.querySelector('[data-slot="pairing-opponent-tag"]');
+      ledgerRowsFound.push({
+        selectorPath: describeElement(rowEl),
+        scrollWidth: rowEl.scrollWidth,
+        clientWidth: rowEl.clientWidth,
+        rowRight: rowRect.right,
+        descendantMaxRight,
+        tickCount: rowEl.querySelectorAll(
+          '[data-slot="set-strip-tick-win"], [data-slot="set-strip-tick-loss"]',
+        ).length,
+        tagWidth: tagEl ? tagEl.getBoundingClientRect().width : 0,
+        rowContentWidth:
+          rowEl.clientWidth -
+          (parseFloat(rowStyle.paddingLeft) || 0) -
+          (parseFloat(rowStyle.paddingRight) || 0),
+      });
+    }
+  }
+
   const nestedScrollers = [];
   if (wantNestedScroll) {
     // Layout reads (scrollHeight/clientHeight) first — cheap; `getComputedStyle`
@@ -1073,7 +1191,11 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   if (wantCardHeightCeiling) {
     for (const ceiling of ceilingMarkers) {
       const markerEl = document.querySelector(ceiling.marker);
-      const cardEl = markerEl ? markerEl.closest('[data-slot="card"]') : null;
+      // The marker sits INSIDE its card (plan 39.1-33's chart body) or WRAPS
+      // exactly one (plan 39.1-44's pairing hero region).
+      const cardEl = markerEl
+        ? (markerEl.closest('[data-slot="card"]') ?? markerEl.querySelector('[data-slot="card"]'))
+        : null;
       if (cardEl) {
         const rect = cardEl.getBoundingClientRect();
         cardHeightCards.push({
@@ -1250,6 +1372,19 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
           filterRowOwnedInCards.push({ selector, selectorPath: describeElement(ownedEl) });
         }
       }
+    }
+  }
+
+  // Plan 39.1-44: each declared section's DOM index (among every slotted
+  // element) and rect; an unresolved slot is simply absent (the evaluator
+  // reports a required one as unmeasured).
+  const sectionOrderFound = [];
+  if (wantSectionOrder) {
+    const slotted = Array.from(document.querySelectorAll('[data-slot]'));
+    for (const { slot } of (familyConfig.sectionOrder && familyConfig.sectionOrder.slots) || []) {
+      const el = document.querySelector(`[data-slot="${slot}"]`);
+      if (!el) continue;
+      sectionOrderFound.push({ slot, domIndex: slotted.indexOf(el), rect: plainRect(el) });
     }
   }
 
@@ -1802,6 +1937,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
   }
 
   return {
+    sectionOrderFound,
     periodTrends,
     terminusFlowsPx,
     terminusLists,
@@ -1829,6 +1965,7 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
     pickers,
     rowCohesionRows,
     rowTags,
+    ledgerRowsFound,
     nestedScrollers,
     nestedScrollPresenceList: nestedScrollPresenceList.length,
     cardHeightCards,
@@ -2210,6 +2347,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     // Plan 39.1-38: the page-frame families' per-route declarations.
     const familyConfig = {
       filterRow: route.filterRow ?? null,
+      sectionOrder: route.sectionOrder ?? null,
       placement: route.placement ?? [],
       orderPairs: route.orderPairs ?? [],
       clipTargets: route.clipTargets ?? [],
@@ -2289,6 +2427,10 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       violations.push(...evaluateRowTagLegibility(measurements.rowTags));
       violations.push(...evaluateFamilyPresence('row-tag-legibility', measurements.rowTags));
     }
+    // Plan 39.1-45: the evaluator carries its own -unmeasured path.
+    if (checks.includes('ledger-rows')) {
+      violations.push(...evaluateLedgerRows(measurements.ledgerRowsFound));
+    }
     if (checks.includes('nested-scroll')) {
       violations.push(...evaluateNestedScrollers(measurements.nestedScrollers));
       violations.push(
@@ -2337,10 +2479,21 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       violations.push(
         ...evaluateFilterRow({
           viewportWidth: viewport.width,
-          maxHeightPx: route.filterRow?.maxHeightPx,
+          maxHeightPx:
+            route.filterRow?.maxHeightPxByViewport?.[viewport.name] ?? route.filterRow?.maxHeightPx,
           owners: route.filterRow?.owns ?? [],
           rows: measurements.filterRows,
           ownedInCards: measurements.filterRowOwnedInCards,
+        }),
+      );
+    }
+    // Plan 39.1-44: section-order (its required-slot check is inside the evaluator).
+    if (checks.includes('section-order')) {
+      violations.push(
+        ...evaluateSectionOrder({
+          viewportWidth: viewport.width,
+          expected: route.sectionOrder?.slots ?? [],
+          found: measurements.sectionOrderFound,
         }),
       );
     }
@@ -2450,8 +2603,18 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       maxStretchPx,
       scrollRatio,
       terminusBudget,
+      scrollBudgetDeferred: describeDeferredScrollBudget(
+        {
+          scrollHeight: measurements.scrollHeight - excludedPx,
+          innerHeight: measurements.innerHeight,
+          viewportName: viewport.name,
+        },
+        route.deferredScrollBudgets,
+      ),
       lastRows,
       cardHeightCards: measurements.cardHeightCards,
+      sectionOrderFound: checks.includes('section-order') ? measurements.sectionOrderFound : null,
+      ledgerRows: checks.includes('ledger-rows') ? measurements.ledgerRowsFound : null,
       innerHeight: measurements.innerHeight,
       timelines: checks.includes('career-timeline') ? measurements.timelines : [],
       plotSurfaces: checks.includes('plot-aspect') ? measurements.plotSurfaces : [],
@@ -2664,7 +2827,7 @@ async function main() {
   // most NARROW_VIEWPORT_MAX_WIDTH_PX wide) and the text-fit targets the
   // route declares for that viewport. Always prints its TABLE_CLIP /
   // TEXT_FIT line; enforce-mode offenders are ordinary VIOLATION lines,
-  // Matchups' routed ones TABLE_CLIP_ROUTED lines (exit code untouched).
+  // routed ones (none since plan 39.1-48) TABLE_CLIP_ROUTED lines.
   const sweptIds = new Set(tableClipSweepRoutes(LAYOUT_ORACLE_ROUTES).map((route) => route.id));
   async function runShellPasses(route, viewport) {
     const sweep = viewport.width <= NARROW_VIEWPORT_MAX_WIDTH_PX && sweptIds.has(route.id);
@@ -2772,6 +2935,23 @@ async function main() {
             // Plan 39.1-43b: one PERIOD_TREND_AXIS line per drawn period trend.
             for (const surface of result.periodTrendAxes ?? []) {
               console.log(formatPeriodTrendAxisLine(route.id, viewport.name, surface));
+            }
+            // Plan 39.1-44: a deferred scroll budget is printed every run.
+            if (result.scrollBudgetDeferred) {
+              const d = result.scrollBudgetDeferred;
+              console.log(
+                `SCROLL_BUDGET_DEFERRED route=${route.id} viewport=${d.viewportName} ratio=${d.ratio.toFixed(3)} budget=${d.budget} over=${d.over} until=${d.until}`,
+              );
+            }
+            // Plan 39.1-44: one SECTION_ORDER line per opted-in surface.
+            if (result.sectionOrderFound) {
+              console.log(
+                formatSectionOrderLine(route.id, viewport.name, result.sectionOrderFound),
+              );
+            }
+            // Plan 39.1-45: one LEDGER line per opted-in surface.
+            if (result.ledgerRows) {
+              console.log(formatLedgerLine(route.id, viewport.name, result.ledgerRows));
             }
             // Plan 39.1-42: one FORM_STRIP line per measured strip root.
             for (const strip of result.formStripLabelStrips ?? []) {

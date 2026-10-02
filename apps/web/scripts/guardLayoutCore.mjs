@@ -118,6 +118,31 @@ export function evaluateScrollBudget(
   return [];
 }
 
+/**
+ * Plan 39.1-44: a scroll budget a route has NOT enforced yet. `deferred` is
+ * `{ budget, until }` (the budget the route must meet and the plan that owns
+ * turning it on). Returns `null` when the viewport has no deferred entry, else
+ * `{ viewportName, ratio, budget, until, over }` — recorded by the runner as a
+ * `SCROLL_BUDGET_DEFERRED` line every run (never a violation, never silent), so
+ * the deferral cannot rot unseen and the owning plan sees exactly how far over
+ * the budget the page still is.
+ */
+export function describeDeferredScrollBudget(
+  { scrollHeight, innerHeight, viewportName },
+  deferredBudgets = {},
+) {
+  const deferred = deferredBudgets[viewportName];
+  if (deferred === undefined) return null;
+  const ratio = scrollHeight / innerHeight;
+  return {
+    viewportName,
+    ratio,
+    budget: deferred.budget,
+    until: deferred.until,
+    over: ratio > deferred.budget,
+  };
+}
+
 /** UI-SPEC §6.3: no horizontal page scroll at any viewport (390px is where it actually bites). */
 export function evaluateHorizontalOverflow({ scrollWidth, innerWidth }) {
   if (scrollWidth > innerWidth) {
@@ -640,6 +665,55 @@ export function evaluateRowTagLegibility(tags, minShare = TAG_MIN_ROW_SHARE) {
   return violations;
 }
 
+/** Plan 39.1-45: sub-pixel slack a ledger row's scroll width and descendant edges may exceed their box by. */
+export const LEDGER_ROW_OVERFLOW_TOLERANCE_PX = 1;
+
+/**
+ * Plan 39.1-45 (sketch 003 C ledger rows, UI-SPEC §6.5): every By-opponent
+ * row must hold its content and carry its per-set strip. Each `row` is
+ * `{ selectorPath, scrollWidth, clientWidth, rowRight, descendantMaxRight,
+ * tickCount, tagWidth, rowContentWidth }`. Every offender is returned:
+ * - `ledger-rows-unmeasured`: an opted route rendered no row;
+ * - `ledger-row-overflow`: the row scrolls wider than it is, or a descendant's
+ *   right edge lies past the row's right edge (more than 1px each);
+ * - `ledger-strip-missing`: a row with no set tick.
+ */
+export function evaluateLedgerRows(rows) {
+  if (rows.length === 0) {
+    return [{ type: 'ledger-rows-unmeasured' }];
+  }
+  const violations = [];
+  for (const row of rows) {
+    const { selectorPath, scrollWidth, clientWidth, rowRight, descendantMaxRight, tickCount } = row;
+    if (
+      scrollWidth > clientWidth + LEDGER_ROW_OVERFLOW_TOLERANCE_PX ||
+      descendantMaxRight > rowRight + LEDGER_ROW_OVERFLOW_TOLERANCE_PX
+    ) {
+      violations.push({
+        type: 'ledger-row-overflow',
+        selectorPath,
+        scrollWidth,
+        clientWidth,
+        rowRight,
+        descendantMaxRight,
+      });
+    }
+    if (!(tickCount > 0)) {
+      violations.push({ type: 'ledger-strip-missing', selectorPath });
+    }
+  }
+  return violations;
+}
+
+/** Plan 39.1-45: the one LEDGER line per measured surface — the row count and the smallest tag share of a row's content width. */
+export function formatLedgerLine(routeId, viewportName, rows) {
+  const shares = rows
+    .filter((row) => row.rowContentWidth > 0)
+    .map((row) => row.tagWidth / row.rowContentWidth);
+  const min = shares.length > 0 ? Math.min(...shares).toFixed(2) : 'none';
+  return `LEDGER route=${routeId} viewport=${viewportName} rows=${rows.length} minTagShare=${min}`;
+}
+
 /**
  * UI-SPEC §6.4: a nested vertical scroller (an element that scrolls its own
  * content, inside the page's own scroll) is banned below 640px. Each
@@ -673,25 +747,48 @@ export function evaluateNestedScrollers(scrollers) {
 // ---------------------------------------------------------------------------
 
 /**
- * Plan 39.1-33: a Matchups regression tripwire, not a design target —
- * UI-SPEC §6.3's own budgets and every other route are unchanged. Derived
- * from the measured projection of a single-row form strip + a 20-row phone
- * results page (7.127 viewport heights, ~6015px) plus ~0.37 (~315px, ~3.5
- * rows) of headroom: 5.611 at 9abcac76 and 6.063 after plan 31 both had the
- * list confined to the (now-banned) 500px nested scroller; 13.793 at
- * 494216ed with neither fix; 7.767 with only the form strip fixed; 13.153
- * with only the results list bounded. 7.5 sits below every single-regression
- * state and below a stacked cap drifting past ~23 rows.
+ * Plan 39.1-44 (PD-44-5): the Matchups phone scroll budget, re-derived from the
+ * APPROVED SKETCH's measured page height (design-audit/matchups-fidelity/
+ * after-39.1-43/metrics.json, sketch 003 A at 390x844): thin 4405px / 844 =
+ * 5.219 viewport heights, deep 6176px / 844 = 7.318. The budget is the larger
+ * page ratio + 0.4 (~340px of headroom, ~3 stacked result rows) = 7.718,
+ * rounded up to 7.72 (and never below 7.5 — plan 39.1-33's floor). Plan
+ * 39.1-33's first derivation (7.5: a single-row strip + a 20-row phone results
+ * page, 7.127 heights measured on the old composition, with 0.37 headroom)
+ * is superseded — the composition it measured is gone. The
+ * plan 39.1-33 regression states (13.793 with neither fix, 7.767 with only the
+ * form strip fixed, 13.153 with only the results list bounded) all still
+ * exceed 7.72.
  */
-export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.5;
+export const MATCHUPS_SCROLL_BUDGET_390X844 = 7.72;
 
 /**
- * Plan 39.1-33: one phone screen — a card taller than the viewport can never
- * be seen whole. 1204px (1.427 viewport heights) on 494216ed fails by 360px;
- * the projected single-row-strip card (~664px, ~0.787) passes with ~180px
- * headroom.
+ * Plan 39.1-48 (PD-48-1, reversible, the owner's first decision in
+ * MATCHUPS-FIDELITY.md): the sketch-deep 390 page could not reach 7.72. After
+ * plan 48 tightened the stacked results rows (118 -> 100 px, page 8.269 ->
+ * 7.866) and stacked the matrix below 640px so the enforced table-clip passes
+ * (the 5-column grid scrolled inside its card, 298 -> 450 px), the page
+ * measures 6791 px / 844 = 8.046. Its attribution against the sketch's 6176 px:
+ * matrix +212 px (sprite headers PD-47-5; stacked rows, UI-SPEC 6.6), advisor
+ * +144 (the engine's 3 Pick + 3 Ban rows and the ruleset control, PD-47-1/2),
+ * results +84 (the filter summary card the sketch omits), By opponent +62,
+ * hero +45, Stage breakdown +18, Insights +8, the stacked pickers and filter
+ * row +122, section gaps and remainder +62, less MatchupOrPlayer -96 and the
+ * trend -46 (sum +615 px). The enforced value is that measurement plus a 0.03 (~25 px)
+ * tolerance; matchups and sketch-thin stay at MATCHUPS_SCROLL_BUDGET_390X844.
  */
-export const WIN_RATE_TREND_CARD_MAX_VIEWPORT_HEIGHTS = 1;
+export const MATCHUPS_SKETCH_DEEP_SCROLL_BUDGET_390X844 = 8.08;
+
+/**
+ * Plan 39.1-44 (PD-44-5): one phone screen cannot hold the pairing hero, but
+ * its card height is bounded by the approved design: the sketch's hero region
+ * at 390x844 is 1022px thin / 1219px deep (after-39.1-43 metrics.json), i.e.
+ * 1.211 / 1.444 viewport heights; the ceiling is the taller (deep) x 1.10 =
+ * 1.588, rounded up to 1.59 (~1342px). It replaces plan 39.1-33's Win Rate
+ * Trend card ceiling (1.0), whose card no longer exists (the trend lives in
+ * the hero).
+ */
+export const PAIRING_HERO_CARD_MAX_VIEWPORT_HEIGHTS = 1.59;
 
 /** Plan 39.1-33: the FormStrip row's own set-top spread tolerance, px. */
 export const FORM_STRIP_ROW_TOP_TOLERANCE_PX = 2;
@@ -724,6 +821,139 @@ export function evaluateCardHeightCeilings({ innerHeight, cards }) {
     }
   }
   return violations;
+}
+
+// ---------------------------------------------------------------------------
+// Plan 39.1-44: the section-order family — sketch 003 A's composition (hero +
+// By opponent beside the rail at 1280+, the matrix below the whole pairing,
+// results last, one reading order at every width).
+// ---------------------------------------------------------------------------
+
+/** Plan 39.1-44: rect comparisons tolerate this many px of sub-pixel rounding. */
+export const SECTION_ORDER_TOLERANCE_PX = 1;
+/** Plan 39.1-44: the rail sits beside the hero from this viewport width up (UI-SPEC 6.6). */
+export const SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX = 1280;
+/** Plan 39.1-44: the first rail section's top may differ from the hero's by at most this many px. */
+export const SECTION_ORDER_RAIL_TOP_TOLERANCE_PX = 2;
+
+/** The pairing sections the matrix must sit below (declared DOM order, hero first). */
+const SECTION_ORDER_PAIRING_SLOTS = [
+  'pairing-hero',
+  'pairing-opponents',
+  'matchup-insights',
+  'matchup-or-player',
+  'counterpick-advisor',
+  'stage-breakdown',
+];
+/** The rail's sections, in rail order. */
+const SECTION_ORDER_RAIL_SLOTS = [
+  'matchup-insights',
+  'matchup-or-player',
+  'counterpick-advisor',
+  'stage-breakdown',
+];
+
+/**
+ * Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1): the declared sections, in the
+ * DOM order every width must keep. Input:
+ * `{ viewportWidth, expected: [{ slot, optional? }], found: [{ slot, domIndex,
+ * rect: { left, right, top, bottom } }] }`, `found` holding only the slots
+ * that resolved. A required slot that is absent is `section-order-unmeasured`
+ * (never a silent pass — the page drifting away from its slots must fail);
+ * an absent optional slot is skipped.
+ *
+ * - `section-order-dom`: the found slots' DOM order differs from `expected`.
+ * - `section-order-matrix-above`: the matrix's top is above the bottom of any
+ *   pairing section.
+ * - From 1280px: `section-order-rail-not-beside` — a rail section's left edge
+ *   is left of the hero's right edge, or the first rail section's top differs
+ *   from the hero's by more than 2px.
+ * - At 639px and narrower: `section-order-stacked` — a section's top is above
+ *   the previous section's bottom (minus 1px).
+ */
+export function evaluateSectionOrder({ viewportWidth, expected, found }) {
+  const violations = [];
+  const bySlot = new Map(found.map((item) => [item.slot, item]));
+  for (const { slot, optional } of expected) {
+    if (!bySlot.has(slot) && !optional) {
+      violations.push({ type: 'section-order-unmeasured', slot });
+    }
+  }
+  const present = expected.filter(({ slot }) => bySlot.has(slot)).map(({ slot }) => slot);
+
+  const domOrder = [...present].sort((a, b) => bySlot.get(a).domIndex - bySlot.get(b).domIndex);
+  if (domOrder.some((slot, i) => slot !== present[i])) {
+    violations.push({ type: 'section-order-dom', expected: present, actual: domOrder });
+  }
+
+  const matrix = bySlot.get('matchup-matrix');
+  if (matrix) {
+    for (const slot of SECTION_ORDER_PAIRING_SLOTS) {
+      const section = bySlot.get(slot);
+      if (section && matrix.rect.top < section.rect.bottom - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-matrix-above',
+          slot,
+          matrixTop: matrix.rect.top,
+          sectionBottom: section.rect.bottom,
+        });
+      }
+    }
+  }
+
+  const hero = bySlot.get('pairing-hero');
+  if (hero && viewportWidth >= SECTION_ORDER_RAIL_MIN_VIEWPORT_WIDTH_PX) {
+    const railSections = SECTION_ORDER_RAIL_SLOTS.filter((slot) => bySlot.has(slot));
+    for (const slot of railSections) {
+      const section = bySlot.get(slot);
+      if (section.rect.left < hero.rect.right - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-rail-not-beside',
+          slot,
+          left: section.rect.left,
+          heroRight: hero.rect.right,
+        });
+      }
+    }
+    const firstRail = railSections[0] ? bySlot.get(railSections[0]) : null;
+    if (
+      firstRail &&
+      Math.abs(firstRail.rect.top - hero.rect.top) > SECTION_ORDER_RAIL_TOP_TOLERANCE_PX
+    ) {
+      violations.push({
+        type: 'section-order-rail-not-beside',
+        slot: railSections[0],
+        top: firstRail.rect.top,
+        heroTop: hero.rect.top,
+      });
+    }
+  }
+
+  if (viewportWidth <= NARROW_VIEWPORT_MAX_WIDTH_PX) {
+    for (let i = 1; i < present.length; i++) {
+      const previous = bySlot.get(present[i - 1]);
+      const current = bySlot.get(present[i]);
+      if (current.rect.top < previous.rect.bottom - SECTION_ORDER_TOLERANCE_PX) {
+        violations.push({
+          type: 'section-order-stacked',
+          slot: present[i],
+          previous: present[i - 1],
+          top: current.rect.top,
+          previousBottom: previous.rect.bottom,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+/** Plan 39.1-44: the one SECTION_ORDER line per measured surface — the found slots in DOM order. */
+export function formatSectionOrderLine(routeId, viewportName, found) {
+  const order = [...found]
+    .sort((a, b) => a.domIndex - b.domIndex)
+    .map((item) => item.slot)
+    .join('>');
+  return `SECTION_ORDER route=${routeId} viewport=${viewportName} order=${order}`;
 }
 
 /**
@@ -1552,13 +1782,17 @@ export const TABLE_CLIP_SCAN_SELECTOR =
   'table, [role="table"], [role="grid"], [role="tablist"], ul, ol, [role="list"]';
 
 /**
- * Matchups (and every `matchups-*` route plan 39.1-41 adds) is rebuilt by
- * plans 39.1-41..48: its clips are printed, never enforced here. An exact id
- * or the `matchups-` prefix only — `match-data` shares the `match` prefix
- * and stays enforced.
+ * Every route is enforced. Plans 39.1-41..48 rebuilt Matchups (and every
+ * `matchups-*` oracle route) and printed its clips as routed
+ * `TABLE_CLIP_ROUTED` lines meanwhile; plan 39.1-48's final gate closes that
+ * hand-off (orchestrator decision 2026-09-25), so the Matchups routes answer
+ * `enforce` like `match-data`, `fighter-analysis`, `scout` and `stage-detail`.
+ * The pure evaluator keeps its `mode` parameter; this function is the only
+ * place a route could be routed again, and none is.
  */
 export function tableClipModeForRoute(id) {
-  return id === 'matchups' || String(id).startsWith('matchups-') ? 'routed' : 'enforce';
+  void id;
+  return 'enforce';
 }
 
 /** Every oracle route the sweep visits: all of them except the synthetic `-fixture` routes, in input order. */

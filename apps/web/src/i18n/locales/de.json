@@ -885,7 +885,11 @@
     "opponent": "Gegner",
     "vs": "vs.",
     "pairingHeading": "{{fighter}} vs. {{opponent}}",
-    "winRateTrend": "Winrate-Verlauf",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}} Match · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}} Matches · {{span}} · {{confidence}}",
+      "otherPairings": "Andere Paarungen"
+    },
     "results": "Matchup-Ergebnisse",
     "selectFighterAria": "Deinen Kämpfer auswählen",
     "selectOpponentAria": "Gegnerischen Kämpfer auswählen",
@@ -895,12 +899,13 @@
       "unfacedGroup": "Noch nicht gespielt"
     },
     "record": {
-      "title": "Bilanz",
-      "empty": "Keine erfassten Matches gegen diesen Kämpfer",
-      "totalMatches": "Matches gesamt"
+      "empty": "Keine erfassten Matches gegen diesen Kämpfer"
     },
     "matrix": {
       "title": "Matchup-Matrix",
+      "cardTitle": "Matchup-Matrix",
+      "meta": "deine Mains × ihre Charaktere · Füllung = Siegquote · Zelle wählen, um diese Seite neu auszurichten",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Top {{count}} anzeigen",
       "showAll": "Alle {{count}} anzeigen",
       "empty": "Noch keine Matches erfasst — spiele ein paar Matches, um deine Matchup-Matrix aufzubauen.",
@@ -908,11 +913,7 @@
       "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} auf {{col}}: {{wins}}-{{losses}}"
     },
-    "chart": {
-      "winRate": "Winrate"
-    },
     "insights": {
-      "title": "Matchup-Einblicke",
       "minMatches": "Min. Matches pro Stage",
       "empty": "Für dieses Matchup sind noch keine Matches erfasst.",
       "currentStreak": "Aktuelle Serie",
@@ -924,11 +925,15 @@
       },
       "longestWin": "Längste Siegesserie",
       "longestLoss": "Längste Niederlagenserie",
-      "recentForm": "Aktuelle Form (neueste zuerst)",
       "bestStage": "Beste Stage",
       "worstStage": "Schlechteste Stage",
       "singleStageOnly": "Noch nicht genügend unterschiedliche Stages — spiele dieses Matchup auf einer weiteren Stage, um eine Warnung zur schlechtesten Stage zu sehen.",
-      "byMatchType": "Nach Match-Typ"
+      "meta": "Matchup-Einblicke · gesamt",
+      "stagesHead_one": "Stages · min. {{count}} Spiel",
+      "stagesHead_other": "Stages · min. {{count}} Spiele",
+      "change": "ändern",
+      "bestLabel": "Beste · {{stage}}",
+      "worstLabel": "Schlechteste · {{stage}}"
     },
     "stageTable": {
       "title": "Stage-Auswertung",
@@ -936,20 +941,27 @@
       "record": "Bilanz",
       "winRate": "Winrate",
       "noStage_one": "{{count}} Spiel ohne erfassten Stage",
-      "noStage_other": "{{count}} Spiele ohne erfassten Stage"
+      "noStage_other": "{{count}} Spiele ohne erfassten Stage",
+      "meta": "meiste Spiele zuerst · gesamt",
+      "legendSubFloor_one": "graue Leiste = unter {{count}} Spiel",
+      "legendSubFloor_other": "graue Leiste = unter {{count}} Spielen"
     },
     "counterpick": {
       "title": "Counterpick-Berater",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
       "unknownStage": "Unbekannte Stage",
-      "threshold_one": "Min. {{count}} Spiel pro Stage",
-      "threshold_other": "Min. {{count}} Spiele pro Stage",
+      "meta_one": "Counterpick-Berater · gesamt · min. {{count}} Spiel pro Stage",
+      "meta_other": "Counterpick-Berater · gesamt · min. {{count}} Spiele pro Stage",
+      "suggestionLocked": "Empfehlung · Gesperrt",
       "noLegalStages": "Unter diesem Regelwerk und diesem Spielstand ist keine Stage legal.",
       "setState": {
         "summary": "Angenommen {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Spielphase, Rolle, vorherige Stages und Bans der Annahme ändern",
-        "editLabel": "Annahme ändern",
+        "editAria": "Bereits gespielte Stages und Bans der Annahme ändern",
+        "playedBans": "gespielte Stages · Bans",
+        "phaseLabel": "Phase",
+        "roleLabel": "Rolle",
+        "roleUnavailable": "Rollen gelten ab Spiel 2",
         "phase": {
           "game1": "Spiel 1",
           "game2plus": "Spiel 2+"
@@ -957,6 +969,10 @@
         "role": {
           "striking": "Striken",
           "picking": "Picken"
+        },
+        "roleGame2": {
+          "banning": "Bannen (du hast gewonnen)",
+          "picking": "Picken (du hast verloren)"
         },
         "priorSummary_one": "{{count}} gespielte Stage",
         "priorSummary_other": "{{count}} gespielte Stages",
@@ -967,12 +983,19 @@
         "priorStagesLabel": "Bisher gespielte Stages",
         "bansLabel": "Bisher gebannte Stages",
         "wonLabel": "Gewonnen",
-        "lostLabel": "Verloren"
+        "lostLabel": "Verloren",
+        "priorResultLabel": "Ergebnis auf {{stage}}"
       }
     },
     "opponentSplit": {
       "title": "Nach Gegner",
       "empty": "Für dieses Matchup sind noch keine benannten Gegner erfasst."
+    },
+    "ledger": {
+      "meta": "ein Strich pro Satz · oben = Satz gewonnen · meiste Spiele zuerst · Chip = letzte 12 Monate gegenüber Gesamt",
+      "sets": "Sätze {{won}}–{{lost}}",
+      "setsAria": "{{won}}–{{lost}} Sätze",
+      "trimmed": "neueste {{shown, grouped}} von {{total, grouped}} Sätzen"
     },
     "table": {
       "empty": "Noch keine Matches erfasst!",
@@ -982,6 +1005,10 @@
       "selectionNotice_one": "{{count}} Match aus dem Diagramm wird angezeigt.",
       "selectionNotice_other": "{{count}} Matches aus dem Diagramm werden angezeigt.",
       "clearSelection": "Alle Matches anzeigen"
+    },
+    "mop": {
+      "vsPlayer": "gegen {{opponent}}",
+      "everyoneElse": "alle anderen"
     }
   },
   "fighterAnalysis": {

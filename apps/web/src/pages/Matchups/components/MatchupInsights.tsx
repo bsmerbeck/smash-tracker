@@ -1,9 +1,11 @@
 import { useId, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -11,56 +13,91 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Match } from '@smash-tracker/shared';
-import {
-  buildStageEvidence,
-  getBestWorstStages,
-  getMatchTypeRecords,
-  getStreakSummary,
-} from '@/lib/stats';
+import type { Match, StageRecord } from '@smash-tracker/shared';
+import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { StatRow, StatFigure } from '@/components/analytics/StatRow';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
+import { buildStageEvidence, getBestWorstStages, getStreakSummary } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
-import { WinLossPips } from '@/components/WinLossPips';
 import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
-import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
+import { cn } from '@/lib/utils';
+import { UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
+import { buildStageSeriesRow, pairingWinRate, useStageDrill } from '../lib/stageSeries';
+import { TierGlyph } from './StageSeries';
+
+/** The overline role (StatFigure's label): the stages head reads as the streak labels do. */
+const OVERLINE_CLASS =
+  'text-[0.6875rem] leading-4 font-semibold tracking-wider text-muted-foreground uppercase';
 
 /**
- * Plan 39.1-13 (UI-SPEC §9.6): `getMatchTypeRecords`' raw `matchType` literal
- * (`'quickplay'`, `'online-tourney'`, …, `'unspecified'`) -> `analytics.matchType.*`.
- * `'unspecified'` (the empty/`'none'`-value bucket `getMatchTypeRecords`
- * groups under) has no key of its own — `analytics.matchType.none`
- * ("Unspecified") is the same bucket under a different name, so it is the
- * fallback target rather than a ninth locale key.
+ * A Best / Worst row label: the translated "Best · {{stage}}" sentence with
+ * everything around the stage name drawn in the meta tone (sketch 003 A
+ * `stageRow`'s `.t-meta` prefix). The whole sentence is the label's title.
  */
-function matchTypeLabel(matchType: string, t: TFunction): string {
-  const key = matchType === 'unspecified' ? 'none' : matchType;
-  return t(`analytics.matchType.${key}`, { defaultValue: matchType });
+function stageLabel(
+  kind: 'best' | 'worst',
+  stageName: string,
+  t: TFunction,
+): { node: ReactNode; title: string } {
+  const text = t(`matchups.insights.${kind}Label`, { stage: stageName });
+  const at = text.lastIndexOf(stageName);
+  if (at < 0) return { node: text, title: text };
+  const before = text.slice(0, at).trim();
+  const after = text.slice(at + stageName.length).trim();
+  // The separating spaces are text nodes OUTSIDE the muted spans, so the row's
+  // accessible name reads "Best · Smashville" rather than running the words together.
+  return {
+    title: text,
+    node: (
+      <>
+        {before && <span className="font-normal text-muted-foreground">{before}</span>}
+        {before && ' '}
+        {stageName}
+        {after && ' '}
+        {after && <span className="font-normal text-muted-foreground">{after}</span>}
+      </>
+    ),
+  };
+}
+
+function stageRow(
+  kind: 'best' | 'worst',
+  record: StageRecord,
+  t: TFunction,
+): ComparisonBarsRow | null {
+  const stage = stagesById.get(record.stageId);
+  if (!stage) return null;
+  const { node, title } = stageLabel(kind, stage.name, t);
+  return buildStageSeriesRow({ record, label: node, labelTitle: title });
 }
 
 /**
- * v2 analytics for the selected matchup: current/best/worst streaks, recent
- * form, the best and worst stage to take this matchup to (threshold-based),
- * and the record split by match type. Phase 35-03 (D-11): the threshold is
- * the one shared per-subject value `useMinStageMatches` owns — changing it
- * here moves Counterpick Advisor and Matchup Stage Guide too.
+ * The Insights rail card for the selected matchup (sketch 003 A
+ * `insightsCard`, plan 39.1-46, PD-46-1): ONE top line — the Fact claim chip,
+ * "Matchup Insights · all time" and the confidence glyph (plus the
+ * mixed-context badge only when the cohort is mixed) — then the fixed 3-up
+ * streak row, then "Stages · min N games" with a "change" link that opens the
+ * threshold control in a popover, and the Best / Worst stage as series rows
+ * against the pairing's all-time rate (each row drills the results list to its
+ * stage). The recent-form pip row, the second By Match Type list and the
+ * emerald / destructive headings are gone — the hero's form strip and share
+ * bar already carry them, and colour stays on win / loss marks.
  *
- * Phase 36 (EVID-06, EVID-10): the best/worst-stage empty branch now reads
- * the shared abstained sentence (with the exact remaining-games count) off
- * `buildStageEvidence` rather than a bespoke "not enough stage data" string,
- * every stage line carries the shared sample/confidence cue, an evidence-type
- * caption marks this card as an inference (not a guaranteed recommendation),
- * an unknown-stage row is disclosed when present, and a mixed-context badge
- * flags a session-type/provenance split — the same claim shape every other
- * advisor surface renders from (D-13, no new visual language).
+ * Phase 35-03 (D-11): the threshold is the one shared per-subject value
+ * `useMinStageMatches` owns — changing it here moves Counterpick Advisor and
+ * Matchup Stage Guide too. Phase 36 (EVID-06, EVID-10): an abstained read
+ * shows the shared sentence once with the exact remaining-games count; an
+ * unknown-stage bucket is disclosed as one muted line.
  */
 export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [threshold, setThreshold] = useMinStageMatches();
-  // Plan 39.1-30 (item 6): the "Min matches per stage" select moved out of
-  // the header into the card body, directly above the best/worst stage list
-  // it governs — a stable id (`useId`) associates the visible `<Label>`
-  // with the select trigger.
   const minMatchesSelectId = useId();
+  const topLineId = useId();
+  const stagesHeadId = useId();
+  const onSelectRow = useStageDrill();
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
   // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
@@ -68,171 +105,146 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
 
   const streaks = getStreakSummary(matchupMatches);
   const { best, worst } = getBestWorstStages(matchupMatches, threshold);
-  const typeRecords = getMatchTypeRecords(matchupMatches);
   const { claim, unknown, cohort } = buildStageEvidence({
     matches: matchupMatches,
     refreshedAt,
     minMatches: threshold,
   });
-  const sampleCue = claim.kind === 'evidenced' ? <SampleCue sample={claim.sample} /> : null;
   const abstainedGamesNeeded = claim.kind === 'abstained' ? claim.gamesNeeded : 0;
 
-  const bestName = best ? (stagesById.get(best.stageId)?.name ?? t('common.unknown')) : null;
-  const worstName = worst ? (stagesById.get(worst.stageId)?.name ?? t('common.unknown')) : null;
+  const bestRow = best ? stageRow('best', best, t) : null;
+  const worstRow = worst ? stageRow('worst', worst, t) : null;
+  const rows = [bestRow, worstRow].filter((row): row is ComparisonBarsRow => row !== null);
+  const referenceRate = pairingWinRate(matchupMatches);
+
+  let stagesBody: ReactNode;
+  if (rows.length === 0) {
+    // Abstained: the shared sentence, once. (`best` is null only when the whole
+    // query is below the floor or no recognised stage qualifies.)
+    stagesBody = (
+      <p className="text-sm text-muted-foreground">
+        {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}
+      </p>
+    );
+  } else {
+    stagesBody = (
+      <>
+        <ComparisonBars
+          tone="series"
+          rows={rows}
+          referenceRate={referenceRate}
+          onSelectRow={onSelectRow}
+        />
+        {!worstRow && claim.kind === 'evidenced' && (
+          // WR-02: the query is NOT abstained here — `worst` is null only because
+          // exactly one stage qualifies (`getBestWorstStages`: "a single stage
+          // can't be both the recommendation and the warning"). The generic
+          // abstained sentence would fabricate "0 more games needed"; this copy
+          // names what would actually change the state.
+          <p className="text-sm text-muted-foreground">{t('matchups.insights.singleStageOnly')}</p>
+        )}
+      </>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle>{t('matchups.insights.title')}</CardTitle>
-          <MixedContextBadge cohort={cohort} />
-        </div>
-        <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {matchupMatches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
-        ) : (
-          <>
-            {/*
-              Plan 39.1-32 (item 10, UI-SPEC §7.3 StatRow, §4.3 rule 2): one
-              fixedColumns StatRow — the kit's 860px two-column collapse
-              would otherwise orphan the third of these three short counts
-              (2+1). The current streak's direction is carried by the unit
-              WORD ("win"/"loss"), never by a coloured value — no chip, no
-              delta (D-07: no insight asserts a direction here).
-            */}
-            <StatRow
-              fixedColumns
-              figures={[
-                <StatFigure
-                  key="current"
-                  label={t('matchups.insights.currentStreak')}
-                  value={streaks.currentStreak}
-                  unitSuffix={t(
-                    streaks.currentStreakIsWin
-                      ? 'matchups.insights.streakUnit.win'
-                      : 'matchups.insights.streakUnit.loss',
-                    { count: streaks.currentStreak },
-                  )}
-                />,
-                <StatFigure
-                  key="longestWin"
-                  label={t('matchups.insights.longestWin')}
-                  value={streaks.bestWinStreak}
-                />,
-                <StatFigure
-                  key="longestLoss"
-                  label={t('matchups.insights.longestLoss')}
-                  value={streaks.worstLossStreak}
-                />,
-              ]}
-            />
+    <Card role="region" aria-labelledby={topLineId} className="gap-3 p-5 shadow-none">
+      <div className="flex flex-wrap items-center gap-2">
+        <ClaimChip kind="fact" label={t('insights.kind.fact')} />
+        <span id={topLineId} className="text-xs leading-4 text-muted-foreground tabular-nums">
+          {t('matchups.insights.meta')}
+        </span>
+        <span className="text-muted-foreground">
+          <TierGlyph total={matchupMatches.length} />
+        </span>
+        <MixedContextBadge cohort={cohort} />
+      </div>
 
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-                {t('matchups.insights.recentForm')}
-              </h3>
-              <WinLossPips matches={matchupMatches} limit={10} />
+      {matchupMatches.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
+      ) : (
+        <>
+          {/*
+            Plan 39.1-32 (item 10, UI-SPEC §7.3 StatRow, §4.3 rule 2): one
+            fixedColumns StatRow — the kit's 860px two-column collapse would
+            otherwise orphan the third of these three short counts (2+1). The
+            current streak's direction is carried by the unit WORD
+            ("win"/"loss"), never by a coloured value — no chip, no delta
+            (D-07: no insight asserts a direction here).
+          */}
+          <StatRow
+            fixedColumns
+            figures={[
+              <StatFigure
+                key="current"
+                label={t('matchups.insights.currentStreak')}
+                value={streaks.currentStreak}
+                unitSuffix={t(
+                  streaks.currentStreakIsWin
+                    ? 'matchups.insights.streakUnit.win'
+                    : 'matchups.insights.streakUnit.loss',
+                  { count: streaks.currentStreak },
+                )}
+              />,
+              <StatFigure
+                key="longestWin"
+                label={t('matchups.insights.longestWin')}
+                value={streaks.bestWinStreak}
+              />,
+              <StatFigure
+                key="longestLoss"
+                label={t('matchups.insights.longestLoss')}
+                value={streaks.worstLossStreak}
+              />,
+            ]}
+          />
+
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <span id={stagesHeadId} className={cn(OVERLINE_CLASS, 'mr-auto')}>
+                {t('matchups.insights.stagesHead', { count: threshold })}
+              </span>
+              {/* The threshold control lives behind this link, never as a select in the card. */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    aria-describedby={stagesHeadId}
+                    className={cn(MUTED_LINK_TONE, 'h-auto px-1 py-0 text-xs underline')}
+                  >
+                    {t('matchups.insights.change')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="flex w-auto flex-col gap-2">
+                  <Label htmlFor={minMatchesSelectId} className="text-sm text-muted-foreground">
+                    {t('matchups.insights.minMatches')}
+                  </Label>
+                  <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
+                    {/* WR-05: named by the visible <Label htmlFor> above — no aria-label override. */}
+                    <SelectTrigger id={minMatchesSelectId} className="w-[72px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={String(option)}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </PopoverContent>
+              </Popover>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Label htmlFor={minMatchesSelectId} className="text-sm text-muted-foreground">
-                {t('matchups.insights.minMatches')}
-              </Label>
-              <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-                {/* WR-05: named by the visible <Label htmlFor> above — no aria-label override. */}
-                <SelectTrigger id={minMatchesSelectId} className="w-[72px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={String(option)}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <li>
-                <h3 className="text-sm font-medium text-emerald-500">
-                  {t('matchups.insights.bestStage')}
-                </h3>
-                <p className="text-sm">
-                  {bestName ? (
-                    <>
-                      {bestName}{' '}
-                      <span className="text-muted-foreground">
-                        {t('common.rateOverSample', { rate: best?.winRate, total: best?.total })}
-                      </span>{' '}
-                      {sampleCue}
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}
-                    </span>
-                  )}
-                </p>
-              </li>
-              <li>
-                <h3 className="text-sm font-medium text-destructive">
-                  {t('matchups.insights.worstStage')}
-                </h3>
-                <p className="text-sm">
-                  {worstName ? (
-                    <>
-                      {worstName}{' '}
-                      <span className="text-muted-foreground">
-                        {t('common.rateOverSample', { rate: worst?.winRate, total: worst?.total })}
-                      </span>{' '}
-                      {sampleCue}
-                    </>
-                  ) : claim.kind === 'evidenced' ? (
-                    // WR-02: the query is NOT abstained here (claim.kind is
-                    // 'evidenced' — best/worst-stage claim, not the raw
-                    // sample-size gate) — `worst` is null only because
-                    // exactly one stage qualifies (`getBestWorstStages`: "a
-                    // single stage can't be both the recommendation and the
-                    // warning"). Reusing the generic abstained sentence here
-                    // would fabricate a `gamesNeeded: 0` and claim "0 more
-                    // games needed", which is both untrue and impossible to
-                    // act on. This dedicated copy names what would actually
-                    // change the state: playing on a second stage.
-                    <span className="text-muted-foreground">
-                      {t('matchups.insights.singleStageOnly')}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}
-                    </span>
-                  )}
-                </p>
-              </li>
-              <UnknownRow bucket={unknown} as="li" />
-            </ul>
-
-            {typeRecords.length > 0 && (
-              <div>
-                <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-                  {t('matchups.insights.byMatchType')}
-                </h3>
-                <ul className="flex flex-col gap-1 text-sm">
-                  {typeRecords.map((record) => (
-                    <li key={record.matchType} className="flex justify-between">
-                      <span>{matchTypeLabel(record.matchType, t)}</span>
-                      <span className="text-muted-foreground">
-                        {record.wins}-{record.losses} ({record.winRate}%)
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {stagesBody}
+            {unknown && (
+              <ul>
+                <UnknownRow bucket={unknown} as="li" />
+              </ul>
             )}
-          </>
-        )}
-      </CardContent>
+          </div>
+        </>
+      )}
     </Card>
   );
 }

@@ -109,10 +109,12 @@ function fixedT(locale: keyof typeof LOCALES) {
 describe('every analytics.strip.aria caller renders a complete accessible name (WR-01)', () => {
   const callers = stripAriaCallers();
 
-  it('finds the strip aria callers (non-vacuity: the three FormStrip hosts and the Matchups mini strip)', () => {
+  // REWRITTEN by plan 39.1-44: the Matchups record card (MatchWinLossCard) and
+  // its mini strip are retired (the pairing hero's StatRow is the record), so
+  // the non-vacuity list names the three FormStrip hosts only.
+  it('finds the strip aria callers (non-vacuity: the three FormStrip hosts)', () => {
     expect(callers.map((caller) => caller.site).sort()).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/MatchWinLossCard\.tsx:/),
         expect.stringMatching(/MatchupChart\.tsx:/),
         expect.stringMatching(/FighterHero\.tsx:/),
         expect.stringMatching(/OpponentHubPage\.tsx:/),

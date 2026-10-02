@@ -885,7 +885,11 @@
     "opponent": "Opponent",
     "vs": "vs",
     "pairingHeading": "{{fighter}} vs {{opponent}}",
-    "winRateTrend": "Win Rate Trend",
+    "hero": {
+      "identityMeta_one": "{{count, grouped}} game · {{span}} · {{confidence}}",
+      "identityMeta_other": "{{count, grouped}} games · {{span}} · {{confidence}}",
+      "otherPairings": "Other pairings"
+    },
     "results": "Matchup Results",
     "selectFighterAria": "Select your fighter",
     "selectOpponentAria": "Select opponent fighter",
@@ -895,12 +899,13 @@
       "unfacedGroup": "Not yet faced"
     },
     "record": {
-      "title": "Record",
-      "empty": "No reported matches against this fighter",
-      "totalMatches": "Total Matches"
+      "empty": "No reported matches against this fighter"
     },
     "matrix": {
       "title": "Matchup Matrix",
+      "cardTitle": "Matchup matrix",
+      "meta": "your mains × their characters · fill = win rate · pick a cell to re-scope this page",
+      "cellSub": "{{rate}} · {{count}}",
       "showTop": "Show top {{count}}",
       "showAll": "Show all {{count}}",
       "empty": "No matches recorded yet — play some matches to build your matchup matrix.",
@@ -908,11 +913,7 @@
       "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}",
       "cellAria4": "{{row}} on {{col}}: {{wins}}-{{losses}}"
     },
-    "chart": {
-      "winRate": "Win Rate"
-    },
     "insights": {
-      "title": "Matchup Insights",
       "minMatches": "Min matches per stage",
       "empty": "No matches recorded for this matchup yet.",
       "currentStreak": "Current Streak",
@@ -924,32 +925,43 @@
       },
       "longestWin": "Longest Win Streak",
       "longestLoss": "Longest Loss Streak",
-      "recentForm": "Recent Form (newest first)",
       "bestStage": "Best Stage",
       "worstStage": "Worst Stage",
       "singleStageOnly": "Not enough distinct stages yet — play this matchup on another stage to see a worst-stage warning.",
-      "byMatchType": "By Match Type"
+      "meta": "Matchup Insights · all time",
+      "stagesHead_one": "Stage · min {{count}} game",
+      "stagesHead_other": "Stages · min {{count}} games",
+      "change": "change",
+      "bestLabel": "Best · {{stage}}",
+      "worstLabel": "Worst · {{stage}}"
     },
     "stageTable": {
-      "title": "Stage Breakdown",
+      "title": "Stage breakdown",
       "stage": "Stage",
       "record": "Record",
       "winRate": "Win Rate",
       "noStage_one": "{{count}} game with no stage recorded",
-      "noStage_other": "{{count}} games with no stage recorded"
+      "noStage_other": "{{count}} games with no stage recorded",
+      "meta": "most games first · all time",
+      "legendSubFloor_one": "grey bar = under {{count}} game",
+      "legendSubFloor_other": "grey bar = under {{count}} games"
     },
     "counterpick": {
       "title": "Counterpick Advisor",
       "pickThese": "Pick these",
       "banThese": "Ban / avoid these",
       "unknownStage": "Unknown stage",
-      "threshold_one": "Min {{count}} game per stage",
-      "threshold_other": "Min {{count}} games per stage",
+      "meta_one": "Counterpick Advisor · all time · min {{count}} game per stage",
+      "meta_other": "Counterpick Advisor · all time · min {{count}} games per stage",
+      "suggestionLocked": "Suggestion · Locked",
       "noLegalStages": "No stage is legal under this ruleset and set state.",
       "setState": {
         "summary": "Assuming {{phase}} · {{role}} · {{priorSummary}}",
-        "editAria": "Change the game-phase, role, prior-stages and bans assumption",
-        "editLabel": "Change assumption",
+        "editAria": "Change the stages played so far and the bans assumed",
+        "playedBans": "stages played · bans",
+        "phaseLabel": "Phase",
+        "roleLabel": "Role",
+        "roleUnavailable": "Roles apply from Game 2",
         "phase": {
           "game1": "Game 1",
           "game2plus": "Game 2+"
@@ -957,6 +969,10 @@
         "role": {
           "striking": "Striking",
           "picking": "Picking"
+        },
+        "roleGame2": {
+          "banning": "Banning (you won)",
+          "picking": "Picking (you lost)"
         },
         "priorSummary_one": "{{count}} stage played",
         "priorSummary_other": "{{count}} stages played",
@@ -967,12 +983,19 @@
         "priorStagesLabel": "Stages played so far",
         "bansLabel": "Stages banned so far",
         "wonLabel": "Won",
-        "lostLabel": "Lost"
+        "lostLabel": "Lost",
+        "priorResultLabel": "Result on {{stage}}"
       }
     },
     "opponentSplit": {
-      "title": "By Opponent",
+      "title": "By opponent",
       "empty": "No named opponents recorded for this matchup yet."
+    },
+    "ledger": {
+      "meta": "one tick per set · up = set won · most games first · chip = last 12 months vs all time",
+      "sets": "sets {{won}}–{{lost}}",
+      "setsAria": "{{won}}–{{lost}} sets",
+      "trimmed": "newest {{shown, grouped}} of {{total, grouped}} sets"
     },
     "table": {
       "empty": "No matches reported yet!",
@@ -982,6 +1005,10 @@
       "selectionNotice_one": "Showing {{count}} match from the chart.",
       "selectionNotice_other": "Showing {{count}} matches from the chart.",
       "clearSelection": "Show all matches"
+    },
+    "mop": {
+      "vsPlayer": "vs {{opponent}}",
+      "everyoneElse": "everyone else"
     }
   },
   "fighterAnalysis": {

@@ -115,7 +115,9 @@ function ChartCardWrapper({
   const opponentId = matchupMatches[0]?.opponent_id;
   return (
     <ChartCard
-      title={t('matchups.winRateTrend')}
+      // 39.1-44: `matchups.winRateTrend` is retired (the page's hero has no chart card);
+      // this test-only frame keeps a literal title.
+      title="Win rate over time"
       caption={t('shared.evidence.type.fact')}
       abstained={
         matchupMatches.length < ABSTENTION_FLOOR_GAMES
