@@ -707,14 +707,23 @@ export const LAYOUT_ORACLE_ROUTES = [
   },
   {
     // Plan 39.1-49 (OOS-9): the GSP page on the harness's seeded `gsp` scale
-    // (the one definition capture:design also reads), phone width only — its
-    // desktop layout is Phase 41's contract (UI-SPEC §12). No `checks`: the
-    // default families plus the text-fit target on the hero figures.
+    // (the one definition capture:design also reads). Plan 41-05 (D3,
+    // RESEARCH correction 6 / DD-41-11): the page adopted PageShell + PageGrid,
+    // so the route runs at EVERY oracle viewport (the three named ones plus
+    // 1024x768, where UI-SPEC §6.2's 8 + 4 rows still hold) - the stretch,
+    // scroll-width and scroll-budget families and the brand-red-text check
+    // apply, and the hero's text-fit target is measured at each of them.
     id: 'gsp',
     loadedMarker: '[data-slot="gsp-body"]',
     scale: 'gsp',
-    viewports: ['390x844'],
-    fitTargets: [{ selector: '[data-slot="gsp-hero"]', viewports: ['390x844'] }],
+    checks: ['brand-red-text'],
+    extraViewports: ['1024x768'],
+    fitTargets: [
+      {
+        selector: '[data-slot="gsp-hero"]',
+        viewports: ['2560x1440', '1440x900', '1024x768', '390x844'],
+      },
+    ],
   },
 ];
 

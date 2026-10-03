@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog';
 import { useAlphaFighters } from '@/hooks/useFighterName';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { formatGrouped } from '@/lib/format';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import {
   STANDARD_ONLINE_STAGE_IDS,
@@ -36,6 +37,10 @@ import { useCreateGspReading } from '@/hooks/useGspReadings';
 import { parseGspNumber } from '../lib/parseGspNumber';
 import { estimateMmrAt } from '../lib/gspMmrModel';
 import { useModelCalibration } from '../lib/useModelCalibration';
+
+/** The kit's compact card density (`ChartCard`'s literal classes, UI-SPEC 6.2), applied to the card root and its sections by className. */
+const COMPACT_CARD_CLASS = 'gap-4 py-4 shadow-none sm:py-5';
+const COMPACT_INSET_CLASS = 'px-4 sm:px-5';
 
 /**
  * Quick-log the core online-quickplay session loop: pick the opponent's
@@ -68,7 +73,8 @@ export function QuickLogger({
   lastPoint: GspPoint | null;
   settings: GspSettings;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
   const calibration = useModelCalibration(settings);
@@ -109,7 +115,7 @@ export function QuickLogger({
     }
     try {
       await createReading.mutateAsync({ fighter_id: fighter.id, gsp });
-      toast.success(t('gsp.setGsp.saved', { gsp: gsp.toLocaleString() }));
+      toast.success(t('gsp.setGsp.saved', { gsp: formatGrouped(gsp, locale) }));
       // The new baseline is now the freshest reading — prefill the match
       // form with it, exactly like logging a match does.
       setGspInput(String(gsp));
@@ -188,9 +194,9 @@ export function QuickLogger({
       });
       if (gsp !== null) {
         const deltaLabel =
-          delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()} GSP)`;
+          delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${formatGrouped(delta, locale)} GSP)`;
         toast.success(
-          `${t('gsp.logger.logged', { gsp: gsp.toLocaleString() })}${deltaLabel}${mmrDeltaLabel}`,
+          `${t('gsp.logger.logged', { gsp: formatGrouped(gsp, locale) })}${deltaLabel}${mmrDeltaLabel}`,
         );
       } else {
         toast.success(t('gsp.logger.loggedNoGsp'));
@@ -204,8 +210,8 @@ export function QuickLogger({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={COMPACT_CARD_CLASS}>
+      <CardHeader className={COMPACT_INSET_CLASS}>
         <CardTitle className="flex items-center gap-2">
           {t('gsp.logger.title')}
           <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
@@ -214,7 +220,7 @@ export function QuickLogger({
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className={`flex flex-col gap-4 ${COMPACT_INSET_CLASS}`}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium" htmlFor="gsp-logger-opponent">

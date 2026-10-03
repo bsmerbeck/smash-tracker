@@ -610,8 +610,11 @@ describe('GspPage', () => {
 
       renderGspPage();
 
-      await screen.findByText('GSP Log');
-      const items = screen.getAllByRole('listitem');
+      const logTitle = await screen.findByText('GSP Log');
+      // Scoped to the log card: the Gains card's band bars are list items too (plan 41-05).
+      const items = within(logTitle.closest('[data-slot="card"]') as HTMLElement).getAllByRole(
+        'listitem',
+      );
       // Newest first: the post-calibration win deltas from the new baseline.
       expect(items[0]).toHaveTextContent('Win');
       expect(items[0]).toHaveTextContent('+10,000');
@@ -761,6 +764,77 @@ describe('GspPage', () => {
 
       expect(await screen.findByText(/matchmaking has found your level/)).toBeInTheDocument();
       expect(screen.getByText(/>50% win rate, not more matches/)).toBeInTheDocument();
+    });
+  });
+
+  // Plan 41-05 (D3, DD-41-11): the page sits on PageShell + PageGrid.
+  describe('page grid composition (plan 41-05)', () => {
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+    function cellSpans(): string[] {
+      const grid = document.querySelector('[data-slot="page-grid"]')!;
+      return Array.from(grid.children).map((cell) => cell.getAttribute('data-span') ?? '');
+    }
+
+    it('lays the rows out hero 12, curve 8 + logger 4, gains 6 + tiers 6, log 12, with the hero cell first', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 3, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      const grid = document.querySelector('[data-slot="page-grid"]')!;
+      expect(grid.closest('[data-slot="page-shell"]')).not.toBeNull();
+      expect(grid.closest('[data-slot="gsp-body"]')).not.toBeNull();
+      expect(grid.children[0]!.querySelector('[data-slot="gsp-hero"]')).not.toBeNull();
+      expect(cellSpans().slice(0, 6)).toEqual(['12', '8', '4', '6', '6', '12']);
+    });
+
+    it('spans the Rating model note across the whole row when the vs-Glicko card is not drawn', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // One session only: fewer than GSP_VS_GLICKO_MIN_POINTS rating periods, so the card is hidden.
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 3, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      expect(screen.queryByText('Est. MMR vs Glicko-2')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="gsp-vs-glicko"]')).toBeNull();
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      expect(note.getAttribute('data-span')).toBe('12');
+      expect(note.className).not.toMatch(/lg:col-start/);
+    });
+
+    it('pairs the card (8, left) with the note (4, right) from lg, the note first in the DOM', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      const card = document.querySelector('[data-slot="gsp-vs-glicko"]')!;
+      expect(note.getAttribute('data-span')).toBe('4');
+      expect(card.getAttribute('data-span')).toBe('8');
+      expect(note.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // desktop placement by explicit utilities, never a CSS `order` utility
+      expect(card.className).toMatch(/lg:col-start-1/);
+      expect(note.className).toMatch(/lg:col-start-9/);
+      expect(note.className).toMatch(/lg:row-start-5/);
+      expect(card.className).toMatch(/lg:row-start-5/);
+      expect(`${note.className} ${card.className}`).not.toMatch(/\border-/);
     });
   });
 

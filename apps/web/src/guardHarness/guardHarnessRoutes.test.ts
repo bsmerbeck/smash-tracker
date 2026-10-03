@@ -219,7 +219,9 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
   // figures leave their cards at 390) needs a committed failing oracle, and a
   // capture is not one — so gsp is now a guard:layout route at 390x844 only,
   // on the harness's seeded gsp scale.
-  it('plan 39.1-49: the gsp route mounts the GSP page at /gsp in the app shell, and guard:layout declares it at 390x844 on the gsp scale', () => {
+  // REWRITTEN by plan 41-05 (D3, RESEARCH correction 6): the GSP page is on
+  // PageShell + PageGrid, so guard:layout declares it at every oracle viewport.
+  it('plan 41-05: the gsp route mounts the GSP page at /gsp in the app shell, and guard:layout declares it at every viewport (no 390-only restriction) plus 1024x768, with brand-red-text', () => {
     const gsp = findGuardHarnessRoute('gsp');
     expect(gsp?.path).toBe('/gsp');
     expect(gsp?.initialEntry).toBe('/gsp');
@@ -238,7 +240,15 @@ describe('guardHarnessRoutes — the harness route table (plan 39.1-20 Task 3)',
     expect(oracleBlock).toMatch(/id: 'gsp'/);
     const gspBlock = oracleBlock.slice(oracleBlock.indexOf("id: 'gsp'"));
     expect(gspBlock).toMatch(/scale: 'gsp'/);
-    expect(gspBlock).toMatch(/viewports: \['390x844'\]/);
+    // No route-level `viewports` restriction (the fitTargets' own `viewports` sit
+    // inside `fitTargets: [`, so isolate the lines before it).
+    const gspRouteHead = gspBlock.slice(0, gspBlock.indexOf('fitTargets'));
+    expect(gspRouteHead).not.toMatch(/^\s*viewports:/m);
+    expect(gspBlock).toMatch(/extraViewports: \['1024x768'\]/);
+    expect(gspBlock).toMatch(/checks: \['brand-red-text'\]/);
+    expect(gspBlock).toMatch(
+      /selector: '\[data-slot="gsp-hero"\]',\s*viewports: \['2560x1440', '1440x900', '1024x768', '390x844'\]/,
+    );
   });
 
   it('plan 39.1-35: trends-casual mounts the Trends page at its real path with the trends loaded marker', () => {

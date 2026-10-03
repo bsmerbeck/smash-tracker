@@ -9,6 +9,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CHART_TOKENS } from '@/components/charts/tokens';
+import { formatGrouped } from '@/lib/format';
 import { getRecentGspWinRate } from './GspHero';
 import { estimateMmrAt } from '../lib/gspMmrModel';
 import { useGspLive } from '@/hooks/useGspLive';
@@ -16,6 +17,10 @@ import { useModelCalibration } from '../lib/useModelCalibration';
 import { useNowMs } from '../lib/useNowMs';
 
 const GSPTIERS_URL = 'https://gsptiers.com';
+
+/** The kit's compact card density (`ChartCard`'s literal classes, UI-SPEC 6.2), applied to the card root and its sections by className. */
+const COMPACT_CARD_CLASS = 'gap-4 py-4 shadow-none sm:py-5';
+const COMPACT_INSET_CLASS = 'px-4 sm:px-5';
 
 /** Ladder rows shown above the current tier — enough for a short-term goal and the one after it. */
 const ROWS_ABOVE_CURRENT = 2;
@@ -33,7 +38,8 @@ const ROWS_ABOVE_CURRENT = 2;
  * model, including its kind "equilibrium" framing for ≤50% win rates).
  */
 export function GspTiers({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language;
   const nowMs = useNowMs();
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
@@ -69,11 +75,11 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
   const windowRows = position === null ? [] : ladder.slice(windowStart, currentIndex + 1);
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={COMPACT_CARD_CLASS}>
+      <CardHeader className={COMPACT_INSET_CLASS}>
         <CardTitle>{t('gsp.tiers.title')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className={`flex flex-col gap-3 ${COMPACT_INSET_CLASS}`}>
         {position === null || lastPoint === null ? (
           <p className="text-sm text-muted-foreground">{t('gsp.tiers.empty')}</p>
         ) : (
@@ -88,7 +94,7 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
                       ? t('gsp.tiers.estMax')
                       : t('gsp.tiers.topPercent', { percent: row.topPercent })
                   }
-                  gspLabel={row.gsp.toLocaleString()}
+                  gspLabel={formatGrouped(row.gsp, locale)}
                   isCurrent={row.id === position.current.id}
                   youLabel={t('gsp.tiers.you')}
                 />
@@ -120,7 +126,7 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
                 </div>
                 <p className="text-sm text-muted-foreground">
                   {t('gsp.tiers.toNext', {
-                    gsp: position.gspToNext.toLocaleString(),
+                    gsp: formatGrouped(position.gspToNext, locale),
                     tier: tierName(position.next.id),
                   })}
                 </p>
