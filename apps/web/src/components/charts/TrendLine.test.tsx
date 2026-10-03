@@ -2024,3 +2024,277 @@ describe('TrendLine — mode value (plan 41-02, tracer)', () => {
     expect(indexRender.container.querySelectorAll('circle')).toHaveLength(2);
   });
 });
+
+describe('TrendLine — mode value says what it shows (plan 41-02 Task 2, UI-SPEC §7.1)', () => {
+  const calibrationReadings = (): ValueSeriesReading[] => {
+    const readings = gspReadings(12, 36);
+    readings[5] = { ...readings[5]!, calibration: true };
+    return readings;
+  };
+
+  it('names the grain actually drawn in the head overline and carries the legend', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    const { container } = renderValue(series, {
+      labels: valueLabels({ overline: (grain) => `GSP by ${grain}` }),
+    });
+    const head = container.querySelector('[data-slot="trend-value-head"]')!;
+    expect(head.textContent).toContain(`GSP by ${series.grain}`);
+    expect(
+      container.querySelectorAll('[data-slot="trend-value-legend-item"][data-kind="series"]'),
+    ).toHaveLength(1);
+    // No calibration drawn: no calibration legend item.
+    expect(container.querySelector('[data-kind="calibration"]')).toBeNull();
+  });
+
+  it('draws a diamond for a calibration reading at reading grain, and shows its legend item', () => {
+    const series = buildValueSeries(calibrationReadings());
+    expect(series.grain).toBe('reading');
+    const { container } = renderValue(series);
+    expect(container.querySelectorAll('[data-slot="trend-value-diamond"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-slot="trend-value-dot"]')).toHaveLength(1);
+    expect(container.querySelector('[data-kind="calibration"]')?.textContent).toBe('set manually');
+  });
+
+  it('draws one dot per close at a coarser grain and a diamond for a close holding a calibration', () => {
+    const series = buildValueSeries(calibrationReadings(), { minGrain: 'week' });
+    expect(series.grain).not.toBe('reading');
+    const { container } = renderValue(series);
+    const diamonds = container.querySelectorAll('[data-slot="trend-value-diamond"]');
+    const dots = container.querySelectorAll('[data-slot="trend-value-dot"]');
+    expect(diamonds).toHaveLength(series.points.filter((p) => p.containsCalibration).length);
+    expect(diamonds.length + dots.length).toBe(series.points.length);
+  });
+
+  it('draws a dashed reference line and its direct label when the host placed it as a line', () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    const { container } = renderValue(series, {
+      reference: { value: 9_100_000, label: 'Elite 9,100,000', placement: 'line' },
+      labels: valueLabels({
+        legend: { series: 'GSP', reference: 'Elite 9,100,000' },
+      }),
+    });
+    const line = container.querySelector('[data-slot="trend-value-reference"]')!;
+    expect(line.getAttribute('stroke-dasharray')).toBe('4 3');
+    expect(container.querySelector('[data-slot="trend-value-reference-label"]')?.textContent).toBe(
+      'Elite 9,100,000',
+    );
+    expect(container.querySelector('[data-kind="reference"]')).not.toBeNull();
+  });
+
+  it("draws no line for an 'above-range' reference and states it in the head legend instead", () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    const { container } = renderValue(series, {
+      reference: { value: 40_000_000, label: 'Elite 40,000,000', placement: 'above-range' },
+      labels: valueLabels({
+        legend: { series: 'GSP', reference: 'Elite 40,000,000 — above this range' },
+      }),
+    });
+    expect(container.querySelector('[data-slot="trend-value-reference"]')).toBeNull();
+    expect(container.querySelector('[data-slot="trend-value-reference-label"]')).toBeNull();
+    expect(container.querySelector('[data-kind="reference-range"]')?.textContent).toBe(
+      'Elite 40,000,000 — above this range',
+    );
+    // The far reference never widened the domain: the y domain still hugs the readings.
+    const domain = container
+      .querySelector('[data-slot="trend-line-value"]')!
+      .getAttribute('data-y-domain')!
+      .split(',')
+      .map(Number);
+    expect(domain[1]).toBeLessThan(10_000_000);
+  });
+
+  it('widens the domain to hold a line-placed reference', () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    const { container } = renderValue(series, {
+      reference: { value: 9_300_000, label: 'Elite', placement: 'line' },
+    });
+    const domain = container
+      .querySelector('[data-slot="trend-line-value"]')!
+      .getAttribute('data-y-domain')!
+      .split(',')
+      .map(Number);
+    expect(domain[1]).toBeGreaterThanOrEqual(9_300_000);
+  });
+
+  it('labels the last point always, and peak / low only when distinct and at 3+ points', () => {
+    const readings: ValueSeriesReading[] = [3, 9, 5, 1, 4].map((v, i) => ({
+      atMs: VALUE_START_MS + i * VALUE_DAY_MS,
+      value: v * 1_000_000,
+      calibration: false,
+    }));
+    const series = buildValueSeries(readings);
+    const last = renderValue(series, { directLabels: 'last' });
+    expect(
+      Array.from(last.container.querySelectorAll('[data-slot="trend-value-label"]')).map((el) =>
+        el.getAttribute('data-role'),
+      ),
+    ).toEqual(['last']);
+    last.unmount();
+    const all = renderValue(series, { directLabels: 'last-peak-low' });
+    expect(
+      Array.from(all.container.querySelectorAll('[data-slot="trend-value-label"]')).map((el) =>
+        el.getAttribute('data-role'),
+      ),
+    ).toEqual(['last', 'peak', 'low']);
+    expect(all.container.querySelector('[data-role="last"]')?.textContent).toBe('4,000,000');
+  });
+
+  it('shows the locked inset in place of the plot, and nothing at all for 0 points', () => {
+    const series = buildValueSeries(gspReadings(1, 1));
+    const { container } = renderValue(series, {
+      locked: {
+        have: 1,
+        need: 2,
+        sentence: 'Log one more reading to unlock this chart.',
+        meterLabel: '1 of 2 readings',
+      },
+    });
+    expect(container.querySelector('[data-slot="trend-value-locked"]')?.textContent).toContain(
+      'Log one more reading to unlock this chart.',
+    );
+    expect(container.querySelector('[role="img"][aria-label="1 of 2 readings"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="trend-value-plot"]')).toBeNull();
+    expect(container.querySelector('.recharts-surface')).toBeNull();
+
+    const empty = render(
+      <TrendLine
+        mode="value"
+        points={[]}
+        grain="reading"
+        formatTick={String}
+        formatValueFull={String}
+        labels={valueLabels()}
+        locked={{ have: 0, need: 2, sentence: 's', meterLabel: '0 of 2' }}
+        width={640}
+      />,
+    );
+    expect(empty.container.firstChild).toBeNull();
+  });
+
+  it('steps points from the keyboard: one tab stop, ← → / Home / End, Enter selects', () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    const onSelectPoint = vi.fn();
+    const { container, points } = renderValue(series, { onSelectPoint });
+    const plot = container.querySelector('[data-slot="trend-value-plot"]') as HTMLElement;
+    expect(plot.getAttribute('role')).toBe('img');
+    expect(plot.getAttribute('tabindex')).toBe('0');
+    expect(plot.getAttribute('aria-label')).toBe('GSP over time');
+    expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+
+    const readout = () => container.querySelector('[data-slot="trend-value-readout"]')?.textContent;
+    fireEvent.keyDown(plot, { key: 'ArrowRight' });
+    expect(readout()).toContain(points[points.length - 1]!.context.title);
+    fireEvent.keyDown(plot, { key: 'ArrowLeft' });
+    expect(readout()).toContain(points[points.length - 2]!.context.title);
+    fireEvent.keyDown(plot, { key: 'Home' });
+    expect(readout()).toContain(points[0]!.context.title);
+    fireEvent.keyDown(plot, { key: 'End' });
+    expect(readout()).toContain(points[points.length - 1]!.context.title);
+    expect(container.querySelector('[data-slot="trend-value-live"]')?.textContent).toContain(
+      points[points.length - 1]!.context.title,
+    );
+    fireEvent.keyDown(plot, { key: 'Enter' });
+    expect(onSelectPoint).toHaveBeenCalledWith(points[points.length - 1]);
+    fireEvent.keyDown(plot, { key: ' ' });
+    expect(onSelectPoint).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(plot, { key: 'Escape' });
+    expect(readout()).toBeUndefined();
+  });
+
+  it('re-grains instead of squeezing: a plot under 520px draws the narrow series', () => {
+    const readings = gspReadings(200, 18 * 30);
+    const wide = buildValueSeries(readings, { target: 60 });
+    const narrowSeries = buildValueSeries(readings, { target: 12 });
+    expect(narrowSeries.points.length).toBeLessThan(wide.points.length);
+    const narrowPoints = valuePointsOf(narrowSeries);
+
+    const narrow = renderValue(
+      wide,
+      { narrowPoints, narrowGrain: narrowSeries.grain },
+      { width: 400 },
+    );
+    const root = narrow.container.querySelector('[data-slot="trend-line-value"]')!;
+    expect(root.getAttribute('data-narrow')).toBe('true');
+    expect(root.getAttribute('data-grain')).toBe(narrowSeries.grain);
+    expect(root.getAttribute('data-point-count')).toBe(String(narrowSeries.points.length));
+    expect(Number(root.getAttribute('data-point-count'))).toBeLessThanOrEqual(30);
+    narrow.unmount();
+
+    const roomy = renderValue(
+      wide,
+      { narrowPoints, narrowGrain: narrowSeries.grain },
+      { width: 800 },
+    );
+    const roomyRoot = roomy.container.querySelector('[data-slot="trend-line-value"]')!;
+    expect(roomyRoot.getAttribute('data-narrow')).toBe('false');
+    expect(roomyRoot.getAttribute('data-point-count')).toBe(String(wide.points.length));
+  });
+
+  it('offers a table twin (date · value · readings) with column-scoped headers', () => {
+    const series = buildValueSeries(gspReadings(30, 90));
+    const { container, points } = renderValue(series);
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'View as table',
+    )!;
+    fireEvent.click(toggle);
+    const headers = Array.from(container.querySelectorAll('th[scope="col"]')).map(
+      (th) => th.textContent,
+    );
+    expect(headers).toEqual(['Date', 'GSP', 'Readings']);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(points.length);
+  });
+
+  it('never builds a NaN domain from a non-finite point value (T-41-05)', () => {
+    const series = buildValueSeries(gspReadings(10, 30));
+    const points = valuePointsOf(series);
+    points[3] = { ...points[3]!, value: Number.NaN };
+    const { container } = render(
+      <ChartCard title="GSP curve">
+        <TrendLine
+          mode="value"
+          points={points}
+          grain="reading"
+          formatTick={String}
+          formatValueFull={String}
+          labels={valueLabels()}
+          width={640}
+          height={288}
+        />
+      </ChartCard>,
+    );
+    const domain = container
+      .querySelector('[data-slot="trend-line-value"]')!
+      .getAttribute('data-y-domain')!;
+    expect(domain).not.toMatch(/NaN/);
+    // Every point NaN: the empty path, not a NaN axis.
+    const allNaN = render(
+      <TrendLine
+        mode="value"
+        points={points.map((p) => ({ ...p, value: Number.NaN }))}
+        grain="reading"
+        formatTick={String}
+        formatValueFull={String}
+        labels={valueLabels()}
+        width={640}
+        height={288}
+      />,
+    );
+    expect(allNaN.container.firstChild).toBeNull();
+  });
+
+  it('draws 1.5px at a compact height or with lineWidth thin, 2px otherwise', () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    const width = (container: HTMLElement) =>
+      container
+        .querySelector('.trend-line-value-line path.recharts-line-curve')
+        ?.getAttribute('stroke-width');
+    const regular = renderValue(series);
+    expect(width(regular.container)).toBe('2');
+    regular.unmount();
+    const compact = renderValue(series, {}, { height: 160 });
+    expect(width(compact.container)).toBe('1.5');
+    compact.unmount();
+    const thin = renderValue(series, { lineWidth: 'thin' });
+    expect(width(thin.container)).toBe('1.5');
+  });
+});

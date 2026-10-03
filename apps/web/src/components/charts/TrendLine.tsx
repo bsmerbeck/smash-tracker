@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type {
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactElement,
@@ -31,6 +32,7 @@ import {
   CHART_H_COMPACT,
   CHART_DOT_RADIUS,
   CHART_LINE_WIDTH,
+  CHART_NARROW_PLOT_PX,
   CHART_TOKENS,
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
@@ -65,6 +67,7 @@ import {
   rateDomainTicks,
   type PeriodValueLabelPlacement,
   type ReferenceLabelPlacement,
+  REFERENCE_LABEL_OFFSET_PX,
 } from './trendGeometry';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { CAREER_TIMELINE_READOUT_MAX_WIDTH_PX, clampReadoutLeft } from './careerTimelineLayout';
@@ -80,10 +83,14 @@ import {
   VALUE_MARGIN_BOTTOM_PX,
   buildValueYAxis,
   nearestPointIndex,
+  placeValueLabels,
+  valueLabelRoles,
+  valueLegendItems,
   valueMarkKind,
   type ReferencePlacement,
   type ValueYAxis,
 } from './valueTrendGeometry';
+import { ValueTrendHead, ValueTrendLockedInset, ValueTrendTableTwin } from './valueTrendParts';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -1533,6 +1540,9 @@ const VALUE_ACTIVE_DOT_SCALE = 1.35;
 /** The x tick label's baseline under the plot, and the tick mark's length (px). */
 const VALUE_X_LABEL_BASELINE_PX = 16;
 const VALUE_X_TICK_LENGTH_PX = 4;
+/** A reference label's baseline offset from its line: below the line (box top 5px under) / above it (box bottom 5px over). */
+const VALUE_REFERENCE_LABEL_BELOW_DY = 14;
+const VALUE_REFERENCE_LABEL_ABOVE_DY = 8;
 /** The y axis's own tick gap (px) between the tick text and the plot's left edge. */
 const VALUE_Y_TICK_GAP_PX = 6;
 
@@ -1558,6 +1568,11 @@ interface ValueLayerProps {
   xDomain: [number, number];
   drawXAxis: boolean;
   locale: string;
+  /** DD-41-13: the reference and how it was placed; only a `'line'` placement is drawn. */
+  reference?: TrendValueReference;
+  /** Which direct labels the plot carries. */
+  directLabels: 'last' | 'last-peak-low';
+  formatValueFull: (n: number) => string;
   /** Where the crosshair stands (ms), or null. */
   crosshairMs: number | null;
   /** The active point's index (its dot is emphasised when it is the last), or null. */
@@ -1628,7 +1643,19 @@ function diamondPath(x: number, y: number, diagonal: number): string {
 
 /** Over the line: marks, the crosshair and the transparent pointer layer. */
 function ValueTopLayer(props: ValueLayerProps): ReactElement | null {
-  const { points, grain, crosshairMs, activeIndex, selectable, onHover, onLeave, onPress } = props;
+  const {
+    points,
+    grain,
+    reference,
+    directLabels,
+    formatValueFull,
+    crosshairMs,
+    activeIndex,
+    selectable,
+    onHover,
+    onLeave,
+    onPress,
+  } = props;
   const scales = useValuePlot();
   // The pointerType of the press that precedes a click — a React click is a MouseEvent in some
   // engines, so the pointerdown is the reliable source (the `CareerTimeline` pattern).
@@ -1656,8 +1683,111 @@ function ValueTopLayer(props: ValueLayerProps): ReactElement | null {
 
   const last = points.length - 1;
   const crosshairX = crosshairMs !== null ? xScale(crosshairMs) : undefined;
+
+  // Every drawn mark (centre + half extent) — direct labels and the reference label never sit on one.
+  const drawnMarks = points.flatMap((point, i) => {
+    const kind = valueMarkKind(point, { isLast: i === last, grain });
+    const x = xScale(point.xMs);
+    const y = yScale(point.value);
+    if (!kind || x == null || y == null) return [];
+    const diameter = kind === 'diamond' ? VALUE_DIAMOND_DIAGONAL_PX : VALUE_DOT_DIAMETER_PX;
+    return [{ xPx: x, yPx: y, diameterPx: diameter, halfPx: diameter / 2 + VALUE_DOT_RING_PX }];
+  });
+  const plotRight = plot.x + plot.width;
+  const labelCandidates = valueLabelRoles(
+    points.map((point) => point.value),
+    directLabels,
+  ).flatMap(({ role, index }) => {
+    const point = points[index]!;
+    const x = xScale(point.xMs);
+    const y = yScale(point.value);
+    return x == null || y == null
+      ? []
+      : [{ role, xPx: x, yPx: y, text: formatValueFull(point.value) }];
+  });
+  const placedLabels = placeValueLabels({
+    candidates: labelCandidates,
+    plotLeftPx: plot.x,
+    plotRightPx: plotRight,
+    plotBottomPx: plot.y + plot.height,
+    marks: drawnMarks,
+  });
+  const referenceY =
+    reference && reference.placement === 'line' ? yScale(reference.value) : undefined;
+  const referenceLabelSlot: ReferenceLabelPlacement =
+    reference && referenceY != null
+      ? placeReferenceLabel({
+          referenceYPx: referenceY,
+          referenceLabelWidthPx: estimateTickLabelWidthPx(reference.label),
+          plotLeftPx: plot.x,
+          plotRightPx: plotRight,
+          labelledPoints: placedLabels.map((label) => ({
+            xPx: label.labelXPx,
+            yPx: label.yPx,
+            labelWidthPx: estimateTickLabelWidthPx(label.text),
+            below: label.below,
+          })),
+          dots: drawnMarks,
+        })
+      : 'none';
+
   return (
     <g data-slot="trend-value-top-layer">
+      {reference && referenceY != null && (
+        <g pointerEvents="none">
+          <line
+            data-slot="trend-value-reference"
+            x1={plot.x}
+            x2={plotRight}
+            y1={referenceY}
+            y2={referenceY}
+            stroke={CHART_TOKENS.deemphasis}
+            strokeWidth={1}
+            strokeDasharray="4 3"
+          />
+          {referenceLabelSlot !== 'none' && (
+            <text
+              data-slot="trend-value-reference-label"
+              data-position={referenceLabelSlot}
+              x={
+                referenceLabelSlot.endsWith('Right')
+                  ? plotRight - REFERENCE_LABEL_OFFSET_PX
+                  : plot.x + REFERENCE_LABEL_OFFSET_PX
+              }
+              y={
+                referenceLabelSlot.startsWith('insideTop')
+                  ? referenceY + VALUE_REFERENCE_LABEL_BELOW_DY
+                  : referenceY - VALUE_REFERENCE_LABEL_ABOVE_DY
+              }
+              textAnchor={referenceLabelSlot.endsWith('Right') ? 'end' : 'start'}
+              fill={CHART_TOKENS.axisText}
+              fontSize={CHART_AXIS_FONT_SIZE}
+              {...VALUE_LABEL_HALO}
+            >
+              {reference.label}
+            </text>
+          )}
+        </g>
+      )}
+      {placedLabels.map((label) => (
+        <text
+          key={label.role}
+          data-slot="trend-value-label"
+          data-role={label.role}
+          data-placement={label.below ? 'below' : 'above'}
+          x={label.labelXPx}
+          y={label.baselineYPx}
+          textAnchor="middle"
+          fill={CHART_TOKENS.text}
+          fontSize={CHART_AXIS_FONT_SIZE}
+          fontWeight={600}
+          className="tabular-nums"
+          pointerEvents="none"
+          {...VALUE_LABEL_HALO}
+        >
+          {label.text}
+        </text>
+      ))}
       {points.map((point, i) => {
         const kind = valueMarkKind(point, { isLast: i === last, grain });
         if (!kind) return null;
@@ -1801,19 +1931,62 @@ function ValueTrendChart({
     return () => observer.disconnect();
   }, [activeKey]);
 
-  const { points, grain, cursor, formatTick, reference } = props;
-  if (points.length === 0) return null;
+  const { cursor, formatTick, formatValueFull, reference, labels, locked } = props;
+  // UI-SPEC §7.1: no readings at all means no chart (never an empty frame) — the host does not mount it.
+  if (props.points.length === 0) return null;
 
   const drawXAxis = props.drawXAxis ?? true;
   const containerWidth = typeof width === 'number' ? width : measuredWidth;
+  const tableTwin = (shown: readonly TrendValuePoint[]) =>
+    labels.tableToggle && labels.tableHeaders && shown.length > 0 ? (
+      <ValueTrendTableTwin
+        points={shown}
+        toggle={labels.tableToggle}
+        headers={labels.tableHeaders}
+        formatValueFull={formatValueFull}
+      />
+    ) : null;
+
+  // UI-SPEC §7.1 locked state: the plot is replaced by an inset with the sentence and the meter.
+  if (locked) {
+    const lockedTitle =
+      typeof labels.overline === 'function' ? labels.overline(props.grain) : labels.overline;
+    return (
+      <div className="contents" data-slot="trend-line-value" data-state="locked">
+        {lockedTitle && <ValueTrendHead title={lockedTitle} items={[]} />}
+        <ValueTrendLockedInset locked={locked} />
+        {tableTwin(props.points)}
+      </div>
+    );
+  }
+
   const referenceArg = reference
     ? { value: reference.value, placement: reference.placement }
     : undefined;
-  const axis: ValueYAxis | null = buildValueYAxis(
-    points.map((point) => point.value),
+  const wideAxis: ValueYAxis | null = buildValueYAxis(
+    props.points.map((point) => point.value),
     formatTick,
     referenceArg,
   );
+  if (!wideAxis) return null;
+
+  // "Narrow plots re-grain, they do not squeeze" (§7.1): below `CHART_NARROW_PLOT_PX` of measured
+  // plot width the host's coarser series is drawn instead of sub-legible marks.
+  const widePlotWidthPx =
+    containerWidth - Math.max(wideAxis.gutterPx, props.gutterPx ?? 0) - VALUE_MARGIN_RIGHT_PX;
+  const narrow =
+    props.narrowPoints !== undefined &&
+    props.narrowPoints.length > 0 &&
+    widePlotWidthPx < CHART_NARROW_PLOT_PX;
+  const points = narrow ? props.narrowPoints! : props.points;
+  const grain = narrow ? (props.narrowGrain ?? props.grain) : props.grain;
+  const axis = narrow
+    ? buildValueYAxis(
+        points.map((point) => point.value),
+        formatTick,
+        referenceArg,
+      )
+    : wideAxis;
   if (!axis) return null;
 
   const gutterPx = Math.max(axis.gutterPx, props.gutterPx ?? 0);
@@ -1822,12 +1995,15 @@ function ValueTrendChart({
   const xDomain = props.xDomain ?? defaultXDomain(points);
   const lineStrokeWidth =
     props.lineWidth === 'thin' || height <= CHART_H_COMPACT ? 1.5 : CHART_LINE_WIDTH;
+  const lastIndex = points.length - 1;
 
   const activeIndex = cursor
     ? cursor.xMs !== null
       ? nearestPointIndex(points, cursor.xMs)
       : null
-    : (active?.index ?? null);
+    : active && active.index <= lastIndex
+      ? active.index
+      : null;
   const crosshairMs = cursor
     ? cursor.xMs
     : activeIndex !== null
@@ -1862,6 +2038,46 @@ function ValueTrendChart({
     select(index);
   }
 
+  /**
+   * UI-SPEC §9.1 / §13: the plot is ONE tab stop. The first ← / → lands on the latest point
+   * (`CareerTimeline`'s rule), then steps; Home / End jump; Enter / Space select; Escape clears.
+   * With a host-controlled `cursor` the host (a multiples grid) owns the keys.
+   */
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (cursor) return;
+    const current = active && active.index <= lastIndex ? active.index : null;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft':
+        next = current === null ? lastIndex : Math.max(0, current - 1);
+        break;
+      case 'ArrowRight':
+        next = current === null ? lastIndex : Math.min(lastIndex, current + 1);
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = lastIndex;
+        break;
+      case 'Enter':
+      case ' ':
+        if (current === null) return;
+        event.preventDefault();
+        select(current);
+        return;
+      case 'Escape':
+        if (current === null) return;
+        event.preventDefault();
+        setActive(null);
+        return;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setActive({ index: next, source: 'keyboard' });
+  }
+
   const rows = points.map((point) => ({ xMs: point.xMs, value: point.value }));
   const layerProps: ValueLayerProps = {
     points,
@@ -1869,6 +2085,9 @@ function ValueTrendChart({
     xDomain,
     drawXAxis,
     locale,
+    reference,
+    directLabels: props.directLabels ?? 'last',
+    formatValueFull,
     crosshairMs,
     activeIndex,
     selectable: props.onSelectPoint !== undefined,
@@ -1937,13 +2156,20 @@ function ValueTrendChart({
     );
 
   // The standalone readout (a grid owns one readout for all its panels and passes `cursor`).
+  const xSpan = xDomain[1] - xDomain[0];
   const readoutAnchorX =
-    gutterPx +
-    (((activePoint?.xMs ?? xDomain[0]) - xDomain[0]) / (xDomain[1] - xDomain[0])) * plotWidthPx;
+    gutterPx + (((activePoint?.xMs ?? xDomain[0]) - xDomain[0]) / (xSpan || 1)) * plotWidthPx;
   const readoutLeft = clampReadoutLeft({
     anchorX: readoutAnchorX,
     readoutWidth: Math.min(readoutWidth, CAREER_TIMELINE_READOUT_MAX_WIDTH_PX),
     containerWidth,
+  });
+
+  const title = typeof labels.overline === 'function' ? labels.overline(grain) : labels.overline;
+  const headItems = valueLegendItems({
+    legend: labels.legend,
+    hasCalibration: points.some((point) => point.containsCalibration),
+    referencePlacement: reference?.placement,
   });
 
   return (
@@ -1952,9 +2178,11 @@ function ValueTrendChart({
       data-slot="trend-line-value"
       data-state="drawn"
       data-grain={grain}
+      data-narrow={narrow ? 'true' : 'false'}
       data-point-count={points.length}
       data-y-domain={`${axis.domain[0]},${axis.domain[1]}`}
     >
+      {title && <ValueTrendHead title={title} items={headItems} />}
       <div
         data-slot="trend-value-frame"
         className="relative [&_.recharts-surface]:overflow-visible"
@@ -1963,8 +2191,12 @@ function ValueTrendChart({
           data-slot="trend-value-plot"
           role="img"
           tabIndex={0}
-          aria-label={props.labels.aria}
+          aria-label={labels.aria}
           className={VALUE_PLOT_FOCUS_CLASSES}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            if (!cursor) setActive(null);
+          }}
         >
           {plot}
         </div>
@@ -1979,7 +2211,16 @@ function ValueTrendChart({
             <ChartTooltip active payload={[{ payload: activePoint }]} />
           </div>
         )}
+        {/* UI-SPEC §13.6: keyboard steps are announced politely; a pointer hover never is. */}
+        {!cursor && (
+          <div data-slot="trend-value-live" aria-live="polite" className="sr-only">
+            {activePoint && active?.source === 'keyboard' ? (
+              <ChartTooltip active payload={[{ payload: activePoint }]} />
+            ) : null}
+          </div>
+        )}
       </div>
+      {tableTwin(points)}
     </div>
   );
 }

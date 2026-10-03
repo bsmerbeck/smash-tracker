@@ -321,3 +321,35 @@ export function nearestPointIndex(points: readonly { xMs: number }[], ms: number
   });
   return best;
 }
+
+export type ValueTrendHeadKind = 'series' | 'calibration' | 'reference' | 'reference-range';
+
+export interface ValueTrendHeadItem {
+  kind: ValueTrendHeadKind;
+  text: string;
+}
+
+/**
+ * The legend a drawn value trend carries: the series always; the calibration diamond only when one is
+ * drawn; the reference only when the host supplied its string — the dashed swatch for a line, the
+ * host's out-of-range wording (no swatch) when the reference is not drawn as one.
+ */
+export function valueLegendItems(input: {
+  legend: { series: string; calibration?: string; reference?: string } | undefined;
+  hasCalibration: boolean;
+  referencePlacement: ReferencePlacement | undefined;
+}): ValueTrendHeadItem[] {
+  const { legend, hasCalibration, referencePlacement: placement } = input;
+  if (!legend) return [];
+  const items: ValueTrendHeadItem[] = [{ kind: 'series', text: legend.series }];
+  if (hasCalibration && legend.calibration) {
+    items.push({ kind: 'calibration', text: legend.calibration });
+  }
+  if (placement !== undefined && legend.reference) {
+    items.push({
+      kind: placement === 'line' ? 'reference' : 'reference-range',
+      text: legend.reference,
+    });
+  }
+  return items;
+}
