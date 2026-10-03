@@ -1,4 +1,4 @@
-import type { KnownTierWord, TierBasis } from '../tournamentTier.js';
+import { TIER_LEVEL, type KnownTierWord, type TierBasis } from '../tournamentTier.js';
 
 /**
  * UI-SPEC §7.9 (marker) / DD-41-09 / B2: the contract of the career-timeline event diamonds — each
@@ -38,4 +38,35 @@ export interface SelectTimelineEventMarkersOptions {
   minLevel: number;
   /** Defaults to `TIMELINE_EVENT_MARKER_MAX`. */
   max?: number;
+}
+
+/**
+ * DD-41-09 / B2: the diamonds one timeline draws. Keeps candidates whose `level` reaches `minLevel`;
+ * when more than `max` qualify, every supermajor is kept first (the most recent ones if they alone
+ * exceed `max`) and the remaining room is filled with the most recent of the rest. Pure — returns
+ * ascending `atMs`, how many are `shown` and how many `total` qualified.
+ */
+export function selectTimelineEventMarkers(
+  candidates: readonly TimelineEventCandidate[],
+  options: SelectTimelineEventMarkersOptions,
+): TimelineEventSelection {
+  const max = options.max ?? TIMELINE_EVENT_MARKER_MAX;
+  const qualifying = candidates.filter((candidate) => candidate.level >= options.minLevel);
+  const total = qualifying.length;
+  const byRecency = (a: TimelineEventCandidate, b: TimelineEventCandidate) =>
+    b.atMs - a.atMs || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+  let kept: TimelineEventCandidate[];
+  if (total <= max) {
+    kept = qualifying;
+  } else {
+    const top = qualifying.filter((candidate) => candidate.level === TIER_LEVEL.supermajor);
+    const rest = qualifying.filter((candidate) => candidate.level !== TIER_LEVEL.supermajor);
+    kept = [...top].sort(byRecency).slice(0, max);
+    kept = [...kept, ...[...rest].sort(byRecency).slice(0, Math.max(0, max - kept.length))];
+  }
+  const markers = [...kept].sort(
+    (a, b) => a.atMs - b.atMs || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+  );
+  return { markers, shown: markers.length, total };
 }

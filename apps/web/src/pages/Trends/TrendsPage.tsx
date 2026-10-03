@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Insight, Match } from '@smash-tracker/shared';
+import { resolveEntryTiers, type Insight, type Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -13,6 +13,7 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -165,6 +166,37 @@ export function TrendsPage() {
   // session is one set, a legacy `game:<id>` key still resolves.
   const stripSetKeysForMatch = useMemo(() => createFormStripSetKeyResolver(matches), [matches]);
 
+  // Plan 41-04 (B2, DD-41-08): the ONE tier resolution — every registry entry against ALL own-account
+  // matches (the 39.2 resolve-once rule: never a filtered subset, or an out-of-range match would
+  // un-assign and a tier would resolve off a partial record). The career timeline's diamonds and the
+  // terminus' `event=<entryKey>` resolver both read it; Phase 42's recorded tiers arrive through the
+  // same resolver with no change here.
+  const { data: tournamentEntries } = useTournamentEntries();
+  const resolvedEntries = useMemo(
+    () => resolveEntryTiers(tournamentEntries ?? [], allMatches),
+    [tournamentEntries, allMatches],
+  );
+  // RESEARCH correction 9: a diamond's `event=<entryKey>` must list exactly that entry's games, so a
+  // match assigned to a resolved entry also answers to the entry's key (after its strip set keys).
+  // Memoised for the terminus' D-16 reference check (WR-C02).
+  const entryKeyByMatchId = useMemo(() => {
+    const byMatch = new Map<string, string>();
+    for (const resolved of resolvedEntries) {
+      for (const match of resolved.matches) {
+        byMatch.set(match.id, resolved.entryKey);
+      }
+    }
+    return byMatch;
+  }, [resolvedEntries]);
+  const eventKeyForMatch = useMemo(
+    () => (match: Match) => {
+      const setKeys = stripSetKeysForMatch(match);
+      const entryKey = entryKeyByMatchId.get(match.id);
+      return entryKey === undefined ? setKeys : [...setKeys, entryKey];
+    },
+    [stripSetKeysForMatch, entryKeyByMatchId],
+  );
+
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
   // computation this page shares with `TrendsReadsRail` (which takes the
   // result as props below) and this page's own NEW page-level
@@ -307,6 +339,20 @@ export function TrendsPage() {
     });
   }
 
+  // Plan 41-04 (B2, DD-41-08): a career-timeline event diamond drills to exactly that event's games —
+  // `event=<entryKey>`, the key the terminus' `eventKeyForMatch` above answers to.
+  function handleTimelineEventDrill(entryKey: string): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ eventKey: entryKey })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
   // same insight at a new horizon; one that cannot resolve is shown as not
   // applied by the terminus. Mirrors `FighterAnalysisPage.tsx`.
@@ -423,6 +469,8 @@ export function TrendsPage() {
             horizon={horizon}
             onSelectPeriod={handleTimelineDrill}
             onSelectSet={handleTimelineSetDrill}
+            resolvedEntries={resolvedEntries}
+            onSelectEventMarker={handleTimelineEventDrill}
           />
         </GridCell>
 
@@ -475,7 +523,7 @@ export function TrendsPage() {
                   <FilteredMatchList
                     matches={sortedMatches}
                     axes={terminusAxes}
-                    eventKeyForMatch={stripSetKeysForMatch}
+                    eventKeyForMatch={eventKeyForMatch}
                     resolveClaim={resolveClaimForTerminus}
                     claimSummary={claimSummary}
                     onClearFilters={handleClearFilters}

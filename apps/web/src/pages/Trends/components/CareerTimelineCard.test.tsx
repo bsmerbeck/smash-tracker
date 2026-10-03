@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { buildCareerTimeline, type Match } from '@smash-tracker/shared';
+import {
+  buildCareerTimeline,
+  resolveEntryTiers,
+  resolveTournamentTier,
+  type Match,
+  type ResolvedTierEntry,
+  type TierSplitEntry,
+} from '@smash-tracker/shared';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
 import { formatPercent } from '@/lib/formatPercent';
 import { buildFormStripSetKeys } from '@/lib/formStripEvents';
@@ -561,10 +568,214 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
     expect(tables[1]!.querySelector('tbody tr th')?.textContent).toBe(String(Math.max(...years)));
   });
 
-  it("passes NO event markers (owner decision 2026-09-25: diamonds are off until Phase 39.2's tier data)", () => {
+  it('without resolved entries draws no diamonds and no legend item (E8 empty)', () => {
     const { container } = renderCard(PRO_MATCHES);
     expect(container.querySelector('[data-slot="career-timeline"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-slot="career-timeline-event"]')).toHaveLength(0);
+    expect(captionItems(container).some((text) => text.includes('major+'))).toBe(false);
+  });
+
+  describe("plan 41-04: major+ event diamonds from the page's resolved tier entries (B2, DD-41-08/09)", () => {
+    const EVENT_MATCH_INDEX = 4_000;
+    const eventMatches: Match[] = PRO_MATCHES.map((match, index) =>
+      index >= EVENT_MATCH_INDEX && index < EVENT_MATCH_INDEX + 5
+        ? {
+            ...match,
+            eventName: 'Ultimate Singles',
+            tournamentName: 'Genesis 10',
+            win: index % 2 === 0,
+          }
+        : match,
+    );
+    const eventStart = PRO_MATCHES[EVENT_MATCH_INDEX]!.time;
+    const eventEnd = PRO_MATCHES[EVENT_MATCH_INDEX + 4]!.time;
+
+    function entry(overrides: Partial<TierSplitEntry> & { entryKey: string }): TierSplitEntry {
+      return {
+        eventName: 'Ultimate Singles',
+        firstSetAt: eventStart,
+        lastSetAt: eventEnd,
+        isOnline: false,
+        ...overrides,
+      };
+    }
+
+    function renderWith(
+      resolvedEntries: ResolvedTierEntry[],
+      onSelectEventMarker?: (key: string) => void,
+    ) {
+      return render(
+        <CareerTimelineCard
+          matches={eventMatches}
+          horizon="last30"
+          chartWidth={1000}
+          resolvedEntries={resolvedEntries}
+          onSelectEventMarker={onSelectEventMarker}
+        />,
+      );
+    }
+
+    function diamonds(container: HTMLElement): HTMLElement[] {
+      return Array.from(container.querySelectorAll('[data-slot="career-timeline-event"]'));
+    }
+
+    it('marks only known tiers at or above a major: manual filled, estimated hollow; minor, unknown, undated and out-of-domain entries are skipped', () => {
+      const resolved = resolveEntryTiers(
+        [
+          entry({
+            entryKey: 'genesis',
+            tournamentName: 'Genesis 10',
+            tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+          }),
+          entry({
+            entryKey: 'big-estimated',
+            tournamentName: 'Big Estimated',
+            numEntrants: 1_100,
+            firstSetAt: PRO_MATCHES[6_000]!.time,
+            lastSetAt: PRO_MATCHES[6_000]!.time + 1,
+          }),
+          entry({ entryKey: 'a-minor', numEntrants: 300, firstSetAt: PRO_MATCHES[2_000]!.time }),
+          entry({ entryKey: 'unknown', isOnline: null, firstSetAt: PRO_MATCHES[3_000]!.time }),
+          entry({ entryKey: 'undated', numEntrants: 1_100, firstSetAt: 0, lastSetAt: 0 }),
+          entry({
+            entryKey: 'ancient',
+            numEntrants: 1_100,
+            firstSetAt: Date.UTC(2010, 0, 1),
+            lastSetAt: Date.UTC(2010, 0, 2),
+          }),
+        ],
+        eventMatches,
+      );
+      const { container } = renderWith(resolved);
+      const drawn = diamonds(container);
+      expect(drawn.map((el) => el.getAttribute('data-basis'))).toEqual(['manual', 'estimated']);
+      expect(drawn[0]!.querySelector('path')!.getAttribute('fill')).not.toBe(
+        drawn[1]!.querySelector('path')!.getAttribute('fill'),
+      );
+      expect(drawn[1]!.getAttribute('aria-label')).toMatch(/^Big Estimated — estimated Supermajor/);
+      expect(captionItems(container)).toEqual(
+        expect.arrayContaining(['2 major+ events', 'hollow = estimated tier']),
+      );
+      expect(captionItems(container).some((text) => text.includes(' of '))).toBe(false);
+      const swatches = container.querySelectorAll('[data-slot="career-timeline-legend-swatch"]');
+      expect(Array.from(swatches).map((el) => el.getAttribute('data-hollow'))).toEqual([
+        'false',
+        'true',
+      ]);
+    });
+
+    it('one diamond uses the singular legend; an all-recorded set adds no hollow legend item', () => {
+      const resolved = resolveEntryTiers(
+        [
+          entry({
+            entryKey: 'genesis',
+            tournamentName: 'Genesis 10',
+            tierOverride: { contractVersion: 1, tier: 'supermajor', setAtMs: 1 },
+          }),
+        ],
+        eventMatches,
+      );
+      const { container } = renderWith(resolved);
+      expect(diamonds(container)).toHaveLength(1);
+      expect(captionItems(container)).toContain('1 major+ event');
+      expect(captionItems(container)).not.toContain('hollow = estimated tier');
+    });
+
+    it('the readout reads name · tier and basis · rating after (a visible point) · record, plus the estimate caveat on an estimate', () => {
+      const resolved = resolveEntryTiers(
+        [
+          entry({
+            entryKey: 'genesis',
+            tournamentName: 'Genesis 10',
+            numEntrants: 1_100,
+          }),
+        ],
+        eventMatches,
+      );
+      const { container } = renderWith(resolved);
+      const [marker] = diamonds(container);
+      fireEvent.focus(marker!);
+      const readout = container.querySelector('[data-slot="career-timeline-readout"]')!;
+      expect(
+        readout.querySelector('[data-slot="career-timeline-readout-title"]')?.textContent,
+      ).toBe('Genesis 10');
+      const timeline = buildCareerTimeline({
+        matches: eventMatches,
+        horizon: 'last30',
+        nowMs: Date.now(),
+      });
+      const after = timeline.rating.points.find((point) => point.closeMs >= eventEnd)!;
+      const text = readout.textContent ?? '';
+      expect(text).toContain('Supermajor · ');
+      expect(text).toContain(`Rating after the event · ${after.rating}`);
+      expect(text).toContain('An estimate from entrant count');
+      expect(text.indexOf('Supermajor')).toBeLessThan(text.indexOf('Rating after the event'));
+      expect(text.indexOf('Rating after the event')).toBeLessThan(
+        text.indexOf('An estimate from entrant count'),
+      );
+    });
+
+    it('an entry with no display date falls back to its latest assigned match time', () => {
+      const undated = entry({
+        entryKey: 'fallback',
+        tournamentName: 'Fallback Open',
+        firstSetAt: 0,
+        lastSetAt: 0,
+        numEntrants: 600,
+      });
+      const resolved: ResolvedTierEntry[] = [
+        {
+          entry: undated,
+          entryKey: 'fallback',
+          resolution: resolveTournamentTier({ entry: undated }),
+          matches: [PRO_MATCHES[5_000]!, PRO_MATCHES[5_001]!],
+        },
+      ];
+      const { container } = renderWith(resolved);
+      expect(diamonds(container)).toHaveLength(1);
+      expect(diamonds(container)[0]!.getAttribute('data-basis')).toBe('estimated');
+    });
+
+    it('thins more than 40 to 40, supermajors first, and the caption says how many are marked', () => {
+      const entries: TierSplitEntry[] = Array.from({ length: 55 }, (_, i) =>
+        entry({
+          entryKey: `major-${i}`,
+          tournamentName: `Major ${i}`,
+          firstSetAt: PRO_MATCHES[100 + i * 100]!.time,
+          lastSetAt: PRO_MATCHES[100 + i * 100]!.time + 1,
+          tierOverride: { contractVersion: 1, tier: i === 0 ? 'supermajor' : 'major', setAtMs: 1 },
+        }),
+      );
+      const { container } = renderWith(resolveEntryTiers(entries, PRO_MATCHES));
+      const drawn = diamonds(container);
+      expect(drawn).toHaveLength(40);
+      // The oldest entry is the lone supermajor, so it survives although it is the least recent.
+      expect(drawn.some((el) => el.getAttribute('aria-label')?.startsWith('Major 0 '))).toBe(true);
+      expect(drawn.some((el) => el.getAttribute('aria-label')?.startsWith('Major 1 '))).toBe(false);
+      expect(captionItems(container)).toEqual(
+        expect.arrayContaining([
+          '40 major+ events',
+          '40 of 55 major+ events marked — the rest are in Recent events',
+        ]),
+      );
+    });
+
+    it("clicking a diamond calls onSelectEventMarker with the entry's key", () => {
+      const onSelectEventMarker = vi.fn();
+      const resolved = resolveEntryTiers(
+        [
+          entry({
+            entryKey: 'genesis',
+            tournamentName: 'Genesis 10',
+            tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+          }),
+        ],
+        eventMatches,
+      );
+      const { container } = renderWith(resolved, onSelectEventMarker);
+      fireEvent.click(diamonds(container)[0]!);
+      expect(onSelectEventMarker).toHaveBeenCalledWith('genesis');
+    });
   });
 });
 

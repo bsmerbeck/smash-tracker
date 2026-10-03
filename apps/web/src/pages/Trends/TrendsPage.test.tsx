@@ -62,9 +62,14 @@ const { DRILL_FROM_MS, DRILL_TO_MS } = vi.hoisted(() => ({
 vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./components/CareerTimelineCard')>();
   function CareerTimelineCardWithProbe(props: ComponentProps<typeof actual.CareerTimelineCard>) {
-    const { onSelectPeriod: selectPeriod, onSelectSet: selectSet } = props as {
+    const {
+      onSelectPeriod: selectPeriod,
+      onSelectSet: selectSet,
+      onSelectEventMarker: selectEvent,
+    } = props as {
       onSelectPeriod?: (range: object) => void;
       onSelectSet?: (key: string) => void;
+      onSelectEventMarker?: (entryKey: string) => void;
     };
     return (
       <>
@@ -77,6 +82,9 @@ vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
         </button>
         <button type="button" onClick={() => selectSet?.('SETA')}>
           timeline-set-probe
+        </button>
+        <button type="button" onClick={() => selectEvent?.('entry-genesis')}>
+          timeline-event-probe
         </button>
       </>
     );
@@ -643,6 +651,61 @@ describe('TrendsPage', () => {
       await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
       const gamesCard = document.getElementById('games') as HTMLElement;
       expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(3);
+    });
+  });
+
+  describe("plan 41-04: a career-timeline event diamond drills to exactly that event's games", () => {
+    it('writes event=<entryKey> + #games and lists only the games assigned to that resolved entry', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const start = Date.UTC(2021, 0, 5, 18);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'g1',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          time: start,
+        }),
+        makeMatch({
+          id: 'g2',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          time: start + 60_000,
+        }),
+        makeMatch({
+          id: 'o1',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Other Weekly',
+          time: start + 40 * day,
+        }),
+        makeMatch({ id: 'm1', time: start + 50 * day }),
+      ]);
+      listTournaments.mockResolvedValue([
+        {
+          entryKey: 'entry-genesis',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          firstSetAt: start,
+          lastSetAt: start + 60_000,
+          setsPlayed: 2,
+        },
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-event-probe' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location').textContent).toMatch(/event=entry-genesis.*#games$/),
+      );
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      await waitFor(() =>
+        expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(
+          2,
+        ),
+      );
     });
   });
 

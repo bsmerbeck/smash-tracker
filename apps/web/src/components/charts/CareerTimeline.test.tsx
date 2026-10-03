@@ -761,6 +761,8 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       atMs: TIMELINE.rating.points[8]!.closeMs,
       wins: 5,
       losses: 2,
+      tier: 'supermajor',
+      basis: 'recorded',
       ratingAfter: 1810,
     },
     {
@@ -769,6 +771,8 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       atMs: TIMELINE.rating.points[20]!.closeMs,
       wins: 3,
       losses: 2,
+      tier: 'major',
+      basis: 'manual',
       ratingAfter: 1850,
     },
   ];
@@ -804,6 +808,60 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       expect(diamond.getAttribute('stroke')).toBe(CHART_TOKENS.surface);
       expect(diamond.getAttribute('stroke-width')).toBe('1.5');
     });
+  });
+
+  it('event layer (12.6 anti-masquerade): an estimated marker is hollow with data-basis, a recorded or manual one is filled', () => {
+    const estimated: CareerTimelineEventMarker = {
+      ...MARKERS[0]!,
+      key: 'evt-est',
+      tier: 'major',
+      basis: 'estimated',
+      ratingAfter: null,
+    };
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={[MARKERS[0]!, MARKERS[1]!, estimated]}
+        onSelectEventMarker={vi.fn()}
+      />,
+    );
+    const events = Array.from(container.querySelectorAll('[data-slot="career-timeline-event"]'));
+    expect(events).toHaveLength(3);
+    expect(events.map((el) => el.getAttribute('data-basis'))).toEqual([
+      'recorded',
+      'manual',
+      'estimated',
+    ]);
+    const paths = events.map((el) => el.querySelector('path')!);
+    for (const filled of [paths[0]!, paths[1]!]) {
+      expect(filled.getAttribute('fill')).toBe(CHART_TOKENS.deemphasis);
+      expect(filled.getAttribute('stroke')).toBe(CHART_TOKENS.surface);
+    }
+    const hollow = paths[2]!;
+    expect(hollow.getAttribute('fill')).toBe(CHART_TOKENS.surface);
+    expect(hollow.getAttribute('stroke')).toBe(CHART_TOKENS.deemphasis);
+    expect(hollow.getAttribute('stroke-width')).toBe('1.5');
+  });
+
+  it('event layer: supermajor and major markers share one shape (the tier is in the readout, never the mark)', () => {
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={MARKERS}
+        onSelectEventMarker={vi.fn()}
+      />,
+    );
+    const shapes = Array.from(
+      container.querySelectorAll('[data-slot="career-timeline-event"] path'),
+    );
+    // Same diamond geometry (relative offsets), same fill: only x differs.
+    const normalise = (d: string) => d.replace(/-?\d+(\.\d+)?/g, '#');
+    expect(new Set(shapes.map((el) => normalise(el.getAttribute('d')!))).size).toBe(1);
+    expect(new Set(shapes.map((el) => el.getAttribute('fill'))).size).toBe(1);
   });
 
   it('event layer: focus shows the event readout, Enter and click select the marker', () => {
