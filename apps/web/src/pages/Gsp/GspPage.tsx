@@ -113,6 +113,16 @@ export function GspPage() {
   const fighter: Fighter | undefined =
     fighterOptions.find((f) => f.id === selectedFighterId) ?? fighterOptions[0] ?? undefined;
 
+  // Index-parity: entries[i] is the record behind series[i] (the series is derived from it in shared/gsp.ts),
+  // which is what makes the curve's point-index -> entry resolution safe (plan 41-06, T-41-16). Memoised so the
+  // curve's value-series memos hold across unrelated re-renders.
+  const fighterId = fighter?.id;
+  const entries = useMemo(
+    () => (fighterId === undefined ? [] : getGspEntries(matches, readings, fighterId)),
+    [matches, readings, fighterId],
+  );
+  const series = useMemo(() => gspSeriesFromEntries(entries), [entries]);
+
   // The vs-Glicko card's own hidden-state gate needs the account's rating periods; counted once here (a
   // hook, so before the early returns) so the Rating-model note can span the whole row when the card is not drawn.
   const ratingPeriodCount = useMemo(() => computeRatingHistory(matches).periods.length, [matches]);
@@ -139,11 +149,6 @@ export function GspPage() {
     return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
-  // Index-parity: entries[i] is the record behind series[i] (the series is
-  // derived from it in shared/gsp.ts), which is what makes the curve's
-  // point-index → entry resolution safe.
-  const entries = getGspEntries(matches, readings, fighter.id);
-  const series = gspSeriesFromEntries(entries);
   const gainStats = getGspGainStats(series);
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
@@ -209,7 +214,7 @@ export function GspPage() {
               <GspCurve
                 series={series}
                 settings={gspSettings}
-                onPointClick={(index) => editEntry(entries[index] ?? null)}
+                onSelectReading={(index) => editEntry(entries[index] ?? null)}
               />
             </GridCell>
             <GridCell span={4}>

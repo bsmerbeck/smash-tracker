@@ -77,11 +77,12 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * removed here and from `eslint.config.js`'s ignores in the same commit.
  * Four entries as of plan 41-05 — GainsAnalysis rebuilt on StatRow + ComparisonBars
  * (chart.js retired from it), removed here and from the eslint ignores in the same commit.
+ * Three entries as of plan 41-06 — GspCurve rebuilt on the kit's value-mode TrendLine (chart.js
+ * retired from it), removed here, from the eslint ignores and from the README in the same commit.
  */
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
   'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-  'apps/web/src/pages/Gsp/components/GspCurve.tsx',
   'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
 ];
 

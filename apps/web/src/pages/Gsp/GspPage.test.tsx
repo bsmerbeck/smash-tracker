@@ -1,5 +1,6 @@
+import { cloneElement, type ReactElement } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -18,6 +19,22 @@ vi.mock('sonner', () => ({
     error: (...args: unknown[]) => toastError(...args),
   },
 }));
+
+// jsdom measures every element 0x0, so Recharts' ResponsiveContainer would draw an empty plot; give the
+// curve a real width so its marks (and the click that resolves a reading) exist (plan 41-06, T-41-16).
+vi.mock('recharts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('recharts')>();
+  return {
+    ...actual,
+    ResponsiveContainer: ({
+      children,
+      height,
+    }: {
+      children: ReactElement<{ width?: number; height?: number }>;
+      height?: number;
+    }) => cloneElement(children, { width: 830, height }),
+  };
+});
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -203,9 +220,12 @@ describe('GspPage', () => {
     // makes the conversion deterministic: gsp 9,050,000 -> MMR 1,000.
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_050_000 })]);
 
-    renderGspPage();
+    const { container } = renderGspPage();
 
-    expect(await screen.findByText('Est. MMR')).toBeInTheDocument();
+    // Scoped to the hero: the curve's view switch also reads "Est. MMR" (plan 41-06).
+    await screen.findByText('GSP Curve');
+    const hero = container.querySelector('[data-slot="gsp-hero"]') as HTMLElement;
+    expect(within(hero).getByText('Est. MMR')).toBeInTheDocument();
     expect(screen.getByText('1,000')).toBeInTheDocument();
     // Distance card: 1142 - 1000 = 142, with the MMR framing caption.
     expect(screen.getByText('142')).toBeInTheDocument();
@@ -502,11 +522,11 @@ describe('GspPage', () => {
     // Default GSP view explains the computed threshold line.
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'MMR view' }));
+    await user.click(screen.getByRole('radio', { name: 'Est. MMR' }));
     expect(screen.getByText(/doesn't inflate over time/)).toBeInTheDocument();
     expect(screen.queryByText(/logged post-match GSP reading/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'GSP view' }));
+    await user.click(screen.getByRole('radio', { name: 'GSP' }));
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
   });
 
@@ -530,6 +550,37 @@ describe('GspPage', () => {
     // delete path too — it hands off to the page's confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete Match' }));
     expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+  });
+
+  it('opens the edit dialog of exactly the reading clicked on the curve (A2, T-41-16)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+      makeMatch({ id: 'm2', time: 300, win: true, gsp: 9_510_000 }),
+    ]);
+    listGspReadings.mockResolvedValue([
+      { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: 200 },
+    ]);
+    const user = userEvent.setup();
+
+    const { container } = renderGspPage();
+    await screen.findByText('GSP Curve');
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+
+    // The calibration reading is the diamond: its path starts at `M{x} ...`.
+    const diamond = container.querySelector('[data-slot="trend-value-diamond"]')!;
+    const diamondX = Number(/^M(-?[\d.]+)/.exec(diamond.getAttribute('d') ?? '')![1]);
+    fireEvent.click(hit, { clientX: diamondX, clientY: 100 });
+    const readingDialog = await screen.findByRole('dialog');
+    expect(readingDialog).toHaveTextContent('Edit GSP reading');
+    expect(within(readingDialog).getByLabelText('Current GSP')).toHaveValue('9500000');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // The newest reading is the last dot: a match, so the match form opens.
+    const lastDot = container.querySelector('[data-slot="trend-value-dot"]')!;
+    fireEvent.click(hit, { clientX: Number(lastDot.getAttribute('cx')), clientY: 100 });
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Edit Match');
   });
 
   describe('live thresholds (gsptiers.com via /api/gsp-live)', () => {
