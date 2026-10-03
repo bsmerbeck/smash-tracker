@@ -9,6 +9,7 @@ import {
   type TrendValueReference,
 } from '@/components/charts/TrendLine';
 import { CHART_H_COMPACT, CHART_H_DEFAULT } from '@/components/charts/tokens';
+import { referencePlacement } from '@/components/charts/valueTrendGeometry';
 import { SegmentedControl } from '@/components/analytics/SegmentedControl';
 import { formatCompact, formatDate, formatGrouped } from '@/lib/format';
 import { computedEliteThreshold, toMmrSeries } from '../lib/gspMmrModel';
@@ -150,8 +151,12 @@ export function GspCurve({
 
   const isLocked = series.length < GSP_CURVE_UNLOCK_THRESHOLD;
   const referenceValue = view === 'gsp' ? eliteThreshold : GSP_MODEL.ELITE_MMR;
-  // Task 1: the reference is always drawn; DD-41-13's out-of-range rule lands in the next commit.
-  const placement = 'line' as TrendValueReference['placement'];
+  // DD-41-13: the Elite line is drawn only near the readings; otherwise the head legend states it as above /
+  // below this range and nothing is drawn (pulling it into the domain would squash the readings).
+  const placement = referencePlacement(
+    widePoints.map((point) => point.value),
+    referenceValue,
+  );
   const referenceLabel =
     view === 'gsp'
       ? t('gsp.curve.legend.elite')

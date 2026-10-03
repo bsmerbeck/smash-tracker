@@ -86,6 +86,14 @@ export function GspPage() {
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [editingReading, setEditingReading] = useState<GspReading | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GspEntry | null>(null);
+  // DD-41-12 (A2): a coarser-grain curve close click selects the log rows it summarises (indices into
+  // `entries`) - never a URL axis. Held until the next selection replaces it, and tied to the `entries`
+  // array it was taken from: an edit, a delete or a fighter switch builds a new array, so a stale index
+  // can never mark the wrong row.
+  const [logSelection, setLogSelection] = useState<{
+    entries: GspEntry[];
+    indexes: number[];
+  } | null>(null);
 
   const localizedName = useFighterNameResolver();
   const fighterOptions = useMemo(
@@ -149,6 +157,7 @@ export function GspPage() {
     return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
+  const logHighlightIndexes = logSelection?.entries === entries ? logSelection.indexes : undefined;
   const gainStats = getGspGainStats(series);
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
@@ -215,6 +224,7 @@ export function GspPage() {
                 series={series}
                 settings={gspSettings}
                 onSelectReading={(index) => editEntry(entries[index] ?? null)}
+                onSelectPeriod={(indexes) => setLogSelection({ entries, indexes })}
               />
             </GridCell>
             <GridCell span={4}>
@@ -229,7 +239,13 @@ export function GspPage() {
             </GridCell>
 
             <GridCell span={12}>
-              <GspMatchLog entries={entries} onEdit={editEntry} onDelete={setPendingDelete} />
+              <GspMatchLog
+                entries={entries}
+                onEdit={editEntry}
+                onDelete={setPendingDelete}
+                highlightedIndexes={logHighlightIndexes}
+                forceShowAll={logHighlightIndexes !== undefined}
+              />
             </GridCell>
 
             <GridCell

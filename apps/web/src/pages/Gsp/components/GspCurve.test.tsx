@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
-import { GSP_MODEL, estimateT, mmrToGsp } from '@smash-tracker/shared';
+import { GSP_MODEL, buildValueSeries, estimateT, mmrToGsp } from '@smash-tracker/shared';
 import { GspCurve } from './GspCurve';
+import { computedEliteThreshold } from '../lib/gspMmrModel';
+import { referencePlacement } from '@/components/charts/valueTrendGeometry';
 
 vi.mock('@/hooks/useGspLive', () => ({ useGspLive: () => ({ data: undefined }) }));
 
@@ -11,15 +13,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const START_MS = Date.UTC(2026, 0, 5, 12);
 const NEVER_SAVED: GspSettings = { eliteThreshold: 10_000_000, updatedAt: 0 };
 
+/**
+ * A manual calibration saved "now": the computed GSP Elite threshold the curve draws is then this value
+ * to within rounding (the model clamps t, so an arbitrary threshold is NOT reproduced - hence the helper
+ * hands back what the component will actually compute).
+ */
+function calibratedNow(): { settings: GspSettings; elite: number } {
+  const settings: GspSettings = { eliteThreshold: 14_000_000, updatedAt: Date.now() };
+  const elite = computedEliteThreshold(Date.now(), {
+    eliteThresholdGsp: settings.eliteThreshold,
+    atMs: settings.updatedAt,
+  });
+  return { settings, elite };
+}
+
 /** `count` readings spread over `spanDays`, rising 5k each; indexes in `calibrationAt` are manual re-baselines. */
 function makeSeries(
   count: number,
   spanDays: number,
-  { start = 9_000_000, calibrationAt = [] as number[] } = {},
+  { start = 9_000_000, step = 5_000, calibrationAt = [] as number[] } = {},
 ): GspPoint[] {
   return Array.from({ length: count }, (_, i) => ({
     time: START_MS + Math.round((i * spanDays * DAY_MS) / count),
-    gsp: start + i * 5_000,
+    gsp: start + i * step,
     win: calibrationAt.includes(i) ? null : i % 3 !== 0,
   }));
 }
@@ -64,7 +80,8 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
 
   it('toggles the series and the reference between GSP and Est. MMR', async () => {
     const user = userEvent.setup();
-    renderCurve(makeSeries(40, 120, { start: 9_500_000 }));
+    const { settings, elite } = calibratedNow();
+    renderCurve(makeSeries(40, 120, { start: elite - 400_000, step: 10_000 }), { settings });
     expect(screen.getByText('GSP by reading')).toBeInTheDocument();
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
     expect(screen.getByText(/^Elite threshold [\d,]+$/)).toBeInTheDocument();
@@ -74,7 +91,9 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
     expect(screen.getByText(/doesn't inflate over time/)).toBeInTheDocument();
     expect(screen.queryByText(/logged post-match GSP reading/)).not.toBeInTheDocument();
     expect(
-      screen.getByText(`Elite threshold ${GSP_MODEL.ELITE_MMR.toLocaleString('en')}`),
+      screen.getByText(
+        new RegExp(`^Elite threshold ${GSP_MODEL.ELITE_MMR.toLocaleString('en')}( — .+)?$`),
+      ),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: 'GSP' }));
@@ -157,5 +176,92 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
     fireEvent.click(hit, { clientX: Number(last.getAttribute('cx')), clientY: 100 });
     expect(onSelectReading).toHaveBeenLastCalledWith(39);
     expect(onSelectPeriod).not.toHaveBeenCalled();
+  });
+
+  it('raises onSelectPeriod with the close memberIndexes at a coarser grain, never onSelectReading (DD-41-12)', () => {
+    const series = makeSeries(200, 18 * 30);
+    const onSelectReading = vi.fn();
+    const onSelectPeriod = vi.fn();
+    const { container } = renderCurve(series, { onSelectReading, onSelectPeriod });
+    const expected = buildValueSeries(
+      series.map((p) => ({ atMs: p.time, value: p.gsp, calibration: p.win === null })),
+      { target: 60 },
+    ).points;
+    const target = expected[4]!;
+    expect(target.memberIndexes.length).toBeGreaterThan(1);
+    const mark = container.querySelector(`[data-point-key="${target.key}"]`)!;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    expect(onSelectPeriod).toHaveBeenCalledTimes(1);
+    expect(onSelectPeriod).toHaveBeenCalledWith(target.memberIndexes);
+    expect(onSelectReading).not.toHaveBeenCalled();
+  });
+
+  it('writes no URL axis: the curve never touches the router (A2)', () => {
+    // No Router wraps this render: a `useNavigate` / `useSearchParams` call would throw.
+    expect(() => renderCurve(makeSeries(40, 120), { onSelectReading: vi.fn() })).not.toThrow();
+  });
+});
+
+describe('GspCurve Elite reference placement (DD-41-13)', () => {
+  const referenceLine = (container: HTMLElement) =>
+    container.querySelector('[data-slot="trend-value-reference"]');
+
+  it('draws no line and says "above this range" when Elite sits far above the readings', () => {
+    const { settings, elite } = calibratedNow();
+    // 40 readings spanning 195k, about 8M below Elite: far beyond twice the data span.
+    const { container } = renderCurve(makeSeries(40, 120, { start: elite - 8_000_000 }), {
+      settings,
+    });
+    expect(referenceLine(container)).toBeNull();
+    expect(container.querySelector('[data-slot="trend-value-reference-label"]')).toBeNull();
+    const legend = screen.getByText(/^Elite threshold [\d,]+ — above this range$/);
+    const value = Number(
+      /Elite threshold ([\d,]+)/.exec(legend.textContent!)![1]!.replace(/,/g, ''),
+    );
+    expect(Math.abs(value - elite)).toBeLessThan(1_000);
+  });
+
+  it('draws no line and says "below this range" when Elite sits far below the readings', () => {
+    const { settings, elite } = calibratedNow();
+    const { container } = renderCurve(makeSeries(40, 120, { start: elite + 700_000 }), {
+      settings,
+    });
+    expect(referenceLine(container)).toBeNull();
+    expect(screen.getByText(/^Elite threshold [\d,]+ — below this range$/)).toBeInTheDocument();
+  });
+
+  it('draws the dashed line and its direct label when Elite is near the readings', () => {
+    const { settings, elite } = calibratedNow();
+    // Readings 400k..10k under Elite (span 390k): Elite is within twice the span.
+    const { container } = renderCurve(
+      makeSeries(40, 120, { start: elite - 400_000, step: 10_000 }),
+      { settings },
+    );
+    expect(referenceLine(container)).not.toBeNull();
+    expect(container.querySelector('[data-slot="trend-value-reference-label"]')).not.toBeNull();
+    expect(screen.getByText(/^Elite threshold [\d,]+$/)).toBeInTheDocument();
+    expect(screen.queryByText(/this range/)).not.toBeInTheDocument();
+  });
+
+  it('judges the MMR view on its own scale: Elite MMR 1142 against the converted readings', async () => {
+    const user = userEvent.setup();
+    const { settings, elite } = calibratedNow();
+    renderCurve(makeSeries(40, 120, { start: elite - 400_000, step: 10_000 }), { settings });
+    await user.click(screen.getByRole('radio', { name: 'Est. MMR' }));
+    // Whatever the placement, the legend names Elite at the fixed model value, never the GSP threshold.
+    const eliteMmr = GSP_MODEL.ELITE_MMR.toLocaleString('en');
+    expect(
+      screen.getByText(new RegExp(`^Elite threshold ${eliteMmr}( — (above|below) this range)?$`)),
+    ).toBeInTheDocument();
+  });
+
+  it("applies the stated placement examples to the kit's rule", () => {
+    // 2.0M-2.1M with a 10M Elite: far above. 11.0M-11.2M with 10.3M: far below. 9.2M-9.6M with 9.8M: a line.
+    expect(referencePlacement([2_000_000, 2_050_000, 2_100_000], 10_000_000)).toBe('above-range');
+    expect(referencePlacement([11_000_000, 11_100_000, 11_200_000], 10_300_000)).toBe(
+      'below-range',
+    );
+    expect(referencePlacement([9_200_000, 9_400_000, 9_600_000], 9_800_000)).toBe('line');
   });
 });

@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { GSP_MODEL } from '@smash-tracker/shared';
+import { GSP_MODEL, buildValueSeries } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { GspPage } from './GspPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -581,6 +581,59 @@ describe('GspPage', () => {
     const lastDot = container.querySelector('[data-slot="trend-value-dot"]')!;
     fireEvent.click(hit, { clientX: Number(lastDot.getAttribute('cx')), clientY: 100 });
     expect(await screen.findByRole('dialog')).toHaveTextContent('Edit Match');
+  });
+
+  it("a close click on the curve expands the GSP Log and marks exactly that close's rows (DD-41-12)", async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startMs = Date.UTC(2026, 0, 1, 12);
+    const matchList = Array.from({ length: 70 }, (_, i) =>
+      makeMatch({
+        id: `m${i}`,
+        time: startMs + i * dayMs,
+        win: i % 2 === 0,
+        gsp: 9_000_000 + i * 1_000,
+      }),
+    );
+    listMatches.mockResolvedValue(matchList);
+    const expected = buildValueSeries(
+      matchList.map((m, i) => ({ atMs: m.time, value: 9_000_000 + i * 1_000, calibration: false })),
+      { target: 60 },
+    );
+    expect(expected.grain).not.toBe('reading');
+
+    const { container } = renderGspPage();
+    const logTitle = await screen.findByText('GSP Log');
+    const logCard = logTitle.closest('[data-slot="card"]') as HTMLElement;
+    // 70 entries, 8 recent rows until a selection arrives.
+    expect(within(logCard).getAllByRole('listitem')).toHaveLength(8);
+    expect(logCard.querySelectorAll('[aria-current="true"]')).toHaveLength(0);
+
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    const clickClose = (k: number) => {
+      const mark = container.querySelector(`[data-point-key="${expected.points[k]!.key}"]`)!;
+      fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    };
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+    const first = expected.points[2]!;
+    const rows = [...logCard.querySelectorAll<HTMLElement>('li[aria-current="true"]')];
+    expect(rows).toHaveLength(first.memberIndexes.length);
+    // The first marked row (newest first) is the close's newest member, and it holds focus.
+    expect(document.activeElement).toBe(rows[0]);
+
+    // The next selection replaces the set.
+    clickClose(5);
+    const second = expected.points[5]!;
+    await waitFor(() =>
+      expect(logCard.querySelectorAll('li[aria-current="true"]')).toHaveLength(
+        second.memberIndexes.length,
+      ),
+    );
+    expect(document.activeElement).toBe(logCard.querySelector('li[aria-current="true"]'));
+    // No edit dialog opened: a close click finds readings, it never edits one.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   describe('live thresholds (gsptiers.com via /api/gsp-live)', () => {

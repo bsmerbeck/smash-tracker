@@ -36,6 +36,13 @@ import { CHART_TOKENS } from './tokens';
  *      kit file reads a raw chart custom property" red, naming that file.
  *   6. Temporarily adding `var(--primary)` to a non-test kit file turned "no
  *      kit file uses --primary" red, naming that file.
+ *
+ * THE ONE ENUMERATED NON-URL CLICK (plan 41-06, DD-41-12, UI-SPEC 9.3): a kit chart's point / mark click
+ * drills into the games behind it through the Phase 38 URL contract - EXCEPT the GSP curve / MMR panel,
+ * because GSP readings are not games and `FilteredMatchList` has no row for one. At reading grain the
+ * click opens that reading's edit dialog; at a coarser grain it expands the GSP Log and marks the
+ * close's rows (`aria-current`). Neither writes a URL axis (`GspCurve.tsx` imports no router API).
+ * No other chart may add a non-URL click without being named here.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
