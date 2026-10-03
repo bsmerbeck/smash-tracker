@@ -339,6 +339,20 @@
       "setRecorded": "Set registrado: {{score}} vs {{opponent}}",
       "partialSave": "Apenas {{saved}} de {{total}} games foram salvos antes de um erro. Verifique os Dados de partidas e insira novamente os games que faltam.",
       "setFailed": "Falha ao salvar o set. Tente novamente."
+    },
+    "formStrip": {
+      "title": {
+        "last30": "Forma · últimas 30 partidas",
+        "lastEvent": "Forma · últimas 30 partidas, último evento em destaque",
+        "last90": "Forma · últimas 30 partidas, últimos 90 dias em destaque"
+      },
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets",
+      "empty": "Ainda não há partidas com {{fighter}} nesta visualização.",
+      "windowEmpty": {
+        "lastEvent": "Sem partidas no último evento — mostrando as últimas 30, nenhuma em destaque.",
+        "last90": "Sem partidas nos últimos 90 dias — mostrando as últimas 30, nenhuma em destaque."
+      }
     }
   },
   "matchForm": {
@@ -489,7 +503,11 @@
       "recentWinRate": "Taxa de vitórias recente",
       "lastNGames_one": "última partida",
       "lastNGames_other": "últimas {{count}} partidas",
-      "liveCalibrated": "atualizado automaticamente em {{date}} via gsptiers.com"
+      "liveCalibrated": "atualizado automaticamente em {{date}} via gsptiers.com",
+      "latestReadingDated": "última leitura · {{date}}",
+      "eliteValue": "Elite",
+      "atElite": "MMR {{mmr}} · no Elite ou acima ({{elite}})",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "Curva de GSP",
@@ -503,7 +521,34 @@
       "gspCaption": "Cada ponto é uma leitura de GSP registrada após uma partida com este lutador. A linha tracejada é o limite calculado do Elite Smash — uma estimativa do modelo da comunidade, não um valor publicado pela Nintendo.",
       "clickHint": "Clique em um ponto para editar essa leitura.",
       "locked": "Registre pelo menos {{count}} partidas com leitura de GSP para este lutador para ver a curva.",
-      "setManually": "definido manualmente"
+      "setManually": "definido manualmente",
+      "view": "Visualização",
+      "overline": {
+        "reading": "GSP por leitura",
+        "day": "GSP · fechamento do dia",
+        "week": "GSP · fechamento da semana",
+        "month": "GSP · fechamento do mês",
+        "quarter": "GSP · fechamento do trimestre"
+      },
+      "overlineMmr": {
+        "reading": "MMR est. por leitura",
+        "day": "MMR est. · fechamento do dia",
+        "week": "MMR est. · fechamento da semana",
+        "month": "MMR est. · fechamento do mês",
+        "quarter": "MMR est. · fechamento do trimestre"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "MMR est.",
+        "elite": "Limite do Elite",
+        "eliteMmr": "Elite · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "MMR est. · {{value}}"
+      },
+      "clickHintPeriod": "Clique em um fechamento para encontrar suas leituras no registro.",
+      "lockedMeter": "{{have}} de {{need}} leituras"
     },
     "logger": {
       "title": "Registro rápido",
@@ -543,7 +588,24 @@
       "growing": "— em alta",
       "winNumber": "Vitória nº {{number}}",
       "gainedGsp": "GSP ganho",
-      "empty": "Registre algumas vitórias e derrotas com leituras de GSP para ver suas tendências."
+      "empty": "Registre algumas vitórias e derrotas com leituras de GSP para ver suas tendências.",
+      "figure": {
+        "avgGain": "Ganho médio por vitória",
+        "avgDrop": "Queda média por derrota",
+        "biggestGain": "Maior ganho",
+        "biggestDrop": "Maior queda",
+        "recent_one": "último {{count}} passo: {{value}}",
+        "recent_other": "últimos {{count}} passos: {{value}}"
+      },
+      "byBand": {
+        "title": "Ganho por vitória por faixa de GSP",
+        "caption": "GSP médio ganho por vitória, pela faixa de GSP em que a vitória ocorreu · faixa mais baixa primeiro · cinza = menos de {{floor}} vitórias",
+        "rowAria_one": "{{band}}: ganho médio {{gain}} em {{count}} vitória",
+        "rowAria_other": "{{band}}: ganho médio {{gain}} em {{count}} vitórias",
+        "subFloor_one": "{{count}} vitória — menos de {{floor}}, sem comparação",
+        "subFloor_other": "{{count}} vitórias — menos de {{floor}}, sem comparação",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "Tiers de GSP",
@@ -583,7 +645,23 @@
       "title": "MMR est. vs Glicko-2",
       "mmrLabel": "MMR est. (normalizado)",
       "glickoLabel": "Glicko-2 (normalizado)",
-      "caption": "Seu nível no quickplay (MMR estimado deste lutador, modelo de engenharia reversa da comunidade) contra seu Glicko-2 geral (todos os lutadores/sessões) — ambos normalizados de 0 a 100 nesta janela, já que as escalas brutas não têm relação. Comparar rating com rating torna as formas honestamente comparáveis; divergência normalmente significa que sua forma no quickplay difere da sua forma geral."
+      "caption": "Seu nível no quickplay (MMR estimado deste lutador, modelo de engenharia reversa da comunidade) contra seu Glicko-2 geral (todos os lutadores/sessões) — ambos normalizados de 0 a 100 nesta janela, já que as escalas brutas não têm relação. Comparar rating com rating torna as formas honestamente comparáveis; divergência normalmente significa que sua forma no quickplay difere da sua forma geral.",
+      "panel": {
+        "mmr": "MMR est.",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "Por leitura",
+        "day": "Fechamento do dia",
+        "week": "Fechamento da semana",
+        "month": "Fechamento do mês",
+        "quarter": "Fechamento do trimestre"
+      },
+      "readout": {
+        "mmr": "MMR est. · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "captionPanels": "O MMR est. é o nível de quickplay deste lutador pelo modelo da comunidade; o Glicko-2 é o rating geral de todos os lutadores e sessões. Cada painel mantém sua própria escala, então vale comparar as formas — divergência normalmente significa que a forma no quickplay difere da forma geral."
     },
     "setGsp": {
       "title": "Definir GSP",
@@ -1124,7 +1202,12 @@
       "title": "Eventos recentes",
       "placementAndSeed": "{{placement}} de {{entrants}} · Cabeça de chave {{seed}}",
       "placementOnly": "{{placement}} de {{entrants}}",
-      "seedOnly": "Cabeça de chave {{seed}}"
+      "seedOnly": "Cabeça de chave {{seed}}",
+      "outsideRange_one": "{{count}} a mais fora do período atual",
+      "outsideRange_other": "{{count}} a mais fora do período atual",
+      "allTime": "Todo o período",
+      "backToRange": "Voltar ao período",
+      "allTimeNote": "Mostrando todo o período — o filtro de período continua limitando os demais cartões."
     },
     "tournaments": {
       "title": "Torneios",
@@ -1149,6 +1232,14 @@
         "last30": "Últimas 30 partidas",
         "lastEvent": "Último evento",
         "last90": "Últimos 90 dias"
+      }
+    },
+    "rhythm": {
+      "title": "Ritmo de jogo",
+      "caption": {
+        "years_one": "Partidas por mês · {{count}} ano, o mais recente primeiro",
+        "years_other": "Partidas por mês · {{count}} anos, os mais recentes primeiro",
+        "shownOf": "{{shown}} de {{total}} anos exibidos · anos anteriores na tabela"
       }
     }
   },
@@ -3531,6 +3622,18 @@
       "evidence": "{{aRecord}} em majors e acima · {{bRecord}} em eventos menores · {{cue}}",
       "estimatedNote_one": "1 desses eventos tem um nível estimado.",
       "estimatedNote_other": "{{count, grouped}} desses eventos têm um nível estimado."
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "Ritmo de jogo — {{recent, grouped}} partidas nos últimos 12 meses vs {{prior, grouped}} nos 12 anteriores; mês mais ativo: {{month}}.",
+        "compareNoSeason": "Ritmo de jogo — {{recent, grouped}} partidas nos últimos 12 meses vs {{prior, grouped}} nos 12 anteriores.",
+        "recentOnly": "Ritmo de jogo — {{recent, grouped}} partidas distribuídas em {{recentMonths}} dos últimos 12 meses."
+      },
+      "evidence": "{{monthsPlayed}} de {{monthsSpan}} meses com partidas · {{share}} de todas as partidas caem em {{month}}",
+      "evidenceNoSeason": "{{monthsPlayed}} de {{monthsSpan}} meses com partidas",
+      "locked_one": "Ritmo de jogo — {{count, grouped}} mês a mais com partidas desbloqueia esta leitura.",
+      "locked_other": "Ritmo de jogo — {{count, grouped}} meses a mais com partidas desbloqueiam esta leitura.",
+      "lockedMeter": "{{have, grouped}} de {{need, grouped}} meses"
     }
   },
   "analytics": {
@@ -3771,7 +3874,52 @@
       },
       "event": {
         "aria": "{{event}} — pontuação após o evento {{rating}}, {{wins}}–{{losses}}",
-        "ratingAfter": "Pontuação após o evento · {{rating}}"
+        "ratingAfter": "Pontuação após o evento · {{rating}}",
+        "legend_one": "{{count}} evento major+",
+        "legend_other": "{{count}} eventos major+",
+        "legendEstimated": "vazado = nível estimado",
+        "shownOf": "{{shown}} de {{total}} eventos major+ marcados — o restante está em Eventos recentes",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — {{tier}} estimado, pontuação após o evento {{rating}}, {{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — {{tier}} estimado, {{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}} ponto, mais recente {{value}}",
+      "aria_other": "{{title}} — {{count}} pontos, mais recente {{value}}",
+      "legend": {
+        "calibration": "definido manualmente",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — acima desta faixa",
+        "referenceBelow": "{{label}} {{value}} — abaixo desta faixa"
+      },
+      "readings_one": "{{count}} leitura · fechamento exibido",
+      "readings_other": "{{count}} leituras · fechamento exibido",
+      "table": {
+        "headers": {
+          "date": "Data",
+          "readings": "Leituras"
+        }
+      },
+      "lockedMeter": "{{have}} de {{need}} leituras"
+    },
+    "multiples": {
+      "aria_one": "{{count}} painel em um eixo de tempo",
+      "aria_other": "{{count}} painéis compartilhando um eixo de tempo",
+      "caption": "Cada painel mantém escala própria — comparam-se as formas, não as alturas."
+    },
+    "heat": {
+      "legend": {
+        "fewer": "menos",
+        "more": "mais",
+        "unit": "= partidas no mês"
+      },
+      "cellAria_one": "{{month}} {{year}}: {{count}} partida",
+      "cellAria_other": "{{month}} {{year}}: {{count}} partidas",
+      "noGames": "{{month}} {{year}}: sem partidas",
+      "table": {
+        "caption": "Partidas por mês, com totais anuais"
       }
     }
   },

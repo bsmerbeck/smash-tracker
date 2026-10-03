@@ -339,6 +339,20 @@
       "setRecorded": "セットを記録: {{score}} vs {{opponent}}",
       "partialSave": "エラーが発生し、{{total}}戦中{{saved}}戦のみ保存されました。対戦データを確認し、足りない分を再入力してください。",
       "setFailed": "セットを保存できませんでした。もう一度お試しください。"
+    },
+    "formStrip": {
+      "title": {
+        "last30": "フォーム · 直近30試合",
+        "lastEvent": "フォーム · 直近30試合、直近のイベントを強調",
+        "last90": "フォーム · 直近30試合、直近90日を強調"
+      },
+      "sets_one": "{{count}}セット",
+      "sets_other": "{{count}}セット",
+      "empty": "この表示には{{fighter}}の対戦がまだありません。",
+      "windowEmpty": {
+        "lastEvent": "直近のイベントでの対戦がありません — 直近30試合を表示しており、強調はありません。",
+        "last90": "直近90日間に対戦がありません — 直近30試合を表示しており、強調はありません。"
+      }
     }
   },
   "matchForm": {
@@ -489,7 +503,11 @@
       "recentWinRate": "直近の勝率",
       "lastNGames_one": "直近{{count}}戦",
       "lastNGames_other": "直近{{count}}戦",
-      "liveCalibrated": "gsptiers.comから{{date}}に自動更新"
+      "liveCalibrated": "gsptiers.comから{{date}}に自動更新",
+      "latestReadingDated": "最新の記録 · {{date}}",
+      "eliteValue": "VIP",
+      "atElite": "MMR {{mmr}} · VIP基準（{{elite}}）以上",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "GSP推移",
@@ -503,7 +521,34 @@
       "gspCaption": "各ポイントはこのファイターで対戦後に記録したGSPです。点線は計算されたVIPマッチのボーダー — コミュニティモデルの推定値であり、任天堂公表の値ではありません。",
       "clickHint": "ポイントをクリックするとその記録を編集できます。",
       "locked": "このファイターでGSP付きの対戦を{{count}}戦以上記録すると推移が表示されます。",
-      "setManually": "手動設定"
+      "setManually": "手動設定",
+      "view": "表示",
+      "overline": {
+        "reading": "GSP（記録ごと）",
+        "day": "GSP · 日末",
+        "week": "GSP · 週末",
+        "month": "GSP · 月末",
+        "quarter": "GSP · 四半期末"
+      },
+      "overlineMmr": {
+        "reading": "推定MMR（記録ごと）",
+        "day": "推定MMR · 日末",
+        "week": "推定MMR · 週末",
+        "month": "推定MMR · 月末",
+        "quarter": "推定MMR · 四半期末"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "推定MMR",
+        "elite": "VIPボーダー",
+        "eliteMmr": "VIP · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "推定MMR · {{value}}"
+      },
+      "clickHintPeriod": "期末のポイントをクリックすると、その記録をログで確認できます。",
+      "lockedMeter": "{{need}}件中{{have}}件の記録"
     },
     "logger": {
       "title": "クイック記録",
@@ -543,7 +588,24 @@
       "growing": "— 増加傾向",
       "winNumber": "{{number}}勝目",
       "gainedGsp": "獲得GSP",
-      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。"
+      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。",
+      "figure": {
+        "avgGain": "勝利あたり平均増加",
+        "avgDrop": "敗北あたり平均減少",
+        "biggestGain": "最大増加",
+        "biggestDrop": "最大減少",
+        "recent_one": "直近{{count}}回: {{value}}",
+        "recent_other": "直近{{count}}回: {{value}}"
+      },
+      "byBand": {
+        "title": "GSP帯別の勝利あたり増加",
+        "caption": "勝利あたりの平均GSP増加量（勝利時のGSP帯別）· 低い帯から順 · グレー = 勝利{{floor}}回未満",
+        "rowAria_one": "{{band}}: 平均増加 {{gain}}（勝利{{count}}回）",
+        "rowAria_other": "{{band}}: 平均増加 {{gain}}（勝利{{count}}回）",
+        "subFloor_one": "勝利{{count}}回 — {{floor}}回未満のため比較なし",
+        "subFloor_other": "勝利{{count}}回 — {{floor}}回未満のため比較なし",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "GSPティア",
@@ -583,7 +645,23 @@
       "title": "推定MMR vs Glicko-2",
       "mmrLabel": "推定MMR（正規化）",
       "glickoLabel": "Glicko-2（正規化）",
-      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
+      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。",
+      "panel": {
+        "mmr": "推定MMR",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "記録ごと",
+        "day": "日末",
+        "week": "週末",
+        "month": "月末",
+        "quarter": "四半期末"
+      },
+      "readout": {
+        "mmr": "推定MMR · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "captionPanels": "推定MMRはコミュニティモデルによるこのファイターのクイックプレイでのレートで、Glicko-2は全ファイター・全セッションを通した全体のレートです。各パネルは独自のスケールなので、比べるのは形です。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
     },
     "setGsp": {
       "title": "世界戦闘力を設定",
@@ -1124,7 +1202,12 @@
       "title": "最近のイベント",
       "placementAndSeed": "{{entrants}}人中{{placement}}位 · シード{{seed}}",
       "placementOnly": "{{entrants}}人中{{placement}}位",
-      "seedOnly": "シード{{seed}}"
+      "seedOnly": "シード{{seed}}",
+      "outsideRange_one": "現在の期間外にあと{{count}}件",
+      "outsideRange_other": "現在の期間外にあと{{count}}件",
+      "allTime": "全期間",
+      "backToRange": "期間に戻る",
+      "allTimeNote": "全期間を表示中 — 期間フィルターは他のすべてのカードに引き続き適用されます。"
     },
     "tournaments": {
       "title": "大会",
@@ -1149,6 +1232,14 @@
         "last30": "直近30戦",
         "lastEvent": "直近の大会",
         "last90": "直近90日"
+      }
+    },
+    "rhythm": {
+      "title": "プレーリズム",
+      "caption": {
+        "years_one": "月別の対戦数 · {{count}}年分、新しい順",
+        "years_other": "月別の対戦数 · {{count}}年分、新しい順",
+        "shownOf": "{{total}}年中{{shown}}年を表示 · それ以前の年は表に掲載"
       }
     }
   },
@@ -3531,6 +3622,18 @@
       "evidence": "メジャー以上 {{aRecord}} · 小規模イベント {{bRecord}} · {{cue}}",
       "estimatedNote_one": "これらのイベントのうち1件はティアが推定です。",
       "estimatedNote_other": "これらのイベントのうち{{count, grouped}}件はティアが推定です。"
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "プレーリズム — 直近12か月は{{recent, grouped}}試合、その前の12か月は{{prior, grouped}}試合。最も多い月: {{month}}。",
+        "compareNoSeason": "プレーリズム — 直近12か月は{{recent, grouped}}試合、その前の12か月は{{prior, grouped}}試合。",
+        "recentOnly": "プレーリズム — 直近12か月のうち{{recentMonths}}か月で{{recent, grouped}}試合。"
+      },
+      "evidence": "{{monthsSpan}}か月中{{monthsPlayed}}か月に対戦あり · 全対戦の{{share}}が{{month}}に集中",
+      "evidenceNoSeason": "{{monthsSpan}}か月中{{monthsPlayed}}か月に対戦あり",
+      "locked_one": "プレーリズム — あと{{count, grouped}}か月分の対戦でこの分析が解放されます。",
+      "locked_other": "プレーリズム — あと{{count, grouped}}か月分の対戦でこの分析が解放されます。",
+      "lockedMeter": "{{need, grouped}}か月中{{have, grouped}}か月"
     }
   },
   "analytics": {
@@ -3771,7 +3874,52 @@
       },
       "event": {
         "aria": "{{event}} — 大会後のレーティング {{rating}}、{{wins}}–{{losses}}",
-        "ratingAfter": "大会後のレーティング · {{rating}}"
+        "ratingAfter": "大会後のレーティング · {{rating}}",
+        "legend_one": "メジャー以上のイベント{{count}}件",
+        "legend_other": "メジャー以上のイベント{{count}}件",
+        "legendEstimated": "白抜き = 推定ティア",
+        "shownOf": "メジャー以上のイベント{{total}}件中{{shown}}件をマーク — 残りは「最近のイベント」に掲載",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — 推定{{tier}}、大会後のレーティング {{rating}}、{{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — 推定{{tier}}、{{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}}点、最新 {{value}}",
+      "aria_other": "{{title}} — {{count}}点、最新 {{value}}",
+      "legend": {
+        "calibration": "手動設定",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — この範囲より上",
+        "referenceBelow": "{{label}} {{value}} — この範囲より下"
+      },
+      "readings_one": "記録{{count}}件 · 期末の値を表示",
+      "readings_other": "記録{{count}}件 · 期末の値を表示",
+      "table": {
+        "headers": {
+          "date": "日付",
+          "readings": "記録数"
+        }
+      },
+      "lockedMeter": "{{need}}件中{{have}}件の記録"
+    },
+    "multiples": {
+      "aria_one": "{{count}}パネル（時間軸は共通）",
+      "aria_other": "{{count}}パネル（時間軸は共通）",
+      "caption": "各パネルは独自のスケール — 比べるのは高さではなく形です。"
+    },
+    "heat": {
+      "legend": {
+        "fewer": "少",
+        "more": "多",
+        "unit": "= 月間の対戦数"
+      },
+      "cellAria_one": "{{year}}年{{month}}: {{count}}試合",
+      "cellAria_other": "{{year}}年{{month}}: {{count}}試合",
+      "noGames": "{{year}}年{{month}}: 対戦なし",
+      "table": {
+        "caption": "月別の対戦数と年間合計"
       }
     }
   },

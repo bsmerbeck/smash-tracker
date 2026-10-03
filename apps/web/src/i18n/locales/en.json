@@ -339,6 +339,20 @@
       "setRecorded": "Set recorded: {{score}} vs {{opponent}}",
       "partialSave": "Only {{saved}} of {{total}} games saved before an error occurred. Check Match Data and re-enter any missing games.",
       "setFailed": "Failed to save the set. Please try again."
+    },
+    "formStrip": {
+      "title": {
+        "last30": "Form · last 30 games",
+        "lastEvent": "Form · last 30 games, last event highlighted",
+        "last90": "Form · last 30 games, last 90 days highlighted"
+      },
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets",
+      "empty": "No games for {{fighter}} in this view yet.",
+      "windowEmpty": {
+        "lastEvent": "No games at the last event — the last 30 shown, none highlighted.",
+        "last90": "No games in the last 90 days — the last 30 shown, none highlighted."
+      }
     }
   },
   "matchForm": {
@@ -489,7 +503,11 @@
       "recentWinRate": "Recent Win Rate",
       "lastNGames_one": "last {{count}} game",
       "lastNGames_other": "last {{count}} games",
-      "liveCalibrated": "auto-updated {{date}} from gsptiers.com"
+      "liveCalibrated": "auto-updated {{date}} from gsptiers.com",
+      "latestReadingDated": "latest reading · {{date}}",
+      "eliteValue": "Elite",
+      "atElite": "MMR {{mmr}} · at or above Elite ({{elite}})",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "GSP Curve",
@@ -503,7 +521,34 @@
       "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
       "clickHint": "Click a point to edit that reading.",
       "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve.",
-      "setManually": "set manually"
+      "setManually": "set manually",
+      "view": "View",
+      "overline": {
+        "reading": "GSP by reading",
+        "day": "GSP · close of day",
+        "week": "GSP · close of week",
+        "month": "GSP · close of month",
+        "quarter": "GSP · close of quarter"
+      },
+      "overlineMmr": {
+        "reading": "Est. MMR by reading",
+        "day": "Est. MMR · close of day",
+        "week": "Est. MMR · close of week",
+        "month": "Est. MMR · close of month",
+        "quarter": "Est. MMR · close of quarter"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "Est. MMR",
+        "elite": "Elite threshold",
+        "eliteMmr": "Elite · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "Est. MMR · {{value}}"
+      },
+      "clickHintPeriod": "Click a close to find its readings in the log.",
+      "lockedMeter": "{{have}} of {{need}} readings"
     },
     "logger": {
       "title": "Quick Logger",
@@ -543,7 +588,24 @@
       "growing": "— trending up",
       "winNumber": "Win #{{number}}",
       "gainedGsp": "GSP gained",
-      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends."
+      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends.",
+      "figure": {
+        "avgGain": "Avg gain per win",
+        "avgDrop": "Avg drop per loss",
+        "biggestGain": "Biggest gain",
+        "biggestDrop": "Biggest drop",
+        "recent_one": "last {{count}} step: {{value}}",
+        "recent_other": "last {{count}} steps: {{value}}"
+      },
+      "byBand": {
+        "title": "Gain per win by GSP band",
+        "caption": "Average GSP gained per win, by the GSP band the win happened at · lowest band first · grey = under {{floor}} wins",
+        "rowAria_one": "{{band}}: average gain {{gain}} over {{count}} win",
+        "rowAria_other": "{{band}}: average gain {{gain}} over {{count}} wins",
+        "subFloor_one": "{{count}} win — under {{floor}}, no comparison",
+        "subFloor_other": "{{count}} wins — under {{floor}}, no comparison",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "GSP Tiers",
@@ -583,7 +645,23 @@
       "title": "Est. MMR vs Glicko-2",
       "mmrLabel": "Est. MMR (normalized)",
       "glickoLabel": "Glicko-2 (normalized)",
-      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form.",
+      "panel": {
+        "mmr": "Est. MMR",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "By reading",
+        "day": "Close of day",
+        "week": "Close of week",
+        "month": "Close of month",
+        "quarter": "Close of quarter"
+      },
+      "readout": {
+        "mmr": "Est. MMR · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "captionPanels": "Est. MMR is this fighter's quickplay rating through the community model; Glicko-2 is the overall rating across every fighter and session. Each panel keeps its own scale, so compare the shapes — divergence usually means quickplay form differs from overall form."
     },
     "setGsp": {
       "title": "Set GSP",
@@ -1124,7 +1202,12 @@
       "title": "Recent Events",
       "placementAndSeed": "{{placement}} of {{entrants}} · Seed {{seed}}",
       "placementOnly": "{{placement}} of {{entrants}}",
-      "seedOnly": "Seed {{seed}}"
+      "seedOnly": "Seed {{seed}}",
+      "outsideRange_one": "{{count}} more outside the current range",
+      "outsideRange_other": "{{count}} more outside the current range",
+      "allTime": "All time",
+      "backToRange": "Back to range",
+      "allTimeNote": "Showing all time — the range filter still scopes every other card."
     },
     "tournaments": {
       "title": "Tournaments",
@@ -1149,6 +1232,14 @@
         "last30": "Last 30 games",
         "lastEvent": "Last event",
         "last90": "Last 90 days"
+      }
+    },
+    "rhythm": {
+      "title": "Play rhythm",
+      "caption": {
+        "years_one": "Games by month · {{count}} year, newest first",
+        "years_other": "Games by month · {{count}} years, newest first",
+        "shownOf": "{{shown}} of {{total}} years shown · older years in the table"
       }
     }
   },
@@ -3531,6 +3622,18 @@
       "evidence": "{{aRecord}} at majors and above · {{bRecord}} at smaller events · {{cue}}",
       "estimatedNote_one": "1 of those events carries an estimated tier.",
       "estimatedNote_other": "{{count, grouped}} of those events carry an estimated tier."
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before; busiest month: {{month}}.",
+        "compareNoSeason": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before.",
+        "recentOnly": "Play rhythm — {{recent, grouped}} games across {{recentMonths}} of the last 12 months."
+      },
+      "evidence": "{{monthsPlayed}} of {{monthsSpan}} months with games · {{share}} of all games fall in {{month}}",
+      "evidenceNoSeason": "{{monthsPlayed}} of {{monthsSpan}} months with games",
+      "locked_one": "Play rhythm — {{count, grouped}} more month with games unlocks this read.",
+      "locked_other": "Play rhythm — {{count, grouped}} more months with games unlock this read.",
+      "lockedMeter": "{{have, grouped}} of {{need, grouped}} months"
     }
   },
   "analytics": {
@@ -3771,7 +3874,52 @@
       },
       "event": {
         "aria": "{{event}} — rating after the event {{rating}}, {{wins}}–{{losses}}",
-        "ratingAfter": "Rating after the event · {{rating}}"
+        "ratingAfter": "Rating after the event · {{rating}}",
+        "legend_one": "{{count}} major+ event",
+        "legend_other": "{{count}} major+ events",
+        "legendEstimated": "hollow = estimated tier",
+        "shownOf": "{{shown}} of {{total}} major+ events marked — the rest are in Recent events",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — estimated {{tier}}, rating after the event {{rating}}, {{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — estimated {{tier}}, {{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}} point, latest {{value}}",
+      "aria_other": "{{title}} — {{count}} points, latest {{value}}",
+      "legend": {
+        "calibration": "set manually",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — above this range",
+        "referenceBelow": "{{label}} {{value}} — below this range"
+      },
+      "readings_one": "{{count}} reading · close shown",
+      "readings_other": "{{count}} readings · close shown",
+      "table": {
+        "headers": {
+          "date": "Date",
+          "readings": "Readings"
+        }
+      },
+      "lockedMeter": "{{have}} of {{need}} readings"
+    },
+    "multiples": {
+      "aria_one": "{{count}} panel on one time axis",
+      "aria_other": "{{count}} panels sharing one time axis",
+      "caption": "Each panel keeps its own scale — compare the shapes, not the heights."
+    },
+    "heat": {
+      "legend": {
+        "fewer": "fewer",
+        "more": "more",
+        "unit": "= games in the month"
+      },
+      "cellAria_one": "{{month}} {{year}}: {{count}} game",
+      "cellAria_other": "{{month}} {{year}}: {{count}} games",
+      "noGames": "{{month}} {{year}}: no games",
+      "table": {
+        "caption": "Games by month, with year totals"
       }
     }
   },
