@@ -29,6 +29,7 @@ import { DrillableRow } from '@/components/DrillableRow';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { formatDate, formatDaySpan } from '@/lib/format';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { cn } from '@/lib/utils';
@@ -221,6 +222,7 @@ function hasActiveAxis(axes: DrillDownAxes): boolean {
 function buildFilterSummaryText(
   axes: DrillDownAxes,
   t: TFunction,
+  locale: string,
   eventGames: Match[],
   claimSummary?: string,
 ): string {
@@ -244,9 +246,12 @@ function buildFilterSummaryText(
     parts.push(describeEventAxisGames(eventGames, t) ?? t('common.unknown'));
   }
   if (axes.from != null || axes.to != null) {
-    const from = axes.from != null ? new Date(axes.from).toLocaleDateString() : null;
-    const to = axes.to != null ? new Date(axes.to).toLocaleDateString() : null;
-    parts.push(from && to && from !== to ? `${from} – ${to}` : (from ?? to ?? ''));
+    // I18N-01 (41-01): the span prints in the app language through the one formatter module — the bare `toLocaleDateString()` it replaces used whatever the OS/browser default was.
+    if (axes.from != null && axes.to != null) {
+      parts.push(formatDaySpan(axes.from, axes.to, locale));
+    } else {
+      parts.push(formatDate((axes.from ?? axes.to) as number, locale));
+    }
   }
   return parts.filter(Boolean).join(' · ');
 }
@@ -591,6 +596,7 @@ export function FilteredMatchList({
                 filters: buildFilterSummaryText(
                   axes,
                   t,
+                  i18n.language,
                   narrowedMatches,
                   claimResolvedOk ? claimSummary : undefined,
                 ),

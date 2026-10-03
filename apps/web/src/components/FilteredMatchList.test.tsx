@@ -14,6 +14,8 @@ import {
   FILTERED_MATCH_LIST_PAGE_SIZE,
 } from './FilteredMatchList';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
+import i18n from '@/i18n';
+import { formatDate, formatDaySpan } from '@/lib/format';
 
 /**
  * Phase 38-04 Task 2: the terminus's full row contract — pinned-column
@@ -192,6 +194,36 @@ describe('FilteredMatchList', () => {
     const matches = [makeMatch()];
     renderList({ matches, axes: { stageId: 1 } });
     expect(screen.getByText(/1 game/)).toBeInTheDocument();
+  });
+
+  describe('I18N-01 (41-01): the from/to date span prints in the app language', () => {
+    const from = new Date(2025, 2, 3, 12).getTime();
+    const to = new Date(2025, 2, 20, 12).getTime();
+
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    function summaryText(): string {
+      const bar = screen.getByText(/ · /, { selector: 'p' });
+      return bar.textContent ?? '';
+    }
+
+    it.each(['de', 'en'])('prints the span through formatDaySpan for %s', async (language) => {
+      await i18n.changeLanguage(language);
+      renderList({ matches: [makeMatch({ time: from + 1000 })], axes: { from, to } });
+      expect(summaryText()).toContain(formatDaySpan(from, to, language));
+    });
+
+    it('a de reader and an en reader see different spans for the same axes', () => {
+      expect(formatDaySpan(from, to, 'de')).not.toBe(formatDaySpan(from, to, 'en'));
+    });
+
+    it('a one-sided range prints a single localized date', async () => {
+      await i18n.changeLanguage('de');
+      renderList({ matches: [makeMatch({ time: from + 1000 })], axes: { from } });
+      expect(summaryText()).toContain(formatDate(from, 'de'));
+    });
   });
 
   it('renders no summary bar when no axis is active', () => {

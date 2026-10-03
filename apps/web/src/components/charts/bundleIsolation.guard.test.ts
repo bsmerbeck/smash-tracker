@@ -426,6 +426,10 @@ describe('chart bundle isolation — build-output guard (SCL-02, D-02, D-19)', (
       totalBytes += fs.statSync(filePath).size;
     }
 
+    // Phase 41 (41-01): print the measured eager total so a re-baseline is taken from the
+    // guard's own run (C4), never from a bare build.
+    console.info(`[eager-bytes] total=${totalBytes} baseline=${EAGER_BYTES_BASELINE}`);
+
     expect(totalBytes).toBeGreaterThan(0);
     expect(totalBytes).toBeLessThanOrEqual(EAGER_BYTES_BASELINE + EAGER_BYTES_TOLERANCE);
   });
