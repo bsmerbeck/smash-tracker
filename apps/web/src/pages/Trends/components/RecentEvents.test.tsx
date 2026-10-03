@@ -1,10 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
-import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import {
+  AnalyticsFilterProvider,
+  ANALYTICS_FILTER_STORAGE_KEY,
+} from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { RecentEvents } from './RecentEvents';
 
@@ -60,7 +64,7 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
-function renderRecentEvents(matches: Match[]) {
+function renderRecentEvents(matches: Match[], allMatches: Match[] = matches) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -68,7 +72,10 @@ function renderRecentEvents(matches: Match[]) {
         <AuthProvider>
           <AnalyticsFilterProvider>
             <Routes>
-              <Route path="/trends" element={<RecentEvents matches={matches} />} />
+              <Route
+                path="/trends"
+                element={<RecentEvents matches={matches} allMatches={allMatches} />}
+              />
               <Route path="/tournaments/:entryKey" element={<div>Tournament detail page</div>} />
               <Route path="/tournaments" element={<div>Tournaments page</div>} />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
@@ -151,5 +158,160 @@ describe('RecentEvents', () => {
     expect(screen.getAllByRole('link').length).toBe(5);
     const showAll = screen.getByRole('button', { name: 'Show all 8' });
     expect(showAll).toBeInTheDocument();
+  });
+
+  describe('plan 41-04: the card-scoped "All time" override (B3, DD-41-10)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    function setRange(range: string) {
+      window.localStorage.setItem(
+        ANALYTICS_FILTER_STORAGE_KEY,
+        JSON.stringify({ source: 'all', range }),
+      );
+    }
+
+    /** `recentCount` entries inside the last 30 days, `oldCount` back in 2021 (outside every range). */
+    function entriesAcrossRange(recentCount: number, oldCount: number): TournamentEntry[] {
+      return [
+        ...Array.from({ length: recentCount }, (_, i) =>
+          makeEntry({
+            eventId: 100 + i,
+            tournamentName: `Recent ${i}`,
+            firstSetAt: Date.now() - (10 + i) * DAY,
+            lastSetAt: Date.now() - (10 + i) * DAY + 1_000,
+          }),
+        ),
+        ...Array.from({ length: oldCount }, (_, i) =>
+          makeEntry({
+            eventId: 200 + i,
+            tournamentName: `Old ${i}`,
+            firstSetAt: Date.UTC(2021, 0, 1 + i * 7),
+            lastSetAt: Date.UTC(2021, 0, 3 + i * 7),
+          }),
+        ),
+      ];
+    }
+
+    it('range "all": no control and no outside-range line', async () => {
+      setRange('all');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 3));
+      renderRecentEvents([]);
+
+      await screen.findByText('Recent 0');
+      expect(screen.queryByRole('button', { name: 'All time' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/outside the current range/)).not.toBeInTheDocument();
+    });
+
+    it('nothing hidden by the range: no control and no line', async () => {
+      setRange('3m');
+      listTournaments.mockResolvedValue(entriesAcrossRange(2, 0));
+      renderRecentEvents([]);
+
+      await screen.findByText('Recent 0');
+      expect(screen.queryByRole('button', { name: 'All time' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/outside the current range/)).not.toBeInTheDocument();
+    });
+
+    it('one hidden entry reads the singular line, three read the count', async () => {
+      setRange('3m');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 1));
+      const one = renderRecentEvents([]);
+      expect(await screen.findByText('1 more outside the current range')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'All time' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      one.unmount();
+
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 3));
+      renderRecentEvents([]);
+      expect(await screen.findByText('3 more outside the current range')).toBeInTheDocument();
+    });
+
+    it('All time lists every entry with honest out-of-range records, states the note, and Back to range restores the range list; the global range is never written', async () => {
+      setRange('3m');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 2));
+      const oldMatches = [
+        makeMatch({
+          id: 'o1',
+          time: Date.UTC(2021, 0, 2),
+          win: true,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Old 0',
+        }),
+        makeMatch({
+          id: 'o2',
+          time: Date.UTC(2021, 0, 2, 1),
+          win: true,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Old 0',
+        }),
+        makeMatch({
+          id: 'o3',
+          time: Date.UTC(2021, 0, 2, 2),
+          win: false,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Old 0',
+        }),
+      ];
+      const user = userEvent.setup();
+      // The range-filtered matches exclude the 2021 games; ALL own-account matches keep them.
+      renderRecentEvents([], oldMatches);
+      const storedBefore = window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY);
+
+      await screen.findByText('Recent 0');
+      expect(screen.queryByText('Old 0')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'All time' }));
+      const pressed = screen.getByRole('button', { name: 'Back to range' });
+      expect(pressed).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByText('Old 0')).toBeInTheDocument();
+      expect(screen.getByText('Old 1')).toBeInTheDocument();
+      expect(
+        screen.getByText('Showing all time — the range filter still scopes every other card.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/more outside the current range/)).not.toBeInTheDocument();
+      // An out-of-range row's record comes from all own-account matches, not 0–0.
+      expect(screen.getAllByText('2–1').length).toBeGreaterThan(0);
+
+      await user.click(pressed);
+      expect(screen.queryByText('Old 0')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'All time' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY)).toBe(storedBefore);
+    });
+
+    it('the all-time list is still capped at the rail cap with a show-all control', async () => {
+      setRange('3m');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 7));
+      const user = userEvent.setup();
+      renderRecentEvents([]);
+
+      await screen.findByText('Recent 0');
+      await user.click(screen.getByRole('button', { name: 'All time' }));
+      expect(screen.getAllByRole('link').length).toBe(5);
+      expect(screen.getByRole('button', { name: 'Show all 8' })).toBeInTheDocument();
+    });
+
+    it('remounting resets the override (in-memory only)', async () => {
+      setRange('3m');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 1));
+      const user = userEvent.setup();
+      const first = renderRecentEvents([]);
+      await screen.findByText('Recent 0');
+      await user.click(screen.getByRole('button', { name: 'All time' }));
+      expect(screen.getByText('Old 0')).toBeInTheDocument();
+      first.unmount();
+
+      renderRecentEvents([]);
+      await screen.findByText('Recent 0');
+      expect(screen.queryByText('Old 0')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'All time' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
   });
 });

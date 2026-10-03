@@ -91,6 +91,38 @@ export function buildRealisticScale() {
  */
 const CAREER_SESSION_GAP_MS = 135 * 60 * 60 * 1000;
 
+/**
+ * Plan 41-04 (TRND-03 SC4): the career dataset's registry, so the timeline's tier diamonds and the
+ * Recent Events card are measured with content. ILLUSTRATIVE and deterministic (integer arithmetic on
+ * the row index, no PRNG, no wall clock): 14 offline rows spaced 190 days apart inside the games'
+ * span, cycling supermajor / major / minor / regional entrant counts, so 8 resolve to a major or above
+ * (all estimates: no recorded or manual tier here). Rows carry no linked games — the oracle measures
+ * layout, not records.
+ */
+const CAREER_TOURNAMENT_ENTRANTS = [1580, 640, 310, 1100, 96, 520, 205, 48];
+const CAREER_TOURNAMENT_COUNT = 14;
+const CAREER_TOURNAMENT_FIRST_MS = Date.UTC(2019, 5, 8, 18);
+
+function buildCareerTournaments() {
+  return Array.from({ length: CAREER_TOURNAMENT_COUNT }, (_, i) => {
+    const eventId = 7_000 + i;
+    const startMs = CAREER_TOURNAMENT_FIRST_MS + i * 190 * DAY_MS;
+    const entrants = CAREER_TOURNAMENT_ENTRANTS[i % CAREER_TOURNAMENT_ENTRANTS.length];
+    return {
+      eventId,
+      entryKey: String(eventId),
+      eventName: 'Ultimate Singles',
+      tournamentName: `Career Fixture Open ${i + 1}`,
+      firstSetAt: startMs,
+      lastSetAt: startMs + 2 * DAY_MS,
+      setsPlayed: 4 + (i % 6),
+      numEntrants: entrants,
+      isOnline: false,
+      source: 'startgg',
+    };
+  });
+}
+
 function buildCareerScale() {
   const matches = generateSyntheticMatches({
     seed: 39_134_001,
@@ -108,7 +140,7 @@ function buildCareerScale() {
     fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
     aliases: {},
     opponentNotes: {},
-    tournaments: [],
+    tournaments: buildCareerTournaments(),
   };
 }
 

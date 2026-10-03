@@ -1402,6 +1402,11 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         rateCells: cellsOf(rootEl, 'career-timeline-rate-cell'),
         gamesCells: cellsOf(rootEl, 'career-timeline-games-cell'),
         formStripTicks: rootEl.querySelectorAll('[data-slot="form-strip-tick"]').length,
+        // Plan 41-04: the tier diamonds drawn, and how many of them are the hollow (estimated) form.
+        eventMarkers: rootEl.querySelectorAll('[data-slot="career-timeline-event"]').length,
+        eventMarkersEstimated: rootEl.querySelectorAll(
+          '[data-slot="career-timeline-event"][data-basis="estimated"]',
+        ).length,
       });
     }
   }
@@ -3088,7 +3093,7 @@ async function main() {
                 0,
               );
               console.log(
-                `TIMELINE route=${route.id} viewport=${viewport.name} state=${timeline.state} plotWidth=${timeline.plotWidth.toFixed(1)} grain=${timeline.stripGrain ?? 'none'} points=${timeline.anchors.length} vertices=${timeline.lineVertexCount} rateCells=${timeline.rateCells.length} gamesCells=${timeline.gamesCells.length} maxAlignDeltaPx=${maxAlignDeltaPx.toFixed(1)}`,
+                `TIMELINE route=${route.id} viewport=${viewport.name} state=${timeline.state} plotWidth=${timeline.plotWidth.toFixed(1)} grain=${timeline.stripGrain ?? 'none'} points=${timeline.anchors.length} vertices=${timeline.lineVertexCount} rateCells=${timeline.rateCells.length} gamesCells=${timeline.gamesCells.length} maxAlignDeltaPx=${maxAlignDeltaPx.toFixed(1)} events=${timeline.eventMarkers} eventsEstimated=${timeline.eventMarkersEstimated}`,
               );
             }
             for (const violation of result.violations) {

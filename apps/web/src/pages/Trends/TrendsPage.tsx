@@ -476,7 +476,7 @@ export function TrendsPage() {
 
         <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
           <SessionsAndTilt matches={matches} />
-          <RecentEvents matches={matches} />
+          <RecentEvents matches={matches} allMatches={allMatches} />
         </GridCell>
 
         <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
