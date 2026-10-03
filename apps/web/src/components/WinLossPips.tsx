@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
+import { formatDate } from '@/lib/format';
 import { getLastNMatches } from '@/lib/stats';
 
 /**
@@ -7,7 +8,7 @@ import { getLastNMatches } from '@/lib/stats';
  * red for a loss. Shared by the Fighter Analysis and Matchups pages.
  */
 export function WinLossPips({ matches, limit = 10 }: { matches: Match[]; limit?: number }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const recent = getLastNMatches(matches, limit);
 
   if (recent.length === 0) {
@@ -22,7 +23,7 @@ export function WinLossPips({ matches, limit = 10 }: { matches: Match[]; limit?:
       {recent.map((match) => (
         <span
           key={match.id}
-          title={`${match.win ? t('common.win') : t('common.loss')} — ${new Date(match.time).toLocaleDateString()}`}
+          title={`${match.win ? t('common.win') : t('common.loss')} — ${formatDate(match.time, i18n.language)}`}
           className={`size-3 rounded-full ${match.win ? 'bg-emerald-500' : 'bg-destructive'}`}
         />
       ))}

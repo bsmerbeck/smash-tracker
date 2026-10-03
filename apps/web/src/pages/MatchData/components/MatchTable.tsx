@@ -55,6 +55,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { getFighterById } from '@/data/sprites';
+import { formatDate } from '@/lib/format';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
@@ -92,10 +93,10 @@ interface MatchRow {
   tournament: string;
 }
 
-function toRow(match: Match): MatchRow {
+function toRow(match: Match, locale: string): MatchRow {
   return {
     match,
-    date: new Date(match.time).toLocaleString(),
+    date: formatDate(match.time, locale, { dateStyle: 'medium', timeStyle: 'short' }),
     fighter: getFighterById(match.fighter_id),
     opponentFighter: getFighterById(match.opponent_id),
     opponentName: match.opponent ?? '',
@@ -161,7 +162,7 @@ export function MatchTable({
   /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
   layout?: RowLayout;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Plan 39.1-49 (UI-SPEC §6.6): exactly one of the table / stacked roots
   // mounts; sorting, filters, pagination and dialogs are shared.
   const layout = useRowLayout(layoutOverride);
@@ -204,7 +205,10 @@ export function MatchTable({
     [matches, columnFilters],
   );
 
-  const data = useMemo(() => columnFilteredMatches.map(toRow), [columnFilteredMatches]);
+  const data = useMemo(
+    () => columnFilteredMatches.map((match) => toRow(match, i18n.language)),
+    [columnFilteredMatches, i18n.language],
+  );
 
   const columns = useMemo<ColumnDef<MatchRow>[]>(
     () => [

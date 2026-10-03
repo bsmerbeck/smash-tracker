@@ -80,7 +80,6 @@ export const D1_DIRECTORIES = [
  * calls across 25 files before the sweep; the D1 files were converted and removed from this list).
  */
 export const LOCALE_LESS_KNOWN_OFFENDERS: Record<string, number> = {
-  'components/WinLossPips.tsx': 1,
   'pages/Coaching/ClientOverviewPage.tsx': 1,
   'pages/Coaching/ReviewsListPage.tsx': 2,
   'pages/Coaching/SessionsListPage.tsx': 3,
@@ -103,13 +102,8 @@ export const LOCALE_LESS_KNOWN_OFFENDERS: Record<string, number> = {
  */
 const D1_PENDING_CONVERSION: Record<string, number> = {
   'lib/relativeDate.ts': 1,
-  'pages/FighterAnalysis/components/FighterInsightRail.tsx': 2,
-  'pages/MatchData/components/MatchDataRail.tsx': 2,
-  'pages/MatchData/components/MatchTable.tsx': 1,
-  'pages/MatchData/lib/matchCsv.ts': 1,
   'pages/Opponents/components/PrintableEvidencePacket.tsx': 3,
   'pages/Opponents/evidencePacket.ts': 2,
-  'pages/Trends/components/TrendsReadsRail.tsx': 2,
 };
 
 /** Non-vacuity: the walker must see most of the real tree (measured 545 files at plan 41-08). */

@@ -25,6 +25,7 @@ import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/anal
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { formatDate } from '@/lib/format';
 import { formatPercent } from '@/lib/formatPercent';
 import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
 import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
@@ -148,7 +149,7 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
   });
 }
 
-function buildSpan(insight: Insight, t: TFunction): string | undefined {
+function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   // Plan 39.1-40: one named event is its own window — no span line.
   if (insight.templateId === 'lastEventRecap') {
     return undefined;
@@ -158,8 +159,8 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   }
   return t('insights.evidence.span', {
     count: insight.window.games,
-    from: new Date(insight.window.fromMs).toLocaleDateString(),
-    to: new Date(insight.window.toMs).toLocaleDateString(),
+    from: formatDate(insight.window.fromMs, locale),
+    to: formatDate(insight.window.toMs, locale),
   });
 }
 
@@ -272,7 +273,7 @@ export function TrendsReadsRail({
     const chipKind = claimChipKindFor(insight.kind);
     const verdict = buildTrendsVerdict(insight, t, accountName);
     const evidence = buildEvidenceLine(insight, t, i18n.language);
-    const span = buildSpan(insight, t);
+    const span = buildSpan(insight, t, i18n.language);
     const isRatingMove = insight.templateId === 'ratingMove';
     const isSessionFatigue = insight.templateId === 'sessionFatigue';
     const caveat = isSessionFatigue ? t('insights.sessionFatigue.caveat') : undefined;

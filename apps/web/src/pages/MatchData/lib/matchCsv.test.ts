@@ -61,6 +61,14 @@ describe('buildMatchCsv', () => {
     expect(row).toContain(`${mario.name},${luigi.name},rival,no selection,none,Win,—,gg`);
   });
 
+  // UI-SPEC §11.1 (I18N-01): a CSV is data — the time column is ISO 8601, not an OS-locale string.
+  it('writes the time column as an ISO 8601 timestamp', () => {
+    const csv = buildMatchCsv([makeMatch()]);
+    const timeColumn = csv.split('\r\n')[1]?.split(',')[0];
+    expect(timeColumn).toBe('2023-11-14T22:13:20.000Z');
+    expect(timeColumn).toBe(new Date(1_700_000_000_000).toISOString());
+  });
+
   it('prefers tournamentName over eventName, and falls back through both', () => {
     const withTournament = buildMatchCsv([
       makeMatch({ tournamentName: 'The Big House 9', eventName: 'Ultimate Singles' }),

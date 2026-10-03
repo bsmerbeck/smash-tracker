@@ -24,6 +24,7 @@ import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/anal
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { formatDate } from '@/lib/format';
 import { formatPercent } from '@/lib/formatPercent';
 
 /**
@@ -145,7 +146,7 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
   });
 }
 
-function buildSpan(insight: Insight, t: TFunction): string | undefined {
+function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   if (insight.templateId === 'lastEventRecap') {
     // Not D-15 scoped (a single named event is its own natural window).
     return undefined;
@@ -155,8 +156,8 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   }
   return t('insights.evidence.span', {
     count: insight.window.games,
-    from: new Date(insight.window.fromMs).toLocaleDateString(),
-    to: new Date(insight.window.toMs).toLocaleDateString(),
+    from: formatDate(insight.window.fromMs, locale),
+    to: formatDate(insight.window.toMs, locale),
   });
 }
 
@@ -170,7 +171,7 @@ function insightToRailCard(
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildInsightVerdict(insight, t, fighterName);
   const evidence = buildEvidenceLine(insight, t, locale);
-  const span = buildSpan(insight, t);
+  const span = buildSpan(insight, t, locale);
   const doors = buildDoorNodes(insight, t, subjectPath);
   // DD-09: only a card whose scope names an opponent, matchup or stage carries Track.
   const trackable = trackRefForInsight(insight) !== null;

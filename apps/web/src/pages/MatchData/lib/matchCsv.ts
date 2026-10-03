@@ -33,7 +33,8 @@ function matchToCsvRow(match: Match): string[] {
   const tournament = tournamentLabel(match);
 
   return [
-    new Date(match.time).toLocaleString(),
+    // UI-SPEC §11.1: a CSV is data, not UI — an ISO 8601 timestamp parses everywhere and never depends on the OS locale.
+    new Date(match.time).toISOString(),
     fighter?.name ?? 'Unknown',
     opponentFighter?.name ?? 'Unknown',
     match.opponent ?? '',

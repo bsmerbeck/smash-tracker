@@ -22,6 +22,7 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { formatDate } from '@/lib/format';
 import { formatPercent } from '@/lib/formatPercent';
 
 /**
@@ -132,14 +133,14 @@ function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): stri
   });
 }
 
-function buildSpan(insight: Insight, t: TFunction): string | undefined {
+function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   if (insight.window.fromMs == null || insight.window.toMs == null) {
     return undefined;
   }
   return t('insights.evidence.span', {
     count: insight.window.games,
-    from: new Date(insight.window.fromMs).toLocaleDateString(),
-    to: new Date(insight.window.toMs).toLocaleDateString(),
+    from: formatDate(insight.window.fromMs, locale),
+    to: formatDate(insight.window.toMs, locale),
   });
 }
 
@@ -245,7 +246,7 @@ export function MatchDataRail({
     const chipKind = claimChipKindFor(insight.kind);
     const verdict = buildMatchDataVerdict(insight, t, accountName);
     const evidence = buildEvidenceLine(insight, t, i18n.language);
-    const span = buildSpan(insight, t);
+    const span = buildSpan(insight, t, i18n.language);
     const doors = buildDoorNodes(insight, t, subjectPath);
     return {
       id: insight.id,
