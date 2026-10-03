@@ -5,7 +5,10 @@ import {
   type TrendChartPoint,
   type TrendEventPoint,
   type TrendLinePeriodLabels,
+  type TrendLineValueProps,
+  type TrendValuePoint,
 } from './TrendLine';
+import { ChartCard } from './ChartCard';
 import { ChartTooltip } from './ChartTooltip';
 import { formatEventTickLabel } from './eventTicks';
 import {
@@ -14,7 +17,8 @@ import {
   selectPeriodTickLayout,
 } from './periodTicks';
 import type { PeriodPoint } from '@smash-tracker/shared';
-import { PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
+import { PERIOD_TREND_MIN_PERIODS, buildValueSeries } from '@smash-tracker/shared';
+import type { ValueSeries, ValueSeriesReading } from '@smash-tracker/shared';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1862,5 +1866,161 @@ describe('TrendLine — period axis matches sketch 003 A / 001-C (plan 39.1-43b)
       .map((line) => Number(line.getAttribute('y1')))
       .filter((y) => !tickYs.some((tickY) => Math.abs(tickY - y) < 0.5));
     expect(stray).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Value mode (plan 41-02, A1 / DD-41-01, UI-SPEC §7.1)
+// ---------------------------------------------------------------------------
+
+const VALUE_DAY_MS = 24 * 60 * 60 * 1000;
+const VALUE_START_MS = Date.UTC(2025, 0, 1, 12);
+
+/** `count` GSP-like readings spread evenly over `spanDays`, rising with the index. */
+function gspReadings(count: number, spanDays: number): ValueSeriesReading[] {
+  return Array.from({ length: count }, (_, i) => ({
+    atMs: VALUE_START_MS + Math.round((i * spanDays * VALUE_DAY_MS) / count),
+    value: 9_000_000 + i * 5_000,
+    calibration: false,
+  }));
+}
+
+/** A host's job: attach a pre-resolved readout to every point the shared ladder produced. */
+function valuePointsOf(series: ValueSeries): TrendValuePoint[] {
+  return series.points.map((point) => ({
+    ...point,
+    context: {
+      valueKey: 'value',
+      title: `${point.value.toLocaleString('en')} GSP`,
+      lines: [`${point.n} readings`],
+    },
+  }));
+}
+
+function valueLabels(
+  overrides: Partial<TrendLineValueProps['labels']> = {},
+): TrendLineValueProps['labels'] {
+  return {
+    overline: 'GSP by reading',
+    aria: 'GSP over time',
+    legend: { series: 'GSP', calibration: 'set manually' },
+    tableToggle: 'View as table',
+    tableHeaders: { date: 'Date', value: 'GSP', readings: 'Readings' },
+    ...overrides,
+  };
+}
+
+function renderValue(
+  series: ValueSeries,
+  overrides: Partial<Omit<TrendLineValueProps, 'mode'>> = {},
+  { width = 640, height = 288 }: { width?: number; height?: number } = {},
+) {
+  const points = valuePointsOf(series);
+  const props = {
+    mode: 'value' as const,
+    points,
+    grain: series.grain,
+    formatTick: (n: number) => `${(n / 1e6).toFixed(2)}M`,
+    formatValueFull: (n: number) => n.toLocaleString('en'),
+    labels: valueLabels(),
+    ...overrides,
+  };
+  const view = render(
+    <ChartCard title="GSP curve">
+      <TrendLine {...props} width={width} height={height} />
+    </ChartCard>,
+  );
+  return { ...view, points: props.points };
+}
+
+describe('TrendLine — mode value (plan 41-02, tracer)', () => {
+  it('draws a 200-reading series as at most 60 value points on one line, inside the frame', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    expect(series.grain).not.toBe('reading');
+    const { container } = renderValue(series);
+    expect(container.querySelector('[data-slot="card"]')).not.toBeNull();
+    const root = container.querySelector('[data-slot="trend-line-value"]')!;
+    expect(root.getAttribute('data-grain')).toBe(series.grain);
+    expect(root.getAttribute('data-point-count')).toBe(String(series.points.length));
+    const marks = container.querySelectorAll(
+      '[data-slot="trend-value-dot"], [data-slot="trend-value-diamond"]',
+    );
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.length).toBeLessThanOrEqual(60);
+    expect(marks).toHaveLength(series.points.length);
+    expect(
+      container.querySelectorAll('.trend-line-value-line path.recharts-line-curve'),
+    ).toHaveLength(1);
+  });
+
+  it('marks only the last reading at reading grain (no dot on match readings)', () => {
+    const series = buildValueSeries(gspReadings(40, 120));
+    expect(series.grain).toBe('reading');
+    const { container } = renderValue(series);
+    expect(container.querySelectorAll('[data-slot="trend-value-dot"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-slot="trend-value-diamond"]')).toHaveLength(0);
+  });
+
+  it('hands the clicked point back with its memberIndexes intact', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    const onSelectPoint = vi.fn();
+    const { container, points } = renderValue(series, { onSelectPoint });
+    const target = points[4]!;
+    const mark = container.querySelector(`[data-point-key="${target.key}"]`)!;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    expect(onSelectPoint).toHaveBeenCalledTimes(1);
+    const selected = onSelectPoint.mock.calls[0]![0] as TrendValuePoint;
+    expect(selected).toEqual(target);
+    expect(selected.memberIndexes.length).toBeGreaterThan(0);
+    expect(selected.memberIndexes).toEqual(series.points[4]!.memberIndexes);
+  });
+
+  it('puts the marks where the plot geometry says: last point at the plot right edge, line inside it', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    const { container, points } = renderValue(series);
+    const last = points[points.length - 1]!;
+    const cx = Number(
+      container.querySelector(`[data-point-key="${last.key}"]`)!.getAttribute('cx'),
+    );
+    // width 640 - the 12px right margin.
+    expect(cx).toBeCloseTo(640 - 12, 0);
+  });
+
+  it('shows the one readout (ChartTooltip value branch) for the point under a fine pointer', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    const { container, points } = renderValue(series);
+    const target = points[2]!;
+    const mark = container.querySelector(`[data-point-key="${target.key}"]`)!;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    fireEvent.pointerMove(hit, { clientX: Number(mark.getAttribute('cx')), pointerType: 'mouse' });
+    const readout = container.querySelector('[data-slot="trend-value-readout"]');
+    expect(readout?.textContent).toContain(target.context.title);
+    expect(container.querySelector('[data-slot="trend-value-crosshair"]')).not.toBeNull();
+    fireEvent.pointerLeave(hit, { pointerType: 'mouse' });
+    expect(container.querySelector('[data-slot="trend-value-readout"]')).toBeNull();
+  });
+
+  it('renders nothing for an empty series and leaves the index / event / period modes alone', () => {
+    const { container } = render(
+      <TrendLine
+        mode="value"
+        points={[]}
+        grain="reading"
+        formatTick={String}
+        formatValueFull={String}
+        labels={valueLabels()}
+        width={640}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+    const indexRender = render(
+      <TrendLine
+        points={[makePoint({ index: 1 }), makePoint({ index: 2 })]}
+        width={640}
+        height={288}
+      />,
+    );
+    expect(indexRender.container.querySelectorAll('circle')).toHaveLength(2);
   });
 });
