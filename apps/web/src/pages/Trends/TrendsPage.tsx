@@ -44,6 +44,7 @@ import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
 import { PlayRhythmCard } from './components/PlayRhythmCard';
+import { PlayRhythmHeat } from './components/PlayRhythmHeat';
 import {
   useTrendsCardInsights,
   buildMixShiftVerdict,
@@ -73,6 +74,8 @@ const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
  */
 const TRENDS_RHYTHM_READ_PLACEMENT =
   'lg:col-span-12 lg:col-start-1 lg:row-start-4 xl:col-span-4 xl:col-start-9';
+const TRENDS_RHYTHM_CHART_PLACEMENT =
+  'lg:col-span-12 lg:col-start-1 lg:row-start-5 xl:col-span-8 xl:row-start-4';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -90,6 +93,10 @@ const TRENDS_RHYTHM_READ_PLACEMENT =
  * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2);
  * plan 39.2-07 then deleted the component itself once `TournamentsTable`
  * replaced it on `/tournaments`.
+ *
+ * Plan 41-03 (B1, DD-41-05): row 4, "Play rhythm" — the `PlayRhythm` read
+ * (4 cols) and the year x month activity heat (8 cols), under the three rails
+ * and above the `#games` terminus; not mounted at 0 games in scope.
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
@@ -339,6 +346,12 @@ export function TrendsPage() {
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
             </GridCell>
+            <GridCell span={4} className={TRENDS_RHYTHM_READ_PLACEMENT}>
+              <CardSkeleton variant="insight" statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={8} className={TRENDS_RHYTHM_CHART_PLACEMENT}>
+              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
+            </GridCell>
           </PageGrid>
         </div>
       </PageShell>
@@ -432,6 +445,14 @@ export function TrendsPage() {
               insight={cardInsights.playRhythm}
               onDismiss={() => dismiss(cardInsights.playRhythm!.id)}
             />
+          </GridCell>
+        )}
+
+        {/* Plan 41-03: the heat follows the read in the DOM (a phone reads the insight first); the
+            placement constants put it beside the read from 1280 and under it from 1024. */}
+        {matches.length > 0 && (
+          <GridCell span={8} slot="trends-rhythm-chart" className={TRENDS_RHYTHM_CHART_PLACEMENT}>
+            <PlayRhythmHeat matches={matches} onSelectMonth={handleTimelineDrill} />
           </GridCell>
         )}
 

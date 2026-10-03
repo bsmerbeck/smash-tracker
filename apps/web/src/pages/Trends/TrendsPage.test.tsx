@@ -657,12 +657,12 @@ describe('TrendsPage', () => {
       expect(status).toHaveTextContent('Loading trends...');
       expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
-      // The skeleton's grid spans (12, 12, 4, 4, 4) mirror the loaded page's
-      // own hero(12)/timeline(12)/rails(4+4+4) spans.
+      // The skeleton's grid spans mirror the loaded page's own hero(12)/timeline(12)/
+      // rails(4+4+4) spans, plus plan 41-03's row 4: an insight (4) and a chart (8).
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4', '8'].sort());
     });
 
     it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
@@ -678,8 +678,8 @@ describe('TrendsPage', () => {
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      // The loaded page adds row 4's read cell (plan 41-03); a one-game account's read is locked.
-      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4'].sort());
+      // The loaded page adds row 4's read (a one-game account's is locked) and heat (plan 41-03).
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4', '8'].sort());
     });
 
     it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
@@ -784,11 +784,111 @@ describe('TrendsPage', () => {
       const { container } = renderTrends();
       const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
       const cells = Array.from(grid.children) as HTMLElement[];
-      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['12', '4', '12', '4', '4']);
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual([
+        '12',
+        '4',
+        '12',
+        '4',
+        '4',
+        '4',
+        '8',
+      ]);
       expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']));
       expect(cls(cells[2]!)).toContain('lg:row-start-2');
       expect(cls(cells[3]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']));
       expect(cls(cells[4]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']));
+      // Plan 41-03: row 4's insight + chart skeleton pair carries the SAME placement constants as the loaded cells.
+      expect(cls(cells[5]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-4', 'xl:col-span-4', 'xl:col-start-9']),
+      );
+      expect(cls(cells[6]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-5', 'xl:col-span-8', 'xl:row-start-4']),
+      );
+      expect(cells[5]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+      expect(cells[6]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+    });
+  });
+
+  // Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm" - the read first in the DOM, then the heat.
+  describe('plan 41-03 row 4: Play rhythm', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    function twoGames() {
+      return [
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+        makeMatch({
+          id: 'm2',
+          win: false,
+          time: Date.UTC(2021, 1, 1),
+          matchType: 'offline-tourney',
+        }),
+      ];
+    }
+
+    it('mounts an 8-col heat cell and a 4-col read cell after the right stack, read before heat in the DOM', async () => {
+      listMatches.mockResolvedValue(twoGames());
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
+      const cells = Array.from(grid.children) as HTMLElement[];
+      const read = cells.findIndex((c) => c.getAttribute('data-slot') === 'trends-rhythm-read');
+      const chart = cells.findIndex((c) => c.getAttribute('data-slot') === 'trends-rhythm-chart');
+      expect(read).toBeGreaterThan(4);
+      expect(chart).toBe(read + 1);
+      expect(cells[read]!.getAttribute('data-span')).toBe('4');
+      expect(cells[chart]!.getAttribute('data-span')).toBe('8');
+      // 1280+: heat 8 left / read 4 right in row 4; 1024-1279: read above a 12-col heat; no CSS order.
+      expect(cls(cells[read]!)).toEqual(
+        expect.arrayContaining([
+          'lg:col-span-12',
+          'lg:row-start-4',
+          'xl:col-span-4',
+          'xl:col-start-9',
+        ]),
+      );
+      expect(cls(cells[chart]!)).toEqual(
+        expect.arrayContaining([
+          'lg:col-span-12',
+          'lg:row-start-5',
+          'xl:col-span-8',
+          'xl:row-start-4',
+        ]),
+      );
+      for (const cell of [cells[read]!, cells[chart]!]) {
+        expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+      }
+      expect(cells[chart]!.textContent).toContain('Play rhythm');
+    });
+
+    it('clicking a heat month drills #games to exactly that UTC month (from/to)', async () => {
+      listMatches.mockResolvedValue(twoGames());
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      renderTrends();
+      await screen.findByText('Career timeline');
+      await user.click(await screen.findByRole('button', { name: 'February 2021: 1 game' }));
+      const location = (await screen.findByTestId('location')).textContent ?? '';
+      const url = new URL(location, 'http://x');
+      expect(url.searchParams.get('from')).not.toBeNull();
+      expect(url.searchParams.get('to')).not.toBeNull();
+      expect(url.hash).toBe('#games');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+      // Only the February game: the month range never reaches January or March.
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(1);
+    });
+
+    it('is not mounted when the global filter leaves no games in scope', async () => {
+      window.localStorage.setItem(
+        ANALYTICS_FILTER_STORAGE_KEY,
+        JSON.stringify({ source: 'startgg', range: 'all' }),
+      );
+      // All matches are manual (no `source`), so the persisted "startgg" filter excludes everything.
+      listMatches.mockResolvedValue(twoGames());
+      const { container } = renderTrends();
+      expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="trends-rhythm-chart"]')).toBeNull();
+      expect(container.querySelector('[data-slot="trends-rhythm-read"]')).toBeNull();
     });
   });
 });

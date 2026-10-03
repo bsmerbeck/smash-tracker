@@ -272,6 +272,17 @@ lets a test or host force either branch explicitly. Test rule: colocated `Matrix
 asserts the rendered button count equals the supplied cell count (never rows × cols), the sub-floor/
 unknown-axis neutral treatment, the tiered win/loss/neutral tint, and cell activation.
 
+**Volume mode** (plan 41-03, DD-41-06 - `scale="volume"`): the same member's second render path, the
+games-per-month activity heat (Trends' Play rhythm row). `scale` omitted is record mode, byte-identical
+(a captured-markup test pins it). Volume mode is its own component: never the Tabs stack, never a record
+tint. Props: `years` (newest first, at most 9), sparse `cells` (`ActivityHeatCell` from shared
+`buildActivityHeat`), `maxCellValue`, host-formatted `monthLabels` / `monthLabelsNarrow` / `yearLabel` /
+`cellAria` / `emptyAria` / `formatCount` / `legend`, and `onSelectCell`. A cell is a `<button>` tinted by
+`careerGamesFill(volumeHeatStep(n, max))` (`ceil(5 * sqrt(n) / sqrt(max))`, 1-5); a zero-game month is a
+`bg-muted/20` placeholder (not a control). The grid is `36px|44px + 12 x minmax(22px, 1fr)`, square cells at
+most 48px, counts shown from a 480px `@container`, two-letter month labels below a 300px one. At most
+108 cells (9 years); older years stay in the host's table twin.
+
 **The collision rule, concretely, as it applies on Matchups today:** the win-rate trend line
 (`TrendLine.tsx`) wears the categorical identity token `--chart-1` — it is not read as good/bad, its
 Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and ban bars
