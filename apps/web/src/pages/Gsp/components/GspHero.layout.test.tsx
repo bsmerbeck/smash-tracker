@@ -9,43 +9,67 @@ vi.mock('@/hooks/useGspSettings', () => ({
 }));
 
 /**
- * Plan 39.1-49 (OOS-9): at 390px the GspHero figures ('10,880,284') left
- * their half-width cards. Below 640px every figure uses the `figure` role
- * size (text-xl font-semibold); from `sm:` up it keeps today's text-3xl
- * font-bold, so desktop is unchanged.
+ * Plan 41-05 (C2, DD-41-17; superseding plan 39.1-49's OOS-9 per-card figure
+ * classes): the hero is ONE compact card whose content root carries
+ * `data-slot="gsp-hero"` and holds a five-figure `StatRow` — two columns
+ * below the 860px page-container rule with the lead spanning both, so a
+ * '10,880,284' figure at 390px has the full row width.
  */
-function renderHero() {
-  const series: GspPoint[] = Array.from({ length: 25 }, (_, i) => ({
-    time: 1_700_000_000_000 + i * 60_000,
-    gsp: 10_000_000 + i * 40_000,
-    win: i % 3 !== 0,
-  }));
+function renderHero(series?: GspPoint[]) {
+  const readings: GspPoint[] =
+    series ??
+    Array.from({ length: 25 }, (_, i) => ({
+      time: 1_700_000_000_000 + i * 60_000,
+      gsp: 10_000_000 + i * 40_000,
+      win: i % 3 !== 0,
+    }));
   return render(
-    <GspHero series={series} settings={{ eliteThreshold: 14_000_000, updatedAt: 0 }} />,
+    <GspHero series={readings} settings={{ eliteThreshold: 14_000_000, updatedAt: 0 }} />,
   );
 }
 
-describe('GspHero phone figures (plan 39.1-49, OOS-9)', () => {
-  it('GspHero phone-figure: every figure span carries the phone figure size plus sm:text-3xl sm:font-bold, none an unprefixed text-3xl', () => {
+describe('GspHero one-card StatRow (plan 41-05)', () => {
+  it('is one card whose content root is the gsp-hero measurement target, holding five figures', () => {
     const { container } = renderHero();
-    const figures = Array.from(container.querySelectorAll('span')).filter((span) =>
-      /(^|\s)(sm:)?text-3xl(\s|$)/.test(span.className),
-    );
-    expect(figures.length).toBeGreaterThanOrEqual(4);
-    for (const figure of figures) {
-      const classes = figure.className.split(/\s+/);
-      expect(classes).toEqual(
-        expect.arrayContaining(['text-xl', 'font-semibold', 'sm:text-3xl', 'sm:font-bold']),
-      );
-      expect(classes).not.toContain('text-3xl');
-      expect(classes).not.toContain('font-bold');
-    }
-  });
-
-  it('the grid root keeps lg:grid-cols-5 and data-slot gsp-hero', () => {
-    const { container } = renderHero();
+    const cards = container.querySelectorAll('[data-slot="card"]');
+    expect(cards).toHaveLength(1);
     const root = container.querySelector('[data-slot="gsp-hero"]');
     expect(root).not.toBeNull();
-    expect(root!.className.split(/\s+/)).toContain('lg:grid-cols-5');
+    expect(root!.getAttribute('data-slot')).toBe('gsp-hero');
+    // the Card keeps its own slot — the stretch oracle selects it
+    expect(root).not.toBe(cards[0]);
+    expect(cards[0]!.contains(root)).toBe(true);
+    const row = root!.querySelector('[data-slot="stat-row"]')!;
+    expect(row.children).toHaveLength(5);
+  });
+
+  it('collapses to two columns below the 860px container with the lead spanning both', () => {
+    const { container } = renderHero();
+    const row = container.querySelector('[data-slot="stat-row"]')!;
+    expect(row.hasAttribute('data-lead-span')).toBe(true);
+    const classes = row.className.split(/\s+/);
+    expect(classes).toContain('@max-[860px]/page:grid-cols-2');
+    expect(classes).toContain('@max-[860px]/page:[&>*:first-child]:col-span-2');
+    expect(classes).toContain('grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))]');
+  });
+
+  it('carries no data-coloured text and no per-figure off-scale classes', () => {
+    const { container } = renderHero();
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/text-(emerald|amber)-/);
+    expect(html).not.toMatch(/(^|[\s"])text-3xl/);
+    expect(html).not.toMatch(/font-bold/);
+  });
+
+  it('keeps five figures (each an em dash with the no-GSP caption) when nothing is logged', () => {
+    const { container } = renderHero([]);
+    const row = container.querySelector('[data-slot="stat-row"]')!;
+    expect(row.children).toHaveLength(5);
+    // every figure but the (always populated) Elite threshold reads "—" + "No GSP logged yet"
+    const empties = Array.from(row.children).filter((child) =>
+      (child.textContent ?? '').includes('No GSP logged yet'),
+    );
+    expect(empties).toHaveLength(4);
+    for (const child of empties) expect(child.textContent).toContain('—');
   });
 });

@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const ANALYTICS_DIR = 'apps/web/src/components/analytics/';
 const CHARTS_DIR = 'apps/web/src/components/charts/';
+/** Plan 41-05 (12.10): the GSP page's components are scanned too, threshold 0 — its hero's off-scale figure classes left in the same commit. */
+const GSP_COMPONENTS_DIR = 'apps/web/src/pages/Gsp/components/';
 const SELF_PATH = 'apps/web/src/components/analytics/typeScale.test.ts';
 const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/OffScaleTypeFixture.tsx';
 
@@ -151,7 +153,9 @@ const SOURCE_FILES = listSourceFiles();
  */
 const SCANNED_FILES = SOURCE_FILES.filter(
   (file) =>
-    (file.startsWith(ANALYTICS_DIR) || file.startsWith(CHARTS_DIR)) &&
+    (file.startsWith(ANALYTICS_DIR) ||
+      file.startsWith(CHARTS_DIR) ||
+      file.startsWith(GSP_COMPONENTS_DIR)) &&
     !/\.test\.tsx?$/.test(file) &&
     !file.includes('guardFixtures/'),
 );

@@ -94,11 +94,13 @@ const KNOWN_FLEX_DISTRIBUTION_OFFENDERS: string[] = [];
 const STAT_COMPONENT_NAME_PATTERN = /\bfunction\s+(Stat|HeroCard|StatBlock|SettingBlock)\b/;
 
 /**
- * The two GSP entries handed to Phase 41 (DD-13) — a PERMANENT exemption,
- * not shrink-only like the array below, but still anti-rot checked (an
- * entry that stops declaring the pattern is stale).
+ * The two GSP entries handed to Phase 41 (DD-13). Empty as of plan 41-05
+ * (12.12): `GainsAnalysis` (Task 1) and `GspHero` (Task 2) were rebuilt on
+ * `StatRow`/`StatFigure`, so no page-local stat component remains anywhere
+ * under `pages/` and the old "cannot rot" assertion (which needed a live
+ * entry to check) is gone with the entries.
  */
-const STAT_COMPONENT_GSP_ALLOWLIST = ['apps/web/src/pages/Gsp/components/GspHero.tsx'];
+const STAT_COMPONENT_GSP_ALLOWLIST: string[] = [];
 
 /**
  * Measured by a real grep at plan-execution time (2026-09-20). Shrink-only:
@@ -231,13 +233,6 @@ describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
         (file) => !allowlistSet.has(file) && STAT_COMPONENT_NAME_PATTERN.test(readRepoFile(file)),
       );
       expect(offenders).toEqual([]);
-    });
-
-    it('the GSP allowlist cannot rot', () => {
-      const stale = STAT_COMPONENT_GSP_ALLOWLIST.filter(
-        (file) => !STAT_COMPONENT_NAME_PATTERN.test(readRepoFile(file)),
-      );
-      expect(stale, `stale GSP allowlist entries: ${stale.join(', ')}`).toEqual([]);
     });
 
     it('the known-offender allowlist cannot rot', () => {

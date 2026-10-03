@@ -226,14 +226,16 @@ describe('GspPage', () => {
     expect(await screen.findByText(/top-tail reading — approximate/)).toBeInTheDocument();
   });
 
-  it('shows the ELITE badge once the estimated MMR reaches Elite (1142)', async () => {
+  it('shows the plain Elite figure once the estimated MMR reaches Elite (1142)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     // gsp 15,000,000 at the floored t -> MMR ~1158 >= 1142.
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 15_000_000 })]);
 
     renderGspPage();
 
-    expect(await screen.findByText('ELITE')).toBeInTheDocument();
+    // The distance figure becomes the plain word (no emerald pill — DD-41-17).
+    expect(await screen.findByText('Elite')).toBeInTheDocument();
+    expect(screen.getByText(/at or above Elite/)).toBeInTheDocument();
     // The tiers card places the reading in the Elite Smash tier (~14.8M
     // boundary on today's ladder) with Top 5% (0.95·max ≈ 15.5M) up next —
     // the in-Elite short-term goal the old Road to Elite card never had.
