@@ -2298,3 +2298,40 @@ describe('TrendLine — mode value says what it shows (plan 41-02 Task 2, UI-SPE
     expect(width(thin.container)).toBe('1.5');
   });
 });
+
+describe('TrendLine — mode value, host-controlled cursor (plan 41-02 Task 3, RESEARCH correction 1)', () => {
+  it('draws the crosshair at the host xMs, reports the nearest of ITS points on hover, and owns no readout or keys', () => {
+    const series = buildValueSeries(gspReadings(30, 90), { minGrain: 'week' });
+    const onChange = vi.fn();
+    const points = valuePointsOf(series);
+    const midMs = (points[0]!.xMs + points[1]!.xMs) / 2; // an x no point has
+    const { container } = renderValue(series, { cursor: { xMs: midMs, onChange } });
+    expect(container.querySelectorAll('[data-slot="trend-value-crosshair"]')).toHaveLength(1);
+    expect(container.querySelector('[data-slot="trend-value-readout"]')).toBeNull();
+
+    const target = points[3]!;
+    const mark = container.querySelector(`[data-point-key="${target.key}"]`)!;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    fireEvent.pointerMove(hit, { clientX: Number(mark.getAttribute('cx')), pointerType: 'mouse' });
+    expect(onChange).toHaveBeenLastCalledWith(target.xMs);
+    fireEvent.pointerLeave(hit, { pointerType: 'mouse' });
+    expect(onChange).toHaveBeenLastCalledWith(null);
+
+    // The host owns the keys: the panel's own handler stays out of the way.
+    onChange.mockClear();
+    fireEvent.keyDown(container.querySelector('[data-slot="trend-value-plot"]')!, {
+      key: 'ArrowRight',
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('draws no crosshair while the host cursor is null, and omits the x tick band with drawXAxis false', () => {
+    const series = buildValueSeries(gspReadings(30, 90), { minGrain: 'week' });
+    const { container } = renderValue(series, {
+      cursor: { xMs: null, onChange: vi.fn() },
+      drawXAxis: false,
+    });
+    expect(container.querySelector('[data-slot="trend-value-crosshair"]')).toBeNull();
+    expect(container.querySelector('[data-slot="trend-value-x-axis"]')).toBeNull();
+  });
+});

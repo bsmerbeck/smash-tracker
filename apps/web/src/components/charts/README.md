@@ -125,7 +125,7 @@ variant, no new surface colour, no new spacing value.
 | Body            | `children`                                    | The chart or comparison-bar content.                                                                                                                  |
 | Footer          | `footer?`                                     | Rendered below `children` when not abstained (e.g. a click hint).                                                                                     |
 
-## The vocabulary — five members, four implemented (D-05, D-09)
+## The vocabulary — five members, all implemented (D-05, D-09; small multiples shipped plan 41-02)
 
 ### The career timeline (plan 39.1-34 — the UI-SPEC §12.1 replacement, not a new idiom)
 
@@ -180,6 +180,32 @@ as an explicit `ticks` array — never delegated to Recharts' `preserveStart`/`p
 interval modes, which decide what to drop by MEASURING rendered text through
 `getBoundingClientRect` and therefore never thin under jsdom's all-zero rects. `eventTicks.ts` also
 exports the tick-label truncation formatter (`formatEventTickLabel`) applied to every rendered tick.
+
+**Value mode (plan 41-02, A1 / DD-41-01)** — `mode: 'value'`, a fourth member of `TrendLine`'s mode
+union (not a separate member, so `KIT_CHART_PRIMITIVES` is unchanged): a time-axis numeric trend
+for GSP, estimated MMR and Glicko-2. Its points arrive PRE-BINNED from shared `buildValueSeries`
+(`packages/shared/src/insight/valueSeries.ts`) — the chart never bins. **The grain ladder** is
+`reading → day → week → month → quarter`, the finest grain with at most 60 points (the line mark
+bound), each point the CLOSE of its period (its last reading's value and time); `grain` is named
+in the head overline, and a plot narrower than `CHART_NARROW_PLOT_PX` (520) draws the host's
+`narrowPoints` / `narrowGrain` instead of squeezing marks (re-grain, never squeeze). **Identity is
+`memberIndexes`**, indices into the host's input readings — never the point's `[startMs, endMs)`
+span (the CR-02 lesson from the period mode) — so `onSelectPoint(point)` hands a host the exact
+readings behind a point, whichever zone the bucket boundary fell in (`day` is host-local,
+`week` / `month` / `quarter` are UTC `calendarBucketBounds`). **Marks:** one 2px `series1` line
+(1.5px at `CHART_H_COMPACT` or `lineWidth: 'thin'`); at reading grain no dot on ordinary readings —
+only the last point (a ringed 5px dot) and a calibration reading (a 9px `deemphasis` diamond); at a
+coarser grain a dot per close, a diamond for a close containing a calibration. **y axis:** the data
+± 4% snapped to a 1-2-5 step giving 4–6 hairlines, host-formatted compact ticks at
+`CHART_AXIS_FONT_SIZE`, and a gutter MEASURED from the longest formatted tick (so ja `1088万` is
+accounted for), never assumed. **Reference rule (DD-41-13):** `referencePlacement(values, value)`
+returns `'line'` only when the reference lies within 2x the data span of the nearest data edge,
+else `'above-range'` / `'below-range'`; the kit draws a dashed line (and joins the domain) only for
+`'line'`, otherwise it draws nothing and the head legend states the value in words. **A11y:** the plot
+is one tab stop (`role="img"`), ← → step points (the first press lands on the latest), Home / End,
+Enter / Space select, and a "View as table" twin lists date · value · readings. Hover and keyboard
+share one readout, which is `ChartTooltip`'s value branch (the host pre-resolves its title and lines).
+A `locked` prop swaps the plot for the unlock inset and meter; zero points mount nothing.
 
 **Comparison bars** (`ComparisonBars.tsx`, shipped plan 37-05) — horizontal bars per
 stage/category, one `<li>` per row. Props: `rows: ComparisonBarsRow[]` (`{ key, label: ReactNode,
@@ -253,25 +279,31 @@ Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and
 ranking is the engine's pick / ban split and the heading says Pick or Ban, but a green / red bar
 would read as a verdict the evidence does not carry, so status colour stays on win / loss marks only.
 
-### NOT implemented this phase — Phase 41 owns these (D-05)
+### Small multiples (plan 41-02, A3 / DD-41-02) — `SmallMultiplesGrid.tsx`
 
-**Small-multiples grid** — a repeated small chart per category (e.g. one mini trend line per
-stage), for comparing many series' shapes at a glance without overlaying them. Sketched API:
+**Small-multiples grid** — N value-mode panels STACKED on one time axis (the GSP vs Glicko-2 page
+passes two). Props: `panels: { key, title, points, grain, formatTick, formatValueFull, readoutLine,
+labels: { aria }, onSelectPoint? }[]`, `layout: 'stacked'` (the only layout), `xDomain` (the host's
+union of the panels' points), `height?` (plot px per panel: `CHART_H_MULTIPLE` 120, or
+`CHART_H_MULTIPLE_NARROW` 96 below 640px), `caption`, `aria`, `tableLabels`. Each panel is a
+`TrendLine mode="value"` at `lineWidth: 'thin'` with its OWN fitted y — **never normalised**; the one
+drawn x axis sits under the last panel, and every panel's y gutter is equalised (the widest measured
+one wins) so one x is one pixel column across the stack.
 
-```ts
-interface SmallMultiplesGridProps<T> {
-  items: T[];
-  getKey: (item: T) => string;
-  getTitle: (item: T) => string;
-  renderChart: (item: T) => ReactNode; // typically a TrendLine at a small fixed size
-  columns?: number; // responsive default; explicit for tests
-}
-```
-
-Expected data shape: one `TrendChartPoint[]`-shaped series per grid cell, each rendered through the
-existing `TrendLine` primitive at a smaller fixed size — this is a LAYOUT/composition primitive
-over the existing trend primitive, not a new chart type. Interaction: clicking a cell's chart
-follows the same click-to-matches contract as the full-size trend chart.
+**The crosshair is host-controlled cursor state, not the chart library's built-in cross-chart
+synchronisation.** That mechanism matches a hovered point in the other charts by an exact string
+comparison of the x value (RESEARCH correction 1), so two panels whose x values differ — the GSP vs
+Glicko panels are built from different readings — would silently show no crosshair in the second
+panel. The grid owns one `cursorXMs`; each panel (`TrendLine`'s `cursor: { xMs, onChange }` prop)
+draws its crosshair at that same x, and converts its own pointer position into the nearest of ITS
+points' x through a transparent hit rect over the plot (the `CareerTimeline` pointer-mapping
+pattern — no chart-library mouse events, so nothing about pointer behaviour depends on the library's
+internals). One shared readout lists each panel's line for its nearest point (value leads, label
+follows); ← → step the sorted UNION of every panel's x values, Home / End jump; the grid is
+`role="group"`, each panel a tab stop, and one table twin lists date · each panel's value (blank where
+a panel has no point). Plain DOM — no chart-library import, so it is absent from
+`KIT_CHART_PRIMITIVES`; its colocated `SmallMultiplesGrid.test.tsx` renders it inside a `ChartCard`
+with two panels that share no x value and asserts the crosshair appears in both.
 
 ## Tooltips and interaction (D-06, D-07)
 
