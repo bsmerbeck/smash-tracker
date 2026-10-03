@@ -1,4 +1,5 @@
 import type { OpponentProfile } from '@/lib/stats';
+import { formatDate } from '@/lib/format';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import type { TournamentBlock } from './tournamentHistory';
@@ -62,6 +63,7 @@ export function buildEvidencePacket(
   profile: OpponentProfile,
   tournamentBlocks: TournamentBlock[],
   preparedBy: string,
+  locale: string,
   generatedAt: number = Date.now(),
 ): EvidencePacket {
   const byTheirCharacter = profile.byTheirFighter.map((row) => ({
@@ -83,7 +85,7 @@ export function buildEvidencePacket(
   const tournamentEncounters: TournamentEncounterLine[] = tournamentBlocks.flatMap((block) =>
     block.sets.map((set) => ({
       displayName: block.displayName,
-      date: new Date(set.time).toLocaleDateString(),
+      date: formatDate(set.time, locale),
       roundLabel: set.roundLabel,
       result: `${set.wins}-${set.losses}${set.isLosersSide ? ' (Losers)' : ''}`,
     })),
@@ -109,22 +111,18 @@ export function buildEvidencePacket(
   };
 }
 
-function formatDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString();
-}
-
 /**
  * Renders the packet as Markdown-ish plain text — the "copy as text"
  * fallback for when printing/PDF export isn't convenient (e.g. pasting into
  * a Discord message to a teammate before a set).
  */
-export function packetToText(packet: EvidencePacket): string {
+export function packetToText(packet: EvidencePacket, locale: string): string {
   const lines: string[] = [];
   lines.push(`# H2H Evidence Packet: ${packet.preparedBy} vs ${packet.opponent}`);
   lines.push('');
-  lines.push(`Generated: ${formatDate(packet.generatedAt)}`);
+  lines.push(`Generated: ${formatDate(packet.generatedAt, locale)}`);
   lines.push(
-    `Date range: ${formatDate(packet.dateRange.firstPlayedAt)} - ${formatDate(packet.dateRange.lastPlayedAt)}`,
+    `Date range: ${formatDate(packet.dateRange.firstPlayedAt, locale)} - ${formatDate(packet.dateRange.lastPlayedAt, locale)}`,
   );
   lines.push('');
   lines.push('## Overall record');

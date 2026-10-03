@@ -715,8 +715,8 @@ export function OpponentHubPage() {
 
   const evidencePacket = useMemo(() => {
     if (!profile) return null;
-    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
-  }, [profile, tournamentBlocks, user]);
+    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you', i18n.language);
+  }, [profile, tournamentBlocks, user, i18n.language]);
 
   // WR-03 (38-REVIEW-FIX): this object literal was rebuilt fresh every
   // render (a NEW reference even when every field's VALUE was unchanged) —

@@ -76,8 +76,9 @@ export const D1_DIRECTORIES = [
 
 /**
  * Out-of-scope surfaces that still hold bare locale calls, repo-relative path → EXACT Ban-A count.
- * Shrink-only: edit it down as a surface is converted, never up. Measured at plan 41-08 (43 bare
- * calls across 25 files before the sweep; the D1 files were converted and removed from this list).
+ * Shrink-only: edit it down as a surface is converted, never up. Measured at plan 41-08: 43 bare
+ * calls across 25 files before the sweep, 24 calls across 13 files after it (the D1 files and
+ * `ScoutAiReportCard` were converted and removed from this list).
  */
 export const LOCALE_LESS_KNOWN_OFFENDERS: Record<string, number> = {
   'pages/Coaching/ClientOverviewPage.tsx': 1,
@@ -87,23 +88,12 @@ export const LOCALE_LESS_KNOWN_OFFENDERS: Record<string, number> = {
   'pages/Coaching/components/IssueClaimCodeDialog.tsx': 1,
   'pages/GspCalculator/GspCalculatorPage.tsx': 5,
   'pages/Review/ReviewDeliveryPage.tsx': 5,
-  'pages/Scout/components/ScoutAiReportCard.tsx': 1,
   'pages/Scout/reportMarkdown.ts': 1,
   'pages/Share/ShareViewPage.tsx': 1,
   'pages/Share/components/RecapView.tsx': 1,
   'pages/VodManager/components/PlaylistRow.tsx': 1,
   'pages/VodManager/components/ShareRow.tsx': 1,
   'pages/VodManager/components/VodMatchList.tsx': 1,
-};
-
-/**
- * Interim: D1 files whose conversion lands in a later task of the same plan. Deleted (with the
- * assertion that reads it) in the plan's last task.
- */
-const D1_PENDING_CONVERSION: Record<string, number> = {
-  'lib/relativeDate.ts': 1,
-  'pages/Opponents/components/PrintableEvidencePacket.tsx': 3,
-  'pages/Opponents/evidencePacket.ts': 2,
 };
 
 /** Non-vacuity: the walker must see most of the real tree (measured 545 files at plan 41-08). */
@@ -139,15 +129,10 @@ const FILES = sourceFiles(SRC_DIR).map((file) => ({
   source: fs.readFileSync(file, 'utf8'),
 }));
 
-const KNOWN: Record<string, number> = {
-  ...LOCALE_LESS_KNOWN_OFFENDERS,
-  ...D1_PENDING_CONVERSION,
-};
-
 describe('I18N-01 locale-explicit formatting (Ban A, ratchet)', () => {
   it('non-allowlisted source files contain no locale-less date/number call', () => {
     const offenders = FILES.filter(
-      (file) => !(file.rel in KNOWN) && countBareLocaleCalls(file.source) > 0,
+      (file) => !(file.rel in LOCALE_LESS_KNOWN_OFFENDERS) && countBareLocaleCalls(file.source) > 0,
     ).map((file) => `${file.rel} (${countBareLocaleCalls(file.source)})`);
     expect(
       offenders,
@@ -157,7 +142,7 @@ describe('I18N-01 locale-explicit formatting (Ban A, ratchet)', () => {
 
   it('the allowlist cannot rot: every entry matches its file exactly, both ways', () => {
     const drift: string[] = [];
-    for (const [rel, expected] of Object.entries(KNOWN)) {
+    for (const [rel, expected] of Object.entries(LOCALE_LESS_KNOWN_OFFENDERS)) {
       const file = FILES.find((candidate) => candidate.rel === rel);
       if (!file) {
         drift.push(`${rel}: listed but the file does not exist`);

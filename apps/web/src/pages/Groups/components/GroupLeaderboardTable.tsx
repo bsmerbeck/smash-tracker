@@ -17,7 +17,7 @@ import { formatRelativeDate } from '@/lib/relativeDate';
  * (`isYou`) is visually highlighted.
  */
 export function GroupLeaderboardTable({ entries }: { entries: LeaderboardEntry[] }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
     <Table>
       <TableHeader>
@@ -50,7 +50,7 @@ export function GroupLeaderboardTable({ entries }: { entries: LeaderboardEntry[]
             <TableCell className="text-right tabular-nums">{entry.games}</TableCell>
             <TableCell className="text-right text-muted-foreground">
               {entry.lastMatchAt != null
-                ? formatRelativeDate(entry.lastMatchAt, t)
+                ? formatRelativeDate(entry.lastMatchAt, t, i18n.language)
                 : t('groups.table.never')}
             </TableCell>
           </TableRow>

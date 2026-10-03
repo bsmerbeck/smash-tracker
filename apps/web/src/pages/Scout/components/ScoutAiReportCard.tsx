@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
+import { formatDate } from '@/lib/format';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { ClaimAtomLine } from '@/components/claims/ClaimAtomLine';
 import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
@@ -151,7 +152,7 @@ function PrintClaimSection({
  * commentary (`WithheldProseNote`, D-20) whenever the stored counts say so.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { report } = record;
   const isDemoAccount = useIsDemoAccount();
   const claimsEra = isClaimsEraReport(report);
@@ -181,7 +182,9 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           </CardTitle>
           {report.overview && <CardDescription>{report.overview}</CardDescription>}
           <p className="text-xs text-muted-foreground">
-            {t('scout.aiReport.generated', { rel: formatRelativeDate(record.createdAt, t) })}
+            {t('scout.aiReport.generated', {
+              rel: formatRelativeDate(record.createdAt, t, i18n.language),
+            })}
           </p>
           <LegacyReportBadge
             variant="card"
@@ -321,7 +324,7 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
 
       <div className="print-packet-root hidden print:block">
         <h1 className="text-2xl font-bold">
-          Scout Report: {record.player.gamerTag} — {new Date(record.createdAt).toLocaleDateString()}
+          Scout Report: {record.player.gamerTag} — {formatDate(record.createdAt, i18n.language)}
         </h1>
 
         {(report.overview || (overviewClaims && overviewClaims.kind !== 'empty')) && (

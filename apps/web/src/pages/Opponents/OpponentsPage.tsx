@@ -43,7 +43,7 @@ import { buildEvidencePacket } from './evidencePacket';
  * to, and recent encounters. Searchable list ranked by games played.
  */
 export function OpponentsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
@@ -176,8 +176,8 @@ export function OpponentsPage() {
     if (!profile) {
       return null;
     }
-    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
-  }, [profile, tournamentBlocks, user]);
+    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you', i18n.language);
+  }, [profile, tournamentBlocks, user, i18n.language]);
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
   // skeleton echoing the loaded page's own 320px-rail + report split, so

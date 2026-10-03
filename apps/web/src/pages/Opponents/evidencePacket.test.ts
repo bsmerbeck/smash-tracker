@@ -51,7 +51,7 @@ function makeProfile(overrides: Partial<OpponentProfile> = {}): OpponentProfile 
 
 describe('buildEvidencePacket', () => {
   it('carries over the opponent name, prepared-by, generated-at, and overall record', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me@example.com', 555);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me@example.com', 'en', 555);
 
     expect(packet.opponent).toBe('rival');
     expect(packet.preparedBy).toBe('me@example.com');
@@ -61,7 +61,7 @@ describe('buildEvidencePacket', () => {
 
   it('carries over the first/last played date range', () => {
     const profile = makeProfile();
-    const packet = buildEvidencePacket(profile, [], 'me', 555);
+    const packet = buildEvidencePacket(profile, [], 'me', 'en', 555);
 
     expect(packet.dateRange).toEqual({
       firstPlayedAt: profile.firstPlayedAt,
@@ -70,7 +70,7 @@ describe('buildEvidencePacket', () => {
   });
 
   it('resolves their-character rows to display names, preserving profile ordering', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me', 555);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en', 555);
 
     expect(packet.byTheirCharacter).toEqual([
       { name: 'Luigi', wins: 1, losses: 0, winRate: 100, total: 1 },
@@ -94,6 +94,7 @@ describe('buildEvidencePacket', () => {
       }),
       [],
       'me',
+      'en',
       555,
     );
 
@@ -110,6 +111,7 @@ describe('buildEvidencePacket', () => {
       }),
       [],
       'me',
+      'en',
       555,
     );
 
@@ -133,7 +135,7 @@ describe('buildEvidencePacket', () => {
         ],
       }),
     ];
-    const packet = buildEvidencePacket(makeProfile(), blocks, 'me', 555);
+    const packet = buildEvidencePacket(makeProfile(), blocks, 'me', 'en', 555);
 
     expect(packet.tournamentEncounters).toHaveLength(2);
     expect(packet.tournamentEncounters[0]).toMatchObject({
@@ -149,8 +151,25 @@ describe('buildEvidencePacket', () => {
   });
 
   it('returns an empty tournamentEncounters array when there are no blocks', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me', 555);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en', 555);
     expect(packet.tournamentEncounters).toEqual([]);
+  });
+});
+
+describe('evidence packet dates follow the app language (I18N-01)', () => {
+  const blocks = [makeBlock({ sets: [makeSet({ time: Date.UTC(2024, 2, 5, 12) })] })];
+
+  it('formats each tournament encounter date in the given locale', () => {
+    const en = buildEvidencePacket(makeProfile(), blocks, 'me', 'en-US', 555);
+    const de = buildEvidencePacket(makeProfile(), blocks, 'me', 'de-DE', 555);
+    expect(en.tournamentEncounters[0]!.date).toBe('3/5/2024');
+    expect(de.tournamentEncounters[0]!.date).toBe('5.3.2024');
+  });
+
+  it('formats the text export generated / date-range lines in the given locale', () => {
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en-US', Date.UTC(2024, 6, 1, 12));
+    expect(packetToText(packet, 'en-US')).toContain('Generated: 7/1/2024');
+    expect(packetToText(packet, 'de-DE')).toContain('Generated: 1.7.2024');
   });
 });
 
@@ -160,9 +179,10 @@ describe('packetToText', () => {
       makeProfile(),
       [],
       'me@example.com',
+      'en',
       Date.parse('2024-07-01'),
     );
-    const text = packetToText(packet);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('H2H Evidence Packet: me@example.com vs rival');
     expect(text).toContain('Generated:');
@@ -170,15 +190,15 @@ describe('packetToText', () => {
   });
 
   it('includes the overall record line', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me', 555);
-    const text = packetToText(packet);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en', 555);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('2-1 (67% over 3 games)');
   });
 
   it('renders a their-characters table with header + rows', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me', 555);
-    const text = packetToText(packet);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en', 555);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('## Their characters');
     expect(text).toContain('| Character | Record | Win Rate | Games |');
@@ -187,8 +207,8 @@ describe('packetToText', () => {
   });
 
   it('renders a stages table with header + rows', () => {
-    const packet = buildEvidencePacket(makeProfile(), [], 'me', 555);
-    const text = packetToText(packet);
+    const packet = buildEvidencePacket(makeProfile(), [], 'me', 'en', 555);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('## Stages');
     expect(text).toContain('| Stage | Record | Win Rate |');
@@ -200,9 +220,10 @@ describe('packetToText', () => {
       makeProfile({ byTheirFighter: [], byStage: [] }),
       [],
       'me',
+      'en',
       555,
     );
-    const text = packetToText(packet);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('No character data recorded.');
     expect(text).toContain('No stage data recorded.');
@@ -211,8 +232,8 @@ describe('packetToText', () => {
 
   it('renders tournament encounters as a bulleted list', () => {
     const blocks = [makeBlock()];
-    const packet = buildEvidencePacket(makeProfile(), blocks, 'me', 555);
-    const text = packetToText(packet);
+    const packet = buildEvidencePacket(makeProfile(), blocks, 'me', 'en', 555);
+    const text = packetToText(packet, 'en');
 
     expect(text).toContain('## Tournament encounters');
     expect(text).toMatch(/- .+ — The Big House 9 \(Winners Semi-Final\): 2-0/);
