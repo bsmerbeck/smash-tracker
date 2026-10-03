@@ -43,7 +43,12 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
-import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCardInsights';
+import { PlayRhythmCard } from './components/PlayRhythmCard';
+import {
+  useTrendsCardInsights,
+  buildMixShiftVerdict,
+  buildPlayRhythmVerdict,
+} from './lib/useTrendsCardInsights';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -61,6 +66,13 @@ const TRENDS_TIMELINE_PLACEMENT = 'lg:row-start-2';
 const TRENDS_LEFT_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-3';
 const TRENDS_READS_PLACEMENT = 'lg:col-start-5 lg:row-start-3';
 const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
+/**
+ * Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm". DOM order is read, then heat (a phone
+ * reads the insight before the chart). At 1024-1279 the read spans 12 above a 12-col heat (row 4, then
+ * row 5); from 1280 the heat is 8 cols at the left and the read 4 cols at the right, both in row 4.
+ */
+const TRENDS_RHYTHM_READ_PLACEMENT =
+  'lg:col-span-12 lg:col-start-1 lg:row-start-4 xl:col-span-4 xl:col-start-9';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -83,7 +95,7 @@ const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
  */
 export function TrendsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const {
@@ -164,11 +176,20 @@ export function TrendsPage() {
   // three card insights (non-null only) — one array, one terminus resolver,
   // matching `FighterAnalysisPage.tsx`'s `pageInsights` precedent.
   const pageInsights = useMemo(() => {
-    const cards = [cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm].filter(
-      (insight): insight is Insight => insight != null,
-    );
+    const cards = [
+      cardInsights.settingGap,
+      cardInsights.mixShift,
+      cardInsights.volumeForm,
+      cardInsights.playRhythm,
+    ].filter((insight): insight is Insight => insight != null);
     return [...trendsInsights, ...cards];
-  }, [trendsInsights, cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm]);
+  }, [
+    trendsInsights,
+    cardInsights.settingGap,
+    cardInsights.mixShift,
+    cardInsights.volumeForm,
+    cardInsights.playRhythm,
+  ]);
   const insightById = useMemo(
     () => new Map(pageInsights.map((insight) => [insight.id, insight])),
     [pageInsights],
@@ -182,9 +203,12 @@ export function TrendsPage() {
           // Plan 39.1-27 (gap closure, Task 2): mixShift's own raw
           // `matchType` literal must never reach the summary — the SAME
           // `buildMixShiftVerdict` the line itself uses.
-          return insight.templateId === 'mixShift'
-            ? buildMixShiftVerdict(insight, t)
-            : buildTrendsVerdict(insight, t, accountNameForClaim);
+          if (insight.templateId === 'mixShift') return buildMixShiftVerdict(insight, t);
+          // Plan 41-03: playRhythm's month and share arrive as numbers; the host formats them.
+          if (insight.templateId === 'playRhythm') {
+            return buildPlayRhythmVerdict(insight, t, i18n.language);
+          }
+          return buildTrendsVerdict(insight, t, accountNameForClaim);
         })()
       : undefined;
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
@@ -340,6 +364,13 @@ export function TrendsPage() {
   // `.filters`): ONE unboxed row — title, spacer, HorizonSwitch.
   const filterRow = <PageFilterRow title={t('trends.title')} trailing={<HorizonSwitch />} />;
 
+  // Plan 41-03: row 4 is not mounted at 0 games in scope (the page-level no-matches view covers it);
+  // a dismissed read leaves the row's heat in place.
+  const showPlayRhythm =
+    matches.length > 0 &&
+    cardInsights.playRhythm != null &&
+    !dismissedIds.includes(cardInsights.playRhythm.id);
+
   return (
     <PageShell filterRow={filterRow}>
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
@@ -394,6 +425,15 @@ export function TrendsPage() {
             volumeFormInsight={cardInsights.volumeForm}
           />
         </GridCell>
+
+        {showPlayRhythm && cardInsights.playRhythm && (
+          <GridCell span={4} slot="trends-rhythm-read" className={TRENDS_RHYTHM_READ_PLACEMENT}>
+            <PlayRhythmCard
+              insight={cardInsights.playRhythm}
+              onDismiss={() => dismiss(cardInsights.playRhythm!.id)}
+            />
+          </GridCell>
+        )}
 
         {hasDrillAxis && (
           <GridCell span={12}>

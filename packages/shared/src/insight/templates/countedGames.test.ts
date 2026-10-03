@@ -115,6 +115,26 @@ function buildMixShiftFixture(): Match[] {
   return matches;
 }
 
+/**
+ * A real play-rhythm history: one game on the 10th of each of 28 consecutive UTC months ending in the
+ * month of `NOW_MS`, so `playRhythm` is past its 12-month lock, has a prior window, and spans more
+ * than 24 months. A shorter shared fixture would only ever exercise its locked branch.
+ */
+function buildPlayRhythmFixture(): Match[] {
+  const nowMonth = new Date(NOW_MS);
+  const matches: Match[] = [];
+  for (let i = 0; i < 28; i += 1) {
+    matches.push({
+      id: `pr-${i}`,
+      fighter_id: SUBJECT_FIGHTER_ID,
+      opponent_id: OPPONENT_FIGHTER_ID,
+      time: Date.UTC(nowMonth.getUTCFullYear(), nowMonth.getUTCMonth() - (27 - i), 10, 12),
+      win: i % 2 === 0,
+    } as Match);
+  }
+  return matches;
+}
+
 const ROSTER_SHIFT_BASELINE_FIGHTER_ID = 9;
 const ROSTER_SHIFT_RECENT_FIGHTER_ID = 20;
 
@@ -164,6 +184,7 @@ const FIXTURES: Record<InsightTemplateId, Match[]> = {
   secondaryPayoff: eightK,
   pocketCost: eightK,
   tierGap: eightK,
+  playRhythm: buildPlayRhythmFixture(),
 };
 
 const THIN_FIXTURES: ReadonlyArray<readonly [string, () => Match[]]> = [

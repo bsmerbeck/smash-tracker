@@ -27,6 +27,7 @@ export type InsightDoorSurface =
   | 'trends-rail'
   | 'trends-setting'
   | 'trends-mix'
+  | 'trends-rhythm'
   | 'matchups-chart'
   | 'matchups-card'
   | 'opponent-hub-trend'
@@ -660,6 +661,28 @@ function mixShiftVolumeFormFixture(): Match[] {
 }
 
 // ---------------------------------------------------------------------------
+// Play rhythm (playRhythm, Phase 41-03) — account scope, personal only.
+// ---------------------------------------------------------------------------
+
+/**
+ * One game every 31 days for 28 games: two dates under 31 days apart can share a UTC month, 31 or
+ * more cannot, so all 28 sit in distinct months (past `RHYTHM_MIN_MONTHS`) across a 28-month span.
+ * The recent 12-month window holds 12 of them. WR-04: every game from the 14th back is older than
+ * `FILLER_AGE_MS` (400 days), so those sit in the `#games` terminus's base but in no counted set,
+ * and an unresolved claim shows 28, never the counted 12.
+ */
+function playRhythmFixture(): Match[] {
+  const now = Date.now();
+  return Array.from({ length: 28 }, (_, i) =>
+    mk({
+      id: `rhythm-${i}`,
+      time: now - i * 31 * DAY,
+      win: i % 2 === 0,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tournaments tier read (tierGap, Phase 39.2-09) — account scope, personal only.
 // ---------------------------------------------------------------------------
 
@@ -798,6 +821,18 @@ const TRENDS_MIX_HOST: InsightDoorHost = {
 };
 
 /**
+ * `coachMountable: false` (38 D-04): the Play rhythm read is part of Trends' own-account row 4.
+ */
+const TRENDS_RHYTHM_HOST: InsightDoorHost = {
+  surface: 'trends-rhythm',
+  personalPath: '/trends',
+  coachMountable: false,
+  doorRegion: '[data-slot="trends-rhythm-read"]',
+  terminusAnchorId: 'games',
+  fixture: () => ({ matches: playRhythmFixture(), primaryFighterId: MARIO_ID }),
+};
+
+/**
  * `coachMountable: false` (38 D-04): the Tournaments page is personal-only, so
  * there is no coach or workspace mount of this host.
  */
@@ -841,6 +876,7 @@ export const INSIGHT_DOOR_HOSTS: Record<InsightTemplateId, readonly InsightDoorH
   mixShift: [TRENDS_MIX_HOST],
   volumeForm: [TRENDS_MIX_HOST],
   tierGap: [TOURNAMENTS_TIER_HOST],
+  playRhythm: [TRENDS_RHYTHM_HOST],
 };
 
 /** Context-carrying variants (plan 39.1-29 must_haves): a URL-seeded pairing differing from the persisted one for both Matchups hosts, and a `vs`+`context`-narrowed hub. Not part of the registry's per-template mapping — these are additional cases the reachability suite runs against the SAME templates above, with different `search`. */

@@ -583,16 +583,16 @@ describe('insight copy — no concatenation, no second person, no probability (I
 });
 
 /**
- * Plan 39.1-11 Task 2: every one of the eighteen closed-registry template
+ * Plan 39.1-11 Task 2: every one of the nineteen closed-registry template
  * ids has at least one key under `insights.<templateId>` in all six
  * locales. The template id UNION comes from the built `@smash-tracker/shared`
  * package's `INSIGHT_TEMPLATES` (plan 39.1-05's closed registry), never a
- * hand-written id list — a later plan adding a nineteenth template to the
+ * hand-written id list — a later plan adding a twentieth template to the
  * registry is automatically covered here without a line of new test code.
  */
 describe('insight namespace covers every registered template id (INS-03, Plan 39.1-11 Task 2)', () => {
-  it('the registry is closed at 18 templates (sanity: 17 since 39.1-05, plus tierGap in 39.2-09)', () => {
-    expect(INSIGHT_TEMPLATES.length).toBe(18);
+  it('the registry is closed at 19 templates (sanity: 17 since 39.1-05, plus tierGap in 39.2-09 and playRhythm in 41-03)', () => {
+    expect(INSIGHT_TEMPLATES.length).toBe(19);
   });
 
   for (const locale of REAL_LOCALES) {
@@ -671,6 +671,10 @@ describe('insight namespace covers every registered template id (INS-03, Plan 39
  *   `abstainedSmaller` (a cohort under the floor), `noTiers`; `evidence` and
  *   `estimatedNote_one|_other` are the card's own companion lines (the evidence
  *   sentence and the estimated-tier sub line), authored beside the verdicts.
+ * - `playRhythm.ts`: a FACT only (no direction word exists): `fact.compare` /
+ *   `fact.compareNoSeason` / `fact.recentOnly` verdicts, `locked` (`_one`/`_other`)
+ *   with its `lockedMeter`, and the card's two evidence lines (`evidence` with a
+ *   busiest month, `evidenceNoSeason` without).
  *
  * Both audit directions below are proven failing (reverted before commit,
  * recorded in this plan's SUMMARY): deleting an emitted key from a clone
@@ -730,6 +734,16 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
     'evidence',
     'estimatedNote_one',
     'estimatedNote_other',
+  ],
+  playRhythm: [
+    'fact.compare',
+    'fact.compareNoSeason',
+    'fact.recentOnly',
+    'evidence',
+    'evidenceNoSeason',
+    'locked_one',
+    'locked_other',
+    'lockedMeter',
   ],
 };
 

@@ -33,7 +33,7 @@ import {
  * thin-data result fails this suite automatically. Mirrors
  * `evidence/abstentionFixtures.test.ts`'s assertion style (plan 36-xx) and
  * `engine.test.ts`'s own FIXT-02 conformance describe block (plan 39.1-01),
- * generalized to every one of the 18 registered templates instead of the
+ * generalized to every one of the 19 registered templates instead of the
  * whole-registry aggregate.
  */
 
@@ -203,8 +203,8 @@ describe('assertion 1: closed set', () => {
     );
   });
 
-  it('MEASURES the registry length at 18 (recorded in the SUMMARY, not recalled)', () => {
-    expect(INSIGHT_TEMPLATES.length).toBe(18);
+  it('MEASURES the registry length at 19 (recorded in the SUMMARY, not recalled)', () => {
+    expect(INSIGHT_TEMPLATES.length).toBe(19);
   });
 });
 
@@ -233,7 +233,7 @@ describe('assertion 2/3: thin-data conformance and never an empty frame', () => 
     }
   }
 
-  it('every one of the 18 templates was actually invoked (coverage), proven by a per-template call tally', () => {
+  it('every one of the 19 templates was actually invoked (coverage), proven by a per-template call tally', () => {
     expect(invokedTemplateIds.size).toBe(INSIGHT_TEMPLATES.length);
   });
 

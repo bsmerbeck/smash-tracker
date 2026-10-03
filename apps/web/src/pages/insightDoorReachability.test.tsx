@@ -397,7 +397,7 @@ beforeEach(() => {
 
 describe('registry coverage', () => {
   it('INSIGHT_DOOR_HOSTS covers exactly the registry INSIGHT_TEMPLATES ids, every entry non-empty', () => {
-    expect(INSIGHT_TEMPLATES).toHaveLength(18);
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
     expect(new Set(Object.keys(INSIGHT_DOOR_HOSTS))).toEqual(
       new Set(INSIGHT_TEMPLATES.map((t) => t.id)),
     );

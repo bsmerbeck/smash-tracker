@@ -157,7 +157,7 @@ describe('trackRefForInsight (DD-09)', () => {
 
   it('covers every id in the closed template registry: the four DD-09 ids may track, all others are null', () => {
     const registryIds = INSIGHT_TEMPLATES.map((template) => template.id);
-    expect(registryIds).toHaveLength(18);
+    expect(registryIds).toHaveLength(19);
     expect(TRACKABLE_IDS.every((id) => registryIds.includes(id))).toBe(true);
 
     for (const templateId of registryIds) {

@@ -531,6 +531,61 @@ describe('TrendsPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('plan 41-03 (B1, DD-41-07): the PlayRhythm door lands on exactly N', () => {
+    /**
+     * One game every 31 days for 28 games (every game in its own UTC month, a 28-month span): the
+     * recent 12-month window counts 12 of them, so the door's count (12) stays below the page's
+     * total (28), and "resolves via the claim id" cannot pass on an unresolved-fallback "everything".
+     */
+    function playRhythmDoorFixture() {
+      const now = Date.now();
+      return Array.from({ length: 28 }, (_, i) =>
+        makeMatch({ id: `rhythm${i}`, time: now - i * 31 * 24 * 60 * 60 * 1000, win: i % 2 === 0 }),
+      );
+    }
+
+    it("clicking the PlayRhythm card's counted-games door mounts #games with exactly the counted games and states the PlayRhythm sentence", async () => {
+      listMatches.mockResolvedValue(playRhythmDoorFixture());
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+
+      const { container } = renderTrends();
+
+      await screen.findByText('Career timeline');
+      const readCell = await waitFor(() => {
+        const el = container.querySelector('[data-slot="trends-rhythm-read"]');
+        if (!el) throw new Error('row 4 read cell not mounted');
+        return el as HTMLElement;
+      });
+      const door = within(readCell).getByRole('link', { name: /See the \d+ games/ });
+      const expectedCount = Number((door.textContent ?? '').match(/\d+/)![0]);
+      expect(expectedCount).toBe(12);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+      expect(summary.textContent).toContain(String(expectedCount));
+      expect(summary.textContent).toMatch(/Play rhythm/);
+    });
+
+    it('the PlayRhythm card is mounted once, in row 4, and never inside the centre reads rail (RESEARCH correction 12)', async () => {
+      listMatches.mockResolvedValue(playRhythmDoorFixture());
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="trends-rhythm-read"]')).not.toBeNull(),
+      );
+      // The centre reads rail never carries the PlayRhythm card (RESEARCH correction 12).
+      const rail = container.querySelector('[data-slot="trends-reads-rail"]') as HTMLElement;
+      expect(rail.querySelector('[data-slot="play-rhythm-card"]')).toBeNull();
+      expect(container.querySelectorAll('[data-slot="play-rhythm-card"]')).toHaveLength(1);
+    });
+  });
+
   describe('plan 39.1-35: a timeline period drills to the Trends terminus', () => {
     it('writes from/to through the drill contract, keeps unrelated params, drops every other drill axis, lands on #games and mounts the terminus', async () => {
       listMatches.mockResolvedValue([
@@ -623,7 +678,8 @@ describe('TrendsPage', () => {
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+      // The loaded page adds row 4's read cell (plan 41-03); a one-game account's read is locked.
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4'].sort());
     });
 
     it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {

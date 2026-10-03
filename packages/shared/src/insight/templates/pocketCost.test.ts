@@ -129,8 +129,8 @@ describe('ROSTER_TEMPLATES closure (Task 2 completes the segment)', () => {
     ]);
   });
 
-  it('INSIGHT_TEMPLATES (the composed registry) has exactly 18 members', () => {
-    expect(INSIGHT_TEMPLATES).toHaveLength(18);
+  it('INSIGHT_TEMPLATES (the composed registry) has exactly 19 members', () => {
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
   });
 
   it('windowExpressible is set correctly across the whole roster segment', () => {

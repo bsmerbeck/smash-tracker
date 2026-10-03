@@ -29,7 +29,7 @@ import { INSIGHT_DOOR_HOSTS } from '@/test/insightDoorHosts';
 /**
  * Plan 39.1-19 Task 3, closed out by plan 39.1-22 (gap closure, orchestrator
  * Finding 8) — UI-SPEC §13.13/§13.13a's same-n door test, now covering ALL
- * 18 registered templates in ONE uniform branch (never a windowExpressible
+ * 19 registered templates in ONE uniform branch (never a windowExpressible
  * split): a counted-games door is present iff the built `Insight`'s
  * `countedMatchIds` is non-empty, `door.count === countedMatchIds.length`,
  * and the `FilteredMatchList` at the door's destination renders exactly that
@@ -94,7 +94,7 @@ function pairingScope(fighterId: number, opponentFighterId: number): InsightScop
   };
 }
 
-/** The plain 8k synthetic fixture — produces a non-empty, non-hidden result for most of the 18 templates directly. */
+/** The plain 8k synthetic fixture — produces a non-empty, non-hidden result for most of the 19 templates directly. */
 const eightK = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
 const SUBJECT_FIGHTER_ID = 8; // Fox — a default main in EIGHT_K_FIXTURE_OPTIONS.
 const OPPONENT_FIGHTER_ID = 2;
@@ -177,6 +177,22 @@ function buildTierGapFixture(): { matches: Match[]; scope: InsightScope } {
   };
 }
 
+/**
+ * A play-rhythm history past its 12-month lock: one game every 31 days for 28 games, so every game
+ * sits in its own UTC month (two dates under 31 days apart can share a month, 31 or more cannot),
+ * the span is 28 months, and the recent 12-month window holds 12 of the 28 games.
+ */
+function buildPlayRhythmFixture(): Match[] {
+  const DAY = 24 * HOUR;
+  return Array.from({ length: 28 }, (_, i) => ({
+    id: `pr-${i}`,
+    fighter_id: SUBJECT_FIGHTER_ID,
+    opponent_id: OPPONENT_FIGHTER_ID,
+    time: NOW_MS - i * 31 * DAY,
+    win: i % 2 === 0,
+  })) as Match[];
+}
+
 const ROSTER_SHIFT_BASELINE_FIGHTER_ID = 9;
 const ROSTER_SHIFT_RECENT_FIGHTER_ID = 20;
 
@@ -231,6 +247,7 @@ const FIXTURES: Record<InsightTemplateId, { matches: Match[]; scope: InsightScop
   secondaryPayoff: { matches: eightK, scope: accountScope() },
   pocketCost: { matches: eightK, scope: accountScope() },
   tierGap: buildTierGapFixture(),
+  playRhythm: { matches: buildPlayRhythmFixture(), scope: accountScope() },
 };
 
 function buildInsight(templateId: InsightTemplateId): Insight {
@@ -308,8 +325,8 @@ beforeEach(() => {
 });
 
 describe('registry coverage', () => {
-  it("FIXTURES covers exactly the registry's 18 templates", () => {
-    expect(INSIGHT_TEMPLATES).toHaveLength(18);
+  it("FIXTURES covers exactly the registry's 19 templates", () => {
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
   });
 

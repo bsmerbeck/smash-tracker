@@ -34,7 +34,8 @@ export type InsightTemplateId =
   | 'matchupOrPlayer'
   | 'bestMatchup'
   | 'worstMatchup'
-  | 'tierGap';
+  | 'tierGap'
+  | 'playRhythm';
 
 /** D-06: the three recent-window choices a page-level `HorizonSwitch` offers. There is no "last 10 games" option — at n = 10 almost no delta clears the noise test. */
 export type HorizonKey = 'last30' | 'lastEvent' | 'last90';

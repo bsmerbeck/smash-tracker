@@ -53,10 +53,10 @@ function build(scope: InsightScope, matches: Match[]) {
 }
 
 describe('tierGapTemplate', () => {
-  it('registers exactly once in COHORT_TEMPLATES and in the composed registry (18 templates)', () => {
+  it('registers exactly once in COHORT_TEMPLATES and in the composed registry (19 templates)', () => {
     expect(COHORT_TEMPLATES.filter((t) => t.id === 'tierGap')).toEqual([tierGapTemplate]);
     expect(INSIGHT_TEMPLATES.filter((t) => t.id === 'tierGap')).toHaveLength(1);
-    expect(INSIGHT_TEMPLATES).toHaveLength(18);
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
   });
 
   it('declares its DD-11 metadata: account scope, asserts a direction, not window-expressible', () => {

@@ -27,6 +27,7 @@ const KNOWN_TEMPLATE_IDS: readonly InsightTemplateId[] = [
   'bestMatchup',
   'worstMatchup',
   'tierGap',
+  'playRhythm',
 ];
 
 describe('ROSTER_TEMPLATES (plan 39.1-05 fills this segment)', () => {
