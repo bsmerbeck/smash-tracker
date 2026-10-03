@@ -186,7 +186,8 @@ export function RecentEvents({ matches, allMatches }: RecentEventsProps) {
           </>
         )}
       </CardHeader>
-      <CardContent>
+      {/* Plan 41-09 (SC4): the content root is the text-fit oracle's target (the `Card` keeps `data-slot="card"`). */}
+      <CardContent data-slot="recent-events">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">{t('trends.tournaments.loading')}</p>
         ) : allEntries.length === 0 ? (

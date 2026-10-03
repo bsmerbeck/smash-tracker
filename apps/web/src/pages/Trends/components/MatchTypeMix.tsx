@@ -133,7 +133,9 @@ export function MatchTypeMix({
       <CardHeader>
         <CardTitle>{t('trends.mix.title')}</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      {/* Plan 41-09 (SC4): the content root is the text-fit oracle's target. It replaces CardContent's own
+          slot name; the `Card` keeps `data-slot="card"`, which the stretch oracle selects. */}
+      <CardContent className="flex flex-col gap-4" data-slot="match-type-mix">
         {matches.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (

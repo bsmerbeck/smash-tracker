@@ -213,6 +213,46 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
 });
 
 /**
+ * Plan 41-09 (UI-SPEC §12.13, DD-41-14 widened): the GSP chart files are rebuilt on the chart kit, whose
+ * ink comes from the kit's own series token. Nothing under `pages/Gsp/components/` may reach for a
+ * chart palette token (`var(--chart-*)`), the brand red (`var(--primary)`), the chart.js palette
+ * (`chartColors`) or the red dataset helper (`redLineDataset`) as mark ink. This extends the brand-red
+ * guard above, which only names the two red palette members, to every palette and token route.
+ */
+const GSP_COMPONENT_DIR = 'apps/web/src/pages/Gsp/components/';
+const GSP_MARK_INK_PATTERN = /var\(--chart-|var\(--primary\)|\bchartColors\b|\bredLineDataset\b/;
+const GSP_COMPONENT_FILES = NON_TEST_FILES.filter((file) => file.startsWith(GSP_COMPONENT_DIR));
+
+describe('design fidelity — no palette or brand-red mark ink in the rebuilt GSP components (plan 41-09)', () => {
+  it('the pattern detects each forbidden ink reference and ignores a look-alike (non-vacuity)', () => {
+    for (const fixture of [
+      'stroke="var(--chart-1)"',
+      "style={{ fill: 'var(--primary)' }}",
+      'borderColor: chartColors.series,',
+      '...redLineDataset(),',
+    ]) {
+      expect(GSP_MARK_INK_PATTERN.test(fixture), fixture).toBe(true);
+    }
+    expect(GSP_MARK_INK_PATTERN.test('className="text-primary-foreground"')).toBe(false);
+    expect(GSP_MARK_INK_PATTERN.test('stroke="var(--series)"')).toBe(false);
+  });
+
+  it('the scanned set contains the four rebuilt GSP files', () => {
+    for (const file of ['GspCurve.tsx', 'GspVsGlicko.tsx', 'GainsAnalysis.tsx', 'GspHero.tsx']) {
+      expect(GSP_COMPONENT_FILES, file).toContain(`${GSP_COMPONENT_DIR}${file}`);
+    }
+    expect(GSP_COMPONENT_FILES.every((file) => !/\.test\.tsx?$/.test(file))).toBe(true);
+  });
+
+  it('no non-test GSP component uses var(--chart-*), var(--primary), chartColors or redLineDataset', () => {
+    const offenders = GSP_COMPONENT_FILES.filter((file) =>
+      GSP_MARK_INK_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
  * Plan 39.1-39 Task 2 (deviation, recorded in SUMMARY): the page-owned list
  * controls whose text is a kit label ("Show all N" / "Show fewer" /
  * "Show 50 more") take the one muted link tone in the same task as the kit,

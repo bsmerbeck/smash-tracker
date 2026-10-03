@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import fs from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Match } from '@smash-tracker/shared';
 import { generateSyntheticMatches } from '@smash-tracker/shared/testUtils';
@@ -41,10 +42,10 @@ import {
  * the Opponents rail and hub cards) is covered by its own describe block
  * below, sharing the generic comparison helpers at the top of the file.
  *
- * Trends, Tournaments and Scout are deliberately NOT covered — 38 D-04/
- * UI-SPEC §16 name them own-account only; the non-vacuity canary at the
- * bottom of this file asserts the surface list is exactly the five named
- * ones and that those three page names never appear in it.
+ * Trends, Tournaments, Scout and (Phase 41 D2) GSP are deliberately NOT
+ * covered — 38 D-04/UI-SPEC §16 name them own-account only; the non-vacuity
+ * canary below asserts the surface list is exactly the five named ones and
+ * that those four page names never appear in it.
  */
 
 vi.mock('firebase/auth', async () => {
@@ -470,7 +471,7 @@ const COACH_MOUNTED_SURFACES = [
   'Opponents rail and hub cards',
 ] as const;
 
-const OWN_ACCOUNT_ONLY_PAGES = ['Trends', 'Tournaments', 'Scout'] as const;
+const OWN_ACCOUNT_ONLY_PAGES = ['Trends', 'Tournaments', 'Scout', 'GSP'] as const;
 
 beforeEach(() => {
   resetAuthMock();
@@ -518,10 +519,57 @@ describe('Coach-mounted surface list (non-vacuity canary, T-39.1-21-03)', () => 
     ]);
   });
 
-  it('never includes an own-account-only page (Trends, Tournaments, Scout — 38 D-04)', () => {
+  it('never includes an own-account-only page (Trends, Tournaments, Scout — 38 D-04; GSP — Phase 41 D2)', () => {
+    expect([...OWN_ACCOUNT_ONLY_PAGES]).toContain('GSP');
     for (const ownAccountOnly of OWN_ACCOUNT_ONLY_PAGES) {
       expect((COACH_MOUNTED_SURFACES as readonly string[]).includes(ownAccountOnly)).toBe(false);
     }
+  });
+});
+
+/**
+ * T-41-24 / Phase 41 D2 (UI-SPEC 12.9, 38 D-04, 39.2 D-17): GSP is an own-account-only page. The coach and
+ * the client-owned workspace families are real route trees in `AppRouter.tsx`; asserting the router source
+ * (the file's own source-assertion style) is the cheapest check that cannot be satisfied by a stub: the
+ * ONLY `<GspPage` mount is the personal `/gsp` route, and both subject trees' `gsp` path is a redirect.
+ */
+describe('GSP is own-account only (T-41-24, Phase 41 D2)', () => {
+  const router = fs.readFileSync(
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../routes/AppRouter.tsx'),
+    'utf8',
+  );
+  const SUBJECT_GSP_REDIRECT =
+    /<Route path="gsp" element=\{<Navigate to="\.\.\/overview" replace \/>\} \/>/g;
+
+  it('the router source is the real one (non-vacuity): it mounts GspPage once, on the personal /gsp route', () => {
+    expect(router).toContain('<TrendsPage />');
+    const mounts = router.match(/<GspPage\b/g) ?? [];
+    expect(mounts).toHaveLength(1);
+    const personal = router.indexOf('path="/gsp"');
+    expect(personal).toBeGreaterThan(-1);
+    expect(router.indexOf('<GspPage', personal) - personal).toBeLessThan(200);
+  });
+
+  it('the coach /coach/:clientId tree and the /workspace/:tenantId tree each redirect gsp to the overview and mount no GspPage', () => {
+    // Every `path="gsp"` route in the file is the redirect, exactly once per subject tree (coach, workspace).
+    expect(router.match(/path="gsp"/g) ?? []).toHaveLength(2);
+    expect(router.match(SUBJECT_GSP_REDIRECT) ?? []).toHaveLength(2);
+    const coachStart = router.indexOf('path="/coach/:clientId"');
+    const workspaceStart = router.indexOf('path="/workspace/:tenantId"');
+    expect(coachStart).toBeGreaterThan(-1);
+    expect(workspaceStart).toBeGreaterThan(coachStart);
+    const coachTree = router.slice(coachStart, workspaceStart);
+    expect(coachTree).not.toMatch(/<GspPage\b/);
+    expect(coachTree.match(SUBJECT_GSP_REDIRECT) ?? []).toHaveLength(1);
+    const workspaceTree = router.slice(workspaceStart, router.indexOf('/auth/startgg'));
+    expect(workspaceTree).not.toMatch(/<GspPage\b/);
+    expect(workspaceTree.match(SUBJECT_GSP_REDIRECT) ?? []).toHaveLength(1);
+  });
+
+  it('the redirect matcher detects a coach route that mounts the page (non-vacuity)', () => {
+    const broken = '<Route path="gsp" element={<GspPage />} />';
+    expect(new RegExp(SUBJECT_GSP_REDIRECT.source).test(broken)).toBe(false);
+    expect(/<GspPage\b/.test(broken)).toBe(true);
   });
 });
 

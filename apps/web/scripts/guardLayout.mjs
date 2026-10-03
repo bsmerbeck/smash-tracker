@@ -204,6 +204,19 @@ const PAIRING_HERO_CARD_CEILINGS = [
   },
 ];
 
+/**
+ * Plan 41-09 (SC4, TRND-03): the Trends text-fit targets declared at the two desktop viewports — the career
+ * timeline (Rating Curve + Monthly Performance), Match-Type Mix and Recent Events (the Tournaments card)
+ * content roots, and the Play rhythm row (the read and the heat cells).
+ */
+export const TRENDS_1440P_FIT_SELECTORS = [
+  '[data-slot="career-timeline"]',
+  '[data-slot="match-type-mix"]',
+  '[data-slot="recent-events"]',
+  '[data-slot="trends-rhythm-chart"]',
+  '[data-slot="trends-rhythm-read"]',
+];
+
 export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'stretched-card-fixture',
@@ -516,8 +529,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       { first: '[data-slot="trends-reads-rail"]', then: '[data-slot="career-timeline"]' },
     ],
     // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
+    // Plan 41-09 (SC4, TRND-03): at 2560x1440 and 1440x900 the career timeline, the Match-Type Mix and
+    // Recent Events cards content roots and the Play rhythm row (read + heat) must also fit their text,
+    // stretch nothing and add no scroll beyond the viewport budgets.
     fitTargets: [
       { selector: '[data-slot="sessions-and-tilt"]', viewports: ['1440x900', '390x844'] },
+      ...TRENDS_1440P_FIT_SELECTORS.map((selector) => ({
+        selector,
+        viewports: ['2560x1440', '1440x900'],
+      })),
     ],
   },
   {
