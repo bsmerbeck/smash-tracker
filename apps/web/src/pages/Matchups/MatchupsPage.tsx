@@ -659,6 +659,9 @@ export function MatchupsPage() {
                         fighter: localizedFighterName(effectiveFighter.id, t),
                         opponent: localizedFighterName(effectiveOpponent.id, t),
                       })}
+                      // Below 640px the toggle is icon-only so the hero identity row never
+                      // wraps (sketch-deep 390 scroll budget); the aria-label keeps its name.
+                      className="max-sm:px-2 max-sm:[&>span]:sr-only"
                     />
                   }
                 />
