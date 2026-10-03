@@ -3625,7 +3625,7 @@
     },
     "playRhythm": {
       "fact": {
-        "compare": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before; busiest month: {{month}}.",
+        "compare": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before; busiest: {{month}}.",
         "compareNoSeason": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before.",
         "recentOnly": "Play rhythm — {{recent, grouped}} games across {{recentMonths}} of the last 12 months."
       },

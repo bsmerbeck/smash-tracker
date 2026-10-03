@@ -125,7 +125,7 @@ describe('PlayRhythmCard', () => {
       const prior = insight.copy.values.prior;
       expect(
         screen.getByText(
-          `Play rhythm — ${recent} games in the last 12 months vs ${prior} the 12 before; busiest month: March.`,
+          `Play rhythm — ${recent} games in the last 12 months vs ${prior} the 12 before; busiest: March.`,
         ),
       ).toBeInTheDocument();
       expect(screen.getByText('Fact')).toBeInTheDocument();
@@ -190,6 +190,87 @@ describe('PlayRhythmCard', () => {
       expect(screen.queryByRole('link')).toBeNull();
       expect(screen.queryByRole('button')).toBeNull();
     });
+  });
+
+  describe('six locales through the real locale files (E6 long-text, UI-SPEC 8.2 verdict budget)', () => {
+    const LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
+    /** The verdict budget (UI-SPEC 8.2): at most 90 characters in en, 140 in de, with grouped four-digit counts. */
+    const VERDICT_BUDGET: Partial<Record<(typeof LOCALES)[number], number>> = { en: 90, de: 140 };
+
+    /** The busiest-month state with four-digit grouped counts: 1,234 recent games vs 1,305 the 12 before. */
+    function heavyCompareInsight(): Insight {
+      const base = [
+        ...monthlyGames([2024, 1], [2026, 6]),
+        ...extraGames(2024, 3, 5),
+        ...extraGames(2025, 3, 5),
+        ...extraGames(2026, 3, 5),
+      ];
+      const heavy = (year: number, month: number, count: number) =>
+        Array.from({ length: count }, (_, i) =>
+          gameIn(year, month, 11 + (i % 15), 1 + Math.floor(i / 15)),
+        );
+      // Recent window (2025-06-15 .. 2026-06-15): ~1,200 extra games in March 2026; prior: ~1,300 in March 2025.
+      return insightFor([...base, ...heavy(2026, 3, 1200), ...heavy(2025, 3, 1300)]);
+    }
+
+    it('the heavy fixture really prints grouped four-digit counts and a busiest month', () => {
+      const insight = heavyCompareInsight();
+      expect(insight.copy.key).toBe('insights.playRhythm.fact.compare');
+      expect(Number(insight.copy.values.recent)).toBeGreaterThanOrEqual(1000);
+      expect(Number(insight.copy.values.prior)).toBeGreaterThanOrEqual(1000);
+    });
+
+    for (const locale of LOCALES) {
+      describe(locale, () => {
+        for (const { name, insight } of STATE_FIXTURES) {
+          it(`${name}: no placeholder survives and no raw month number stands where the month name belongs`, async () => {
+            await i18n.changeLanguage(locale);
+            const built = insight();
+            const { container } = renderCard(built);
+            const text = container.textContent ?? '';
+            expect(text).not.toContain('{{');
+            expect(text).not.toContain('}}');
+            expect(text.trim()).not.toBe('');
+            const verdict =
+              container.querySelector('[data-slot="insight-card-verdict"]')?.textContent ??
+              container.querySelector('[data-slot="unlocks-next-meters"] p')?.textContent ??
+              '';
+            expect(verdict.trim(), `${locale} ${name} verdict`).not.toBe('');
+            if (typeof built.copy.values.month === 'number') {
+              const month = new Intl.DateTimeFormat(locale, {
+                month: 'long',
+                timeZone: 'UTC',
+              }).format(Date.UTC(2000, built.copy.values.month - 1, 15));
+              // Only `fact.compare` carries `{{month}}` in its sentence; the evidence line names it whenever stated.
+              if (built.copy.key === 'insights.playRhythm.fact.compare') {
+                expect(verdict, `${locale} ${name} names the month`).toContain(month);
+              }
+              expect(text, `${locale} ${name} evidence names the month`).toContain(month);
+              // The share is the locale's percent (not a bare 0-1 fraction).
+              expect(text).not.toMatch(/\b0\.\d{3,}\b/);
+            }
+          });
+        }
+
+        it('heavy compare: grouped counts, the month by name, and the verdict stays inside its budget', async () => {
+          await i18n.changeLanguage(locale);
+          const insight = heavyCompareInsight();
+          const { container } = renderCard(insight);
+          const verdict = container.querySelector(
+            '[data-slot="insight-card-verdict"]',
+          )!.textContent!;
+          const grouped = new Intl.NumberFormat(locale).format(Number(insight.copy.values.recent));
+          expect(verdict).toContain(grouped);
+          const budget = VERDICT_BUDGET[locale];
+          if (budget !== undefined) {
+            expect(
+              Array.from(verdict).length,
+              `${locale} verdict "${verdict}"`,
+            ).toBeLessThanOrEqual(budget);
+          }
+        });
+      });
+    }
   });
 
   it('a template exception inside the card removes the card, not the page', () => {

@@ -68,14 +68,18 @@ const TRENDS_LEFT_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-3';
 const TRENDS_READS_PLACEMENT = 'lg:col-start-5 lg:row-start-3';
 const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
 /**
- * Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm". DOM order is read, then heat (a phone
- * reads the insight before the chart). At 1024-1279 the read spans 12 above a 12-col heat (row 4, then
- * row 5); from 1280 the heat is 8 cols at the left and the read 4 cols at the right, both in row 4.
+ * Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm", its own `PageGrid` UNDER the rails grid.
+ * Row 3's three rails are content-hugging and ragged by design (`items-start`, never stretched), so a row
+ * placed inside that same grid would sit below cells that end up to ~280px short of it - a dead gap the
+ * layout oracle rightly flags. A section of its own (like the `#games` terminus that follows it) keeps
+ * row 3 a self-contained rail row and row 4 a balanced 8 + 4 pair. DOM order is read, then heat (a phone
+ * reads the insight before the chart). At 1024-1279 the read spans 12 above a 12-col heat; from 1280 the
+ * heat is 8 cols at the left and the read 4 cols at the right, both in this grid's first row.
  */
 const TRENDS_RHYTHM_READ_PLACEMENT =
-  'lg:col-span-12 lg:col-start-1 lg:row-start-4 xl:col-span-4 xl:col-start-9';
+  'lg:col-span-12 lg:col-start-1 lg:row-start-1 xl:col-span-4 xl:col-start-9';
 const TRENDS_RHYTHM_CHART_PLACEMENT =
-  'lg:col-span-12 lg:col-start-1 lg:row-start-5 xl:col-span-8 xl:row-start-4';
+  'lg:col-span-12 lg:col-start-1 lg:row-start-2 xl:col-span-8 xl:row-start-1';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -346,6 +350,8 @@ export function TrendsPage() {
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
             </GridCell>
+          </PageGrid>
+          <PageGrid>
             <GridCell span={4} className={TRENDS_RHYTHM_READ_PLACEMENT}>
               <CardSkeleton variant="insight" statusLabel={t('trends.loading')} />
             </GridCell>
@@ -384,16 +390,16 @@ export function TrendsPage() {
     cardInsights.playRhythm != null &&
     !dismissedIds.includes(cardInsights.playRhythm.id);
 
+  const refetchingClass = cn(
+    isRefetching && 'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+  );
+  const showRhythmGrid = matches.length > 0 || hasDrillAxis;
+
   return (
     <PageShell filterRow={filterRow}>
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <PageGrid
-        className={cn(
-          isRefetching &&
-            'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
-        )}
-      >
+      <PageGrid className={refetchingClass}>
         {/* Plan 39.1-38 (UI-SPEC §8.2 "insight before chart"): DOM order is
             the phone reading order — stat row, reads, timeline, then the two
             rail stacks; lg placement keeps the desktop composition. */}
@@ -438,45 +444,49 @@ export function TrendsPage() {
             volumeFormInsight={cardInsights.volumeForm}
           />
         </GridCell>
-
-        {showPlayRhythm && cardInsights.playRhythm && (
-          <GridCell span={4} slot="trends-rhythm-read" className={TRENDS_RHYTHM_READ_PLACEMENT}>
-            <PlayRhythmCard
-              insight={cardInsights.playRhythm}
-              onDismiss={() => dismiss(cardInsights.playRhythm!.id)}
-            />
-          </GridCell>
-        )}
-
-        {/* Plan 41-03: the heat follows the read in the DOM (a phone reads the insight first); the
-            placement constants put it beside the read from 1280 and under it from 1024. */}
-        {matches.length > 0 && (
-          <GridCell span={8} slot="trends-rhythm-chart" className={TRENDS_RHYTHM_CHART_PLACEMENT}>
-            <PlayRhythmHeat matches={matches} onSelectMonth={handleTimelineDrill} />
-          </GridCell>
-        )}
-
-        {hasDrillAxis && (
-          <GridCell span={12}>
-            <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
-              <CardHeader>
-                <CardTitle>{t('matchups.results')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <FilteredMatchList
-                  matches={sortedMatches}
-                  axes={terminusAxes}
-                  eventKeyForMatch={stripSetKeysForMatch}
-                  resolveClaim={resolveClaimForTerminus}
-                  claimSummary={claimSummary}
-                  onClearFilters={handleClearFilters}
-                  showDelete
-                />
-              </CardContent>
-            </Card>
-          </GridCell>
-        )}
       </PageGrid>
+
+      {showRhythmGrid && (
+        <PageGrid className={refetchingClass}>
+          {showPlayRhythm && cardInsights.playRhythm && (
+            <GridCell span={4} slot="trends-rhythm-read" className={TRENDS_RHYTHM_READ_PLACEMENT}>
+              <PlayRhythmCard
+                insight={cardInsights.playRhythm}
+                onDismiss={() => dismiss(cardInsights.playRhythm!.id)}
+              />
+            </GridCell>
+          )}
+
+          {/* Plan 41-03: the heat follows the read in the DOM (a phone reads the insight first); the
+            placement constants put it beside the read from 1280 and under it from 1024. */}
+          {matches.length > 0 && (
+            <GridCell span={8} slot="trends-rhythm-chart" className={TRENDS_RHYTHM_CHART_PLACEMENT}>
+              <PlayRhythmHeat matches={matches} onSelectMonth={handleTimelineDrill} />
+            </GridCell>
+          )}
+
+          {hasDrillAxis && (
+            <GridCell span={12}>
+              <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
+                <CardHeader>
+                  <CardTitle>{t('matchups.results')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FilteredMatchList
+                    matches={sortedMatches}
+                    axes={terminusAxes}
+                    eventKeyForMatch={stripSetKeysForMatch}
+                    resolveClaim={resolveClaimForTerminus}
+                    claimSummary={claimSummary}
+                    onClearFilters={handleClearFilters}
+                    showDelete
+                  />
+                </CardContent>
+              </Card>
+            </GridCell>
+          )}
+        </PageGrid>
+      )}
     </PageShell>
   );
 }

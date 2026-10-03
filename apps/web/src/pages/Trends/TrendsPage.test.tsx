@@ -784,28 +784,24 @@ describe('TrendsPage', () => {
       const { container } = renderTrends();
       const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
       const cells = Array.from(grid.children) as HTMLElement[];
-      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual([
-        '12',
-        '4',
-        '12',
-        '4',
-        '4',
-        '4',
-        '8',
-      ]);
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['12', '4', '12', '4', '4']);
       expect(cls(cells[1]!)).toEqual(expect.arrayContaining(['lg:col-start-5', 'lg:row-start-3']));
       expect(cls(cells[2]!)).toContain('lg:row-start-2');
       expect(cls(cells[3]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']));
       expect(cls(cells[4]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']));
-      // Plan 41-03: row 4's insight + chart skeleton pair carries the SAME placement constants as the loaded cells.
-      expect(cls(cells[5]!)).toEqual(
-        expect.arrayContaining(['lg:row-start-4', 'xl:col-span-4', 'xl:col-start-9']),
+      // Plan 41-03: row 4's insight + chart skeleton pair is its own grid under the rails and carries the
+      // SAME placement constants as the loaded cells.
+      const rhythmGrid = container.querySelectorAll('[data-slot="page-grid"]')[1] as HTMLElement;
+      const rhythm = Array.from(rhythmGrid.children) as HTMLElement[];
+      expect(rhythm.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8']);
+      expect(cls(rhythm[0]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-1', 'xl:col-span-4', 'xl:col-start-9']),
       );
-      expect(cls(cells[6]!)).toEqual(
-        expect.arrayContaining(['lg:row-start-5', 'xl:col-span-8', 'xl:row-start-4']),
+      expect(cls(rhythm[1]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-2', 'xl:col-span-8', 'xl:row-start-1']),
       );
-      expect(cells[5]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
-      expect(cells[6]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+      expect(rhythm[0]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+      expect(rhythm[1]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
     });
   });
 
@@ -825,39 +821,40 @@ describe('TrendsPage', () => {
       ];
     }
 
-    it('mounts an 8-col heat cell and a 4-col read cell after the right stack, read before heat in the DOM', async () => {
+    it('mounts the read and the heat as their own 4 + 8 grid under the rails, read before heat in the DOM', async () => {
       listMatches.mockResolvedValue(twoGames());
       const { container } = renderTrends();
       await screen.findByText('Career timeline');
-      const grid = container.querySelector('[data-slot="page-grid"]') as HTMLElement;
-      const cells = Array.from(grid.children) as HTMLElement[];
-      const read = cells.findIndex((c) => c.getAttribute('data-slot') === 'trends-rhythm-read');
-      const chart = cells.findIndex((c) => c.getAttribute('data-slot') === 'trends-rhythm-chart');
-      expect(read).toBeGreaterThan(4);
-      expect(chart).toBe(read + 1);
-      expect(cells[read]!.getAttribute('data-span')).toBe('4');
-      expect(cells[chart]!.getAttribute('data-span')).toBe('8');
-      // 1280+: heat 8 left / read 4 right in row 4; 1024-1279: read above a 12-col heat; no CSS order.
-      expect(cls(cells[read]!)).toEqual(
+      const grids = container.querySelectorAll('[data-slot="page-grid"]');
+      expect(grids).toHaveLength(2);
+      // The rails grid holds rows 1-3 only: five cells, no Play rhythm cell.
+      expect(grids[0]!.children).toHaveLength(5);
+      expect(grids[0]!.querySelector('[data-slot="trends-rhythm-read"]')).toBeNull();
+      const cells = Array.from(grids[1]!.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-slot'))).toEqual([
+        'trends-rhythm-read',
+        'trends-rhythm-chart',
+      ]);
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8']);
+      // 1280+: heat 8 left / read 4 right in one row; 1024-1279: read above a 12-col heat; no CSS order.
+      expect(cls(cells[0]!)).toEqual(
         expect.arrayContaining([
           'lg:col-span-12',
-          'lg:row-start-4',
+          'lg:row-start-1',
           'xl:col-span-4',
           'xl:col-start-9',
         ]),
       );
-      expect(cls(cells[chart]!)).toEqual(
+      expect(cls(cells[1]!)).toEqual(
         expect.arrayContaining([
           'lg:col-span-12',
-          'lg:row-start-5',
+          'lg:row-start-2',
           'xl:col-span-8',
-          'xl:row-start-4',
+          'xl:row-start-1',
         ]),
       );
-      for (const cell of [cells[read]!, cells[chart]!]) {
-        expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
-      }
-      expect(cells[chart]!.textContent).toContain('Play rhythm');
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+      expect(cells[1]!.textContent).toContain('Play rhythm');
     });
 
     it('clicking a heat month drills #games to exactly that UTC month (from/to)', async () => {
