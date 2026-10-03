@@ -243,7 +243,7 @@ function buildFilterSummaryText(
     parts.push(stagesById.get(axes.stageId)?.name ?? t('common.unknown'));
   }
   if (axes.eventKey != null) {
-    parts.push(describeEventAxisGames(eventGames, t) ?? t('common.unknown'));
+    parts.push(describeEventAxisGames(eventGames, t, locale) ?? t('common.unknown'));
   }
   if (axes.from != null || axes.to != null) {
     // I18N-01 (41-01): the span prints in the app language through the one formatter module — the bare `toLocaleDateString()` it replaces used whatever the OS/browser default was.

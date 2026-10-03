@@ -1,11 +1,11 @@
 import type { TFunction } from 'i18next';
 import { parseExternalId, trimmedEventKey, type Match } from '@smash-tracker/shared';
+import { formatDate, formatDaySpan } from '@/lib/format';
 
-function formatDateRange(games: Match[]): string {
+/** I18N-01: the span prints in the app language through the one formatter module (one date when both ends share a day). */
+function formatDateRange(games: Match[], locale: string): string {
   const times = games.map((m) => m.time);
-  const from = new Date(Math.min(...times)).toLocaleDateString();
-  const to = new Date(Math.max(...times)).toLocaleDateString();
-  return from !== to ? `${from} – ${to}` : from;
+  return formatDaySpan(Math.min(...times), Math.max(...times), locale);
 }
 
 /**
@@ -28,7 +28,11 @@ function formatDateRange(games: Match[]): string {
  * `undefined` for an empty set (a stale key) — the caller then shows the
  * localized "unknown" rather than the raw key.
  */
-export function describeEventAxisGames(games: Match[], t: TFunction): string | undefined {
+export function describeEventAxisGames(
+  games: Match[],
+  t: TFunction,
+  locale: string,
+): string | undefined {
   const first = games[0];
   if (!first) return undefined;
   const opponent = first.opponent?.trim() || t('common.unknown');
@@ -36,7 +40,7 @@ export function describeEventAxisGames(games: Match[], t: TFunction): string | u
   if (games.length === 1) {
     return t('shared.filteredMatchList.eventSummary.game', {
       opponent,
-      date: new Date(first.time).toLocaleDateString(),
+      date: formatDate(first.time, locale),
     });
   }
 
@@ -54,5 +58,5 @@ export function describeEventAxisGames(games: Match[], t: TFunction): string | u
     return onlyName;
   }
 
-  return formatDateRange(games);
+  return formatDateRange(games, locale);
 }
