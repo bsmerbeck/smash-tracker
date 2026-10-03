@@ -35,3 +35,8 @@ export * from './templates/lastEventRecap.js';
 // re-exported `templates/rosterCore.js` (only the closed `INSIGHT_TEMPLATES` array from
 // `templates/registry.js` was reachable). Added here as a Rule 3 blocking-issue fix.
 export * from './templates/rosterCore.js';
+// Plan 41-01 (interface-first): the value-series, activity-heat and timeline-event contracts —
+// 41-02 / 41-03 / 41-04 add their builders inside these files, so this barrel is closed for the phase.
+export * from './valueSeries.js';
+export * from './activityHeat.js';
+export * from './timelineEvents.js';
