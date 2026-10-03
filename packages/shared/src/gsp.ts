@@ -233,11 +233,62 @@ export interface GspGainStats {
   biggestDrop: number | null;
   /** Chronological per-win gains (for sparking/bar-charting the shrink over time). */
   perWinGains: number[];
+  /** The GSP level each win started from, parallel to `perWinGains` (the x-value of each gain). */
+  perWinLevels: number[];
+  /** How many steps the "last 20" figures cover: `min(20, steps)`. */
+  recentStepCount: number;
+  /** Average gain per win by the GSP band the win started in — ascending, occupied bands only. */
+  gainsByBand: GspGainBand[];
   /** Whether per-win gains are trending down (expected as GSP climbs), up, or flat. */
   gainTrend: 'shrinking' | 'growing' | 'flat';
 }
 
+/** One GSP band of `GspGainStats.gainsByBand`: wins that started in `[fromGsp, toGsp)`. */
+export interface GspGainBand {
+  fromGsp: number;
+  toGsp: number;
+  wins: number;
+  avgGain: number;
+}
+
+/** Candidate band widths, narrowest first; the first one that fits `GSP_BAND_MAX_BANDS` bands wins. */
+export const GSP_BAND_WIDTH_LADDER = [250_000, 500_000, 1_000_000, 2_000_000, 5_000_000] as const;
+/** The most bands `gainsByBand` ever lists (the widest ladder width is the fallback past it). */
+export const GSP_BAND_MAX_BANDS = 12;
+
 const LAST_N = 20;
+
+/**
+ * Bins win-steps by the GSP level they started from. The width is the first
+ * ladder entry whose span (lowest to highest win level) needs at most
+ * `GSP_BAND_MAX_BANDS` bands; a level exactly on an edge belongs to the upper
+ * band (`floor(level / width)`); only occupied bands are listed, ascending.
+ */
+function bandWins(levels: number[], gains: number[]): GspGainBand[] {
+  if (levels.length === 0) return [];
+  const lowest = Math.min(...levels);
+  const highest = Math.max(...levels);
+  const width =
+    GSP_BAND_WIDTH_LADDER.find(
+      (w) => Math.floor(highest / w) - Math.floor(lowest / w) + 1 <= GSP_BAND_MAX_BANDS,
+    ) ?? GSP_BAND_WIDTH_LADDER[GSP_BAND_WIDTH_LADDER.length - 1]!;
+
+  const byIndex = new Map<number, number[]>();
+  levels.forEach((level, i) => {
+    const index = Math.floor(level / width);
+    const bucket = byIndex.get(index);
+    if (bucket) bucket.push(gains[i]!);
+    else byIndex.set(index, [gains[i]!]);
+  });
+  return [...byIndex.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, bucket]) => ({
+      fromGsp: index * width,
+      toGsp: (index + 1) * width,
+      wins: bucket.length,
+      avgGain: bucket.reduce((sum, v) => sum + v, 0) / bucket.length,
+    }));
+}
 
 /** Derives win/loss gain statistics from a chronological `GspPoint[]` (see `getGspSeries`). */
 export function getGspGainStats(series: GspPoint[]): GspGainStats {
@@ -259,6 +310,12 @@ export function getGspGainStats(series: GspPoint[]): GspGainStats {
     biggestGain: winGains.length > 0 ? Math.max(...winGains) : null,
     biggestDrop: lossDrops.length > 0 ? Math.max(...lossDrops) : null,
     perWinGains: winGains,
+    perWinLevels: winSteps.map((s) => s.fromGsp),
+    recentStepCount: last20Steps.length,
+    gainsByBand: bandWins(
+      winSteps.map((s) => s.fromGsp),
+      winGains,
+    ),
     gainTrend: gainTrend(winGains),
   };
 }

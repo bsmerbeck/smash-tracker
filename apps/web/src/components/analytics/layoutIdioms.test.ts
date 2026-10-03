@@ -98,10 +98,7 @@ const STAT_COMPONENT_NAME_PATTERN = /\bfunction\s+(Stat|HeroCard|StatBlock|Setti
  * not shrink-only like the array below, but still anti-rot checked (an
  * entry that stops declaring the pattern is stale).
  */
-const STAT_COMPONENT_GSP_ALLOWLIST = [
-  'apps/web/src/pages/Gsp/components/GspHero.tsx',
-  'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
-];
+const STAT_COMPONENT_GSP_ALLOWLIST = ['apps/web/src/pages/Gsp/components/GspHero.tsx'];
 
 /**
  * Measured by a real grep at plan-execution time (2026-09-20). Shrink-only:

@@ -75,11 +75,12 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * `MonthlyPerformance.tsx` were retired by plan 39.1-34 (owner decision
  * 2026-09-25 — the Trends career timeline, UI-SPEC §12.1, replaces both),
  * removed here and from `eslint.config.js`'s ignores in the same commit.
+ * Four entries as of plan 41-05 — GainsAnalysis rebuilt on StatRow + ComparisonBars
+ * (chart.js retired from it), removed here and from the eslint ignores in the same commit.
  */
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
   'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-  'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
   'apps/web/src/pages/Gsp/components/GspCurve.tsx',
   'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
 ];
