@@ -207,16 +207,23 @@ export function GspCurve({
         />
       }
       footer={
-        <div className="mt-4 flex flex-col gap-1 text-xs text-muted-foreground">
-          <p>
+        // The caption and the click hint share one paragraph: the hint follows the caption's last line
+        // instead of opening a third line (plan 41-07 reclaims the height the vs-Glicko multiples add).
+        <p className="mt-4 text-xs text-muted-foreground">
+          <span>
             {view === 'mmr'
               ? t('gsp.curve.mmrCaption', { mmr: GSP_MODEL.ELITE_MMR })
               : t('gsp.curve.gspCaption')}
-          </p>
+          </span>
           {hintShown && (
-            <p>{grainIsReading ? t('gsp.curve.clickHint') : t('gsp.curve.clickHintPeriod')}</p>
+            <>
+              {' '}
+              <span>
+                {grainIsReading ? t('gsp.curve.clickHint') : t('gsp.curve.clickHintPeriod')}
+              </span>
+            </>
           )}
-        </div>
+        </p>
       }
     >
       <TrendLine

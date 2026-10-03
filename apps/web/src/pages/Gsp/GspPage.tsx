@@ -38,7 +38,7 @@ import { QuickLogger } from './components/QuickLogger';
 import { GainsAnalysis } from './components/GainsAnalysis';
 import { GspTiers } from './components/GspTiers';
 import { GspVsGlicko } from './components/GspVsGlicko';
-import { GSP_VS_GLICKO_MIN_POINTS } from './lib/gspVsGlicko';
+import { shouldShowGspVsGlicko } from './lib/gspVsGlicko';
 
 /**
  * Plan 41-05 (D3, DD-41-11, UI-SPEC 6.2): the last row pairs the vs-Glicko card (8 cols, left) with the
@@ -131,8 +131,9 @@ export function GspPage() {
   );
   const series = useMemo(() => gspSeriesFromEntries(entries), [entries]);
 
-  // The vs-Glicko card's own hidden-state gate needs the account's rating periods; counted once here (a
-  // hook, so before the early returns) so the Rating-model note can span the whole row when the card is not drawn.
+  // The vs-Glicko card's hidden-state gate needs the account's rating periods; counted once here (a hook, so
+  // before the early returns) and read through the same `shouldShowGspVsGlicko` helper the card itself uses, so
+  // the Rating-model note spans the whole row exactly when the card is not drawn.
   const ratingPeriodCount = useMemo(() => computeRatingHistory(matches).periods.length, [matches]);
 
   const isLoading = matchesLoading || readingsLoading || fightersLoading || settingsLoading;
@@ -189,8 +190,7 @@ export function GspPage() {
   // Plan 41-05: a background refetch (data already loaded once) holds the previous frame at reduced
   // opacity instead of flashing the loading line (the Trends / Dashboard precedent).
   const isRefetching = matchesFetching && !matchesLoading;
-  const showVsGlicko =
-    series.length >= GSP_VS_GLICKO_MIN_POINTS && ratingPeriodCount >= GSP_VS_GLICKO_MIN_POINTS;
+  const showVsGlicko = shouldShowGspVsGlicko(series.length, ratingPeriodCount);
 
   // data-slot="gsp-body" (plan 39.1-39): a `display: contents` marker that exists only once every data hook
   // has settled and a fighter is resolved - the layout oracle's and capture tool's page-loaded marker.
@@ -257,7 +257,13 @@ export function GspPage() {
             </GridCell>
             {showVsGlicko && (
               <GridCell span={8} slot="gsp-vs-glicko" className={GSP_VS_GLICKO_PLACEMENT}>
-                <GspVsGlicko gspSeries={series} allMatches={matches} settings={gspSettings} />
+                <GspVsGlicko
+                  gspSeries={series}
+                  allMatches={matches}
+                  settings={gspSettings}
+                  onSelectReading={(index) => editEntry(entries[index] ?? null)}
+                  onSelectPeriod={(indexes) => setLogSelection({ entries, indexes })}
+                />
               </GridCell>
             )}
           </PageGrid>

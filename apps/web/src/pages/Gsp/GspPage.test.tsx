@@ -978,4 +978,78 @@ describe('GspPage', () => {
       ).toBeTruthy();
     });
   });
+  // Plan 41-07 (A3, T-41-19): the vs-Glicko card is two small-multiples panels, gated once, whose MMR panel
+  // resolves a click to the stored reading behind it.
+  describe('Est. MMR vs Glicko-2 as small multiples (41-07)', () => {
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+    it('renders the card as two stacked panels on one time axis for a qualifying fixture', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const card = document.querySelector('[data-slot="gsp-vs-glicko"]')!;
+      expect(card.querySelectorAll('[data-slot="multiples-panel"]')).toHaveLength(2);
+      expect(card.querySelectorAll('[data-slot="trend-value-x-axis"]')).toHaveLength(1);
+      expect(card.querySelector('canvas')).toBeNull();
+    });
+
+    it('spans the note across the row and draws no card with only 2 rating periods', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // Three readings, but only two sessions (the first two matches share one).
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 60_000, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      expect(screen.queryByText('Est. MMR vs Glicko-2')).not.toBeInTheDocument();
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      expect(note.getAttribute('data-span')).toBe('12');
+    });
+
+    it('opens the edit dialog of exactly the reading clicked on the MMR panel (T-41-19)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: FOUR_HOURS_MS + 60_000 },
+      ]);
+      const user = userEvent.setup();
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const card = document.querySelector<HTMLElement>('[data-slot="gsp-vs-glicko"]')!;
+      const mmrHit = card.querySelectorAll('[data-slot="trend-value-hit"]')[0]!;
+
+      // The calibration reading is the MMR panel's diamond: its path starts at `M{x} ...`.
+      const diamond = card.querySelector('[data-slot="trend-value-diamond"]')!;
+      const diamondX = Number(/^M(-?[\d.]+)/.exec(diamond.getAttribute('d') ?? '')![1]);
+      fireEvent.click(mmrHit, { clientX: diamondX, clientY: 60 });
+      const readingDialog = await screen.findByRole('dialog');
+      expect(readingDialog).toHaveTextContent('Edit GSP reading');
+      expect(within(readingDialog).getByLabelText('Current GSP')).toHaveValue('9500000');
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      // The Glicko panel is not a reading: a click on it opens nothing.
+      const glickoHit = card.querySelectorAll('[data-slot="trend-value-hit"]')[1]!;
+      const glickoDot = card.querySelectorAll('[data-slot="trend-value-dot"]')[1]!;
+      fireEvent.click(glickoHit, { clientX: Number(glickoDot.getAttribute('cx')), clientY: 60 });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
 });
