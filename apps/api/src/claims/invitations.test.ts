@@ -261,31 +261,42 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    await issueClaimInvitation(
-      database as never,
-      COACH_UID,
-      TENANT_ID,
-      {
-        sessionId: SESSION_ID,
-        hmacSecret: HMAC_SECRET,
-      },
-      null,
-    );
-    await flush();
-    expect(eventLedgerEntries(database, 'claim_invitation_created')).toHaveLength(1);
-    expect(eventLedgerEntries(database, 'claim_invitation_revoked')).toHaveLength(0);
+    // causationId embeds Date.now(); two issuances in the same millisecond
+    // would dedup the second claim_invitation_created. flush() does not
+    // guarantee the clock advances, so pin Date (only Date is faked).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const issuedAt = Date.now();
+      vi.setSystemTime(issuedAt);
+      await issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        {
+          sessionId: SESSION_ID,
+          hmacSecret: HMAC_SECRET,
+        },
+        null,
+      );
+      await flush();
+      expect(eventLedgerEntries(database, 'claim_invitation_created')).toHaveLength(1);
+      expect(eventLedgerEntries(database, 'claim_invitation_revoked')).toHaveLength(0);
 
-    await issueClaimInvitation(
-      database as never,
-      COACH_UID,
-      TENANT_ID,
-      {
-        sessionId: SESSION_ID,
-        hmacSecret: HMAC_SECRET,
-      },
-      null,
-    );
-    await flush();
+      vi.setSystemTime(issuedAt + 1);
+      await issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        {
+          sessionId: SESSION_ID,
+          hmacSecret: HMAC_SECRET,
+        },
+        null,
+      );
+      await flush();
+    } finally {
+      vi.useRealTimers();
+    }
     expect(eventLedgerEntries(database, 'claim_invitation_created')).toHaveLength(2);
     const revokedEvents = eventLedgerEntries(database, 'claim_invitation_revoked');
     expect(revokedEvents).toHaveLength(1);
