@@ -7,20 +7,20 @@ come from — read this before adding a sixth chart.
 
 - **Recharts** (`recharts`) may only be imported from inside this directory
   (`apps/web/src/components/charts/**`).
-- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the three
-  legacy chart.js files still on the allowlist (`chartTheme.ts`, `LastMatchesChart.tsx` and
-  `GspVsGlicko.tsx` — each one named explicitly in the allowlists below; the list only shrinks,
-  never grows). Plan 39.1-34 retired the Trends `RatingCurve.tsx` / `MonthlyPerformance.tsx` pair
-  (the career timeline below replaces both), plan 41-05 retired the GSP `GainsAnalysis.tsx`
-  (figures plus `ComparisonBars` by GSP band) and plan 41-06 retired `GspCurve.tsx` (value-mode
-  `TrendLine`); the `chart.js` package stays a dependency until the last three migrate (Phase 41,
-  CHRT-04).
+- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the two
+  legacy chart.js files still on the allowlist (`chartTheme.ts` and `LastMatchesChart.tsx` — each
+  one named explicitly in the allowlists below; the list only shrinks, never grows). Plan 39.1-34
+  retired the Trends `RatingCurve.tsx` / `MonthlyPerformance.tsx` pair (the career timeline below
+  replaces both), plan 41-05 retired the GSP `GainsAnalysis.tsx` (figures plus `ComparisonBars` by
+  GSP band), plan 41-06 retired `GspCurve.tsx` (value-mode `TrendLine`) and plan 41-07 retired
+  `GspVsGlicko.tsx` (a `SmallMultiplesGrid` of two value-mode panels); the `chart.js` package stays
+  a dependency until the last two migrate (Phase 41, CHRT-04).
 
 Two independent, committed oracles enforce this, plus a third that enforces the runtime
 consequence of getting it wrong:
 
 1. **`eslint.config.js`** — a `no-restricted-imports` rule scoped to `apps/web/**/*.{ts,tsx}`,
-   with an `ignores` array naming this directory and the three legacy files. Catches a bad import at
+   with an `ignores` array naming this directory and the two legacy files. Catches a bad import at
    edit time (`pnpm lint`).
 2. **`chartKitBoundary.test.ts`** — a committed test in the DEFAULT `pnpm test` suite that greps
    the source tree for the same two import patterns. It also proves the allowlist can't rot (every

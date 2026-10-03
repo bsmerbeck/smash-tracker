@@ -46,7 +46,6 @@ export default tseslint.config(
       'apps/web/src/components/charts/**',
       'apps/web/src/lib/chartTheme.ts',
       'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-      'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
     ],
     rules: {
       'no-restricted-imports': [

@@ -86,11 +86,14 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * (chart.js retired from it), removed here and from the eslint ignores in the same commit.
  * Three entries as of plan 41-06 — GspCurve rebuilt on the kit's value-mode TrendLine (chart.js
  * retired from it), removed here, from the eslint ignores and from the README in the same commit.
+ * Two entries as of plan 41-07 — every GSP chart is on the kit: GspVsGlicko rebuilt as a
+ * SmallMultiplesGrid of two value-mode panels (chart.js retired from it), removed here, from the
+ * eslint ignores and from the README in the same commit. Only `LastMatchesChart.tsx` and
+ * `chartTheme.ts` remain.
  */
 const LEGACY_CANVAS_ALLOWLIST = [
   'apps/web/src/lib/chartTheme.ts',
   'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-  'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
 ];
 
 const SVG_CHART_IMPORT = /from\s+['"]recharts['"]/;
