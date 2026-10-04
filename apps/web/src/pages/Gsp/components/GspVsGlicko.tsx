@@ -163,6 +163,7 @@ export function GspVsGlicko({
         panels={panels}
         layout="stacked"
         xDomain={xDomain}
+        noReadingLine={(title) => t('gsp.vsGlicko.noReading', { title })}
         caption={t('analytics.multiples.caption')}
         aria={t('analytics.multiples.aria', { count: panels.length })}
         tableLabels={{

@@ -76,6 +76,7 @@ export const PHASE41_LEDGER_KEYS: readonly string[] = [
   'gsp.hero.eliteValue',
   'gsp.hero.atElite',
   'gsp.hero.mmrUnit',
+  'gsp.vsGlicko.noReading',
   'gsp.curve.view',
   'gsp.curve.overline.reading',
   'gsp.curve.overline.day',

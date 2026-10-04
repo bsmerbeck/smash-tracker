@@ -5,6 +5,7 @@ import {
   fitValueDomain,
   measureYGutterPx,
   nearestPointIndex,
+  nearestPointWithinGrain,
   placeValueLabels,
   referencePlacement,
   valueLabelRoles,
@@ -134,6 +135,16 @@ describe('marks and labels', () => {
     expect(nearestPointIndex(points, 5)).toBe(0);
     expect(nearestPointIndex(points, 16)).toBe(2);
     expect(nearestPointIndex([], 3)).toBe(-1);
+  });
+
+  it('WR-03: a nearest point counts as at the cursor only within one bucket of the grain', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const points = [{ xMs: 10 * day }, { xMs: 50 * day }];
+    expect(nearestPointWithinGrain(points, 10 * day + day, 'day')).toBe(points[0]);
+    expect(nearestPointWithinGrain(points, 10 * day + 2 * day, 'day')).toBeUndefined();
+    expect(nearestPointWithinGrain(points, 10 * day + 7 * day, 'week')).toBe(points[0]);
+    expect(nearestPointWithinGrain(points, 30 * day, 'month')).toBe(points[0]);
+    expect(nearestPointWithinGrain([], 3, 'reading')).toBeUndefined();
   });
 
   it('labels the last always; peak and low only when distinct from last and at 3+ points', () => {

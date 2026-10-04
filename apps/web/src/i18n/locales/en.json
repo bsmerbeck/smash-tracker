@@ -625,6 +625,7 @@
         "mmr": "Est. MMR · {{value}}",
         "glicko": "Glicko-2 · {{value}} ±{{rd}}"
       },
+      "noReading": "{{title}} · no reading",
       "captionPanels": "Est. MMR is this fighter's quickplay rating through the community model; Glicko-2 is the overall rating across every fighter and session. Each panel keeps its own scale, so compare the shapes — divergence usually means quickplay form differs from overall form."
     },
     "setGsp": {

@@ -625,6 +625,7 @@
         "mmr": "MMR est. · {{value}}",
         "glicko": "Glicko-2 · {{value}} ±{{rd}}"
       },
+      "noReading": "{{title}} · sin lectura",
       "captionPanels": "El MMR est. es el nivel de quickplay de este luchador según el modelo de la comunidad; Glicko-2 es el rating global de todos los luchadores y sesiones. Cada panel conserva su propia escala, así que conviene comparar las formas — una divergencia suele significar que la forma en quickplay difiere de la forma general."
     },
     "setGsp": {

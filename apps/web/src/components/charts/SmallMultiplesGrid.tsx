@@ -14,6 +14,7 @@ import {
   VALUE_MARGIN_TOP_PX,
   buildValueYAxis,
   nearestPointIndex,
+  nearestPointWithinGrain,
   valueChartHeight,
 } from './valueTrendGeometry';
 
@@ -60,6 +61,11 @@ export interface SmallMultiplesProps {
   height?: number;
   /** D-04 test affordance: an explicit container width; omitted at runtime (each panel measures itself). */
   width?: number;
+  /**
+   * A panel's readout line when it has no point within one bucket of the shared grain of the crosshair
+   * ("Glicko-2 · no reading") — the grid never localises, the host supplies the sentence.
+   */
+  noReadingLine: (panelTitle: string) => string;
   /** The `meta` caption under the grid ("Each panel keeps its own scale…"). */
   caption: string;
   /** The grid's accessible name (`analytics.multiples.aria_*`). */
@@ -102,6 +108,7 @@ export function SmallMultiplesGrid({
   xDomain,
   height,
   width,
+  noReadingLine,
   caption,
   aria,
   tableLabels,
@@ -204,7 +211,8 @@ export function SmallMultiplesGrid({
           ?.getAttribute('data-panel-key');
         const panel = drawnPanels.find((candidate) => candidate.key === panelKey);
         if (!panel?.onSelectPoint) return;
-        const point = panel.points[nearestPointIndex(panel.points, cursor.xMs)];
+        // WR-03: only a point within one grain bucket of the crosshair is "at" it.
+        const point = nearestPointWithinGrain(panel.points, cursor.xMs, panel.grain);
         if (!point) return;
         event.preventDefault();
         panel.onSelectPoint(point);
@@ -222,13 +230,18 @@ export function SmallMultiplesGrid({
     move(unionXs[next] ?? null, 'keyboard');
   }
 
-  // The ONE readout: a date title, then each panel's line for its point nearest the crosshair.
+  // The ONE readout: a date title, then each panel's line for its point nearest the crosshair — or
+  // "no reading" when that point is more than one grain bucket away (WR-03), never a value from
+  // another season presented as if it stood at the cursor's date.
   const readoutRows =
     cursor.xMs === null
       ? []
-      : drawnPanels.flatMap((panel) => {
-          const point = panel.points[nearestPointIndex(panel.points, cursor.xMs!)];
-          return point ? [{ key: panel.key, line: panel.readoutLine(point) }] : [];
+      : drawnPanels.map((panel) => {
+          const point = nearestPointWithinGrain(panel.points, cursor.xMs!, panel.grain);
+          return {
+            key: panel.key,
+            line: point ? panel.readoutLine(point) : noReadingLine(panel.title),
+          };
         });
   const xSpan = xDomain[1] - xDomain[0];
   const plotWidthPx = Math.max(0, containerWidth - gutterPx - VALUE_MARGIN_RIGHT_PX);

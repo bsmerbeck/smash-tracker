@@ -625,6 +625,7 @@
         "mmr": "MMR est. · {{value}}",
         "glicko": "Glicko-2 · {{value}} ±{{rd}}"
       },
+      "noReading": "{{title}} · aucune lecture",
       "captionPanels": "Le MMR est. est le niveau en quickplay de ce combattant selon le modèle communautaire ; Glicko-2 est le classement global sur tous les combattants et toutes les sessions. Chaque panneau garde sa propre échelle, donc ce sont les formes qui se comparent — une divergence signifie généralement que la forme en quickplay diffère de la forme générale."
     },
     "setGsp": {

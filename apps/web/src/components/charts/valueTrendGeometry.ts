@@ -1,3 +1,4 @@
+import type { ValueSeriesGrain } from '@smash-tracker/shared';
 import { estimateTickLabelWidthPx } from './periodTicks';
 import {
   PERIOD_REFERENCE_LABEL_CLEARANCE_PX,
@@ -321,6 +322,36 @@ export function nearestPointIndex(points: readonly { xMs: number }[], ms: number
     }
   });
   return best;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How far (ms) a point may sit from a shared crosshair and still be "at" it: one bucket of the grain
+ * the panels share. A `reading` grain has no bucket, so it gets the day the GSP log dates readings by.
+ * Month and quarter use the longest calendar span (31 and 92 days), so a real neighbour is never refused.
+ */
+export const VALUE_GRAIN_BUCKET_MS: Record<ValueSeriesGrain, number> = {
+  reading: DAY_MS,
+  day: DAY_MS,
+  week: 7 * DAY_MS,
+  month: 31 * DAY_MS,
+  quarter: 92 * DAY_MS,
+};
+
+/**
+ * The point nearest `ms`, or `undefined` when there is none within one bucket of `grain` (WR-03): a
+ * shared crosshair never reads a value from a different season as if it stood at the cursor.
+ */
+export function nearestPointWithinGrain<P extends { xMs: number }>(
+  points: readonly P[],
+  ms: number,
+  grain: ValueSeriesGrain,
+): P | undefined {
+  const index = nearestPointIndex(points, ms);
+  const point = points[index];
+  if (!point) return undefined;
+  return Math.abs(point.xMs - ms) <= VALUE_GRAIN_BUCKET_MS[grain] ? point : undefined;
 }
 
 export type ValueTrendHeadKind = 'series' | 'calibration' | 'reference' | 'reference-range';

@@ -625,6 +625,7 @@
         "mmr": "Gesch. MMR · {{value}}",
         "glicko": "Glicko-2 · {{value}} ±{{rd}}"
       },
+      "noReading": "{{title}} · keine Ablesung",
       "captionPanels": "Gesch. MMR ist das Quickplay-Rating dieses Kämpfers nach dem Community-Modell; Glicko-2 ist das Gesamtrating über alle Kämpfer und Sitzungen. Jedes Feld behält seine eigene Skala, daher zählen die Verläufe — Abweichungen bedeuten meist, dass die Quickplay-Form von der Gesamtform abweicht."
     },
     "setGsp": {

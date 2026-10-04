@@ -50,13 +50,14 @@ function panel(
   };
 }
 
-function renderGrid(panels: SmallMultiplesPanel[], width = 640) {
+function renderGrid(panels: SmallMultiplesPanel[], width = 640, lastDay = 6) {
   return render(
     <ChartCard title="Est. MMR vs Glicko-2">
       <SmallMultiplesGrid
         panels={panels}
         layout="stacked"
-        xDomain={[dayMs(1), dayMs(6)]}
+        xDomain={[dayMs(1), dayMs(lastDay)]}
+        noReadingLine={(title) => `${title} · no reading`}
         width={width}
         caption="Each panel keeps its own scale — compare the shapes, not the heights."
         aria="2 panels sharing one time axis"
@@ -188,6 +189,51 @@ describe('SmallMultiplesGrid (plan 41-02, DD-41-02)', () => {
 
     fireEvent.keyDown(group, { key: 'Escape' });
     expect(crosshairXs(container)).toEqual([]);
+  });
+
+  // 41-REVIEW WR-03: a panel's readout line states a value only when its nearest point is within one
+  // bucket of the shared grain of the crosshair; a point from another season is "no reading", and the
+  // keyboard select never opens a far-away reading either.
+  describe('a panel with no point near the crosshair (WR-03)', () => {
+    const FAR_DAYS = [40, 41, 42];
+
+    it('reads "no reading" instead of a value taken from weeks away, and says nothing false', () => {
+      const a = panel('mmr', 'Est. MMR', A_DAYS, 1000);
+      const b = panel('glicko', 'Glicko-2', FAR_DAYS, 1700);
+      const { container } = renderGrid([a, b], 640, 42);
+      const hitA = container.querySelectorAll('[data-slot="trend-value-hit"]')[0]!;
+      fireEvent.pointerMove(hitA, { clientX: markX(container, 'mmr:3'), pointerType: 'mouse' });
+      const lines = Array.from(
+        container.querySelectorAll('[data-slot="multiples-readout-line"]'),
+      ).map((el) => el.textContent);
+      expect(lines).toEqual(['Est. MMR · 1010', 'Glicko-2 · no reading']);
+    });
+
+    it('still reads the nearest value when it lies within one grain bucket (a day at the day grain)', () => {
+      const a = panel('mmr', 'Est. MMR', A_DAYS, 1000);
+      const b = panel('glicko', 'Glicko-2', B_DAYS, 1700);
+      const { container } = renderGrid([a, b]);
+      const hitA = container.querySelectorAll('[data-slot="trend-value-hit"]')[0]!;
+      fireEvent.pointerMove(hitA, { clientX: markX(container, 'mmr:3'), pointerType: 'mouse' });
+      const lines = Array.from(
+        container.querySelectorAll('[data-slot="multiples-readout-line"]'),
+      ).map((el) => el.textContent);
+      expect(lines).toEqual(['Est. MMR · 1010', 'Glicko-2 · 1700']);
+    });
+
+    it('Enter on a panel whose nearest point is out of range selects nothing', () => {
+      const onSelectPoint = vi.fn();
+      const a = panel('mmr', 'Est. MMR', A_DAYS, 1000);
+      const b = panel('glicko', 'Glicko-2', FAR_DAYS, 1700, { onSelectPoint });
+      const { container } = renderGrid([a, b], 640, 42);
+      const plots = container.querySelectorAll('[data-slot="trend-value-plot"]');
+      fireEvent.keyDown(plots[0]!, { key: 'Home' }); // the crosshair stands on day 1
+      fireEvent.keyDown(plots[1]!, { key: 'Enter' });
+      expect(onSelectPoint).not.toHaveBeenCalled();
+      fireEvent.keyDown(plots[1]!, { key: 'End' }); // day 42: B's own point
+      fireEvent.keyDown(plots[1]!, { key: 'Enter' });
+      expect(onSelectPoint).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('draws at most 60 marks per panel on a long real series', () => {

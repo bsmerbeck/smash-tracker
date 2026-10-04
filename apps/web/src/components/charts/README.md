@@ -285,7 +285,8 @@ would read as a verdict the evidence does not carry, so status colour stays on w
 **Small-multiples grid** — N value-mode panels STACKED on one time axis (the GSP vs Glicko-2 page
 passes two). Props: `panels: { key, title, points, grain, formatTick, formatValueFull, readoutLine,
 labels: { aria }, onSelectPoint? }[]`, `layout: 'stacked'` (the only layout), `xDomain` (the host's
-union of the panels' points), `height?` (plot px per panel: `CHART_H_MULTIPLE` 120, or
+union of the panels' points), `noReadingLine(panelTitle)` (a panel's readout line when its nearest point is
+more than one bucket of its grain from the crosshair — never a value from another season), `height?` (plot px per panel: `CHART_H_MULTIPLE` 120, or
 `CHART_H_MULTIPLE_NARROW` 96 below 640px), `caption`, `aria`, `tableLabels`. Each panel is a
 `TrendLine mode="value"` at `lineWidth: 'thin'` with its OWN fitted y — **never normalised**; the one
 drawn x axis sits under the last panel, and every panel's y gutter is equalised (the widest measured
