@@ -287,22 +287,6 @@
       "ratingDown": "前回セッションからレーティング下降",
       "ratingUnchanged": "前回セッションからレーティング変化なし"
     },
-    "formCurve": {
-      "title": "調子の推移",
-      "caption": {
-        "last30": "累積勝率 · 直近30試合",
-        "lastEvent": "累積勝率 · 直近のイベント",
-        "last90": "累積勝率 · 直近90日間"
-      },
-      "windowEmpty": {
-        "last30": "記録された試合が3試合未満です — 曲線の表示には3試合以上必要です。",
-        "lastEvent": "直近のイベントの試合が3試合未満です — 曲線の表示には3試合以上必要です。",
-        "last90": "直近90日間の試合が3試合未満です — 曲線の表示には3試合以上必要です。"
-      },
-      "empty": "対戦を登録するとグラフが表示されます。",
-      "winRate": "勝率",
-      "opponent": "相手: {{name}}"
-    },
     "previous": {
       "title": "最近の対戦",
       "empty": "まだ対戦が記録されていません。",
@@ -480,7 +464,6 @@
     },
     "hero": {
       "currentGsp": "現在のGSP",
-      "latestReading": "最新の記録",
       "noGsp": "まだGSPの記録がありません",
       "estMmr": "推定MMR",
       "tailReading": "分布の端（{{zone}}）の値 — 概算",
@@ -498,7 +481,6 @@
       "recalibratedToast": "入力されたボーダー値でモデルを再調整しました！",
       "thresholdSaveFailed": "VIPボーダーを保存できませんでした。もう一度お試しください。",
       "distanceToElite": "VIPまでの距離",
-      "elite": "VIP",
       "belowElite": "MMR {{mmr}} · VIP基準（{{elite}}）未満",
       "recentWinRate": "直近の勝率",
       "lastNGames_one": "直近{{count}}戦",
@@ -511,12 +493,8 @@
     },
     "curve": {
       "title": "GSP推移",
-      "gspViewAria": "GSP表示",
-      "mmrViewAria": "MMR表示",
       "gspLabel": "GSP",
-      "eliteLine": "VIPボーダー",
       "estMmrLabel": "推定MMR",
-      "eliteMmrLine": "VIP（MMR {{mmr}}）",
       "mmrCaption": "各記録の背後にある推定隠しレート（コミュニティ解析モデル）です。GSPと違って時間でインフレしないため、横ばいの線は実力が安定していることを意味します。点線: MMR {{mmr}}のVIPボーダー。",
       "gspCaption": "各ポイントはこのファイターで対戦後に記録したGSPです。点線は計算されたVIPマッチのボーダー — コミュニティモデルの推定値であり、任天堂公表の値ではありません。",
       "clickHint": "ポイントをクリックするとその記録を編集できます。",
@@ -577,17 +555,6 @@
     },
     "gains": {
       "title": "増減分析",
-      "avgGainLifetime": "勝利あたり平均増加（通算）",
-      "avgDropLifetime": "敗北あたり平均減少（通算）",
-      "biggestGain": "1戦での最大増加",
-      "avgGainLast20": "勝利あたり平均増加（直近20戦）",
-      "avgDropLast20": "敗北あたり平均減少（直近20戦）",
-      "biggestDrop": "1戦での最大減少",
-      "perWinTitle": "勝利ごとの増加量の推移",
-      "shrinking": "— GSPが上がるにつれて縮小中",
-      "growing": "— 増加傾向",
-      "winNumber": "{{number}}勝目",
-      "gainedGsp": "獲得GSP",
       "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。",
       "figure": {
         "avgGain": "勝利あたり平均増加",
@@ -643,9 +610,6 @@
     },
     "vsGlicko": {
       "title": "推定MMR vs Glicko-2",
-      "mmrLabel": "推定MMR（正規化）",
-      "glickoLabel": "Glicko-2（正規化）",
-      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。",
       "panel": {
         "mmr": "推定MMR",
         "glicko": "Glicko-2"

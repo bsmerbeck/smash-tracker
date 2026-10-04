@@ -1223,7 +1223,7 @@ export function careerTimelineEdgeDeltas(timeline) {
  * `{ selectorPath, state, plotLeft, plotRight, plotWidth, stripGrain,
  * anchors: [{ t, cx }], lineVertexCount, rateCells, gamesCells:
  * [{ startMs, endMs, left, right }], formStripTicks }` — and `canvasCount` is
- * the page's `canvas` element count (the retired chart.js pair drew two).
+ * the page's `canvas` element count (the chart.js pair removed in Phase 41 drew two).
  * `expectation` is the route's own `timelineExpect`
  * (`{ strips?, formStrip?, state? }`). An empty `timelines` list is
  * `career-timeline-unmeasured` (never a silent pass).

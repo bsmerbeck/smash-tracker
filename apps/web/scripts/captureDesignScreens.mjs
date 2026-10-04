@@ -208,10 +208,7 @@ function collectMetrics(floorGames) {
       '';
     return { title, width: Math.round(rect.width), height: Math.round(rect.height) };
   });
-  // Plan 39.1-39: the GSP page's chart.js canvases (capture-only `gsp` route).
-  const gspCanvases = document.querySelectorAll('[data-slot="gsp-body"] canvas').length;
   return {
-    gspCanvases,
     statRows,
     firstContentTop,
     filterRowHeight,
@@ -464,7 +461,7 @@ async function main() {
         });
         records.push(record);
         console.log(
-          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'} gspCanvases=${record.gspCanvases}${record.eventTooltip ? ` trendPoints=${record.eventTooltip.points} tooltip="${record.eventTooltip.text}"` : ''}`,
+          `CAPTURED scale=${args.scale} route=${route.id} width=${width} screens=${record.screens} chips=${record.chips.length} steadyOnSubFloor=${record.steadyOnSubFloor} dotRadii=${record.dotRadii.join('/') || '-'}${record.eventTooltip ? ` trendPoints=${record.eventTooltip.points} tooltip="${record.eventTooltip.text}"` : ''}`,
         );
       }
     }

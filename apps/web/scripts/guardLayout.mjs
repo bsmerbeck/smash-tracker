@@ -768,8 +768,8 @@ const ROUTE_LOAD_TIMEOUT_MS = 15_000;
 /**
  * Plan 39.1-34: how long a career-timeline route waits for the timeline's
  * plot area after the page-loaded marker. On timeout it proceeds anyway —
- * `evaluateCareerTimeline` then reports what it finds (on production's
- * chart.js Trends: `career-timeline-unmeasured`), never a silent pass.
+ * `evaluateCareerTimeline` then reports what it finds (on a build without the
+ * timeline: `career-timeline-unmeasured`), never a silent pass.
  */
 const CAREER_TIMELINE_WAIT_MS = 5_000;
 

@@ -302,10 +302,10 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
   },
   {
     // Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): a
-    // CAPTURE-ONLY route — `captureDesignScreens.mjs` screenshots the GSP
-    // page's three chart.js charts on its `gsp` fixture scale. It is never
-    // one of guard:layout's `LAYOUT_ORACLE_ROUTES` (GSP stays chart.js until
-    // Phase 41 and is not an analytics route).
+    // route kept for `captureDesignScreens.mjs`, which screenshots the
+    // GSP page on its `gsp` fixture scale; since plan 41-05 the page is also a
+    // guard:layout route at every viewport; its charts are kit charts, and the
+    // chart.js library was removed in Phase 41.
     id: 'gsp',
     path: '/gsp',
     initialEntry: '/gsp',

@@ -287,22 +287,6 @@
       "ratingDown": "Rating down from last session",
       "ratingUnchanged": "Rating unchanged from last session"
     },
-    "formCurve": {
-      "title": "Form Curve",
-      "caption": {
-        "last30": "Running win rate · last 30 games",
-        "lastEvent": "Running win rate · last event",
-        "last90": "Running win rate · last 90 days"
-      },
-      "windowEmpty": {
-        "last30": "Fewer than 3 games recorded — the curve needs at least 3.",
-        "lastEvent": "Fewer than 3 games at the last event — the curve needs at least 3.",
-        "last90": "Fewer than 3 games in the last 90 days — the curve needs at least 3."
-      },
-      "empty": "Submit a match to see the match chart.",
-      "winRate": "Win Rate",
-      "opponent": "Opponent: {{name}}"
-    },
     "previous": {
       "title": "Previous Matches",
       "empty": "No matches recorded yet.",
@@ -480,7 +464,6 @@
     },
     "hero": {
       "currentGsp": "Current GSP",
-      "latestReading": "latest reading",
       "noGsp": "No GSP logged yet",
       "estMmr": "Est. MMR",
       "tailReading": "{{zone}}-tail reading — approximate",
@@ -498,7 +481,6 @@
       "recalibratedToast": "Model recalibrated from your threshold reading!",
       "thresholdSaveFailed": "Failed to save the Elite threshold. Please try again.",
       "distanceToElite": "Distance to Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · below Elite ({{elite}})",
       "recentWinRate": "Recent Win Rate",
       "lastNGames_one": "last {{count}} game",
@@ -511,12 +493,8 @@
     },
     "curve": {
       "title": "GSP Curve",
-      "gspViewAria": "GSP view",
-      "mmrViewAria": "MMR view",
       "gspLabel": "GSP",
-      "eliteLine": "Elite threshold",
       "estMmrLabel": "Est. MMR",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "Estimated hidden MMR behind each reading (community-reverse-engineered model) — unlike GSP, it doesn't inflate over time, so a flat line means flat skill. Dashed line: Elite entry at MMR {{mmr}}.",
       "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
       "clickHint": "Click a point to edit that reading.",
@@ -577,17 +555,6 @@
     },
     "gains": {
       "title": "Gains Analysis",
-      "avgGainLifetime": "Avg gain/win (lifetime)",
-      "avgDropLifetime": "Avg drop/loss (lifetime)",
-      "biggestGain": "Biggest single gain",
-      "avgGainLast20": "Avg gain/win (last 20)",
-      "avgDropLast20": "Avg drop/loss (last 20)",
-      "biggestDrop": "Biggest single drop",
-      "perWinTitle": "Per-win gains over time",
-      "shrinking": "— shrinking as your GSP climbs",
-      "growing": "— trending up",
-      "winNumber": "Win #{{number}}",
-      "gainedGsp": "GSP gained",
       "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends.",
       "figure": {
         "avgGain": "Avg gain per win",
@@ -643,9 +610,6 @@
     },
     "vsGlicko": {
       "title": "Est. MMR vs Glicko-2",
-      "mmrLabel": "Est. MMR (normalized)",
-      "glickoLabel": "Glicko-2 (normalized)",
-      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form.",
       "panel": {
         "mmr": "Est. MMR",
         "glicko": "Glicko-2"

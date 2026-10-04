@@ -1,8 +1,8 @@
 /**
  * Chart kit design tokens (D-03, CHRT-01/CHRT-04). SVG resolves CSS custom
- * properties natively in `stroke`/`fill` (unlike chart.js, which needs the
- * resolved-hex mirror in `apps/web/src/lib/chartTheme.ts` — that mirror is
- * the anti-pattern this module deliberately does NOT repeat). The app is
+ * properties natively in `stroke`/`fill`, so there is no resolved-hex
+ * mirror of the palette (the former chart.js theme module needed one and
+ * was removed in Phase 41). The app is
  * dark-only, `:root` and `.dark` share one identical palette
  * (`apps/web/src/index.css`), so this module carries exactly one token map
  * and no colour-scheme branch anywhere in the kit.

@@ -287,22 +287,6 @@
       "ratingDown": "Puntuación a la baja desde la última sesión",
       "ratingUnchanged": "Puntuación sin cambios desde la última sesión"
     },
-    "formCurve": {
-      "title": "Curva de forma",
-      "caption": {
-        "last30": "% de victorias acumulado · últimas 30 partidas",
-        "lastEvent": "% de victorias acumulado · último evento",
-        "last90": "% de victorias acumulado · últimos 90 días"
-      },
-      "windowEmpty": {
-        "last30": "Menos de 3 partidas registradas — la curva necesita al menos 3.",
-        "lastEvent": "Menos de 3 partidas en el último evento — la curva necesita al menos 3.",
-        "last90": "Menos de 3 partidas en los últimos 90 días — la curva necesita al menos 3."
-      },
-      "empty": "Registra una partida para ver la gráfica.",
-      "winRate": "% de victorias",
-      "opponent": "Rival: {{name}}"
-    },
     "previous": {
       "title": "Partidas anteriores",
       "empty": "Aún no hay partidas registradas.",
@@ -480,7 +464,6 @@
     },
     "hero": {
       "currentGsp": "GSP actual",
-      "latestReading": "última lectura",
       "noGsp": "Aún no hay GSP registrado",
       "estMmr": "MMR est.",
       "tailReading": "lectura en la cola ({{zone}}) — aproximada",
@@ -498,7 +481,6 @@
       "recalibratedToast": "¡Modelo recalibrado con tu lectura del umbral!",
       "thresholdSaveFailed": "No se pudo guardar el umbral Elite. Inténtalo de nuevo.",
       "distanceToElite": "Distancia a Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · por debajo de Elite ({{elite}})",
       "recentWinRate": "% de victorias reciente",
       "lastNGames_one": "última partida",
@@ -511,12 +493,8 @@
     },
     "curve": {
       "title": "Curva de GSP",
-      "gspViewAria": "Vista GSP",
-      "mmrViewAria": "Vista MMR",
       "gspLabel": "GSP",
-      "eliteLine": "Umbral Elite",
       "estMmrLabel": "MMR est.",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "MMR oculto estimado detrás de cada lectura (modelo de ingeniería inversa de la comunidad) — a diferencia del GSP, no se infla con el tiempo, así que una línea plana significa nivel estable. Línea discontinua: entrada a Elite en MMR {{mmr}}.",
       "gspCaption": "Cada punto es una lectura de GSP registrada tras una partida con este luchador. La línea discontinua es el umbral calculado de Elite Smash — una estimación del modelo comunitario, no un valor publicado por Nintendo.",
       "clickHint": "Haz clic en un punto para editar esa lectura.",
@@ -577,17 +555,6 @@
     },
     "gains": {
       "title": "Análisis de ganancias",
-      "avgGainLifetime": "Ganancia media/victoria (total)",
-      "avgDropLifetime": "Pérdida media/derrota (total)",
-      "biggestGain": "Mayor ganancia individual",
-      "avgGainLast20": "Ganancia media/victoria (últimas 20)",
-      "avgDropLast20": "Pérdida media/derrota (últimas 20)",
-      "biggestDrop": "Mayor pérdida individual",
-      "perWinTitle": "Ganancias por victoria a lo largo del tiempo",
-      "shrinking": "— se reducen a medida que sube tu GSP",
-      "growing": "— al alza",
-      "winNumber": "Victoria n.º {{number}}",
-      "gainedGsp": "GSP ganado",
       "empty": "Registra algunas victorias y derrotas con lecturas de GSP para ver tus tendencias.",
       "figure": {
         "avgGain": "Ganancia media por victoria",
@@ -643,9 +610,6 @@
     },
     "vsGlicko": {
       "title": "MMR est. vs Glicko-2",
-      "mmrLabel": "MMR est. (normalizado)",
-      "glickoLabel": "Glicko-2 (normalizado)",
-      "caption": "Tu nivel en quickplay (MMR estimado de este luchador, modelo de ingeniería inversa de la comunidad) frente a tu Glicko-2 global (todos los luchadores/sesiones) — ambos normalizados a 0-100 en esta ventana porque sus escalas no están relacionadas. Comparar nivel contra nivel hace las formas honestamente comparables; una divergencia suele significar que tu forma en quickplay difiere de tu forma general.",
       "panel": {
         "mmr": "MMR est.",
         "glicko": "Glicko-2"

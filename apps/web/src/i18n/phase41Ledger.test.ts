@@ -120,6 +120,39 @@ export const PHASE41_LEDGER_KEYS: readonly string[] = [
   'gsp.vsGlicko.captionPanels',
 ];
 
+/**
+ * Plan 41-11 (12.8 / I18N-01): every key a Phase 41 chart replacement retired. A key whose chart is gone
+ * is dead copy in six languages; this list is the committed record that it STAYS gone. `dashboard.formCurve`
+ * is a whole subtree (the chart.js Form Curve card, replaced by `dashboard.formStrip.*` in plan 41-10), so it
+ * is listed as a namespace; every other entry is a single leaf. The conditional entries (`gsp.hero.elite`,
+ * `gsp.hero.latestReading`, `gsp.curve.gspViewAria`, `gsp.curve.mmrViewAria`) were deleted because
+ * `git grep` found no source reference to them in plan 41-11.
+ */
+export const PHASE41_DELETED_NAMESPACES: readonly string[] = ['dashboard.formCurve'];
+export const PHASE41_DELETED_KEYS: readonly string[] = [
+  ...PHASE41_DELETED_NAMESPACES,
+  'gsp.gains.avgGainLifetime',
+  'gsp.gains.avgDropLifetime',
+  'gsp.gains.biggestGain',
+  'gsp.gains.avgGainLast20',
+  'gsp.gains.avgDropLast20',
+  'gsp.gains.biggestDrop',
+  'gsp.gains.perWinTitle',
+  'gsp.gains.shrinking',
+  'gsp.gains.growing',
+  'gsp.gains.winNumber',
+  'gsp.gains.gainedGsp',
+  'gsp.vsGlicko.mmrLabel',
+  'gsp.vsGlicko.glickoLabel',
+  'gsp.vsGlicko.caption',
+  'gsp.curve.eliteLine',
+  'gsp.curve.eliteMmrLine',
+  'gsp.curve.gspViewAria',
+  'gsp.curve.mmrViewAria',
+  'gsp.hero.elite',
+  'gsp.hero.latestReading',
+];
+
 type LocaleTree = Record<string, unknown>;
 
 function readLocale(code: string): LocaleTree {
@@ -188,5 +221,70 @@ describe('Phase 41 copy ledger (I18N-01)', () => {
         expect(typeof other, `${code}: ${key} has no _other sibling`).toBe('string');
       }
     });
+  });
+});
+
+const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function listNonTestSourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listNonTestSourceFiles(full));
+    else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+/** The dotted key as a whole key reference: not the prefix of a longer word (`gsp.hero.eliteValue`). */
+function referencesKey(source: string, key: string): boolean {
+  return new RegExp(`${key.replace(/\./g, '\\.')}(?!\\w)`).test(source);
+}
+
+describe('Phase 41 deleted keys stay deleted (plan 41-11, 12.8 / I18N-01)', () => {
+  it('is not vacuous: the deleted list is non-empty, unique and names the formCurve namespace', () => {
+    expect(PHASE41_DELETED_KEYS.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(PHASE41_DELETED_KEYS).size).toBe(PHASE41_DELETED_KEYS.length);
+    expect(PHASE41_DELETED_KEYS).toContain('dashboard.formCurve');
+  });
+
+  it('the reference scanner matches a whole key and namespace children but never a longer sibling key', () => {
+    expect(referencesKey("t('gsp.hero.elite')", 'gsp.hero.elite')).toBe(true);
+    expect(referencesKey("t('gsp.hero.eliteValue')", 'gsp.hero.elite')).toBe(false);
+    expect(referencesKey("t('gsp.hero.latestReadingDated')", 'gsp.hero.latestReading')).toBe(false);
+    expect(referencesKey("t('dashboard.formCurve.title')", 'dashboard.formCurve')).toBe(true);
+  });
+
+  it('the ledger keys and the deleted keys are disjoint (no ledger key is retired or lives under a retired namespace)', () => {
+    const overlap = PHASE41_LEDGER_KEYS.filter((key) =>
+      PHASE41_DELETED_KEYS.some((gone) => key === gone || key.startsWith(`${gone}.`)),
+    );
+    expect(overlap).toEqual([]);
+  });
+
+  describe.each(LOCALE_CODES)('%s', (code) => {
+    it('resolves none of the deleted keys', () => {
+      const surviving = PHASE41_DELETED_KEYS.filter(
+        (key) => resolveKey(locales[code]!, key) !== undefined,
+      );
+      expect(surviving, `${code}: deleted keys still present`).toEqual([]);
+    });
+  });
+
+  it('no non-test source file under apps/web/src references a deleted key', () => {
+    const files = listNonTestSourceFiles(SRC_ROOT);
+    expect(files.length).toBeGreaterThan(200);
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = fs.readFileSync(file, 'utf8');
+      for (const key of PHASE41_DELETED_KEYS) {
+        if (referencesKey(source, key)) {
+          offenders.push(`${path.relative(SRC_ROOT, file).split(path.sep).join('/')}: ${key}`);
+        }
+      }
+    }
+    expect(offenders, `source files referencing a deleted key: ${offenders.join('; ')}`).toEqual(
+      [],
+    );
   });
 });

@@ -287,22 +287,6 @@
       "ratingDown": "Pontuação em queda desde a última sessão",
       "ratingUnchanged": "Pontuação inalterada desde a última sessão"
     },
-    "formCurve": {
-      "title": "Curva de forma",
-      "caption": {
-        "last30": "Taxa de vitórias acumulada · últimas 30 partidas",
-        "lastEvent": "Taxa de vitórias acumulada · último evento",
-        "last90": "Taxa de vitórias acumulada · últimos 90 dias"
-      },
-      "windowEmpty": {
-        "last30": "Menos de 3 partidas registradas — a curva precisa de pelo menos 3.",
-        "lastEvent": "Menos de 3 partidas no último evento — a curva precisa de pelo menos 3.",
-        "last90": "Menos de 3 partidas nos últimos 90 dias — a curva precisa de pelo menos 3."
-      },
-      "empty": "Registre uma partida para ver o gráfico.",
-      "winRate": "Taxa de vitórias",
-      "opponent": "Oponente: {{name}}"
-    },
     "previous": {
       "title": "Partidas anteriores",
       "empty": "Nenhuma partida registrada ainda.",
@@ -480,7 +464,6 @@
     },
     "hero": {
       "currentGsp": "GSP atual",
-      "latestReading": "última leitura",
       "noGsp": "Nenhum GSP registrado ainda",
       "estMmr": "MMR est.",
       "tailReading": "leitura na cauda ({{zone}}) — aproximada",
@@ -498,7 +481,6 @@
       "recalibratedToast": "Modelo recalibrado com a sua leitura do limite!",
       "thresholdSaveFailed": "Falha ao salvar o limite do Elite. Tente novamente.",
       "distanceToElite": "Distância até o Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · abaixo do Elite ({{elite}})",
       "recentWinRate": "Taxa de vitórias recente",
       "lastNGames_one": "última partida",
@@ -511,12 +493,8 @@
     },
     "curve": {
       "title": "Curva de GSP",
-      "gspViewAria": "Visão GSP",
-      "mmrViewAria": "Visão MMR",
       "gspLabel": "GSP",
-      "eliteLine": "Limite do Elite",
       "estMmrLabel": "MMR est.",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "MMR oculto estimado por trás de cada leitura (modelo de engenharia reversa da comunidade) — diferente do GSP, ele não infla com o tempo, então uma linha plana significa nível estável. Linha tracejada: entrada no Elite em MMR {{mmr}}.",
       "gspCaption": "Cada ponto é uma leitura de GSP registrada após uma partida com este lutador. A linha tracejada é o limite calculado do Elite Smash — uma estimativa do modelo da comunidade, não um valor publicado pela Nintendo.",
       "clickHint": "Clique em um ponto para editar essa leitura.",
@@ -577,17 +555,6 @@
     },
     "gains": {
       "title": "Análise de ganhos",
-      "avgGainLifetime": "Ganho médio/vitória (geral)",
-      "avgDropLifetime": "Perda média/derrota (geral)",
-      "biggestGain": "Maior ganho individual",
-      "avgGainLast20": "Ganho médio/vitória (últimas 20)",
-      "avgDropLast20": "Perda média/derrota (últimas 20)",
-      "biggestDrop": "Maior perda individual",
-      "perWinTitle": "Ganhos por vitória ao longo do tempo",
-      "shrinking": "— encolhendo conforme seu GSP sobe",
-      "growing": "— em alta",
-      "winNumber": "Vitória nº {{number}}",
-      "gainedGsp": "GSP ganho",
       "empty": "Registre algumas vitórias e derrotas com leituras de GSP para ver suas tendências.",
       "figure": {
         "avgGain": "Ganho médio por vitória",
@@ -643,9 +610,6 @@
     },
     "vsGlicko": {
       "title": "MMR est. vs Glicko-2",
-      "mmrLabel": "MMR est. (normalizado)",
-      "glickoLabel": "Glicko-2 (normalizado)",
-      "caption": "Seu nível no quickplay (MMR estimado deste lutador, modelo de engenharia reversa da comunidade) contra seu Glicko-2 geral (todos os lutadores/sessões) — ambos normalizados de 0 a 100 nesta janela, já que as escalas brutas não têm relação. Comparar rating com rating torna as formas honestamente comparáveis; divergência normalmente significa que sua forma no quickplay difere da sua forma geral.",
       "panel": {
         "mmr": "MMR est.",
         "glicko": "Glicko-2"

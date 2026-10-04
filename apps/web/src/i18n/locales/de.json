@@ -287,22 +287,6 @@
       "ratingDown": "Wertung niedriger als in der letzten Sitzung",
       "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
     },
-    "formCurve": {
-      "title": "Formkurve",
-      "caption": {
-        "last30": "Laufende Winrate · letzte 30 Matches",
-        "lastEvent": "Laufende Winrate · letztes Event",
-        "last90": "Laufende Winrate · letzte 90 Tage"
-      },
-      "windowEmpty": {
-        "last30": "Weniger als 3 Matches erfasst — die Kurve braucht mindestens 3.",
-        "lastEvent": "Weniger als 3 Matches beim letzten Event — die Kurve braucht mindestens 3.",
-        "last90": "Weniger als 3 Matches in den letzten 90 Tagen — die Kurve braucht mindestens 3."
-      },
-      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
-      "winRate": "Winrate",
-      "opponent": "Gegner: {{name}}"
-    },
     "previous": {
       "title": "Letzte Matches",
       "empty": "Noch keine Matches erfasst.",
@@ -480,7 +464,6 @@
     },
     "hero": {
       "currentGsp": "Aktuelle GSP",
-      "latestReading": "letzte Ablesung",
       "noGsp": "Noch keine GSP erfasst",
       "estMmr": "Gesch. MMR",
       "tailReading": "Randbereich-Ablesung ({{zone}}) — ungefähr",
@@ -498,7 +481,6 @@
       "recalibratedToast": "Modell anhand deiner Schwellen-Ablesung rekalibriert!",
       "thresholdSaveFailed": "Elite-Schwelle konnte nicht gespeichert werden. Bitte erneut versuchen.",
       "distanceToElite": "Abstand zu Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · unter Elite ({{elite}})",
       "recentWinRate": "Aktuelle Winrate",
       "lastNGames_one": "letztes Match",
@@ -511,12 +493,8 @@
     },
     "curve": {
       "title": "GSP-Kurve",
-      "gspViewAria": "GSP-Ansicht",
-      "mmrViewAria": "MMR-Ansicht",
       "gspLabel": "GSP",
-      "eliteLine": "Elite-Schwelle",
       "estMmrLabel": "Gesch. MMR",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "Geschätzte versteckte MMR hinter jeder Ablesung (Community-Modell per Reverse Engineering) — anders als die GSP inflationiert sie nicht mit der Zeit: Eine flache Linie bedeutet konstantes Niveau. Gestrichelte Linie: Elite-Einstieg bei MMR {{mmr}}.",
       "gspCaption": "Jeder Punkt ist eine nach dem Match erfasste GSP-Ablesung für diesen Kämpfer. Die gestrichelte Linie ist die berechnete Elite-Smash-Schwelle — eine Schätzung des Community-Modells, kein von Nintendo veröffentlichter Wert.",
       "clickHint": "Klicke einen Punkt an, um die Ablesung zu bearbeiten.",
@@ -577,17 +555,6 @@
     },
     "gains": {
       "title": "Gewinn-Analyse",
-      "avgGainLifetime": "Ø Gewinn/Sieg (gesamt)",
-      "avgDropLifetime": "Ø Verlust/Niederlage (gesamt)",
-      "biggestGain": "Größter Einzelgewinn",
-      "avgGainLast20": "Ø Gewinn/Sieg (letzte 20)",
-      "avgDropLast20": "Ø Verlust/Niederlage (letzte 20)",
-      "biggestDrop": "Größter Einzelverlust",
-      "perWinTitle": "Gewinne pro Sieg im Zeitverlauf",
-      "shrinking": "— schrumpfen, während deine GSP steigt",
-      "growing": "— steigend",
-      "winNumber": "Sieg Nr. {{number}}",
-      "gainedGsp": "GSP gewonnen",
       "empty": "Erfasse ein paar Siege und Niederlagen mit GSP-Ablesungen, um deine Trends zu sehen.",
       "figure": {
         "avgGain": "Ø Gewinn pro Sieg",
@@ -643,9 +610,6 @@
     },
     "vsGlicko": {
       "title": "Gesch. MMR vs. Glicko-2",
-      "mmrLabel": "Gesch. MMR (normalisiert)",
-      "glickoLabel": "Glicko-2 (normalisiert)",
-      "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht.",
       "panel": {
         "mmr": "Gesch. MMR",
         "glicko": "Glicko-2"
