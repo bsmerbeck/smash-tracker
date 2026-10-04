@@ -113,6 +113,21 @@ export interface FormStripLabels {
    * (replaces `windowEmpty`).
    */
   windowNote?: string;
+  /**
+   * Plan 41-10 (DD-41-04): an optional support line under the foot — a
+   * formatter of the games the kit actually DRAWS (after the `limit` trim and
+   * the width fit): their W–L and set count. Only the kit knows the drawn set,
+   * so a host that wants "the record of the drawn games" cannot compute it
+   * itself. Absent, the foot renders exactly as before.
+   */
+  drawn?: (drawn: FormStripDrawn) => ReactNode;
+}
+
+/** The record and set count of the games a `FormStrip` actually draws. */
+export interface FormStripDrawn {
+  wins: number;
+  losses: number;
+  sets: number;
 }
 
 export interface FormStripProps {
@@ -216,6 +231,26 @@ function drawnRecord(event: FormStripEvent): string {
     }
   }
   return `${wins}–${losses}`;
+}
+
+/** Plan 41-10: the W–L and set count over the events a strip draws. */
+function drawnTotals(events: FormStripEvent[]): FormStripDrawn {
+  let wins = 0;
+  let losses = 0;
+  let sets = 0;
+  for (const event of events) {
+    for (const set of event.sets) {
+      sets += 1;
+      for (const game of set.games) {
+        if (game.won) {
+          wins += 1;
+        } else {
+          losses += 1;
+        }
+      }
+    }
+  }
+  return { wins, losses, sets };
 }
 
 function countGames(events: FormStripEvent[]): number {
@@ -606,6 +641,7 @@ export function FormStrip({
       : trimmedEvents;
   const shownGames = countGames(shownEvents.map(({ event }) => event));
   const counts = { shown: shownGames, total: totalGames };
+  const drawn = labels.drawn ? drawnTotals(shownEvents.map(({ event }) => event)) : null;
   const title = typeof labels.title === 'function' ? labels.title(counts) : labels.title;
 
   return (
@@ -690,6 +726,14 @@ export function FormStrip({
           </span>
         )}
       </div>
+      {labels.drawn && drawn && (
+        <div
+          data-slot="form-strip-support"
+          className="min-w-0 text-xs leading-4 text-muted-foreground"
+        >
+          {labels.drawn(drawn)}
+        </div>
+      )}
     </div>
   );
 }

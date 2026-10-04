@@ -192,10 +192,10 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
     expect(RED_CHART_INK_PATTERN.test('borderColor: chartColors.series,')).toBe(false);
   });
 
-  it('the scanned set is non-empty and includes the Form Curve and all three GSP chart files', () => {
+  it('the scanned set is non-empty and includes the form strip tile and all three GSP chart files', () => {
     expect(RED_INK_SCANNED.length).toBeGreaterThan(50);
     for (const file of [
-      'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
+      'apps/web/src/pages/Dashboard/components/FormStripTile.tsx',
       'apps/web/src/pages/Gsp/components/GspCurve.tsx',
       'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
       'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',

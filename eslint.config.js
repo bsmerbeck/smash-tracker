@@ -42,11 +42,7 @@ export default tseslint.config(
     // excludes the jsdom stub and the mocking test — neither needs an
     // exemption from a rule about imports.
     files: ['apps/web/**/*.{ts,tsx}'],
-    ignores: [
-      'apps/web/src/components/charts/**',
-      'apps/web/src/lib/chartTheme.ts',
-      'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-    ],
+    ignores: ['apps/web/src/components/charts/**', 'apps/web/src/lib/chartTheme.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

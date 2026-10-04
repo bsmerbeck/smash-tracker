@@ -88,13 +88,12 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  * retired from it), removed here, from the eslint ignores and from the README in the same commit.
  * Two entries as of plan 41-07 — every GSP chart is on the kit: GspVsGlicko rebuilt as a
  * SmallMultiplesGrid of two value-mode panels (chart.js retired from it), removed here, from the
- * eslint ignores and from the README in the same commit. Only `LastMatchesChart.tsx` and
- * `chartTheme.ts` remain.
+ * eslint ignores and from the README in the same commit.
+ * One entry as of plan 41-10 — the Dashboard Form Curve (`LastMatchesChart.tsx`) was replaced by the
+ * `FormStripTile` (a kit `FormStrip limit={30}`), deleted with its test, removed here, from the
+ * eslint ignores and from the README in the same commit. Only `chartTheme.ts` remains.
  */
-const LEGACY_CANVAS_ALLOWLIST = [
-  'apps/web/src/lib/chartTheme.ts',
-  'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-];
+const LEGACY_CANVAS_ALLOWLIST = ['apps/web/src/lib/chartTheme.ts'];
 
 const SVG_CHART_IMPORT = /from\s+['"]recharts['"]/;
 const CANVAS_CHART_IMPORT = /from\s+['"](chart\.js|react-chartjs-2)['"]/;

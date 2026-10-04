@@ -261,7 +261,8 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Casual vs Competitive')).toBeInTheDocument();
     expect(screen.getByText('Online vs Offline')).toBeInTheDocument();
     expect(screen.getByText('Previous Matches')).toBeInTheDocument();
-    expect(screen.getByText('Form Curve')).toBeInTheDocument();
+    expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
+    expect(screen.queryByText('Form Curve')).toBeNull();
     expect(screen.getByText('Most-Played Stages')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
@@ -330,21 +331,51 @@ describe('DashboardPage', () => {
 
   // Plan 39.1-50 Task 3 (DEFECT found on the after capture, UI-SPEC §6.1
   // "no orphan half"): with six hero tiles the second hero row holds Rating
-  // and the fighter tile (6 columns), so the 6-span Form Curve packed in
-  // beside them and left Previous Matches alone on the next row. The Form
-  // Curve starts its own row at lg, so it and Previous Matches stay a pair.
-  it('the Form Curve cell starts a new row at lg, pairing it with Previous Matches', async () => {
+  // and the fighter tile (6 columns), so a 6-span cell packed in beside them
+  // and left Previous Matches alone on the next row. Plan 41-10 (DD-41-03):
+  // the left cell is now the form strip tile stacked over Matchup Snapshot; it
+  // starts its own row at lg, so it and Previous Matches stay a pair.
+  it('the form strip + Snapshot stack starts a new row at lg, pairing it with Previous Matches', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
 
-    renderDashboard();
+    const { container } = renderDashboard();
 
-    const curveCell = (await screen.findByText('Form Curve')).closest('[data-span]')!;
+    const tile = await waitFor(() => {
+      const found = container.querySelector('[data-slot="form-strip-tile"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const stackCell = tile.closest('[data-span]')!;
     const previousCell = screen.getByText('Previous Matches').closest('[data-span]')!;
-    expect(curveCell).toHaveAttribute('data-span', '6');
-    expect(curveCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(stackCell).toHaveAttribute('data-slot', 'dashboard-form-stack');
+    expect(stackCell).toHaveAttribute('data-span', '6');
+    expect(stackCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(stackCell.className).toMatch(/(^|\s)flex-col(\s|$)/);
+    // The stack holds the strip tile, then Matchup Snapshot — nothing else.
+    expect(stackCell.children).toHaveLength(2);
+    expect(stackCell.children[0]).toContainElement(tile as HTMLElement);
+    expect(stackCell.children[1]).toHaveAttribute('data-slot', 'card');
+    expect(stackCell.children[1]).not.toContainElement(tile as HTMLElement);
     expect(previousCell).toHaveAttribute('data-span', '6');
-    expect(curveCell.nextElementSibling).toBe(previousCell);
+    expect(previousCell).toHaveAttribute('data-slot', 'previous-matches');
+    expect(stackCell.nextElementSibling).toBe(previousCell);
+    // Most-Played Stages stays a 12-col row below the pair.
+    const stagesCell = screen.getByText('Most-Played Stages').closest('[data-span]')!;
+    expect(stagesCell).toHaveAttribute('data-span', '12');
+    expect(previousCell.nextElementSibling).toBe(stagesCell);
+  });
+
+  it('plan 41-10: the chart.js Form Curve is gone — no canvas and no Form Curve title', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await screen.findByText('Form · last 30 games');
+    expect(container.querySelector('canvas')).toBeNull();
+    expect(screen.queryByText('Form Curve')).toBeNull();
+    expect(container.querySelector('[data-slot="form-curve-caption"]')).toBeNull();
   });
 
   it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
@@ -465,23 +496,25 @@ describe('DashboardPage', () => {
       );
     });
 
-    // Plan 39.1-39 (UI-SPEC §10.4, D-06): the Form Curve has no window select
-    // of its own — it plots the page horizon's window, so the same switch
-    // press re-windows it and its caption names the new window.
-    it('the Form Curve follows the page horizon (no per-card select)', async () => {
+    // Plan 39.1-39 (UI-SPEC §10.4, D-06) / plan 41-10: the form strip has no
+    // window select of its own — the page horizon only changes which of its
+    // games are emphasised, and the strip's overline names the new highlight.
+    it('the form strip follows the page horizon (no per-card select)', async () => {
       const user = userEvent.setup();
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue(horizonFixture());
 
       const { container } = renderDashboard();
 
-      const caption = () => container.querySelector('[data-slot="form-curve-caption"]');
-      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 30 games'));
+      const overline = () => container.querySelector('[data-slot="form-strip-overline"]');
+      await waitFor(() => expect(overline()?.textContent).toBe('Form · last 30 games'));
       expect(screen.queryByRole('combobox', { name: 'Rolling window' })).toBeNull();
 
       await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
 
-      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 90 days'));
+      await waitFor(() =>
+        expect(overline()?.textContent).toBe('Form · last 30 games, last 90 days highlighted'),
+      );
     });
   });
 
@@ -675,7 +708,7 @@ describe('DashboardPage', () => {
       expect(tracked.querySelector('[role="status"][aria-busy="true"]')).not.toBeNull();
       expect(tracked.querySelector('[data-slot="tracked-row"]')).toBeNull();
       // The rest of the Dashboard is on screen and unblocked.
-      expect(screen.getByText('Form Curve')).toBeInTheDocument();
+      expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
     });
 
     it('a watchlist load failure is one line inside the section and leaves the Dashboard alone', async () => {
@@ -690,7 +723,7 @@ describe('DashboardPage', () => {
       renderDashboard();
 
       expect(await screen.findByText(/Tracked items couldn't be loaded/)).toBeInTheDocument();
-      expect(screen.getByText('Form Curve')).toBeInTheDocument();
+      expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
     });
   });
 
@@ -969,6 +1002,24 @@ describe('DashboardPage', () => {
       expect(statRowGrids).toHaveLength(6);
       // Plan 39.2-12: exactly ONE 12-span stat-row skeleton is legitimate — the digest's own cell.
       expect(statRowSkeletonCells('12')).toHaveLength(1);
+    });
+
+    it('plan 41-10: the row-3 skeleton mirrors the loaded stack — a chart skeleton over a 3-row list skeleton beside the Previous Matches list, then the Stages row', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      const stack = Array.from(container.querySelectorAll('[data-span="6"]')).find((cell) =>
+        /\bflex-col\b/.test(cell.className),
+      );
+      expect(stack).toBeDefined();
+      expect(stack!.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+      // Two skeleton cards stacked; the Snapshot's own 12-span skeleton is gone.
+      expect(stack!.querySelectorAll('[role="status"]')).toHaveLength(2);
+      expect(stack!.nextElementSibling).toHaveAttribute('data-span', '6');
+      expect(stack!.nextElementSibling!.nextElementSibling).toHaveAttribute('data-span', '12');
+      expect(stack!.nextElementSibling!.nextElementSibling!.nextElementSibling).toBeNull();
     });
 
     it('renders zero skeleton blocks once the dashboard has loaded', async () => {

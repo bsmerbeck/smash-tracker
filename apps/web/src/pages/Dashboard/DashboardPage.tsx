@@ -26,7 +26,7 @@ import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
 import { MatchupSnapshot } from './components/MatchupSnapshot';
 import { PreviousMatches } from './components/PreviousMatches';
-import { LastMatchesChart } from './components/LastMatchesChart';
+import { FormStripTile } from './components/FormStripTile';
 import { HeroStats, HERO_TILE_CLASS } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
@@ -244,14 +244,15 @@ export function DashboardPage() {
                 <CardSkeleton variant="stat-row" rows={2} statusLabel={t('dashboard.loading')} />
               </GridCell>
             ))}
-            <GridCell span={6}>
+            {/* Plan 41-10 (DD-41-03): mirrors the loaded row 3 — the strip tile
+                (a chart skeleton) stacked over the Snapshot (a 3-row list) beside
+                Previous Matches — then the Stages row. */}
+            <GridCell span={6} stack className="lg:col-start-1">
               <CardSkeleton variant="chart" statusLabel={t('dashboard.loading')} />
+              <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />
             </GridCell>
             <GridCell span={6}>
               <CardSkeleton variant="list" rows={4} statusLabel={t('dashboard.loading')} />
-            </GridCell>
-            <GridCell span={12}>
-              <CardSkeleton variant="list" rows={3} statusLabel={t('dashboard.loading')} />
             </GridCell>
             <GridCell span={12}>
               <CardSkeleton variant="chart" statusLabel={t('dashboard.loading')} />
@@ -376,21 +377,21 @@ export function DashboardPage() {
                         <FilteredEmptyNotice />
                       </GridCell>
                     )}
-                    {/* Plan 39.1-50 / quick 261002-leg: the hero now sums to exactly 12
-                columns at lg and xl, so `lg:col-start-1` is harmless; it stays
-                because the Form Curve + Previous Matches pairing test asserts it
-                (UI-SPEC §6.1 "no orphan half"). */}
-                    <GridCell span={6} className="lg:col-start-1">
-                      <LastMatchesChart matches={matches} horizon={horizon} />
+                    {/* Plan 41-10 (DD-41-03): row 3 is the form strip tile stacked over
+                Matchup Snapshot, beside Previous Matches (the 5-row rail list). The
+                hero sums to exactly 12 columns at lg and xl, so `lg:col-start-1` is
+                harmless; it stays because the pairing test asserts it (UI-SPEC §6.1
+                "no orphan half"). DOM order below 1024: hero, strip tile, Snapshot,
+                Previous Matches, Stages. */}
+                    <GridCell span={6} stack className="lg:col-start-1" slot="dashboard-form-stack">
+                      <FormStripTile matches={matches} horizon={horizon} />
+                      <MatchupSnapshot matches={matches} />
                     </GridCell>
-                    <GridCell span={6}>
+                    <GridCell span={6} slot="previous-matches">
                       <PreviousMatches matches={matches} horizon={horizon} />
                     </GridCell>
                     <GridCell span={12}>
                       <StageTiles matches={matches} />
-                    </GridCell>
-                    <GridCell span={12}>
-                      <MatchupSnapshot matches={matches} />
                     </GridCell>
                   </PageGrid>
                 </div>
