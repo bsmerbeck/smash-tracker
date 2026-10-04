@@ -2254,6 +2254,21 @@ describe('TrendLine — mode value says what it shows (plan 41-02 Task 2, UI-SPE
     roomy.unmount();
   });
 
+  it('WR-07: the table toggle carries aria-expanded, flips on click and then names the table it controls', () => {
+    const series = buildValueSeries(gspReadings(30, 90));
+    const { container } = renderValue(series);
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'View as table',
+    )!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBeTruthy();
+    expect(
+      container.querySelector(`[id="${toggle.getAttribute('aria-controls')}"]`),
+    ).not.toBeNull();
+  });
+
   it('offers a table twin (date · value · readings) with column-scoped headers', () => {
     const series = buildValueSeries(gspReadings(30, 90));
     const { container, points } = renderValue(series);

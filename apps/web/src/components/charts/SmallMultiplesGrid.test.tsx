@@ -236,6 +236,23 @@ describe('SmallMultiplesGrid (plan 41-02, DD-41-02)', () => {
     });
   });
 
+  it('WR-07: the table toggle carries aria-expanded, flips on click and then names the table it controls', () => {
+    const { container } = renderGrid([
+      panel('mmr', 'Est. MMR', A_DAYS, 1000),
+      panel('glicko', 'Glicko-2', B_DAYS, 1700),
+    ]);
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'View as table',
+    )!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-controls')).toBeTruthy();
+    expect(
+      container.querySelector(`[id="${toggle.getAttribute('aria-controls')}"]`),
+    ).not.toBeNull();
+  });
+
   it('draws at most 60 marks per panel on a long real series', () => {
     const readings = (offset: number): ValueSeriesReading[] =>
       Array.from({ length: 200 }, (_, i) => ({

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { formatDate } from '@/lib/format';
 import { CHART_TOKENS } from './tokens';
@@ -128,15 +128,12 @@ export function ValueTrendTableTwin({
   const { i18n } = useTranslation();
   return (
     <Collapsible open={open} onOpenChange={setOpen} data-slot="trend-value-table">
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        className={MUTED_LINK_TONE}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {toggle}
-      </Button>
+      {/* The trigger sets aria-expanded and aria-controls and toggles the content (WR-07). */}
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="link" size="sm" className={MUTED_LINK_TONE}>
+          {toggle}
+        </Button>
+      </CollapsibleTrigger>
       <CollapsibleContent>
         <table className="w-full text-sm">
           <thead>

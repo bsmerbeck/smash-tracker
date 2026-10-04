@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ValueSeriesGrain } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { formatDate } from '@/lib/format';
 import { CAREER_TIMELINE_READOUT_MAX_WIDTH_PX, clampReadoutLeft } from './careerTimelineLayout';
@@ -338,15 +338,12 @@ export function SmallMultiplesGrid({
         {caption}
       </p>
       <Collapsible open={tableOpen} onOpenChange={setTableOpen} data-slot="multiples-table">
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          className={MUTED_LINK_TONE}
-          onClick={() => setTableOpen((open) => !open)}
-        >
-          {tableLabels.toggle}
-        </Button>
+        {/* The trigger sets aria-expanded and aria-controls and toggles the content (WR-07). */}
+        <CollapsibleTrigger asChild>
+          <Button type="button" variant="link" size="sm" className={MUTED_LINK_TONE}>
+            {tableLabels.toggle}
+          </Button>
+        </CollapsibleTrigger>
         <CollapsibleContent>
           <table className="w-full text-sm">
             <thead>
