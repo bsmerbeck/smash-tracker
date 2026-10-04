@@ -1172,7 +1172,7 @@
       "outsideRange_other": "{{count}} weitere außerhalb des aktuellen Zeitraums",
       "allTime": "Gesamter Zeitraum",
       "backToRange": "Zurück zum Zeitraum",
-      "allTimeNote": "Gesamter Zeitraum angezeigt — der Zeitraumfilter gilt weiterhin für alle anderen Karten."
+      "allTimeNote": "Gesamter Zeitraum angezeigt — der Quellen-Filter gilt weiterhin; der Zeitraumfilter gilt weiterhin für alle anderen Karten."
     },
     "tournaments": {
       "title": "Turniere",

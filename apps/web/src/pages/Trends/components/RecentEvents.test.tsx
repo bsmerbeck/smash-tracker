@@ -163,11 +163,8 @@ describe('RecentEvents', () => {
   describe('plan 41-04: the card-scoped "All time" override (B3, DD-41-10)', () => {
     const DAY = 24 * 60 * 60 * 1000;
 
-    function setRange(range: string) {
-      window.localStorage.setItem(
-        ANALYTICS_FILTER_STORAGE_KEY,
-        JSON.stringify({ source: 'all', range }),
-      );
+    function setRange(range: string, source = 'all') {
+      window.localStorage.setItem(ANALYTICS_FILTER_STORAGE_KEY, JSON.stringify({ source, range }));
     }
 
     /** `recentCount` entries inside the last 30 days, `oldCount` back in 2021 (outside every range). */
@@ -268,7 +265,9 @@ describe('RecentEvents', () => {
       expect(screen.getByText('Old 0')).toBeInTheDocument();
       expect(screen.getByText('Old 1')).toBeInTheDocument();
       expect(
-        screen.getByText('Showing all time — the range filter still scopes every other card.'),
+        screen.getByText(
+          'Showing all time — the source filter still applies; the range filter still scopes every other card.',
+        ),
       ).toBeInTheDocument();
       expect(screen.queryByText(/more outside the current range/)).not.toBeInTheDocument();
       // An out-of-range row's record comes from all own-account matches, not 0–0.
@@ -281,6 +280,38 @@ describe('RecentEvents', () => {
         'false',
       );
       expect(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY)).toBe(storedBefore);
+    });
+
+    // 41-REVIEW WR-04: "All time" overrides only the range. With the source filter on "manual" the
+    // all-time rows must not start counting start.gg games the range-mode rows excluded.
+    it("WR-04: All time keeps the global source filter, so a row's W-L does not change when start.gg games join", async () => {
+      setRange('3m', 'manual');
+      listTournaments.mockResolvedValue(entriesAcrossRange(1, 1));
+      const game = (id: string, hour: number, win: boolean, source?: 'startgg') =>
+        makeMatch({
+          id,
+          time: Date.UTC(2021, 0, 2, hour),
+          win,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Old 0',
+          ...(source ? { source } : {}),
+        });
+      const allMatches = [
+        game('m1', 0, true),
+        game('m2', 1, false),
+        game('s1', 2, true, 'startgg'),
+        game('s2', 3, true, 'startgg'),
+        game('s3', 4, true, 'startgg'),
+      ];
+      const user = userEvent.setup();
+      renderRecentEvents([], allMatches);
+
+      await screen.findByText('Recent 0');
+      await user.click(screen.getByRole('button', { name: 'All time' }));
+      expect(screen.getByText('Old 0')).toBeInTheDocument();
+      // Manual-only: 1 win, 1 loss. The three start.gg wins are filtered out, not added (4–1).
+      expect(screen.getAllByText('1–1').length).toBeGreaterThan(0);
+      expect(screen.queryByText('4–1')).not.toBeInTheDocument();
     });
 
     it('the all-time list is still capped at the rail cap with a show-all control', async () => {

@@ -1172,7 +1172,7 @@
       "outsideRange_other": "{{count}} a mais fora do período atual",
       "allTime": "Todo o período",
       "backToRange": "Voltar ao período",
-      "allTimeNote": "Mostrando todo o período — o filtro de período continua limitando os demais cartões."
+      "allTimeNote": "Mostrando todo o período — o filtro de origem continua valendo; o filtro de período continua limitando os demais cartões."
     },
     "tournaments": {
       "title": "Torneios",

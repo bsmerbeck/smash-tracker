@@ -1172,7 +1172,7 @@
       "outsideRange_other": "{{count}} more outside the current range",
       "allTime": "All time",
       "backToRange": "Back to range",
-      "allTimeNote": "Showing all time — the range filter still scopes every other card."
+      "allTimeNote": "Showing all time — the source filter still applies; the range filter still scopes every other card."
     },
     "tournaments": {
       "title": "Tournaments",

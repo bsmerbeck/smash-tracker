@@ -1172,7 +1172,7 @@
       "outsideRange_other": "{{count}} de plus hors de la période actuelle",
       "allTime": "Depuis le début",
       "backToRange": "Revenir à la période",
-      "allTimeNote": "Affichage de tout l'historique — le filtre de période continue de limiter toutes les autres cartes."
+      "allTimeNote": "Affichage de tout l'historique — le filtre de source s'applique toujours ; le filtre de période continue de limiter toutes les autres cartes."
     },
     "tournaments": {
       "title": "Tournois",

@@ -17,7 +17,7 @@ import { RecordBar } from '@/components/charts/inlineMarks';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
-import { filterEntriesByRange } from '@/hooks/useFilteredMatches';
+import { filterBySource, filterEntriesByRange } from '@/hooks/useFilteredMatches';
 import { entryDisplayDateRange } from '@/lib/historicalTournament';
 import { formatDate, formatDaySpan } from '@/lib/format';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -116,7 +116,11 @@ function RecentEventRow({ row, href, locale }: RecentEventRowProps) {
 export interface RecentEventsProps {
   /** The page's range-filtered matches — the default record cells. */
   matches: Match[];
-  /** Plan 41-04 (B3): ALL own-account matches — the "All time" list's record cells, so an out-of-range row is never shown as 0-0. */
+  /**
+   * Plan 41-04 (B3): ALL own-account matches, range- and source-unfiltered — the base of the "All time" list's
+   * record cells, so an out-of-range row is never shown as 0-0. The card applies the global SOURCE filter to it
+   * itself (41-REVIEW WR-04): "All time" overrides only the range, never the source.
+   */
   allMatches: Match[];
 }
 
@@ -128,13 +132,14 @@ export interface RecentEventsProps {
  *
  * Plan 41-04 (B3, DD-41-10): follows the global range by default. When the range hides entries it
  * offers a one-click, card-scoped "All time" override — in-memory state only, never persisted and
- * never written to the global range, so every other card keeps following the range.
+ * never written to the global range, so every other card keeps following the range. It overrides the range
+ * only: the global source filter still applies to its record cells.
  */
 export function RecentEvents({ matches, allMatches }: RecentEventsProps) {
   const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
   const { data: entries, isLoading } = useTournamentEntries();
-  const { range } = useAnalyticsFilter();
+  const { range, source } = useAnalyticsFilter();
 
   const [showAllTime, setShowAllTime] = useState(false);
 
@@ -145,7 +150,7 @@ export function RecentEvents({ matches, allMatches }: RecentEventsProps) {
   const hasHidden = range !== 'all' && hiddenCount > 0;
   const allTimeActive = showAllTime && hasHidden;
   const rows = allTimeActive
-    ? buildTournamentEntryRows(allEntries, allMatches)
+    ? buildTournamentEntryRows(allEntries, filterBySource(allMatches, source))
     : buildTournamentEntryRows(visibleEntries, matches);
 
   const empty = (

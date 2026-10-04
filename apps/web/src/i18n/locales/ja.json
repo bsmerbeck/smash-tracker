@@ -1172,7 +1172,7 @@
       "outsideRange_other": "現在の期間外にあと{{count}}件",
       "allTime": "全期間",
       "backToRange": "期間に戻る",
-      "allTimeNote": "全期間を表示中 — 期間フィルターは他のすべてのカードに引き続き適用されます。"
+      "allTimeNote": "全期間を表示中 — 種別フィルターは引き続き適用され、期間フィルターは他のすべてのカードに引き続き適用されます。"
     },
     "tournaments": {
       "title": "大会",
