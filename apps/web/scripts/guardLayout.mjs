@@ -217,6 +217,18 @@ export const TRENDS_1440P_FIT_SELECTORS = [
   '[data-slot="trends-rhythm-read"]',
 ];
 
+/**
+ * Plan 41-10 (UI-SPEC §12.11, DD-41-03): the Dashboard's row-3 pair — the strip-tile-over-Snapshot
+ * stack beside Previous Matches. `itemSelector` makes grid-balance measure only that pair (the
+ * digest / hero rows are not part of it); `pairBottomTolerancePx` is the §12.11 bottom tolerance
+ * and `deadGapTolerancePx` the same 64px for the dead-gap rule (§12.11 pair tolerance).
+ */
+const DASHBOARD_PAIR_BALANCE = {
+  itemSelector: '[data-slot="dashboard-form-stack"], [data-slot="previous-matches"]',
+  deadGapTolerancePx: 64,
+  pairBottomTolerancePx: 64,
+};
+
 export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'stretched-card-fixture',
@@ -246,8 +258,11 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the Dashboard has none); phone StatRows collapse to two columns.
     // Plan 39.1-39: record-fit (the split cards' two records never
     // overprint or leave their cells) and brand-red-text (UI-SPEC §4.3).
-    checks: ['filter-row', 'record-fit', 'brand-red-text'],
+    // Plan 41-10 (UI-SPEC §12.11, DD-41-03): grid-balance on the row-3 PAIR only — the
+    // form-stack cell and Previous Matches — within 64px of each other's bottom.
+    checks: ['filter-row', 'record-fit', 'brand-red-text', 'grid-balance'],
     filterRow: { maxHeightPx: 72, owns: ['[data-slot="horizon-switch"]'] },
+    gridBalance: DASHBOARD_PAIR_BALANCE,
     narrowChecks: ['stat-row-columns'],
   },
   {
@@ -264,7 +279,8 @@ export const LAYOUT_ORACLE_ROUTES = [
     scale: 'dashboard',
     storageSeed: DASHBOARD_DIGEST_SEED,
     prepare: DASHBOARD_DIGEST_PREPARE,
-    checks: ['record-fit', 'brand-red-text'],
+    checks: ['record-fit', 'brand-red-text', 'grid-balance'],
+    gridBalance: DASHBOARD_PAIR_BALANCE,
   },
   {
     id: 'fighter-analysis',
@@ -1121,8 +1137,15 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       // other route keeps the plain card selector.
       const gridCardSelector =
         (familyConfig.gridBalance && familyConfig.gridBalance.cardSelector) || '[data-slot="card"]';
-      const cardBearingChildren = Array.from(gridEl.children).filter(
-        (child) => child.matches(gridCardSelector) || child.querySelector(gridCardSelector),
+      // Plan 41-10: a route may instead name the exact grid children it balances (the Dashboard's
+      // form-stack / Previous Matches pair); only those children are kept, so the digest and hero
+      // rows are not part of that route's measurement. Absent, behaviour is unchanged.
+      const gridItemSelector =
+        (familyConfig.gridBalance && familyConfig.gridBalance.itemSelector) || null;
+      const cardBearingChildren = Array.from(gridEl.children).filter((child) =>
+        gridItemSelector
+          ? child.matches(gridItemSelector)
+          : child.matches(gridCardSelector) || child.querySelector(gridCardSelector),
       );
       if (cardBearingChildren.length < 2) continue;
       const rowGapPx = parseFloat(window.getComputedStyle(gridEl).rowGap) || 0;
@@ -2540,7 +2563,16 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       );
     }
     if (checks.includes('grid-balance')) {
-      violations.push(...evaluateGridBalance(measurements.grids));
+      violations.push(
+        ...evaluateGridBalance(measurements.grids, {
+          ...(route.gridBalance?.deadGapTolerancePx !== undefined
+            ? { deadGapTolerancePx: route.gridBalance.deadGapTolerancePx }
+            : {}),
+          ...(route.gridBalance?.pairBottomTolerancePx !== undefined
+            ? { pairBottomTolerancePx: route.gridBalance.pairBottomTolerancePx }
+            : {}),
+        }),
+      );
       violations.push(...evaluateFamilyPresence('grid-balance', measurements.grids));
     }
     // Plan 39.1-32: the four mobile gap-closure families, same opt-in

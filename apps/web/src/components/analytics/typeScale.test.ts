@@ -27,6 +27,8 @@ const ANALYTICS_DIR = 'apps/web/src/components/analytics/';
 const CHARTS_DIR = 'apps/web/src/components/charts/';
 /** Plan 41-05 (12.10): the GSP page's components are scanned too, threshold 0 — its hero's off-scale figure classes left in the same commit. */
 const GSP_COMPONENTS_DIR = 'apps/web/src/pages/Gsp/components/';
+/** Plan 41-10 (12.10): the Dashboard form strip tile is scanned too, threshold 0 — it hosts the kit strip and carries its own overline. */
+const FORM_STRIP_TILE_PATH = 'apps/web/src/pages/Dashboard/components/FormStripTile.tsx';
 const SELF_PATH = 'apps/web/src/components/analytics/typeScale.test.ts';
 const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/OffScaleTypeFixture.tsx';
 
@@ -155,7 +157,8 @@ const SCANNED_FILES = SOURCE_FILES.filter(
   (file) =>
     (file.startsWith(ANALYTICS_DIR) ||
       file.startsWith(CHARTS_DIR) ||
-      file.startsWith(GSP_COMPONENTS_DIR)) &&
+      file.startsWith(GSP_COMPONENTS_DIR) ||
+      file === FORM_STRIP_TILE_PATH) &&
     !/\.test\.tsx?$/.test(file) &&
     !file.includes('guardFixtures/'),
 );
@@ -165,6 +168,10 @@ describe('type-scale guard — source-tree guard (UIX-04, §5.1/§13.16)', () =>
     expect(SCANNED_FILES.length).toBeGreaterThan(0);
     expect(SCANNED_FILES).not.toContain(FIXTURE_PATH);
     expect(SCANNED_FILES).not.toContain(SELF_PATH);
+  });
+
+  it('the scanned set includes the Dashboard form strip tile (plan 41-10)', () => {
+    expect(SCANNED_FILES).toContain(FORM_STRIP_TILE_PATH);
   });
 
   it("declares no exemption list — self-check over this file's own declared constants", () => {

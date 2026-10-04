@@ -15,6 +15,12 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { filterByFighter, rankMatchupsByEvidence, type RankedMatchup } from '@/lib/stats';
 import { SampleCue } from '@/components/EvidenceCues';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { cn } from '@/lib/utils';
+import {
+  TILE_CARD_CLASS,
+  TILE_CONTENT_CLASS,
+  TILE_HEADER_CLASS,
+} from '@/components/analytics/cardDensity';
 import { useDashboardContext } from '../DashboardContext';
 
 const SNAPSHOT_COUNT = 3;
@@ -73,8 +79,8 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
 
   if (!fighter || matches.length === 0) {
     return (
-      <Card>
-        <CardContent className="pt-6">
+      <Card className={TILE_CARD_CLASS}>
+        <CardContent className={TILE_CONTENT_CLASS}>
           <h2 className="text-lg font-medium">{t('dashboard.snapshot.noMatches')}</h2>
         </CardContent>
       </Card>
@@ -85,8 +91,8 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
   const { strongest, toughest, needsMoreData } = buildMatchupSnapshot(fighterMatches);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className={TILE_CARD_CLASS}>
+      <CardHeader className={cn('flex flex-row items-center justify-between', TILE_HEADER_CLASS)}>
         <div>
           <CardTitle>{t('dashboard.snapshot.title')}</CardTitle>
           <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
@@ -95,7 +101,12 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
           <Link to={subjectPath('/matchups')}>{t('dashboard.snapshot.openLab')}</Link>
         </Button>
       </CardHeader>
-      <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Plan 41-10 (DD-41-03): the two lists switch on the CARD's width, not the viewport's —
+          the Snapshot now shares a half-width column with the strip tile, so a wide viewport
+          no longer implies a wide card. */}
+      <CardContent
+        className={cn('@container grid grid-cols-1 gap-4 @[440px]:grid-cols-2', TILE_CONTENT_CLASS)}
+      >
         <MatchupList
           title={t('dashboard.snapshot.strongest')}
           entries={strongest}

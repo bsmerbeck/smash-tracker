@@ -622,6 +622,63 @@ test('grid-balance: a 40px gap (= 16 row-gap + 24 tolerance) passes', () => {
   assert.equal(violations.filter((v) => v.type === 'dead-gap').length, 0);
 });
 
+// Plan 41-10 (UI-SPEC §12.11): the opt-in `pairBottomTolerancePx`. The Dashboard's stack (446px)
+// beside a Previous Matches list that grew to 770px is a 0.58 ratio — NOT an orphan half — so the
+// ratio rule alone passes a pair whose bottoms are 324px apart. The bottom rule is what catches it.
+const PAIR_446_770 = [
+  {
+    selectorPath: '#grid',
+    rowGapPx: 16,
+    items: [
+      { selectorPath: '#stack', left: 0, right: 100, top: 0, bottom: 446 },
+      { selectorPath: '#previous', left: 110, right: 210, top: 0, bottom: 770 },
+    ],
+  },
+];
+
+test('grid-balance: without pairBottomTolerancePx a 446 / 770 pair passes (the ratio is 0.58)', () => {
+  assert.deepEqual(evaluateGridBalance(PAIR_446_770), []);
+});
+
+test('grid-balance: pairBottomTolerancePx 64 fails a pair whose bottoms are 324px apart', () => {
+  const violations = evaluateGridBalance(PAIR_446_770, { pairBottomTolerancePx: 64 });
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, 'pair-bottom-delta');
+  assert.equal(violations[0].delta, 324);
+});
+
+test('grid-balance: pairBottomTolerancePx 64 passes bottoms 64px apart and fails 65px', () => {
+  const pair = (rightBottom) => [
+    {
+      selectorPath: '#grid',
+      rowGapPx: 16,
+      items: [
+        { selectorPath: '#stack', left: 0, right: 100, top: 0, bottom: 446 },
+        { selectorPath: '#previous', left: 110, right: 210, top: 0, bottom: rightBottom },
+      ],
+    },
+  ];
+  assert.deepEqual(evaluateGridBalance(pair(510), { pairBottomTolerancePx: 64 }), []);
+  assert.equal(evaluateGridBalance(pair(511), { pairBottomTolerancePx: 64 }).length, 1);
+});
+
+test('grid-balance: pairBottomTolerancePx never fires on a stacked (single-column) pair', () => {
+  const violations = evaluateGridBalance(
+    [
+      {
+        selectorPath: '#grid',
+        rowGapPx: 16,
+        items: [
+          { selectorPath: '#stack', left: 0, right: 100, top: 0, bottom: 446 },
+          { selectorPath: '#previous', left: 0, right: 100, top: 462, bottom: 900 },
+        ],
+      },
+    ],
+    { pairBottomTolerancePx: 64 },
+  );
+  assert.deepEqual(violations, []);
+});
+
 // --- family presence (written RED first, one case per family) ---
 
 test('evaluateFamilyPresence: an empty content-overflow list fails non-vacuously', () => {

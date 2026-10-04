@@ -222,8 +222,14 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
 const GSP_COMPONENT_DIR = 'apps/web/src/pages/Gsp/components/';
 const GSP_MARK_INK_PATTERN = /var\(--chart-|var\(--primary\)|\bchartColors\b|\bredLineDataset\b/;
 const GSP_COMPONENT_FILES = NON_TEST_FILES.filter((file) => file.startsWith(GSP_COMPONENT_DIR));
+/**
+ * Plan 41-10 (UI-SPEC §12.13): the Dashboard form strip tile hosts the kit strip, whose ink is the kit's
+ * own win / loss tokens, so it is held to the same no-palette, no-brand-red rule as the GSP components.
+ */
+const FORM_STRIP_TILE_FILE = 'apps/web/src/pages/Dashboard/components/FormStripTile.tsx';
+const MARK_INK_FILES = [...GSP_COMPONENT_FILES, FORM_STRIP_TILE_FILE];
 
-describe('design fidelity — no palette or brand-red mark ink in the rebuilt GSP components (plan 41-09)', () => {
+describe('design fidelity — no palette or brand-red mark ink in the rebuilt GSP components and the Dashboard form strip tile (plans 41-09, 41-10)', () => {
   it('the pattern detects each forbidden ink reference and ignores a look-alike (non-vacuity)', () => {
     for (const fixture of [
       'stroke="var(--chart-1)"',
@@ -244,8 +250,13 @@ describe('design fidelity — no palette or brand-red mark ink in the rebuilt GS
     expect(GSP_COMPONENT_FILES.every((file) => !/\.test\.tsx?$/.test(file))).toBe(true);
   });
 
-  it('no non-test GSP component uses var(--chart-*), var(--primary), chartColors or redLineDataset', () => {
-    const offenders = GSP_COMPONENT_FILES.filter((file) =>
+  it('the scanned set also contains the Dashboard form strip tile, which exists (plan 41-10)', () => {
+    expect(MARK_INK_FILES).toContain(FORM_STRIP_TILE_FILE);
+    expect(NON_TEST_FILES).toContain(FORM_STRIP_TILE_FILE);
+  });
+
+  it('no non-test GSP component or the form strip tile uses var(--chart-*), var(--primary), chartColors or redLineDataset', () => {
+    const offenders = MARK_INK_FILES.filter((file) =>
       GSP_MARK_INK_PATTERN.test(readRepoFile(file)),
     );
     expect(offenders).toEqual([]);
