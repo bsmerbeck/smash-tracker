@@ -24,6 +24,7 @@ describe('buildActivityHeat', () => {
     expect(buildActivityHeat([])).toEqual({
       years: [],
       cells: [],
+      allCells: [],
       yearTotals: [],
       maxCellValue: 0,
       shownYears: 0,
@@ -87,6 +88,21 @@ describe('buildActivityHeat', () => {
     expect(heat.cells.every((c) => c.year >= 2018)).toBe(true);
     // The table twin still lists the dropped year.
     expect(heat.yearTotals.map((y) => y.year)).toContain(2017);
+  });
+
+  // 41-REVIEW WR-01: the drawn `cells` are bounded, but the table twin lists the dropped years' months
+  // too, so every month with a game is reachable through `allCells` and agrees with `yearTotals`.
+  it('WR-01: allCells holds every month with a game, dropped years included, summing to each year total', () => {
+    const all = Array.from({ length: 10 }, (_, i) => game(2017 + i, 5));
+    const heat = buildActivityHeat(all);
+    expect(heat.allCells).toHaveLength(10);
+    expect(heat.allCells.some((c) => c.year === 2017 && c.month === 5 && c.total === 1)).toBe(true);
+    for (const { year, total } of heat.yearTotals) {
+      const months = heat.allCells.filter((c) => c.year === year);
+      expect(months.reduce((sum, c) => sum + c.total, 0)).toBe(total);
+    }
+    // The drawn cells keep the mark bound.
+    expect(heat.cells).toHaveLength(9);
   });
 
   it('honours maxYears and never exceeds 108 cells', () => {

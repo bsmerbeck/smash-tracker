@@ -48,9 +48,9 @@ function HeatTableTwin({
   // Every year, not only the shown ones: the table is where the older years live.
   const countByYearMonth = useMemo(() => {
     const map = new Map<string, number>();
-    for (const cell of heat.cells) map.set(`${cell.year}:${cell.month}`, cell.total);
+    for (const cell of heat.allCells) map.set(`${cell.year}:${cell.month}`, cell.total);
     return map;
-  }, [heat.cells]);
+  }, [heat.allCells]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>

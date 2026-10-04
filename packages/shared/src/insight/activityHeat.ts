@@ -26,8 +26,10 @@ export interface ActivityHeatCell {
 export interface ActivityHeat {
   /** Newest first, at most `ACTIVITY_HEAT_MAX_YEARS`. */
   years: number[];
-  /** Sparse: months with at least one game only (at most 108). */
+  /** Sparse: months with at least one game only, shown years only (at most 108) — what the heat DRAWS. */
   cells: ActivityHeatCell[];
+  /** Every month with a game in EVERY year, shown or not — what the table twin lists (older years live there). */
+  allCells: ActivityHeatCell[];
   yearTotals: { year: number; total: number }[];
   maxCellValue: number;
   shownYears: number;
@@ -80,13 +82,13 @@ export function buildActivityHeat(
   const allYears = [...totalByYear.keys()].sort((a, b) => b - a);
   const years = allYears.slice(0, maxYears);
   const shown = new Set(years);
-  const cells = [...byMonth.values()]
-    .filter((cell) => shown.has(cell.year))
-    .sort((a, b) => b.year - a.year || a.month - b.month);
+  const allCells = [...byMonth.values()].sort((a, b) => b.year - a.year || a.month - b.month);
+  const cells = allCells.filter((cell) => shown.has(cell.year));
 
   return {
     years,
     cells,
+    allCells,
     yearTotals: allYears.map((year) => ({ year, total: totalByYear.get(year)! })),
     maxCellValue: cells.reduce((max, cell) => Math.max(max, cell.total), 0),
     shownYears: years.length,

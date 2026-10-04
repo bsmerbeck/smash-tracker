@@ -98,6 +98,11 @@ describe('PlayRhythmHeat', () => {
         ...Array.from({ length: 12 }, (_, i) => (i === 4 ? '1' : '—')),
         '1',
       ]);
+      // 41-REVIEW WR-01: the dropped year's months are listed too, not a row of dashes under a real total.
+      const oldest = within(bodyRows[9]!)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent);
+      expect(oldest).toEqual([...Array.from({ length: 12 }, (_, i) => (i === 4 ? '1' : '—')), '1']);
     });
   });
 
