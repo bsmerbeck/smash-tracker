@@ -34,7 +34,7 @@ grandfinals.gg today; the legacy client-only app is retired.
 - Tailwind CSS v4 + shadcn/ui (Radix primitives)
 - TanStack Query 5 (server state/caching) + TanStack Table 8 (match table)
 - react-hook-form + zod resolvers (forms)
-- chart.js 4 + react-chartjs-2 (win/loss and matchup charts)
+- Recharts, only through the chart kit (`apps/web/src/components/charts`)
 - firebase (modular v12) — **Auth only**, for sign-in
 - sonner (toasts), lucide-react (icons)
 

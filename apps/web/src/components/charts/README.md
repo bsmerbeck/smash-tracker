@@ -7,26 +7,25 @@ come from — read this before adding a sixth chart.
 
 - **Recharts** (`recharts`) may only be imported from inside this directory
   (`apps/web/src/components/charts/**`).
-- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the one
-  legacy chart.js file still on the allowlist (`chartTheme.ts`, named explicitly in the allowlists
-  below; the list only shrinks, never grows). Plan 39.1-34
-  retired the Trends `RatingCurve.tsx` / `MonthlyPerformance.tsx` pair (the career timeline below
-  replaces both), plan 41-05 retired the GSP `GainsAnalysis.tsx` (figures plus `ComparisonBars` by
-  GSP band), plan 41-06 retired `GspCurve.tsx` (value-mode `TrendLine`) and plan 41-07 retired
-  `GspVsGlicko.tsx` (a `SmallMultiplesGrid` of two value-mode panels) and plan 41-10 retired the
-  Dashboard Form Curve `LastMatchesChart.tsx` (replaced by the `FormStripTile`, a `FormStrip
-limit={30}`); the `chart.js` package stays a dependency until `chartTheme.ts` goes (Phase 41,
-  CHRT-04).
+- **Recharts inside this kit is the only chart library in the repository.** `chart.js` and
+  `react-chartjs-2` were removed in Phase 41 (CHRT-03): the last canvas files were retired plan by
+  plan (the Trends career timeline replaced the Rating Curve / Monthly Performance pair, the GSP
+  charts moved onto `TrendLine`, `ComparisonBars` and `SmallMultiplesGrid`, and the Dashboard Form
+  Curve became the `FormStripTile`, a `FormStrip limit={30}`), then both packages, their shared theme
+  module, the jsdom canvas stub and its vitest alias were deleted. The ban is unconditional - there is
+  no exemption list, in lint or in test.
 
 Two independent, committed oracles enforce this, plus a third that enforces the runtime
 consequence of getting it wrong:
 
 1. **`eslint.config.js`** — a `no-restricted-imports` rule scoped to `apps/web/**/*.{ts,tsx}`,
-   with an `ignores` array naming this directory and the one legacy file. Catches a bad import at
-   edit time (`pnpm lint`).
+   with an `ignores` array naming this directory and nothing else; its messages say the canvas
+   libraries were removed. Catches a bad import at edit time (`pnpm lint`).
 2. **`chartKitBoundary.test.ts`** — a committed test in the DEFAULT `pnpm test` suite that greps
-   the source tree for the same two import patterns. It also proves the allowlist can't rot (every
-   entry must still exist and still need the exemption) and proves the **frame rule** described
+   the source tree for any canvas-library import (kit included), for either package in any
+   workspace `package.json`, for a recreated canvas theme module or canvas stub, a vitest alias or a
+   `vi.mock` of the canvas wrapper, for any eslint `ignores` entry other than this directory, and
+   for a README that claims a legacy file remains. It also proves the **frame rule** described
    below. This is the CI-independent half: it still catches a violation even somewhere lint isn't
    run.
 3. **`bundleIsolation.guard.test.ts`** — a real production `vite build`, excluded from the default
@@ -65,8 +64,7 @@ test proving it renders inside a `ChartCard`.
 
 One token map, no colour-scheme branch — the app is dark-only, and `:root`/`.dark` share an
 identical palette. SVG resolves CSS custom properties natively in `stroke`/`fill`, so unlike
-chart.js this kit does NOT keep a resolved-hex mirror (`apps/web/src/lib/chartTheme.ts`'s pattern
-is the one this kit deliberately does not repeat).
+chart.js did (it was removed in Phase 41) this kit keeps no resolved-hex mirror of the palette.
 
 **Phase 39.1 plan 10 (UIX-05, UI-SPEC §4.1/§4.2) repointed the kit's identity/context tokens onto
 a dedicated tokenised visualization layer.** No kit file may read `var(--chart-` directly anymore
@@ -100,18 +98,6 @@ The win-rate trend line's colour (`--viz-series-1`) carries NO win/loss judgemen
 reader must never read "the line is red, therefore losing" from hue alone (and, after this plan,
 it no longer even can — brand red is never a data mark anywhere in the kit). Meaning comes from
 the line's Y-position and the tooltip's numeric value, never from its colour.
-
-## Where the jsdom stub is licensed
-
-`apps/web/src/test/stubs/react-chartjs-2.tsx` is a test stub for the CANVAS library
-(`react-chartjs-2`), reached through a vitest `resolve.alias` in `apps/web/vitest.config.ts` — not
-through an `import`. That's why it is absent from both the lint `ignores` array and the boundary
-test's allowlist: neither rule has anything to exempt there, since the stub file contains no
-import of the package it stands in for. jsdom has no canvas implementation, so a real chart.js
-component floods test output with `Not implemented: getContext` noise; this stub exists so
-chart.js-based component tests get a stable placeholder instead. It has no equivalent for Recharts
-— Recharts renders real SVG under jsdom (D-04), so kit primitives are tested with real DOM
-assertions, not a stub.
 
 ## The frame: `ChartCard`
 

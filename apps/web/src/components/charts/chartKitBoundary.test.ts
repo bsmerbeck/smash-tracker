@@ -21,8 +21,8 @@ import { CHART_TOKENS } from './tokens';
  *   1. Temporarily adding `import { LineChart } from 'recharts';` to a page
  *      component outside the kit turned "no SVG chart import outside the
  *      kit" red, naming that file.
- *   2. Temporarily deleting the `chart.js` import from one allowlisted file
- *      turned "the allowlist cannot rot" red, naming that stale entry.
+ *   2. (Retired by plan 41-11 with the allowlist it guarded.) Temporarily deleting the `chart.js` import
+ *      from one allowlisted file turned "the allowlist cannot rot" red, naming that stale entry.
  *   3. Temporarily adding a `#ff0000` literal to a non-test kit file turned
  *      "dark-only" red, naming that file.
  *
@@ -36,6 +36,18 @@ import { CHART_TOKENS } from './tokens';
  *      kit file reads a raw chart custom property" red, naming that file.
  *   6. Temporarily adding `var(--primary)` to a non-test kit file turned "no
  *      kit file uses --primary" red, naming that file.
+ *
+ * PROVEN FAILING, plan 41-11 (CHRT-03 / C3 / T-41-30: the ban is unconditional, no allowlist; executed by
+ * hand, each mutation reverted before commit):
+ *   7. A scratch page file `apps/web/src/pages/Trends/zzScratch.ts` importing `chart.js` turned "no canvas
+ *      chart import exists in ANY source file" red: `canvas-library import offenders:
+ *      apps/web/src/pages/Trends/zzScratch.ts`.
+ *   8. Re-adding `"chart.js": "^4.5.1"` to `apps/web/package.json` turned "neither canvas package is
+ *      declared in any workspace package.json" red: `canvas packages declared: apps/web/package.json
+ *      dependencies.chart.js`.
+ *   9. Recreating `apps/web/src/test/stubs/react-chartjs-2.tsx` turned "the canvas theme module and the
+ *      jsdom canvas stub are gone" red: `apps/web/src/test/stubs/react-chartjs-2.tsx must not exist:
+ *      expected true to be false`.
  *
  * THE ONE ENUMERATED NON-URL CLICK (plan 41-06, DD-41-12, UI-SPEC 9.3): a kit chart's point / mark click
  * drills into the games behind it through the Phase 38 URL contract - EXCEPT the GSP curve / MMR panel,
@@ -53,49 +65,18 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
  * normalised back to this form before any comparison. ESLint's `ignores`
  * patterns in the root `eslint.config.js` also resolve from the repo root
  * (the config file's own directory) — which is what makes that array
- * literally comparable to `LEGACY_CANVAS_ALLOWLIST` below, path for path,
- * with no base-translation step (Task 3).
+ * directly comparable to `KIT_DIR` with no base-translation step.
  */
 const KIT_DIR = 'apps/web/src/components/charts/';
 
 /**
- * Re-grepped at plan-execution time with the SAME regex the assertions below
- * use (an import specifier for `chart.js` or `react-chartjs-2`, quoted
- * single or double) across `apps/web/src`. A looser grep (matching any
- * occurrence of the package name, not just an import specifier) also
- * matches `apps/web/src/test/stubs/react-chartjs-2.tsx` (the vitest alias
- * TARGET for `react-chartjs-2` — the package name appears only in its doc
- * comment, never in an import) and
- * `apps/web/src/pages/Scout/components/FullAnalysisSection.test.tsx` (which
- * previously used `vi.mock('react-chartjs-2', ...)`, not an import — that
- * mock block was removed by plan 38-05 alongside the Scout replacement
- * below) — neither file is listed here, because neither needs an exemption
- * from a rule about imports (R1-BLOCKER-3). Nine entries as of plan 38-05
- * (D-12/B-01): the chart.js scouting-trend component this list used to name
- * is DELETED — its two live importers (`OpponentsPage.tsx`,
- * `Scout/components/FullAnalysisSection.tsx`) moved onto the kit's
- * `TrendLine` — so its allowlist entry is removed in the SAME commit as the
- * deletion (the anti-rot assertion below fails the instant a listed path
- * stops existing). Ten entries matched D-20/37-RESEARCH.md on the post-37-01
- * tree (37-01 migrated the eleventh, `MatchupChart.tsx`, onto the kit).
- * Five entries as of plan 39.1-34: `RatingCurve.tsx` and
- * `MonthlyPerformance.tsx` were retired by plan 39.1-34 (owner decision
- * 2026-09-25 — the Trends career timeline, UI-SPEC §12.1, replaces both),
- * removed here and from `eslint.config.js`'s ignores in the same commit.
- * Four entries as of plan 41-05 — GainsAnalysis rebuilt on StatRow + ComparisonBars
- * (chart.js retired from it), removed here and from the eslint ignores in the same commit.
- * Three entries as of plan 41-06 — GspCurve rebuilt on the kit's value-mode TrendLine (chart.js
- * retired from it), removed here, from the eslint ignores and from the README in the same commit.
- * Two entries as of plan 41-07 — every GSP chart is on the kit: GspVsGlicko rebuilt as a
- * SmallMultiplesGrid of two value-mode panels (chart.js retired from it), removed here, from the
- * eslint ignores and from the README in the same commit.
- * One entry as of plan 41-10 — the Dashboard Form Curve (`LastMatchesChart.tsx`) was replaced by the
- * `FormStripTile` (a kit `FormStrip limit={30}`), deleted with its test, removed here, from the
- * eslint ignores and from the README in the same commit. Only `chartTheme.ts` remains.
+ * Plan 41-11 (CHRT-03, C3): there is NO canvas allowlist. `chart.js` and `react-chartjs-2` were
+ * removed from the repository in Phase 41 - the last file that imported them (`lib/chartTheme.ts`),
+ * the jsdom stub and its vitest alias, and both dependencies are gone - so the ban below is
+ * unconditional. History of the shrinking allowlist (37-02 .. 41-10) lives in the plan SUMMARYs.
  */
-const LEGACY_CANVAS_ALLOWLIST = ['apps/web/src/lib/chartTheme.ts'];
-
 const SVG_CHART_IMPORT = /from\s+['"]recharts['"]/;
+const CANVAS_PACKAGES = ['chart.js', 'react-chartjs-2', '@kurkle/color'];
 const CANVAS_CHART_IMPORT = /from\s+['"](chart\.js|react-chartjs-2)['"]/;
 
 /**
@@ -191,62 +172,60 @@ describe('chart kit import boundary — source-tree guard (CHRT-04, D-08)', () =
     expect(offenders).toEqual([]);
   });
 
-  it('no canvas chart (chart.js/react-chartjs-2) import exists outside the allowlist', () => {
-    const allowlistSet = new Set(LEGACY_CANVAS_ALLOWLIST);
-    const offenders = SOURCE_FILES.filter(
-      (file) => !allowlistSet.has(file) && CANVAS_CHART_IMPORT.test(readRepoFile(file)),
+  it('no canvas chart (chart.js/react-chartjs-2) import exists in ANY source file, the kit included (CHRT-03, unconditional)', () => {
+    const offenders = SOURCE_FILES.filter((file) => CANVAS_CHART_IMPORT.test(readRepoFile(file)));
+    expect(offenders, `canvas-library import offenders: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('neither canvas package is declared in any workspace package.json dependency map (CHRT-03)', () => {
+    const manifests = [
+      'package.json',
+      'apps/web/package.json',
+      'apps/api/package.json',
+      'packages/shared/package.json',
+    ];
+    const declared: string[] = [];
+    for (const manifest of manifests) {
+      const parsed = JSON.parse(readRepoFile(manifest)) as Record<string, unknown>;
+      for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
+        const map = (parsed[field] ?? {}) as Record<string, string>;
+        for (const name of CANVAS_PACKAGES) {
+          if (name in map) declared.push(`${manifest} ${field}.${name}`);
+        }
+      }
+    }
+    expect(declared, `canvas packages declared: ${declared.join(', ')}`).toEqual([]);
+  });
+
+  it('the canvas theme module and the jsdom canvas stub are gone, and nothing aliases or mocks the canvas wrapper (CHRT-03)', () => {
+    for (const gone of [
+      'apps/web/src/lib/chartTheme.ts',
+      'apps/web/src/test/stubs/react-chartjs-2.tsx',
+    ]) {
+      expect(fs.existsSync(path.join(REPO_ROOT, gone)), `${gone} must not exist`).toBe(false);
+    }
+    expect(readRepoFile('apps/web/vitest.config.ts')).not.toMatch(/react-chartjs-2|chart\.js/);
+    const mockOffenders = SOURCE_FILES.filter((file) =>
+      /vi\.mock\(\s*['"](react-chartjs-2|chart\.js)['"]/.test(readRepoFile(file)),
     );
-    expect(offenders).toEqual([]);
-  });
-
-  it('the allowlist cannot rot: every entry still exists and still needs its exemption', () => {
-    const stale = LEGACY_CANVAS_ALLOWLIST.filter((file) => {
-      const fullPath = path.join(REPO_ROOT, file);
-      if (!fs.existsSync(fullPath)) return true;
-      return !CANVAS_CHART_IMPORT.test(fs.readFileSync(fullPath, 'utf8'));
-    });
-    expect(
-      stale,
-      `stale allowlist entries (missing file or no longer importing): ${stale.join(', ')}`,
-    ).toEqual([]);
-  });
-
-  it('the two files that are NOT allowlisted stay unlisted (R1-BLOCKER-3: neither imports the package)', () => {
-    expect(LEGACY_CANVAS_ALLOWLIST).not.toContain('apps/web/src/test/stubs/react-chartjs-2.tsx');
-    expect(LEGACY_CANVAS_ALLOWLIST).not.toContain(
-      'apps/web/src/pages/Scout/components/FullAnalysisSection.test.tsx',
-    );
-  });
-
-  it('37-01 migrated MatchupChart.tsx off the allowlist', () => {
-    expect(LEGACY_CANVAS_ALLOWLIST).not.toContain(
-      'apps/web/src/pages/Matchups/components/MatchupChart.tsx',
+    expect(mockOffenders, `canvas-wrapper vi.mock offenders: ${mockOffenders.join(', ')}`).toEqual(
+      [],
     );
   });
 
   /**
-   * M-01 (plan 38-05): this file's own head comment (above) has claimed since
-   * Phase 37 that `eslint.config.js`'s `ignores` array — the `no-restricted-imports`
-   * rule's exemption list — is "literally comparable to `LEGACY_CANVAS_ALLOWLIST`
-   * below, path for path, with no base-translation step". Nothing ever checked
-   * that claim: ESLint does not error on an `ignores` pattern that matches no
-   * file, so a stale entry there survives `pnpm lint` silently. This assertion
-   * makes the claim real, in BOTH directions, so an entry added to either list
-   * without the other is named.
+   * M-01 (plan 38-05), made unconditional by plan 41-11: this file's head comment claims the
+   * `eslint.config.js` `no-restricted-imports` `ignores` array and the source-tree rule agree.
+   * ESLint does not error on an `ignores` pattern that matches no file, so a stale or newly added
+   * exemption survives `pnpm lint` silently. With no allowlist left, the array minus the kit
+   * directory entry must be EMPTY - any other entry is a licensed chart-library bypass.
    *
-   * Parsed rather than imported — importing the flat config inside a Vitest
-   * worker pulls in the whole ESLint plugin graph. The `ignores` array is
-   * located by finding the LAST `ignores: [...]` literal that appears before
-   * the `'no-restricted-imports'` rule key in the source text (this file
-   * declares two `ignores` arrays; the first, at the top of the config, is an
-   * unrelated dist/coverage/node_modules exclusion).
-   *
-   * Deliberate failure observed (per this file's own discipline), reverted,
-   * and recorded in the plan 38-05 SUMMARY: temporarily removing one entry
-   * from `LEGACY_CANVAS_ALLOWLIST` (leaving `eslint.config.js` untouched)
-   * turned this assertion red, naming the orphaned `eslint.config.js` entry.
+   * Parsed rather than imported - importing the flat config inside a Vitest worker pulls in the
+   * whole ESLint plugin graph. The `ignores` array is located by finding the LAST `ignores: [...]`
+   * literal before the `'no-restricted-imports'` rule key (the config declares an earlier,
+   * unrelated dist/coverage/node_modules `ignores`).
    */
-  it("eslint.config.js's no-restricted-imports ignores array (minus its charts/** kit-directory entry) equals LEGACY_CANVAS_ALLOWLIST, in both directions (M-01)", () => {
+  it("eslint.config.js's no-restricted-imports ignores array is exactly the kit directory (M-01, unconditional)", () => {
     const eslintSource = readRepoFile('eslint.config.js');
     const ruleIndex = eslintSource.indexOf("'no-restricted-imports'");
     expect(ruleIndex, 'expected a no-restricted-imports rule in eslint.config.js').toBeGreaterThan(
@@ -260,10 +239,17 @@ describe('chart kit import boundary — source-tree guard (CHRT-04, D-08)', () =
     const eslintIgnoresMembers = [...arrayBody.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
     const KIT_DIRECTORY_IGNORE_ENTRY = 'apps/web/src/components/charts/**';
     expect(eslintIgnoresMembers).toContain(KIT_DIRECTORY_IGNORE_ENTRY);
-    const withoutKitDirectory = eslintIgnoresMembers.filter(
-      (entry) => entry !== KIT_DIRECTORY_IGNORE_ENTRY,
+    expect(eslintIgnoresMembers.filter((entry) => entry !== KIT_DIRECTORY_IGNORE_ENTRY)).toEqual(
+      [],
     );
-    expect([...withoutKitDirectory].sort()).toEqual([...LEGACY_CANVAS_ALLOWLIST].sort());
+  });
+
+  it('the kit README states Recharts is the only chart library and names no legacy canvas file (README agreement)', () => {
+    const readme = readRepoFile('apps/web/src/components/charts/README.md');
+    const boundary = readme.slice(readme.indexOf('## Boundary'), readme.indexOf('## Tokens'));
+    expect(boundary.length).toBeGreaterThan(0);
+    expect(boundary).toMatch(/Recharts[^.]*only chart library/);
+    expect(readme).not.toMatch(/legacy (chart\.js|canvas)|chartTheme|allowlist|jsdom stub/i);
   });
 
   it('the SVG-chart-import assertion is not vacuous — at least one kit file imports recharts', () => {
