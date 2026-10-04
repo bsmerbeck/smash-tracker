@@ -143,6 +143,43 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
+  // 41-REVIEW WR-05: under 520px the kit draws the coarser series, so the footer hint and the aria count
+  // describe THAT series - a phone user with 45 readings sees closes, not "Click a point to edit".
+  it('WR-05: a narrow plot states the drawn grain in the click hint and the drawn count in the aria label', () => {
+    const { container } = renderCurve(makeSeries(45, 120), {
+      chartWidth: 420,
+      onSelectReading: vi.fn(),
+      onSelectPeriod: vi.fn(),
+    });
+    const root = container.querySelector('[data-slot="trend-line-value"]')!;
+    expect(root.getAttribute('data-narrow')).toBe('true');
+    expect(root.getAttribute('data-grain')).not.toBe('reading');
+    const drawnCount = Number(root.getAttribute('data-point-count'));
+    expect(drawnCount).toBeLessThan(45);
+    expect(screen.getByText('Click a close to find its readings in the log.')).toBeInTheDocument();
+    expect(screen.queryByText('Click a point to edit that reading.')).not.toBeInTheDocument();
+    const aria = container
+      .querySelector('[data-slot="trend-value-plot"]')!
+      .getAttribute('aria-label')!;
+    expect(aria).toContain(String(drawnCount));
+    expect(aria).not.toContain('45');
+  });
+
+  it('WR-05: a wide plot keeps the reading hint and the reading count', () => {
+    const { container } = renderCurve(makeSeries(45, 120), {
+      chartWidth: 830,
+      onSelectReading: vi.fn(),
+      onSelectPeriod: vi.fn(),
+    });
+    expect(
+      container.querySelector('[data-slot="trend-line-value"]')!.getAttribute('data-narrow'),
+    ).toBe('false');
+    expect(screen.getByText('Click a point to edit that reading.')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="trend-value-plot"]')!.getAttribute('aria-label'),
+    ).toContain('45');
+  });
+
   it('re-grains a narrow plot to the 30-point series', () => {
     const { container } = renderCurve(makeSeries(200, 18 * 30), { chartWidth: 420 });
     expect(marks(container).length).toBeLessThanOrEqual(30);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GspPoint, GspSettings, ValueSeriesReading } from '@smash-tracker/shared';
 import { GSP_MODEL, buildValueSeries } from '@smash-tracker/shared';
@@ -76,6 +76,13 @@ export function GspCurve({
   const nowMs = useNowMs();
   const isNarrowViewport = useIsNarrowViewport();
   const [view, setView] = useState<GspCurveView>('gsp');
+  // WR-05: whether the kit is drawing the narrow series (a plot under 520px). The hint, the aria count and
+  // the reference placement describe the series that is on screen, not always the wide one.
+  const [drawnNarrow, setDrawnNarrow] = useState(false);
+  const handleDrawnChange = useCallback(
+    (drawn: { narrow: boolean }) => setDrawnNarrow(drawn.narrow),
+    [],
+  );
   const liveCalibration = useModelCalibration(settings);
   // `useModelCalibration` builds a fresh object each render; key the memos on its two numbers instead.
   const calibrationElite = liveCalibration?.eliteThresholdGsp;
@@ -153,18 +160,27 @@ export function GspCurve({
   const referenceValue = view === 'gsp' ? eliteThreshold : GSP_MODEL.ELITE_MMR;
   // DD-41-13: the Elite line is drawn only near the readings; otherwise the head legend states it as above /
   // below this range and nothing is drawn (pulling it into the domain would squash the readings).
-  const placement = referencePlacement(
+  const drawn = drawnNarrow ? narrow : wide;
+  const drawnPoints = drawnNarrow ? narrowPoints : widePoints;
+  const widePlacement = referencePlacement(
     widePoints.map((point) => point.value),
     referenceValue,
   );
+  const placement = drawnNarrow
+    ? referencePlacement(
+        narrowPoints.map((point) => point.value),
+        referenceValue,
+      )
+    : widePlacement;
   const referenceLabel =
     view === 'gsp'
       ? t('gsp.curve.legend.elite')
       : t('gsp.curve.legend.eliteMmr', { mmr: GSP_MODEL.ELITE_MMR });
+  // The kit takes the placement against the WIDE points and re-places it against the narrow series itself.
   const reference: TrendValueReference = {
     value: referenceValue,
     label: referenceLabel,
-    placement,
+    placement: widePlacement,
   };
   const legendKey =
     placement === 'line'
@@ -177,8 +193,8 @@ export function GspCurve({
     value: formatGrouped(referenceValue, locale),
   });
 
-  const lastValue = widePoints[widePoints.length - 1]!.value;
-  const grainIsReading = wide.grain === 'reading';
+  const lastValue = drawnPoints[drawnPoints.length - 1]!.value;
+  const grainIsReading = drawn.grain === 'reading';
   const hintShown = grainIsReading ? onSelectReading !== undefined : onSelectPeriod !== undefined;
   const handleSelectPoint = (point: TrendValuePoint) => {
     if (point.kind === 'close') {
@@ -235,6 +251,7 @@ export function GspCurve({
         formatTick={(n, step) => formatCompact(n, locale, { stepHint: step })}
         formatValueFull={(n) => formatGrouped(n, locale)}
         reference={reference}
+        onDrawnChange={handleDrawnChange}
         directLabels="last-peak-low"
         {...(isLocked
           ? {
@@ -258,7 +275,7 @@ export function GspCurve({
             view === 'gsp' ? t(`gsp.curve.overline.${grain}`) : t(`gsp.curve.overlineMmr.${grain}`),
           aria: t('analytics.valueTrend.aria', {
             title: t('gsp.curve.title'),
-            count: widePoints.length,
+            count: drawnPoints.length,
             value: formatGrouped(lastValue, locale),
           }),
           legend: {

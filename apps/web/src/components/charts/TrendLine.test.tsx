@@ -2230,6 +2230,30 @@ describe('TrendLine — mode value says what it shows (plan 41-02 Task 2, UI-SPE
     expect(roomyRoot.getAttribute('data-point-count')).toBe(String(wide.points.length));
   });
 
+  it('WR-05: reports which series it draws (onDrawnChange), so a host describes what is on screen', () => {
+    const readings = gspReadings(200, 18 * 30);
+    const wide = buildValueSeries(readings, { target: 60 });
+    const narrowSeries = buildValueSeries(readings, { target: 12 });
+    const narrowPoints = valuePointsOf(narrowSeries);
+    const onDrawnChange = vi.fn();
+
+    const narrow = renderValue(
+      wide,
+      { narrowPoints, narrowGrain: narrowSeries.grain, onDrawnChange },
+      { width: 400 },
+    );
+    expect(onDrawnChange).toHaveBeenLastCalledWith({ narrow: true });
+    narrow.unmount();
+
+    const roomy = renderValue(
+      wide,
+      { narrowPoints, narrowGrain: narrowSeries.grain, onDrawnChange },
+      { width: 800 },
+    );
+    expect(onDrawnChange).toHaveBeenLastCalledWith({ narrow: false });
+    roomy.unmount();
+  });
+
   it('offers a table twin (date · value · readings) with column-scoped headers', () => {
     const series = buildValueSeries(gspReadings(30, 90));
     const { container, points } = renderValue(series);

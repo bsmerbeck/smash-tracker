@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -84,6 +84,7 @@ import {
   buildValueYAxis,
   nearestPointIndex,
   placeValueLabels,
+  referencePlacement,
   valueLabelRoles,
   valueLegendItems,
   valueMarkKind,
@@ -328,7 +329,18 @@ export interface TrendLineValueProps extends TrendLineSharedProps {
   formatTick: (n: number, step: number) => string;
   /** Host-formatted full-precision value (direct labels, table twin). */
   formatValueFull: (n: number) => string;
+  /**
+   * The reference and its placement against the WIDE `points`. A narrow plot re-places it against the
+   * `narrowPoints` it actually draws (`referencePlacement`), so a host that re-derives the placement from
+   * the drawn series (`onDrawnChange`) agrees with the chart.
+   */
   reference?: TrendValueReference;
+  /**
+   * 41-REVIEW WR-05: reports whether the plot is drawing the host's `narrowPoints` (a plot under
+   * `CHART_NARROW_PLOT_PX`) so the host's hint and aria count describe the series that is on screen.
+   * Called on mount and whenever it changes.
+   */
+  onDrawnChange?: (drawn: { narrow: boolean }) => void;
   directLabels?: 'last' | 'last-peak-low';
   locked?: TrendValueLocked;
   cursor?: TrendValueCursor;
@@ -1897,6 +1909,20 @@ function defaultXDomain(points: readonly { xMs: number }[]): [number, number] {
     : [first - VALUE_SINGLE_POINT_HALF_SPAN_MS, last + VALUE_SINGLE_POINT_HALF_SPAN_MS];
 }
 
+/** Reports which series (wide or narrow) value mode is drawing; renders nothing. */
+function DrawnSeriesReporter({
+  narrow,
+  onChange,
+}: {
+  narrow: boolean;
+  onChange?: (drawn: { narrow: boolean }) => void;
+}): null {
+  useEffect(() => {
+    onChange?.({ narrow });
+  }, [narrow, onChange]);
+  return null;
+}
+
 /**
  * Value mode's whole render tree — a real component because the narrow re-grain and the readout
  * both need the plot's measured width, known instantly with an explicit `width` (every test) and
@@ -1983,11 +2009,26 @@ function ValueTrendChart({
     widePlotWidthPx < CHART_NARROW_PLOT_PX;
   const points = narrow ? props.narrowPoints! : props.points;
   const grain = narrow ? (props.narrowGrain ?? props.grain) : props.grain;
+  // WR-05: the reference is placed against the series that is drawn (the narrow series can sit further
+  // from it than the wide one), so the dashed line, the legend and the fitted domain agree.
+  const drawnReference: TrendValueReference | undefined =
+    reference && narrow
+      ? {
+          ...reference,
+          placement: referencePlacement(
+            points.map((point) => point.value),
+            reference.value,
+          ),
+        }
+      : reference;
+  const drawnReferenceArg = drawnReference
+    ? { value: drawnReference.value, placement: drawnReference.placement }
+    : undefined;
   const axis = narrow
     ? buildValueYAxis(
         points.map((point) => point.value),
         formatTick,
-        referenceArg,
+        drawnReferenceArg,
       )
     : wideAxis;
   if (!axis) return null;
@@ -2088,7 +2129,7 @@ function ValueTrendChart({
     xDomain,
     drawXAxis,
     locale,
-    reference,
+    reference: drawnReference,
     directLabels: props.directLabels ?? 'last',
     formatValueFull,
     crosshairMs,
@@ -2172,7 +2213,7 @@ function ValueTrendChart({
   const headItems = valueLegendItems({
     legend: labels.legend,
     hasCalibration: points.some((point) => point.containsCalibration),
-    referencePlacement: reference?.placement,
+    referencePlacement: drawnReference?.placement,
   });
 
   return (
@@ -2185,6 +2226,7 @@ function ValueTrendChart({
       data-point-count={points.length}
       data-y-domain={`${axis.domain[0]},${axis.domain[1]}`}
     >
+      <DrawnSeriesReporter narrow={narrow} onChange={props.onDrawnChange} />
       {title && <ValueTrendHead title={title} items={headItems} />}
       <div
         data-slot="trend-value-frame"
