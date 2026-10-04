@@ -32,9 +32,31 @@ describe('formatCompact', () => {
     expect(formatCompact(9500000, 'ja')).toBe('950万');
   });
 
-  it('uses two fraction digits when the step hint is below 500,000', () => {
+  it("derives the fraction digits from the step hint (the step's own decimals in the figure's unit)", () => {
     expect(formatCompact(9250000, 'en', { stepHint: 250000 })).toBe('9.25M');
     expect(formatCompact(9500000, 'en', { stepHint: 500000 })).toBe('9.5M');
+    expect(formatCompact(10020000, 'en', { stepHint: 20000 })).toBe('10.02M');
+    expect(formatCompact(10005000, 'en', { stepHint: 5000 })).toBe('10.005M');
+    expect(formatCompact(10000000, 'en', { stepHint: 1000000 })).toBe('10M');
+    expect(formatCompact(10020000, 'ja', { stepHint: 20000 })).toBe('1002万');
+  });
+
+  // 41-REVIEW CR-02: adjacent ticks never share a label, in every shipped locale, over the step ladder
+  // `fitValueDomain` can pick on GSP-sized values (10.01M-10.08M sits on a 20,000 step).
+  it('CR-02: six adjacent ticks on any 1-2-5 step print six distinct labels in all six locales', () => {
+    const steps = [500, 1_000, 2_000, 2_500, 5_000, 10_000, 20_000, 25_000, 50_000, 100_000];
+    const bases = [9_000_000, 10_000_000, 10_010_000, 12_345_000, 950_000, 1_995_000];
+    for (const locale of ['en', 'es', 'fr', 'de', 'pt', 'ja']) {
+      for (const step of [...steps, 250_000, 500_000, 1_000_000, 2_000_000]) {
+        for (const base of bases) {
+          const start = Math.floor(base / step) * step;
+          const labels = Array.from({ length: 6 }, (_, i) =>
+            formatCompact(start + i * step, locale, { stepHint: step }),
+          );
+          expect(new Set(labels).size, `${locale} step ${step} from ${start}: ${labels}`).toBe(6);
+        }
+      }
+    }
   });
 });
 

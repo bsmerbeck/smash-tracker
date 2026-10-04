@@ -321,8 +321,11 @@ export interface TrendLineValueProps extends TrendLineSharedProps {
   narrowGrain?: ValueSeriesGrain;
   /** A shared x domain (multiples); defaults to the points' own span. */
   xDomain?: [number, number];
-  /** Host-formatted compact tick strings (`9.5M`, `1088万`); the y gutter is measured from them (DD-41-14). */
-  formatTick: (n: number) => string;
+  /**
+   * Host-formatted compact tick strings (`9.5M`, `1088万`); the y gutter is measured from them (DD-41-14).
+   * `step` is the axis' tick step, so a host can derive enough digits that adjacent ticks never collide.
+   */
+  formatTick: (n: number, step: number) => string;
   /** Host-formatted full-precision value (direct labels, table twin). */
   formatValueFull: (n: number) => string;
   reference?: TrendValueReference;
@@ -2120,7 +2123,7 @@ function ValueTrendChart({
         tickLine={false}
         tickSize={0}
         tickMargin={VALUE_Y_TICK_GAP_PX}
-        tickFormatter={(value: number) => formatTick(value)}
+        tickFormatter={(value: number) => formatTick(value, axis.step)}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
         allowDataOverflow
       />

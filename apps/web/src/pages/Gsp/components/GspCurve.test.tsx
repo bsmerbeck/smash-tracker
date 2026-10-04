@@ -132,6 +132,17 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
     expect(screen.queryByText('GSP by reading')).not.toBeInTheDocument();
   });
 
+  // 41-REVIEW CR-02: compact ticks derive their fraction digits from the tick step, so two adjacent
+  // hairlines never carry the same label (10,010,000-10,080,000 sits on a 20,000 step).
+  it('CR-02: a narrow GSP range prints one distinct y label per hairline (10.01M-10.08M)', () => {
+    const { container } = renderCurve(makeSeries(40, 120, { start: 10_010_000, step: 1_795 }));
+    const labels = [...container.querySelectorAll('.recharts-yAxis-tick-labels text')].map(
+      (el) => el.textContent ?? '',
+    );
+    expect(labels.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   it('re-grains a narrow plot to the 30-point series', () => {
     const { container } = renderCurve(makeSeries(200, 18 * 30), { chartWidth: 420 });
     expect(marks(container).length).toBeLessThanOrEqual(30);

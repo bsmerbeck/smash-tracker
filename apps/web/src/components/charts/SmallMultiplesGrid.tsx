@@ -43,7 +43,7 @@ export interface SmallMultiplesPanel {
   title: string;
   points: TrendValuePoint[];
   grain: ValueSeriesGrain;
-  formatTick: (n: number) => string;
+  formatTick: (n: number, step: number) => string;
   formatValueFull: (n: number) => string;
   /** The panel's line of the shared readout for ITS point nearest the crosshair ("Est. MMR · 1,096"): value leads, label follows. */
   readoutLine: (point: TrendValuePoint) => string;

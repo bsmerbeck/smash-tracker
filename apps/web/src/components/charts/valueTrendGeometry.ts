@@ -169,12 +169,13 @@ export interface ValueYAxis extends ValueDomainFit {
  */
 export function buildValueYAxis(
   values: readonly number[],
-  formatTick: (n: number) => string,
+  formatTick: (n: number, step: number) => string,
   reference?: { value: number; placement: ReferencePlacement },
 ): ValueYAxis | null {
   const fit = fitValueDomain(values, reference);
   if (!fit) return null;
-  const tickLabels = fit.ticks.map((tick) => formatTick(tick));
+  // The step travels with every tick so a host can print enough digits to keep neighbours distinct (CR-02).
+  const tickLabels = fit.ticks.map((tick) => formatTick(tick, fit.step));
   return { ...fit, tickLabels, gutterPx: measureYGutterPx(tickLabels) };
 }
 

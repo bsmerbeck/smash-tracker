@@ -232,7 +232,7 @@ export function GspCurve({
         grain={wide.grain}
         narrowPoints={narrowPoints}
         narrowGrain={narrow.grain}
-        formatTick={(n) => formatCompact(n, locale)}
+        formatTick={(n, step) => formatCompact(n, locale, { stepHint: step })}
         formatValueFull={(n) => formatGrouped(n, locale)}
         reference={reference}
         directLabels="last-peak-low"
