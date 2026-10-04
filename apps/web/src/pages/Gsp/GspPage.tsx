@@ -159,6 +159,9 @@ export function GspPage() {
   }
 
   const logHighlightIndexes = logSelection?.entries === entries ? logSelection.indexes : undefined;
+  // WR-06: a FRESH array per selection. The log keys its expand-and-focus on the array's identity, and a
+  // close's `memberIndexes` is memoised, so re-clicking the same close must not hand it the same array.
+  const selectLogRows = (indexes: number[]) => setLogSelection({ entries, indexes: [...indexes] });
   const gainStats = getGspGainStats(series);
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
@@ -224,7 +227,7 @@ export function GspPage() {
                 series={series}
                 settings={gspSettings}
                 onSelectReading={(index) => editEntry(entries[index] ?? null)}
-                onSelectPeriod={(indexes) => setLogSelection({ entries, indexes })}
+                onSelectPeriod={selectLogRows}
               />
             </GridCell>
             <GridCell span={4}>
@@ -262,7 +265,7 @@ export function GspPage() {
                   allMatches={matches}
                   settings={gspSettings}
                   onSelectReading={(index) => editEntry(entries[index] ?? null)}
-                  onSelectPeriod={(indexes) => setLogSelection({ entries, indexes })}
+                  onSelectPeriod={selectLogRows}
                 />
               </GridCell>
             )}

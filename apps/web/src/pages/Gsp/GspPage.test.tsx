@@ -636,6 +636,49 @@ describe('GspPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  // 41-REVIEW WR-06: clicking the SAME close again must act again - re-expand a log the reader collapsed
+  // with "Show recent only", and move focus to the marked rows - not silently do nothing.
+  it('re-clicking the same close re-expands a collapsed GSP Log and refocuses its rows (WR-06)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startMs = Date.UTC(2026, 0, 1, 12);
+    const matchList = Array.from({ length: 70 }, (_, i) =>
+      makeMatch({
+        id: `m${i}`,
+        time: startMs + i * dayMs,
+        win: i % 2 === 0,
+        gsp: 9_000_000 + i * 1_000,
+      }),
+    );
+    listMatches.mockResolvedValue(matchList);
+    const expected = buildValueSeries(
+      matchList.map((m, i) => ({ atMs: m.time, value: 9_000_000 + i * 1_000, calibration: false })),
+      { target: 60 },
+    );
+    const user = userEvent.setup();
+
+    const { container } = renderGspPage();
+    const logTitle = await screen.findByText('GSP Log');
+    const logCard = logTitle.closest('[data-slot="card"]') as HTMLElement;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    const clickClose = (k: number) => {
+      const mark = container.querySelector(`[data-point-key="${expected.points[k]!.key}"]`)!;
+      fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    };
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+
+    await user.click(within(logCard).getByRole('button', { name: 'Show recent only' }));
+    expect(within(logCard).getAllByRole('listitem')).toHaveLength(8);
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+    const rows = [...logCard.querySelectorAll<HTMLElement>('li[aria-current="true"]')];
+    expect(rows).toHaveLength(expected.points[2]!.memberIndexes.length);
+    expect(document.activeElement).toBe(rows[0]);
+  });
+
   describe('live thresholds (gsptiers.com via /api/gsp-live)', () => {
     it('calibrates the threshold card from the live reading and says so', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
