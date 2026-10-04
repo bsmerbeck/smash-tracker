@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { X_EVENT_ALLOWLIST } from '@smash-tracker/shared';
 import type { ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
@@ -499,26 +499,35 @@ describe('serverEmitterAudit: claim-family emitters produce zero telemetry for a
     // rotation — the old code is auto-revoked and a new one issued.
     const ordinaryDb = new FakeDatabase();
     seedMembership(ordinaryDb, TENANT_ID, COACH_UID, 'custodian');
-    await issueClaimInvitation(
-      ordinaryDb as never,
-      COACH_UID,
-      TENANT_ID,
-      { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
-      null,
-    );
-    // A tick between the two issuances so their causationIds (derived from
-    // Date.now()) never collide within the same millisecond — mirrors
-    // invitations.test.ts's own rotation test, which flushes between calls
-    // for the same reason.
-    await flush();
-    await issueClaimInvitation(
-      ordinaryDb as never,
-      COACH_UID,
-      TENANT_ID,
-      { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
-      null,
-    );
-    await flush();
+    // Each issuance's causationId is `${tenantId}:${Date.now()}:created`, so
+    // two issuances in the same millisecond collide and the ledger's
+    // eventDedup transaction drops the second claim_invitation_created. A
+    // setTimeout flush does not guarantee the wall clock advances (it flaked
+    // in CI), so pin Date explicitly: only Date is faked, flush() stays real.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const issuedAt = Date.now();
+      vi.setSystemTime(issuedAt);
+      await issueClaimInvitation(
+        ordinaryDb as never,
+        COACH_UID,
+        TENANT_ID,
+        { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
+        null,
+      );
+      await flush();
+      vi.setSystemTime(issuedAt + 1);
+      await issueClaimInvitation(
+        ordinaryDb as never,
+        COACH_UID,
+        TENANT_ID,
+        { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
+        null,
+      );
+      await flush();
+    } finally {
+      vi.useRealTimers();
+    }
     expect(eventLedgerEntries(ordinaryDb, 'claim_invitation_created')).toHaveLength(2);
     const revoked = eventLedgerEntries(ordinaryDb, 'claim_invitation_revoked') as Array<{
       payload: { reason: string };

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ReactNode } from 'react';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -6,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { OnboardingIntent } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -99,7 +101,17 @@ function defaultProfile(
   };
 }
 
-function renderDashboard(initialEntry = '/dashboard') {
+/** Quick 261002-leg: a test-local control that flips the global SOURCE filter. */
+function SourceSetter() {
+  const { setSource } = useAnalyticsFilter();
+  return (
+    <button type="button" onClick={() => setSource('manual')}>
+      Set source manual
+    </button>
+  );
+}
+
+function renderDashboard(initialEntry = '/dashboard', extra?: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -110,7 +122,15 @@ function renderDashboard(initialEntry = '/dashboard') {
                 disabled "lastEvent" option needs a TooltipProvider ancestor. */}
             <TooltipProvider>
               <Routes>
-                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <>
+                      {extra}
+                      <DashboardPage />
+                    </>
+                  }
+                />
                 <Route path="/choose-primary" element={<div>Choose primary page</div>} />
                 <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
                 {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror — the
@@ -246,15 +266,14 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
 
-  // Plan 39.1-17 (UI-SPEC §8.7 placement table): the hero row's cards
-  // render as `GridCell span={3}` — 4 per row at the widest breakpoint, the
-  // second row LEFT-ALIGNED (never stretched to a sibling's height —
-  // `PageGrid`'s `items-start` is hardcoded, never a prop).
-  // Plan 39.1-50 REWROTE this case from five cells to six. Reason: design
-  // audit 5.4 / the planner decision — the selected fighter's record joins
-  // the hero row as the sixth 3-span tile (left-aligned beside Rating),
-  // replacing the centred span-12 tracker card.
-  it('renders the hero row as six span-3 grid cells, the sixth holding the fighter record tile', async () => {
+  // Quick 261002-leg (DESIGN §2): REWROTE the plan 39.1-17/39.1-50 six-cell
+  // case. The hero is now FOUR span-3 cells — stack A (Overall Record over
+  // Rating), stack B (Form over the selected fighter's record, passed into
+  // HeroStats as `fighterTile`), then the two split tiles — each overriding
+  // GridCell's lg:col-span-3 to lg:col-span-6 (2x2 at lg) and xl:col-span-3
+  // (one row at xl). `PageGrid`'s `items-start` stays hardcoded; nothing
+  // stretches.
+  it('renders the hero as four span-3 cells: Overall Record over Rating, Form over the fighter record, then the two split tiles', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
 
@@ -262,18 +281,51 @@ describe('DashboardPage', () => {
 
     await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
 
-    const heroCells = Array.from(container.querySelectorAll('[data-span="3"]'));
-    // Overall Record, Form, Casual vs Competitive, Online vs Offline, Rating,
-    // and the selected fighter's record — exactly six, no more.
-    expect(heroCells).toHaveLength(6);
-    expect(heroCells[5]!.querySelector('[data-slot="fighter-record-tile"]')).not.toBeNull();
+    const heroCells = Array.from(container.querySelectorAll<HTMLElement>('[data-span="3"]'));
+    expect(heroCells).toHaveLength(4);
+    const tokens = (el: Element) => el.className.split(/\s+/);
+    const cardsOf = (cell: Element) =>
+      Array.from(cell.children).filter((c) => c.getAttribute('data-slot') === 'card');
+    for (const stack of [heroCells[0]!, heroCells[1]!]) {
+      expect(tokens(stack)).toEqual(expect.arrayContaining(['flex', 'flex-col', 'gap-4']));
+    }
+    const [overall, rating] = cardsOf(heroCells[0]!);
+    expect(cardsOf(heroCells[0]!)).toHaveLength(2);
+    expect(within(overall as HTMLElement).getByText('Overall Record')).toBeInTheDocument();
+    expect(within(rating as HTMLElement).getByText('Rating')).toBeInTheDocument();
+    const formStackCards = cardsOf(heroCells[1]!);
+    expect(formStackCards).toHaveLength(2);
+    expect(within(formStackCards[0] as HTMLElement).getByText('Form')).toBeInTheDocument();
+    expect(formStackCards[1]!.querySelector('[data-slot="fighter-record-tile"]')).not.toBeNull();
     for (const cell of heroCells) {
+      expect(tokens(cell)).toContain('lg:col-span-6');
+      expect(tokens(cell)).toContain('xl:col-span-3');
       expect(cell.className).not.toMatch(/\bh-full\b|\bflex-1\b|\bself-stretch\b/);
     }
-    // No span-12 cell holds the tracker any more.
+    // No span-12 cell holds the tracker.
     for (const wide of container.querySelectorAll('[data-span="12"]')) {
       expect(wide.querySelector('[data-slot="fighter-record-tile"]')).toBeNull();
     }
+  });
+
+  // Quick 261002-leg: DashboardPage reads the global SOURCE filter and passes
+  // `sourceFilterActive` into HeroStats; the Casual vs Competitive caveat only
+  // renders once a source filter is on.
+  it('shows the Casual vs Competitive caveat only after the source filter leaves "all"', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderDashboard('/dashboard', <SourceSetter />);
+
+    await screen.findByText('Casual vs Competitive');
+    const caveat = 'Ignores the source filter above (time range still applies).';
+    expect(screen.queryByText(caveat)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Set source manual' }));
+
+    const shown = await screen.findByText(caveat);
+    expect(shown.closest('[data-slot="card"]')).toHaveTextContent('Casual vs Competitive');
   });
 
   // Plan 39.1-50 Task 3 (DEFECT found on the after capture, UI-SPEC §6.1
@@ -894,7 +946,7 @@ describe('DashboardPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
-    it('plan 39.1-50: the skeleton mirrors the loaded hero row — six span-3 stat-row skeletons and only the digest 12-span stat-row skeleton', () => {
+    it('quick 261002-leg: the skeleton mirrors the loaded hero — four span-3 cells (two stacks of two stat-row skeletons) and only the digest 12-span stat-row skeleton', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
       listMatches.mockReturnValue(new Promise(() => {}));
 
@@ -905,7 +957,16 @@ describe('DashboardPage', () => {
         Array.from(container.querySelectorAll(`[data-span="${span}"]`)).filter((cell) =>
           cell.querySelector('.grid-cols-2 [data-slot="skeleton-block"]'),
         );
-      expect(statRowSkeletonCells('3')).toHaveLength(6);
+      const cells = statRowSkeletonCells('3');
+      expect(cells).toHaveLength(4);
+      expect(cells[0]!.className).toMatch(/\bflex-col\b/);
+      expect(cells[1]!.className).toMatch(/\bflex-col\b/);
+      const statRowGrids = cells.flatMap((cell) =>
+        Array.from(cell.querySelectorAll('.grid-cols-2')).filter((g) =>
+          g.querySelector('[data-slot="skeleton-block"]'),
+        ),
+      );
+      expect(statRowGrids).toHaveLength(6);
       // Plan 39.2-12: exactly ONE 12-span stat-row skeleton is legitimate — the digest's own cell.
       expect(statRowSkeletonCells('12')).toHaveLength(1);
     });
