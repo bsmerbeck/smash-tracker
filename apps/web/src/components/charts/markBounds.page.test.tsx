@@ -650,7 +650,11 @@ describe('Phase 41 surfaces (plan 41-09)', () => {
           isOnline: false,
           tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
         }));
-        const resolved = resolveEntryTiers(entries, PRO);
+        // 41-REVIEW CR-01: a diamond needs listable games, so each entry owns the game it dates from.
+        const resolved = resolveEntryTiers(entries, PRO).map((item, i) => ({
+          ...item,
+          matches: [PRO[100 + i * 100]!],
+        }));
         // Non-vacuity: all 55 resolve to a known major tier, so the 40 cap is what binds.
         expect(resolved.filter((entry) => entry.resolution.tier === 'major')).toHaveLength(55);
         expect(resolved.length).toBeGreaterThan(TIMELINE_EVENT_MARKER_MAX);

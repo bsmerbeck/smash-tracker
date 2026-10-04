@@ -80,12 +80,19 @@ const EVENT_MARKER_MIN_LEVEL = TIER_LEVEL.major;
  * entries. A marker's x is the entry's display end (else its latest assigned match; an entry with
  * neither is skipped); markers outside the timeline's domain are dropped; `ratingAfter` is the
  * first plotted rating point at or after the event, so the readout equals a visible point.
+ *
+ * 41-REVIEW CR-01 (door/terminus same-n): a diamond is a door to the `#games` list, which lists the
+ * page's filtered games only. So an entry is marked only when at least one of its assigned games is
+ * in `visibleMatches` (the page's range- and source-filtered set), and its W-L counts exactly those
+ * games — the readout's n is the list's n.
  */
 function buildEventCandidates(input: {
   resolvedEntries: readonly ResolvedTierEntry[];
+  visibleMatches: readonly Match[];
   timeline: ReturnType<typeof buildCareerTimeline>;
 }): TimelineEventCandidate[] {
-  const { resolvedEntries, timeline } = input;
+  const { resolvedEntries, visibleMatches, timeline } = input;
+  const visibleIds = new Set(visibleMatches.map((match) => match.id));
   const { domain } = timeline;
   if (!domain) {
     return [];
@@ -96,21 +103,26 @@ function buildEventCandidates(input: {
     if (tier === 'unknown') {
       continue;
     }
+    const own = resolved.matches.filter((match) => visibleIds.has(match.id));
+    if (own.length === 0) {
+      // No listable games behind it: the door would open an empty `#games` list.
+      continue;
+    }
     // The resolved entry is the registry row at runtime (`resolveEntryTiers` maps the page's entries).
     const range = entryDisplayDateRange(resolved.entry as TournamentEntry);
-    const latestMatchMs = resolved.matches.reduce((max, match) => Math.max(max, match.time), 0);
+    const latestMatchMs = own.reduce((max, match) => Math.max(max, match.time), 0);
     const atMs = range?.endMs ?? (latestMatchMs > 0 ? latestMatchMs : null);
     if (atMs === null || atMs < domain.startMs || atMs > domain.endMs) {
       continue;
     }
-    const wins = resolved.matches.filter((match) => match.win).length;
+    const wins = own.filter((match) => match.win).length;
     const ratingPoint = timeline.rating.points.find((point) => point.closeMs >= atMs);
     candidates.push({
       key: resolved.entryKey,
       label: resolved.entry.tournamentName ?? resolved.entry.eventName,
       atMs,
       wins,
-      losses: resolved.matches.length - wins,
+      losses: own.length - wins,
       tier,
       basis: resolved.resolution.basis,
       level: TIER_LEVEL[tier],
@@ -384,10 +396,12 @@ export function CareerTimelineCard({
   const eventSelection = useMemo(
     () =>
       selectTimelineEventMarkers(
-        eventsDrawable ? buildEventCandidates({ resolvedEntries, timeline }) : [],
+        eventsDrawable
+          ? buildEventCandidates({ resolvedEntries, visibleMatches: matches, timeline })
+          : [],
         { minLevel: EVENT_MARKER_MIN_LEVEL },
       ),
-    [eventsDrawable, resolvedEntries, timeline],
+    [eventsDrawable, resolvedEntries, matches, timeline],
   );
   const eventMarkers: CareerTimelineEventMarker[] = useMemo(
     () =>

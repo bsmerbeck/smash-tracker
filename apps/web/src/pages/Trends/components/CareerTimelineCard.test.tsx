@@ -619,8 +619,18 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
       return Array.from(container.querySelectorAll('[data-slot="career-timeline-event"]'));
     }
 
+    /** Gives a resolved entry its own assigned games (41-REVIEW CR-01: a diamond needs games to list). */
+    function withGames(
+      resolved: ResolvedTierEntry[],
+      gamesByKey: Record<string, Match[]>,
+    ): ResolvedTierEntry[] {
+      return resolved.map((item) =>
+        gamesByKey[item.entryKey] ? { ...item, matches: gamesByKey[item.entryKey]! } : item,
+      );
+    }
+
     it('marks only known tiers at or above a major: manual filled, estimated hollow; minor, unknown, undated and out-of-domain entries are skipped', () => {
-      const resolved = resolveEntryTiers(
+      const resolvedBare = resolveEntryTiers(
         [
           entry({
             entryKey: 'genesis',
@@ -646,6 +656,10 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
         ],
         eventMatches,
       );
+      const resolved = withGames(resolvedBare, {
+        genesis: eventMatches.slice(EVENT_MATCH_INDEX, EVENT_MATCH_INDEX + 5),
+        'big-estimated': [PRO_MATCHES[6_000]!],
+      });
       const { container } = renderWith(resolved);
       const drawn = diamonds(container);
       expect(drawn.map((el) => el.getAttribute('data-basis'))).toEqual(['manual', 'estimated']);
@@ -746,7 +760,11 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
           tierOverride: { contractVersion: 1, tier: i === 0 ? 'supermajor' : 'major', setAtMs: 1 },
         }),
       );
-      const { container } = renderWith(resolveEntryTiers(entries, PRO_MATCHES));
+      const resolved = withGames(
+        resolveEntryTiers(entries, PRO_MATCHES),
+        Object.fromEntries(entries.map((e, i) => [e.entryKey, [PRO_MATCHES[100 + i * 100]!]])),
+      );
+      const { container } = renderWith(resolved);
       const drawn = diamonds(container);
       expect(drawn).toHaveLength(40);
       // The oldest entry is the lone supermajor, so it survives although it is the least recent.
@@ -758,6 +776,69 @@ describe('CareerTimelineCard (plan 39.1-35) — thin strip, locked inset, twin, 
           '40 of 55 major+ events marked — the rest are in Recent events',
         ]),
       );
+    });
+
+    // 41-REVIEW CR-01: a diamond is a door whose terminus lists the page's filtered games, so it is
+    // drawn only when those games exist, and its W-L counts exactly them (door/terminus same-n).
+    function renderWithMatches(matches: Match[], resolvedEntries: ResolvedTierEntry[]) {
+      return render(
+        <CareerTimelineCard
+          matches={matches}
+          horizon="last30"
+          chartWidth={1000}
+          resolvedEntries={resolvedEntries}
+        />,
+      );
+    }
+    const genesisEntry = () =>
+      entry({
+        entryKey: 'genesis',
+        tournamentName: 'Genesis 10',
+        tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+      });
+    const EVENT_IDS = new Set(
+      PRO_MATCHES.slice(EVENT_MATCH_INDEX, EVENT_MATCH_INDEX + 5).map((match) => match.id),
+    );
+
+    it('CR-01: a known-tier entry with no assigned games draws no diamond (it could only open an empty list)', () => {
+      const bare = genesisEntry();
+      const resolved: ResolvedTierEntry[] = [
+        {
+          entry: bare,
+          entryKey: 'genesis',
+          resolution: resolveTournamentTier({ entry: bare }),
+          matches: [],
+        },
+      ];
+      const { container } = renderWithMatches(eventMatches, resolved);
+      expect(diamonds(container)).toHaveLength(0);
+      expect(captionItems(container).some((text) => text.includes('major+'))).toBe(false);
+    });
+
+    it('CR-01: an entry whose games are all outside the page filter draws no diamond', () => {
+      const resolved = resolveEntryTiers([genesisEntry()], eventMatches);
+      expect(resolved[0]!.matches.length).toBeGreaterThan(0);
+      const filtered = eventMatches.filter((match) => !EVENT_IDS.has(match.id));
+      const { container } = renderWithMatches(filtered, resolved);
+      expect(diamonds(container)).toHaveLength(0);
+    });
+
+    it("CR-01: a diamond's W-L counts only the page-filtered games (the list's n), not every source", () => {
+      const resolved = resolveEntryTiers([genesisEntry()], eventMatches);
+      const assigned = resolved[0]!.matches;
+      expect(assigned.length).toBeGreaterThan(1);
+      const dropped = assigned[0]!;
+      const filtered = eventMatches.filter((match) => match.id !== dropped.id);
+      const visible = assigned.filter((match) => match.id !== dropped.id);
+      const wins = visible.filter((match) => match.win).length;
+      const { container } = renderWithMatches(filtered, resolved);
+      const [marker] = diamonds(container);
+      expect(marker).toBeDefined();
+      fireEvent.focus(marker!);
+      const readout = container.querySelector('[data-slot="career-timeline-readout"]')!;
+      expect(readout.textContent).toContain(`${wins}–${visible.length - wins} · `);
+      expect(readout.textContent).toContain(`· ${visible.length} games`);
+      expect(marker!.getAttribute('aria-label')).toContain(`${wins}`);
     });
 
     it("clicking a diamond calls onSelectEventMarker with the entry's key", () => {
