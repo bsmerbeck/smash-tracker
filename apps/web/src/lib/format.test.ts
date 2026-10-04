@@ -68,6 +68,14 @@ describe('formatSigned', () => {
     expect(out).not.toContain('-');
   });
 
+  it('IN-04: a figure that rounds to zero is a bare 0, never -0 or +0', () => {
+    expect(formatSigned(-0.4, 'en')).toBe('0');
+    expect(formatSigned(0.4, 'en')).toBe('0');
+    expect(formatSigned(-0, 'en')).toBe('0');
+    expect(formatSigned(-0.6, 'en')).toBe('\u22121');
+    expect(formatSigned(0.6, 'en')).toBe('+1');
+  });
+
   it('prefixes + to a positive grouped figure and leaves zero bare', () => {
     expect(formatSigned(1234, 'en')).toBe('+1,234');
     expect(formatSigned(0, 'en')).toBe('0');

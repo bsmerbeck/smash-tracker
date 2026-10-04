@@ -114,9 +114,10 @@ export function formatCompact(n: number, locale: string, options?: { stepHint?: 
   }).format(n);
 }
 
-/** A signed grouped figure: `+1,234`, `−5` (typographic minus), `0` for zero. */
+/** A signed grouped figure: `+1,234`, `−5` (typographic minus), `0` for zero or anything that rounds to it. */
 export function formatSigned(n: number, locale: string): string {
-  if (n === 0) return formatGrouped(0, locale);
+  // Round BEFORE choosing the sign: `-0.4` shows as `0`, never `−0` (41-REVIEW IN-04).
+  if (Math.round(Math.abs(n)) === 0) return formatGrouped(0, locale);
   const sign = n > 0 ? '+' : MINUS_SIGN;
   return `${sign}${formatGrouped(Math.abs(n), locale)}`;
 }
