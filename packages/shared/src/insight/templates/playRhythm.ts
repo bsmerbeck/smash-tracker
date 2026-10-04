@@ -10,10 +10,14 @@ import type { InsightTemplate } from './registry.js';
 
 const TEMPLATE_ID = 'playRhythm' as const;
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-/** The two comparison windows are a fixed 365 days each (DD-41-07), anchored on `nowMs`. */
-const RHYTHM_WINDOW_MS = 365 * MS_PER_DAY;
 const MONTHS_PER_YEAR = 12;
+/**
+ * The two comparison windows are 12 whole UTC calendar months each (DD-41-07): the recent one ends
+ * with the month `nowMs` falls in, the prior one is the 12 months before it. Whole months, not a
+ * rolling 365 days — a rolling year touches 13 calendar months, so "N of the last 12 months" could
+ * state 13 (41-REVIEW WR-02).
+ */
+const RHYTHM_WINDOW_MONTHS = 12;
 
 /**
  * A UTC calendar month as one integer (`year * 12 + monthIndex`), so a span between two months is a
@@ -24,6 +28,12 @@ const MONTHS_PER_YEAR = 12;
 function monthIndexOf(timeMs: number): number {
   const d = new Date(timeMs);
   return d.getUTCFullYear() * MONTHS_PER_YEAR + d.getUTCMonth();
+}
+
+/** The first instant (UTC) of the month `monthIndex` names (the inverse of `monthIndexOf`). */
+function monthStartMs(monthIndex: number): number {
+  const year = Math.floor(monthIndex / MONTHS_PER_YEAR);
+  return Date.UTC(year, monthIndex - year * MONTHS_PER_YEAR, 1);
 }
 
 /** The month-of-year (1-12, UTC) of a game. */
@@ -124,8 +134,9 @@ function buildPlayRhythmInsight(input: {
     };
   }
 
-  const recentFloorMs = nowMs - RHYTHM_WINDOW_MS;
-  const priorFloorMs = nowMs - 2 * RHYTHM_WINDOW_MS;
+  const nowMonthIndex = monthIndexOf(nowMs);
+  const recentFloorMs = monthStartMs(nowMonthIndex - (RHYTHM_WINDOW_MONTHS - 1));
+  const priorFloorMs = monthStartMs(nowMonthIndex - (2 * RHYTHM_WINDOW_MONTHS - 1));
   const recentMatches = scopedMatches.filter(
     (match) => match.time >= recentFloorMs && match.time <= nowMs,
   );
@@ -199,7 +210,7 @@ function buildPlayRhythmInsight(input: {
 }
 
 /**
- * `PlayRhythm` (DD-41-07, B1): a direction-free FACT comparing the last 12 months of play with the 12
+ * `PlayRhythm` (DD-41-07, B1): a direction-free FACT comparing the last 12 calendar months of play with the 12
  * before, plus a busiest-month-of-year clause only when the history is long and peaked enough to
  * support one. Locked below `RHYTHM_MIN_MONTHS` distinct months with games. `assertsDirection: false`
  * - it never says "more" or "less", so `deltaPoints` is always `null`. `windowExpressible: true` -

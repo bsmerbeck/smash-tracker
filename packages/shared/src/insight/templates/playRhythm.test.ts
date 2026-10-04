@@ -9,7 +9,6 @@ import {
 } from '../policy.js';
 import type { Match } from '../../match.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW_MS = Date.UTC(2026, 5, 15, 12); // 2026-06-15
 
 let nextId = 0;
@@ -122,8 +121,9 @@ describe('playRhythmTemplate', () => {
     });
 
     it('compares the last 12 months with the 12 before', () => {
-      const recentStart = NOW_MS - 365 * DAY_MS;
-      const priorStart = NOW_MS - 730 * DAY_MS;
+      // Whole UTC months: NOW is 2026-06-15, so recent = Jul 2025 .. Jun 2026, prior = Jul 2024 .. Jun 2025.
+      const recentStart = Date.UTC(2025, 6, 1);
+      const priorStart = Date.UTC(2024, 6, 1);
       const expectedRecent = games.filter((m) => m.time >= recentStart && m.time <= NOW_MS);
       const expectedPrior = games.filter((m) => m.time >= priorStart && m.time < recentStart);
       expect(insight.copy.values.recent).toBe(expectedRecent.length);
@@ -132,7 +132,7 @@ describe('playRhythmTemplate', () => {
     });
 
     it('counts exactly the last-12-month games, newest first, with their real first/last times', () => {
-      const recentStart = NOW_MS - 365 * DAY_MS;
+      const recentStart = Date.UTC(2025, 6, 1);
       const expected = games.filter((m) => m.time >= recentStart && m.time <= NOW_MS);
       expect(new Set(insight.countedMatchIds)).toEqual(new Set(expected.map((m) => m.id)));
       expect(insight.countedMatchIds).toHaveLength(expected.length);
@@ -231,6 +231,52 @@ describe('playRhythmTemplate', () => {
       expect(insight.countedMatchIds).toEqual([]);
       expect(insight.window.games).toBe(0);
       expect(insight.window.fromMs).toBeNull();
+    });
+  });
+
+  // 41-REVIEW WR-02: the windows are whole UTC calendar months (the 12 ending with the current month,
+  // and the 12 before), so "the last 12 months" is literally true and `recentMonths` never exceeds 12.
+  describe('whole-month windows (WR-02)', () => {
+    const MID_MARCH_MS = Date.UTC(2026, 2, 15, 12);
+    // A game each month Mar 2025 .. Mar 2026 (13 months touched by a rolling 365 days) + 12 old months.
+    const games = [
+      ...monthlyGames([2020, 1], [2020, 12]),
+      gameIn(2025, 3, 20),
+      ...monthlyGames([2025, 4], [2026, 3]),
+    ];
+
+    it('the recent window is the 12 calendar months ending with the current one, never 13', () => {
+      const insight = build(games, MID_MARCH_MS)!;
+      expect(insight.state).toBe('fact');
+      // Apr 2025 .. Mar 2026: 12 games. The 2025-03-20 game is in the prior 12 months, not the recent.
+      expect(insight.copy.values.recent).toBe(12);
+      expect(insight.copy.values.prior).toBe(1);
+      expect(insight.window.games).toBe(12);
+      expect(insight.window.fromMs).toBe(Date.UTC(2025, 3, 10, 12));
+    });
+
+    it('recentMonths never states more than 12 months, whatever the day of the month', () => {
+      for (const day of [10, 14, 28, 31]) {
+        const nowMs = Date.UTC(2026, 2, day, 12);
+        const dense = [
+          ...monthlyGames([2020, 1], [2020, 12]),
+          ...monthlyGames([2025, 3], [2026, 3]),
+        ];
+        const insight = build(dense, nowMs)!;
+        const months = insight.copy.values.recentMonths;
+        if (months !== undefined) expect(months).toBeLessThanOrEqual(12);
+        expect(insight.copy.values.recent).toBe(12);
+      }
+    });
+
+    it('the prior window is the 12 calendar months before the recent one', () => {
+      const insight = build(
+        [...monthlyGames([2024, 7], [2025, 6]), ...monthlyGames([2025, 7], [2026, 6])],
+        NOW_MS,
+      )!;
+      // NOW = 2026-06-15: recent = Jul 2025 .. Jun 2026, prior = Jul 2024 .. Jun 2025.
+      expect(insight.copy.values.recent).toBe(12);
+      expect(insight.copy.values.prior).toBe(12);
     });
   });
 

@@ -541,9 +541,11 @@ describe('TrendsPage', () => {
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
   describe('plan 41-03 (B1, DD-41-07): the PlayRhythm door lands on exactly N', () => {
     /**
-     * One game every 31 days for 28 games (every game in its own UTC month, a 28-month span): the
-     * recent 12-month window counts 12 of them, so the door's count (12) stays below the page's
-     * total (28), and "resolves via the claim id" cannot pass on an unresolved-fallback "everything".
+     * One game every 31 days for 28 games (a 28-month span): the recent window (the 12 whole UTC
+     * calendar months ending with this one, 41-REVIEW WR-02) counts some of them, so the door's count
+     * stays below the page's total (28), and "resolves via the claim id" cannot pass on an
+     * unresolved-fallback "everything". The expected count is derived from that same window, so the
+     * test does not depend on the day it runs.
      */
     function playRhythmDoorFixture() {
       const now = Date.now();
@@ -567,7 +569,12 @@ describe('TrendsPage', () => {
       });
       const door = within(readCell).getByRole('link', { name: /See the \d+ games/ });
       const expectedCount = Number((door.textContent ?? '').match(/\d+/)![0]);
-      expect(expectedCount).toBe(12);
+      const nowDate = new Date();
+      const recentFloorMs = Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth() - 11, 1);
+      const inWindow = playRhythmDoorFixture().filter((m) => m.time >= recentFloorMs).length;
+      expect(expectedCount).toBe(inWindow);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(expectedCount).toBeLessThan(28);
 
       await user.click(door);
 
