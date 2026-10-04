@@ -23,6 +23,7 @@
     "capture:timeline-fidelity": "node scripts/captureTimelineFidelity.mjs",
     "capture:design": "node scripts/captureDesignScreens.mjs",
     "capture:matchups-fidelity": "node scripts/captureMatchupsFidelity.mjs",
+    "measure:dashboard-hero": "node scripts/measureDashboardHero.mjs",
     "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {

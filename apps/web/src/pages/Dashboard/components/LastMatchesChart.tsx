@@ -14,6 +14,11 @@ import {
 import { Line } from 'react-chartjs-2';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  TILE_CARD_CLASS,
+  TILE_CONTENT_CLASS,
+  TILE_HEADER_CLASS,
+} from '@/components/analytics/cardDensity';
+import {
   ABSTENTION_FLOOR_GAMES,
   resolveWindow,
   type HorizonKey,
@@ -83,8 +88,8 @@ export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horiz
   const showChart = series.length >= ABSTENTION_FLOOR_GAMES;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={TILE_CARD_CLASS}>
+      <CardHeader className={TILE_HEADER_CLASS}>
         <CardTitle>{t('dashboard.formCurve.title')}</CardTitle>
         {showChart && (
           <p data-slot="form-curve-caption" className="text-xs text-muted-foreground">
@@ -100,7 +105,7 @@ export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horiz
           </p>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className={TILE_CONTENT_CLASS}>
         {fighterMatches.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('dashboard.formCurve.empty')}</p>
         ) : !showChart ? (
@@ -108,7 +113,8 @@ export function LastMatchesChart({ matches, horizon }: { matches: Match[]; horiz
             {t(`dashboard.formCurve.windowEmpty.${horizon}`)}
           </p>
         ) : (
-          <div className="h-64">
+          // h-40 = CHART_H_COMPACT (160px, below 640); sm:h-72 = CHART_H_DEFAULT (288px, 640 up).
+          <div className="h-40 sm:h-72">
             <Line
               data={buildFormCurveData(series, t('dashboard.formCurve.winRate'))}
               options={buildOptions(series, t, i18n.language)}
