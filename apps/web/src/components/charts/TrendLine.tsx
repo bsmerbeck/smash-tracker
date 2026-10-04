@@ -443,28 +443,11 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
       const rawIndex = state.activeTooltipIndex;
       const index = typeof rawIndex === 'number' ? rawIndex : Number(rawIndex);
       if (!Number.isInteger(index)) return;
-      if (props.mode === 'event') {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
-      } else if (props.mode === 'period') {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
-      } else if (props.mode === 'value') {
-        // Unreached at runtime (value mode owns its pointer layer and returns below), but the
-        // explicit arm keeps the index `else` narrowed to its own point type.
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
-      } else {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
+      // Each mode's `onSelectPoint` takes its own point type, so the union call is narrowed with a cast;
+      // value mode never gets here (it owns its pointer layer and returns below).
+      const point = props.points[index];
+      if (point) {
+        props.onSelectPoint(point as never);
       }
     },
     [props],

@@ -35,15 +35,12 @@ export const VALUE_MARGIN_RIGHT_PX = 12;
 export const VALUE_X_AXIS_BAND_PX = 26;
 /** UI-SPEC §3: the bottom margin of a plot that draws no x axis. */
 export const VALUE_MARGIN_BOTTOM_PX = 6;
-/** The x axis's inset on each side (px) — a dot on the first or last reading is never cut by the plot edge. */
-export const VALUE_X_AXIS_PADDING_PX = 8;
 
-/** UI-SPEC §7.1 marks (px). The last / close dot, the calibration diamond, its hit rect and the surface rings. */
+/** UI-SPEC §7.1 marks (px). The last / close dot, the calibration diamond and the surface rings. */
 export const VALUE_DOT_DIAMETER_PX = 5;
 export const VALUE_DOT_RING_PX = 2;
 export const VALUE_DIAMOND_DIAGONAL_PX = 9;
 export const VALUE_DIAMOND_STROKE_PX = 1.5;
-export const VALUE_HIT_RECT_PX = 24;
 
 /** The SVG height of a value plot: its plot box (`plotPx`) plus the top margin and the bottom band / margin. */
 export function valueChartHeight(plotPx: number, drawXAxis: boolean): number {
