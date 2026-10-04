@@ -47,8 +47,11 @@ const SRC_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** Ban A — a date/time/number `toLocale*String` call with no locale argument (or literal `undefined`). */
 export const BARE_TO_LOCALE = /\.toLocale(?:Date|Time)?String\(\s*(?:undefined\s*)?[,)]/g;
-/** Ban A — an `Intl` formatter constructed with no arguments at all. */
-export const BARE_INTL = /new\s+Intl\.\w+\(\s*\)/g;
+/**
+ * Ban A — an `Intl` formatter constructed with no locale: no arguments, or a literal `undefined` first
+ * argument (the host default), with or without `new` (`Intl.DateTimeFormat()` is legal without it).
+ */
+export const BARE_INTL = /(?:new\s+)?Intl\.\w+\(\s*(?:undefined\s*)?[,)]/g;
 /** Ban B — any `toLocale…(` call (also catches the locale-bearing form) under the chart kit. */
 export const ANY_TO_LOCALE = /\.toLocale\w*\(/g;
 /** Ban B — any `Intl` construction. */
@@ -211,6 +214,11 @@ describe('guard non-vacuity (T-41-23)', () => {
     expect(countBareLocaleCalls('d.toLocaleString(undefined, { dateStyle: "short" })')).toBe(1);
     expect(countBareLocaleCalls('d.toLocaleDateString(\n  )')).toBe(1);
     expect(countBareLocaleCalls('new Intl.NumberFormat()')).toBe(1);
+    // 41-REVIEW IN-03: the `undefined`-locale and `new`-less forms are the same defect.
+    expect(countBareLocaleCalls('new Intl.NumberFormat(undefined, { style: "percent" })')).toBe(1);
+    expect(countBareLocaleCalls('new Intl.DateTimeFormat( undefined )')).toBe(1);
+    expect(countBareLocaleCalls('Intl.DateTimeFormat()')).toBe(1);
+    expect(countBareLocaleCalls('Intl.NumberFormat(undefined, { notation: "compact" })')).toBe(1);
     expect(countMatches('d.toLocaleDateString(locale)', ANY_TO_LOCALE)).toBe(1);
     expect(countMatches('d.toLocaleUpperCase()', ANY_TO_LOCALE)).toBe(1);
     expect(countMatches('new Intl.DateTimeFormat(locale)', ANY_NEW_INTL)).toBe(1);
@@ -220,6 +228,8 @@ describe('guard non-vacuity (T-41-23)', () => {
     expect(countBareLocaleCalls('d.toLocaleDateString(i18n.language)')).toBe(0);
     expect(countBareLocaleCalls("d.toLocaleString('en-US', { style: 'currency' })")).toBe(0);
     expect(countBareLocaleCalls('new Intl.NumberFormat(locale)')).toBe(0);
+    expect(countBareLocaleCalls('Intl.DateTimeFormat(locale, { dateStyle: "short" })')).toBe(0);
+    expect(countBareLocaleCalls('new Intl.NumberFormat(undefinedLocale)')).toBe(0);
     expect(countBareLocaleCalls('// d.toLocaleDateString()\nconst a = 1;')).toBe(0);
     expect(countBareLocaleCalls('/* new Intl.NumberFormat() */ const a = 1;')).toBe(0);
   });

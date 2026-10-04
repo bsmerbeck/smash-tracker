@@ -59,6 +59,14 @@ export default tseslint.config(
                 'react-chartjs-2 was removed in Phase 41 (CHRT-03) and must not return. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
             },
           ],
+          // `paths` matches the exact specifier only; a sub-path (`chart.js/auto`) needs a pattern.
+          patterns: [
+            {
+              group: ['chart.js/*', 'react-chartjs-2/*'],
+              message:
+                'chart.js and react-chartjs-2 were removed in Phase 41 (CHRT-03) and must not return, sub-paths included. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
+            },
+          ],
         },
       ],
     },

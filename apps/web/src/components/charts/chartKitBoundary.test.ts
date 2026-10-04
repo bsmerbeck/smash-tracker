@@ -77,7 +77,15 @@ const KIT_DIR = 'apps/web/src/components/charts/';
  */
 const SVG_CHART_IMPORT = /from\s+['"]recharts['"]/;
 const CANVAS_PACKAGES = ['chart.js', 'react-chartjs-2', '@kurkle/color'];
-const CANVAS_CHART_IMPORT = /from\s+['"](chart\.js|react-chartjs-2)['"]/;
+
+/**
+ * Every spelling that pulls a canvas chart package in: a static import, a sub-path of either
+ * package, a dynamic import call, a require call and a bare side-effect import (41-REVIEW IN-03 -
+ * the static form alone left the others unguarded). The doc comment names the forms in prose: a
+ * quoted example here would be matched by the source-tree scan, which reads this file too.
+ */
+const CANVAS_CHART_IMPORT =
+  /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)['"](?:chart\.js|react-chartjs-2)(?:\/[^'"]*)?['"]/;
 
 /**
  * The structural frame rule (R1-BLOCKER-2, R2-HIGH-1, R2-MEDIUM-2): every kit
@@ -175,6 +183,35 @@ describe('chart kit import boundary — source-tree guard (CHRT-04, D-08)', () =
   it('no canvas chart (chart.js/react-chartjs-2) import exists in ANY source file, the kit included (CHRT-03, unconditional)', () => {
     const offenders = SOURCE_FILES.filter((file) => CANVAS_CHART_IMPORT.test(readRepoFile(file)));
     expect(offenders, `canvas-library import offenders: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  // IN-03 positive controls. The sample strings are assembled at runtime: a literal import-shaped string in this
+  // file would be matched by the source-tree scan above, which reads this file too.
+  it('the canvas-import detector matches every import spelling (synthetic positive controls) and no look-alike', () => {
+    const q = (name: string) => `'${name}'`;
+    const dq = (name: string) => `"${name}"`;
+    const hits = [
+      `import { Chart } from ${q('chart.js')};`,
+      `import { Chart } from ${q('chart.js/auto')};`,
+      `import { Line } from ${q('react-chartjs-2')};`,
+      `const mod = await import(${q('chart.js')});`,
+      `const mod = import( ${q('chart.js/helpers')} );`,
+      `const chart = require(${q('chart.js')});`,
+      `import ${q('chart.js/auto')};`,
+      `import { Chart } from ${dq('chart.js')};`,
+    ];
+    for (const sample of hits) {
+      expect(CANVAS_CHART_IMPORT.test(sample), sample).toBe(true);
+    }
+    const misses = [
+      `import { LineChart } from ${q('recharts')};`,
+      `import x from ${q('chart.json')};`,
+      `import x from ${q('my-chart.js')};`,
+      `const note = ${q('chart.js')};`,
+    ];
+    for (const sample of misses) {
+      expect(CANVAS_CHART_IMPORT.test(sample), sample).toBe(false);
+    }
   });
 
   it('neither canvas package is declared in any workspace package.json dependency map (CHRT-03)', () => {
