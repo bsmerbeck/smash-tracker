@@ -1,30 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
-import {
-  ABSTENTION_FLOOR_GAMES,
-  MARK_BOUND_LINE_POINTS,
-  type ScoutGame,
-} from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import {
-  filterByFighter,
-  getOpponentRecords,
-  getRollingWinRate,
-  rankMatchupsByEvidence,
-} from '@/lib/stats';
+import { filterByFighter, getOpponentRecords, rankMatchupsByEvidence } from '@/lib/stats';
 import { StageMastery } from '@/pages/FighterAnalysis/components/StageMastery';
 import {
   OpponentTable,
   type OpponentTableRow,
 } from '@/pages/FighterAnalysis/components/OpponentTable';
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
-import { ChartCard } from '@/components/charts/ChartCard';
-import { TrendLine } from '@/components/charts/TrendLine';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { scoutGamesToMatches, buildScoutTrendChartPoints } from '../lib/fullAnalysis';
+import { scoutGamesToMatches } from '../lib/fullAnalysis';
+import { ScoutRecentFormCard } from './ScoutRecentFormCard';
 
 /**
  * V9-D: "Fighter Analysis, but for the player you're scouting" — reuses the
@@ -84,19 +74,9 @@ export function FullAnalysisSection({
   );
 }
 
-/** Trailing-5 rolling window — matches the deleted chart.js scouting-trend component's own `ROLLING_WINDOW` constant, so the numbers this card shows are unchanged by the kit swap. */
-const ROLLING_WINDOW = 5;
-
 function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag: string }) {
   const { t } = useTranslation();
-  const matches = scoutGamesToMatches(games);
-  const trendSeries = getRollingWinRate(matches, ROLLING_WINDOW);
-  // Plan 39.1-49 (UI-SPEC §11, orchestrator 2026-09-26): a line chart shows at
-  // most MARK_BOUND_LINE_POINTS points — "Recent Form" plots the most recent
-  // ones (each still its own trailing-5 value over the full history) and says
-  // how many of how many games it shows, the strip's own shownOf line.
-  const shownSeries = trendSeries.slice(-MARK_BOUND_LINE_POINTS);
-  const trendPoints = buildScoutTrendChartPoints(shownSeries, t);
+  const matches = useMemo(() => scoutGamesToMatches(games), [games]);
 
   // "Their top character" — the character with the most sampled games,
   // i.e. whichever fighter_id appears most often once adapted to Match[]
@@ -174,23 +154,12 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
       */}
       <WhatTheyPlayTable byTheirFighter={matchupSpread} />
 
-      <ChartCard title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}>
-        {trendPoints.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('opponents.trend.empty')}</p>
-        ) : (
-          <div data-slot="scout-recent-form" data-points={trendPoints.length}>
-            <TrendLine points={trendPoints} />
-            {shownSeries.length < trendSeries.length && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t('analytics.strip.shownOf', {
-                  shown: shownSeries.length,
-                  total: trendSeries.length,
-                })}
-              </p>
-            )}
-          </div>
-        )}
-      </ChartCard>
+      {/*
+        Plan 41-12 (PD-12-1): an event-anchored series with an IN-CARD games
+        panel — no link, no router/query/subject hook. Scouted games are a
+        third party's history; the drill's terminus is the card itself.
+      */}
+      <ScoutRecentFormCard matches={matches} gamerTag={gamerTag} />
 
       <OpponentTable rows={opponentTableRows} />
     </>

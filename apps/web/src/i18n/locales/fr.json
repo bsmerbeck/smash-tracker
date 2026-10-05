@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "Maîtrise des stages — Globale",
       "stageMasteryFor": "Maîtrise des stages — {{name}}",
       "topCharacter": "Personnage principal",
-      "recentForm": "Forme récente de {{name}}"
+      "recentForm": "Forme récente de {{name}}",
+      "form": {
+        "caption": {
+          "event": "Taux de victoires cumulé après chaque événement, du plus ancien au plus récent · sélectionner un point pour afficher ses parties",
+          "week": "Taux de victoires cumulé à la fin de chaque semaine comportant un événement, du plus ancien au plus récent · sélectionner un point pour afficher ses parties",
+          "month": "Taux de victoires cumulé à la fin de chaque mois comportant un événement, du plus ancien au plus récent · sélectionner un point pour afficher ses parties",
+          "quarter": "Taux de victoires cumulé à la fin de chaque trimestre comportant un événement, du plus ancien au plus récent · sélectionner un point pour afficher ses parties",
+          "year": "Taux de victoires cumulé à la fin de chaque année comportant un événement, du plus ancien au plus récent · sélectionner un point pour afficher ses parties"
+        },
+        "games_one": "{{count}} partie · {{event}} · {{span}}",
+        "games_other": "{{count}} parties · {{event}} · {{span}}",
+        "characters": "{{fighter}} contre {{opponent}}",
+        "close": "Masquer les parties"
+      }
     },
     "aiReport": {
       "title": "Rapport de scouting IA",

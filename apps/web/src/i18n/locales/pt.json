@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "Domínio de stages — Geral",
       "stageMasteryFor": "Domínio de stages — {{name}}",
       "topCharacter": "Personagem principal",
-      "recentForm": "Forma recente de {{name}}"
+      "recentForm": "Forma recente de {{name}}",
+      "form": {
+        "caption": {
+          "event": "Taxa de vitórias acumulada após cada evento, da mais antiga para a mais recente · selecione um ponto para listar suas partidas",
+          "week": "Taxa de vitórias acumulada no fim de cada semana com um evento, da mais antiga para a mais recente · selecione um ponto para listar suas partidas",
+          "month": "Taxa de vitórias acumulada no fim de cada mês com um evento, da mais antiga para a mais recente · selecione um ponto para listar suas partidas",
+          "quarter": "Taxa de vitórias acumulada no fim de cada trimestre com um evento, da mais antiga para a mais recente · selecione um ponto para listar suas partidas",
+          "year": "Taxa de vitórias acumulada no fim de cada ano com um evento, da mais antiga para a mais recente · selecione um ponto para listar suas partidas"
+        },
+        "games_one": "{{count}} partida · {{event}} · {{span}}",
+        "games_other": "{{count}} partidas · {{event}} · {{span}}",
+        "characters": "{{fighter}} contra {{opponent}}",
+        "close": "Ocultar partidas"
+      }
     },
     "aiReport": {
       "title": "Relatório de scouting com IA",

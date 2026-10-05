@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "Dominio de escenarios — General",
       "stageMasteryFor": "Dominio de escenarios — {{name}}",
       "topCharacter": "Personaje principal",
-      "recentForm": "Forma reciente de {{name}}"
+      "recentForm": "Forma reciente de {{name}}",
+      "form": {
+        "caption": {
+          "event": "Porcentaje de victorias acumulado tras cada evento, del más antiguo al más reciente · selecciona un punto para ver sus partidas",
+          "week": "Porcentaje de victorias acumulado al final de cada semana con un evento, del más antiguo al más reciente · selecciona un punto para ver sus partidas",
+          "month": "Porcentaje de victorias acumulado al final de cada mes con un evento, del más antiguo al más reciente · selecciona un punto para ver sus partidas",
+          "quarter": "Porcentaje de victorias acumulado al final de cada trimestre con un evento, del más antiguo al más reciente · selecciona un punto para ver sus partidas",
+          "year": "Porcentaje de victorias acumulado al final de cada año con un evento, del más antiguo al más reciente · selecciona un punto para ver sus partidas"
+        },
+        "games_one": "{{count}} partida · {{event}} · {{span}}",
+        "games_other": "{{count}} partidas · {{event}} · {{span}}",
+        "characters": "{{fighter}} contra {{opponent}}",
+        "close": "Ocultar partidas"
+      }
     },
     "aiReport": {
       "title": "Informe de scouting con IA",

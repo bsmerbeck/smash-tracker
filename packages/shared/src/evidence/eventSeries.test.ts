@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '../match.js';
 import * as eventSeriesModule from './eventSeries.js';
-import { buildOpponentEventSeries, buildStageEventSeries } from './eventSeries.js';
+import {
+  buildOpponentEventSeries,
+  buildPlayerEventSeries,
+  buildStageEventSeries,
+} from './eventSeries.js';
 import { ABSTENTION_FLOOR_GAMES } from './policy.js';
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
@@ -133,6 +137,66 @@ describe('buildStageEventSeries', () => {
   it('a stage id with no matches returns an empty anchor array', () => {
     const series = buildStageEventSeries({ matches: [], stageId: 5, refreshedAt: 1 });
     expect(series).toEqual([]);
+  });
+});
+
+describe('buildPlayerEventSeries (plan 41-12)', () => {
+  it('over games that all face one opponent it deep-equals the opponent entry point (anchoring parity)', () => {
+    const matches: Match[] = [
+      makeMatch({ id: 'a1', time: 1_000, win: true, eventName: 'Tourney A' }),
+      makeMatch({ id: 'a2', time: 2_000, win: false, eventName: 'Tourney A' }),
+      makeMatch({ id: 's1', time: 10_000_000, win: true }),
+      makeMatch({ id: 'b1', time: 50_000_000, win: true, eventName: 'Tourney B' }),
+    ];
+    expect(buildPlayerEventSeries({ matches, refreshedAt: 1 })).toEqual(
+      buildOpponentEventSeries({ matches, aliasMap: {}, opponentTag: 'tagone', refreshedAt: 1 }),
+    );
+  });
+
+  it('two opponents inside one same-named event share ONE tournament anchor holding both games', () => {
+    const matches: Match[] = [
+      makeMatch({
+        id: 'x1',
+        time: 1_000,
+        win: true,
+        eventName: 'Ultimate Singles',
+        opponent: 'ann',
+      }),
+      makeMatch({
+        id: 'x2',
+        time: 2_000 + DAY_MS,
+        win: false,
+        eventName: 'Ultimate Singles',
+        opponent: 'bob',
+      }),
+    ];
+    const series = buildPlayerEventSeries({ matches, refreshedAt: 1 });
+    expect(series).toHaveLength(1);
+    expect(series[0]!.kind).toBe('tournament');
+    expect([...series[0]!.matchIds].sort()).toEqual(['x1', 'x2']);
+  });
+
+  it('a game with no event name becomes a session anchor interleaved by time; cumulative values run across anchors', () => {
+    const matches: Match[] = [
+      makeMatch({ id: 'a1', time: 1_000, win: true, eventName: 'Tourney A' }),
+      makeMatch({ id: 's1', time: 10_000_000, win: false }),
+      makeMatch({ id: 'b1', time: 50_000_000, win: true, eventName: 'Tourney B' }),
+    ];
+    const series = buildPlayerEventSeries({ matches, refreshedAt: 1 });
+    expect(series.map((a) => a.kind)).toEqual(['tournament', 'session', 'tournament']);
+    expect(series.map((a) => a.cumulativeWins)).toEqual([1, 1, 2]);
+    expect(series.map((a) => a.cumulativeLosses)).toEqual([0, 1, 1]);
+  });
+
+  it('an empty input yields an empty series, and two calls on one input are deep-equal', () => {
+    expect(buildPlayerEventSeries({ matches: [], refreshedAt: 0 })).toEqual([]);
+    const matches: Match[] = [
+      makeMatch({ id: 'a1', time: 1_000, win: true, eventName: 'Tourney A' }),
+      makeMatch({ id: 's1', time: 10_000_000, win: false }),
+    ];
+    expect(buildPlayerEventSeries({ matches, refreshedAt: 1 })).toEqual(
+      buildPlayerEventSeries({ matches, refreshedAt: 1 }),
+    );
   });
 });
 

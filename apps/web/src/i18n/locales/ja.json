@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "ステージ習熟度 — 全体",
       "stageMasteryFor": "ステージ習熟度 — {{name}}",
       "topCharacter": "メインキャラ",
-      "recentForm": "{{name}}の最近の調子"
+      "recentForm": "{{name}}の最近の調子",
+      "form": {
+        "caption": {
+          "event": "各イベント終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "week": "イベントのあった各週の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "month": "イベントのあった各月の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "quarter": "イベントのあった各四半期の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "year": "イベントのあった各年の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示"
+        },
+        "games_one": "{{count}}試合 · {{event}} · {{span}}",
+        "games_other": "{{count}}試合 · {{event}} · {{span}}",
+        "characters": "{{fighter}} vs {{opponent}}",
+        "close": "試合を隠す"
+      }
     },
     "aiReport": {
       "title": "AIスカウティングレポート",

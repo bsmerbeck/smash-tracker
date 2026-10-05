@@ -119,6 +119,16 @@ export const PHASE41_LEDGER_KEYS: readonly string[] = [
   'gsp.vsGlicko.readout.mmr',
   'gsp.vsGlicko.readout.glicko',
   'gsp.vsGlicko.captionPanels',
+  // Plan 41-12: the Scout Recent Form card's event-anchored caption (one per grain) and in-card games panel.
+  'scout.fullAnalysis.form.caption.event',
+  'scout.fullAnalysis.form.caption.week',
+  'scout.fullAnalysis.form.caption.month',
+  'scout.fullAnalysis.form.caption.quarter',
+  'scout.fullAnalysis.form.caption.year',
+  'scout.fullAnalysis.form.games_one',
+  'scout.fullAnalysis.form.games_other',
+  'scout.fullAnalysis.form.characters',
+  'scout.fullAnalysis.form.close',
 ];
 
 /**

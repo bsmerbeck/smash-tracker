@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Match, ScoutGame } from '@smash-tracker/shared';
-import i18n from '@/i18n';
-import { getRollingWinRate } from '@/lib/stats';
-import { buildScoutTrendChartPoints, scoutGamesToMatches } from './fullAnalysis';
+import type { ScoutGame } from '@smash-tracker/shared';
+import { buildScoutFormSeries, gamesBehindPoint, scoutGamesToMatches } from './fullAnalysis';
 
 function makeGame(overrides: Partial<ScoutGame> = {}): ScoutGame {
   return {
@@ -59,53 +57,76 @@ describe('scoutGamesToMatches', () => {
   });
 });
 
-describe('buildScoutTrendChartPoints', () => {
-  function makeMatch(overrides: Partial<Match> = {}): Match {
-    return {
-      id: 'm1',
-      fighter_id: 1,
-      opponent_id: 10,
-      time: 1000,
-      map: { id: 1, name: 'Battlefield' },
-      opponent: 'PowPow',
-      matchType: 'none',
-      win: true,
-      ...overrides,
-    };
-  }
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const T0 = Date.UTC(2025, 0, 6, 18);
 
-  it('maps the rolling-win-rate series onto the kit TrendChartPoint shape', () => {
-    const matches = [
-      makeMatch({ id: 'm1', time: 1, win: true }),
-      makeMatch({ id: 'm2', time: 2, win: false }),
-    ];
-    const series = getRollingWinRate(matches, 5);
-    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
-    expect(points).toHaveLength(2);
-    expect(points[0]?.context).toMatchObject({
-      matchId: 'm1',
-      opponentTag: 'PowPow',
-      stageName: 'Battlefield',
-      win: true,
-    });
+/** One game per distinct weekly event: `count` events, each named differently and a week apart. */
+function weeklyEventGames(count: number): ScoutGame[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeGame({ time: T0 + i * WEEK_MS, win: i % 3 !== 0, eventName: `Weekly ${i}` }),
+  );
+}
+
+describe('buildScoutFormSeries', () => {
+  it('at or under 60 anchors the display is the unbinned anchor array at grain "event"', () => {
+    const matches = scoutGamesToMatches(weeklyEventGames(20));
+    const { display, grain } = buildScoutFormSeries(matches);
+    expect(grain).toBe('event');
+    expect(display).toHaveLength(20);
+    expect(display.every((point) => point.kind === 'tournament')).toBe(true);
   });
 
-  it('falls back to the localized unknown label for a match with stage id 0', () => {
-    const series = getRollingWinRate([makeMatch({ map: { id: 0, name: 'no selection' } })], 5);
-    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
-    expect(points[0]?.context.stageName).toBe(i18n.t('common.unknown'));
+  it('100 distinct weekly events bin to at most 60 points at grain "month"', () => {
+    const matches = scoutGamesToMatches(weeklyEventGames(100));
+    const { display, grain } = buildScoutFormSeries(matches);
+    expect(grain).toBe('month');
+    expect(display.length).toBeLessThanOrEqual(60);
+    expect(display.every((point) => point.kind === 'bin')).toBe(true);
   });
 
-  it('resolves eventName from tournamentName when eventName is absent', () => {
-    const series = getRollingWinRate(
-      [makeMatch({ eventName: undefined, tournamentName: 'Genesis 10' })],
-      5,
-    );
-    const points = buildScoutTrendChartPoints(series, i18n.t.bind(i18n));
-    expect(points[0]?.context.eventName).toBe('Genesis 10');
+  it.each([20, 100])('partition: %i events, every match id sits behind exactly one point', (n) => {
+    const matches = scoutGamesToMatches(weeklyEventGames(n));
+    const { display } = buildScoutFormSeries(matches);
+    const ids = display.flatMap((point) => point.matchIds);
+    expect(ids).toHaveLength(matches.length);
+    expect(new Set(ids)).toEqual(new Set(matches.map((m) => m.id)));
   });
 
-  it('returns an empty array for an empty series', () => {
-    expect(buildScoutTrendChartPoints([], i18n.t.bind(i18n))).toEqual([]);
+  it('no games yields an empty display at grain "event"', () => {
+    expect(buildScoutFormSeries([])).toEqual({ display: [], grain: 'event' });
+  });
+});
+
+describe('gamesBehindPoint', () => {
+  it('returns exactly the matches whose ids are in the point matchIds, oldest first', () => {
+    const matches = scoutGamesToMatches([
+      makeGame({ time: T0 + 30, eventName: 'Event A' }),
+      makeGame({ time: T0 + 10, eventName: 'Event A' }),
+      makeGame({ time: T0 + 40 * WEEK_MS, eventName: 'Event B' }),
+    ]);
+    const { display } = buildScoutFormSeries(matches);
+    expect(display).toHaveLength(2);
+    const behind = gamesBehindPoint(display[0]!, matches);
+    expect(behind.map((m) => m.time)).toEqual([T0 + 10, T0 + 30]);
+    expect(gamesBehindPoint(display[1]!, matches)).toHaveLength(1);
+  });
+
+  it('identity, not window: a game inside the point time span but not in matchIds is excluded', () => {
+    const matches = scoutGamesToMatches([
+      makeGame({ time: T0, eventName: 'Event A' }),
+      makeGame({ time: T0 + 20, eventName: 'Event A' }),
+      makeGame({ time: T0 + 10, eventName: undefined, opponentTag: 'Other' }),
+    ]);
+    const { display } = buildScoutFormSeries(matches);
+    const tournament = display.find((point) => point.kind === 'tournament')!;
+    const behind = gamesBehindPoint(tournament, matches);
+    expect(behind).toHaveLength(2);
+    expect(behind.every((m) => m.opponent === 'PowPow')).toBe(true);
+  });
+
+  it('an empty matchIds returns no games', () => {
+    const matches = scoutGamesToMatches([makeGame()]);
+    const { display } = buildScoutFormSeries(matches);
+    expect(gamesBehindPoint({ ...display[0]!, matchIds: [] }, matches)).toEqual([]);
   });
 });

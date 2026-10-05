@@ -220,6 +220,24 @@ export function buildStageEventSeries(input: {
 }
 
 /**
+ * Plan 41-12 (SC1 / SC2, PD-12-2): one player's whole countable history as an
+ * event-anchored series — unscoped by opponent or stage. The Scout page's
+ * Recent Form card plots a THIRD PARTY's sampled games (`ScoutReportData.games`
+ * adapted to `Match[]`), where there is no single opponent or stage to scope
+ * by. Shares the one private builder with the opponent and stage entry points,
+ * so its anchoring can never diverge from the hub's or the stage page's; no
+ * windowed average.
+ */
+export function buildPlayerEventSeries(input: {
+  matches: Match[];
+  refreshedAt: number;
+  minMatches?: number;
+}): EventSeries {
+  const { matches, refreshedAt, minMatches } = input;
+  return buildEventSeries(matches.filter(isCountableGame), refreshedAt, minMatches);
+}
+
+/**
  * Plan 39.1-39 (VIZ-01, UI-SPEC §11 "line points at most 60"): the calendar
  * grains a long event series is binned into for DISPLAY, finest first. The
  * UTC bucket rule is `insight/periodSeries.ts`'s `calendarBucketBounds` (plan

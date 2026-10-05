@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "Stage Mastery — Overall",
       "stageMasteryFor": "Stage Mastery — {{name}}",
       "topCharacter": "Top character",
-      "recentForm": "{{name}}'s Recent Form"
+      "recentForm": "{{name}}'s Recent Form",
+      "form": {
+        "caption": {
+          "event": "Cumulative win rate after each event, oldest first · select a point to list its games",
+          "week": "Cumulative win rate at the end of each week with an event, oldest first · select a point to list its games",
+          "month": "Cumulative win rate at the end of each month with an event, oldest first · select a point to list its games",
+          "quarter": "Cumulative win rate at the end of each quarter with an event, oldest first · select a point to list its games",
+          "year": "Cumulative win rate at the end of each year with an event, oldest first · select a point to list its games"
+        },
+        "games_one": "{{count}} game · {{event}} · {{span}}",
+        "games_other": "{{count}} games · {{event}} · {{span}}",
+        "characters": "{{fighter}} vs {{opponent}}",
+        "close": "Hide games"
+      }
     },
     "aiReport": {
       "title": "AI Scouting Report",

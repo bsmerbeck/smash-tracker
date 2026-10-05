@@ -1640,7 +1640,20 @@
       "stageMasteryOverall": "Stage-Beherrschung — Gesamt",
       "stageMasteryFor": "Stage-Beherrschung — {{name}}",
       "topCharacter": "Top-Charakter",
-      "recentForm": "Aktuelle Form von {{name}}"
+      "recentForm": "Aktuelle Form von {{name}}",
+      "form": {
+        "caption": {
+          "event": "Kumulierte Siegquote nach jedem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "week": "Kumulierte Siegquote am Ende jeder Woche mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "month": "Kumulierte Siegquote am Ende jedes Monats mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "quarter": "Kumulierte Siegquote am Ende jedes Quartals mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "year": "Kumulierte Siegquote am Ende jedes Jahres mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten"
+        },
+        "games_one": "{{count}} Spiel · {{event}} · {{span}}",
+        "games_other": "{{count}} Spiele · {{event}} · {{span}}",
+        "characters": "{{fighter}} gegen {{opponent}}",
+        "close": "Spiele ausblenden"
+      }
     },
     "aiReport": {
       "title": "KI-Scouting-Bericht",
