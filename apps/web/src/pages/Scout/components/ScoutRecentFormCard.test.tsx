@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ScoutGame } from '@smash-tracker/shared';
 import type { TrendLineProps } from '@/components/charts/TrendLine';
-import { scoutGamesToMatches } from '../lib/fullAnalysis';
+import { buildScoutFormSeries, scoutGamesToMatches } from '../lib/fullAnalysis';
 import { FullAnalysisSection } from './FullAnalysisSection';
 import { ScoutRecentFormCard } from './ScoutRecentFormCard';
 
@@ -125,5 +125,133 @@ describe('ScoutRecentFormCard direct renders (plan 41-12)', () => {
     rerender(<ScoutRecentFormCard matches={other} gamerTag="Pandem1c" />);
     expect(container.querySelector('[data-slot="scout-form-games"]')).toBeNull();
     expect(container.querySelector('[data-slot="scout-recent-form"]')).not.toBeNull();
+  });
+});
+
+/**
+ * PD-12-3: the keyboard twin. Driven by userEvent on the real twin — no
+ * TrendLine interaction involved, so the stubbed chart above changes nothing.
+ */
+describe('ScoutRecentFormCard table twin (plan 41-12)', () => {
+  const WEEK_MS = 7 * DAY_MS;
+
+  /** `count` games, each its own weekly event ("Weekly i"), win pattern fixed. */
+  function weeklyEventMatches(count: number) {
+    return scoutGamesToMatches(
+      Array.from({ length: count }, (_, i) =>
+        makeGame({ time: T0 + i * WEEK_MS, win: i % 3 !== 0, eventName: `Weekly ${i}` }),
+      ),
+    );
+  }
+
+  async function openTwin(user: ReturnType<typeof userEvent.setup>) {
+    const toggle = screen.getByRole('button', { name: 'View as table' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  }
+
+  function bodyRows(container: HTMLElement) {
+    return container.querySelectorAll('[data-slot="scout-form-table"] tbody tr');
+  }
+
+  it('toggles open and carries one body row per plotted point, headed "Event" at event grain', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ScoutRecentFormCard matches={weeklyEventMatches(20)} gamerTag="Pandem1c" />,
+    );
+    expect(container.querySelector('[data-slot="scout-form-table"]')).toBeNull();
+    await openTwin(user);
+    expect(bodyRows(container)).toHaveLength(20);
+    expect(container.querySelector('[data-slot="scout-form-table"] thead th')?.textContent).toBe(
+      'Event',
+    );
+  });
+
+  it('carries the binned count (at most 60) headed "Period" at a binned grain', async () => {
+    const user = userEvent.setup();
+    const matches = weeklyEventMatches(100);
+    const { display } = buildScoutFormSeries(matches);
+    const { container } = render(<ScoutRecentFormCard matches={matches} gamerTag="Pandem1c" />);
+    await openTwin(user);
+    expect(bodyRows(container)).toHaveLength(display.length);
+    expect(display.length).toBeLessThanOrEqual(60);
+    expect(container.querySelector('[data-slot="scout-form-table"] thead th')?.textContent).toBe(
+      'Period',
+    );
+  });
+
+  it('Enter on a row button opens the same panel, presses only that button, focuses the heading, and a second row swaps the panel', async () => {
+    const user = userEvent.setup();
+    const matches = scoutGamesToMatches(twoEventGames());
+    const { container } = render(<ScoutRecentFormCard matches={matches} gamerTag="Pandem1c" />);
+    await openTwin(user);
+
+    const buttons = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="scout-form-table"] tbody button',
+        ),
+      );
+    expect(buttons()).toHaveLength(2);
+
+    buttons()[1]!.focus();
+    await user.keyboard('{Enter}');
+    const panel = container.querySelector('[data-slot="scout-form-games"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-count')).toBe('2');
+    expect(panel!.textContent).toContain('Event B');
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    expect(document.activeElement).toBe(panel!.querySelector('[tabindex="-1"]'));
+
+    buttons()[0]!.focus();
+    await user.keyboard('{Enter}');
+    const swapped = container.querySelector('[data-slot="scout-form-games"]');
+    expect(swapped!.getAttribute('data-count')).toBe('3');
+    expect(swapped!.textContent).toContain('Event A');
+    expect(buttons().map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+  });
+
+  it.each([
+    ['event', 20],
+    ['month', 100],
+  ])(
+    'same-n at grain %s: heading count equals listed rows equals the point wins + losses',
+    async (grain, events) => {
+      const user = userEvent.setup();
+      const matches = weeklyEventMatches(events);
+      const { display, grain: actualGrain } = buildScoutFormSeries(matches);
+      expect(actualGrain).toBe(grain);
+      const { container } = render(<ScoutRecentFormCard matches={matches} gamerTag="Pandem1c" />);
+      await openTwin(user);
+
+      for (const index of [0, display.length - 1]) {
+        const point = display[index]!;
+        const expected = point.wins + point.losses;
+        const button = container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="scout-form-table"] tbody button',
+        )[index]!;
+        await user.click(button);
+        const panel = container.querySelector('[data-slot="scout-form-games"]')!;
+        expect(Number(panel.getAttribute('data-count'))).toBe(expected);
+        expect(panel.querySelectorAll('li')).toHaveLength(expected);
+        const heading = panel.querySelector('[tabindex="-1"]')!.textContent!;
+        expect(heading.startsWith(`${expected} game`)).toBe(true);
+      }
+      if (grain === 'month') {
+        expect(display.some((p) => p.wins + p.losses > 1)).toBe(true);
+      }
+    },
+  );
+
+  it('holds zero anchors with the twin open and a point selected', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ScoutRecentFormCard matches={scoutGamesToMatches(twoEventGames())} gamerTag="Pandem1c" />,
+    );
+    await openTwin(user);
+    await user.click(container.querySelector('[data-slot="scout-form-table"] tbody button')!);
+    expect(container.querySelector('[data-slot="scout-form-games"]')).not.toBeNull();
+    expect(container.querySelectorAll('a')).toHaveLength(0);
   });
 });

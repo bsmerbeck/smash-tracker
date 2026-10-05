@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { EventAnchor, EventBin, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChartCard } from '@/components/charts/ChartCard';
 import { TrendLine, type TrendEventPoint } from '@/components/charts/TrendLine';
 import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { Record } from '@/components/analytics/Record';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatDate, formatDaySpan } from '@/lib/format';
+import { formatPercent } from '@/lib/formatPercent';
 import { buildEventTrendPoints, readableEventLabel } from '@/lib/eventTrendPoints';
-import { buildScoutFormSeries, gamesBehindPoint } from '../lib/fullAnalysis';
+import { buildScoutFormSeries, gamesBehindPoint, type ScoutFormGrain } from '../lib/fullAnalysis';
 
 /**
  * Every row item but the last ends with a CSS middot separator — never JSX
@@ -47,6 +50,89 @@ function GameRow({ match }: { match: Match }) {
         </span>
       ))}
     </li>
+  );
+}
+
+/**
+ * PD-12-3: the keyboard twin. `TrendLine` event mode has no keyboard select, so
+ * a "View as table" disclosure carries one row per PLOTTED point — the row's
+ * first cell a button calling the same select handler the chart click calls.
+ */
+function RecentFormTableTwin({
+  display,
+  grain,
+  selectedKey,
+  onSelect,
+}: {
+  display: ReadonlyArray<EventAnchor | EventBin>;
+  grain: ScoutFormGrain;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button type="button" variant="link" size="sm" className={MUTED_LINK_TONE}>
+          {t('analytics.trend.tableToggle')}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <table className="w-full text-sm" data-slot="scout-form-table">
+          <thead>
+            <tr>
+              <th scope="col" className="text-left font-medium">
+                {grain === 'event'
+                  ? t('shared.filteredMatchList.columnEvent')
+                  : t('analytics.timeline.table.headers.period')}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {t('analytics.valueTrend.table.headers.date')}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {t('analytics.timeline.table.headers.record')}
+              </th>
+              <th scope="col" className="text-left font-medium">
+                {t('analytics.timeline.table.headers.rate')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {display.map((point) => (
+              <tr key={point.key}>
+                <td>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className={MUTED_LINK_TONE}
+                    aria-pressed={point.key === selectedKey}
+                    onClick={() => onSelect(point.key)}
+                  >
+                    {readableEventLabel({ point, t, locale: i18n.language })}
+                  </Button>
+                </td>
+                <td className="tabular-nums">
+                  {formatDaySpan(point.startMs, point.endMs, i18n.language)}
+                </td>
+                <td className="tabular-nums">
+                  <Record
+                    wins={point.wins}
+                    losses={point.losses}
+                    cue="none"
+                    locale={i18n.language}
+                  />
+                </td>
+                <td className="tabular-nums">
+                  {formatPercent(point.cumulativeWinRate / 100, i18n.language)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -156,6 +242,12 @@ export function ScoutRecentFormCard({ matches, gamerTag }: { matches: Match[]; g
               />
             </div>
           )}
+          <RecentFormTableTwin
+            display={display}
+            grain={grain}
+            selectedKey={selectedKey}
+            onSelect={setSelectedKey}
+          />
         </div>
       )}
     </ChartCard>

@@ -49,12 +49,18 @@ import { CHART_TOKENS } from './tokens';
  *      jsdom canvas stub are gone" red: `apps/web/src/test/stubs/react-chartjs-2.tsx must not exist:
  *      expected true to be false`.
  *
- * THE ONE ENUMERATED NON-URL CLICK (plan 41-06, DD-41-12, UI-SPEC 9.3): a kit chart's point / mark click
- * drills into the games behind it through the Phase 38 URL contract - EXCEPT the GSP curve / MMR panel,
- * because GSP readings are not games and `FilteredMatchList` has no row for one. At reading grain the
- * click opens that reading's edit dialog; at a coarser grain it expands the GSP Log and marks the
- * close's rows (`aria-current`). Neither writes a URL axis (`GspCurve.tsx` imports no router API).
- * No other chart may add a non-URL click without being named here.
+ * THE ENUMERATED NON-URL CLICKS: a kit chart's point / mark click drills into the games behind it through
+ * the Phase 38 URL contract - EXCEPT the two named here. No other chart may add a non-URL click without
+ * being named here.
+ *   (1) Plan 41-06, DD-41-12, UI-SPEC 9.3: the GSP curve / MMR panel, because GSP readings are not games
+ *       and `FilteredMatchList` has no row for one. At reading grain the click opens that reading's edit
+ *       dialog; at a coarser grain it expands the GSP Log and marks the close's rows (`aria-current`).
+ *       Neither writes a URL axis (`GspCurve.tsx` imports no router API).
+ *   (2) Plan 41-12, PD-12-1: the Scout Recent Form point (and its keyboard table-twin row) lists the
+ *       point's games in-card (identity through `matchIds`, never a time window), because a scouted
+ *       third party's games have no row in the viewer's `FilteredMatchList` and Phase 38 H-01 / H-02
+ *       forbid links from that host into the viewer's routes. No URL axis, no anchor, no router /
+ *       query / subject hook (`ScoutRecentFormCard.tsx` imports none).
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');

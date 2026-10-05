@@ -338,14 +338,22 @@ new URL/query contract exists yet. Phase 38 owns the URL-addressable drill-down 
 member built before then should follow the same in-page pattern `MatchupChart`/`MatchupsContext`
 establishes rather than inventing its own.
 
-**The one enumerated non-URL click (plan 41-06, DD-41-12):** the GSP curve / MMR panel's point click.
-GSP readings are not games, so `FilteredMatchList` has no row for one and the Phase 38 URL contract does
-not apply. At reading grain `onSelectPoint` opens that reading's edit dialog (`memberIndexes[0]` into the
-host's entries); at a coarser grain it expands the GSP Log, scrolls to the close's rows and marks them
-`aria-current="true"` with `bg-muted/40` until the next selection (the rows are exactly the close's
-`memberIndexes` - identity, never a time window). Neither writes a URL axis. Every other kit click drills
-through the URL contract; adding another non-URL click means naming it here and in
-`chartKitBoundary.test.ts`.
+**The enumerated non-URL clicks (two):** every other kit click drills through the URL contract.
+
+1. _Plan 41-06, DD-41-12:_ the GSP curve / MMR panel's point click. GSP readings are not games, so
+   `FilteredMatchList` has no row for one and the Phase 38 URL contract does not apply. At reading grain
+   `onSelectPoint` opens that reading's edit dialog (`memberIndexes[0]` into the host's entries); at a
+   coarser grain it expands the GSP Log, scrolls to the close's rows and marks them `aria-current="true"`
+   with `bg-muted/40` until the next selection (the rows are exactly the close's `memberIndexes` -
+   identity, never a time window). Neither writes a URL axis.
+2. _Plan 41-12, PD-12-1:_ the Scout Recent Form card's point click (and its keyboard "View as table"
+   twin row, PD-12-3). Scouted games are a third party's history with no row in the viewer's
+   `FilteredMatchList`, and Phase 38 H-01 / H-02 forbid links from that provider-less host into the
+   viewer's own routes, so the click opens an in-card games panel listing exactly the point's games
+   (identity through the point's `matchIds`, never a time window). Buttons only: no anchor, no URL axis,
+   no router / query / subject hook.
+
+Adding another non-URL click means naming it here and in `chartKitBoundary.test.ts`.
 
 **Click surface on Recharts charts:** bind the click handler on the chart CONTAINER (e.g.
 `LineChart`'s `onClick`), not on an individual mark like `Line`'s `dot`. Recharts 3.10.1's
