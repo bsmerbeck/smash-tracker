@@ -43,8 +43,7 @@ export interface TrendsHeroData {
  * Pure computations backing the Trends hero stat row (V9-C): current rating
  * ±RD, peak rating, best month (win-rate leader with a minimum sample), and
  * current form. Derived entirely from data the page already fetches/computes
- * (rating history + monthly records) — no additional API calls, mirroring
- * FighterAnalysis's `buildFighterHero` pattern.
+ * (rating history + monthly records) — no additional API calls.
  */
 export function buildTrendsHero(matches: Match[]): TrendsHeroData {
   const { periods, current }: RatingHistory = computeRatingHistory(matches);

@@ -5,7 +5,6 @@ import {
   getMonthlyRecords,
   getOnlineOfflineSplit,
   getOpponentProfile,
-  getRollingWinRate,
   getSessions,
   rankMatchupsByEvidence,
   rankStagesByEvidence,
@@ -105,20 +104,6 @@ describe('rankStagesByEvidence', () => {
     const ranked = rankStagesByEvidence(matches);
     expect(ranked.map((r) => r.stageId)).toEqual([3, 1]); // proven 5-1 beats thinner 2-1
     expect(ranked.find((r) => r.stageId === 0)).toBeUndefined();
-  });
-});
-
-describe('getRollingWinRate', () => {
-  it('computes trailing-window rates chronologically', () => {
-    // W W L L with window 2 -> 100, 100, 50, 0
-    const matches = [
-      makeMatch({ id: '1', time: 1, win: true }),
-      makeMatch({ id: '2', time: 2, win: true }),
-      makeMatch({ id: '3', time: 3, win: false }),
-      makeMatch({ id: '4', time: 4, win: false }),
-    ];
-    const series = getRollingWinRate(matches, 2);
-    expect(series.map((p) => p.winRate)).toEqual([100, 100, 50, 0]);
   });
 });
 

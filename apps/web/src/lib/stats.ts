@@ -400,27 +400,6 @@ export function getStageUsage(matches: Match[]): Map<number, number> {
 // V3 stats engine: form and time
 // ---------------------------------------------------------------------------
 
-export interface RollingWinRatePoint {
-  /** 1-based match index within the series. */
-  index: number;
-  /** Win rate (0-100) over the trailing `window` matches ending here. */
-  winRate: number;
-  match: Match;
-}
-
-/**
- * Trailing-window win rate per match, chronologically — the "form curve".
- * Early points use however many matches exist so the curve starts at match 1.
- */
-export function getRollingWinRate(matches: Match[], window = 10): RollingWinRatePoint[] {
-  const sorted = [...matches].sort((a, b) => a.time - b.time);
-  return sorted.map((match, i) => {
-    const slice = sorted.slice(Math.max(0, i - window + 1), i + 1);
-    const wins = slice.filter((m) => m.win).length;
-    return { index: i + 1, winRate: (wins / slice.length) * 100, match };
-  });
-}
-
 export interface MonthlyRecord extends WinLossRecord {
   /** Calendar month key, e.g. '2021-01' (UTC). */
   month: string;
