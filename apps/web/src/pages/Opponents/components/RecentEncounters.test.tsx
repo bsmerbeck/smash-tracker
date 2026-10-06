@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
@@ -327,5 +327,54 @@ describe('RecentEncounters (39.1-18 Task 2, UIX-08/D-10)', () => {
     await user.click(button);
     expect(screen.queryByRole('link', { name: /Win/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Win ·/)).toBeInTheDocument();
+  });
+
+  // Plan 39.1-56 (UAT 39.1 test 10): pins the behaviour the UAT text dump
+  // could not exercise — per-game expansion and the >25-set hand-off.
+  it('plan 39.1-56: activating a three-game set reveals one line per game in that set', async () => {
+    const user = userEvent.setup();
+    const matches = [1, 2, 3].map((g) =>
+      makeMatch({
+        id: `t${g}`,
+        time: 1000 + g,
+        win: g !== 2,
+        externalId: `sgg:900:g${g}`,
+        eventName: 'Three Game Event',
+      }),
+    );
+    renderEncounters(matches, {
+      tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }),
+    });
+
+    expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(1);
+    await user.click(document.querySelector('[data-slot="encounter-set-row"] button')!);
+    const lines = screen.getAllByText(/^(Win|Loss) ·/);
+    expect(lines).toHaveLength(3);
+  });
+
+  it('plan 39.1-56: with 30 sets, 8 render and Show all hands off to onSeeAllInMatchList instead of expanding inline', async () => {
+    const user = userEvent.setup();
+    const onSeeAllInMatchList = vi.fn();
+    const matches: Match[] = [];
+    for (let i = 0; i < 30; i++) {
+      matches.push(
+        makeMatch({
+          id: `h${i}`,
+          time: 1000 + i,
+          win: i % 2 === 0,
+          externalId: `sgg:${500 + i}:g1`,
+          eventName: 'Thirty Set Event',
+        }),
+      );
+    }
+    renderEncounters(matches, {
+      tournamentLinkForMatch: () => ({ href: '/tournaments/x', label: 'x' }),
+      onSeeAllInMatchList,
+    });
+
+    expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(8);
+    await user.click(screen.getByRole('button', { name: 'Show all sets' }));
+    expect(onSeeAllInMatchList).toHaveBeenCalledTimes(1);
+    expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(8);
   });
 });
