@@ -118,6 +118,68 @@ describe('buildValueSeries (A1 / DD-41-01)', () => {
     expect(series.points[0]!.memberIndexes).toEqual([1, 0, 2]);
   });
 
+  // UAT 41 test 9 / F19: readings that share one instant are ONE close-of-instant point at reading
+  // grain — the line never retraces a zero-width spike at one x, and every label sits on a drawn vertex.
+  // The fixture is in `getGspSeries` order: at a shared instant every match sorts before the reading.
+  it('collapses readings sharing one instant into one close point at reading grain (F19)', () => {
+    const T = START_MS + 10 * DAY_MS;
+    const readings = [
+      reading(T - 5 * DAY_MS, 12_100_000),
+      reading(T, 12_500_000),
+      reading(T, 12_700_000),
+      reading(T, 13_456_789, true),
+      reading(T + 60 * 60 * 1000, 12_600_000),
+      reading(T + DAY_MS, 12_890_123),
+    ];
+    const series = buildValueSeries(readings);
+    expect(series.grain).toBe('reading');
+    expect(series.points).toHaveLength(4);
+    const tied = series.points[1]!;
+    expect(tied.kind).toBe('close');
+    expect(tied.n).toBe(3);
+    expect(tied.memberIndexes).toEqual([1, 2, 3]);
+    expect(tied.value).toBe(13_456_789);
+    expect(tied.containsCalibration).toBe(true);
+    expect(tied.xMs).toBe(T);
+    const xs = series.points.map((point) => point.xMs);
+    expect(new Set(xs).size).toBe(xs.length);
+    expect(series.points.map((point) => point.kind)).toEqual([
+      'reading',
+      'close',
+      'reading',
+      'reading',
+    ]);
+  });
+
+  it('a same-instant point is the CLOSE of the instant, never its max (F19)', () => {
+    const T = START_MS + 10 * DAY_MS;
+    const readings = [
+      reading(T - 5 * DAY_MS, 12_100_000),
+      reading(T, 13_456_789),
+      reading(T, 12_700_000),
+      reading(T + 60 * 60 * 1000, 12_600_000),
+      reading(T + DAY_MS, 12_890_123),
+    ];
+    const series = buildValueSeries(readings);
+    expect(series.points).toHaveLength(4);
+    expect(series.points[1]!.value).toBe(12_700_000);
+    expect(series.points[1]!.memberIndexes).toEqual([1, 2]);
+    expect(Math.max(...series.points.map((point) => point.value))).toBe(12_890_123);
+  });
+
+  it('keeps input order inside a collapsed instant — numeric, never lexicographic (F19)', () => {
+    const readings = [
+      ...Array.from({ length: 11 }, (_, i) => reading(START_MS, 100 + i)),
+      reading(START_MS + DAY_MS, 500),
+    ];
+    const series = buildValueSeries(readings);
+    expect(series.grain).toBe('reading');
+    expect(series.points).toHaveLength(2);
+    expect(series.points[0]!.memberIndexes).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(series.points[0]!.value).toBe(110);
+    expect(series.points[0]!.n).toBe(11);
+  });
+
   it('skips a non-finite reading without breaking the series (T-41-05)', () => {
     const readings = [
       reading(START_MS, 1),

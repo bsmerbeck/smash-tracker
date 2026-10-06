@@ -245,6 +245,67 @@ describe('GspCurve on the kit value mode (plan 41-06, A1)', () => {
     expect(onSelectReading).not.toHaveBeenCalled();
   });
 
+  // UAT 41 test 9 / F19: readings sharing one instant (two matches and a calibration on Jul 7) are one
+  // close-of-instant point — no zero-width vertical spike, and every peak/low/last label is a drawn vertex.
+  describe('same-instant readings (F19)', () => {
+    const T = START_MS + 10 * DAY_MS;
+    const tied: GspPoint[] = [
+      { time: T - 5 * DAY_MS, gsp: 12_100_000, win: true },
+      { time: T, gsp: 12_500_000, win: true },
+      { time: T, gsp: 12_700_000, win: true },
+      { time: T, gsp: 13_456_789, win: null },
+      { time: T + 60 * 60 * 1000, gsp: 12_600_000, win: false },
+      { time: T + DAY_MS, gsp: 12_890_123, win: true },
+    ];
+
+    function vertices(container: HTMLElement): { x: number; y: number }[] {
+      const d = container
+        .querySelector('.trend-line-value-line .recharts-line-curve')!
+        .getAttribute('d')!;
+      return [...d.matchAll(/[ML]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/g)].map((m) => ({
+        x: Number(m[1]),
+        y: Number(m[2]),
+      }));
+    }
+
+    it('draws one vertex per instant: no two consecutive vertices share an x', () => {
+      const { container } = renderCurve(tied);
+      const points = vertices(container);
+      expect(points).toHaveLength(4);
+      points.slice(1).forEach((point, i) => {
+        expect(point.x).not.toBe(points[i]!.x);
+      });
+    });
+
+    it('labels only values the line actually draws, the peak on the one vertex at its x', () => {
+      const { container } = renderCurve(tied);
+      // The close of each instant: T's three readings close on the calibration (last in series order).
+      const drawn = new Set(['12,100,000', '13,456,789', '12,600,000', '12,890,123']);
+      const labels = [...container.querySelectorAll('[data-slot="trend-value-label"]')];
+      expect(labels.length).toBeGreaterThan(0);
+      labels.forEach((label) => expect(drawn).toContain(label.textContent ?? ''));
+      const peak = container.querySelector('[data-slot="trend-value-label"][data-role="peak"]')!;
+      expect(peak.textContent).toBe('13,456,789');
+      const peakX = Number(peak.getAttribute('x'));
+      // Before F19 the instant drew three vertices at this x (a zero-width spike up to the label).
+      expect(vertices(container).filter((point) => Math.abs(point.x - peakX) < 0.5)).toHaveLength(
+        1,
+      );
+    });
+
+    it('a collapsed instant click raises onSelectPeriod with every member, never onSelectReading', () => {
+      const onSelectReading = vi.fn();
+      const onSelectPeriod = vi.fn();
+      const { container } = renderCurve(tied, { onSelectReading, onSelectPeriod });
+      const diamond = container.querySelector('[data-slot="trend-value-diamond"]')!;
+      const diamondX = Number(/^M(-?[\d.]+)/.exec(diamond.getAttribute('d') ?? '')![1]);
+      const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+      fireEvent.click(hit, { clientX: diamondX, clientY: 100 });
+      expect(onSelectPeriod).toHaveBeenCalledWith([1, 2, 3]);
+      expect(onSelectReading).not.toHaveBeenCalled();
+    });
+  });
+
   it('writes no URL axis: the curve never touches the router (A2)', () => {
     // No Router wraps this render: a `useNavigate` / `useSearchParams` call would throw.
     expect(() => renderCurve(makeSeries(40, 120), { onSelectReading: vi.fn() })).not.toThrow();

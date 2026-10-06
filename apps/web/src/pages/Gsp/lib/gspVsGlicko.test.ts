@@ -131,6 +131,37 @@ describe('buildGspVsGlickoPanels', () => {
     expect(panels.mmr.points.map((p) => p.kind)).toEqual(['reading', 'calibration', 'reading']);
   });
 
+  // UAT 41 test 9 / F19: the MMR panel is one reading PER GSP MATCH, so tied match times collapse to one
+  // close-of-instant point at reading grain — the grain-agreement loop must still converge.
+  it('collapses tied MMR match times into one point and still agrees on one grain (F19)', () => {
+    const series = gspSeriesOf(10, DAY_MS).map((point, i) =>
+      i === 5 ? { ...point, time: START_MS + 4 * DAY_MS } : point,
+    );
+    const panels = buildGspVsGlickoPanels({
+      mmr: toMmrSeries(series),
+      periods: periodsOf(12, DAY_MS),
+    });
+    expect(panels.mmr.grain).toBe(panels.glicko.grain);
+    expect(panels.grain).toBe('reading');
+    expect(panels.mmr.points).toHaveLength(9);
+    const tied = panels.mmr.points.filter((point) => point.xMs === START_MS + 4 * DAY_MS);
+    expect(tied).toHaveLength(1);
+    expect(tied[0]!.n).toBe(2);
+    expect(tied[0]!.memberIndexes).toEqual([4, 5]);
+    const xs = panels.mmr.points.map((point) => point.xMs);
+    expect(new Set(xs).size).toBe(xs.length);
+    expect(panels.glicko.points).toHaveLength(12);
+  });
+
+  it('leaves an untied MMR panel one point per reading, identity by own index (F19)', () => {
+    const mmr = toMmrSeries(gspSeriesOf(10, DAY_MS));
+    const panels = buildGspVsGlickoPanels({ mmr, periods: periodsOf(12, DAY_MS) });
+    expect(panels.mmr.points.map((point) => point.memberIndexes)).toEqual(mmr.map((_, i) => [i]));
+    expect(panels.mmr.points.every((point) => point.kind === 'reading' && point.n === 1)).toBe(
+      true,
+    );
+  });
+
   it('does not throw on empty input', () => {
     const panels = buildGspVsGlickoPanels({ mmr: [], periods: [] });
     expect(panels.mmr.points).toEqual([]);
