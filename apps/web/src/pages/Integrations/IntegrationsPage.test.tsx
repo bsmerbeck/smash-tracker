@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
+import { toast } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { IntegrationsPage } from './IntegrationsPage';
@@ -155,6 +156,65 @@ describe('IntegrationsPage', () => {
     await user.click(await screen.findByRole('button', { name: /Sync now/ }));
     await waitFor(() => expect(sync).toHaveBeenCalled());
     expect(await screen.findByText(/3 DQs skipped/)).toBeInTheDocument();
+  });
+
+  describe('UAT 39.2-8: a partially failed registry write is a warning, not a success', () => {
+    const LINKED = {
+      linked: true,
+      gamerTag: 'Pandem1c',
+      playerId: 1802316,
+      slug: 'user/07dc2239',
+      lastSyncAt: 1_700_000_000_000,
+    };
+    const CLEAN = {
+      sets: 74,
+      imported: 112,
+      setsWithoutGames: 24,
+      gamesUnmappedCharacter: 0,
+      gamesMissingSelections: 0,
+      gamesUnknownStage: 0,
+      dqSets: 0,
+    };
+
+    beforeEach(() => {
+      vi.spyOn(toast, 'success').mockImplementation(() => 'id');
+      vi.spyOn(toast, 'warning').mockImplementation(() => 'id');
+    });
+
+    async function syncWith(summary: Record<string, unknown>) {
+      const user = userEvent.setup();
+      status.mockResolvedValue(LINKED);
+      sync.mockResolvedValue(summary);
+      renderPage();
+      await user.click(await screen.findByRole('button', { name: /Sync now/ }));
+      await waitFor(() => expect(sync).toHaveBeenCalled());
+    }
+
+    it('names the failed events (_other) in the summary line and toasts a warning', async () => {
+      await syncWith({ ...CLEAN, registryEntriesFailed: 2 });
+      const expected =
+        "Imported 112 games from 74 sets · 24 without importable detail · 2 events' details couldn't be saved — Sync again to retry";
+      expect(await screen.findByText(expected)).toBeInTheDocument();
+      expect(toast.warning).toHaveBeenCalledWith(expected);
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('uses the _one form for a single failed event', async () => {
+      await syncWith({ ...CLEAN, registryEntriesFailed: 1 });
+      expect(
+        await screen.findByText(/1 event's details couldn't be saved — Sync again to retry/),
+      ).toBeInTheDocument();
+      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it('a summary without registryEntriesFailed toasts success with the unchanged text', async () => {
+      await syncWith(CLEAN);
+      const expected = 'Imported 112 games from 74 sets · 24 without importable detail';
+      expect(await screen.findByText(expected)).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalledWith(expected);
+      expect(toast.warning).not.toHaveBeenCalled();
+    });
   });
 
   it('unlinks after confirmation', async () => {
