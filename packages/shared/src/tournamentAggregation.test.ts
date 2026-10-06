@@ -437,6 +437,83 @@ describe('buildSetTimeline', () => {
     expect(sets[0]?.opponentParryUserId).toBeUndefined();
   });
 
+  describe('start.gg bracket phases (UAT 37-9 / F10)', () => {
+    it('orders sets by phase order before time when every set carries a phase order', () => {
+      // A later phase's set whose first game has an EARLIER timestamp still sorts after
+      // the earlier phase — phase-local round names are only readable in phase order.
+      const topCut = makeMatch({
+        id: 'top',
+        time: 100,
+        externalId: 'sgg:200:g1',
+        phaseName: 'Top 64',
+        phaseOrder: 2,
+      });
+      const pools = makeMatch({
+        id: 'pool',
+        time: 500,
+        externalId: 'sgg:100:g1',
+        phaseName: 'Pools',
+        phaseOrder: 1,
+      });
+      const { sets } = buildSetTimeline([topCut, pools]);
+
+      expect(sets.map((s) => s.setId)).toEqual(['100', '200']);
+    });
+
+    it('keeps pure time order when no set carries a phase order', () => {
+      const late = makeMatch({ id: 'a', time: 500, externalId: 'sgg:1:g1' });
+      const early = makeMatch({ id: 'b', time: 100, externalId: 'sgg:2:g1' });
+      const { sets } = buildSetTimeline([late, early]);
+
+      expect(sets.map((s) => s.setId)).toEqual(['2', '1']);
+    });
+
+    it('falls back to pure time order for every input permutation when any set lacks a phase order', () => {
+      // A(phaseOrder 2, t=1), B(none, t=2), C(phaseOrder 1, t=3). A per-pair
+      // "both have phaseOrder" comparator is non-transitive here (A<B<C<A); the
+      // whole event must order by time alone.
+      const a = makeMatch({ id: 'a', time: 1, externalId: 'sgg:A:g1', phaseOrder: 2 });
+      const b = makeMatch({ id: 'b', time: 2, externalId: 'sgg:B:g1' });
+      const c = makeMatch({ id: 'c', time: 3, externalId: 'sgg:C:g1', phaseOrder: 1 });
+      const permutations: Match[][] = [
+        [a, b, c],
+        [a, c, b],
+        [b, a, c],
+        [b, c, a],
+        [c, a, b],
+        [c, b, a],
+      ];
+      for (const input of permutations) {
+        const { sets } = buildSetTimeline(input);
+        expect(sets.map((s) => s.setId)).toEqual(['A', 'B', 'C']);
+      }
+    });
+
+    it('reads phaseName/phaseOrder off whichever game carries them, tolerating absence', () => {
+      const withMeta = makeMatch({
+        id: 'a',
+        time: 100,
+        externalId: 'sgg:1:g1',
+        phaseName: 'Pools',
+        phaseOrder: 1,
+      });
+      const withoutMeta = makeMatch({ id: 'b', time: 200, externalId: 'sgg:1:g2' });
+      const nullMeta = makeMatch({
+        id: 'c',
+        time: 300,
+        externalId: 'sgg:2:g1',
+        phaseName: null,
+        phaseOrder: null,
+      });
+      const { sets } = buildSetTimeline([withoutMeta, withMeta, nullMeta]);
+
+      expect(sets[0]?.phaseName).toBe('Pools');
+      expect(sets[0]?.phaseOrder).toBe(1);
+      expect(sets[1]?.phaseName).toBeUndefined();
+      expect(sets[1]?.phaseOrder).toBeUndefined();
+    });
+  });
+
   describe('parry.gg set grouping', () => {
     it('groups pgg-{matchId}-g{n} games into one set, keyed on the matchId', () => {
       const g1 = makeMatch({ id: 'm1', time: 100, externalId: 'pgg-M1-g1', win: true });
