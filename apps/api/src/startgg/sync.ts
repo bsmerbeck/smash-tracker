@@ -97,6 +97,12 @@ export function gamesFromSet(
   const tournamentName = set.event?.tournament?.name?.trim();
   const roundText = set.fullRoundText?.trim();
   const bracketRound = typeof set.round === 'number' ? set.round : undefined;
+  // The set's bracket phase (e.g. "Pools", "Top 64"): `fullRoundText` is
+  // phase-local, so the set timeline needs the phase to tell repeated round
+  // names apart and to order sets across phases (UAT 37-9 / F10).
+  const phaseName = set.phaseGroup?.phase?.name?.trim();
+  const rawPhaseOrder = set.phaseGroup?.phase?.phaseOrder;
+  const phaseOrder = typeof rawPhaseOrder === 'number' ? rawPhaseOrder : undefined;
   // `Set.vodUrl` is TO-curated and near-always null in practice (see the
   // V6-W1b probe notes on client.ts's `vodUrl` schema field), but when
   // present it applies to every game of the set.
@@ -199,6 +205,8 @@ export function gamesFromSet(
         ...(tournamentName ? { tournamentName } : {}),
         ...(roundText ? { roundText } : {}),
         ...(bracketRound !== undefined ? { bracketRound } : {}),
+        ...(phaseName ? { phaseName } : {}),
+        ...(phaseOrder !== undefined ? { phaseOrder } : {}),
         ...(opponentSeed != null ? { opponentSeed } : {}),
         ...(opponentPlacement != null ? { opponentPlacement } : {}),
         ...(opponentUserSlug ? { opponentUserSlug } : {}),
