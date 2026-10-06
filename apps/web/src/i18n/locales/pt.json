@@ -1084,10 +1084,11 @@
       "formRolling": "Forma (janela de 10)",
       "typeColumn": "Tipo",
       "identityMeta": "{{pct}}% das partidas · {{confidence}}",
+      "identityMeta_bare": "{{pct}}% das partidas",
       "verdictMeta": {
-        "last30": "FormNow · últimas 30 partidas vs sempre",
-        "lastEvent": "FormNow · último evento vs sempre",
-        "last90": "FormNow · últimos 90 dias vs sempre"
+        "last30": "Forma · últimas 30 partidas vs sempre",
+        "lastEvent": "Forma · último evento vs sempre",
+        "last90": "Forma · últimos 90 dias vs sempre"
       },
       "vsCharacters": {
         "title": "vs personagens",

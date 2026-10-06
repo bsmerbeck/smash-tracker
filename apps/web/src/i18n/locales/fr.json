@@ -1084,10 +1084,11 @@
       "formRolling": "Forme (fenêtre de 10)",
       "typeColumn": "Type",
       "identityMeta": "{{pct}} % des parties · {{confidence}}",
+      "identityMeta_bare": "{{pct}} % des parties",
       "verdictMeta": {
-        "last30": "FormNow · 30 dernières parties contre toujours",
-        "lastEvent": "FormNow · dernier événement contre toujours",
-        "last90": "FormNow · 90 derniers jours contre toujours"
+        "last30": "Forme · 30 dernières parties contre toujours",
+        "lastEvent": "Forme · dernier événement contre toujours",
+        "last90": "Forme · 90 derniers jours contre toujours"
       },
       "vsCharacters": {
         "title": "vs personnages",

@@ -1084,10 +1084,11 @@
       "formRolling": "Form (rolling 10)",
       "typeColumn": "Type",
       "identityMeta": "{{pct}}% of play · {{confidence}}",
+      "identityMeta_bare": "{{pct}}% of play",
       "verdictMeta": {
-        "last30": "FormNow · last 30 games vs all time",
-        "lastEvent": "FormNow · last event vs all time",
-        "last90": "FormNow · last 90 days vs all time"
+        "last30": "Form · last 30 games vs all time",
+        "lastEvent": "Form · last event vs all time",
+        "last90": "Form · last 90 days vs all time"
       },
       "vsCharacters": {
         "title": "vs characters",

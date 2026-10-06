@@ -43,6 +43,7 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { SampleCue, MixedContextBadge, CohortCompositionLine } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -83,7 +84,6 @@ import { SpriteList } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { alphaStageList } from '@/lib/stageOptions';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { formatPercent } from '@/lib/formatPercent';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
@@ -171,25 +171,10 @@ function renderOpponentFormNowHead(
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildOpponentFormNowVerdict(insight, opponentTag, t);
 
-  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
-  // `recent`/`baseline` claims and format it through the one shared,
-  // locale-aware percent formatter, rather than the engine's pre-formatted
-  // `copy.values.rate`/`.baselineRate` strings (always English-convention
-  // "42%").
-  const recentRateText =
-    insight.recent.kind === 'evidenced' ? formatPercent(insight.recent.value.rate, locale) : '';
-  const baselineRateText =
-    insight.baseline.kind === 'evidenced' ? formatPercent(insight.baseline.value.rate, locale) : '';
-  const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
+  // Plan 39.1-52: the one shared evidence builder (no dangling cue, never
+  // "over 0"); the H2H head keeps its cue on the verdict's counted games.
   const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
-  const tier = confidenceTierFor(count);
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
-  const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord,
-    baselineRate: baselineRateText,
-    baselineGames: insight.copy.values.baselineGames ?? 0,
-    cue,
-  });
+  const evidence = buildInsightEvidenceLine(insight, t, locale, { cueCount: count });
 
   return (
     <div className="flex flex-col gap-2" data-slot="opponent-form-now">
@@ -200,12 +185,14 @@ function renderOpponentFormNowHead(
       >
         {verdict}
       </p>
-      <p
-        className="text-xs leading-4 text-muted-foreground tabular-nums"
-        data-slot="opponent-form-now-evidence"
-      >
-        {evidence}
-      </p>
+      {evidence && (
+        <p
+          className="text-xs leading-4 text-muted-foreground tabular-nums"
+          data-slot="opponent-form-now-evidence"
+        >
+          {evidence}
+        </p>
+      )}
       {door && (
         <div className="flex flex-wrap gap-2" data-slot="opponent-form-now-doors">
           <Button asChild size="sm">

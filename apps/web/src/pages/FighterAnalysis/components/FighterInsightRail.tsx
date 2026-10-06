@@ -21,11 +21,11 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { InsightTrackAction } from '@/components/analytics/track/InsightTrackAction';
 import { trackRefForInsight } from '@/components/analytics/track/trackRef';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { useFighterName } from '@/hooks/useFighterName';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatDate } from '@/lib/format';
-import { formatPercent } from '@/lib/formatPercent';
 
 /**
  * The five cards this rail draws from — FormNow is excluded (it lives in
@@ -118,34 +118,6 @@ function buildDoorNodes(
   return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
 }
 
-function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
-  const claim = insight.recent;
-  if (claim.kind !== 'evidenced') {
-    return '';
-  }
-  const record = `${claim.value.wins}–${claim.value.losses}`;
-  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
-  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
-  // literal, which baked in the English convention (no space before `%`)
-  // inside every locale's translated evidence sentence.
-  const rate = formatPercent(claim.value.rate, locale);
-  const tier = claim.sample.confidenceTier;
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
-  if (insight.templateId === 'lastEventRecap') {
-    return t('insights.evidence.single', { record, cue });
-  }
-  const baselineClaim = insight.baseline;
-  const baselineRate =
-    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
-  const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
-  return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord: `${record} · ${rate}`,
-    baselineRate,
-    baselineGames,
-    cue,
-  });
-}
-
 function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   if (insight.templateId === 'lastEventRecap') {
     // Not D-15 scoped (a single named event is its own natural window).
@@ -170,7 +142,7 @@ function insightToRailCard(
 ): InsightRailCard {
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildInsightVerdict(insight, t, fighterName);
-  const evidence = buildEvidenceLine(insight, t, locale);
+  const evidence = buildInsightEvidenceLine(insight, t, locale) ?? '';
   const span = buildSpan(insight, t, locale);
   const doors = buildDoorNodes(insight, t, subjectPath);
   // DD-09: only a card whose scope names an opponent, matchup or stage carries Track.

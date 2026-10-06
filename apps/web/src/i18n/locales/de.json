@@ -1084,10 +1084,11 @@
       "formRolling": "Form (gleitende 10)",
       "typeColumn": "Typ",
       "identityMeta": "{{pct}} % der Spiele · {{confidence}}",
+      "identityMeta_bare": "{{pct}} % der Spiele",
       "verdictMeta": {
-        "last30": "FormNow · letzte 30 Spiele gegen Gesamt",
-        "lastEvent": "FormNow · letztes Event gegen Gesamt",
-        "last90": "FormNow · letzte 90 Tage gegen Gesamt"
+        "last30": "Form · letzte 30 Spiele gegen Gesamt",
+        "lastEvent": "Form · letztes Event gegen Gesamt",
+        "last90": "Form · letzte 90 Tage gegen Gesamt"
       },
       "vsCharacters": {
         "title": "vs Charaktere",

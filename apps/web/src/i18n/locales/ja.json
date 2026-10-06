@@ -1084,10 +1084,11 @@
       "formRolling": "調子（直近10戦）",
       "typeColumn": "種類",
       "identityMeta": "対戦の{{pct}}% · {{confidence}}",
+      "identityMeta_bare": "対戦の{{pct}}%",
       "verdictMeta": {
-        "last30": "FormNow · 直近30試合 対 通算",
-        "lastEvent": "FormNow · 直近イベント 対 通算",
-        "last90": "FormNow · 直近90日 対 通算"
+        "last30": "調子 · 直近30試合 対 通算",
+        "lastEvent": "調子 · 直近イベント 対 通算",
+        "last90": "調子 · 直近90日 対 通算"
       },
       "vsCharacters": {
         "title": "対キャラクター",

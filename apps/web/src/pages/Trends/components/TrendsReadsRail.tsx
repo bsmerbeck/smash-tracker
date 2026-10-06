@@ -23,11 +23,11 @@ import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatDate } from '@/lib/format';
-import { formatPercent } from '@/lib/formatPercent';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
 import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
@@ -90,64 +90,38 @@ function buildDoorNodes(
 }
 
 function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
+  // Plan 39.1-52: every caption comes from the one shared builder, labelled by
+  // its sample's (template, state) shape. Only TiltCost / SessionFatigue keep
+  // this rail's own 'host' sentences below.
+  if (insight.templateId !== 'tiltCost' && insight.templateId !== 'sessionFatigue') {
+    return buildInsightEvidenceLine(insight, t, locale) ?? '';
+  }
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
     return '';
   }
   const record = `${claim.value.wins}–${claim.value.losses}`;
   const tier = claim.sample.confidenceTier;
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
-  // Plan 39.1-40 (UI-SPEC §9.4, D-06): a sample is labelled by what it is.
-  // A Best / Toughest record is a lifetime matchup record — 'all time', never
-  // a recent horizon. A LastEventRecap names one event, which is its own
-  // window (the Fighter rail's precedent).
-  if (insight.templateId === 'bestMatchup' || insight.templateId === 'worstMatchup') {
-    return t('insights.evidence.allTimeOnly', {
-      record,
-      rate: formatPercent(claim.value.rate, locale),
-      cue,
-    });
-  }
-  if (insight.templateId === 'lastEventRecap') {
-    return t('insights.evidence.single', { record, cue });
-  }
   // TiltCost pools every spot of the account's history and SessionFatigue
   // every session — lifetime / cohort samples, never a recent horizon. Card
   // states that reach here always carry a tier (n at least 8); a tier-less
-  // one falls back to the single-sample line.
-  if (insight.templateId === 'tiltCost' || insight.templateId === 'sessionFatigue') {
-    if (!tier) {
-      return t('insights.evidence.single', { record, cue });
-    }
-    const tierLabel = t(`insights.evidence.tier.${tier}`);
-    if (insight.templateId === 'tiltCost') {
-      return t('insights.evidence.spots', {
-        record,
-        count: claim.value.total,
-        tier: tierLabel,
-      });
-    }
-    const lateGameNumber = Number(insight.copy.values.lateGameNumber);
-    return t('insights.evidence.longSessions', {
-      count: Number(insight.copy.values.longSessionCount),
-      games: lateGameNumber - 1,
+  // one falls back to the cue-less single-sample line.
+  if (!tier) {
+    return t('insights.evidence.single', { record, context: 'bare' });
+  }
+  const tierLabel = t(`insights.evidence.tier.${tier}`);
+  if (insight.templateId === 'tiltCost') {
+    return t('insights.evidence.spots', {
+      record,
+      count: claim.value.total,
       tier: tierLabel,
     });
   }
-  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
-  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
-  // literal, which baked in the English convention (no space before `%`)
-  // inside every locale's translated evidence sentence.
-  const rate = formatPercent(claim.value.rate, locale);
-  const baselineClaim = insight.baseline;
-  const baselineRate =
-    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
-  const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
-  return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord: `${record} · ${rate}`,
-    baselineRate,
-    baselineGames,
-    cue,
+  const lateGameNumber = Number(insight.copy.values.lateGameNumber);
+  return t('insights.evidence.longSessions', {
+    count: Number(insight.copy.values.longSessionCount),
+    games: lateGameNumber - 1,
+    tier: tierLabel,
   });
 }
 

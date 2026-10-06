@@ -1084,10 +1084,11 @@
       "formRolling": "Forma (ventana de 10)",
       "typeColumn": "Tipo",
       "identityMeta": "{{pct}}% de las partidas · {{confidence}}",
+      "identityMeta_bare": "{{pct}}% de las partidas",
       "verdictMeta": {
-        "last30": "FormNow · últimas 30 partidas frente a siempre",
-        "lastEvent": "FormNow · último evento frente a siempre",
-        "last90": "FormNow · últimos 90 días frente a siempre"
+        "last30": "Forma · últimas 30 partidas frente a siempre",
+        "lastEvent": "Forma · último evento frente a siempre",
+        "last90": "Forma · últimos 90 días frente a siempre"
       },
       "vsCharacters": {
         "title": "vs personajes",

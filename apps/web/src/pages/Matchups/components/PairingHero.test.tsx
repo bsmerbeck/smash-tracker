@@ -147,12 +147,12 @@ describe('PairingHero', () => {
     expect(hero.querySelector('[data-slot="matchup-form-now-verdict"]')?.textContent).toBeTruthy();
     expect(hero.querySelector('[data-slot="matchup-form-now-evidence"]')).not.toBeNull();
     expect(hero.querySelector('[data-slot="matchup-form-now"] [data-slot="badge"]')).not.toBeNull();
-    expect(within(hero).getByText('FormNow · last 90 days vs all time')).toBeInTheDocument();
+    expect(within(hero).getByText('Form · last 90 days vs all time')).toBeInTheDocument();
   });
 
   it('the verdict meta follows the page horizon', () => {
     render(<Harness matches={thirtyGames()} horizon="last30" />);
-    expect(screen.getByText('FormNow · last 30 games vs all time')).toBeInTheDocument();
+    expect(screen.getByText('Form · last 30 games vs all time')).toBeInTheDocument();
   });
 
   it('renders the kit horizon StatRow; a figure click calls the page setter with its horizon', () => {

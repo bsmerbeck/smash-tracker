@@ -729,11 +729,11 @@ describe('renderFormNowHead (plan 39.1-44, pairing-hero: the door row moved to t
   });
 
   it('shows an optional meta line beside the claim chip, before the verdict', () => {
-    const { container } = renderHead({ meta: 'FormNow · last 30 games vs all time' });
+    const { container } = renderHead({ meta: 'Form · last 30 games vs all time' });
     const head = container.querySelector('[data-slot="matchup-form-now"]')!;
     const chipRow = head.firstElementChild!;
     expect(chipRow.querySelector('[data-slot="badge"]')).not.toBeNull();
-    expect(chipRow.textContent).toContain('FormNow · last 30 games vs all time');
+    expect(chipRow.textContent).toContain('Form · last 30 games vs all time');
     expect(
       chipRow.compareDocumentPosition(
         head.querySelector('[data-slot="matchup-form-now-verdict"]')!,

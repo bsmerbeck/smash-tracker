@@ -11,7 +11,7 @@ import type {
   PeriodPoint,
   PeriodSeries,
 } from '@smash-tracker/shared';
-import { INSIGHT_TEMPLATES, confidenceTierFor, toRateValue } from '@smash-tracker/shared';
+import { INSIGHT_TEMPLATES, toRateValue } from '@smash-tracker/shared';
 import { TrendLine } from '@/components/charts/TrendLine';
 import { PERIOD_HERO_VALUE_RANGE_PX } from '@/components/charts/trendGeometry';
 import { FormStrip } from '@/components/charts/FormStrip';
@@ -23,7 +23,7 @@ import {
 } from '@/lib/formStripEvents';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { formatPercent } from '@/lib/formatPercent';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
 
@@ -158,58 +158,6 @@ export function buildFormNowVerdict(insight: Insight, opponentId: number, t: TFu
 }
 
 /**
- * Plan 39.1-31 (item 7): the evidence line's ONE composition, split out of
- * `renderFormNowHead` so its three-way branch (recent evidenced / baseline
- * only / neither) is a single readable function.
- *
- * - Recent evidenced (the common case, and every non-`locked`/scoped-empty
- *   state): the existing two-horizon sentence, unchanged EXCEPT its
- *   confidence cue now reads `insight.window.games` (the window's own game
- *   total) rather than `insight.copy.values.count` — for `locked`,
- *   `copy.values.count` is deliberately `gamesNeeded` (CR-A02), the wrong
- *   number for a cue about the recent sample; for every other state the two
- *   values already coincide (`copy.values.count` is `recentRate.total`
- *   there), so this is a no-op for those states and a fix for the one it
- *   isn't.
- * - Recent NOT evidenced, baseline evidenced (below-floor recent window —
- *   `locked` at any horizon, not only the D-15 scoped-empty case above):
- *   a lifetime-only line — never a fabricated "0–0" recent record, never a
- *   confidence cue computed from games still needed.
- * - Neither evidenced (a pairing with fewer than 3 games total): no
- *   evidence line at all — there is nothing true to report yet beyond the
- *   verdict's own "N more games" sentence.
- */
-function buildFormNowEvidence(insight: Insight, t: TFunction, locale: string): string | null {
-  if (insight.recent.kind === 'evidenced') {
-    const recentRateText = formatPercent(insight.recent.value.rate, locale);
-    const baselineRateText =
-      insight.baseline.kind === 'evidenced'
-        ? formatPercent(insight.baseline.value.rate, locale)
-        : '';
-    const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
-    const cueCount = insight.window.games;
-    const tier = confidenceTierFor(cueCount);
-    const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: cueCount }) : '';
-    return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-      recentRecord,
-      baselineRate: baselineRateText,
-      baselineGames: insight.copy.values.baselineGames ?? 0,
-      cue,
-    });
-  }
-  if (insight.baseline.kind === 'evidenced') {
-    const record = `${insight.baseline.value.wins}–${insight.baseline.value.losses}`;
-    const rate = formatPercent(insight.baseline.value.rate, locale);
-    const tier = insight.baseline.sample.confidenceTier;
-    const cue = tier
-      ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: insight.baseline.value.total })
-      : '';
-    return t('insights.evidence.allTimeOnly', { record, rate, cue });
-  }
-  return null;
-}
-
-/**
  * The pairing hero's verdict block (UI-SPEC §7.9): `InsightCard`'s head —
  * claim chip, verdict, evidence — WITHOUT the card's own chrome (no `Card`
  * wrapper, no dismiss). Called by `PairingHero.tsx` (and by
@@ -220,7 +168,7 @@ function buildFormNowEvidence(insight: Insight, t: TFunction, locale: string): s
  * moved out — the hero owns the card's LAST row (`matchup-form-now-doors`:
  * "See the N games" + "Other pairings"). The head instead takes an optional
  * `meta` node shown beside the claim chip (sketch 003 `leadHtml`'s
- * "FormNow · <horizon> vs lifetime").
+ * "Form · <horizon> vs all time").
  */
 export function renderFormNowHead(
   insight: Insight,
@@ -231,7 +179,10 @@ export function renderFormNowHead(
 ): ReactElement {
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildFormNowVerdict(insight, opponentId, t);
-  const evidence = buildFormNowEvidence(insight, t, locale);
+  // Plan 39.1-52: the one shared evidence builder. The pairing hero cues on
+  // the window's own game total (plan 39.1-31: for `locked`,
+  // `copy.values.count` is games still needed, the wrong number for a cue).
+  const evidence = buildInsightEvidenceLine(insight, t, locale, { cueCount: insight.window.games });
 
   return (
     <div className="flex flex-col gap-2" data-slot="matchup-form-now">
