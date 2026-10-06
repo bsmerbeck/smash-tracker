@@ -168,3 +168,57 @@ describe('VsCharactersList', () => {
     expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
   });
 });
+
+describe('plan 39.1-54 (UAT 39.1-26 F2): rows sort by the games they print', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /** A: 34 all-time, 13 inside the scoped window; B: 30 in window; C: 9; D: 7; E: 5; F: sub-floor (2 recent, 40 all-time — prints its all-time record). */
+  function printedSortFixture(): Match[] {
+    const now = Date.now();
+    const matches: Match[] = [];
+    let id = 0;
+    const add = (key: number, recent: number, old: number) => {
+      for (let i = 0; i < old; i++) {
+        matches.push(
+          makeMatch({
+            id: `p${id++}`,
+            time: now - (400 + i) * DAY_MS,
+            win: i % 2 === 0,
+            opponent_id: key,
+          }),
+        );
+      }
+      for (let i = 0; i < recent; i++) {
+        matches.push(
+          makeMatch({
+            id: `p${id++}`,
+            time: now - (recent - i) * DAY_MS,
+            win: i % 3 !== 0,
+            opponent_id: key,
+          }),
+        );
+      }
+    };
+    add(2, 13, 21);
+    add(3, 30, 0);
+    add(4, 9, 0);
+    add(5, 7, 0);
+    add(6, 5, 0);
+    add(7, 2, 38);
+    return matches;
+  }
+
+  function printedGames(): number[] {
+    return Array.from(document.querySelectorAll('[data-slot="record"]')).map((node) => {
+      const match = /(\d+)–(\d+)/.exec(node.textContent ?? '');
+      expect(match).not.toBeNull();
+      return Number(match![1]) + Number(match![2]);
+    });
+  }
+
+  it('the printed game counts are non-increasing down the list, the sub-floor row by its printed all-time count', () => {
+    renderList(printedSortFixture());
+    fireEvent.click(screen.getByRole('button', { name: /show all/i }));
+    expect(printedGames()).toEqual([40, 30, 13, 9, 7, 5]);
+  });
+});
