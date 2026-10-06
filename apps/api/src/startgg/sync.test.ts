@@ -282,6 +282,33 @@ describe('gamesFromSet', () => {
     expect('vodUrl' in games[0]!.record).toBe(false);
   });
 
+  it("stores the set's start.gg phase name and order on every game (UAT 37-9 / F10)", () => {
+    const summary = emptySummary();
+    const set = makeSet({ phaseGroup: { phase: { name: 'Pools', phaseOrder: 1 } } });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games).toHaveLength(2);
+    for (const game of games) {
+      expect(game.record.phaseName).toBe('Pools');
+      expect(game.record.phaseOrder).toBe(1);
+    }
+  });
+
+  it('omits phaseName/phaseOrder entirely when start.gg returns no phase', () => {
+    for (const phaseGroup of [
+      null,
+      undefined,
+      { phase: null },
+      { phase: { name: '  ', phaseOrder: null } },
+    ]) {
+      const summary = emptySummary();
+      const games = gamesFromSet(makeSet({ phaseGroup }), PLAYER_ID, summary);
+      expect(games).toHaveLength(2);
+      // RTDB rejects undefined values — the keys must be absent, not undefined/null.
+      expect('phaseName' in games[0]!.record).toBe(false);
+      expect('phaseOrder' in games[0]!.record).toBe(false);
+    }
+  });
+
   it('omits stocksLeft when start.gg tracks neither entrant score', () => {
     const summary = emptySummary();
     const set = makeSet({

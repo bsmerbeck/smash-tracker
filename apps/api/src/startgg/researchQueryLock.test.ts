@@ -48,6 +48,7 @@ const EXPECTED_LEGACY_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $pe
         displayScore
         totalGames
         vodUrl
+        phaseGroup { phase { name phaseOrder } }
         event { id name slug isOnline numEntrants type videogame { id } tournament { name } }
         slots {
           entrant {
