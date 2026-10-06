@@ -3,11 +3,13 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  DEFAULT_RULESET,
   RULESET_CONTRACT_VERSION,
   stageIdKey,
   type RulesetOverrideStored,
   type TournamentEntry,
 } from '@smash-tracker/shared';
+import { getStageById } from '@/data/stages';
 import { RulesetOverrideSection } from './RulesetOverrideSection';
 
 const setRulesetOverride = vi.fn();
@@ -88,6 +90,29 @@ describe('RulesetOverrideSection', () => {
   it('the rendered detail line contains the preset strikeOrder string verbatim', () => {
     renderSection({ entryKey: 'entry-1', rulesetOverride: null });
     expect(screen.getByText(/Game 1: 1-2-1 stage strike/)).toBeInTheDocument();
+  });
+
+  it('the card lists every starter and counterpick stage BY NAME and never garbles the strike-order sentence (UAT 37-4, F10)', () => {
+    const { container } = renderSection({ entryKey: 'entry-1', rulesetOverride: null });
+    const text = container.textContent ?? '';
+    for (const id of [...DEFAULT_RULESET.starterStageIds, ...DEFAULT_RULESET.counterpickStageIds]) {
+      const name = getStageById(id)?.name;
+      expect(name).toBeTruthy();
+      expect(text).toContain(name as string);
+    }
+    expect(text).not.toMatch(/is played\. strike/);
+    expect(text).not.toMatch(/ strike, /);
+  });
+
+  it('under an event override the card never says house convention (UAT 37-6 note)', () => {
+    const { container } = renderSection({
+      entryKey: 'entry-1',
+      rulesetOverride: { contractVersion: RULESET_CONTRACT_VERSION, dsr: 'none' },
+    });
+    expect(container.textContent ?? '').not.toContain('house convention');
+    expect(container.textContent ?? '').toContain(
+      'Custom ruleset for this event; unchanged rules follow the house default.',
+    );
   });
 
   it('moving one stage from starter to counterpick and saving calls the mutation exactly once with the expected payload', async () => {
