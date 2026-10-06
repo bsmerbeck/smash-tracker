@@ -285,3 +285,47 @@ describe('R1-BLOCKER-2 negative proof: buildStageEvidence / buildMatchupEvidence
     );
   });
 });
+
+describe('buildOpponentProfile — byTheirFighterBelowFloor (38-UAT 13/22, F18)', () => {
+  const SONIC = 41;
+  const PALUTENA = 57;
+  const T0 = 1_780_000_000_000;
+
+  it('a 2-game opponent keeps byTheirFighter empty and lists both characters below the floor', () => {
+    const matches = [
+      makeMatch({ id: 'a', time: T0, win: true, opponent: 'moton', opponent_id: SONIC }),
+      makeMatch({ id: 'b', time: T0 + 1, win: false, opponent: 'moton', opponent_id: PALUTENA }),
+    ];
+    const profile = buildOpponentProfile({
+      matches,
+      aliasMap: {},
+      opponentTag: 'moton',
+      refreshedAt: T0,
+    });
+    expect(profile?.byTheirFighter).toEqual([]);
+    expect(profile?.byTheirFighterBelowFloor).toEqual([
+      { opponentFighterId: SONIC, wins: 1, losses: 0, totalMatches: 1, ratio: 100 },
+      { opponentFighterId: PALUTENA, wins: 0, losses: 1, totalMatches: 1, ratio: 0 },
+    ]);
+  });
+
+  it('splits a 3-game Sonic (ranked) from a 1-game Palutena (below floor); unknown characters appear in neither', () => {
+    const matches = [
+      makeMatch({ id: 's1', time: T0, win: true, opponent: 'moton', opponent_id: SONIC }),
+      makeMatch({ id: 's2', time: T0 + 1, win: true, opponent: 'moton', opponent_id: SONIC }),
+      makeMatch({ id: 's3', time: T0 + 2, win: false, opponent: 'moton', opponent_id: SONIC }),
+      makeMatch({ id: 'p1', time: T0 + 3, win: false, opponent: 'moton', opponent_id: PALUTENA }),
+      makeMatch({ id: 'u1', time: T0 + 4, win: true, opponent: 'moton', opponent_id: 0 }),
+    ];
+    const profile = buildOpponentProfile({
+      matches,
+      aliasMap: {},
+      opponentTag: 'moton',
+      refreshedAt: T0,
+    });
+    expect(profile?.byTheirFighter.map((row) => row.opponentFighterId)).toEqual([SONIC]);
+    expect(profile?.byTheirFighterBelowFloor.map((row) => row.opponentFighterId)).toEqual([
+      PALUTENA,
+    ]);
+  });
+});
