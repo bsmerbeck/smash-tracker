@@ -69,7 +69,8 @@ function makeSet(
   return {
     id: overrides.id ?? 1,
     state: null,
-    completedAt: overrides.completedAt !== undefined ? overrides.completedAt : 1_000,
+    // 2025-01-01T00:00:00Z in provider SECONDS — above the SSBU-era coverage floor.
+    completedAt: overrides.completedAt !== undefined ? overrides.completedAt : 1_735_689_600,
     createdAt: null,
     updatedAt: overrides.updatedAt !== undefined ? overrides.updatedAt : 500,
     fullRoundText: 'Winners Round 1',
@@ -360,6 +361,28 @@ describe('runResearchBackfillBatch: happy path', () => {
 // ---------------------------------------------------------------------------
 // Rate limiting / backoff
 // ---------------------------------------------------------------------------
+
+describe('runResearchBackfillBatch: date coverage', () => {
+  it('a sub-floor provider completedAt never widens the staged date coverage (UAT 36 F1)', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const year2Seconds = new Date('0002-11-30T00:00:00Z').getTime() / 1000;
+    const validSeconds = 1_786_233_600; // 2026-08-09T00:00:00Z
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 2, sets: [makeSet({ id: 1, completedAt: year2Seconds })] }],
+      2: [{ kind: 'ok', totalPages: 2, sets: [makeSet({ id: 2, completedAt: validSeconds })] }],
+    });
+
+    await run(database, runId, { fetchImpl });
+
+    const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
+    expect(stored?.stagedDateCoverage).toEqual({
+      earliestSetAtMs: validSeconds * 1000,
+      latestSetAtMs: validSeconds * 1000,
+    });
+  });
+});
 
 describe('runResearchBackfillBatch: rate limiting and backoff', () => {
   it('persists the cursor at the SAME page BEFORE sleeping, then re-fetches and continues (cursor-before-sleep ordering)', async () => {
