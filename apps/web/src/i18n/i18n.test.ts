@@ -68,6 +68,20 @@ describe('i18n', () => {
     expect(i18n.t('nav.dashboard')).toBe('Dashboard');
   });
 
+  // UAT 39.1-30 (F12): <html lang> follows the UI language, as its supported base code.
+  it('document language follows the UI language as its supported base code', async () => {
+    await i18n.changeLanguage('de');
+    expect(document.documentElement.lang).toBe('de');
+    await i18n.changeLanguage('pt-BR');
+    expect(document.documentElement.lang).toBe('pt');
+    await i18n.changeLanguage('xx');
+    expect(document.documentElement.lang).toBe('en');
+    await i18n.changeLanguage('ja');
+    expect(document.documentElement.lang).toBe('ja');
+    await i18n.changeLanguage('en');
+    expect(document.documentElement.lang).toBe('en');
+  });
+
   it('falls back to English for unsupported languages', async () => {
     await i18n.changeLanguage('xx');
     expect(i18n.t('nav.dashboard')).toBe('Dashboard');
