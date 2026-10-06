@@ -63,4 +63,25 @@ describe('selectTimeAxisTicks — America/Los_Angeles (WR-02)', () => {
     ]);
     expect(ticks.labels.map((l) => l.text)).toEqual(['Mar 4', 'Mar 5', 'Mar 6', 'Mar 7']);
   });
+
+  it('plan 39.1-53: the origin label names the UTC start year / month, not the local one', () => {
+    // 03:00 UTC on Jan 1 2021 is still Dec 31 2020 in Los Angeles.
+    const year = selectTimeAxisTicks({
+      startMs: Date.UTC(2021, 0, 1, 3),
+      endMs: Date.UTC(2026, 7, 9),
+      plotWidthPx: 900,
+      locale: 'en',
+      originLabel: true,
+    });
+    expect(year.labels[0]!.text).toBe('2021');
+    // 03:00 UTC on Mar 1 2024 is still Feb 29 in Los Angeles.
+    const month = selectTimeAxisTicks({
+      startMs: Date.UTC(2024, 2, 1, 3),
+      endMs: Date.UTC(2024, 6, 2),
+      plotWidthPx: 600,
+      locale: 'en',
+      originLabel: true,
+    });
+    expect(month.labels[0]!.text).toBe('Mar 2024');
+  });
 });

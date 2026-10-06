@@ -2388,6 +2388,21 @@ describe('TrendLine — mode value says what it shows (plan 41-02 Task 2, UI-SPE
   });
 });
 
+describe('TrendLine — mode value time axis (plan 39.1-53 pin)', () => {
+  it('a year-mode value axis over a mid-2020 domain draws no 2020 origin label (originLabel is CareerTimeline-only)', () => {
+    const series = buildValueSeries(gspReadings(200, 18 * 30));
+    const { container } = renderValue(series, {
+      xDomain: [Date.UTC(2020, 5, 14), Date.UTC(2026, 7, 9)],
+    });
+    const xLabels = Array.from(container.querySelectorAll('[data-slot="trend-value-x-label"]')).map(
+      (el) => el.textContent,
+    );
+    expect(xLabels.length).toBeGreaterThan(0);
+    expect(xLabels).not.toContain('2020');
+    expect(xLabels[0]).toBe('2021');
+  });
+});
+
 describe('TrendLine — mode value, host-controlled cursor (plan 41-02 Task 3, RESEARCH correction 1)', () => {
   it('draws the crosshair at the host xMs, reports the nearest of ITS points on hover, and owns no readout or keys', () => {
     const series = buildValueSeries(gspReadings(30, 90), { minGrain: 'week' });

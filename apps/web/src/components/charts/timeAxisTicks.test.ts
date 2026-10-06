@@ -133,3 +133,95 @@ describe('selectTimeAxisTicks (plan 39.1-34)', () => {
     );
   });
 });
+
+/**
+ * Plan 39.1-53 (UAT 39.1-35b): gridlines sit strictly inside the domain, so a
+ * career starting mid-2020 was first labelled "2021". Behind the opt-in
+ * `originLabel` (CareerTimeline only), an origin label at startMs names the
+ * domain's first year / month, with no gridline of its own, and thinning
+ * always keeps it.
+ */
+describe('selectTimeAxisTicks — originLabel (plan 39.1-53)', () => {
+  const ORIGIN_START = Date.UTC(2020, 5, 14);
+  const ORIGIN_END = Date.UTC(2026, 7, 9);
+
+  function rightEdge(label: { ms: number; text: string }, plotWidthPx: number): number {
+    return (
+      xOf(label.ms, ORIGIN_START, ORIGIN_END, plotWidthPx) +
+      TIME_AXIS_LABEL_OFFSET_PX +
+      estimateTickLabelWidthPx(label.text)
+    );
+  }
+
+  it("year mode: the first label is '2020' at startMs, and the gridlines are unchanged", () => {
+    const base = { startMs: ORIGIN_START, endMs: ORIGIN_END, plotWidthPx: 900, locale: 'en' };
+    const ticks = selectTimeAxisTicks({ ...base, originLabel: true });
+    expect(ticks.labels[0]!.text).toBe('2020');
+    expect(ticks.labels[0]!.ms).toBe(ORIGIN_START);
+    expect(ticks.gridlines).toEqual(selectTimeAxisTicks(base).gridlines);
+    expect(ticks.gridlines).not.toContain(ORIGIN_START);
+  });
+
+  it('a 200px plot keeps the origin label and drops the colliding next label instead', () => {
+    const plotWidthPx = 200;
+    const ticks = selectTimeAxisTicks({
+      startMs: ORIGIN_START,
+      endMs: ORIGIN_END,
+      plotWidthPx,
+      locale: 'en',
+      originLabel: true,
+    });
+    expect(ticks.labels[0]!.text).toBe('2020');
+    expect(ticks.labels[0]!.ms).toBe(ORIGIN_START);
+    expect(ticks.labels.map((l) => l.text)).not.toContain('2021');
+    for (let i = 1; i < ticks.labels.length; i++) {
+      const left =
+        xOf(ticks.labels[i]!.ms, ORIGIN_START, ORIGIN_END, plotWidthPx) + TIME_AXIS_LABEL_OFFSET_PX;
+      expect(left - rightEdge(ticks.labels[i - 1]!, plotWidthPx)).toBeGreaterThanOrEqual(
+        MIN_TICK_LABEL_GAP_PX,
+      );
+    }
+  });
+
+  it("month mode: the first label names the start month with its year ('Mar 2024')", () => {
+    const ticks = selectTimeAxisTicks({
+      startMs: Date.UTC(2024, 2, 17),
+      endMs: Date.UTC(2024, 6, 2),
+      plotWidthPx: 600,
+      locale: 'en',
+      originLabel: true,
+    });
+    expect(ticks.labels[0]!.text).toBe('Mar 2024');
+    expect(ticks.labels[0]!.ms).toBe(Date.UTC(2024, 2, 17));
+    expect(ticks.gridlines).toEqual([
+      Date.UTC(2024, 3, 1),
+      Date.UTC(2024, 4, 1),
+      Date.UTC(2024, 5, 1),
+      Date.UTC(2024, 6, 1),
+    ]);
+  });
+
+  it('pin: without the option the same domains return the labels they always did', () => {
+    const year = selectTimeAxisTicks({
+      startMs: ORIGIN_START,
+      endMs: ORIGIN_END,
+      plotWidthPx: 900,
+      locale: 'en',
+    });
+    expect(year.labels.map((l) => l.text)).toEqual([
+      '2021',
+      '2022',
+      '2023',
+      '2024',
+      '2025',
+      '2026',
+    ]);
+    const month = selectTimeAxisTicks({
+      startMs: Date.UTC(2024, 2, 17),
+      endMs: Date.UTC(2024, 6, 2),
+      plotWidthPx: 600,
+      locale: 'en',
+    });
+    expect(month.labels.map((l) => l.text)).toEqual(['Apr', 'May', 'Jun', 'Jul']);
+  });
+});
