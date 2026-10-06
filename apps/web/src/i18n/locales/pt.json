@@ -3418,7 +3418,9 @@
       "short": {
         "last30": "30 partidas",
         "lastEvent": "Último evento",
-        "last90": "90 dias"
+        "last90": "90 dias",
+        "lastN_one": "{{count, grouped}} partida",
+        "lastN_other": "{{count, grouped}} partidas"
       }
     },
     "evidence": {

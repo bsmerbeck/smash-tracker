@@ -3418,7 +3418,9 @@
       "short": {
         "last30": "30 games",
         "lastEvent": "Last event",
-        "last90": "90 days"
+        "last90": "90 days",
+        "lastN_one": "{{count, grouped}} game",
+        "lastN_other": "{{count, grouped}} games"
       }
     },
     "evidence": {

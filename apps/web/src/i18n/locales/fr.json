@@ -3418,7 +3418,9 @@
       "short": {
         "last30": "30 matchs",
         "lastEvent": "Dernier événement",
-        "last90": "90 jours"
+        "last90": "90 jours",
+        "lastN_one": "{{count, grouped}} match",
+        "lastN_other": "{{count, grouped}} matchs"
       }
     },
     "evidence": {

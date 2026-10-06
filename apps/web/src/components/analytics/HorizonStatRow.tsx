@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import {
   HORIZON_COLLAPSE_RATIO,
+  RECENT_GAME_WINDOW,
   classify,
   confidenceTierFor,
   resolveWindow,
@@ -112,87 +113,99 @@ export function HorizonStatRow({
     />
   );
 
-  const recentFigureNodes = horizonFigures.map(({ key, recentRate, state, deltaPoints }) => {
-    const isPressed = horizon === key;
-    const figureLabel = t(`insights.horizon.short.${key}`);
-    // The figure overline ("30 games", "Last event", "90 days") names the
-    // horizon, so the chip never repeats it.
-    const chipView = deltaChipView({
-      state,
-      deltaPoints,
-      recentGames: recentRate.total,
-      horizon: key,
-      horizonOwnedByParent: true,
-      t,
-    });
-    const delta = chipView ? (
-      <DeltaChip
-        {...chipView}
-        ariaLabel={t('analytics.dumbbell.rowAria', {
-          label: t(`insights.horizon.${key}`),
-          recentRecord: `${recentRate.wins}–${recentRate.losses}`,
-          baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
-        })}
-      />
-    ) : null;
+  const recentFigureNodes = horizonFigures.map(
+    ({ key, window, recentRate, state, deltaPoints }) => {
+      const isPressed = horizon === key;
+      // Plan 39.1-57 (UAT 39.1-28 F7): a last-30 window the D-15 scope trimmed
+      // below 30 games states the games it holds ("13 games"), matching the
+      // FormNow verdict; the chip's accessible name keeps the full horizon name.
+      const statesSample =
+        key === 'last30' &&
+        state !== 'collapsed' &&
+        window.games > 0 &&
+        window.games < RECENT_GAME_WINDOW;
+      const figureLabel = statesSample
+        ? t('insights.horizon.short.lastN', { count: window.games })
+        : t(`insights.horizon.short.${key}`);
+      // The figure overline ("30 games", "Last event", "90 days") names the
+      // horizon, so the chip never repeats it.
+      const chipView = deltaChipView({
+        state,
+        deltaPoints,
+        recentGames: recentRate.total,
+        horizon: key,
+        horizonOwnedByParent: true,
+        t,
+      });
+      const delta = chipView ? (
+        <DeltaChip
+          {...chipView}
+          ariaLabel={t('analytics.dumbbell.rowAria', {
+            label: t(`insights.horizon.${key}`),
+            recentRecord: `${recentRate.wins}–${recentRate.losses}`,
+            baselineRecord: `${baselineAllTime.wins}–${baselineAllTime.losses}`,
+          })}
+        />
+      ) : null;
 
-    if (state === 'locked') {
-      // Plan 39.1-36 (audit 1.3): below the floor the figure is a muted em
-      // dash plus the honest chip ("no games" / "n N · no direction") — no
-      // repeated per-figure unlock sentence. The Record appears only when
-      // the window holds a game (Record itself omits the rate below 3).
+      if (state === 'locked') {
+        // Plan 39.1-36 (audit 1.3): below the floor the figure is a muted em
+        // dash plus the honest chip ("no games" / "n N · no direction") — no
+        // repeated per-figure unlock sentence. The Record appears only when
+        // the window holds a game (Record itself omits the rate below 3).
+        return (
+          <StatFigure
+            key={key}
+            label={figureLabel}
+            state="none"
+            value={<span className="text-muted-foreground">{'—'}</span>}
+            support={
+              recentRate.total > 0 ? (
+                <Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />
+              ) : undefined
+            }
+            delta={delta}
+            onSelect={() => handleSelectHorizon(key)}
+            pressed={isPressed}
+          />
+        );
+      }
+
+      if (state === 'collapsed') {
+        const collapsedValue = t('analytics.stat.collapsedValue');
+        const collapsedSupport = t('analytics.stat.collapsedSupport', {
+          recent: recentRate.total,
+          total: baselineAllTime.total,
+        });
+        return (
+          <StatFigure
+            key={key}
+            label={figureLabel}
+            state="collapsed"
+            value={collapsedValue}
+            support={collapsedSupport}
+            onSelect={() => handleSelectHorizon(key)}
+            pressed={isPressed}
+          />
+        );
+      }
+
+      const isThinRecent = state === 'thinRecent' || state === 'thin';
+
       return (
         <StatFigure
           key={key}
           label={figureLabel}
-          state="none"
-          value={<span className="text-muted-foreground">{'—'}</span>}
-          support={
-            recentRate.total > 0 ? (
-              <Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />
-            ) : undefined
-          }
+          value={`${Math.round(recentRate.rate * 100)}%`}
+          state={isThinRecent ? 'thinRecent' : 'populated'}
+          support={<Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />}
           delta={delta}
           onSelect={() => handleSelectHorizon(key)}
           pressed={isPressed}
         />
       );
-    }
-
-    if (state === 'collapsed') {
-      const collapsedValue = t('analytics.stat.collapsedValue');
-      const collapsedSupport = t('analytics.stat.collapsedSupport', {
-        recent: recentRate.total,
-        total: baselineAllTime.total,
-      });
-      return (
-        <StatFigure
-          key={key}
-          label={figureLabel}
-          state="collapsed"
-          value={collapsedValue}
-          support={collapsedSupport}
-          onSelect={() => handleSelectHorizon(key)}
-          pressed={isPressed}
-        />
-      );
-    }
-
-    const isThinRecent = state === 'thinRecent' || state === 'thin';
-
-    return (
-      <StatFigure
-        key={key}
-        label={figureLabel}
-        value={`${Math.round(recentRate.rate * 100)}%`}
-        state={isThinRecent ? 'thinRecent' : 'populated'}
-        support={<Record wins={recentRate.wins} losses={recentRate.losses} cue="none" />}
-        delta={delta}
-        onSelect={() => handleSelectHorizon(key)}
-        pressed={isPressed}
-      />
-    );
-  });
+    },
+  );
 
   return <StatRow leadWidth figures={[allTimeFigure, ...recentFigureNodes]} />;
 }

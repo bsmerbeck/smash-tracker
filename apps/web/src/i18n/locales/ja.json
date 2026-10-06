@@ -3418,7 +3418,9 @@
       "short": {
         "last30": "30試合",
         "lastEvent": "直近のイベント",
-        "last90": "90日間"
+        "last90": "90日間",
+        "lastN_one": "{{count, grouped}}試合",
+        "lastN_other": "{{count, grouped}}試合"
       }
     },
     "evidence": {

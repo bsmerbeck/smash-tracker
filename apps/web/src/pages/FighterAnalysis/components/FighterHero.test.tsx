@@ -342,7 +342,8 @@ describe('FighterHero', () => {
 
     it('a figure whose window holds 2 games reads "n 2 · no direction"', () => {
       renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
-      const chip = figureButton('30 games').querySelector('[data-slot="delta-chip"]')!;
+      // Plan 39.1-57 (UAT 39.1-28 F7): a last-30 window holding 2 games is labelled by its sample.
+      const chip = figureButton('2 games').querySelector('[data-slot="delta-chip"]')!;
       expect(chip.getAttribute('data-state')).toBe('thin');
       expect(chip.textContent).toBe('n 2 · no direction');
       const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
