@@ -1837,7 +1837,9 @@
       "unknownStages_one": "{{count}}件は認識できないステージを含みます",
       "unknownStages_other": "{{count}}件は認識できないステージを含みます",
       "dqSkipped_one": "{{count}}件のDQをスキップしました",
-      "dqSkipped_other": "{{count}}件のDQをスキップしました"
+      "dqSkipped_other": "{{count}}件のDQをスキップしました",
+      "registryFailed_one": "{{count}}件の大会の詳細を保存できませんでした — もう一度同期すると再試行します",
+      "registryFailed_other": "{{count}}件の大会の詳細を保存できませんでした — もう一度同期すると再試行します"
     },
     "startgg": {
       "connect": "start.ggアカウントを連携",

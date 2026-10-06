@@ -1837,7 +1837,9 @@
       "unknownStages_one": "{{count}} mit unbekannten Stages",
       "unknownStages_other": "{{count}} mit unbekannten Stages",
       "dqSkipped_one": "{{count}} DQ übersprungen",
-      "dqSkipped_other": "{{count}} DQs übersprungen"
+      "dqSkipped_other": "{{count}} DQs übersprungen",
+      "registryFailed_one": "Details zu {{count}} Event konnten nicht gespeichert werden – erneut synchronisieren, um es nochmals zu versuchen",
+      "registryFailed_other": "Details zu {{count}} Events konnten nicht gespeichert werden – erneut synchronisieren, um es nochmals zu versuchen"
     },
     "startgg": {
       "connect": "start.gg-Konto verbinden",

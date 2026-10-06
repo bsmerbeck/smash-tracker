@@ -41,6 +41,9 @@ function describeSummary(summary: StartggSyncSummary, t: TFunction): string {
   if (summary.dqSets > 0) {
     parts.push(t('integrations.summary.dqSkipped', { count: summary.dqSets }));
   }
+  if (summary.registryEntriesFailed) {
+    parts.push(t('integrations.summary.registryFailed', { count: summary.registryEntriesFailed }));
+  }
   return parts.join(' · ');
 }
 
@@ -79,7 +82,12 @@ export function IntegrationsPage() {
     try {
       const summary = await sync.mutateAsync();
       setLastSummary(summary);
-      toast.success(describeSummary(summary, t));
+      // A partially failed event-registry write is still a completed sync, but not a clean one.
+      if (summary.registryEntriesFailed) {
+        toast.warning(describeSummary(summary, t));
+      } else {
+        toast.success(describeSummary(summary, t));
+      }
     } catch {
       toast.error(t('integrations.syncFailed'));
     }

@@ -1837,7 +1837,9 @@
       "unknownStages_one": "{{count}} with unrecognized stages",
       "unknownStages_other": "{{count}} with unrecognized stages",
       "dqSkipped_one": "{{count}} DQ skipped",
-      "dqSkipped_other": "{{count}} DQs skipped"
+      "dqSkipped_other": "{{count}} DQs skipped",
+      "registryFailed_one": "{{count}} event's details couldn't be saved — Sync again to retry",
+      "registryFailed_other": "{{count}} events' details couldn't be saved — Sync again to retry"
     },
     "startgg": {
       "connect": "Connect start.gg account",

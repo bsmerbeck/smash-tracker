@@ -1837,7 +1837,9 @@
       "unknownStages_one": "{{count}} avec des stages non reconnus",
       "unknownStages_other": "{{count}} avec des stages non reconnus",
       "dqSkipped_one": "{{count}} DQ ignorée",
-      "dqSkipped_other": "{{count}} DQ ignorées"
+      "dqSkipped_other": "{{count}} DQ ignorées",
+      "registryFailed_one": "Les détails de {{count}} événement n'ont pas pu être enregistrés — synchroniser à nouveau pour réessayer",
+      "registryFailed_other": "Les détails de {{count}} événements n'ont pas pu être enregistrés — synchroniser à nouveau pour réessayer"
     },
     "startgg": {
       "connect": "Connecter un compte start.gg",
