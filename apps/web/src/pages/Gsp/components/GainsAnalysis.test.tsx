@@ -16,7 +16,8 @@ const stats: GspGainStats = {
   biggestDrop: 140_000,
   perWinGains: [180_000, 150_000, 120_000, 100_000],
   perWinLevels: [9_000_000, 9_250_000, 9_500_000, 9_750_000],
-  recentStepCount: 7,
+  recentWinStepCount: 3,
+  recentLossStepCount: 1,
   gainsByBand: [
     { fromGsp: 9_000_000, toGsp: 9_250_000, wins: 1, avgGain: 180_000 },
     { fromGsp: 9_250_000, toGsp: 9_500_000, wins: 4, avgGain: 150_000 },
@@ -31,16 +32,19 @@ function figureTexts(): string[] {
 }
 
 describe('GainsAnalysis', () => {
-  it('states four figures with signed values (U+2212 for drops) and a last-N-steps support line', () => {
+  // UAT 41 test 9 / F19: each support line counts the steps behind its own average — wins for the
+  // avg gain, losses for the avg drop — never one shared 'last N steps'.
+  it('states four figures with signed values (U+2212 for drops) and support lines counting their own wins / losses', () => {
     render(<GainsAnalysis stats={stats} />);
     const figures = figureTexts();
     expect(figures).toHaveLength(4);
     expect(figures[0]).toContain('Avg gain per win');
     expect(figures[0]).toContain('+120,000');
-    expect(figures[0]).toContain('last 7 steps: +110,000');
+    expect(figures[0]).toContain('last 3 wins: +110,000');
     expect(figures[1]).toContain('Avg drop per loss');
     expect(figures[1]).toContain('−' + '90,000');
-    expect(figures[1]).toContain('last 7 steps: −' + '95,000');
+    expect(figures[1]).toContain('last loss: −' + '95,000');
+    expect(figures.join(' ')).not.toContain('steps');
     expect(figures[2]).toContain('+180,000');
     expect(figures[3]).toContain('−' + '140,000');
   });
@@ -115,7 +119,8 @@ describe('GainsAnalysis', () => {
           biggestDrop: null,
           perWinGains: [],
           perWinLevels: [],
-          recentStepCount: 0,
+          recentWinStepCount: 0,
+          recentLossStepCount: 0,
           gainsByBand: [],
           gainTrend: 'flat',
         }}

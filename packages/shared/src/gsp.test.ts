@@ -546,15 +546,36 @@ describe('getGspGainStats by GSP band (41-05, A4)', () => {
     expect(stats.perWinGains).toEqual([10_000, 10_000]);
   });
 
-  it('perWinLevels is parallel to perWinGains and recentStepCount is min(20, steps)', () => {
+  it('perWinLevels is parallel to perWinGains', () => {
     const series: GspPoint[] = [{ time: 0, gsp: 0, win: true }];
     for (let i = 1; i <= 25; i += 1) series.push({ time: i, gsp: i * 10, win: true });
     const stats = getGspGainStats(series);
     expect(stats.perWinLevels).toHaveLength(stats.perWinGains.length);
-    expect(stats.recentStepCount).toBe(20);
-    const short = getGspGainStats(series.slice(0, 4));
-    expect(short.recentStepCount).toBe(3);
-    expect(getGspGainStats([{ time: 0, gsp: 1, win: true }]).recentStepCount).toBe(0);
     expect(getGspGainStats([{ time: 0, gsp: 1, win: true }]).gainsByBand).toEqual([]);
+  });
+
+  // UAT 41 test 9 / F19: each "last 20" average names the steps it actually covers — its wins or its losses.
+  it('counts the win and loss steps behind the last-20 averages separately', () => {
+    const mixed: GspPoint[] = [
+      { time: 0, gsp: 9_000_000, win: true },
+      { time: 1, gsp: 9_010_000, win: true },
+      { time: 2, gsp: 9_020_000, win: true },
+      { time: 3, gsp: 9_015_000, win: false },
+      { time: 4, gsp: 9_025_000, win: true },
+    ];
+    const stats = getGspGainStats(mixed);
+    expect(stats.recentWinStepCount).toBe(3);
+    expect(stats.recentLossStepCount).toBe(1);
+
+    const long: GspPoint[] = [{ time: 0, gsp: 0, win: true }];
+    for (let i = 1; i <= 25; i += 1) long.push({ time: i, gsp: i * 10, win: true });
+    long.push({ time: 26, gsp: 200, win: false });
+    const trailing = getGspGainStats(long);
+    expect(trailing.recentWinStepCount).toBe(19);
+    expect(trailing.recentLossStepCount).toBe(1);
+
+    const single = getGspGainStats([{ time: 0, gsp: 1, win: true }]);
+    expect(single.recentWinStepCount).toBe(0);
+    expect(single.recentLossStepCount).toBe(0);
   });
 });
