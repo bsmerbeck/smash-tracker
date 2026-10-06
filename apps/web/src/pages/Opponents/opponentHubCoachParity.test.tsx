@@ -219,4 +219,26 @@ describe('Opponent hub coach/workspace parity (DRL-04, plan 38-05 Task 3)', () =
     expect(coachHeadings).toEqual(personalHeadings);
     expect(workspaceHeadings).toEqual(personalHeadings);
   });
+
+  it('38-10 (UAT 38-13/22, F18): a coach-route hub for a 2-game opponent lists both characters below the floor, not the empty copy, in both route families', async () => {
+    const sonic = SpriteList.find((s) => s.id === 41)!;
+    const palutena = SpriteList.find((s) => s.id === 57)!;
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 't1', time: 1, win: true, opponent: 'moton', opponent_id: sonic.id }),
+      makeMatch({ id: 't2', time: 2, win: false, opponent: 'moton', opponent_id: palutena.id }),
+    ]);
+    for (const entry of ['/coach/test-client/opponents/moton', '/opponents/moton']) {
+      const { unmount } = renderHubAt(entry);
+      await waitFor(() => expect(screen.getAllByText('What They Play').length).toBeGreaterThan(0));
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      const slotText = (
+        document.querySelector('[data-slot="what-they-play"]')?.textContent ?? ''
+      ).replace(/\s+/g, ' ');
+      expect(slotText).toContain('Sonic');
+      expect(slotText).toContain('Palutena');
+      expect(slotText).toContain('Not enough data yet (1 game)');
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
 });

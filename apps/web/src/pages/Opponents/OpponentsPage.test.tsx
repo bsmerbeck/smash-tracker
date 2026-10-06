@@ -695,6 +695,29 @@ describe('OpponentsPage', () => {
     });
   });
 
+  describe('thin-data What They Play (38-10, UAT 38-13/22 F18)', () => {
+    it("lists a 2-game opponent's characters as Not enough data rows, not the empty copy", async () => {
+      const sonic = SpriteList.find((s) => s.id === 41)!;
+      const palutena = SpriteList.find((s) => s.id === 57)!;
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 't1', time: 1, opponent: 'moton', opponent_id: sonic.id, win: true }),
+        makeMatch({ id: 't2', time: 2, opponent: 'moton', opponent_id: palutena.id, win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getAllByText('What They Play').length).toBeGreaterThan(0));
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      const slotText = (
+        document.querySelector('[data-slot="what-they-play"]')?.textContent ?? ''
+      ).replace(/\s+/g, ' ');
+      expect(slotText).toContain('Sonic');
+      expect(slotText).toContain('Palutena');
+      expect(slotText).toContain('Not enough data yet (1 game)');
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+    });
+  });
+
   describe('tournament history', () => {
     it('shows the empty state when no matches have an eventName', async () => {
       listMatches.mockResolvedValue([
