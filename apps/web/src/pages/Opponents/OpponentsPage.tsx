@@ -292,7 +292,10 @@ export function OpponentsPage() {
                 items-start exists to prevent). The layout oracle measured
                 this as a real 29px stretch violation on this exact pair. */}
             <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-              <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
+              <WhatTheyPlayTable
+                byTheirFighter={profile.byTheirFighter}
+                belowFloor={profile.byTheirFighterBelowFloor}
+              />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
             <RecentEncounters matches={profile.recent} />

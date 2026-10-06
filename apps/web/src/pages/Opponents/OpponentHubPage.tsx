@@ -1078,6 +1078,7 @@ export function OpponentHubPage() {
             <GridCell span={4} stack>
               <WhatTheyPlayTable
                 byTheirFighter={profile.byTheirFighter}
+                belowFloor={profile.byTheirFighterBelowFloor}
                 rowHref={(row) =>
                   subjectPath(
                     `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
