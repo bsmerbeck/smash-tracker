@@ -9,6 +9,12 @@ import {
   type TournamentEntry,
 } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import i18n from '@/i18n';
+import de from '@/i18n/locales/de.json';
+import es from '@/i18n/locales/es.json';
+import fr from '@/i18n/locales/fr.json';
+import ja from '@/i18n/locales/ja.json';
+import pt from '@/i18n/locales/pt.json';
 import { TierOverrideSection } from './TierOverrideSection';
 
 vi.mock('@/lib/firebase', async () => {
@@ -224,6 +230,45 @@ describe('TierOverrideSection', () => {
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Tier saved for this event.'));
     expect(lastRequest().body).toEqual({ tierOverride: null });
+  });
+
+  describe('UAT 39.2-3 (a): the manual-tier badge is a tier-override noun, never the ruleset string', () => {
+    // Read both values from the locale bytes so the assertion cannot drift from what ships.
+    const locales = { es, fr, de, pt, ja } as Record<
+      string,
+      { tiers: { override: { badge?: string } }; shared: { ruleset: { overrideBadge: string } } }
+    >;
+
+    afterEach(async () => {
+      await i18n.changeLanguage('en');
+    });
+
+    it.each(Object.keys(locales))(
+      'renders tiers.override.badge under %s, not shared.ruleset.overrideBadge',
+      async (language) => {
+        const bundle = locales[language];
+        const tierBadge = bundle.tiers.override.badge;
+        const rulesetBadge = bundle.shared.ruleset.overrideBadge;
+        expect(tierBadge).toEqual(expect.any(String));
+        expect(tierBadge).not.toBe(rulesetBadge);
+
+        await i18n.changeLanguage(language);
+        renderSection(
+          {
+            entryKey: 'entry-1',
+            tierOverride: {
+              contractVersion: TIER_OVERRIDE_CONTRACT_VERSION,
+              tier: 'major',
+              setAtMs: 1,
+            },
+          },
+          OFFLINE_412,
+        );
+
+        expect(screen.getByText(tierBadge as string)).toBeInTheDocument();
+        expect(screen.queryByText(rulesetBadge)).not.toBeInTheDocument();
+      },
+    );
   });
 
   it('shows no estimate line under an override when nothing could have estimated (an online event)', () => {
