@@ -1,7 +1,13 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
-import { classify, confidenceTierFor, resolveWindow, toRateValue } from '@smash-tracker/shared';
+import {
+  HORIZON_COLLAPSE_RATIO,
+  classify,
+  confidenceTierFor,
+  resolveWindow,
+  toRateValue,
+} from '@smash-tracker/shared';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
@@ -13,6 +19,14 @@ import { Record } from '@/components/analytics/Record';
  * fixed, matching UI-SPEC §8.1's stat row.
  */
 const RECENT_HORIZON_KEYS: readonly HorizonKey[] = ['last30', 'lastEvent', 'last90'];
+
+/**
+ * Plan 39.1-57 (UAT 39.1-16): the game / day horizons collapse BEFORE the
+ * abstention floor — a 2-game window holding 2 of 2 games is "= all games",
+ * not "n 2 · no direction". `classify` keeps its order (floor first) for every
+ * other caller; last event keeps today's ladder (UI-SPEC §8.1 40-game clause).
+ */
+const COLLAPSE_BEFORE_FLOOR_KEYS: readonly HorizonKey[] = ['last30', 'last90'];
 
 export interface HorizonStatRowProps {
   /** The hero's scoped base (a fighter's or a pairing's games). */
@@ -56,12 +70,18 @@ export function HorizonStatRow({
         nowMs,
       });
       const recentRate = toRateValue(recentMatches);
-      const { state, deltaPoints } = classify({
-        recent: recentRate,
-        baseline: baselineAllTime,
-        scoped: true,
-        hasAction: false,
-      });
+      const collapsesBeforeFloor =
+        COLLAPSE_BEFORE_FLOOR_KEYS.includes(key) &&
+        baselineAllTime.total > 0 &&
+        recentRate.total >= HORIZON_COLLAPSE_RATIO * baselineAllTime.total;
+      const { state, deltaPoints } = collapsesBeforeFloor
+        ? { state: 'collapsed' as const, deltaPoints: null }
+        : classify({
+            recent: recentRate,
+            baseline: baselineAllTime,
+            scoped: true,
+            hasAction: false,
+          });
       return { key, window, recentRate, state, deltaPoints };
     });
   }, [matches, baselineAllTime, nowMs]);
