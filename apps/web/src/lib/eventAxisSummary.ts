@@ -1,5 +1,10 @@
 import type { TFunction } from 'i18next';
-import { parseExternalId, trimmedEventKey, type Match } from '@smash-tracker/shared';
+import {
+  eventDisplayName,
+  parseExternalId,
+  trimmedEventKey,
+  type Match,
+} from '@smash-tracker/shared';
 import { formatDate, formatDaySpan } from '@/lib/format';
 import { calendarPeriodLabel } from '@/lib/periodKeyLabel';
 
@@ -22,8 +27,10 @@ function formatDateRange(games: Match[], locale: string): string {
  *    show;
  * 2. one parsed set (2+ of its games) -> "Set vs <opponent> at <event>" (or
  *    without the event);
- * 3. games sharing one event name -> that name (`trimmedEventKey`, the one
- *    name-priority rule);
+ * 3. games sharing one event name (`trimmedEventKey`, the one name-priority
+ *    rule) -> their display name (`eventDisplayName`, 41-13: "Genesis 9 ·
+ *    Ultimate Singles" when every game shares that tournament, else the event
+ *    name). Step 2's event is the same display name;
  * 4. anything else (a session, a calendar period) -> its date range.
  *
  * `undefined` for an empty set (a stale key) — the caller then shows the
@@ -55,7 +62,7 @@ export function describeEventAxisGames(
 
   const setIds = new Set(games.map((m) => parseExternalId(m.externalId)?.setId ?? null));
   if (setIds.size === 1 && !setIds.has(null)) {
-    const event = trimmedEventKey(first);
+    const event = trimmedEventKey(first) != null ? eventDisplayName(games) : null;
     return event
       ? t('shared.filteredMatchList.eventSummary.set', { opponent, event })
       : t('shared.filteredMatchList.eventSummary.setUnnamed', { opponent });
@@ -64,7 +71,7 @@ export function describeEventAxisGames(
   const names = new Set(games.map((m) => trimmedEventKey(m)));
   const [onlyName] = names;
   if (names.size === 1 && onlyName != null) {
-    return onlyName;
+    return eventDisplayName(games) ?? onlyName;
   }
 
   return formatDateRange(games, locale);
