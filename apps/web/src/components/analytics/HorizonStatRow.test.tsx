@@ -164,6 +164,37 @@ describe('HorizonStatRow (plan 39.1-43, hero-idioms-kit)', () => {
     }
   });
 
+  it('thin window collapse (UAT 39.1-16, plan 39.1-57): a 2-game fighter reads "= all games" on 30 games and 90 days with no chip, never "no direction"; last event keeps the floor ladder', async () => {
+    const twoGames = [
+      makeMatch({ id: 't0', time: NOW_MS - 2 * 60 * 60 * 1000, win: true }),
+      makeMatch({ id: 't1', time: NOW_MS - 60 * 60 * 1000, win: false, eventName: 'Local 1' }),
+    ];
+    await renderRow({ matches: twoGames });
+    for (const label of ['30 games', '90 days']) {
+      const button = figureButton(label);
+      expect(button.textContent).toContain('= all games');
+      expect(button.textContent).toContain('2 of 2 games');
+      expect(button.querySelector('[data-slot="delta-chip"]')).toBeNull();
+      expect(button.textContent).not.toMatch(/no direction/);
+    }
+    const lastEvent = figureButton('Last event');
+    expect(lastEvent.textContent).toContain('—');
+    expect(lastEvent.textContent).not.toContain('= all games');
+    expect(lastEvent.querySelector('[data-slot="delta-chip"]')?.textContent).toMatch(
+      /no direction/,
+    );
+  });
+
+  it('regression pin (plan 39.1-57): a 100-game fighter whose last 30 holds 30 games stays populated', async () => {
+    const hundred = Array.from({ length: 100 }, (_, i) =>
+      makeMatch({ id: `h${i}`, time: NOW_MS - (100 - i) * DAY_MS, win: i % 3 !== 0 }),
+    );
+    await renderRow({ matches: hundred });
+    const button = figureButton('30 games');
+    expect(button.textContent).toMatch(/\d+%.*\d+–\d+/);
+    expect(button.textContent).not.toContain('= all games');
+  });
+
   it('parity: renders exactly what the Fighter hero renders for the same fixture, horizon and clock', async () => {
     const { FighterHero } = await import('@/pages/FighterAnalysis/components/FighterHero');
     const HorizonStatRow = await loadHorizonStatRow();
