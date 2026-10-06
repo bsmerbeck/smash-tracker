@@ -380,7 +380,8 @@ describe('ChartTooltip', () => {
       },
     });
     const { getByText, queryByText } = renderTooltip({ payload: tooltipPayload(point) });
-    expect(getByText('67%')).toBeInTheDocument();
+    // Plan 38-12 (F5): an event point names the running D-11 record.
+    expect(getByText('67% overall so far')).toBeInTheDocument();
     expect(queryByText('66.6666%')).not.toBeInTheDocument();
     expect(
       getByText(
