@@ -52,6 +52,29 @@ function groupKnownCharacterMatchesByOpponent(matches: Match[]): Map<number, Mat
   return byOpponent;
 }
 
+/**
+ * The one per-opponent-fighter `MatchupStats` candidate builder, gated at
+ * `effectiveFloor(minMatches)`. Shared by `rankMatchupsByEvidence` (which
+ * ranks the `evidenced` half) and `listSubFloorMatchups` (which discloses
+ * the `abstained` half), so the two can never disagree on which rows clear
+ * the floor.
+ */
+function gateMatchupCandidates(
+  matches: Match[],
+  minMatches?: number,
+): { evidenced: MatchupStats[]; abstained: MatchupStats[] } {
+  const floor = effectiveFloor(minMatches);
+  const byOpponent = groupKnownCharacterMatchesByOpponent(matches);
+  const candidates: MatchupStats[] = [...byOpponent.entries()].map(([opponentFighterId, ms]) => {
+    const wins = ms.filter((m) => m.win).length;
+    const losses = ms.length - wins;
+    const totalMatches = ms.length;
+    const ratio = losses ? Math.round((wins / totalMatches) * 100) : 100;
+    return { opponentFighterId, wins, losses, totalMatches, ratio };
+  });
+  return gateBySampleSize(candidates, (row) => row.totalMatches, floor);
+}
+
 export interface RankedMatchup extends MatchupStats {
   /** Wilson lower bound (0-1) for this matchup's win rate. */
   wilson: number;
@@ -76,21 +99,28 @@ export interface RankedMatchup extends MatchupStats {
  * exercised by synthetic fixtures only.
  */
 export function rankMatchupsByEvidence(matches: Match[], minMatches?: number): RankedMatchup[] {
-  const floor = effectiveFloor(minMatches);
-  const byOpponent = groupKnownCharacterMatchesByOpponent(matches);
-  const candidates: MatchupStats[] = [...byOpponent.entries()].map(([opponentFighterId, ms]) => {
-    const wins = ms.filter((m) => m.win).length;
-    const losses = ms.length - wins;
-    const totalMatches = ms.length;
-    const ratio = losses ? Math.round((wins / totalMatches) * 100) : 100;
-    return { opponentFighterId, wins, losses, totalMatches, ratio };
-  });
-  const { evidenced } = gateBySampleSize(candidates, (row) => row.totalMatches, floor);
+  const { evidenced } = gateMatchupCandidates(matches, minMatches);
   return rankByWilson(
     evidenced,
     (row) => row.wins,
     (row) => row.totalMatches,
     (row) => row.opponentFighterId,
+  );
+}
+
+/**
+ * The exact complement of `rankMatchupsByEvidence` over known characters:
+ * every per-opponent-fighter row BELOW `effectiveFloor(minMatches)` (an
+ * explicit sub-floor `minMatches` cannot lower it). Disclosure, not a
+ * ranked claim — rows are ordered by sample size (most games first), then
+ * `opponentFighterId` ascending, never by win rate (38-UAT 13/22).
+ */
+export function listSubFloorMatchups(matches: Match[], minMatches?: number): MatchupStats[] {
+  const { abstained } = gateMatchupCandidates(matches, minMatches);
+  return [...abstained].sort((a, b) =>
+    b.totalMatches === a.totalMatches
+      ? a.opponentFighterId - b.opponentFighterId
+      : b.totalMatches - a.totalMatches,
   );
 }
 

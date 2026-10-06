@@ -4,10 +4,15 @@ import { wilsonLowerBound } from './rank.js';
 import {
   getStageRecords,
   getWinLossRecord,
+  type MatchupStats,
   type StageRecord,
   type WinLossRecord,
 } from './records.js';
-import { rankMatchupsByEvidence, type RankedMatchup } from './matchupEvidence.js';
+import {
+  listSubFloorMatchups,
+  rankMatchupsByEvidence,
+  type RankedMatchup,
+} from './matchupEvidence.js';
 import {
   ABSTENTION_FLOOR_GAMES,
   confidenceTierFor,
@@ -360,7 +365,11 @@ export function buildOpponentEvidence(input: {
  * `match.opponent === opponentTag` string equality. Applies no floor of its
  * own — a profile is the fact record for one person — except through
  * `byTheirFighter`, which IS a ranked character-pair claim and correctly
- * inherits `rankMatchupsByEvidence`'s floor. `aliasMap` is REQUIRED — no
+ * inherits `rankMatchupsByEvidence`'s floor. The characters that floor drops
+ * travel separately in `byTheirFighterBelowFloor` (most games first) — a
+ * disclosure of what the opponent was recorded on, NOT a ranked claim, so
+ * `byTheirFighter`'s consumers (evidence packets, prep) are unaffected
+ * (38-UAT 13/22). `aliasMap` is REQUIRED — no
  * default, no optional marker — so a caller cannot reach this entry point
  * without identity resolution.
  */
@@ -376,6 +385,7 @@ export function buildOpponentProfile(input: {
   firstPlayedAt: number;
   lastPlayedAt: number;
   byTheirFighter: RankedMatchup[];
+  byTheirFighterBelowFloor: MatchupStats[];
   byStage: StageRecord[];
   recent: Match[];
   source: OpponentProviderLabel;
@@ -399,6 +409,7 @@ export function buildOpponentProfile(input: {
     firstPlayedAt: sorted[0]!.time,
     lastPlayedAt: sorted[sorted.length - 1]!.time,
     byTheirFighter: rankMatchupsByEvidence(versus),
+    byTheirFighterBelowFloor: listSubFloorMatchups(versus),
     byStage: getStageRecords(versus).sort((a, b) => b.total - a.total),
     recent: sorted.slice(-recentLimit).reverse(),
     source: computeProviderLabel(versus),
