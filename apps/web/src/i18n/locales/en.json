@@ -1002,6 +1002,8 @@
       "title": "Counterpick Advisor",
       "pickThese": "Pick these",
       "banThese": "Ban / avoid these",
+      "picksBelowEven_one": "{{count}} of these picks has a losing record — ranked by how certain each record is, not by raw win rate.",
+      "picksBelowEven_other": "{{count}} of these picks have a losing record — ranked by how certain each record is, not by raw win rate.",
       "unknownStage": "Unknown stage",
       "meta_one": "Counterpick Advisor · all time · min {{count}} game per stage",
       "meta_other": "Counterpick Advisor · all time · min {{count}} games per stage",

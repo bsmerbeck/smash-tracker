@@ -1002,6 +1002,8 @@
       "title": "Asesor de counterpicks",
       "pickThese": "Elige estos",
       "banThese": "Banea / evita estos",
+      "picksBelowEven_one": "{{count}} de estas elecciones tiene un récord negativo: el orden refleja la certeza de cada récord, no el porcentaje de victorias bruto.",
+      "picksBelowEven_other": "{{count}} de estas elecciones tienen un récord negativo: el orden refleja la certeza de cada récord, no el porcentaje de victorias bruto.",
       "unknownStage": "Escenario desconocido",
       "meta_one": "Asesor de counterpicks · histórico · mín. {{count}} partida por escenario",
       "meta_other": "Asesor de counterpicks · histórico · mín. {{count}} partidas por escenario",

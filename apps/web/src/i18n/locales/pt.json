@@ -1002,6 +1002,8 @@
       "title": "Conselheiro de counterpick",
       "pickThese": "Escolha estes",
       "banThese": "Bana / evite estes",
+      "picksBelowEven_one": "{{count}} destas escolhas tem um retrospecto negativo — ordenadas pela confiabilidade de cada retrospecto, não pela taxa de vitória bruta.",
+      "picksBelowEven_other": "{{count}} destas escolhas têm um retrospecto negativo — ordenadas pela confiabilidade de cada retrospecto, não pela taxa de vitória bruta.",
       "unknownStage": "Stage desconhecido",
       "meta_one": "Conselheiro de counterpick · histórico · mín. {{count}} partida por stage",
       "meta_other": "Conselheiro de counterpick · histórico · mín. {{count}} partidas por stage",

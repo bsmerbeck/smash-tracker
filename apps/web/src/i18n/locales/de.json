@@ -1002,6 +1002,8 @@
       "title": "Counterpick-Berater",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
+      "picksBelowEven_one": "{{count}} dieser Picks hat eine negative Bilanz — sortiert danach, wie belastbar jede Bilanz ist, nicht nach roher Siegquote.",
+      "picksBelowEven_other": "{{count}} dieser Picks haben eine negative Bilanz — sortiert danach, wie belastbar jede Bilanz ist, nicht nach roher Siegquote.",
       "unknownStage": "Unbekannte Stage",
       "meta_one": "Counterpick-Berater · gesamt · min. {{count}} Spiel pro Stage",
       "meta_other": "Counterpick-Berater · gesamt · min. {{count}} Spiele pro Stage",

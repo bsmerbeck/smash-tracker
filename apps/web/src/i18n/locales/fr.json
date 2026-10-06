@@ -1002,6 +1002,8 @@
       "title": "Conseiller de counterpick",
       "pickThese": "À prendre",
       "banThese": "À bannir / éviter",
+      "picksBelowEven_one": "{{count}} de ces choix a un bilan négatif — classés selon la fiabilité de chaque bilan, pas selon le taux de victoire brut.",
+      "picksBelowEven_other": "{{count}} de ces choix ont un bilan négatif — classés selon la fiabilité de chaque bilan, pas selon le taux de victoire brut.",
       "unknownStage": "Stage inconnu",
       "meta_one": "Conseiller de counterpick · historique · min. {{count}} partie par stage",
       "meta_other": "Conseiller de counterpick · historique · min. {{count}} parties par stage",
