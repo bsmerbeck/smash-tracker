@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Diese {{count, grouped}} Matches erstrecken sich von {{from}} bis {{to}}.",
       "range": "{{rate}} über {{count, grouped}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} gesamt · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} gesamt",
       "tier": {
         "low": "niedrige Konfidenz",
         "medium": "mittlere Konfidenz",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "Keine verlorenen Sets.",
       "setLosses_one": "Verlorener Satz — {{named}}.",
       "setLosses_other": "Verlorene Sätze — {{named}}.",
-      "evidence": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}} · {{cue}}"
+      "evidence": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Wertung — um {{points}} gestiegen in den letzten {{count, grouped}} Matches ({{startRating}} → {{endRating}} ±{{band}}).",

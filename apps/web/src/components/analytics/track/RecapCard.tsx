@@ -159,7 +159,8 @@ function RecapCardBody({
     eventRecord: String(insight.copy.values.gameRecord),
     baselineRate: formatPercent(read.baseline.rate, i18n.language),
     baselineGames: read.baseline.total,
-    cue,
+    // Plan 39.1-52 (F22): no tier → the cue-less `_bare` sentence, never a dangling ' · '.
+    ...(cue ? { cue } : { context: 'bare' }),
   });
 
   const chip = deltaChipView({

@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "last30_bare": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}",
         "lastEvent": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
-        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}"
+        "lastEvent_bare": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}",
+        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "last90_bare": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "この{{count, grouped}}試合の期間は{{from}}〜{{to}}です。",
       "range": "{{count, grouped}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
       "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}",
+      "allTimeOnly_bare": "全期間 {{record}} · {{rate}}",
       "tier": {
         "low": "信頼度低",
         "medium": "信頼度中",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "セットの負けはありません。",
       "setLosses_one": "セット負け — {{named}}。",
       "setLosses_other": "セット負け — {{named}}。",
-      "evidence": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）· {{cue}}"
+      "evidence": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）· {{cue}}",
+      "evidence_bare": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）"
     },
     "ratingMove": {
       "up": "レーティング — 直近{{count, grouped}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",

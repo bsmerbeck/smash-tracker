@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} sur 30 derniers · {{baselineRate}} historique sur {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} sur 30 derniers · {{baselineRate}} historique sur {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} dernier événement · {{baselineRate}} historique sur {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} sur 90 derniers jours · {{baselineRate}} historique sur {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} dernier événement · {{baselineRate}} historique sur {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} sur 90 derniers jours · {{baselineRate}} historique sur {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} sur 90 derniers jours · {{baselineRate}} historique sur {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Ces {{count, grouped}} matchs s'étendent de {{from}} à {{to}}.",
       "range": "{{rate}} sur {{count, grouped}}, dans la plage habituelle ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} historique · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} historique",
       "tier": {
         "low": "confiance faible",
         "medium": "confiance moyenne",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "Aucun set perdu.",
       "setLosses_one": "Set perdu — {{named}}.",
       "setLosses_other": "Sets perdus — {{named}}.",
-      "evidence": "{{eventRecord}} à l'événement · {{baselineRate}} au total sur {{baselineGames, grouped}} · {{cue}}"
+      "evidence": "{{eventRecord}} à l'événement · {{baselineRate}} au total sur {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} à l'événement · {{baselineRate}} au total sur {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Classement — en hausse de {{points}} sur les {{count, grouped}} derniers matchs ({{startRating}} → {{endRating}} ±{{band}}).",

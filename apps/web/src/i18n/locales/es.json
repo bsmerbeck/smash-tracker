@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico sobre {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} último evento · {{baselineRate}} histórico sobre {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} últimos 90 días · {{baselineRate}} histórico sobre {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Esas {{count, grouped}} partidas van de {{from}} a {{to}}.",
       "range": "{{rate}} sobre {{count, grouped}}, dentro del rango habitual ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} histórico",
       "tier": {
         "low": "confianza baja",
         "medium": "confianza media",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "Sin sets perdidos.",
       "setLosses_one": "Set perdido — {{named}}.",
       "setLosses_other": "Sets perdidos — {{named}}.",
-      "evidence": "{{eventRecord}} en el evento · {{baselineRate}} histórico en {{baselineGames, grouped}} · {{cue}}"
+      "evidence": "{{eventRecord}} en el evento · {{baselineRate}} histórico en {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} en el evento · {{baselineRate}} histórico en {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Clasificación — sube {{points}} en las últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",

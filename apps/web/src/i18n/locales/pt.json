@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico em {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} últimas 30 · {{baselineRate}} histórico em {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} último evento · {{baselineRate}} histórico em {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} últimos 90 dias · {{baselineRate}} histórico em {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} último evento · {{baselineRate}} histórico em {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} últimos 90 dias · {{baselineRate}} histórico em {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} últimos 90 dias · {{baselineRate}} histórico em {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Essas {{count, grouped}} partidas vão de {{from}} a {{to}}.",
       "range": "{{rate}} em {{count, grouped}}, dentro da faixa habitual ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} histórico · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} histórico",
       "tier": {
         "low": "confiança baixa",
         "medium": "confiança média",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "Nenhum set perdido.",
       "setLosses_one": "Set perdido — {{named}}.",
       "setLosses_other": "Sets perdidos — {{named}}.",
-      "evidence": "{{eventRecord}} no evento · {{baselineRate}} no total, em {{baselineGames, grouped}} · {{cue}}"
+      "evidence": "{{eventRecord}} no evento · {{baselineRate}} no total, em {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} no evento · {{baselineRate}} no total, em {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Classificação — sobe {{points}} nas últimas {{count, grouped}} partidas ({{startRating}} → {{endRating}} ±{{band}}).",

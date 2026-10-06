@@ -3423,13 +3423,18 @@
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Those {{count, grouped}} games span {{from}} – {{to}}.",
       "range": "{{rate}} over {{count, grouped}}, inside the usual range ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} all time",
       "tier": {
         "low": "low confidence",
         "medium": "medium confidence",
@@ -3530,7 +3535,8 @@
       "noSetLosses": "No set losses.",
       "setLosses_one": "Set loss — {{named}}.",
       "setLosses_other": "Set losses — {{named}}.",
-      "evidence": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}"
+      "evidence": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Rating — up {{points}} over the last {{count, grouped}} games ({{startRating}} → {{endRating}} ±{{band}}).",

@@ -710,6 +710,8 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
     'setLosses_one',
     'setLosses_other',
     'evidence',
+    // Plan 39.1-52: RecapCard's cue-less variant (`context: 'bare'` when no tier).
+    'evidence_bare',
   ],
   ratingMove: ['up', 'down', 'steady', 'thin', 'collapsed', 'locked_one', 'locked_other'],
   tiltCost: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
