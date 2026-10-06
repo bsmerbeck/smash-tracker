@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -79,14 +79,20 @@ function makeMatch(
   };
 }
 
-function renderFighterAnalysis() {
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe" data-search={location.search} />;
+}
+
+function renderFighterAnalysis(initialEntry = '/fighter-analysis') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/fighter-analysis']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <TooltipProvider>
+              <LocationProbe />
               <Routes>
                 <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
                 <Route path="/choose-primary" element={<div>Choose primary page</div>} />
@@ -195,6 +201,64 @@ describe('FighterAnalysisPage', () => {
     const heroHeading = await screen.findByRole('heading', { name: luigi.name, level: 2 });
     expect(heroHeading).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: mario.name, level: 2 })).not.toBeInTheDocument();
+  });
+
+  describe('?fighter= URL axis (38-UAT test 23 / F20, DRL-01, DRL-02)', () => {
+    function savedMarioAndLuigi() {
+      getFighters.mockResolvedValue({ primary: [mario.id, luigi.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+        makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+        makeMatch({ id: 'm3', time: 3, win: false, fighter_id: mario.id }),
+        makeMatch({ id: 'l1', time: 4, win: true, fighter_id: luigi.id }),
+      ]);
+    }
+    function probeSearch(): URLSearchParams {
+      return new URLSearchParams(screen.getByTestId('location-probe').dataset.search ?? '');
+    }
+
+    it('opens on the ?fighter= fighter over the most-played default', async () => {
+      savedMarioAndLuigi();
+      renderFighterAnalysis(`/fighter-analysis?fighter=${luigi.id}`);
+
+      expect(
+        await screen.findByRole('heading', { name: luigi.name, level: 2 }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: mario.name, level: 2 })).not.toBeInTheDocument();
+    });
+
+    it('falls back to the persisted/computed fighter when ?fighter= names no known fighter', async () => {
+      savedMarioAndLuigi();
+      renderFighterAnalysis('/fighter-analysis?fighter=99999');
+
+      expect(
+        await screen.findByRole('heading', { name: mario.name, level: 2 }),
+      ).toBeInTheDocument();
+    });
+
+    it('an explicit pick after a ?fighter= open wins and writes ?fighter=<picked id>', async () => {
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      savedMarioAndLuigi();
+      renderFighterAnalysis(`/fighter-analysis?fighter=${luigi.id}`);
+      await screen.findByRole('heading', { name: luigi.name, level: 2 });
+
+      await user.click(screen.getByLabelText('Select fighter'));
+      await user.click(await screen.findByRole('option', { name: new RegExp(mario.name) }));
+
+      await screen.findByRole('heading', { name: mario.name, level: 2 });
+      await waitFor(() => expect(probeSearch().get('fighter')).toBe(String(mario.id)));
+    });
+
+    it('opening via ?fighter= never persists that fighter (D-06: only explicit picks persist)', async () => {
+      savedMarioAndLuigi();
+      renderFighterAnalysis(`/fighter-analysis?fighter=${luigi.id}`);
+      await screen.findByRole('heading', { name: luigi.name, level: 2 });
+
+      const stored = window.localStorage.getItem(analyticsSelectionStorageKey('test-uid', null));
+      const parsed = stored ? (JSON.parse(stored) as { fighterId?: number }) : {};
+      expect(parsed.fighterId).not.toBe(luigi.id);
+    });
   });
 
   it('still shows the choose-fighters gate when there are neither saved favorites nor any matches to infer from', async () => {
