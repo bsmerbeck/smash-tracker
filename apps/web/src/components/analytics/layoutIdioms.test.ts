@@ -210,7 +210,7 @@ function collectVerdictSlotTags(files: string[]): VerdictSlotTag[] {
   for (const file of files) {
     const source = readRepoFile(file);
     for (const match of source.matchAll(VERDICT_SLOT_PATTERN)) {
-      out.push({ file, slot: match[1], tag: openingTagAt(source, match.index ?? 0) });
+      out.push({ file, slot: match[1] ?? '', tag: openingTagAt(source, match.index ?? 0) });
     }
   }
   return out;
