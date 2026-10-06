@@ -96,10 +96,7 @@ export function InsightCard({
       </div>
 
       <div className="flex flex-col gap-3" data-slot="insight-card-content">
-        <p
-          className="line-clamp-3 text-base leading-6 font-medium text-pretty"
-          data-slot="insight-card-verdict"
-        >
+        <p className="text-base leading-6 font-medium text-pretty" data-slot="insight-card-verdict">
           {verdict}
         </p>
 

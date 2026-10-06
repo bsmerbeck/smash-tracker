@@ -234,7 +234,7 @@ export function FighterHero({
               </span>
             </div>
             <p
-              className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+              className="text-base leading-6 font-medium text-pretty"
               data-slot="fighter-hero-verdict-sentence"
             >
               {verdict}

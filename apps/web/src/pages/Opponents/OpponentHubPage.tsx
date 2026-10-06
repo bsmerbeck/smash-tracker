@@ -180,7 +180,7 @@ function renderOpponentFormNowHead(
     <div className="flex flex-col gap-2" data-slot="opponent-form-now">
       <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
       <p
-        className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+        className="text-base leading-6 font-medium text-pretty"
         data-slot="opponent-form-now-verdict"
       >
         {verdict}
