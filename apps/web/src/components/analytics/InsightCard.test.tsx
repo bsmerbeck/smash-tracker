@@ -193,13 +193,16 @@ describe('InsightCard', () => {
     expect(container.querySelector('[data-slot="insight-card-doors"]')).toBeNull();
   });
 
-  it('the verdict element carries no truncation utility and no line-clamp below three lines', () => {
+  // Plan 39.1-58 (UAT 39.1-20/32, F15): the ≤ 3-line budget is a copy-length target — a verdict
+  // wraps in full and is never clamped at any line count.
+  it('the verdict element carries no truncation utility and no line-clamp of any count', () => {
     const { container } = render(
       <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,
     );
     const verdict = container.querySelector('[data-slot="insight-card-verdict"]')!;
     expect(verdict.className).not.toMatch(/\btruncate\b/);
-    expect(verdict.className).not.toMatch(/\bline-clamp-[12]\b/);
+    expect(verdict.className).not.toMatch(/\bline-clamp-/);
+    expect(verdict.className).toMatch(/\btext-pretty\b/);
   });
 
   it("the component's prop type contains no salience, ranking, score, tracking or watchlist member", () => {

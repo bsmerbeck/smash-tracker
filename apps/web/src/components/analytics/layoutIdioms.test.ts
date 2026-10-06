@@ -166,7 +166,90 @@ const ANALYTICS_PAGE_FILES = [
 const TEXT_LOADING_LINE_PATTERN =
   /<div className="text-muted-foreground">\{t\('[^']*\.loading'\)\}<\/div>/;
 
+/**
+ * Plan 39.1-58 (UAT 39.1-20/32, F15; UI-SPEC §7.x/§13 — a verdict "wraps to ≤ 3 lines … and never
+ * truncates"): the ≤ 3-line budget is a copy-length target, never a render rule, so no element
+ * whose literal `data-slot` names a verdict may carry a `line-clamp-*` utility.
+ */
+const VERDICT_SLOT_PATTERN = /data-slot="([^"]*verdict[^"]*)"/g;
+const LINE_CLAMP_PATTERN = /\bline-clamp-[^\s"'`}]+/;
+
+/**
+ * Returns the full JSX opening tag that contains `index`: from the nearest preceding `<` + tag
+ * name to its closing `>`, skipping `>` inside string literals and `{…}` expressions (`=>`).
+ */
+function openingTagAt(source: string, index: number): string {
+  let start = index;
+  while (start > 0 && !(source[start] === '<' && /[A-Za-z]/.test(source[start + 1] ?? ''))) {
+    start -= 1;
+  }
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = start + 1; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') quote = ch;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    else if (ch === '>' && depth === 0) return source.slice(start, i + 1);
+  }
+  return source.slice(start);
+}
+
+interface VerdictSlotTag {
+  file: string;
+  slot: string;
+  tag: string;
+}
+
+function collectVerdictSlotTags(files: string[]): VerdictSlotTag[] {
+  const out: VerdictSlotTag[] = [];
+  for (const file of files) {
+    const source = readRepoFile(file);
+    for (const match of source.matchAll(VERDICT_SLOT_PATTERN)) {
+      out.push({ file, slot: match[1], tag: openingTagAt(source, match.index ?? 0) });
+    }
+  }
+  return out;
+}
+
 describe('layout idioms — source-tree guard (UIX-04, §13.3/§13.4)', () => {
+  describe('§7.x/§13 — a verdict never truncates (plan 39.1-58, UAT 39.1-20/32)', () => {
+    const verdictTags = collectVerdictSlotTags([...PAGES_FILES, ...ANALYTICS_FILES]);
+
+    it('the scan finds the four verdict sentences it protects (non-vacuity canary)', () => {
+      const slots = new Set(verdictTags.map((entry) => entry.slot));
+      for (const slot of [
+        'insight-card-verdict',
+        'matchup-form-now-verdict',
+        'fighter-hero-verdict-sentence',
+        'opponent-form-now-verdict',
+      ]) {
+        expect(slots.has(slot), `verdict slot not found by the scan: ${slot}`).toBe(true);
+      }
+    });
+
+    it('the tag reader returns the whole opening tag, including a className before data-slot and an arrow inside braces', () => {
+      const fixture =
+        '<p\n  className="line-clamp-3 text-pretty"\n  onClick={() => go()}\n  data-slot="x-verdict"\n>';
+      const tag = openingTagAt(fixture, fixture.indexOf('data-slot'));
+      expect(tag).toBe(fixture);
+      expect(LINE_CLAMP_PATTERN.test(tag)).toBe(true);
+    });
+
+    it('no element whose data-slot names a verdict carries a line-clamp-* utility', () => {
+      const offenders = verdictTags
+        .filter((entry) => LINE_CLAMP_PATTERN.test(entry.tag))
+        .map(
+          (entry) => `${entry.file} [${entry.slot}] ${entry.tag.match(LINE_CLAMP_PATTERN)?.[0]}`,
+        );
+      expect(offenders, `clamped verdicts:\n${offenders.join('\n')}`).toEqual([]);
+    });
+  });
+
   it('the default suite excludes the .guard.test.ts suffix (this file is deliberately NOT named with it)', () => {
     const vitestConfigSource = readRepoFile('apps/web/vitest.config.ts');
     expect(vitestConfigSource).toMatch(/guard\.test\.ts/);
