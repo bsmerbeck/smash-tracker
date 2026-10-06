@@ -1249,6 +1249,7 @@
       "empty": "Aucun match enregistré pour cet évènement pour l'instant.",
       "setsAria": "Sets",
       "setFallback": "Set {{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "Vos combattants",
       "opponentFighters": "Combattants adverses",
       "watchVod": "Voir la VOD",

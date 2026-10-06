@@ -1249,6 +1249,7 @@
       "empty": "この大会の対戦はまだ記録されていません。",
       "setsAria": "セット",
       "setFallback": "セット{{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "自分のファイター",
       "opponentFighters": "相手のファイター",
       "watchVod": "VODを見る",

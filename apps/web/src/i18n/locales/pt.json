@@ -1249,6 +1249,7 @@
       "empty": "Nenhuma partida registrada para este evento ainda.",
       "setsAria": "Sets",
       "setFallback": "Set {{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "Seus lutadores",
       "opponentFighters": "Lutadores do oponente",
       "watchVod": "Assistir VOD",
