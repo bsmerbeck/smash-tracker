@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import { parseExternalId, trimmedEventKey, type Match } from '@smash-tracker/shared';
 import { formatDate, formatDaySpan } from '@/lib/format';
+import { calendarPeriodLabel } from '@/lib/periodKeyLabel';
 
 /** I18N-01: the span prints in the app language through the one formatter module (one date when both ends share a day). */
 function formatDateRange(games: Match[], locale: string): string {
@@ -27,14 +28,22 @@ function formatDateRange(games: Match[], locale: string): string {
  *
  * `undefined` for an empty set (a stale key) — the caller then shows the
  * localized "unknown" rather than the raw key.
+ *
+ * UAT 39.1-27a (F4): when the axis `eventKey` is a calendar-period key
+ * (`week:`/`month:`/`quarter:`/`year:`) the period itself names the drill
+ * ("2024 Q2") — the games of a quarter may well share one event name, and
+ * printing it would describe the drill as that event.
  */
 export function describeEventAxisGames(
   games: Match[],
   t: TFunction,
   locale: string,
+  eventKey?: string,
 ): string | undefined {
   const first = games[0];
   if (!first) return undefined;
+  const period = eventKey != null ? calendarPeriodLabel(eventKey, t, locale) : undefined;
+  if (period) return period;
   const opponent = first.opponent?.trim() || t('common.unknown');
 
   if (games.length === 1) {
