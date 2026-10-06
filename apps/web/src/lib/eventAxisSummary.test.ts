@@ -109,3 +109,42 @@ describe('describeEventAxisGames — calendar-period keys (UAT 39.1-27a F4)', ()
     );
   });
 });
+
+describe('describeEventAxisGames — the display name names the tournament (41-13, UAT 41 test 7 F6)', () => {
+  const named = { eventName: 'Ultimate Singles', tournamentName: 'Genesis 9' };
+
+  it('a multi-set block of one tournament reads "Genesis 9 · Ultimate Singles"', () => {
+    const games = Array.from({ length: 16 }, (_, i) =>
+      makeMatch({
+        id: `m${i}`,
+        time: i,
+        ...named,
+        externalId: `sgg:s${Math.floor(i / 3)}:g${(i % 3) + 1}`,
+      }),
+    );
+    expect(describeEventAxisGames(games, t, EN)).toBe('Genesis 9 \u00b7 Ultimate Singles');
+  });
+
+  it('a one-set slice names the tournament in the set sentence', () => {
+    const games = [1, 2].map((g) =>
+      makeMatch({ id: `g${g}`, time: g, ...named, externalId: `sgg:777:g${g}` }),
+    );
+    expect(describeEventAxisGames(games, t, EN)).toBe(
+      'Set vs rival at Genesis 9 \u00b7 Ultimate Singles',
+    );
+  });
+
+  it('mixed tournaments under one event name fall back to the bare event name', () => {
+    const games = [
+      makeMatch({ id: 'a', time: 1, ...named, externalId: 'sgg:s1:g1' }),
+      makeMatch({
+        id: 'b',
+        time: 2,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly 12',
+        externalId: 'sgg:s2:g1',
+      }),
+    ];
+    expect(describeEventAxisGames(games, t, EN)).toBe('Ultimate Singles');
+  });
+});
