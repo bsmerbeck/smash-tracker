@@ -631,6 +631,55 @@ describe('TrendLine — period mode (VIZ-01, VIZ-03, UI-SPEC §7.13)', () => {
     expect(onSelectPoint).toHaveBeenCalledWith(points[0]);
   });
 
+  it('plan 37-08: a period-mode chart with NO tooltip prop still mounts the Recharts tooltip (on by default, like index/event modes)', () => {
+    const points = makePeriodSeries(PERIOD_TREND_MIN_PERIODS, () => ({ rate: 0.5 }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    expect(container.querySelector('.recharts-tooltip-wrapper')).not.toBeNull();
+  });
+
+  it('plan 37-08: keyboard-focusing a period point shows its period, rate and W–L in the default tooltip', () => {
+    const points = makePeriodSeries(PERIOD_TREND_MIN_PERIODS, (i) => ({
+      rate: 0.5,
+      wins: 2 + i,
+      losses: 2 + i,
+      total: 4 + 2 * i,
+    }));
+    const { container } = render(
+      <TrendLine mode="period" points={points} width={640} height={288} labels={PERIOD_LABELS} />,
+    );
+    const surface = container.querySelector('.recharts-wrapper svg, svg.recharts-surface');
+    expect(surface).not.toBeNull();
+    fireEvent.focus(surface!);
+    fireEvent.keyDown(surface!, { key: 'ArrowRight' });
+    const wrapper = container.querySelector('.recharts-tooltip-wrapper');
+    expect(wrapper?.textContent ?? '').toMatch(/in this period/);
+  });
+
+  it('plan 37-08: a host-supplied tooltip still takes precedence over the period default', () => {
+    const points = makePeriodSeries(PERIOD_TREND_MIN_PERIODS, () => ({ rate: 0.5 }));
+    function HostTooltip({ active }: { active?: boolean }) {
+      return active ? <div data-testid="host-tooltip">host</div> : null;
+    }
+    const { container } = render(
+      <TrendLine
+        mode="period"
+        points={points}
+        width={640}
+        height={288}
+        labels={PERIOD_LABELS}
+        tooltip={<HostTooltip />}
+      />,
+    );
+    const surface = container.querySelector('.recharts-wrapper svg, svg.recharts-surface');
+    fireEvent.focus(surface!);
+    fireEvent.keyDown(surface!, { key: 'ArrowRight' });
+    const wrapper = container.querySelector('.recharts-tooltip-wrapper');
+    expect(wrapper?.querySelector('[data-testid="host-tooltip"]')).not.toBeNull();
+    expect(wrapper?.textContent ?? '').not.toMatch(/in this period/);
+  });
+
   it('TrendLine.tsx imports nothing from the shared engine but the period TYPE and the one declared threshold — no bucketing/grouping/windowing code appears anywhere in the file', () => {
     // Plan 39.1-30: `PeriodGrain` dropped from this assertion (and from the
     // file's own import) — the grain-rule tick selection that was the ONLY
