@@ -525,12 +525,12 @@ describe('CounterpickAdvisor', () => {
       expect(picking).not.toHaveAttribute('aria-disabled');
       expect(screen.queryByRole('radio', { name: 'Striking' })).toBeNull();
       expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
-        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+        'Assuming Game 2+ · Banning (you won) · no stages played yet, no bans',
       );
       await user.click(picking);
       expect(picking).toHaveAttribute('aria-checked', 'true');
       expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
-        'Assuming Game 2+ · Picking · no stages played yet, no bans',
+        'Assuming Game 2+ · Picking (you lost) · no stages played yet, no bans',
       );
     });
 
@@ -711,7 +711,7 @@ describe('CounterpickAdvisor', () => {
 
       await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
       expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
-        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+        'Assuming Game 2+ · Banning (you won) · no stages played yet, no bans',
       );
 
       await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
