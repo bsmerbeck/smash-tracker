@@ -1280,9 +1280,16 @@ describe('MatchDataPage — page grid, rail, and drill-axis terminus (T-39.1-16-
   describe('plan 39.1-38: the page frame', () => {
     async function renderLoaded() {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // Plan 39.1-54: a known stage — the unknown-stage bucket no longer
+      // headlines the Stage Breakdown StatRow (UAT 39.1-29c, F8).
       listMatches.mockResolvedValue([
-        makeMatch({ id: 'm1', fighter_id: mario.id }),
-        makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+        makeMatch({ id: 'm1', fighter_id: mario.id, map: { id: 1, name: 'Battlefield' } }),
+        makeMatch({
+          id: 'm2',
+          fighter_id: mario.id,
+          win: false,
+          map: { id: 1, name: 'Battlefield' },
+        }),
       ]);
       const result = renderMatchData();
       await screen.findByText('Match History');

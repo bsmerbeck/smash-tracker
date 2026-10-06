@@ -1,11 +1,12 @@
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
+import { UNKNOWN_STAGE_ID, type Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BoundedList, LIST_CAP } from '@/components/analytics/BoundedList';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { RecordBar } from '@/components/charts/inlineMarks';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
+import { UnknownRow } from '@/components/EvidenceCues';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getStageById } from '@/data/stages';
 import { getStageRecords, type StageRecord } from '@/lib/stats';
@@ -91,8 +92,9 @@ function StageRow({
 
 /**
  * The Match Data stage card (UIX-02/UIX-04, UI-SPEC §8.4, owner note 7):
- * a stage-first `BoundedList` ordered by games (`getStageRecords`), each row
- * navigating to the stage detail route. The old centred stage-art header and
+ * a stage-first `BoundedList` of KNOWN stages ordered by games
+ * (`getStageRecords`), each row navigating to the stage detail route; the
+ * unknown-stage bucket follows it once, unranked, as an `UnknownRow`. The old centred stage-art header and
  * the colliding flex-distribution stat row are gone — replaced by a
  * `StatRow` headlining the most-played stage's rate/wins/losses (the same
  * three figures the deleted local `Stat` used, same `common.*` keys, now on
@@ -116,10 +118,19 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
     );
   }
 
-  const records = [...getStageRecords(matches)].sort(
-    (a, b) => b.total - a.total || a.stageId - b.stageId,
-  );
-  const top = records[0]!;
+  // Plan 39.1-54 (UAT 39.1-29c, F8): the unknown-stage bucket is never a
+  // ranked, drillable stage nor the headline's most-played stage — it is
+  // disclosed once, last, through the shared `UnknownRow` (D-09/EVID-11),
+  // the same forced-last disclosure the stage-detail and hub surfaces use.
+  const allRecords = getStageRecords(matches);
+  const records = allRecords
+    .filter((record) => record.stageId !== UNKNOWN_STAGE_ID)
+    .sort((a, b) => b.total - a.total || a.stageId - b.stageId);
+  const unknownRecord = allRecords.find((record) => record.stageId === UNKNOWN_STAGE_ID);
+  const unknownBucket = unknownRecord
+    ? { games: unknownRecord.total, wins: unknownRecord.wins, losses: unknownRecord.losses }
+    : null;
+  const top = records[0];
 
   const rows = records.map((record) => (
     <StageRow key={record.stageId} record={record} t={t} subjectPath={subjectPath} />
@@ -135,16 +146,18 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
         {/* Plan 39.1-49: a layout-neutral text-fit hook (display: contents —
             the CardContent's own flex column still lays these children out). */}
         <div data-slot="stage-breakdown" className="contents">
-          <StatRow
-            // Plan 39.1-38: three short figures stay three-up on a phone
-            // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
-            fixedColumns
-            figures={[
-              <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
-              <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
-              <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
-            ]}
-          />
+          {top ? (
+            <StatRow
+              // Plan 39.1-38: three short figures stay three-up on a phone
+              // (plan 39.1-32's precedent) instead of a 2 + 1 orphan.
+              fixedColumns
+              figures={[
+                <StatFigure key="rate" label={t('common.rate')} value={`${top.winRate}%`} />,
+                <StatFigure key="wins" label={t('common.wins')} value={top.wins} />,
+                <StatFigure key="losses" label={t('common.losses')} value={top.losses} />,
+              ]}
+            />
+          ) : null}
           <BoundedList
             cap={LIST_CAP}
             rows={rows}
@@ -156,6 +169,11 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
             }}
             empty={<p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>}
           />
+          {unknownBucket ? (
+            <ul className="flex flex-col gap-2" data-slot="stage-breakdown-unknown">
+              <UnknownRow bucket={unknownBucket} as="li" />
+            </ul>
+          ) : null}
         </div>
       </CardContent>
     </Card>
