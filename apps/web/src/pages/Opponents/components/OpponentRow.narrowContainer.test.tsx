@@ -211,18 +211,25 @@ function visibleCount(container: HTMLElement, needle: string): number {
  * Plan 39.1-56 (UAT 39.1 test 1): a 4-column rail at 2560px leaves each meta
  * line under both thresholds, so the game count used to survive only in the
  * badge's `title`. The count is now visible exactly once at every width:
- * below 260px a compact `common.games` token; at or above it the Record's n
+ * below 260px a compact `common.games` token after the tag on line 1 (the
+ * meta line has no room for it — guard:layout's opponents scroll budget);
+ * at or above it the Record's n
  * (the confidence cue is then always the glyph, so the words sentence never
  * repeats the count beside the Record).
  */
 describe('OpponentRow — the game count is visible exactly once at every meta width (UAT 39.1-1)', () => {
-  it('at 200px (no Record) line 2 carries a visible "275 games" token, once', () => {
+  it('at 200px (no Record) the row carries a visible "275 games" token once, on line 1 beside the tag — never growing the meta line', () => {
     const row = buildRow({ wins: 194, losses: 81 });
     restoreGeometry = stubElementGeometry({ metaClientWidth: 200 });
     const { container } = renderRow(row);
 
+    expect((container.textContent ?? '').match(/275 games/g)).toHaveLength(1);
     const meta = container.querySelector('[data-slot="opponent-row-meta"]')!;
-    expect((meta.textContent ?? '').match(/275 games/g)).toHaveLength(1);
+    expect(meta.textContent).not.toMatch(/275/);
+    // The tag stays the one flexible slot; the count token never truncates.
+    const token = container.querySelector('[data-slot="opponent-row-count"]')!;
+    expect(token.className).toMatch(/\bshrink-0\b/);
+    expect(token.hasAttribute('data-truncate-guard')).toBe(false);
     expect(visibleCount(container, '275')).toBe(1);
     expect(screen.queryByText('194–81')).not.toBeInTheDocument();
   });

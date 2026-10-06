@@ -327,7 +327,7 @@ function useElementWidth<T extends HTMLElement>() {
 
 /**
  * Below this meta-line width the record leaves the row; a compact `common.games`
- * count token takes its place so the game count stays visible (plan 39.1-56,
+ * count token on line 1 takes its place so the game count stays visible (plan 39.1-56,
  * UAT 39.1 test 1). The badge's tooltip still carries the full record.
  */
 const OPPONENT_ROW_RECORD_THRESHOLD_PX = 260;
@@ -368,7 +368,10 @@ export function OpponentRow({
 
   // Plan 39.1-56 (UI-SPEC §6.5 rule 4, "no figure stated twice"): the game
   // count is visible exactly once at every width — the Record's n at or above
-  // the record threshold, a compact count token below it. The confidence cue
+  // the record threshold, a compact count token on line 1 (after the tag)
+  // below it. Line 1, not the meta line: a two-part source badge (~139px) plus
+  // the token plus the glyph overflows a ~204px meta line and wraps rows to a
+  // third line, breaking the opponents route's scroll budget. The confidence cue
   // is therefore always the glyph (count only on its `aria-label`): the words
   // sentence ("275 games · high confidence") would restate the Record's n,
   // and below the record threshold there is no room for it.
@@ -398,14 +401,24 @@ export function OpponentRow({
 
   const rowBody = (
     <>
-      {/* Line 1: the ONE flexible truncating slot (the tag) plus nothing else — the kebab menu is a row-level sibling, not part of this flex-col group. */}
-      <span
-        ref={tagRef}
-        className="min-w-0 truncate font-medium"
-        data-truncate-guard
-        title={isTruncated ? opponent.displayTag : undefined}
-      >
-        {opponent.displayTag}
+      {/* Line 1: the ONE flexible truncating slot (the tag) — the kebab menu is a row-level sibling, not part of this flex-col group. Below the record threshold a fixed (never-truncating) game-count token follows the tag (plan 39.1-56). */}
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span
+          ref={tagRef}
+          className="min-w-0 truncate font-medium"
+          data-truncate-guard
+          title={isTruncated ? opponent.displayTag : undefined}
+        >
+          {opponent.displayTag}
+        </span>
+        {!showRecord && (
+          <span
+            className="ml-auto shrink-0 text-xs tabular-nums whitespace-nowrap text-muted-foreground"
+            data-slot="opponent-row-count"
+          >
+            {t('common.games', { count: opponent.total })}
+          </span>
+        )}
       </span>
       {/* Line 2: a wrapping meta line — every token wraps WHOLE, never mid-token. */}
       <div
@@ -424,11 +437,6 @@ export function OpponentRow({
               cue="none"
               locale={i18n.language}
             />
-          </span>
-        )}
-        {!showRecord && (
-          <span className="tabular-nums whitespace-nowrap">
-            {t('common.games', { count: opponent.total })}
           </span>
         )}
         <SampleCueGlyph sample={opponent.sample} />
