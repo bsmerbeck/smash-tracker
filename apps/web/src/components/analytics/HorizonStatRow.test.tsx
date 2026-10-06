@@ -195,6 +195,29 @@ describe('HorizonStatRow (plan 39.1-43, hero-idioms-kit)', () => {
     expect(button.textContent).not.toContain('= all games');
   });
 
+  it('sample-stating label (UAT 39.1-28 F7, plan 39.1-57): a 34-game pairing with 13 games inside the scoped last-30 window labels that figure "13 games", never "30 games"', async () => {
+    const pairing = [
+      ...Array.from({ length: 21 }, (_, i) =>
+        makeMatch({ id: `old${i}`, time: NOW_MS - (400 + i) * DAY_MS, win: i % 2 === 0 }),
+      ),
+      ...Array.from({ length: 13 }, (_, i) =>
+        makeMatch({ id: `new${i}`, time: NOW_MS - (13 - i) * DAY_MS, win: i % 3 !== 0 }),
+      ),
+    ];
+    const { container } = await renderRow({ matches: pairing });
+    const row = container.querySelector('[data-slot="stat-row"]') as HTMLElement;
+    const last30Figure = row.children[1] as HTMLElement;
+    expect(last30Figure.querySelector('span')?.textContent).toBe('13 games');
+    expect(last30Figure.textContent).not.toContain('30 games');
+    expect(figureButton('13 games')).toBe(last30Figure);
+  });
+
+  it('sample-stating label (plan 39.1-57): a window holding 30 games still reads "30 games"', async () => {
+    const { container } = await renderRow({ matches: largeFixture() });
+    const row = container.querySelector('[data-slot="stat-row"]') as HTMLElement;
+    expect((row.children[1] as HTMLElement).querySelector('span')?.textContent).toBe('30 games');
+  });
+
   it('parity: renders exactly what the Fighter hero renders for the same fixture, horizon and clock', async () => {
     const { FighterHero } = await import('@/pages/FighterAnalysis/components/FighterHero');
     const HorizonStatRow = await loadHorizonStatRow();
