@@ -221,6 +221,7 @@
     },
     "chartTooltip": {
       "rate": "{{rate}}%",
+      "cumulativeRate": "これまでの通算 {{rate}}%",
       "whoWhere": "{{opponent}}（{{stage}}）",
       "whenEvent": "{{event}} · {{date}}",
       "whenOnly": "{{date}}",

@@ -84,8 +84,12 @@ export function ChartTooltip({ active, payload }: ChartTooltipProps) {
     const date = formatDate(context.dateMs, i18n.language);
     return (
       <div className="rounded-md border border-border bg-card p-2 text-xs">
+        {/* Plan 38-12 (38-UAT test 20, F5): the plotted series is the D-11
+            cumulative record, so the bold figure says it is the running
+            rate — never read as this event's own rate. Binned points carry
+            their last member's cumulative value, so the label holds there too. */}
         <p className="text-sm font-semibold">
-          {t('shared.chartTooltip.rate', { rate: Math.round(point.cumulativeWinRate) })}
+          {t('shared.chartTooltip.cumulativeRate', { rate: Math.round(point.cumulativeWinRate) })}
         </p>
         <p className="text-muted-foreground">
           {/* Plan 39.1-50 (OOS-14, UI-SPEC §10.2): with no opponent (stage
