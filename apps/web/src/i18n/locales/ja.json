@@ -193,6 +193,8 @@
       "unknownRow_other": "不明（{{count, grouped}}戦、除外）",
       "unnamedBucket_one": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
       "unnamedBucket_other": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
+      "cohortCount_one": "{{label}} {{count, grouped}}",
+      "cohortCount_other": "{{label}} {{count, grouped}}",
       "mixedContext": "混合コンテキスト",
       "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
       "sampleCueGlyph": {

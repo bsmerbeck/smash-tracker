@@ -43,7 +43,7 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
-import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
+import { SampleCue, MixedContextBadge, CohortCompositionLine } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageFilterRow } from '@/components/analytics/PageFilterRow';
@@ -958,7 +958,12 @@ export function OpponentHubPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
+                {crossTab && (
+                  <div className="flex flex-col gap-1">
+                    <CohortCompositionLine cohort={crossTab.cohort} />
+                    <MixedContextBadge cohort={crossTab.cohort} showDetail />
+                  </div>
+                )}
               </>
             }
             trailing={

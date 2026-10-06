@@ -193,6 +193,8 @@
       "unknownRow_other": "Inconnu ({{count, grouped}} matchs, exclus)",
       "unnamedBucket_one": "{{count, grouped}} partie sans nom d'adversaire enregistré",
       "unnamedBucket_other": "{{count, grouped}} parties sans nom d'adversaire enregistré",
+      "cohortCount_one": "{{count, grouped}} {{label}}",
+      "cohortCount_other": "{{count, grouped}} {{label}}",
       "mixedContext": "Contexte mixte",
       "mixedContextDetail": "{{minorityPct}} % {{minorityLabel}} — mélangé avec {{majorityLabel}}.",
       "sampleCueGlyph": {

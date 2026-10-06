@@ -193,6 +193,8 @@
       "unknownRow_other": "Unknown ({{count, grouped}} games, excluded)",
       "unnamedBucket_one": "{{count, grouped}} game with no opponent name recorded",
       "unnamedBucket_other": "{{count, grouped}} games with no opponent name recorded",
+      "cohortCount_one": "{{count, grouped}} {{label}}",
+      "cohortCount_other": "{{count, grouped}} {{label}}",
       "mixedContext": "Mixed context",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
       "sampleCueGlyph": {
