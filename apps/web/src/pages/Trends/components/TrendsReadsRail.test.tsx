@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isValidElement, type ComponentProps } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
@@ -32,6 +34,28 @@ vi.mock('firebase/auth', async () => {
 vi.mock('@/lib/firebase', async () => {
   const mock = await import('@/test/mockAuth');
   return mock.firebaseLibMock();
+});
+
+/**
+ * Plan 36-11 (g): a switch that makes the rating-move card's `InsightCard`
+ * throw (identified by its `ratingModel` door), so the per-card error
+ * boundary excludes it exactly as a real render crash would.
+ */
+const crashSwitch = vi.hoisted(() => ({ ratingMoveCard: false }));
+
+vi.mock('@/components/analytics/InsightCard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/analytics/InsightCard')>();
+  function MaybeCrashingInsightCard(props: ComponentProps<typeof actual.InsightCard>) {
+    const doors = (props.doors ?? []) as readonly unknown[];
+    const carriesRatingDoor = doors.some(
+      (door) => isValidElement(door) && door.key === 'ratingModel',
+    );
+    if (crashSwitch.ratingMoveCard && carriesRatingDoor) {
+      throw new Error('rating-move card render failed');
+    }
+    return <actual.InsightCard {...props} />;
+  }
+  return { ...actual, InsightCard: MaybeCrashingInsightCard };
 });
 
 const listMatches = vi.fn();
@@ -139,7 +163,15 @@ function ratingCardFixture(): Match[] {
  * harness reproduces that real usage pattern for the rail's own isolated
  * tests.
  */
-function RailTestHarness({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
+function RailTestHarness({
+  matches,
+  horizon,
+  hasRating,
+}: {
+  matches: Match[];
+  horizon: HorizonKey;
+  hasRating?: boolean;
+}) {
   const { insights, dismissedIds, dismiss, restoreAll } = useTrendsInsights({ matches, horizon });
   return (
     <TrendsReadsRail
@@ -148,18 +180,19 @@ function RailTestHarness({ matches, horizon }: { matches: Match[]; horizon: Hori
       dismiss={dismiss}
       restoreAll={restoreAll}
       horizon={horizon}
+      hasRating={hasRating}
     />
   );
 }
 
-function renderRail(matches: Match[], horizon: HorizonKey = 'last30') {
+function renderRail(matches: Match[], horizon: HorizonKey = 'last30', hasRating?: boolean) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <AuthProvider>
           <AnalyticsFilterProvider>
-            <RailTestHarness matches={matches} horizon={horizon} />
+            <RailTestHarness matches={matches} horizon={horizon} hasRating={hasRating} />
           </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -550,5 +583,188 @@ describe('TrendsReadsRail', () => {
         expect(text).not.toMatch(/\d+%/);
       }
     });
+  });
+});
+
+/**
+ * Plan 36-11 (UAT 36-5, TRND-01, 36 D-02): the rating-model disclosure is
+ * reachable wherever Trends shows a rating — on the RatingMove card when that
+ * card is visible, otherwise as one standalone door under the rail. "Visible"
+ * is the selection InsightRail actually renders (dismissal, crash exclusion,
+ * the unlocksNext budget, promotion refill), never a host re-derivation.
+ */
+describe('TrendsReadsRail rating-model door fallback (plan 36-11)', () => {
+  const DOOR_NAME = 'Rating model note';
+  const STANDALONE_DOOR = '[data-slot="trends-rating-model-door"]';
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    crashSwitch.ratingMoveCard = false;
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listMatches.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+  });
+
+  afterEach(() => {
+    crashSwitch.ratingMoveCard = false;
+  });
+
+  function ratingMoveInsight(): Insight {
+    const template = TRENDS_READ_TEMPLATES.find((candidate) => candidate.id === 'ratingMove')!;
+    const built = template.build({
+      matches: ratingCardFixture(),
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW,
+    })[0]!;
+    expect(built.templateId).toBe('ratingMove');
+    return { ...built, salience: 0 };
+  }
+
+  /** A non-rating card candidate cloned from the rating read (same claim shape, other template). */
+  function otherCard(id: string, state: Insight['state'], salience: number): Insight {
+    return { ...ratingMoveInsight(), id, templateId: 'formNow', state, salience } as Insight;
+  }
+
+  function renderInsights(
+    insights: Insight[],
+    { dismissedIds = [], hasRating }: { dismissedIds?: string[]; hasRating?: boolean },
+  ) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <AuthProvider>
+            <AnalyticsFilterProvider>
+              <TrendsReadsRail
+                insights={insights}
+                dismissedIds={dismissedIds}
+                dismiss={() => {}}
+                restoreAll={() => {}}
+                horizon="last30"
+                hasRating={hasRating}
+              />
+            </AnalyticsFilterProvider>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  function ratingCard(): HTMLElement | null {
+    return document.querySelector('[data-slot="trends-read-card"][data-template-id="ratingMove"]');
+  }
+
+  it('(a) a rating with no RatingMove insight renders exactly one standalone door that opens the note', async () => {
+    renderInsights([otherCard('x1', 'thin', 5)], { hasRating: true });
+    await waitForSettled();
+
+    const doors = screen.getAllByRole('button', { name: DOOR_NAME });
+    expect(doors).toHaveLength(1);
+    expect(doors[0]!.closest(STANDALONE_DOOR) ?? doors[0]!.matches(STANDALONE_DOOR)).toBeTruthy();
+    expect(screen.queryByText('Rating model updated')).not.toBeInTheDocument();
+
+    await userEvent.click(doors[0]!);
+    expect(screen.getByText('Rating model updated')).toBeInTheDocument();
+  });
+
+  it('(b) a dismissed RatingMove card leaves the standalone door in its place', async () => {
+    const rating = ratingMoveInsight();
+    renderInsights([rating, otherCard('x1', 'thin', 5)], {
+      dismissedIds: [rating.id],
+      hasRating: true,
+    });
+    await waitForSettled();
+
+    expect(ratingCard()).toBeNull();
+    expect(screen.getAllByRole('button', { name: DOOR_NAME })).toHaveLength(1);
+    expect(document.querySelector(STANDALONE_DOOR)).not.toBeNull();
+  });
+
+  it('(b, UAT flow) dismissing the RatingMove card on the page keeps one door reachable', async () => {
+    renderRail(ratingCardFixture(), 'last30', true);
+    await waitForSettled();
+    const card = ratingCard()!;
+    expect(card).not.toBeNull();
+
+    await userEvent.click(within(card).getByRole('button', { name: /dismiss/i }));
+
+    await waitFor(() => expect(ratingCard()).toBeNull());
+    const doors = screen.getAllByRole('button', { name: DOOR_NAME });
+    expect(doors).toHaveLength(1);
+    await userEvent.click(doors[0]!);
+    expect(screen.getByText('Rating model updated')).toBeInTheDocument();
+  });
+
+  it('(c) a visible RatingMove card carries the only door — no standalone slot', async () => {
+    renderInsights([ratingMoveInsight()], { hasRating: true });
+    await waitForSettled();
+
+    const doors = screen.getAllByRole('button', { name: DOOR_NAME });
+    expect(doors).toHaveLength(1);
+    expect(ratingCard()!.contains(doors[0]!)).toBe(true);
+    expect(document.querySelector(STANDALONE_DOOR)).toBeNull();
+  });
+
+  it('(d) no rating and no RatingMove card renders no door at all', async () => {
+    renderInsights([otherCard('x1', 'thin', 5)], { hasRating: false });
+    await waitForSettled();
+
+    expect(screen.queryByRole('button', { name: DOOR_NAME })).not.toBeInTheDocument();
+    expect(document.querySelector(STANDALONE_DOOR)).toBeNull();
+  });
+
+  it('(e) a RatingMove card promoted from the queue after another dismiss carries the only door', async () => {
+    const insights = [
+      otherCard('x1', 'thin', 30),
+      otherCard('x2', 'thin', 20),
+      otherCard('x3', 'thin', 10),
+      ratingMoveInsight(),
+    ];
+    renderInsights(insights, { dismissedIds: ['x1'], hasRating: true });
+    await waitForSettled();
+
+    const card = ratingCard();
+    expect(card).not.toBeNull();
+    const doors = screen.getAllByRole('button', { name: DOOR_NAME });
+    expect(doors).toHaveLength(1);
+    expect(card!.contains(doors[0]!)).toBe(true);
+    expect(document.querySelector(STANDALONE_DOOR)).toBeNull();
+  });
+
+  it('(f) a RatingMove card cut by the unlocksNext budget leaves the standalone door', async () => {
+    const insights = [
+      otherCard('x1', 'thin', 30),
+      otherCard('x2', 'thin', 20),
+      ratingMoveInsight(),
+      otherCard('l1', 'locked', 5),
+      otherCard('l2', 'locked', 4),
+    ];
+    const { container } = renderInsights(insights, { hasRating: true });
+    await waitForSettled();
+
+    expect(
+      container.querySelectorAll('[data-slot="insight-rail-card"][data-card-kind="unlocks-next"]'),
+    ).toHaveLength(1);
+    expect(ratingCard()).toBeNull();
+    expect(screen.getAllByRole('button', { name: DOOR_NAME })).toHaveLength(1);
+    expect(document.querySelector(STANDALONE_DOOR)).not.toBeNull();
+  });
+
+  it('(g) a RatingMove card whose render crashes leaves the standalone door', async () => {
+    crashSwitch.ratingMoveCard = true;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      renderInsights([ratingMoveInsight(), otherCard('x1', 'thin', 5)], { hasRating: true });
+      await waitForSettled();
+
+      await waitFor(() => expect(document.querySelector(STANDALONE_DOOR)).not.toBeNull());
+      expect(ratingCard()).toBeNull();
+      expect(screen.getAllByRole('button', { name: DOOR_NAME })).toHaveLength(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InsightCard } from './InsightCard';
 import { UnlocksNext, type UnlocksNextMeters } from './UnlocksNext';
-import { InsightRail, type InsightRailCard, type InsightRailShape } from './InsightRail';
+import {
+  InsightRail,
+  selectVisible,
+  type InsightRailCard,
+  type InsightRailShape,
+} from './InsightRail';
 
 const LABELS = {
   dismissedCount: (count: number) => `${count} dismissed on this device`,
@@ -468,5 +473,100 @@ describe('InsightRail restore link tone (plan 39.1-39, UI-SPEC §4.3)', () => {
       />,
     );
     expectMuted(screen.getByRole('button', { name: LABELS.restore }));
+  });
+});
+
+/**
+ * Plan 36-11: a host that must know which cards the rail ACTUALLY renders
+ * (Trends' rating-model door fallback) reads the same selection — the pure
+ * `selectVisible` for the synchronous first answer and `onVisibleIdsChange`
+ * for the rendered truth, which also covers per-card crashes.
+ */
+describe('InsightRail visible-id reporting (plan 36-11)', () => {
+  function unlockCard(): InsightRailCard {
+    return { id: 'unlock', render: () => <div>unlock</div> };
+  }
+
+  function renderReporting(rail: InsightRailShape, dismissedIds: string[]) {
+    const onVisibleIdsChange = vi.fn();
+    render(
+      <InsightRail
+        rail={rail}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={dismissedIds}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+        cap={3}
+        onVisibleIdsChange={onVisibleIdsChange}
+      />,
+    );
+    return onVisibleIdsChange;
+  }
+
+  it('promotion: a queued card refilling a dismissed slot is reported visible', () => {
+    const rail: InsightRailShape = {
+      cards: [makeCard('a', 'A'), makeCard('b', 'B'), makeCard('c', 'C')],
+      unlocksNext: null,
+      lines: [],
+      promotionQueue: [makeCard('d', 'D')],
+    };
+    expect(selectVisible(rail, ['a'], 3).cards.map((c) => c.id)).toEqual(['b', 'c', 'd']);
+    const report = renderReporting(rail, ['a']);
+    expect(report).toHaveBeenLastCalledWith(['b', 'c', 'd']);
+  });
+
+  it('budget cut: an unlocksNext card shrinks the budget, so the last card is not reported', () => {
+    const rail: InsightRailShape = {
+      cards: [makeCard('a', 'A'), makeCard('b', 'B'), makeCard('c', 'C')],
+      unlocksNext: unlockCard(),
+      lines: [],
+      promotionQueue: [],
+    };
+    const selection = selectVisible(rail, [], 3);
+    expect(selection.cards.map((c) => c.id)).toEqual(['a', 'b']);
+    expect(selection.unlocksNext?.id).toBe('unlock');
+    const report = renderReporting(rail, []);
+    expect(report).toHaveBeenLastCalledWith(['a', 'b', 'unlock']);
+  });
+
+  it('crash: a card whose render throws is reported gone and its promoted replacement visible', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const rail: InsightRailShape = {
+        cards: [makeThrowingCard('a'), makeCard('b', 'B'), makeCard('c', 'C')],
+        unlocksNext: null,
+        lines: [],
+        promotionQueue: [makeCard('d', 'D')],
+      };
+      const report = renderReporting(rail, []);
+      await waitFor(() => expect(report).toHaveBeenLastCalledWith(['b', 'c', 'd']));
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('hosts that omit onVisibleIdsChange render exactly as before', () => {
+    const rail: InsightRailShape = {
+      cards: [makeCard('a', 'A')],
+      unlocksNext: null,
+      lines: [],
+      promotionQueue: [],
+    };
+    const { container } = render(
+      <InsightRail
+        rail={rail}
+        header="h"
+        legend={<span>l</span>}
+        labels={LABELS}
+        dismissedIds={[]}
+        onDismiss={vi.fn()}
+        onRestore={vi.fn()}
+        fallbackCard={<div>fb</div>}
+      />,
+    );
+    expect(container.querySelectorAll('[data-slot="insight-rail-card"]')).toHaveLength(1);
   });
 });
