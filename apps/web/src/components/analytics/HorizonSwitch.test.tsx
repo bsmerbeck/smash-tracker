@@ -145,6 +145,33 @@ describe('HorizonSwitch', () => {
     ]);
   });
 
+  // UAT 39.1-22: at 390px the fr 'Dernier événement' overflowed an equal
+  // third. Every segment is content-sized and prints its whole short label —
+  // no equal-thirds sizing, no truncation.
+  it('under fr every segment is content-sized and prints its untruncated short label', async () => {
+    list.mockResolvedValue([manualMatch()]);
+    await i18n.changeLanguage('fr');
+
+    renderSwitch();
+    await waitForSettled();
+
+    const expectedShort = ['last30', 'lastEvent', 'last90'].map((key) =>
+      i18n.t(`insights.horizon.short.${key}`),
+    );
+    expect(expectedShort).toContain('Dernier événement');
+    const radios = screen.getAllByRole('radio');
+    expect(radios).toHaveLength(3);
+    radios.forEach((radio, index) => {
+      expect(radio.className).toMatch(/(^|\s)flex-auto(\s|$)/);
+      expect(radio.className).toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+      expect(radio.className).not.toMatch(/(^|\s)flex-1(\s|$)/);
+      expect(radio.className).not.toMatch(/(^|\s)truncate(\s|$)/);
+      const shortSpan = radio.querySelector('span.sm\\:hidden');
+      expect(shortSpan?.textContent).toBe(expectedShort[index]);
+      expect(shortSpan?.className ?? '').not.toMatch(/truncate|text-ellipsis/);
+    });
+  });
+
   it('exposes radiogroup semantics labelled by its overline element', async () => {
     list.mockResolvedValue([manualMatch()]);
 
