@@ -14,9 +14,16 @@ import { calendarBucketBounds } from './periodSeries.js';
  * `quarter` buckets use `calendarBucketBounds` (UTC); `day` uses the host-local calendar day, matching
  * the GSP log's host-local dates. A click resolves rows by `memberIndexes`, so a reading on a bucket
  * boundary can never land on rows the close did not count.
+ *
+ * Grain rule (UAT 41 test 9 / F19): a reading-grain point is one instant; readings sharing an instant
+ * are one close-of-instant point (`kind: 'close'`, value = the last of them), so no two points share
+ * an x and every direct label sits on a vertex the line actually turns at.
  */
 
-/** The ladder's grains, finest first. `reading` is one point per input row (no binning). */
+/**
+ * The ladder's grains, finest first. A `reading`-grain point is one instant: readings that share an
+ * instant are one close-of-instant point (UAT 41 test 9 / F19), never a zero-width spike at one x.
+ */
 export type ValueSeriesGrain = 'reading' | 'day' | 'week' | 'month' | 'quarter';
 
 /** The grain ladder in escalation order — the builder walks it until the point count fits its target. */
@@ -120,8 +127,13 @@ function toPoint(
   const closeIndex = bucket.members[bucket.members.length - 1]!;
   const close = readings[closeIndex]!;
   const containsCalibration = bucket.members.some((index) => readings[index]!.calibration);
+  // A multi-member reading-grain bucket is a same-instant close (F19): it routes as a period click.
   const kind: ValueSeriesPoint['kind'] =
-    grain !== 'reading' ? 'close' : close.calibration ? 'calibration' : 'reading';
+    grain !== 'reading' || bucket.members.length > 1
+      ? 'close'
+      : close.calibration
+        ? 'calibration'
+        : 'reading';
   return {
     key: bucket.key,
     xMs: close.atMs,
@@ -151,14 +163,22 @@ function pointsForGrain(
 ): ValueSeriesPoint[] {
   const buckets: Bucket[] = [];
   if (grain === 'reading') {
+    // Readings that share one instant are ONE close-of-instant point (UAT 41 test 9 / F19): `ordered`
+    // is chronological with ties by input index, so the group's last member is the instant's close
+    // (in `getGspSeries` order, a calibration reading after that instant's matches).
     for (const index of ordered) {
       const atMs = readings[index]!.atMs;
-      buckets.push({
-        key: `reading:${atMs}:${index}`,
-        startMs: atMs,
-        endMs: atMs,
-        members: [index],
-      });
+      const previous = buckets[buckets.length - 1];
+      if (previous && previous.startMs === atMs) {
+        previous.members.push(index);
+      } else {
+        buckets.push({
+          key: `reading:${atMs}:${index}`,
+          startMs: atMs,
+          endMs: atMs,
+          members: [index],
+        });
+      }
     }
   } else {
     const byKey = new Map<string, Bucket>();
@@ -174,9 +194,12 @@ function pointsForGrain(
       }
     }
   }
-  return buckets
-    .map((bucket) => toPoint(readings, grain, bucket))
-    .sort((a, b) => a.xMs - b.xMs || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return (
+    buckets
+      .map((bucket) => toPoint(readings, grain, bucket))
+      // Ties break on the first member's input index — numeric, never a string compare of keys.
+      .sort((a, b) => a.xMs - b.xMs || a.memberIndexes[0]! - b.memberIndexes[0]!)
+  );
 }
 
 /**
