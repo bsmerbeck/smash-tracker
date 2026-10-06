@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { StageDetailPage } from './StageDetailPage';
+import { RouteTitles } from '@/routes/RouteTitles';
+import i18n from '@/i18n';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as drillDownParamsModule from '@/lib/drillDownParams';
@@ -209,6 +211,64 @@ describe('StageDetailPage', () => {
     expect(screen.getByText('Games')).toBeInTheDocument();
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
     expect(screen.getAllByText('second').length).toBeGreaterThan(0);
+  });
+
+  describe('38-11 (UAT 38-21 / F11): the stage page sets its document title', () => {
+    beforeEach(() => {
+      document.title = 'marketing';
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+    });
+
+    it('/stages/:id titles the tab with the stage name', async () => {
+      renderStageAt('/stages/1');
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it('/coach/<id>/stages/:id titles the tab with the stage name', async () => {
+      renderStageAt('/coach/test-client/stages/1');
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it("/workspace/<tenantId>/stages/:id: the stage title wins over RouteTitles' workspace entry, across a language round-trip", async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // AppRouter order: RouteTitles is the EARLIER sibling of <Routes>.
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/workspace/t1/stages/1']}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <RouteTitles />
+                <Routes>
+                  <Route
+                    path="/workspace/:tenantId/stages/:stageId"
+                    element={<StageDetailPage />}
+                  />
+                </Routes>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+      expect(document.title).not.toContain('My Workspace');
+
+      try {
+        await act(async () => {
+          await i18n.changeLanguage('es');
+        });
+        await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage('en');
+        });
+      }
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it('a non-numeric stage id titles the tab Unknown', async () => {
+      renderStageAt('/stages/not-a-number');
+      await waitFor(() => expect(document.title).toBe('Unknown | grandfinals.gg'));
+    });
   });
 
   describe('plan 39.2-10 (T-04): the Track toggle on the identity row', () => {
