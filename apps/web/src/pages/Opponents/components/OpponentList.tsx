@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
 import { buildOpponentEvidence, type OpponentEvidenceRow } from '@/lib/stats';
-import { SampleCue, SampleCueGlyph } from '@/components/EvidenceCues';
+import { SampleCueGlyph } from '@/components/EvidenceCues';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
 import { LIST_PASS_MAX, LIST_PASS_STEP } from '@/components/analytics/BoundedList';
 // Aliased: this file already uses TypeScript's built-in `Record<K, V>` utility
@@ -325,9 +325,11 @@ function useElementWidth<T extends HTMLElement>() {
   return { ref, width };
 }
 
-/** Below this meta-line width the confidence sentence becomes the glyph (dots + full-sentence `aria-label`). */
-const OPPONENT_ROW_SENTENCE_THRESHOLD_PX = 380;
-/** Below this meta-line width the record leaves the row entirely, staying reachable via the badge's own tooltip. */
+/**
+ * Below this meta-line width the record leaves the row; a compact `common.games`
+ * count token takes its place so the game count stays visible (plan 39.1-56,
+ * UAT 39.1 test 1). The badge's tooltip still carries the full record.
+ */
 const OPPONENT_ROW_RECORD_THRESHOLD_PX = 260;
 
 const EN_DASH = '–';
@@ -364,7 +366,12 @@ export function OpponentRow({
   const { ref: tagRef, isTruncated } = useTruncationGuard<HTMLSpanElement>(opponent.displayTag);
   const { ref: metaRef, width: metaWidth } = useElementWidth<HTMLDivElement>();
 
-  const showSentence = metaWidth >= OPPONENT_ROW_SENTENCE_THRESHOLD_PX;
+  // Plan 39.1-56 (UI-SPEC §6.5 rule 4, "no figure stated twice"): the game
+  // count is visible exactly once at every width — the Record's n at or above
+  // the record threshold, a compact count token below it. The confidence cue
+  // is therefore always the glyph (count only on its `aria-label`): the words
+  // sentence ("275 games · high confidence") would restate the Record's n,
+  // and below the record threshold there is no room for it.
   const showRecord = metaWidth === 0 || metaWidth >= OPPONENT_ROW_RECORD_THRESHOLD_PX;
 
   const showRate = opponent.total >= ABSTENTION_FLOOR_GAMES;
@@ -419,11 +426,12 @@ export function OpponentRow({
             />
           </span>
         )}
-        {showSentence ? (
-          <SampleCue sample={opponent.sample} />
-        ) : (
-          <SampleCueGlyph sample={opponent.sample} />
+        {!showRecord && (
+          <span className="tabular-nums whitespace-nowrap">
+            {t('common.games', { count: opponent.total })}
+          </span>
         )}
+        <SampleCueGlyph sample={opponent.sample} />
         {notable && (
           <DeltaChip
             state={chipState}
