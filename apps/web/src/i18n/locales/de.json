@@ -3954,6 +3954,7 @@
     },
     "override": {
       "title": "Stufe dieses Events",
+      "badge": "Stufe überschrieben",
       "label": "Stufe überschreiben",
       "placeholder": "Keine Überschreibung – aufgelöste Stufe verwenden",
       "clear": "Überschreibung entfernen",

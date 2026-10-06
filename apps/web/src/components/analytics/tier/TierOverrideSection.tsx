@@ -86,7 +86,7 @@ export function TierOverrideSection({ entry, resolution }: TierOverrideSectionPr
         <CardTitle>{t('tiers.override.title')}</CardTitle>
         {isManual && (
           <CardAction>
-            <Badge variant="outline">{t('shared.ruleset.overrideBadge')}</Badge>
+            <Badge variant="outline">{t('tiers.override.badge')}</Badge>
           </CardAction>
         )}
       </CardHeader>

@@ -3954,6 +3954,7 @@
     },
     "override": {
       "title": "Niveau de cet événement",
+      "badge": "Niveau forcé",
       "label": "Forcer le niveau",
       "placeholder": "Aucun forçage — utiliser le niveau résolu",
       "clear": "Retirer le forçage",

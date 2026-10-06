@@ -3954,6 +3954,7 @@
     },
     "override": {
       "title": "Nível deste evento",
+      "badge": "Nível substituído",
       "label": "Substituir nível",
       "placeholder": "Sem substituição — usar o nível resolvido",
       "clear": "Remover substituição",

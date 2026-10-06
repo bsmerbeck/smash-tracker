@@ -3954,6 +3954,7 @@
     },
     "override": {
       "title": "Tier for this event",
+      "badge": "Event override",
       "label": "Override tier",
       "placeholder": "No override — use the resolved tier",
       "clear": "Clear override",

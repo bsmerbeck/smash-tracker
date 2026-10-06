@@ -3954,6 +3954,7 @@
     },
     "override": {
       "title": "Nivel de este evento",
+      "badge": "Nivel anulado",
       "label": "Anular nivel",
       "placeholder": "Sin anulación — usar el nivel resuelto",
       "clear": "Quitar anulación",
