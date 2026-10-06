@@ -15,7 +15,7 @@ function renderDisclosure(resolved: ReturnType<typeof resolveRuleset>) {
 }
 
 describe('RulesetDisclosure', () => {
-  it('opening the control renders the preset display name and a detail line with the starter/ban counts, DSR, set format, source and date', async () => {
+  it('opening the control renders the preset display name and labelled rows for bans, DSR, set format, plus the source and date', async () => {
     const user = userEvent.setup();
     const resolved = resolveRuleset(undefined);
     renderDisclosure(resolved);
@@ -26,16 +26,16 @@ describe('RulesetDisclosure', () => {
     expect(trigger.textContent).toContain('House default (SSBU)');
     await user.click(trigger);
 
-    const detail = screen.getByText(
-      new RegExp(`${DEFAULT_RULESET.starterStageIds.length} starters`),
-    );
-    expect(detail.textContent).toContain(
-      `${DEFAULT_RULESET.banCounts[DEFAULT_RULESET.setFormat.default]} ban`,
-    );
-    expect(detail.textContent).toContain('modified DSR');
-    expect(detail.textContent).toContain('Best of 3');
-    expect(detail.textContent).toContain(DEFAULT_RULESET.source.url);
-    expect(detail.textContent).toContain(DEFAULT_RULESET.source.retrievedAt);
+    expect(screen.getByText('Starter stages')).toBeInTheDocument();
+    expect(screen.getByText('Counterpick stages')).toBeInTheDocument();
+    expect(screen.getByText('Bans per game')).toBeInTheDocument();
+    expect(screen.getByText('Best of 3: 1 ban · Best of 5: 2 bans')).toBeInTheDocument();
+    expect(screen.getByText('modified DSR')).toBeInTheDocument();
+    expect(screen.getByText('Best of 3 (top cut: Best of 5)')).toBeInTheDocument();
+    expect(screen.getByText(DEFAULT_RULESET.strikeOrder)).toBeInTheDocument();
+    const source = screen.getByText(/House convention modelled on/);
+    expect(source.textContent).toContain(DEFAULT_RULESET.source.url);
+    expect(source.textContent).toContain(DEFAULT_RULESET.source.retrievedAt);
   });
 
   it('opening the control lists every starter and counterpick stage BY NAME and never garbles the strike-order sentence (UAT 37-4, F10)', async () => {

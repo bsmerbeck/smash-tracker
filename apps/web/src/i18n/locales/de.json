@@ -237,7 +237,7 @@
       "preset": {
         "default": {
           "name": "Haus-Standard (SSBU)",
-          "detail": "{{starters}}, {{bans}} pro Spiel, {{strikeOrder}}-Strike, {{dsr}}, {{setFormat}} — hausinterne Konvention angelehnt an {{source}} ({{date}})"
+          "strikeOrder": "Spiel 1: 1-2-1-Stage-Strike — wer zuerst strikt, bannt eine Stage, die andere Seite bannt zwei, die erste Seite bannt eine weitere, und auf der verbleibenden Stage wird gespielt."
         },
         "starterClause_one": "{{count}} Startstage",
         "starterClause_other": "{{count}} Startstages",
@@ -256,7 +256,19 @@
       "customName": "Angepasst (dieses Event)",
       "overrideBadge": "Angepasstes Regelwerk",
       "overrideEditHint": "Dieses Regelwerk auf der Turnier-Detailseite bearbeiten.",
-      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet."
+      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet.",
+      "rows": {
+        "starters": "Startstages",
+        "counterpicks": "Counterpick-Stages",
+        "bans": "Banns pro Spiel",
+        "dsr": "DSR",
+        "strikeOrder": "Strike-Reihenfolge",
+        "setFormat": "Set-Format",
+        "none": "Keine",
+        "setFormatValue": "{{default}} (Top Cut: {{topCut}})"
+      },
+      "sourceHouse": "Hausinterne Konvention angelehnt an {{source}} ({{date}})",
+      "sourceCustom": "Angepasstes Regelwerk für dieses Event; unveränderte Regeln folgen dem Haus-Standard."
     }
   },
   "dashboard": {

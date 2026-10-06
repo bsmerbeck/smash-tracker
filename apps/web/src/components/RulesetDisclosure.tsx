@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import type { ResolvedRuleset } from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { RulesetDetailList } from '@/components/RulesetDetailList';
 import {
   Popover,
   PopoverContent,
@@ -16,9 +17,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
  * The ruleset DISCLOSURE control (EVID-04, D-10, D-16, D-18 — plan 37-05).
  * This is a disclosure and never an editor: it offers no way to change the
  * ruleset — override editing lives on tournament detail
- * (`RulesetOverrideSection`, plan 37-04). It reuses that component's exact
- * detail-line keys (`shared.ruleset.preset.*`) rather than paraphrasing a
- * second vocabulary.
+ * (`RulesetOverrideSection`, plan 37-04). Its body is the same
+ * `RulesetDetailList` that card renders (plan 37-07), so the two surfaces
+ * never paraphrase the ruleset differently.
  *
  * On Matchups (this plan's only mount point) the resolved source is ALWAYS
  * the house default this phase: Matchups is not event-scoped, and D-18 keeps
@@ -37,24 +38,6 @@ export function RulesetDisclosure({ resolved }: { resolved: ResolvedRuleset }) {
     ? t('shared.ruleset.customName')
     : t('shared.ruleset.preset.default.name');
 
-  const starterClause = t('shared.ruleset.preset.starterClause', {
-    count: ruleset.starterStageIds.length,
-  });
-  const banClause = t('shared.ruleset.preset.banClause', {
-    count: ruleset.banCounts[ruleset.setFormat.default],
-  });
-  const dsrLabel = t(`shared.ruleset.dsr.${ruleset.dsr}`);
-  const setFormatLabel = t(`shared.ruleset.setFormat.${ruleset.setFormat.default}`);
-  const detailLine = t('shared.ruleset.preset.default.detail', {
-    starters: starterClause,
-    bans: banClause,
-    strikeOrder: ruleset.strikeOrder,
-    dsr: dsrLabel,
-    setFormat: setFormatLabel,
-    source: ruleset.source.url,
-    date: ruleset.source.retrievedAt,
-  });
-
   return (
     <div className="flex items-center gap-2">
       <Popover>
@@ -69,10 +52,10 @@ export function RulesetDisclosure({ resolved }: { resolved: ResolvedRuleset }) {
             <ChevronDown className="size-3" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 text-sm">
+        <PopoverContent className="max-h-[70vh] w-80 overflow-y-auto text-sm">
           <PopoverHeader>
             <PopoverTitle>{presetName}</PopoverTitle>
-            <p className="text-muted-foreground">{detailLine}</p>
+            <RulesetDetailList resolved={resolved} />
             {isOverride && <p>{t('shared.ruleset.overrideEditHint')}</p>}
             {resolved.ignoredOverrideReason && (
               <p className="text-xs text-muted-foreground">{t('shared.ruleset.overrideIgnored')}</p>

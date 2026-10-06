@@ -237,7 +237,7 @@
       "preset": {
         "default": {
           "name": "Predeterminado de la casa (SSBU)",
-          "detail": "{{starters}}, {{bans}} por partida, strike {{strikeOrder}}, {{dsr}}, {{setFormat}} — convención de la casa basada en {{source}} ({{date}})"
+          "strikeOrder": "Partida 1: strike de escenarios 1-2-1 — quien empieza banea un escenario, el otro banea dos, el primero banea uno más y se juega en el escenario restante."
         },
         "starterClause_one": "{{count}} escenario inicial",
         "starterClause_other": "{{count}} escenarios iniciales",
@@ -256,7 +256,19 @@
       "customName": "Personalizado (este evento)",
       "overrideBadge": "Reglas personalizadas",
       "overrideEditHint": "Edita estas reglas en la página de detalle del torneo.",
-      "overrideIgnored": "Las reglas guardadas de este evento se escribieron con una versión más nueva de la app y no se están aplicando."
+      "overrideIgnored": "Las reglas guardadas de este evento se escribieron con una versión más nueva de la app y no se están aplicando.",
+      "rows": {
+        "starters": "Escenarios iniciales",
+        "counterpicks": "Escenarios de counterpick",
+        "bans": "Baneos por partida",
+        "dsr": "DSR",
+        "strikeOrder": "Orden de strike",
+        "setFormat": "Formato del set",
+        "none": "Ninguno",
+        "setFormatValue": "{{default}} (top cut: {{topCut}})"
+      },
+      "sourceHouse": "Convención de la casa basada en {{source}} ({{date}})",
+      "sourceCustom": "Ruleset personalizado para este evento; las reglas sin cambios siguen el predeterminado de la casa."
     }
   },
   "dashboard": {

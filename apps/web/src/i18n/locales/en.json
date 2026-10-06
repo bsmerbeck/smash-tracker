@@ -237,7 +237,7 @@
       "preset": {
         "default": {
           "name": "House default (SSBU)",
-          "detail": "{{starters}}, {{bans}} per game, {{strikeOrder}} strike, {{dsr}}, {{setFormat}} — house convention modelled on {{source}} ({{date}})"
+          "strikeOrder": "Game 1: 1-2-1 stage strike — the first striker bans one stage, the second bans two, the first bans one more, and the remaining stage is played."
         },
         "starterClause_one": "{{count}} starter",
         "starterClause_other": "{{count}} starters",
@@ -256,7 +256,19 @@
       "customName": "Custom (this event)",
       "overrideBadge": "Event override",
       "overrideEditHint": "Edit this ruleset on the tournament's detail page.",
-      "overrideIgnored": "This event's saved ruleset was written by a newer version of the app and is not being applied."
+      "overrideIgnored": "This event's saved ruleset was written by a newer version of the app and is not being applied.",
+      "rows": {
+        "starters": "Starter stages",
+        "counterpicks": "Counterpick stages",
+        "bans": "Bans per game",
+        "dsr": "DSR",
+        "strikeOrder": "Strike order",
+        "setFormat": "Set format",
+        "none": "None",
+        "setFormatValue": "{{default}} (top cut: {{topCut}})"
+      },
+      "sourceHouse": "House convention modelled on {{source}} ({{date}})",
+      "sourceCustom": "Custom ruleset for this event; unchanged rules follow the house default."
     }
   },
   "dashboard": {

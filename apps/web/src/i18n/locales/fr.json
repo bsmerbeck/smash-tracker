@@ -237,7 +237,7 @@
       "preset": {
         "default": {
           "name": "Règles maison par défaut (SSBU)",
-          "detail": "{{starters}}, {{bans}} par manche, strike {{strikeOrder}}, {{dsr}}, {{setFormat}} — convention maison inspirée de {{source}} ({{date}})"
+          "strikeOrder": "Manche 1 : strike de stages 1-2-1 — le premier joueur bannit un stage, le second en bannit deux, le premier en bannit un de plus, et le stage restant est joué."
         },
         "starterClause_one": "{{count}} stage de départ",
         "starterClause_other": "{{count}} stages de départ",
@@ -256,7 +256,19 @@
       "customName": "Personnalisé (cet événement)",
       "overrideBadge": "Règles personnalisées",
       "overrideEditHint": "Modifiez ces règles depuis la page de détail du tournoi.",
-      "overrideIgnored": "Les règles enregistrées pour cet événement ont été écrites par une version plus récente de l'application et ne sont pas appliquées."
+      "overrideIgnored": "Les règles enregistrées pour cet événement ont été écrites par une version plus récente de l'application et ne sont pas appliquées.",
+      "rows": {
+        "starters": "Stages de départ",
+        "counterpicks": "Stages de counterpick",
+        "bans": "Bannissements par manche",
+        "dsr": "DSR",
+        "strikeOrder": "Ordre de strike",
+        "setFormat": "Format du set",
+        "none": "Aucun",
+        "setFormatValue": "{{default}} (top cut : {{topCut}})"
+      },
+      "sourceHouse": "Convention maison inspirée de {{source}} ({{date}})",
+      "sourceCustom": "Ruleset personnalisé pour cet événement ; les règles inchangées suivent le défaut maison."
     }
   },
   "dashboard": {

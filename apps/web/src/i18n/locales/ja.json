@@ -237,7 +237,7 @@
       "preset": {
         "default": {
           "name": "ハウスデフォルト（SSBU）",
-          "detail": "{{starters}}、1戦あたり{{bans}}、{{strikeOrder}}ストライク、{{dsr}}、{{setFormat}} — {{source}}（{{date}}）を参考にしたハウスルール"
+          "strikeOrder": "第1戦：1-2-1のステージストライク — 先攻が1つ禁止し、後攻が2つ禁止し、先攻がさらに1つ禁止して、残ったステージで対戦します。"
         },
         "starterClause_one": "初期ステージ{{count}}個",
         "starterClause_other": "初期ステージ{{count}}個",
@@ -256,7 +256,19 @@
       "customName": "カスタム（この大会）",
       "overrideBadge": "カスタムルール",
       "overrideEditHint": "このルールは大会詳細ページで編集できます。",
-      "overrideIgnored": "この大会に保存されたルールは新しいバージョンのアプリで書き込まれたため、適用されていません。"
+      "overrideIgnored": "この大会に保存されたルールは新しいバージョンのアプリで書き込まれたため、適用されていません。",
+      "rows": {
+        "starters": "初期ステージ",
+        "counterpicks": "カウンターピックステージ",
+        "bans": "1戦あたりの禁止数",
+        "dsr": "DSR",
+        "strikeOrder": "ストライク順",
+        "setFormat": "セット形式",
+        "none": "なし",
+        "setFormatValue": "{{default}}（トップカット：{{topCut}}）"
+      },
+      "sourceHouse": "{{source}}（{{date}}）を参考にしたハウスルール",
+      "sourceCustom": "この大会のカスタムルールセット。変更していないルールはハウスデフォルトに従います。"
     }
   },
   "dashboard": {
