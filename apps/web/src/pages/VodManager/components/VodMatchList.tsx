@@ -43,10 +43,11 @@ type VodManagerFilterOptions = {
  * opponent/tournament as searchable comboboxes given higher cardinality),
  * plus the newest/oldest sort toggle (D-08, the only sort dimension). Rows
  * are selectable — clicking a row calls `onSelect(match.id)`, which the
- * parent reflects into `?match=`. Applies the `border-primary text-primary`
- * has-vod accent (every row here always has a VOD, so it's always applied)
- * and `bg-accent text-accent-foreground` when a row is the current selection
- * (mirrors the sidebar active-link treatment, D-13's token pairing).
+ * parent reflects into `?match=`. Unselected rows are neutral
+ * (`border-border text-foreground`) — the brand-red primary accent on every
+ * row read as an error state (owner report 2026-10-06) — and the current
+ * selection gets `border-primary bg-accent text-accent-foreground` (mirrors
+ * the sidebar active-link treatment, D-13's token pairing).
  */
 export function VodMatchList({
   matches,
@@ -229,8 +230,10 @@ function MatchRow({
       onClick={onSelect}
       aria-label={t('vodManager.selectMatchAria', { opponent })}
       className={cn(
-        'flex flex-col items-start gap-0.5 rounded-md border border-primary p-2 text-left text-sm text-primary transition-colors hover:bg-accent hover:text-accent-foreground',
-        isSelected && 'bg-accent text-accent-foreground',
+        'flex flex-col items-start gap-0.5 rounded-md border p-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground',
+        isSelected
+          ? 'border-primary bg-accent text-accent-foreground'
+          : 'border-border text-foreground',
       )}
     >
       <span className="font-medium">
