@@ -675,7 +675,11 @@ describe('OpponentHubPage', () => {
       });
     });
 
-    it('renders the cohort composition and the mixed-context badge without hover, for a mixed-source fixture', async () => {
+    function compositionLine(): HTMLElement | null {
+      return document.querySelector('[data-slot="cohort-composition"]');
+    }
+
+    it('prints the cohort composition counts and the mixed-context detail without hover, for a mixed-source fixture (38-UAT test 5)', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
         makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true, source: 'startgg' }),
@@ -686,6 +690,61 @@ describe('OpponentHubPage', () => {
 
       await findRecordText('3-1');
       expect(await screen.findByText('Mixed context')).toBeInTheDocument();
+      await waitFor(() => expect(compositionLine()).not.toBeNull());
+      const text = compositionLine()?.textContent ?? '';
+      expect(text).toContain('3 start.gg');
+      expect(text).toContain('1 manual');
+      expect(screen.getByText('25% manual — mixed with start.gg.')).toBeInTheDocument();
+    });
+
+    it('prints the composition line for a non-mixed opponent, with no Mixed context badge (38-UAT test 5)', async () => {
+      listMatches.mockResolvedValue(
+        [1, 2, 3, 4, 5].map((n) =>
+          makeMatch({
+            id: `m${n}`,
+            time: n,
+            opponent: 'rival',
+            win: true,
+            matchType: 'offline-tourney',
+          }),
+        ),
+      );
+      renderHub('/opponents/rival');
+
+      await findRecordText('5-0');
+      await waitFor(() => expect(compositionLine()).not.toBeNull());
+      expect(compositionLine()?.textContent).toBe('5 offline');
+      expect(screen.queryByText('Mixed context')).not.toBeInTheDocument();
+    });
+
+    it('the composition line follows the context chip (38-UAT test 5)', async () => {
+      listMatches.mockResolvedValue([
+        ...[1, 2, 3].map((n) =>
+          makeMatch({
+            id: `f${n}`,
+            time: n,
+            opponent: 'rival',
+            win: true,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        ...[4, 5].map((n) =>
+          makeMatch({
+            id: `o${n}`,
+            time: n,
+            opponent: 'rival',
+            win: false,
+            matchType: 'online-friendly',
+          }),
+        ),
+      ]);
+      const user = userEvent.setup();
+      renderHub('/opponents/rival');
+
+      await findRecordText('3-2');
+      await waitFor(() => expect(compositionLine()?.textContent).toBe('3 offline · 2 online'));
+      await user.click(screen.getByRole('radio', { name: 'online' }));
+      await waitFor(() => expect(compositionLine()?.textContent).toBe('2 online'));
     });
 
     it('renders the three filter selects with their documented labels', async () => {

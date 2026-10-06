@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { CohortComposition, SampleMeta, UnknownBucket } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { SampleCue, SampleCueGlyph, UnknownRow, MixedContextBadge } from './EvidenceCues';
+import {
+  SampleCue,
+  SampleCueGlyph,
+  UnknownRow,
+  MixedContextBadge,
+  CohortCompositionLine,
+} from './EvidenceCues';
 
 function makeSample(overrides: Partial<SampleMeta> = {}): SampleMeta {
   return {
@@ -129,13 +135,34 @@ describe('UnknownRow', () => {
 });
 
 describe('MixedContextBadge', () => {
-  function renderBadge(cohort: CohortComposition) {
+  function renderBadge(cohort: CohortComposition, options: { showDetail?: boolean } = {}) {
     return render(
       <TooltipProvider>
-        <MixedContextBadge cohort={cohort} />
+        <MixedContextBadge cohort={cohort} showDetail={options.showDetail} />
       </TooltipProvider>,
     );
   }
+
+  const mixed = makeCohort({
+    manual: 1,
+    startgg: 3,
+    mixedContext: true,
+    minorityShare: 0.25,
+    minorityLabel: 'manual',
+    majorityLabel: 'startgg',
+  });
+
+  it('with showDetail, prints the mixed-context detail as visible text next to the badge (38-UAT test 5)', () => {
+    renderBadge(mixed, { showDetail: true });
+    expect(screen.getByText('Mixed context')).toBeInTheDocument();
+    expect(screen.getByText('25% manual — mixed with start.gg.')).toBeInTheDocument();
+  });
+
+  it('without showDetail, keeps the detail tooltip-only (other hosts unchanged)', () => {
+    renderBadge(mixed);
+    expect(screen.getByText('Mixed context')).toBeInTheDocument();
+    expect(screen.queryByText('25% manual — mixed with start.gg.')).not.toBeInTheDocument();
+  });
 
   it('renders nothing when mixedContext is false', () => {
     const { container } = renderBadge(makeCohort({ mixedContext: false }));
@@ -154,5 +181,30 @@ describe('MixedContextBadge', () => {
     const badge = screen.getByText('Mixed context');
     expect(badge).toHaveAttribute('data-variant', 'outline');
     expect(screen.getAllByText('Mixed context')).toHaveLength(1);
+  });
+});
+
+describe('CohortCompositionLine (38-UAT test 5)', () => {
+  function line(cohort: CohortComposition): string | null {
+    const { container } = render(<CohortCompositionLine cohort={cohort} />);
+    return container.querySelector('[data-slot="cohort-composition"]')?.textContent ?? null;
+  }
+
+  it('prints non-zero session buckets in the fixed order offline · online · unspecified', () => {
+    expect(line(makeCohort({ online: 2, offline: 3, unspecified: 1, manual: 6 }))).toBe(
+      '3 offline · 2 online · 1 unspecified',
+    );
+  });
+
+  it('adds the source buckets only when two or more sources are non-zero', () => {
+    expect(line(makeCohort({ unspecified: 4, startgg: 3, manual: 1 }))).toBe(
+      '4 unspecified · 1 manual · 3 start.gg',
+    );
+    expect(line(makeCohort({ offline: 5, startgg: 5 }))).toBe('5 offline');
+  });
+
+  it('renders for a non-mixed cohort, and renders nothing for zero games', () => {
+    expect(line(makeCohort({ offline: 5, manual: 5, mixedContext: false }))).toBe('5 offline');
+    expect(line(makeCohort())).toBeNull();
   });
 });
