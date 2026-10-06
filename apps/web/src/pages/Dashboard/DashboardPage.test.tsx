@@ -14,6 +14,7 @@ import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import { api } from '@/lib/api';
 import { analyticsDigestStorageKey, writeStoredDigest } from '@/lib/analyticsDigest';
+import { persistSelection, readStoredSelection } from '@/lib/analyticsSelection';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -1118,5 +1119,109 @@ describe('DashboardPage', () => {
     const tile = container.querySelector('[data-slot="fighter-record-tile"]');
     expect(tile).not.toBeNull();
     expect(tile!.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]')).toBeNull();
+  });
+
+  // Plan 35-04 (UAT gap closure): the Dashboard resolves its fighter list and its default
+  // fighter the way Fighter Analysis and Matchups do — the Phase 30.3 inferred-fighter
+  // fallback plus Phase 35's usePersistedSelection (D-03/D-07/D-12).
+  describe('player-true default (35-UAT gaps F16/F24)', () => {
+    const link = SpriteList.find((s) => s.name === 'Link')!;
+    const lucas = SpriteList.find((s) => s.name === 'Lucas')!;
+    const ness = SpriteList.find((s) => s.name === 'Ness')!;
+    const bowserJr = SpriteList.find((s) => s.name === 'Bowser Jr.')!;
+
+    function gamesOn(fighterId: number, count: number, idPrefix: string) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `${idPrefix}-${i}`,
+        fighter_id: fighterId,
+        opponent_id: 10,
+        map: { id: 1, name: 'Battlefield' },
+        opponent: 'rival',
+        notes: '',
+        matchType: 'none',
+        time: Date.now() - (i + 1) * 60_000,
+        win: i % 2 === 0,
+      }));
+    }
+
+    const pickerTrigger = () => screen.getByRole('combobox', { name: 'Select fighter' });
+
+    it('F16: no saved favorites but match history runs on the most-played fighter with the non-blocking prompt, never the gate', async () => {
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([
+        ...gamesOn(link.id, 6, 'link'),
+        ...gamesOn(ness.id, 2, 'ness'),
+      ]);
+
+      const { container } = renderDashboard();
+
+      expect(await screen.findByText('Link record')).toBeInTheDocument();
+      expect(screen.queryByText("You haven't picked any fighters yet!")).toBeNull();
+      expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="dashboard-body"]')).not.toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Link');
+    });
+
+    it('F16 boundary: no saved favorites AND no match history still shows the blocking gate', async () => {
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+
+      expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+      expect(screen.queryByTestId('choose-favorites-prompt')).toBeNull();
+      expect(container.querySelector('[data-slot="dashboard-body"]')).toBeNull();
+    });
+
+    it('F24: with saved favorites the default is the played fighter, not the alphabetically-first 0-game one', async () => {
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id], secondary: [] });
+      listMatches.mockResolvedValue(gamesOn(lucas.id, 5, 'lucas'));
+
+      renderDashboard();
+
+      expect(await screen.findByText('Lucas record')).toBeInTheDocument();
+      expect(screen.queryByText('Bowser Jr. record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Lucas');
+      expect(pickerTrigger()).not.toHaveTextContent('Bowser Jr.');
+      expect(screen.queryByText(/No games for Bowser Jr\./)).toBeNull();
+      // The saved favorites stay the picker list; nothing inferred, no prompt.
+      expect(screen.queryByTestId('choose-favorites-prompt')).toBeNull();
+    });
+
+    it('F24 parity: opens on the remembered fighter from the store Fighter Analysis and Matchups share (D-12)', async () => {
+      // Ness is a saved favorite WITH games that is NOT the most-played one (Lucas), so the
+      // assertion cannot pass on the usage-ranked default alone.
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id, ness.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        ...gamesOn(lucas.id, 6, 'lucas'),
+        ...gamesOn(ness.id, 2, 'ness'),
+      ]);
+      persistSelection('test-uid', null, { fighterId: ness.id });
+
+      renderDashboard();
+
+      expect(await screen.findByText('Ness record')).toBeInTheDocument();
+      expect(screen.queryByText('Lucas record')).toBeNull();
+      expect(screen.queryByText('Bowser Jr. record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Ness');
+    });
+
+    it('an explicit in-session pick of a 0-game favorite is honored (no snap-back) and persisted', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id], secondary: [] });
+      listMatches.mockResolvedValue(gamesOn(lucas.id, 5, 'lucas'));
+
+      renderDashboard();
+      expect(await screen.findByText('Lucas record')).toBeInTheDocument();
+
+      await user.click(pickerTrigger());
+      await user.click(await screen.findByRole('option', { name: 'Bowser Jr.' }));
+
+      expect(await screen.findByText('Bowser Jr. record')).toBeInTheDocument();
+      expect(screen.queryByText('Lucas record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Bowser Jr.');
+      // An explicit change writes the one shared store (D-06/D-12).
+      expect(readStoredSelection('test-uid', null).fighterId).toBe(bowserJr.id);
+    });
   });
 });
