@@ -23,8 +23,15 @@ function formatEncounterContext(
     month: 'short',
     year: 'numeric',
   });
-  const span = start === end ? start : t('opponents.header.encounterSpan', { start, end });
-  return t('opponents.header.metAt', { count, span });
+  // 38-10 (UAT 38-22, F18): a single-month span reads "in <month>" — the
+  // "between" template only fits a two-ended span.
+  if (start === end) {
+    return t('opponents.header.metIn', { count, month: start });
+  }
+  return t('opponents.header.metAt', {
+    count,
+    span: t('opponents.header.encounterSpan', { start, end }),
+  });
 }
 
 /**

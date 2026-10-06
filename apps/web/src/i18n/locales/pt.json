@@ -1438,6 +1438,8 @@
       "encounterSpan": "{{start}} e {{end}}",
       "metAt_one": "Vocês se encontraram em {{count}} torneio entre {{span}}",
       "metAt_other": "Vocês se encontraram em {{count}} torneios entre {{span}}",
+      "metIn_one": "Vocês se encontraram em {{count}} torneio em {{month}}",
+      "metIn_other": "Vocês se encontraram em {{count}} torneios em {{month}}",
       "rateOverGames_one": "{{rate}}% em {{count}} partida",
       "rateOverGames_other": "{{rate}}% em {{count}} partidas"
     },

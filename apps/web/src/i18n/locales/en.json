@@ -1438,6 +1438,8 @@
       "encounterSpan": "{{start}} and {{end}}",
       "metAt_one": "Met at {{count}} tournament between {{span}}",
       "metAt_other": "Met at {{count}} tournaments between {{span}}",
+      "metIn_one": "Met at {{count}} tournament in {{month}}",
+      "metIn_other": "Met at {{count}} tournaments in {{month}}",
       "rateOverGames_one": "{{rate}}% over {{count}} game",
       "rateOverGames_other": "{{rate}}% over {{count}} games"
     },

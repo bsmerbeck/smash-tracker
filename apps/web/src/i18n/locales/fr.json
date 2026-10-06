@@ -1438,6 +1438,8 @@
       "encounterSpan": "{{start}} et {{end}}",
       "metAt_one": "Rencontré à {{count}} tournoi entre {{span}}",
       "metAt_other": "Rencontré à {{count}} tournois entre {{span}}",
+      "metIn_one": "Rencontré à {{count}} tournoi en {{month}}",
+      "metIn_other": "Rencontré à {{count}} tournois en {{month}}",
       "rateOverGames_one": "{{rate}} % sur {{count}} match",
       "rateOverGames_other": "{{rate}} % sur {{count}} matchs"
     },

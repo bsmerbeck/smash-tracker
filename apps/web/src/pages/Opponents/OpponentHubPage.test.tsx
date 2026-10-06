@@ -436,6 +436,7 @@ describe('OpponentHubPage', () => {
       firstPlayedAt: 1,
       lastPlayedAt: 2,
       byTheirFighter: [],
+      byTheirFighterBelowFloor: [],
       byStage: [],
       recent: [],
       source: 'manual',

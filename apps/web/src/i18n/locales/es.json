@@ -1438,6 +1438,8 @@
       "encounterSpan": "{{start}} y {{end}}",
       "metAt_one": "Coincidisteis en {{count}} torneo entre {{span}}",
       "metAt_other": "Coincidisteis en {{count}} torneos entre {{span}}",
+      "metIn_one": "Coincidisteis en {{count}} torneo en {{month}}",
+      "metIn_other": "Coincidisteis en {{count}} torneos en {{month}}",
       "rateOverGames_one": "{{rate}}% en {{count}} partida",
       "rateOverGames_other": "{{rate}}% en {{count}} partidas"
     },

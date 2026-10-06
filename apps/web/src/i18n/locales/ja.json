@@ -1438,6 +1438,8 @@
       "encounterSpan": "{{start}}〜{{end}}",
       "metAt_one": "{{span}}の間に{{count}}つの大会で対戦",
       "metAt_other": "{{span}}の間に{{count}}つの大会で対戦",
+      "metIn_one": "{{month}}に{{count}}つの大会で対戦",
+      "metIn_other": "{{month}}に{{count}}つの大会で対戦",
       "rateOverGames_one": "{{count}}戦で勝率{{rate}}%",
       "rateOverGames_other": "{{count}}戦で勝率{{rate}}%"
     },

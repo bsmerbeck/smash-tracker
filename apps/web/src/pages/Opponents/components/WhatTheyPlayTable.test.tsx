@@ -79,7 +79,7 @@ describe('WhatTheyPlayTable — stacked rows below 640px (plan 39.1-49)', () => 
     makeRow({ opponentFighterId: 1, wins: 1, losses: 4, ratio: 20, totalMatches: 5 }),
     makeRow({ opponentFighterId: 999_999, wins: 2, losses: 2, ratio: 50, totalMatches: 4 }),
   ];
-  const rowHref = (row: RankedMatchup) => `/matchups?vs=${row.opponentFighterId}`;
+  const rowHref = (row: MatchupStats) => `/matchups?vs=${row.opponentFighterId}`;
 
   it('stack versus table parity: same rows, same links per row, every table value in its stacked row', () => {
     const table = render(
