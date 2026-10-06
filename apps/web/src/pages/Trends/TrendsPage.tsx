@@ -34,6 +34,7 @@ import {
 } from '@/lib/drillDownParams';
 import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { TrendsHero } from './components/TrendsHero';
+import { buildTrendsHero } from './lib/trendsHero';
 import {
   TrendsReadsRail,
   buildTrendsVerdict,
@@ -105,6 +106,9 @@ const TRENDS_RHYTHM_CHART_PLACEMENT =
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
+ * Plan 36-11 (36 D-02, UAT 36-5): whenever the hero shows a Rating figure the
+ * rail also gets `hasRating`, so it renders one standalone door when no
+ * visible rating-move card carries it — still a door, never a banner.
  */
 export function TrendsPage() {
   const { t, i18n } = useTranslation();
@@ -209,6 +213,8 @@ export function TrendsPage() {
     dismiss,
     restoreAll,
   } = useTrendsInsights({ matches, horizon });
+  // Plan 36-11: the same "is there a Rating figure" the hero reads.
+  const hasRating = useMemo(() => buildTrendsHero(matches).currentRating != null, [matches]);
   // Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `settingGap`/`mixShift`/
   // `volumeForm` computation this page shares with `SettingComparison`/
   // `MatchTypeMix` (which take the result as props) and its own terminus
@@ -460,6 +466,7 @@ export function TrendsPage() {
             dismiss={dismiss}
             restoreAll={restoreAll}
             horizon={horizon}
+            hasRating={hasRating}
           />
         </GridCell>
 

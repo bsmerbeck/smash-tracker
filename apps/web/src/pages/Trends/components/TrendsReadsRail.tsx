@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -14,6 +14,7 @@ import {
 } from '@smash-tracker/shared';
 import {
   InsightRail,
+  selectVisible,
   type InsightRailCard,
   type InsightRailShape,
 } from '@/components/analytics/InsightRail';
@@ -27,6 +28,7 @@ import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { formatDate } from '@/lib/format';
 import { formatPercent } from '@/lib/formatPercent';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
 import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
 
@@ -234,7 +236,23 @@ export interface TrendsReadsRailProps {
   dismiss: (id: string) => void;
   restoreAll: () => void;
   horizon: HorizonKey;
+  /**
+   * Plan 36-11: true when the page shows a Rating figure (the Trends hero's
+   * `buildTrendsHero(matches).currentRating != null`). Drives the standalone
+   * rating-model door when no visible RatingMove card carries it.
+   */
+  hasRating?: boolean;
 }
+
+/** The ids InsightRail last reported, tagged with the inputs they were reported for. */
+interface ReportedVisibleIds {
+  railKey: string;
+  dismissedKey: string;
+  ids: string[];
+}
+
+/** Joins ids into a comparison key; insight ids never contain a NUL. */
+const ID_KEY_SEPARATOR = '\u0000';
 
 /**
  * The centre rail of the Trends Pro desk (UI-SPEC §8.2 Row 3, TRND-02,
@@ -246,7 +264,13 @@ export interface TrendsReadsRailProps {
  * `[data-slot="trends-read-card"]` hook carrying its template id and state
  * (`data-rail-fallback` on the engine's synthetic fallback only).
  * `RatingMove`'s card carries the rating-model door, demoting the page-level
- * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Session
+ * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Plan
+ * 36-11 (36 D-02, UAT 36-5): a rating must never show without a reachable
+ * disclosure, so when `hasRating` is set and no RatingMove card is actually
+ * rendered (absent, dismissed, cut by the unlocksNext budget, or crashed —
+ * decided by InsightRail's own `selectVisible` + `onVisibleIdsChange`, never
+ * re-derived here) one standalone door under the rail toggles the same note;
+ * the page never shows two doors. Session
  * fatigue always renders its standing caveat, in every rendered state — the
  * engine supplies it in `copy.values.caveat` and this rail must not drop it.
  */
@@ -256,6 +280,7 @@ export function TrendsReadsRail({
   dismiss,
   restoreAll,
   horizon,
+  hasRating = false,
 }: TrendsReadsRailProps) {
   const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -403,6 +428,64 @@ export function TrendsReadsRail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assembled, insightById, t, accountName, i18n.language, subjectPath]);
 
+  // Plan 36-11: the RatingMove card ids, then which of the rail's ids are
+  // really on screen — synchronously the same `selectVisible` InsightRail
+  // runs (same rail, same cap), replaced by what InsightRail reports once it
+  // has rendered (which also accounts for per-card crashes).
+  const ratingMoveIds = useMemo(
+    () =>
+      new Set(
+        [...assembled.cards, ...assembled.promotionQueue]
+          .filter((insight) => insight.templateId === 'ratingMove')
+          .map((insight) => insight.id),
+      ),
+    [assembled],
+  );
+  // Keyed by CONTENT, never identity: `rail` is rebuilt whenever
+  // `useSubjectPath`'s fresh closure changes and a host may hand a fresh `[]`
+  // of dismissed ids, so identity keys would never match — and would turn the
+  // report into a render loop.
+  const railKey = [
+    ...rail.cards.map((card) => card.id),
+    '|',
+    ...rail.promotionQueue.map((card) => card.id),
+    '|',
+    rail.unlocksNext?.id ?? '',
+  ].join(ID_KEY_SEPARATOR);
+  const dismissedKey = dismissedIds.join(ID_KEY_SEPARATOR);
+  const [reportedVisible, setReportedVisible] = useState<ReportedVisibleIds | null>(null);
+  const handleVisibleIdsChange = useCallback(
+    (ids: string[]) => {
+      setReportedVisible((prev) =>
+        prev &&
+        prev.railKey === railKey &&
+        prev.dismissedKey === dismissedKey &&
+        prev.ids.join(ID_KEY_SEPARATOR) === ids.join(ID_KEY_SEPARATOR)
+          ? prev
+          : { railKey, dismissedKey, ids },
+      );
+    },
+    [railKey, dismissedKey],
+  );
+  const visibleIds = useMemo(() => {
+    if (
+      reportedVisible &&
+      reportedVisible.railKey === railKey &&
+      reportedVisible.dismissedKey === dismissedKey
+    ) {
+      return reportedVisible.ids;
+    }
+    const selection = selectVisible(rail, dismissedIds, RAIL_CARD_CAP);
+    return [
+      ...selection.cards.map((card) => card.id),
+      ...(selection.unlocksNext ? [selection.unlocksNext.id] : []),
+    ];
+    // `railKey`/`dismissedKey` are the content of `rail`/`dismissedIds`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportedVisible, railKey, dismissedKey]);
+  const ratingDoorOnCard = visibleIds.some((id) => ratingMoveIds.has(id));
+  const showStandaloneRatingDoor = hasRating && !ratingDoorOnCard;
+
   const legend = (
     <>
       <ClaimChip kind="fact" label={t('insights.kind.fact')} />
@@ -443,7 +526,19 @@ export function TrendsReadsRail({
         onDismiss={dismiss}
         onRestore={restoreAll}
         fallbackCard={fallbackCard}
+        cap={RAIL_CARD_CAP}
+        onVisibleIdsChange={handleVisibleIdsChange}
       />
+      {showStandaloneRatingDoor && (
+        <button
+          type="button"
+          data-slot="trends-rating-model-door"
+          className={`self-start text-xs leading-4 underline-offset-4 hover:underline ${MUTED_LINK_TONE}`}
+          onClick={() => setShowRatingModelNote((v) => !v)}
+        >
+          {t('insights.door.ratingModelNote')}
+        </button>
+      )}
       {showRatingModelNote && <RatingModelNote />}
     </div>
   );
