@@ -240,6 +240,20 @@ export const matchRecordSchema = z.object({
    */
   bracketRound: z.number().int().optional(),
   /**
+   * start.gg's bracket phase name for the set this game belonged to
+   * (`set.phaseGroup.phase.name`, e.g. "Pools", "Top 64"). `roundText` is
+   * phase-local ("Winners Round 1" exists in every phase), so the set
+   * timeline needs the phase to tell repeated round names apart. Server-set,
+   * imported matches only; omitted when start.gg returns none.
+   */
+  phaseName: z.string().nullish(),
+  /**
+   * start.gg's `phase.phaseOrder` — the phase's position in the event
+   * (1 = first phase). Orders sets across phases. Server-set, imported
+   * matches only; omitted when start.gg returns none.
+   */
+  phaseOrder: z.number().int().nullish(),
+  /**
    * The human opponent's seed in the event this match belonged to, when
    * start.gg provides it. Per-event fact about the opponent, intentionally
    * duplicated across every game/match row from that event (RTDB read

@@ -160,6 +160,10 @@ export interface TournamentSet {
   roundText: string | undefined;
   /** start.gg's signed round integer; negative = losers side. */
   bracketRound: number | undefined;
+  /** start.gg's bracket phase name (e.g. "Pools", "Top 64"), when available. */
+  phaseName: string | undefined;
+  /** start.gg's phase position in the event (1 = first phase), when available. */
+  phaseOrder: number | undefined;
   /** The tracked user's fighter id(s) played across this set's games, in first-seen order. */
   userFighterIds: number[];
   /** The opponent's fighter id(s) faced across this set's games, in first-seen order. */
@@ -185,10 +189,13 @@ export interface TournamentSet {
 }
 
 /**
- * Groups an entry's matches into sets (parsed from `externalId`), ordered
- * chronologically, plus a separate list of matches that don't belong to any
- * parseable set (manual entries, or imports predating the externalId
- * convention). `roundText`/`bracketRound`/`opponentName`/`opponentSeed`/
+ * Groups an entry's matches into sets (parsed from `externalId`), plus a
+ * separate list of matches that don't belong to any parseable set (manual
+ * entries, or imports predating the externalId convention). Sets order by
+ * start.gg phase order, then time, ONLY when every set carries a numeric
+ * `phaseOrder`; if any set lacks one the whole event orders purely by time
+ * (a total, transitive order — a per-pair "both have it" comparator is not).
+ * `roundText`/`bracketRound`/`phaseName`/`phaseOrder`/`opponentName`/`opponentSeed`/
  * `opponentPlacement`/`opponentUserSlug`/`opponentParryUserId` are read off
  * the first game that carries them (imports before the relevant resync lack
  * these fields entirely — every consumer must tolerate `undefined`).
@@ -239,6 +246,8 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
       time: Math.min(...ordered.map((g) => g.match.time)),
       roundText: ordered.map((g) => g.match.roundText).find((r) => r != null),
       bracketRound: ordered.map((g) => g.match.bracketRound).find((r) => r != null),
+      phaseName: ordered.map((g) => g.match.phaseName).find((r) => r != null) ?? undefined,
+      phaseOrder: ordered.map((g) => g.match.phaseOrder).find((r) => r != null) ?? undefined,
       userFighterIds,
       opponentFighterIds,
       opponentName: ordered.map((g) => g.match.opponent).find((r) => r != null),
@@ -253,7 +262,14 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
     };
   });
 
-  sets.sort((a, b) => a.time - b.time);
+  // Phase-first ordering only when EVERY set is phased: mixed data (pre-resync
+  // games, research-ingested sets) falls back to time order for the whole event.
+  const allPhased = sets.length > 0 && sets.every((s) => typeof s.phaseOrder === 'number');
+  if (allPhased) {
+    sets.sort((a, b) => (a.phaseOrder as number) - (b.phaseOrder as number) || a.time - b.time);
+  } else {
+    sets.sort((a, b) => a.time - b.time);
+  }
 
   otherMatches.sort((a, b) => a.time - b.time);
 
