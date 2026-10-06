@@ -7,6 +7,9 @@ import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+import i18n from '@/i18n';
+import de from '@/i18n/locales/de.json';
+import fr from '@/i18n/locales/fr.json';
 import { MatchDataRail, useMatchDataInsights } from './MatchDataRail';
 
 vi.mock('firebase/auth', async () => {
@@ -246,6 +249,32 @@ describe('MatchDataRail', () => {
     expect(roster, `evidence lines: ${JSON.stringify(evidence)}`).toBeDefined();
     expect(roster).toMatch(/^45–15 · 75% all time · /);
     expect(roster).not.toContain('last 30');
+  });
+
+  describe('plan 39.1-52 (UAT 39.1-29b): plural-correct roster counts', () => {
+    // Inject the bundles synchronously (the runtime loads them lazily) so a
+    // locale-bound t reads the real locale file without changing the language.
+    i18n.addResourceBundle('de', 'translation', de, true, true);
+    i18n.addResourceBundle('fr', 'translation', fr, true, true);
+    const fact = (locale: string, secondaryCount: number, pocketCount: number) =>
+      i18n.getFixedT(locale)('insights.rosterCore.fact', {
+        fighter: 'Mario',
+        share: 60,
+        secondaryCount,
+        pocketCount,
+      });
+
+    it('en: 1 secondary / 1 pocket and 2 secondaries / 2 pockets', () => {
+      expect(fact('en', 1, 1)).toContain('1 secondary, 1 pocket.');
+      expect(fact('en', 2, 2)).toContain('2 secondaries, 2 pockets.');
+    });
+
+    it('de and fr: the singular noun at a count of 1', () => {
+      expect(fact('de', 1, 1)).toContain('1 Secondary, 1 Pocket.');
+      expect(fact('de', 2, 2)).toContain('2 Secondaries, 2 Pockets.');
+      expect(fact('fr', 1, 1)).toContain('1 secondaire, 1 de dépannage.');
+      expect(fact('fr', 2, 2)).toContain('2 secondaires, 2 de dépannage.');
+    });
   });
 
   it('the secondary-payoff read is absent (not locked) when the roster model has no secondaries', async () => {
