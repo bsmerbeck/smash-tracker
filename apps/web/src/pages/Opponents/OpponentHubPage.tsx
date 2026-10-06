@@ -1083,8 +1083,9 @@ export function OpponentHubPage() {
               />
             </GridCell>
           </PageGrid>
+          {/* Plan 39.1-56: the whole alias-resolved head-to-head — `profile.recent` holds only the last 10 games, so the card never reached its 8-set cap or "Show all". */}
           <RecentEncounters
-            matches={profile.recent}
+            matches={opponentMatches}
             tournamentLinkForMatch={tournamentLinkForMatch}
             onSeeAllInMatchList={scrollToList}
           />
