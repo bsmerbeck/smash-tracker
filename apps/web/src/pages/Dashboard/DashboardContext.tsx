@@ -9,7 +9,11 @@ import type { Fighter } from '@smash-tracker/shared';
  * TanStack Query hooks called directly by each widget.
  */
 export interface DashboardContextValue {
-  /** All fighters available to select from: the user's primary + secondary selections combined, in that order (matches legacy). */
+  /**
+   * All fighters available to select from, alphabetized by localized name (260725-Q1): the
+   * subject's saved primary + secondary favorites or, when none are saved but match history
+   * exists, the fighters inferred from that history (plan 35-04, Phase 30.3 fallback).
+   */
   fighterSprites: Fighter[];
   /** The currently selected fighter, or undefined if the user has no fighters selected yet. */
   fighter: Fighter | undefined;

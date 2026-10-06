@@ -13,6 +13,9 @@ import { useOnboardingProgress } from '@/hooks/useOnboardingProgress';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { intentDestination } from '@/hooks/useOnboarding';
 import { getFighterById } from '@/data/sprites';
+import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
+import { usePersistedSelection } from '@/hooks/usePersistedSelection';
+import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
@@ -177,15 +180,32 @@ export function DashboardPage() {
   // caveat inside HeroStats. Called with useHorizon, above every early return.
   const { source } = useAnalyticsFilter();
 
+  // Plan 35-04 (35-UAT gap F16): exactly as Fighter Analysis and Matchups do
+  // (Phase 30.3 fallback) — an account with imported history but no saved
+  // favorites runs on the fighters OBSERVED in its matches, with the
+  // non-blocking ChooseFavoritesPrompt, instead of dead-ending on the gate.
+  const savedFighterIds = useMemo(
+    () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
+    [fighterSelection],
+  );
+  const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
   const rawFighterSprites = useMemo<Fighter[]>(() => {
-    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
-  }, [fighterSelection]);
-  // 260725-Q1: alphabetized by localized name, not primary+secondary save
-  // order — matches every other fighter picker in the app.
+  }, [usingInferredFighters, allMatches, savedFighterIds]);
+  // 260725-Q1: the PICKER list is alphabetized by localized name, not
+  // primary+secondary save order — matches every other fighter picker in the
+  // app. Only the list order; the default is resolved below by usage.
   const fighterSprites = useSortedFighters(rawFighterSprites);
+
+  // Plan 35-04 (35-UAT gap F24, D-03/D-07/D-12): the default fighter comes
+  // from the SAME remembered-vs-usage resolution Fighter Analysis and
+  // Matchups read — a remembered pick with games, else the most-played
+  // member of the list. Never the alphabetically-first entry. Called above
+  // every early return (rules of hooks).
+  const persisted = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
   // Plan 39.2-12 (TRK-01): the since-last-visit digest, owned by the page so the card and the
   // Tracked section share ONE reader/writer. It is on screen only in the loaded branch with
@@ -195,19 +215,25 @@ export function DashboardPage() {
   // The digest's "and N more" link and the Track refusal toast both land on #tracked.
   useLandingScroll({ anchorId: TRACKED_SECTION_ID, ready: digestVisible && !matchesLoading });
 
-  // Tracks an explicit user selection only; when unset, the first available
-  // fighter is used (derived below during render, mirroring legacy's
-  // one-time "firstLoad" hydration of `fighter` from the first sprite,
-  // without needing an effect to seed state from data that just loaded).
+  // Tracks an explicit in-session user pick only. It wins over the persisted
+  // resolution so a pick of a 0-game favorite is honored (usePersistedSelection
+  // ignores a remembered id without games — D-03 — which would otherwise snap
+  // the picker back). The `fighterSprites[0]` tail is reached only when the
+  // subject has no games at all (the "fighters but no matches" empty state).
   const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
 
-  const fighter =
-    fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
+  const explicitPick = fighterSprites.find((s) => s.id === selectedFighterId);
+  const persistedFighter = fighterSprites.find((s) => s.id === persisted.fighter?.id);
+  const fighter = explicitPick ?? persistedFighter ?? fighterSprites[0] ?? undefined;
 
   const contextValue: DashboardContextValue = {
     fighterSprites,
     fighter,
-    setFighter: (next) => setSelectedFighterId(next.id),
+    // An explicit user change only — a computed default is never persisted (D-06).
+    setFighter: (next) => {
+      setSelectedFighterId(next.id);
+      persisted.setFighter(next);
+    },
   };
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a page
@@ -216,7 +242,8 @@ export function DashboardPage() {
   // (DashboardToolbar) is intentionally not rendered here — it needs
   // fighter/matches-derived props the loading state doesn't have yet, and
   // `PageShell` renders it as an optional slot either way.
-  if (fightersLoading || matchesLoading) {
+  // `persisted.isLoading` (D-16): nothing resolves while the matches load.
+  if (fightersLoading || matchesLoading || persisted.isLoading) {
     return (
       <PageShell>
         <div role="status" aria-busy="true" className="flex flex-col gap-6">
@@ -276,6 +303,9 @@ export function DashboardPage() {
   // migrated completeness report. It self-hides (renders nothing) when the
   // account has no migrated coverage, so this is safe for every ordinary
   // fighterless account too.
+  //
+  // Plan 35-04 (F16): `fighterSprites` is empty here only after the inferred
+  // fallback, i.e. no saved favorites AND no match history.
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
@@ -322,6 +352,7 @@ export function DashboardPage() {
             return (
               <>
                 <SelfDataCoveragePanel />
+                {usingInferredFighters && <ChooseFavoritesPrompt />}
                 <DashboardNextBestAction />
                 <DashboardPrepActionSlot suppressReviewForEntryKey={suppressReviewForEntryKey} />
                 <RatingModelNote />
