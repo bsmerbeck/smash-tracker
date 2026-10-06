@@ -573,8 +573,10 @@
         "avgDrop": "敗北あたり平均減少",
         "biggestGain": "最大増加",
         "biggestDrop": "最大減少",
-        "recent_one": "直近{{count}}回: {{value}}",
-        "recent_other": "直近{{count}}回: {{value}}"
+        "recentWins_one": "直近1勝: {{value}}",
+        "recentWins_other": "直近{{count}}勝: {{value}}",
+        "recentLosses_one": "直近1敗: {{value}}",
+        "recentLosses_other": "直近{{count}}敗: {{value}}"
       },
       "byBand": {
         "title": "GSP帯別の勝利あたり増加",

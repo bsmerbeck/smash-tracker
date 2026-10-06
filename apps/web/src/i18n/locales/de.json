@@ -573,8 +573,10 @@
         "avgDrop": "Ø Verlust pro Niederlage",
         "biggestGain": "Größter Gewinn",
         "biggestDrop": "Größter Verlust",
-        "recent_one": "letzter {{count}} Schritt: {{value}}",
-        "recent_other": "letzte {{count}} Schritte: {{value}}"
+        "recentWins_one": "letzter Sieg: {{value}}",
+        "recentWins_other": "letzte {{count}} Siege: {{value}}",
+        "recentLosses_one": "letzte Niederlage: {{value}}",
+        "recentLosses_other": "letzte {{count}} Niederlagen: {{value}}"
       },
       "byBand": {
         "title": "Gewinn pro Sieg nach GSP-Bereich",

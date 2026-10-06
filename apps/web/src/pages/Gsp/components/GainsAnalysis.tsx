@@ -8,7 +8,7 @@ import { formatCompact, formatSigned } from '@/lib/format';
 /**
  * Win/loss GSP gain analysis for the selected fighter (plan 41-05, A4 / DD-41-16):
  * four figures — the lifetime average gain per win and drop per loss (each with
- * the last-N-steps average as its support line), the biggest gain and the
+ * the last-N-wins / last-N-losses average as its support line), the biggest gain and the
  * biggest drop — over one neutral bar per GSP band showing the average gain of
  * the wins that started in it. The band edges and averages come from the shared
  * `getGspGainStats` (`gainsByBand`); this component never bins.
@@ -27,13 +27,20 @@ export function GainsAnalysis({ stats }: { stats: GspGainStats }) {
     );
   }
 
+  // UAT 41 test 9 / F19: each support line counts the steps behind its own average — the wins inside the
+  // last 20 steps ARE the last N wins (and likewise losses), so the trailing-N wording is exact.
   const recent = (value: number | null, sign: 1 | -1): string | undefined =>
     value === null
       ? undefined
-      : t('gsp.gains.figure.recent', {
-          count: stats.recentStepCount,
-          value: formatSigned(sign * value, locale),
-        });
+      : sign === 1
+        ? t('gsp.gains.figure.recentWins', {
+            count: stats.recentWinStepCount,
+            value: formatSigned(value, locale),
+          })
+        : t('gsp.gains.figure.recentLosses', {
+            count: stats.recentLossStepCount,
+            value: formatSigned(-value, locale),
+          });
 
   const figure = (props: {
     key: string;

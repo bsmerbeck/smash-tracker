@@ -235,8 +235,10 @@ export interface GspGainStats {
   perWinGains: number[];
   /** The GSP level each win started from, parallel to `perWinGains` (the x-value of each gain). */
   perWinLevels: number[];
-  /** How many steps the "last 20" figures cover: `min(20, steps)`. */
-  recentStepCount: number;
+  /** How many WIN steps `avgGainPerWinLast20` averages: the wins among the last 20 steps (= the last N wins). */
+  recentWinStepCount: number;
+  /** How many LOSS steps `avgDropPerLossLast20` averages: the losses among the last 20 steps (= the last N losses). */
+  recentLossStepCount: number;
   /** Average gain per win by the GSP band the win started in — ascending, occupied bands only. */
   gainsByBand: GspGainBand[];
   /** Whether per-win gains are trending down (expected as GSP climbs), up, or flat. */
@@ -311,7 +313,8 @@ export function getGspGainStats(series: GspPoint[]): GspGainStats {
     biggestDrop: lossDrops.length > 0 ? Math.max(...lossDrops) : null,
     perWinGains: winGains,
     perWinLevels: winSteps.map((s) => s.fromGsp),
-    recentStepCount: last20Steps.length,
+    recentWinStepCount: last20WinSteps.length,
+    recentLossStepCount: last20LossSteps.length,
     gainsByBand: bandWins(
       winSteps.map((s) => s.fromGsp),
       winGains,

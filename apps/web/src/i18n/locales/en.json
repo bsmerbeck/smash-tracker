@@ -573,8 +573,10 @@
         "avgDrop": "Avg drop per loss",
         "biggestGain": "Biggest gain",
         "biggestDrop": "Biggest drop",
-        "recent_one": "last {{count}} step: {{value}}",
-        "recent_other": "last {{count}} steps: {{value}}"
+        "recentWins_one": "last win: {{value}}",
+        "recentWins_other": "last {{count}} wins: {{value}}",
+        "recentLosses_one": "last loss: {{value}}",
+        "recentLosses_other": "last {{count}} losses: {{value}}"
       },
       "byBand": {
         "title": "Gain per win by GSP band",

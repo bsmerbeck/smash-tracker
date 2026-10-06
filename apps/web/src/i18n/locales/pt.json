@@ -573,8 +573,10 @@
         "avgDrop": "Queda média por derrota",
         "biggestGain": "Maior ganho",
         "biggestDrop": "Maior queda",
-        "recent_one": "último {{count}} passo: {{value}}",
-        "recent_other": "últimos {{count}} passos: {{value}}"
+        "recentWins_one": "última vitória: {{value}}",
+        "recentWins_other": "últimas {{count}} vitórias: {{value}}",
+        "recentLosses_one": "última derrota: {{value}}",
+        "recentLosses_other": "últimas {{count}} derrotas: {{value}}"
       },
       "byBand": {
         "title": "Ganho por vitória por faixa de GSP",
