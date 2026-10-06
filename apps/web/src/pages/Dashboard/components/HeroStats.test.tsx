@@ -367,6 +367,100 @@ describe('HeroStats', () => {
       const chip = ratingCard.querySelector('[data-slot="delta-chip"]');
       expect(['up', 'down', 'steady']).not.toContain(chip?.getAttribute('data-state'));
     });
+
+    describe('plan 41-14 (UAT 41 test 2): the Rating tile and the Trends hero agree on one rule', () => {
+      const HOUR_MS = 60 * 60 * 1000;
+
+      function readDashboardChip(matches: Match[], horizon: 'last30' | 'lastEvent') {
+        const view = render(
+          <HeroStats matches={matches} timeFilteredMatches={matches} horizon={horizon} />,
+        );
+        const card = within(view.container)
+          .getByText('Rating')
+          .closest('[data-slot="card"]') as HTMLElement;
+        const chip = card.querySelector('[data-slot="delta-chip"]');
+        const read = {
+          glyph: /[▲▼]/.test(card.textContent ?? ''),
+          state: chip?.getAttribute('data-state') ?? null,
+          text: chip?.textContent ?? null,
+        };
+        view.unmount();
+        return read;
+      }
+
+      function readTrendsChip(matches: Match[], horizon: 'last30' | 'lastEvent') {
+        const view = render(<TrendsHero matches={matches} horizon={horizon} />);
+        const figure = within(view.container).getByText('Rating').parentElement as HTMLElement;
+        const chip = figure.querySelector('[data-slot="delta-chip"]');
+        const read = {
+          state: chip?.getAttribute('data-state') ?? null,
+          text: chip?.textContent ?? null,
+        };
+        view.unmount();
+        return read;
+      }
+
+      // The demo shape: 8 games at one event inside every horizon; the last
+      // session (L, L, W) underperforms the first (five wins).
+      function thinDemo(): Match[] {
+        const start = Date.now() - 3 * 24 * HOUR_MS;
+        return [true, true, true, true, true, false, false, true].map((win, i) =>
+          makeMatch({
+            id: `d${i}`,
+            time: start + (i < 5 ? i * HOUR_MS : 24 * HOUR_MS + (i - 5) * HOUR_MS),
+            win,
+            tournamentName: 'Demo Weekly',
+            eventName: 'Ultimate Singles',
+          }),
+        );
+      }
+
+      // 120 games: 90 older losses, then 30 recent wins (a notable rise; the
+      // last-30 window is a quarter of the account, so it never collapses).
+      function rising(): Match[] {
+        const start = Date.now() - 200 * DAY_MS;
+        return Array.from({ length: 120 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: start + i * DAY_MS, win: i >= 90 }),
+        );
+      }
+
+      // 120 games alternating W/L at one pace (steady).
+      function steady(): Match[] {
+        const start = Date.now() - 200 * DAY_MS;
+        return Array.from({ length: 120 }, (_, i) =>
+          makeMatch({ id: `s${i}`, time: start + i * DAY_MS, win: i % 2 === 0 }),
+        );
+      }
+
+      it.each(['last30', 'lastEvent'] as const)(
+        'the thin demo account shows no direction on either surface at %s',
+        (horizon) => {
+          const dashboard = readDashboardChip(thinDemo(), horizon);
+          const trends = readTrendsChip(thinDemo(), horizon);
+          expect(dashboard.glyph).toBe(false);
+          expect(['up', 'down']).not.toContain(dashboard.state);
+          expect(['up', 'down']).not.toContain(trends.state);
+          expect(dashboard).toMatchObject(trends);
+        },
+      );
+
+      it.each([
+        ['thin all-in-horizon', thinDemo],
+        ['notable rise', rising],
+        ['steady', steady],
+      ] as const)('%s: the tile and the hero read the same chip at last30', (_label, build) => {
+        const matches = build();
+        const dashboard = readDashboardChip(matches, 'last30');
+        const trends = readTrendsChip(matches, 'last30');
+        expect(dashboard.state).toBe(trends.state);
+        expect(dashboard.text).toBe(trends.text);
+      });
+
+      it('the notable-rise fixture does state a rise on both surfaces (the oracle is not vacuous)', () => {
+        expect(readDashboardChip(rising(), 'last30').state).toBe('up');
+        expect(readTrendsChip(rising(), 'last30').state).toBe('up');
+      });
+    });
   });
 });
 

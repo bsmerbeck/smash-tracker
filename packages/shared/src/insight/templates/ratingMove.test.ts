@@ -5,8 +5,6 @@ import { ACCOUNT_SCOPE } from '../types.js';
 import type { Match } from '../../match.js';
 
 const BASE_TIME_MS = 1_700_000_000_000;
-// Plan 39.1-53: read from an f910cc85 run — lastEvent stays on the classify ladder (UI-SPEC §8.1).
-const LAST_EVENT_PINNED_STATE = 'trend';
 const NOW_MS = BASE_TIME_MS + 365 * 24 * 60 * 60 * 1000;
 
 function buildMatches(outcomes: boolean[], startTime = BASE_TIME_MS, gapMs = 60_000): Match[] {
@@ -146,9 +144,33 @@ describe('ratingMoveTemplate', () => {
       expect(['steady', 'trend']).toContain(insight.state);
     });
 
-    it('pin: the 8-game account at lastEvent keeps the classify ladder (not collapsed by the horizon gate)', () => {
+    // Plan 41-14 (UAT 41 test 2): the 39.1-53 pin read 'trend' here from f910cc85 — the last
+    // event held every game, so the move was measured from the 1500 default with no 'before'.
+    it('an 8-game single-event account at lastEvent states no direction: the prior window is empty (plan 41-14)', () => {
       const insight = buildAt(thinAccount, 'lastEvent');
-      expect(insight.state).toBe(LAST_EVENT_PINNED_STATE);
+      expect(insight.state).toBe('collapsed');
+      expect(insight.kind).toBe('fact');
+      expect(insight.deltaPoints).toBeNull();
+      expect(insight.copy.key).toBe('insights.ratingMove.collapsed');
+    });
+
+    it('pin: lastEvent with an earlier event keeps the RD-band rule (prior window non-empty)', () => {
+      const earlier = buildMatches(Array(70).fill(false)).map((match) => ({
+        ...match,
+        tournamentName: 'Earlier Weekly',
+        eventName: 'Ultimate Singles',
+      }));
+      const last = buildMatches(
+        Array(10).fill(true),
+        earlier[earlier.length - 1]!.time + 7 * 24 * 60 * 60 * 1000,
+      ).map((match) => ({
+        ...match,
+        tournamentName: 'Demo Weekly',
+        eventName: 'Ultimate Singles',
+      }));
+      const insight = buildAt([...earlier, ...last], 'lastEvent');
+      expect(insight.window.games).toBe(10);
+      expect(['steady', 'trend']).toContain(insight.state);
     });
   });
 
