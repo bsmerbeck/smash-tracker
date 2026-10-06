@@ -462,3 +462,27 @@ describe('lastEventRecap event identity (39.2-REVIEW SH-CR-01): an event is neve
     expect(eventDoor?.axes.to).toBe(insight.window.toMs);
   });
 });
+
+describe('lastEventRecap display label (41-13, UAT 41 test 7 F6)', () => {
+  it('the copy names the tournament while every door axis keeps the bare event name', () => {
+    const matches = buildEventGames({
+      eventName: 'Ultimate Singles',
+      setCount: 2,
+      gamesPerSet: 2,
+      startAt: NOW_MS - 20 * ONE_HOUR_MS,
+      win: () => true,
+    }).map((match) => ({ ...match, tournamentName: 'Genesis 9' }));
+    const insight = buildLastEventRecapInsight({
+      matches,
+      scope: ACCOUNT_SCOPE,
+      horizon: 'last30',
+      nowMs: NOW_MS,
+    });
+    expect(insight.copy.values.event).toBe('Genesis 9 \u00b7 Ultimate Singles');
+    const eventAxes = insight.doors
+      .map((door) => door.axes.event)
+      .filter((value) => value !== undefined);
+    expect(eventAxes.length).toBeGreaterThan(0);
+    expect(eventAxes.every((value) => value === 'Ultimate Singles')).toBe(true);
+  });
+});

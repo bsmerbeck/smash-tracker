@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Match } from '../match.js';
 import * as eventSeriesModule from './eventSeries.js';
 import {
+  anchorKey,
   buildOpponentEventSeries,
   buildPlayerEventSeries,
   buildStageEventSeries,
@@ -340,5 +341,63 @@ describe('binEventSeries (plan 39.1-39)', () => {
     expect(january.matchIds).toHaveLength(27); // Jan 5 .. Jan 31
     expect(resolve(series, series[0]!.key)).toBeNull();
     expect(resolve(series, `bin:month:${Date.UTC(2030, 0, 1)}`)).toBeNull();
+  });
+});
+
+describe('event display label (41-13, UAT 41 test 7 F6): names the tournament, keys unchanged', () => {
+  const g = (id: string, time: number, extra: Partial<Match>): Match =>
+    makeMatch({ id, time, win: true, ...extra });
+
+  it('eventDisplayName joins a shared tournament name to the event name', () => {
+    const { eventDisplayName } = eventSeriesModule;
+    const both = { tournamentName: ' Genesis 9 ', eventName: 'Ultimate Singles' };
+    expect(eventDisplayName([g('a', 1, both), g('b', 2, both)])).toBe(
+      'Genesis 9 \u00b7 Ultimate Singles',
+    );
+  });
+
+  it('eventDisplayName prints an equal tournament once, case-insensitively', () => {
+    const { eventDisplayName } = eventSeriesModule;
+    expect(
+      eventDisplayName([g('a', 1, { tournamentName: 'genesis 9', eventName: 'Genesis 9' })]),
+    ).toBe('genesis 9');
+  });
+
+  it('eventDisplayName never guesses: mixed or partly-missing tournaments fall back to the event name', () => {
+    const { eventDisplayName } = eventSeriesModule;
+    const mixed = [
+      g('a', 1, { tournamentName: 'Genesis 9', eventName: 'Ultimate Singles' }),
+      g('b', 2, { tournamentName: 'Weekly 12', eventName: 'Ultimate Singles' }),
+    ];
+    expect(eventDisplayName(mixed)).toBe('Ultimate Singles');
+    const partial = [
+      g('a', 1, { tournamentName: 'Genesis 9', eventName: 'Ultimate Singles' }),
+      g('b', 2, { tournamentName: '   ', eventName: 'Ultimate Singles' }),
+    ];
+    expect(eventDisplayName(partial)).toBe('Ultimate Singles');
+  });
+
+  it('eventDisplayName: no names, or no games, is null', () => {
+    const { eventDisplayName } = eventSeriesModule;
+    expect(eventDisplayName([])).toBeNull();
+    expect(eventDisplayName([g('a', 1, { eventName: '  ', tournamentName: ' ' })])).toBeNull();
+  });
+
+  it('a tournament anchor is labelled "Genesis 9 · Ultimate Singles" while its key keeps the bare event name', () => {
+    const both = { tournamentName: 'Genesis 9', eventName: 'Ultimate Singles' };
+    const startMs = 5 * DAY_MS;
+    const series = buildOpponentEventSeries({
+      matches: [
+        g('t1', startMs, both),
+        g('t2', startMs + HOUR_MS, both),
+        g('t3', startMs + 2 * HOUR_MS, both),
+      ],
+      aliasMap: {},
+      opponentTag: 'tagone',
+      refreshedAt: 1,
+    });
+    expect(series).toHaveLength(1);
+    expect(series[0]!.label).toBe('Genesis 9 \u00b7 Ultimate Singles');
+    expect(series[0]!.key).toBe(anchorKey('tournament', 'Ultimate Singles', startMs));
   });
 });
