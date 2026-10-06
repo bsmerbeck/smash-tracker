@@ -3584,10 +3584,10 @@
     "rosterCore": {
       "fact": "Plantel — {{fighter}} es el principal con {{share}}% del juego; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
       "thin": "Plantel — el principal aún no está establecido; {{count, grouped}} partidas con un mismo personaje lo confirman.",
-      "secondaries_one": "{{count}} secundario",
-      "secondaries_other": "{{count}} secundarios",
-      "pockets_one": "{{count}} de bolsillo",
-      "pockets_other": "{{count}} de bolsillo"
+      "secondaries_one": "{{count, grouped}} secundario",
+      "secondaries_other": "{{count, grouped}} secundarios",
+      "pockets_one": "{{count, grouped}} de bolsillo",
+      "pockets_other": "{{count, grouped}} de bolsillo"
     },
     "rosterShift": {
       "hidden": "Aún no hay un cambio notable en quién se juega.",

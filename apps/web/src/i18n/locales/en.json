@@ -3584,10 +3584,10 @@
     "rosterCore": {
       "fact": "Roster — {{fighter}} is the main at {{share}}% of play; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
       "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it.",
-      "secondaries_one": "{{count}} secondary",
-      "secondaries_other": "{{count}} secondaries",
-      "pockets_one": "{{count}} pocket",
-      "pockets_other": "{{count}} pockets"
+      "secondaries_one": "{{count, grouped}} secondary",
+      "secondaries_other": "{{count, grouped}} secondaries",
+      "pockets_one": "{{count, grouped}} pocket",
+      "pockets_other": "{{count, grouped}} pockets"
     },
     "rosterShift": {
       "hidden": "Not enough of a shift in who gets played to report yet.",

@@ -3584,10 +3584,10 @@
     "rosterCore": {
       "fact": "使用キャラ構成 — {{fighter}}がメインで使用率{{share}}%、$t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} })、$t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} })。",
       "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count, grouped}}試合に達すると確定します。",
-      "secondaries_one": "サブ{{count}}体",
-      "secondaries_other": "サブ{{count}}体",
-      "pockets_one": "ポケット{{count}}体",
-      "pockets_other": "ポケット{{count}}体"
+      "secondaries_one": "サブ{{count, grouped}}体",
+      "secondaries_other": "サブ{{count, grouped}}体",
+      "pockets_one": "ポケット{{count, grouped}}体",
+      "pockets_other": "ポケット{{count, grouped}}体"
     },
     "rosterShift": {
       "hidden": "使用キャラの構成にまだ有意な変化はありません。",

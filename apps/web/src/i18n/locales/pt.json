@@ -3584,10 +3584,10 @@
     "rosterCore": {
       "fact": "Elenco — {{fighter}} é o principal com {{share}}% do tempo de jogo; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
       "thin": "Elenco — o principal ainda não está estabelecido; {{count, grouped}} partidas em um só personagem definem isso.",
-      "secondaries_one": "{{count}} secundário",
-      "secondaries_other": "{{count}} secundários",
-      "pockets_one": "{{count}} de reserva",
-      "pockets_other": "{{count}} de reserva"
+      "secondaries_one": "{{count, grouped}} secundário",
+      "secondaries_other": "{{count, grouped}} secundários",
+      "pockets_one": "{{count, grouped}} de reserva",
+      "pockets_other": "{{count, grouped}} de reserva"
     },
     "rosterShift": {
       "hidden": "Ainda não há uma mudança notável em quem é jogado.",

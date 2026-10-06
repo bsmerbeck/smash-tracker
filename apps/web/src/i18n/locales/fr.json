@@ -3584,10 +3584,10 @@
     "rosterCore": {
       "fact": "Roster — {{fighter}} est le personnage principal avec {{share}}% du temps de jeu ; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
       "thin": "Roster — le principal n'est pas encore établi ; {{count, grouped}} matchs sur un même personnage suffisent à le déterminer.",
-      "secondaries_one": "{{count}} secondaire",
-      "secondaries_other": "{{count}} secondaires",
-      "pockets_one": "{{count}} de dépannage",
-      "pockets_other": "{{count}} de dépannage"
+      "secondaries_one": "{{count, grouped}} secondaire",
+      "secondaries_other": "{{count, grouped}} secondaires",
+      "pockets_one": "{{count, grouped}} de dépannage",
+      "pockets_other": "{{count, grouped}} de dépannage"
     },
     "rosterShift": {
       "hidden": "Pas encore de changement notable dans qui est joué.",
