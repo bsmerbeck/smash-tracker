@@ -236,6 +236,18 @@ describe('MatchDataRail', () => {
     await waitFor(() => expect(regularCards()).toHaveLength(3));
   });
 
+  it('plan 39.1-52 (F8): the roster caption is an all-time record, never "last 30"', async () => {
+    renderRail(noSecondariesFixture());
+    await waitForSettled();
+    const evidence = [...document.querySelectorAll('[data-slot="insight-card-evidence"]')].map(
+      (node) => node.textContent ?? '',
+    );
+    const roster = evidence.find((line) => line.startsWith('45–15'));
+    expect(roster, `evidence lines: ${JSON.stringify(evidence)}`).toBeDefined();
+    expect(roster).toMatch(/^45–15 · 75% all time · /);
+    expect(roster).not.toContain('last 30');
+  });
+
   it('the secondary-payoff read is absent (not locked) when the roster model has no secondaries', async () => {
     const { container } = renderRail(noSecondariesFixture());
     await waitForSettled();

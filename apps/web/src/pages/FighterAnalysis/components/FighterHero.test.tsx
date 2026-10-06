@@ -613,6 +613,25 @@ describe('FighterHero', () => {
     expect(screen.getByText(mario.name)).toBeInTheDocument();
   });
 
+  it('plan 39.1-52 (F22): a 2-game fighter prints no dangling separator in the identity meta or the verdict evidence', () => {
+    const now = Date.now();
+    const twoGames = Array.from({ length: 2 }, (_, i) =>
+      makeMatch({ id: `two${i}`, time: now - (2 - i) * 60 * 60 * 1000, win: i === 0 }),
+    );
+    renderHero({ fighterMatches: twoGames });
+    const identity = document.querySelector('[data-slot="fighter-hero-identity"] p');
+    const meta = identity?.lastElementChild?.textContent ?? '';
+    expect(meta).toContain('% of play');
+    const evidence =
+      document.querySelector('[data-slot="fighter-hero-verdict-evidence"]')?.textContent ?? '';
+    for (const text of [meta, evidence]) {
+      expect(text, `"${text}"`).not.toMatch(/·\s*$/);
+      expect(text, `"${text}"`).not.toMatch(/·\s*·/);
+      expect(text).not.toContain('last 30 · all time');
+      expect(text).not.toMatch(/over 0\b/);
+    }
+  });
+
   describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {
     afterEach(async () => {
       await i18n.changeLanguage('en');

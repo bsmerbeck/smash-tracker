@@ -843,3 +843,54 @@ describe('registry audit — every emittable key exists, no dead sentences, both
     expect(unreachable).toContain('neverEmittedByAnyBranch');
   });
 });
+
+/**
+ * Plan 39.1-52 (UAT 39.1-31, F13): no locale VALUE names an internal template
+ * id ("FormNow · last 30 games vs all time"). The pattern is BUILT from the
+ * registry, in camelCase and PascalCase, word-bounded; keys are exempt. Scans
+ * every namespace of every locale — no allowlist.
+ */
+function collectLocaleValues(tree: unknown, keyPath = ''): { keyPath: string; value: string }[] {
+  if (typeof tree === 'string') return [{ keyPath, value: tree }];
+  if (tree === null || typeof tree !== 'object') return [];
+  return Object.entries(tree as Record<string, unknown>).flatMap(([key, child]) =>
+    collectLocaleValues(child, keyPath ? `${keyPath}.${key}` : key),
+  );
+}
+
+function templateTokenPattern(): RegExp {
+  const ids = INSIGHT_TEMPLATES.map((template) => template.id);
+  const forms = ids.flatMap((id) => [id, id.charAt(0).toUpperCase() + id.slice(1)]);
+  return new RegExp(`\\b(?:${forms.join('|')})\\b`);
+}
+
+function findTemplateTokens(locale: Record<string, unknown>): string[] {
+  const pattern = templateTokenPattern();
+  return collectLocaleValues(locale)
+    .filter(({ value }) => pattern.test(value))
+    .map(({ keyPath, value }) => `${keyPath}: ${value}`);
+}
+
+describe('no internal template id in any locale value (plan 39.1-52, UAT 39.1-31 F13)', () => {
+  it('the token pattern covers all 19 registry ids in both cases', () => {
+    const pattern = templateTokenPattern();
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
+    for (const template of INSIGHT_TEMPLATES) {
+      const pascal = template.id.charAt(0).toUpperCase() + template.id.slice(1);
+      expect(pattern.test(`x ${template.id} y`)).toBe(true);
+      expect(pattern.test(`x ${pascal} y`)).toBe(true);
+    }
+  });
+
+  for (const locale of REAL_LOCALES) {
+    it(`${locale}: no value contains an InsightTemplateId as a word`, () => {
+      expect(findTemplateTokens(INSIGHT_COPY_LOCALE_SOURCE[locale]!)).toEqual([]);
+    });
+  }
+
+  it('permanent positive control — a value naming TiltCost in a clone of the real tree is flagged', () => {
+    const clone = deepClone(INSIGHT_COPY_LOCALE_SOURCE.en!);
+    (clone.insights as Record<string, unknown>).probe = 'TiltCost · last 30 games';
+    expect(findTemplateTokens(clone)).toContain('insights.probe: TiltCost · last 30 games');
+  });
+});

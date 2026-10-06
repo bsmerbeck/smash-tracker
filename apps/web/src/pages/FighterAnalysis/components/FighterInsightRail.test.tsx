@@ -222,6 +222,21 @@ function dismissFixture(): Match[] {
   return matches;
 }
 
+/**
+ * Plan 39.1-52 (UAT 39.1-26, F2): a MkLeo-shaped Toughest record — 36–40 into
+ * Luigi, 40–10 into Fox, interleaved so neither mover asserts and no event or
+ * rival tag exists, so the rail back-fills the Best / Toughest record cards.
+ */
+function toughestRecordFixture(): Match[] {
+  const now = Date.now();
+  const games: { opponent_id: number; win: boolean }[] = [];
+  for (let i = 0; i < 76; i++) games.push({ opponent_id: luigi.id, win: i % 19 < 9 });
+  for (let i = 0; i < 50; i++) games.push({ opponent_id: fox.id, win: i % 5 !== 0 });
+  return games.map((g, i) =>
+    makeMatch({ id: `tr${i}`, time: now - (games.length - i) * 60 * 60 * 1000, ...g }),
+  );
+}
+
 describe('FighterInsightRail', () => {
   beforeEach(async () => {
     resetAuthMock();
@@ -247,6 +262,19 @@ describe('FighterInsightRail', () => {
     const cards = document.querySelectorAll('[data-slot="insight-rail-card"]');
     expect(cards.length).toBeLessThanOrEqual(3);
     expect(cards.length).toBeGreaterThan(0);
+  });
+
+  it('plan 39.1-52 (F2): the Toughest record caption is an all-time record, never "last 30"', async () => {
+    list.mockResolvedValue(toughestRecordFixture());
+    renderRail(toughestRecordFixture());
+    await waitForSettled();
+    const evidence = [...document.querySelectorAll('[data-slot="insight-card-evidence"]')].map(
+      (node) => node.textContent ?? '',
+    );
+    const toughest = evidence.find((line) => line.startsWith('36–40'));
+    expect(toughest, `evidence lines: ${JSON.stringify(evidence)}`).toBeDefined();
+    expect(toughest).toMatch(/^36–40 · 47% all time · /);
+    expect(toughest).not.toContain('last 30');
   });
 
   it('with only locked candidates, renders one unlock card and never zero cards', async () => {

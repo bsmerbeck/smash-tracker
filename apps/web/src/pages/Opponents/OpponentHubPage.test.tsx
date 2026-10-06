@@ -803,6 +803,25 @@ describe('OpponentHubPage', () => {
         expect(ticks.length).toBeLessThanOrEqual(20);
       });
 
+      it('plan 39.1-52 (F22/F23): a 2-game H2H prints no dangling separator, no "over 0" and no empty "last 30 · all time"', async () => {
+        const now = Date.now();
+        listMatches.mockResolvedValue([
+          makeMatch({ id: 'two1', time: now - 2 * 60 * 60 * 1000, opponent: 'rival', win: true }),
+          makeMatch({ id: 'two2', time: now - 60 * 60 * 1000, opponent: 'rival', win: false }),
+        ]);
+        renderHub('/opponents/rival');
+
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+        );
+        const text =
+          document.querySelector('[data-slot="opponent-form-now-evidence"]')?.textContent ?? '';
+        expect(text, `"${text}"`).not.toMatch(/·\s*$/);
+        expect(text, `"${text}"`).not.toMatch(/·\s*·/);
+        expect(text).not.toMatch(/over 0\b/);
+        expect(text).not.toContain('last 30 · all time');
+      });
+
       it("the hub's region structure (card count and order) is otherwise unchanged", async () => {
         listMatches.mockResolvedValue(twoCharacterFixture());
         renderHub('/opponents/rival');
