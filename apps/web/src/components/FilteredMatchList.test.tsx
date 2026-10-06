@@ -226,6 +226,26 @@ describe('FilteredMatchList', () => {
     });
   });
 
+  // UAT 39.1-27a (F4): a calendar-period drill names its period, never the
+  // event name its games happen to share.
+  it('a quarter drill summary names the period, not the shared event name', () => {
+    const matches = [1, 2, 3].map((g) =>
+      makeMatch({
+        id: `q${g}`,
+        time: Date.UTC(2024, 3, g * 5, 12),
+        eventName: 'Ultimate Singles',
+      }),
+    );
+    renderList({
+      matches,
+      axes: { fighterId: mario.id, vsFighterId: luigi.id, eventKey: 'quarter:2024-Q2' },
+      eventKeyForMatch: () => 'quarter:2024-Q2',
+    });
+    const summary = screen.getByText(/ · /, { selector: 'p' }).textContent ?? '';
+    expect(summary).toContain('2024 Q2');
+    expect(summary).not.toContain('Ultimate Singles');
+  });
+
   it('renders no summary bar when no axis is active', () => {
     const matches = [makeMatch()];
     renderList({ matches, axes: {} });

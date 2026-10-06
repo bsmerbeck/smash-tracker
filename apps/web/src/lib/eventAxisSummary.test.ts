@@ -86,3 +86,26 @@ describe('describeEventAxisGames (WR-03, 39.1-REVIEW)', () => {
     expect(describeEventAxisGames([], t, EN)).toBeUndefined();
   });
 });
+
+describe('describeEventAxisGames — calendar-period keys (UAT 39.1-27a F4)', () => {
+  const games = [1, 2, 3, 4, 5, 6, 7].map((g) =>
+    makeMatch({
+      id: `q${g}`,
+      time: Date.UTC(2024, 3, g * 3, 12),
+      eventName: 'Ultimate Singles',
+      opponent: `rival${g}`,
+    }),
+  );
+
+  it('names a quarter drill by its period, never by the event name the games share', () => {
+    const text = describeEventAxisGames(games, t, EN, 'quarter:2024-Q2');
+    expect(text).toBe('2024 Q2');
+    expect(text).not.toContain('Ultimate Singles');
+  });
+
+  it('keeps the shared event name for a named-event key', () => {
+    expect(describeEventAxisGames(games, t, EN, 'eventSession:Ultimate Singles')).toBe(
+      'Ultimate Singles',
+    );
+  });
+});
