@@ -90,10 +90,16 @@ function buildRatingMoveInsight(input: {
   // direction. For the count/day horizons the window is ALSO collapsed when it
   // holds at least HORIZON_COLLAPSE_RATIO of all scoped games — the rule
   // `buildCareerTimeline` already applies. `lastEvent` stays on the ladder.
+  //
+  // Plan 41-14 (UAT 41 test 2 / 39.1 test 17): at ANY horizon, lastEvent
+  // included, an empty prior window collapses — the horizon holds every game,
+  // so there is no 'before' to move from. Only reached once the gate passed;
+  // locked/thinRecent/thin/collapsed keep the gate's own state.
   const windowCoversAccount =
-    horizon !== 'lastEvent' &&
-    scopedMatches.length > 0 &&
-    recentMatches.length >= HORIZON_COLLAPSE_RATIO * scopedMatches.length;
+    priorMatches.length === 0 ||
+    (horizon !== 'lastEvent' &&
+      scopedMatches.length > 0 &&
+      recentMatches.length >= HORIZON_COLLAPSE_RATIO * scopedMatches.length);
 
   let state: Insight['state'];
   let kind: Insight['kind'];
