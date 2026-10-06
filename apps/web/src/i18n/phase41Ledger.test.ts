@@ -131,6 +131,12 @@ export const PHASE41_LEDGER_KEYS: readonly string[] = [
   'scout.fullAnalysis.form.games_other',
   'scout.fullAnalysis.form.characters',
   'scout.fullAnalysis.form.close',
+  // Plan 41-16 (UAT 41-8 F14): source-aware Scout help text and the localized lookup bad-query copy.
+  'scout.form.descriptionParry',
+  'scout.form.descriptionBoth',
+  'scout.errors.badQueryParry',
+  'scout.errors.badQueryBoth',
+  'scout.errors.tagNeedsParry',
 ];
 
 /**
@@ -164,6 +170,9 @@ export const PHASE41_DELETED_KEYS: readonly string[] = [
   'gsp.curve.mmrViewAria',
   'gsp.hero.elite',
   'gsp.hero.latestReading',
+  // Plan 41-16: the source-blind Scout copy that put the parry.gg-only gamer tag beside start.gg inputs.
+  'scout.form.descriptionWithParry',
+  'scout.form.inputAriaWithParry',
 ];
 
 type LocaleTree = Record<string, unknown>;

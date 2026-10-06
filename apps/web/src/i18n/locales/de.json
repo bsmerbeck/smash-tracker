@@ -1556,21 +1556,24 @@
   "scout": {
     "title": "Spieler scouten",
     "prompt": "Füge oben eine start.gg-Profil-URL, einen Slug oder eine Spieler-ID ein, um die öffentliche Turnier-Historie abzurufen.",
-    "promptWithParry": "Füge oben eine start.gg- oder parry.gg-Profil-URL, einen Slug/Tag oder eine Spieler-ID ein, um die öffentliche Turnier-Historie abzurufen.",
+    "promptWithParry": "Füge oben eine start.gg-Profil-URL, einen Slug oder eine Spieler-ID ein — oder eine parry.gg-Profil-URL oder einen Gamertag —, um die öffentliche Turnier-Historie abzurufen.",
     "errors": {
       "notFound": "Wir konnten keinen start.gg-Spieler zu dieser Suche finden. Prüfe URL, Slug oder Spieler-ID.",
       "badQuery": "Das sieht nicht nach einer start.gg-Profil-URL, einem Slug oder einer Spieler-ID aus.",
+      "badQueryParry": "Das sieht nicht nach einer parry.gg-Profil-URL oder einem Gamertag aus.",
+      "badQueryBoth": "Einer der Einträge passt nicht zu dem, was die jeweilige Seite akzeptiert. Prüfe jedes Feld und versuche es erneut.",
+      "tagNeedsParry": "Gamertags sind nur auf parry.gg suchbar — stelle die Quelle auf parry.gg um, um nach Tag zu suchen.",
       "rateLimited": "start.gg drosselt gerade die Anfragen. Versuche es in einer Minute erneut.",
       "scoutFallback": "Beim Scouten dieses Spielers ist etwas schiefgelaufen.",
       "generateFallback": "Beim Generieren des Berichts ist etwas schiefgelaufen."
     },
     "form": {
       "description": "Füge eine start.gg-Profil-URL, eine „user/<slug>“-Referenz oder eine numerische Spieler-ID ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
-      "descriptionWithParry": "Füge eine start.gg- oder parry.gg-Profil-URL, einen Gamer-Tag, eine „user/<slug>“-Referenz oder eine numerische Spieler-ID ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
+      "descriptionParry": "Füge eine parry.gg-Profil-URL oder einen Gamertag ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
+      "descriptionBoth": "Fülle das start.gg-Feld, das parry.gg-Feld oder beide aus, um vor dem Match die kombinierte öffentliche Turnier-Historie abzurufen.",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 oder eine parry.gg-Profil-URL",
       "inputAria": "start.gg-Profil-URL, Slug oder Spieler-ID",
-      "inputAriaWithParry": "start.gg- oder parry.gg-Profil-URL, Slug/Tag oder Spieler-ID",
       "scout": "Scouten",
       "scouting": "Scoutet…",
       "source": "Quelle:",

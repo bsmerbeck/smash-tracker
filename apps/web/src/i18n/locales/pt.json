@@ -1556,21 +1556,24 @@
   "scout": {
     "title": "Buscar jogador",
     "prompt": "Cole acima uma URL de perfil do start.gg, um slug ou um id de jogador para ver o histórico público de torneios.",
-    "promptWithParry": "Cole acima uma URL de perfil do start.gg ou parry.gg, um slug/tag ou um id de jogador para ver o histórico público de torneios.",
+    "promptWithParry": "Cole acima uma URL de perfil do start.gg, um slug ou um id de jogador — ou uma URL de perfil ou gamertag do parry.gg — para ver o histórico público de torneios.",
     "errors": {
       "notFound": "Não encontramos um jogador do start.gg para essa busca. Confira a URL, o slug ou o id do jogador.",
       "badQuery": "Isso não parece uma URL de perfil do start.gg, um slug nem um id de jogador.",
+      "badQueryParry": "Isso não parece uma URL de perfil nem um gamertag do parry.gg.",
+      "badQueryBoth": "Uma dessas entradas não corresponde ao que o site dela aceita. Confira cada campo e tente novamente.",
+      "tagNeedsParry": "Gamertags só podem ser buscados no parry.gg — mude a fonte para parry.gg para buscar por tag.",
       "rateLimited": "O start.gg está limitando as requisições agora. Tente novamente em um minuto.",
       "scoutFallback": "Algo deu errado ao buscar esse jogador.",
       "generateFallback": "Algo deu errado ao gerar o relatório."
     },
     "form": {
       "description": "Cole uma URL de perfil do start.gg, uma referência \"user/<slug>\" ou um id numérico de jogador para ver o histórico público de torneios antes de enfrentá-lo.",
-      "descriptionWithParry": "Cole uma URL de perfil do start.gg ou parry.gg, um gamer tag, uma referência \"user/<slug>\" ou um id numérico de jogador para ver o histórico público de torneios antes de enfrentá-lo.",
+      "descriptionParry": "Cole uma URL de perfil do parry.gg ou um gamertag para ver o histórico público de torneios antes de enfrentá-lo.",
+      "descriptionBoth": "Preencha o campo do start.gg, o do parry.gg ou ambos para ver o histórico público de torneios combinado antes de enfrentá-lo.",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 ou uma URL de perfil do parry.gg",
       "inputAria": "URL de perfil do start.gg, slug ou id de jogador",
-      "inputAriaWithParry": "URL de perfil do start.gg ou parry.gg, slug/tag ou id de jogador",
       "scout": "Buscar",
       "scouting": "Buscando…",
       "source": "Fonte:",

@@ -1556,21 +1556,24 @@
   "scout": {
     "title": "Scout a Player",
     "prompt": "Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.",
-    "promptWithParry": "Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.",
+    "promptWithParry": "Paste a start.gg profile URL, slug, or player id — or a parry.gg profile URL or gamer tag — above to pull up their public tournament history.",
     "errors": {
       "notFound": "We couldn't find a start.gg player for that query. Double-check the URL, slug, or player id.",
       "badQuery": "That doesn't look like a start.gg profile URL, slug, or player id.",
+      "badQueryParry": "That doesn't look like a parry.gg profile URL or gamer tag.",
+      "badQueryBoth": "One of those entries doesn't match what its site accepts. Check each field and try again.",
+      "tagNeedsParry": "Gamer tags are searchable on parry.gg only — switch the source to parry.gg to search by tag.",
       "rateLimited": "start.gg is rate-limiting requests right now. Try again in a minute.",
       "scoutFallback": "Something went wrong while scouting that player.",
       "generateFallback": "Something went wrong while generating the report."
     },
     "form": {
       "description": "Paste a start.gg profile URL, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
-      "descriptionWithParry": "Paste a start.gg or parry.gg profile URL, a bare gamer tag, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
+      "descriptionParry": "Paste a parry.gg profile URL or a gamer tag to pull up their public tournament history before you play them.",
+      "descriptionBoth": "Fill in the start.gg field, the parry.gg field, or both to pull up their combined public tournament history before you play them.",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 or a parry.gg profile URL",
       "inputAria": "start.gg profile URL, slug, or player id",
-      "inputAriaWithParry": "start.gg or parry.gg profile URL, slug/tag, or player id",
       "scout": "Scout",
       "scouting": "Scouting…",
       "source": "Source:",

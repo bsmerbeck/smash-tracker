@@ -1556,21 +1556,24 @@
   "scout": {
     "title": "プレイヤーを検索",
     "prompt": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
-    "promptWithParry": "上にstart.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
+    "promptWithParry": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーID、またはparry.ggのプロフィールURL・ゲーマータグを貼り付けると、公開されている大会履歴を表示します。",
     "errors": {
       "notFound": "その検索条件に一致するstart.ggプレイヤーが見つかりませんでした。URL・スラッグ・プレイヤーIDを確認してください。",
       "badQuery": "start.ggのプロフィールURL・スラッグ・プレイヤーIDではないようです。",
+      "badQueryParry": "parry.ggのプロフィールURLまたはゲーマータグではないようです。",
+      "badQueryBoth": "いずれかの入力がそのサイトで使える形式と一致しません。各欄を確認してもう一度お試しください。",
+      "tagNeedsParry": "ゲーマータグで検索できるのはparry.ggのみです。タグで検索するにはソースをparry.ggに切り替えてください。",
       "rateLimited": "現在start.ggがリクエストを制限しています。1分後にもう一度お試しください。",
       "scoutFallback": "プレイヤーの検索中に問題が発生しました。",
       "generateFallback": "レポートの生成中に問題が発生しました。"
     },
     "form": {
       "description": "start.ggのプロフィールURL、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
-      "descriptionWithParry": "start.ggまたはparry.ggのプロフィールURL、ゲーマータグ、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "descriptionParry": "parry.ggのプロフィールURLまたはゲーマータグを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "descriptionBoth": "start.ggの欄、parry.ggの欄、またはその両方を入力すると、対戦前に統合された公開大会履歴を確認できます。",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 またはparry.ggのプロフィールURL",
       "inputAria": "start.ggのプロフィールURL・スラッグ・プレイヤーID",
-      "inputAriaWithParry": "start.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーID",
       "scout": "検索",
       "scouting": "検索中…",
       "source": "ソース:",
