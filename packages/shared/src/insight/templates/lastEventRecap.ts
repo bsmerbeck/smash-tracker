@@ -6,7 +6,7 @@ import { classify, type ClassifyResult } from '../ladder.js';
 import type { HorizonKey, Insight, InsightScope, RateValue } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 import { buildSetStripMark } from '../marks.js';
-import { newestEventBlock } from '../../evidence/eventBlocks.js';
+import { eventDisplayName, newestEventBlock } from '../../evidence/eventBlocks.js';
 
 const TEMPLATE_ID = 'lastEventRecap' as const;
 /** How many lost sets the sub line names before falling back to a count-only phrasing. */
@@ -171,7 +171,8 @@ export function buildLastEventRecapInsight(input: {
 
   let copyKey: string;
   const values: Record<string, string | number> = {
-    event: eventKey,
+    // 41-13: the copy names the tournament; every door's `event` axis keeps `eventKey`.
+    event: eventDisplayName(games) ?? eventKey,
     gameRecord: `${gameRecord.wins}–${gameRecord.losses}`,
     gameCount: gameRecord.total,
   };

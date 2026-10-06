@@ -45,6 +45,36 @@ export function trimmedEventKey(match: Match): string | null {
 }
 
 /**
+ * 41-13 (UAT 41 test 7, F6): the ONE event DISPLAY-label rule, beside the identity rule above.
+ * DISPLAY ONLY — never a key, never a grouping input, never a URL axis (those stay
+ * `trimmedEventKey`). Names the parent tournament when, and only when, EVERY game carries the
+ * same non-empty tournament name: "Genesis 9 · Ultimate Singles". A tournament name equal to the
+ * event name (case-insensitive) prints once; a mixed or partly-missing tournament falls back to
+ * the bare event name (never a guessed tournament); no name at all is `null`.
+ */
+export function eventDisplayName(games: readonly Match[]): string | null {
+  let event: string | null = null;
+  for (const game of games) {
+    event = trimmedEventKey(game);
+    if (event !== null) break;
+  }
+  let tournament: string | null = null;
+  for (const game of games) {
+    const name = game.tournamentName?.trim() ?? '';
+    if (name.length === 0 || (tournament !== null && name !== tournament)) {
+      tournament = null;
+      break;
+    }
+    tournament = name;
+  }
+  if (tournament !== null) {
+    if (event === null || event.toLowerCase() === tournament.toLowerCase()) return tournament;
+    return `${tournament} \u00b7 ${event}`;
+  }
+  return event;
+}
+
+/**
  * Splits one name-grouped, time-sorted set of tournament matches into blocks
  * whenever consecutive games exceed the proximity window — the same
  * technique `groupTournamentBlocks` uses, ported rather than imported.

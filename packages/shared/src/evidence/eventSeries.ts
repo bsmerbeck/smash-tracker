@@ -6,7 +6,7 @@ import { getWinLossRecord } from './records.js';
 import { splitIntoSessions } from '../glicko.js';
 import { calendarBucketBounds, type CalendarGrain } from '../insight/periodSeries.js';
 import { MARK_BOUND_LINE_POINTS } from '../insight/markBounds.js';
-import { splitTournamentBlocks, trimmedEventKey } from './eventBlocks.js';
+import { eventDisplayName, splitTournamentBlocks, trimmedEventKey } from './eventBlocks.js';
 import type { ClaimKind, ConfidenceTier } from './types.js';
 
 /**
@@ -41,6 +41,7 @@ import type { ClaimKind, ConfidenceTier } from './types.js';
 export {
   EVENT_ANCHOR_PROXIMITY_MS,
   trimmedEventKey,
+  eventDisplayName,
   splitTournamentBlocks,
   eventBlocksOf,
   newestEventBlock,
@@ -56,7 +57,7 @@ export interface EventAnchor {
   /** Content-derived — kind, normalized name (empty for a session), and the anchor's first-game timestamp. Never an array index; stable across a re-render or a repeat call. */
   key: string;
   kind: EventAnchorKind;
-  /** Raw, untruncated display name for a tournament anchor, or a formatted session date for a session anchor. */
+  /** Raw, untruncated display name for a tournament anchor (`eventDisplayName` — names the tournament when every game shares one; never part of `key`), or a formatted session date for a session anchor. */
   label: string;
   startMs: number;
   endMs: number;
@@ -173,7 +174,12 @@ function buildEventSeries(
     anchors.push({
       key: anchorKey(anchor.kind, anchor.name, anchor.startMs),
       kind: anchor.kind,
-      label: anchor.kind === 'tournament' ? anchor.name : formatSessionLabel(anchor.startMs),
+      // 41-13: the DISPLAY label names the tournament (`eventDisplayName`); the key above keeps
+      // the bare identity name so deep links and dismissal keys still resolve.
+      label:
+        anchor.kind === 'tournament'
+          ? (eventDisplayName(anchor.matches) ?? anchor.name)
+          : formatSessionLabel(anchor.startMs),
       startMs: anchor.startMs,
       endMs: anchor.endMs,
       wins: record.wins,
