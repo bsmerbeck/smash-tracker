@@ -243,10 +243,9 @@ describe('TierOverrideSection', () => {
       await i18n.changeLanguage('en');
     });
 
-    it.each(Object.keys(locales))(
+    it.each(Object.entries(locales))(
       'renders tiers.override.badge under %s, not shared.ruleset.overrideBadge',
-      async (language) => {
-        const bundle = locales[language];
+      async (language, bundle) => {
         const tierBadge = bundle.tiers.override.badge;
         const rulesetBadge = bundle.shared.ruleset.overrideBadge;
         expect(tierBadge).toEqual(expect.any(String));
