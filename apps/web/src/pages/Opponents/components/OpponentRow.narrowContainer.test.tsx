@@ -192,24 +192,70 @@ describe('OpponentRow — one flexible truncating slot (UIX-03)', () => {
 });
 
 describe('OpponentRow — no figure stated twice (UI-SPEC §6.5 rule 4)', () => {
-  it("the row's text content contains the games count exactly once", () => {
+  it("the row's visible text contains the games count exactly once", () => {
     const row = buildRow({ wins: 20, losses: 4 }); // total 24, tier "high"
-    restoreGeometry = stubElementGeometry({ metaClientWidth: 400 }); // wide: sentence + record both render
+    restoreGeometry = stubElementGeometry({ metaClientWidth: 400 }); // wide: the record carries n
     const { container } = renderRow(row);
 
-    const mentions = within(container).getAllByText(/24 games/);
-    expect(mentions).toHaveLength(1);
+    // `textContent` never includes `aria-label`/`title` — only visible text.
+    expect(visibleCount(container, '24')).toBe(1);
+  });
+});
+
+/** Occurrences of `needle` in the row's visible text (`textContent` excludes `aria-label` / `title`). */
+function visibleCount(container: HTMLElement, needle: string): number {
+  return (container.textContent ?? '').split(needle).length - 1;
+}
+
+/**
+ * Plan 39.1-56 (UAT 39.1 test 1): a 4-column rail at 2560px leaves each meta
+ * line under both thresholds, so the game count used to survive only in the
+ * badge's `title`. The count is now visible exactly once at every width:
+ * below 260px a compact `common.games` token; at or above it the Record's n
+ * (the confidence cue is then always the glyph, so the words sentence never
+ * repeats the count beside the Record).
+ */
+describe('OpponentRow — the game count is visible exactly once at every meta width (UAT 39.1-1)', () => {
+  it('at 200px (no Record) line 2 carries a visible "275 games" token, once', () => {
+    const row = buildRow({ wins: 194, losses: 81 });
+    restoreGeometry = stubElementGeometry({ metaClientWidth: 200 });
+    const { container } = renderRow(row);
+
+    const meta = container.querySelector('[data-slot="opponent-row-meta"]')!;
+    expect((meta.textContent ?? '').match(/275 games/g)).toHaveLength(1);
+    expect(visibleCount(container, '275')).toBe(1);
+    expect(screen.queryByText('194–81')).not.toBeInTheDocument();
+  });
+
+  it('at 300px the Record carries the count once and no second "275 games" token renders', () => {
+    const row = buildRow({ wins: 194, losses: 81 });
+    restoreGeometry = stubElementGeometry({ metaClientWidth: 300 });
+    const { container } = renderRow(row);
+
+    const record = container.querySelector('[data-slot="record"]')!;
+    expect(record.textContent).toContain('275');
+    expect(container.textContent).not.toMatch(/275 games/);
+    expect(visibleCount(container, '275')).toBe(1);
+  });
+
+  it('at 420px (the old words-cue width) the count is still visible exactly once', () => {
+    const row = buildRow({ wins: 194, losses: 81 });
+    restoreGeometry = stubElementGeometry({ metaClientWidth: 420 });
+    const { container } = renderRow(row);
+
+    expect(container.querySelector('[data-slot="record"]')!.textContent).toContain('275');
+    expect(visibleCount(container, '275')).toBe(1);
   });
 });
 
 describe('OpponentRow — container-query priority drop (declared order)', () => {
-  it('at the wider tier (>=380px), the confidence SENTENCE renders as visible text and the record renders', () => {
+  it("at the wider tier (>=380px), the record renders and the confidence cue stays the glyph — the words sentence would restate the Record's n (plan 39.1-56)", () => {
     const row = buildRow({ wins: 20, losses: 4 });
     restoreGeometry = stubElementGeometry({ metaClientWidth: 400 });
     renderRow(row);
 
-    expect(screen.getByText(/24 games · high confidence/)).toBeInTheDocument();
-    // Record's own bare figure (wins–losses) is present alongside the sentence.
+    expect(screen.queryByText(/24 games · high confidence/)).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'high confidence, 24 games' })).toBeInTheDocument();
     expect(screen.getByText('20–4')).toBeInTheDocument();
   });
 
