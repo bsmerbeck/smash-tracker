@@ -282,10 +282,7 @@
       "gamesSampled_other": "{{count}} matchs pris en compte",
       "ratingCaption": "Glicko-2, par session · non officiel",
       "ratingLocked": "Le classement se débloque à {{threshold}} matchs",
-      "ratingProgress": "{{played}}/{{threshold}} matchs pour l'instant",
-      "ratingUp": "Classement en hausse depuis la dernière session",
-      "ratingDown": "Classement en baisse depuis la dernière session",
-      "ratingUnchanged": "Classement inchangé depuis la dernière session"
+      "ratingProgress": "{{played}}/{{threshold}} matchs pour l'instant"
     },
     "previous": {
       "title": "Matchs précédents",

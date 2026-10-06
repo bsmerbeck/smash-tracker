@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
-  ACCOUNT_SCOPE,
-  INSIGHT_TEMPLATES,
   classify,
   resolveWindow,
   toRateValue,
@@ -13,20 +11,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { buildRatingMoveChipView } from '@/components/analytics/ratingMoveChip';
 import { Record } from '@/components/analytics/Record';
 import { getSessions } from '@/lib/stats';
 import { computeRatingHistory } from '@/lib/glicko';
 import { buildSessionsHeadline } from './SessionsAndTilt';
 import { BEST_MONTH_MIN_GAMES, buildTrendsHero, formatMonthLabel } from '../lib/trendsHero';
-
-/**
- * `ratingMove` invoked at the whole-account scope (TRND-02/DD-12) — the same
- * template `TrendsReadsRail.tsx` renders as a card, reused here (independent
- * computation, per this codebase's small-helper-duplication convention) so
- * the hero's Rating figure carries the SAME up/down/steady read as the rail's
- * card rather than a bespoke second rating-delta rule.
- */
-const RATING_MOVE_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'ratingMove')!;
 
 function formatFullDate(timeMs: number, locale: string): string {
   return new Date(timeMs).toLocaleDateString(locale, {
@@ -79,9 +69,12 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
     [recentRate, baselineAllTime],
   );
 
-  const ratingMoveInsight = useMemo(
-    () => RATING_MOVE_TEMPLATE.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0] ?? null,
-    [matches, horizon, nowMs],
+  // `ratingMove` at the whole-account scope (TRND-02/DD-12) through the ONE
+  // shared helper the Dashboard Rating tile also uses (plan 35-05, F24), so
+  // the two pages can never disagree on a rating direction.
+  const { chipView: ratingChipView } = useMemo(
+    () => buildRatingMoveChipView({ matches, horizon, nowMs, t }),
+    [matches, horizon, nowMs, t],
   );
 
   // Plan 39.1-36 (audit 2.2, UI-SPEC §7.5): the "Win rate" overline does not
@@ -179,15 +172,6 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
     // The rating figure keeps its ratingMove-driven state (a rating delta is
     // not a win-rate window); its sample size is the insight's own window.
     // The "Rating" overline does not name the horizon, so the chip does.
-    const ratingChipView = deltaChipView({
-      state: ratingMoveInsight?.state ?? 'locked',
-      deltaPoints: ratingMoveInsight?.deltaPoints ?? null,
-      recentGames: ratingMoveInsight?.window.games ?? 0,
-      horizon,
-      horizonOwnedByParent: false,
-      deltaUnit: 'rating',
-      t,
-    });
     ratingFigure = (
       <StatFigure
         key="rating"

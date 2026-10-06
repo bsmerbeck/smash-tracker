@@ -282,10 +282,7 @@
       "gamesSampled_other": "{{count}}戦を集計",
       "ratingCaption": "Glicko-2・セッション制・非公式",
       "ratingLocked": "レーティングは{{threshold}}戦で解放されます",
-      "ratingProgress": "現在{{played}}/{{threshold}}戦",
-      "ratingUp": "前回セッションからレーティング上昇",
-      "ratingDown": "前回セッションからレーティング下降",
-      "ratingUnchanged": "前回セッションからレーティング変化なし"
+      "ratingProgress": "現在{{played}}/{{threshold}}戦"
     },
     "previous": {
       "title": "最近の対戦",

@@ -282,10 +282,7 @@
       "gamesSampled_other": "{{count}} games sampled",
       "ratingCaption": "Glicko-2, session-based · unofficial",
       "ratingLocked": "Rating unlocks at {{threshold}} games",
-      "ratingProgress": "{{played}}/{{threshold}} games so far",
-      "ratingUp": "Rating up from last session",
-      "ratingDown": "Rating down from last session",
-      "ratingUnchanged": "Rating unchanged from last session"
+      "ratingProgress": "{{played}}/{{threshold}} games so far"
     },
     "previous": {
       "title": "Previous Matches",

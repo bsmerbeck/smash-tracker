@@ -282,10 +282,7 @@
       "gamesSampled_other": "{{count}} Matches ausgewertet",
       "ratingCaption": "Glicko-2, sitzungsbasiert · inoffiziell",
       "ratingLocked": "Wertung wird ab {{threshold}} Matches freigeschaltet",
-      "ratingProgress": "Bisher {{played}}/{{threshold}} Matches",
-      "ratingUp": "Wertung höher als in der letzten Sitzung",
-      "ratingDown": "Wertung niedriger als in der letzten Sitzung",
-      "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
+      "ratingProgress": "Bisher {{played}}/{{threshold}} Matches"
     },
     "previous": {
       "title": "Letzte Matches",

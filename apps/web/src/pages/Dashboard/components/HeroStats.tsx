@@ -21,6 +21,7 @@ import { StatFigure, StatRow } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { buildRatingMoveChipView } from '@/components/analytics/ratingMoveChip';
 import {
   TILE_CARD_CLASS,
   TILE_CONTENT_CLASS,
@@ -86,7 +87,7 @@ export function HeroStats({
     <>
       <GridCell span={3} stack className={HERO_TILE_CLASS}>
         <OverallRecordCard matches={matches} horizon={horizon} />
-        <RatingCard matches={matches} />
+        <RatingCard matches={matches} horizon={horizon} />
       </GridCell>
       <GridCell span={3} stack className={HERO_TILE_CLASS}>
         <FormCard matches={matches} />
@@ -368,10 +369,18 @@ const RATING_UNLOCK_THRESHOLD = 5;
  * (via `RatingOverline`) because the label row carries the explainer
  * trigger and the locked state needs that row without an em-dash figure.
  */
-function RatingCard({ matches }: { matches: Match[] }) {
+function RatingCard({ matches, horizon }: { matches: Match[]; horizon: HorizonKey }) {
   const { t } = useTranslation();
+  // A one-time read of "now" (React Compiler forbids a bare `Date.now()` in render).
+  const [nowMs] = useState(() => Date.now());
   const hasEnoughGames = matches.length >= RATING_UNLOCK_THRESHOLD;
-  const { periods, current } = computeRatingHistory(matches);
+  const { current } = computeRatingHistory(matches);
+  // Plan 35-05 (F24): the direction comes from the SAME `ratingMove` chip the
+  // Trends hero renders — never a session-to-session comparison.
+  const { chipView: ratingChipView } = useMemo(
+    () => buildRatingMoveChipView({ matches, horizon, nowMs, t }),
+    [matches, horizon, nowMs, t],
+  );
 
   return (
     <Card className={TILE_CARD_CLASS}>
@@ -386,7 +395,16 @@ function RatingCard({ matches }: { matches: Match[] }) {
               <span className="text-sm leading-5 font-medium text-muted-foreground">
                 &plusmn;{current.rd}
               </span>
-              <RatingTrendArrow periods={periods} />
+              {ratingChipView === null ? null : (
+                <DeltaChip
+                  {...ratingChipView}
+                  ariaLabel={t('analytics.dumbbell.rowAria', {
+                    label: t('dashboard.hero.rating'),
+                    recentRecord: `${current.rating}`,
+                    baselineRecord: `${current.rating}`,
+                  })}
+                />
+              )}
             </div>
             {/* Two separate spans, never a joined string (§13.8). */}
             <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs leading-4 text-muted-foreground tabular-nums">
@@ -430,39 +448,5 @@ function RatingOverline() {
         <GlickoExplainer />
       </span>
     </div>
-  );
-}
-
-/**
- * Small trend indicator comparing the two most recent rating periods
- * (sessions). Hidden when there's no prior period to compare against (a
- * single session played so far).
- */
-function RatingTrendArrow({ periods }: { periods: { rating: number }[] }) {
-  const { t } = useTranslation();
-  if (periods.length < 2) {
-    return null;
-  }
-  const latest = periods[periods.length - 1];
-  const previous = periods[periods.length - 2];
-  if (!latest || !previous) {
-    return null;
-  }
-  const delta = latest.rating - previous.rating;
-  if (delta === 0) {
-    return (
-      <span aria-label={t('dashboard.hero.ratingUnchanged')} className="text-muted-foreground">
-        &rarr;
-      </span>
-    );
-  }
-  const isUp = delta > 0;
-  return (
-    <span
-      aria-label={isUp ? t('dashboard.hero.ratingUp') : t('dashboard.hero.ratingDown')}
-      className={isUp ? 'text-emerald-500' : 'text-destructive'}
-    >
-      {isUp ? '▲' : '▼'} {Math.abs(delta)}
-    </span>
   );
 }

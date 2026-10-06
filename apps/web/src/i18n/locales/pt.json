@@ -282,10 +282,7 @@
       "gamesSampled_other": "{{count}} partidas analisadas",
       "ratingCaption": "Glicko-2, por sessão · não oficial",
       "ratingLocked": "A pontuação desbloqueia com {{threshold}} partidas",
-      "ratingProgress": "{{played}}/{{threshold}} partidas até agora",
-      "ratingUp": "Pontuação em alta desde a última sessão",
-      "ratingDown": "Pontuação em queda desde a última sessão",
-      "ratingUnchanged": "Pontuação inalterada desde a última sessão"
+      "ratingProgress": "{{played}}/{{threshold}} partidas até agora"
     },
     "previous": {
       "title": "Partidas anteriores",
