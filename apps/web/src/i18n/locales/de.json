@@ -3608,9 +3608,9 @@
       "fact": "Schwerste Bilanz — vs. {{vs}}, {{record}} über {{count, grouped}}."
     },
     "tierGap": {
-      "up": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches vs. {{bRate}} bei kleineren Events.",
-      "down": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches, unter den {{bRate}} bei kleineren Events.",
-      "steady": "Majors und darüber — {{aRate}} über {{aGames, grouped}} Matches; kein nennenswerter Unterschied zu kleineren Events ({{bRate}}).",
+      "up": "Majors und darüber — {{aRate}} vs. {{bRate}} bei kleineren Events, über {{count, grouped}} Matches.",
+      "down": "Majors und darüber — {{aRate}}, unter den {{bRate}} bei kleineren Events, über {{count, grouped}} Matches.",
+      "steady": "Majors und darüber — {{aRate}} vs. {{bRate}} bei kleineren Events, über {{count, grouped}} Matches; kein nennenswerter Unterschied.",
       "abstained": "Nicht genug Matches bei Majors ({{count, grouped}}).",
       "abstainedSmaller": "Nicht genug Matches bei kleineren Events ({{count, grouped}}).",
       "noTiers": "Stufe — noch kein Event hat eine bekannte Stufe.",

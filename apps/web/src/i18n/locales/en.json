@@ -3608,9 +3608,9 @@
       "fact": "Toughest record — vs {{vs}}, {{record}} over {{count, grouped}}."
     },
     "tierGap": {
-      "up": "Majors and above — {{aRate}} over {{aGames, grouped}} vs {{bRate}} at smaller events.",
-      "down": "Majors and above — {{aRate}} over {{aGames, grouped}}, below {{bRate}} at smaller events.",
-      "steady": "Majors and above — {{aRate}} over {{aGames, grouped}}; no notable gap vs smaller events ({{bRate}}).",
+      "up": "Majors and above — {{aRate}} vs {{bRate}} at smaller events, over {{count, grouped}} games.",
+      "down": "Majors and above — {{aRate}}, below {{bRate}} at smaller events, over {{count, grouped}} games.",
+      "steady": "Majors and above — {{aRate}} vs {{bRate}} at smaller events over {{count, grouped}} games; no notable gap.",
       "abstained": "Not enough games at majors ({{count, grouped}}).",
       "abstainedSmaller": "Not enough games at smaller events ({{count, grouped}}).",
       "noTiers": "Tier — no event has a known tier yet.",

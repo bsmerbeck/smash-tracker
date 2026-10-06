@@ -3608,9 +3608,9 @@
       "fact": "Marca más difícil — vs {{vs}}, {{record}} en {{count, grouped}}."
     },
     "tierGap": {
-      "up": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas frente a {{bRate}} en eventos más pequeños.",
-      "down": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas, por debajo del {{bRate}} en eventos más pequeños.",
-      "steady": "Majors y superiores — {{aRate}} en {{aGames, grouped}} partidas; sin diferencia notable frente a los eventos más pequeños ({{bRate}}).",
+      "up": "Majors y superiores — {{aRate}} frente a {{bRate}} en eventos más pequeños, en {{count, grouped}} partidas.",
+      "down": "Majors y superiores — {{aRate}}, por debajo del {{bRate}} en eventos más pequeños, en {{count, grouped}} partidas.",
+      "steady": "Majors y superiores — {{aRate}} frente a {{bRate}} en eventos más pequeños, en {{count, grouped}} partidas; sin diferencia notable.",
       "abstained": "No hay suficientes partidas en majors ({{count, grouped}}).",
       "abstainedSmaller": "No hay suficientes partidas en eventos más pequeños ({{count, grouped}}).",
       "noTiers": "Nivel — ningún evento tiene aún un nivel conocido.",

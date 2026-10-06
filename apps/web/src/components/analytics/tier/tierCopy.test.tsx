@@ -612,11 +612,13 @@ describe('tier insight copy through the real locale files (G4, plan 39.2-09)', (
         }
       });
 
-      it('a large cohort is grouped in this locale and the estimated note names its count', async () => {
+      it('the verdict names the counted total, grouped, and the estimated note names its count', async () => {
         await i18n.changeLanguage(locale);
         const [up] = insightCases();
-        const { container } = renderInsight(up!);
-        const grouped = new Intl.NumberFormat(locale).format(1234);
+        const { container, insight } = renderInsight(up!);
+        // 1,234 majors-and-above games + 12 smaller-event games: the counted total.
+        expect(insight.countedMatchIds).toHaveLength(1246);
+        const grouped = new Intl.NumberFormat(locale).format(insight.countedMatchIds.length);
         expect(container.textContent).toContain(grouped);
         const note = container.querySelector('[data-slot="insight-card-sub"]')?.textContent ?? '';
         expect(note).toContain('2');
@@ -638,7 +640,9 @@ describe('tier insight copy through the real locale files (G4, plan 39.2-09)', (
       })!;
       return i18n.t(insight.copy.key, insight.copy.values);
     };
-    expect(verdictOf('down')).toBe('Majors and above — 33% over 12, below 79% at smaller events.');
+    expect(verdictOf('down')).toBe(
+      'Majors and above — 33%, below 79% at smaller events, over 45 games.',
+    );
     expect(verdictOf('abstained (majors short)')).toBe('Not enough games at majors (5).');
     expect(verdictOf('abstained (smaller events short)')).toBe(
       'Not enough games at smaller events (3).',

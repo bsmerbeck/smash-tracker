@@ -128,7 +128,7 @@ describe('TierInsightCard', () => {
     it('a notable gap is a Trend: the verdict, both records and the confidence cue of the smaller cohort', () => {
       const { container } = renderCard(trendFixture());
       expect(
-        screen.getByText('Majors and above — 79% over 33 vs 33% at smaller events.'),
+        screen.getByText('Majors and above — 79% vs 33% at smaller events, over 45 games.'),
       ).toBeInTheDocument();
       expect(screen.getByText('Trend')).toBeInTheDocument();
       const evidence = container.querySelector('[data-slot="insight-card-evidence"]')!.textContent;
@@ -184,7 +184,9 @@ describe('TierInsightCard', () => {
       });
       renderCard(built);
       expect(
-        screen.getByText('Majors and above — 52% over 33; no notable gap vs smaller events (50%).'),
+        screen.getByText(
+          'Majors and above — 52% vs 50% at smaller events over 45 games; no notable gap.',
+        ),
       ).toBeInTheDocument();
       expect(screen.getByText('Fact')).toBeInTheDocument();
       expect(screen.queryByText('Trend')).toBeNull();

@@ -707,7 +707,7 @@ describe('TournamentsPage', () => {
         expect(cell.className).toContain('xl:order-none');
         expect(
           screen.getByText(
-            'Majors and above — 79% over 33; no notable gap vs smaller events (80%).',
+            'Majors and above — 79% vs 80% at smaller events over 43 games; no notable gap.',
           ),
         ).toBeInTheDocument();
       });

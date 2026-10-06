@@ -3608,9 +3608,9 @@
       "fact": "Retrospecto mais difícil — vs {{vs}}, {{record}} em {{count, grouped}}."
     },
     "tierGap": {
-      "up": "Majors e acima — {{aRate}} em {{aGames, grouped}} partidas contra {{bRate}} em eventos menores.",
-      "down": "Majors e acima — {{aRate}} em {{aGames, grouped}} partidas, abaixo dos {{bRate}} em eventos menores.",
-      "steady": "Majors e acima — {{aRate}} em {{aGames, grouped}} partidas; sem diferença notável em relação aos eventos menores ({{bRate}}).",
+      "up": "Majors e acima — {{aRate}} contra {{bRate}} em eventos menores, em {{count, grouped}} partidas.",
+      "down": "Majors e acima — {{aRate}}, abaixo dos {{bRate}} em eventos menores, em {{count, grouped}} partidas.",
+      "steady": "Majors e acima — {{aRate}} contra {{bRate}} em eventos menores, em {{count, grouped}} partidas; sem diferença notável.",
       "abstained": "Não há partidas suficientes em majors ({{count, grouped}}).",
       "abstainedSmaller": "Não há partidas suficientes em eventos menores ({{count, grouped}}).",
       "noTiers": "Nível — nenhum evento tem um nível conhecido ainda.",
