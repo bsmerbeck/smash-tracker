@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -152,6 +152,19 @@ export function StageDetailPage() {
     const parsed = parseStageIdSegment(params.stageId);
     return parsed != null && isKnownStageSegment(parsed) ? parsed : undefined;
   }, [params.stageId]);
+
+  // 38-11 (UAT 38-21 / F11): the one stage-name derivation — the tab title
+  // and the identity row both read it. RouteTitles.tsx has no /stages/
+  // mapping (and its /workspace/ entry runs first, as the earlier sibling),
+  // so this page writes the title itself: a plain assignment, not useSeo
+  // (app chrome titles never rewrite OG tags). Above the isLoading return.
+  const stageName =
+    resolvedStageId == null || resolvedStageId === UNKNOWN_STAGE_ID
+      ? t('common.unknown')
+      : (getStageById(resolvedStageId)?.name ?? t('common.unknown'));
+  useEffect(() => {
+    document.title = `${t('stages.detail.title', { stage: stageName })} | grandfinals.gg`;
+  }, [stageName, t]);
 
   // D-05: tolerant read — only the event and date-window axes are consumed
   // by this page; a `stage`/`fighter`/`vs` query param (this page's own path
@@ -386,10 +399,6 @@ export function StageDetailPage() {
   const showEmpty = resolvedStageId == null || !breakdown || breakdown.sample.rawSampleSize === 0;
 
   const stage = resolvedStageId != null ? getStageById(resolvedStageId) : undefined;
-  const stageName =
-    resolvedStageId === UNKNOWN_STAGE_ID
-      ? t('common.unknown')
-      : (stage?.name ?? t('common.unknown'));
   // Plan 39.1-39: the subtitle names the event the way the trend's tooltip
   // does (a session's date, a bin's period, a tournament's name) — never an
   // engine key or ISO string.
