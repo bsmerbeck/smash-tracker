@@ -95,4 +95,24 @@ i18n.services.formatter?.add('grouped', (value: unknown, lng: string | undefined
   typeof value === 'number' ? new Intl.NumberFormat(lng).format(value) : String(value),
 );
 
+/**
+ * UAT 39.1-30 (F12): `<html lang>` follows the UI language so screen readers,
+ * hyphenation and the browser's translate prompt see the language actually
+ * rendered. A regional code maps to its bundled base (de-AT → de); anything
+ * unsupported is rendered in English, so it reads 'en'. Guarded for
+ * non-DOM (prerender/SSR) contexts.
+ */
+function documentLanguage(lng: string | undefined): SupportedLanguage {
+  const base = (lng ?? '').split('-')[0];
+  return SUPPORTED_LANGUAGES.find((l) => l.code === base)?.code ?? 'en';
+}
+
+function syncDocumentLanguage(lng: string | undefined): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = documentLanguage(lng);
+}
+
+i18n.on('languageChanged', syncDocumentLanguage);
+syncDocumentLanguage(i18n.resolvedLanguage ?? i18n.language);
+
 export default i18n;
