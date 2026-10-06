@@ -3582,8 +3582,12 @@
       "fact": "Mistura de partidas — {{recentShare}} {{matchType}} recentemente vs {{lifetimeShare}} no histórico."
     },
     "rosterCore": {
-      "fact": "Elenco — {{fighter}} é o principal com {{share}}% do tempo de jogo; {{secondaryCount}} secundários, {{pocketCount}} de reserva.",
-      "thin": "Elenco — o principal ainda não está estabelecido; {{count, grouped}} partidas em um só personagem definem isso."
+      "fact": "Elenco — {{fighter}} é o principal com {{share}}% do tempo de jogo; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Elenco — o principal ainda não está estabelecido; {{count, grouped}} partidas em um só personagem definem isso.",
+      "secondaries_one": "{{count}} secundário",
+      "secondaries_other": "{{count}} secundários",
+      "pockets_one": "{{count}} de reserva",
+      "pockets_other": "{{count}} de reserva"
     },
     "rosterShift": {
       "hidden": "Ainda não há uma mudança notável em quem é jogado.",

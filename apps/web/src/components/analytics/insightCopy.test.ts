@@ -719,7 +719,15 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
   settingGap: ['up', 'down', 'steady', 'thin', 'locked_one', 'locked_other'],
   volumeForm: ['up', 'down', 'steady', 'locked_one', 'locked_other'],
   mixShift: ['hidden', 'fact'],
-  rosterCore: ['fact', 'thin'],
+  // Plan 39.1-52: the plural count nouns `fact` nests via $t(…, {"count": …}).
+  rosterCore: [
+    'fact',
+    'thin',
+    'secondaries_one',
+    'secondaries_other',
+    'pockets_one',
+    'pockets_other',
+  ],
   rosterShift: ['hidden', 'steady', 'up', 'down'],
   secondaryPayoff: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
   pocketCost: ['hidden', 'fact', 'steady'],
@@ -864,10 +872,15 @@ function templateTokenPattern(): RegExp {
   return new RegExp(`\\b(?:${forms.join('|')})\\b`);
 }
 
+/** A `$t(<key>, …)` nesting reference names a KEY, which is never rendered — keys are exempt, so the key path is dropped before the scan. */
+function renderedText(value: string): string {
+  return value.replace(/\$t\([^,)]*/g, '$t(');
+}
+
 function findTemplateTokens(locale: Record<string, unknown>): string[] {
   const pattern = templateTokenPattern();
   return collectLocaleValues(locale)
-    .filter(({ value }) => pattern.test(value))
+    .filter(({ value }) => pattern.test(renderedText(value)))
     .map(({ keyPath, value }) => `${keyPath}: ${value}`);
 }
 
@@ -892,5 +905,15 @@ describe('no internal template id in any locale value (plan 39.1-52, UAT 39.1-31
     const clone = deepClone(INSIGHT_COPY_LOCALE_SOURCE.en!);
     (clone.insights as Record<string, unknown>).probe = 'TiltCost · last 30 games';
     expect(findTemplateTokens(clone)).toContain('insights.probe: TiltCost · last 30 games');
+  });
+
+  it('a $t nesting reference is a key (exempt), while the same id in visible text is flagged', () => {
+    const clone = deepClone(INSIGHT_COPY_LOCALE_SOURCE.en!);
+    (clone.insights as Record<string, unknown>).nested =
+      '$t(insights.rosterCore.pockets, {"count": {{pocketCount}} })';
+    (clone.insights as Record<string, unknown>).visible = 'rosterCore · all time';
+    const hits = findTemplateTokens(clone);
+    expect(hits).toContain('insights.visible: rosterCore · all time');
+    expect(hits.some((hit) => hit.startsWith('insights.nested'))).toBe(false);
   });
 });

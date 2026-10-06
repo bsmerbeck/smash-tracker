@@ -3582,8 +3582,12 @@
       "fact": "Match-Mischung — {{recentShare}} {{matchType}} zuletzt vs. {{lifetimeShare}} insgesamt."
     },
     "rosterCore": {
-      "fact": "Roster — {{fighter}} ist der Main mit {{share}}% der Spielzeit; {{secondaryCount}} Secondaries, {{pocketCount}} Pockets.",
-      "thin": "Roster — der Main steht noch nicht fest; {{count, grouped}} Matches auf einem Charakter legen ihn fest."
+      "fact": "Roster — {{fighter}} ist der Main mit {{share}}% der Spielzeit; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Roster — der Main steht noch nicht fest; {{count, grouped}} Matches auf einem Charakter legen ihn fest.",
+      "secondaries_one": "{{count}} Secondary",
+      "secondaries_other": "{{count}} Secondaries",
+      "pockets_one": "{{count}} Pocket",
+      "pockets_other": "{{count}} Pockets"
     },
     "rosterShift": {
       "hidden": "Noch keine nennenswerte Verschiebung darin, wer gespielt wird.",

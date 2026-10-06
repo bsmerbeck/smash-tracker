@@ -3582,8 +3582,12 @@
       "fact": "Match mix — {{recentShare}} {{matchType}} recently vs {{lifetimeShare}} lifetime."
     },
     "rosterCore": {
-      "fact": "Roster — {{fighter}} is the main at {{share}}% of play; {{secondaryCount}} secondaries, {{pocketCount}} pockets.",
-      "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it."
+      "fact": "Roster — {{fighter}} is the main at {{share}}% of play; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it.",
+      "secondaries_one": "{{count}} secondary",
+      "secondaries_other": "{{count}} secondaries",
+      "pockets_one": "{{count}} pocket",
+      "pockets_other": "{{count}} pockets"
     },
     "rosterShift": {
       "hidden": "Not enough of a shift in who gets played to report yet.",

@@ -3582,8 +3582,12 @@
       "fact": "Mezcla de partidas — {{recentShare}} {{matchType}} recientemente vs {{lifetimeShare}} histórico."
     },
     "rosterCore": {
-      "fact": "Plantel — {{fighter}} es el principal con {{share}}% del juego; {{secondaryCount}} secundarios, {{pocketCount}} de bolsillo.",
-      "thin": "Plantel — el principal aún no está establecido; {{count, grouped}} partidas con un mismo personaje lo confirman."
+      "fact": "Plantel — {{fighter}} es el principal con {{share}}% del juego; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Plantel — el principal aún no está establecido; {{count, grouped}} partidas con un mismo personaje lo confirman.",
+      "secondaries_one": "{{count}} secundario",
+      "secondaries_other": "{{count}} secundarios",
+      "pockets_one": "{{count}} de bolsillo",
+      "pockets_other": "{{count}} de bolsillo"
     },
     "rosterShift": {
       "hidden": "Aún no hay un cambio notable en quién se juega.",
