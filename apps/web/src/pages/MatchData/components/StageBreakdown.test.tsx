@@ -144,3 +144,65 @@ describe('StageBreakdown — two-line rows below a 480px row width (plan 39.1-49
     });
   });
 });
+
+/**
+ * Plan 39.1-54 (UAT 39.1-29c, F8): the unknown-stage bucket (stageId
+ * `UNKNOWN_STAGE_ID` = 0, or an absent `map`) is never a ranked, drillable
+ * stage row and never the headline's most-played stage — it is disclosed
+ * once, last, through the shared `UnknownRow`.
+ */
+describe('StageBreakdown — Unknown stage is last and unranked (plan 39.1-54, UAT 39.1-29c)', () => {
+  function stageGames(stageId: number | null, wins: number, losses: number): Match[] {
+    const out: Match[] = [];
+    for (let i = 0; i < wins + losses; i++) {
+      const match = makeMatch(stageId ?? 0);
+      match.win = i < wins;
+      if (stageId === null) {
+        delete match.map;
+      }
+      out.push(match);
+    }
+    return out;
+  }
+
+  function headlineText(): string {
+    return document.querySelector('[data-slot="stat-row"]')?.textContent ?? '';
+  }
+
+  it('ranks known stages only, never links /stages/0, and renders "Unknown (130 games, excluded)" as the last list item', () => {
+    // Stage 1 (200), unknown (130: 100 stored as id 0, 30 with no map), stage 2 (40).
+    renderCard([
+      ...stageGames(1, 150, 50),
+      ...stageGames(0, 60, 40),
+      ...stageGames(null, 10, 20),
+      ...stageGames(2, 10, 30),
+    ]);
+    const rows = Array.from(document.querySelectorAll('li[data-slot="stage-row"]'));
+    expect(rows.map((row) => row.querySelector('a')!.getAttribute('href'))).toEqual([
+      '/stages/1',
+      '/stages/2',
+    ]);
+    expect(document.querySelector('a[href="/stages/0"]')).toBeNull();
+    const items = Array.from(document.querySelectorAll('li'));
+    expect(items[items.length - 1]!.textContent).toBe('Unknown (130 games, excluded)');
+    expect(screen.getAllByText(/^Unknown \(/)).toHaveLength(1);
+  });
+
+  it('the headline names the most-played KNOWN stage even when the unknown bucket is larger', () => {
+    renderCard([...stageGames(0, 100, 30), ...stageGames(1, 30, 10)]);
+    const headline = headlineText();
+    expect(headline).toContain('75%');
+    expect(headline).toContain('30');
+    expect(headline).toContain('10');
+    expect(headline).not.toContain('100');
+    expect(headline).not.toContain('77%');
+  });
+
+  it('a card with only unknown-stage games shows the empty sentence plus the UnknownRow and no ranked rows', () => {
+    renderCard(stageGames(0, 3, 2));
+    expect(document.querySelectorAll('[data-slot="stage-row"]')).toHaveLength(0);
+    expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
+    expect(screen.getByText('Unknown (5 games, excluded)')).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="stat-row"]')).toBeNull();
+  });
+});
