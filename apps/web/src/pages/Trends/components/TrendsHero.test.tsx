@@ -107,6 +107,21 @@ describe('TrendsHero', () => {
     expect(screen.getByText(/^±\d+$/)).toBeInTheDocument();
   });
 
+  it.each(['last30', 'last90'] as const)(
+    'plan 39.1-53 (UAT 39.1-17): a demo-shaped 8-game account states no rating direction at %s',
+    (horizon) => {
+      const outcomes = [true, true, false, true, true, false, true, true];
+      const matches = outcomes.map((win, i) =>
+        makeMatch({ id: `d${i}`, time: NOW - (8 - i) * 3 * 60 * 60 * 1000, win }),
+      );
+      render(<TrendsHero matches={matches} horizon={horizon} />);
+      const ratingFigure = screen.getByText('Rating').parentElement as HTMLElement;
+      const chip = ratingFigure.querySelector('[data-slot="delta-chip"]');
+      expect(['up', 'down']).not.toContain(chip?.getAttribute('data-state'));
+      expect(ratingFigure.textContent).not.toMatch(/[+\u2212]\d+/);
+    },
+  );
+
   it('renders the sessions figure with an average-games support line', () => {
     const matches = Array.from({ length: 6 }, (_, i) =>
       makeMatch({ id: `g${i}`, time: NOW - (6 - i) * 4 * 60 * 60 * 1000, win: true }),

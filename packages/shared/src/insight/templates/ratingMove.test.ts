@@ -5,6 +5,8 @@ import { ACCOUNT_SCOPE } from '../types.js';
 import type { Match } from '../../match.js';
 
 const BASE_TIME_MS = 1_700_000_000_000;
+// Plan 39.1-53: read from an f910cc85 run — lastEvent stays on the classify ladder (UI-SPEC §8.1).
+const LAST_EVENT_PINNED_STATE = 'trend';
 const NOW_MS = BASE_TIME_MS + 365 * 24 * 60 * 60 * 1000;
 
 function buildMatches(outcomes: boolean[], startTime = BASE_TIME_MS, gapMs = 60_000): Match[] {
@@ -101,6 +103,53 @@ describe('ratingMoveTemplate', () => {
     expect(insight.state).toBe('locked');
     expect(insight.gamesNeeded).toBe(1);
     expect(insight.copy.values.count).toBe(1);
+  });
+
+  describe('plan 39.1-53 (UAT 39.1-17): the window covering most of the account collapses', () => {
+    // 6–2 over 8 games, all well inside every horizon; nowMs is after the last game.
+    // Every game belongs to one named event, so lastEvent holds the same 8 games.
+    const thinAccount = buildMatches([true, true, false, true, true, false, true, true]).map(
+      (match) => ({ ...match, tournamentName: 'Demo Weekly', eventName: 'Ultimate Singles' }),
+    );
+
+    function buildAt(matches: Match[], horizon: 'last30' | 'last90' | 'lastEvent') {
+      // One day after the account's last game, so the day-bounded last90 window holds it.
+      const nowMs = matches[matches.length - 1]!.time + 24 * 60 * 60 * 1000;
+      return ratingMoveTemplate.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0]!;
+    }
+
+    it.each(['last30', 'last90'] as const)(
+      'an 8-game account at %s states no direction: collapsed fact, no delta',
+      (horizon) => {
+        const insight = buildAt(thinAccount, horizon);
+        expect(insight.state).toBe('collapsed');
+        expect(insight.kind).toBe('fact');
+        expect(insight.deltaPoints).toBeNull();
+        expect(insight.copy.key).toBe('insights.ratingMove.collapsed');
+        expect(insight.window.games).toBe(8);
+      },
+    );
+
+    it('pin: a 40-game account whose last-30 window holds 30 of 40 collapses', () => {
+      const insight = buildAt(buildMatches(Array(40).fill(true)), 'last30');
+      expect(insight.state).toBe('collapsed');
+      expect(insight.deltaPoints).toBeNull();
+    });
+
+    it('pin: a 100-game account whose last-30 window holds 30 of 100 runs the RD-band rule', () => {
+      const prior = buildMatches(Array(70).fill(false));
+      const recent = buildMatches(
+        [...Array(10).fill(true), ...Array(20).fill(false)],
+        prior[prior.length - 1]!.time + 4 * 60 * 60 * 1000,
+      );
+      const insight = buildAt([...prior, ...recent], 'last30');
+      expect(['steady', 'trend']).toContain(insight.state);
+    });
+
+    it('pin: the 8-game account at lastEvent keeps the classify ladder (not collapsed by the horizon gate)', () => {
+      const insight = buildAt(thinAccount, 'lastEvent');
+      expect(insight.state).toBe(LAST_EVENT_PINNED_STATE);
+    });
   });
 
   it('windowExpressible is true — a rating window is a contiguous scoped window the existing axes express', () => {
