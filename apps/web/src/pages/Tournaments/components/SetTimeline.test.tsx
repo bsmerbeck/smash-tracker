@@ -126,6 +126,87 @@ describe('SetTimeline', () => {
     expect(screen.getByText('Set 555')).toBeInTheDocument();
   });
 
+  describe('bracket phases (UAT 37-9 / F10)', () => {
+    it('names the phase before the round when the event spans several phases, in phase order', () => {
+      const matches = [
+        // The later phase's set carries the EARLIER time: phase order still wins.
+        makeMatch({
+          id: 'top',
+          time: 100,
+          win: true,
+          externalId: 'sgg:200:g1',
+          roundText: 'Winners Quarter-Final',
+          phaseName: 'Top 64',
+          phaseOrder: 2,
+        }),
+        makeMatch({
+          id: 'pool',
+          time: 500,
+          win: true,
+          externalId: 'sgg:100:g1',
+          roundText: 'Winners Quarter-Final',
+          phaseName: 'Pools',
+          phaseOrder: 1,
+        }),
+      ];
+      renderTimeline(matches);
+
+      const rows = within(screen.getByRole('list', { name: 'Sets' })).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]!).getByText('Pools · Winners Quarter-Final')).toBeInTheDocument();
+      expect(within(rows[1]!).getByText('Top 64 · Winners Quarter-Final')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Edit VOD notes for Pools · Winners Quarter-Final' }),
+      ).toBeInTheDocument();
+    });
+
+    it('renders the bare round text for a single-phase event', () => {
+      const matches = [
+        makeMatch({
+          id: 'a',
+          time: 100,
+          win: true,
+          externalId: 'sgg:1:g1',
+          roundText: 'Winners Round 1',
+          phaseName: 'Pools',
+          phaseOrder: 1,
+        }),
+        makeMatch({
+          id: 'b',
+          time: 200,
+          win: true,
+          externalId: 'sgg:2:g1',
+          roundText: 'Winners Round 2',
+          phaseName: 'Pools',
+          phaseOrder: 1,
+        }),
+      ];
+      renderTimeline(matches);
+
+      expect(screen.getByText('Winners Round 1')).toBeInTheDocument();
+      expect(screen.getByText('Winners Round 2')).toBeInTheDocument();
+      expect(screen.queryByText(/Pools ·/)).not.toBeInTheDocument();
+    });
+
+    it('renders today’s label for sets without phase data', () => {
+      const matches = [
+        makeMatch({
+          id: 'a',
+          time: 100,
+          win: true,
+          externalId: 'sgg:1:g1',
+          roundText: 'Winners Round 1',
+        }),
+        makeMatch({ id: 'b', time: 200, win: true, externalId: 'sgg:2:g1' }),
+      ];
+      renderTimeline(matches);
+
+      expect(screen.getByText('Winners Round 1')).toBeInTheDocument();
+      expect(screen.getByText('Set 2')).toBeInTheDocument();
+      expect(screen.queryByText(/ · /)).not.toBeInTheDocument();
+    });
+  });
+
   it('applies a losers-side tint when bracketRound is negative', () => {
     const matches = [
       makeMatch({
