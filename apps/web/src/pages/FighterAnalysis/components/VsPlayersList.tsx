@@ -37,7 +37,19 @@ function pickDisplayTag(identity: string, matches: Match[]): string {
   return identity;
 }
 
-/** Groups by RESOLVED opponent identity (mirrors `rivalMovers.ts`'s own exclusion of machine keys and the unnamed bucket), sorted most-games-first. */
+/**
+ * Plan 39.1-54 (UAT 39.1-26 F2): the games a row PRINTS — its recent-window
+ * total at or above the abstention floor, its all-time total below it (a
+ * sub-floor row prints its all-time record). "Most games first" sorts by this,
+ * so the order is true of the figures on screen.
+ */
+function printedGames(candidate: { baselineRate: RateValue; recentRate: RateValue }): number {
+  return candidate.recentRate.total >= ABSTENTION_FLOOR_GAMES
+    ? candidate.recentRate.total
+    : candidate.baselineRate.total;
+}
+
+/** Groups by RESOLVED opponent identity (mirrors `rivalMovers.ts`'s own exclusion of machine keys and the unnamed bucket), sorted by the games each row prints (`printedGames`), then all-time games, then identity. */
 function buildCandidates(
   fighterMatches: Match[],
   aliasMap: Record<string, string>,
@@ -82,7 +94,12 @@ function buildCandidates(
       deltaPoints,
     });
   }
-  return candidates.sort((a, b) => b.baselineRate.total - a.baselineRate.total);
+  return candidates.sort(
+    (a, b) =>
+      printedGames(b) - printedGames(a) ||
+      b.baselineRate.total - a.baselineRate.total ||
+      (a.identity < b.identity ? -1 : a.identity > b.identity ? 1 : 0),
+  );
 }
 
 export interface VsPlayersListProps {

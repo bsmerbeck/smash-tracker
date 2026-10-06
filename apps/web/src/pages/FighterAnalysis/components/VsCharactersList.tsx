@@ -27,7 +27,19 @@ interface CharacterCandidate {
   deltaPoints: number | null;
 }
 
-/** Groups by opponent CHARACTER (excluding `isUnknownCharacter`, mirroring `characterMovers.ts`'s own exclusion), sorted most-games-first (UI-SPEC §6.4's default sort). */
+/**
+ * Plan 39.1-54 (UAT 39.1-26 F2): the games a row PRINTS — its recent-window
+ * total at or above the abstention floor, its all-time total below it (a
+ * sub-floor row prints its all-time record). "Most games first" sorts by this,
+ * so the order is true of the figures on screen.
+ */
+function printedGames(candidate: { baselineRate: RateValue; recentRate: RateValue }): number {
+  return candidate.recentRate.total >= ABSTENTION_FLOOR_GAMES
+    ? candidate.recentRate.total
+    : candidate.baselineRate.total;
+}
+
+/** Groups by opponent CHARACTER (excluding `isUnknownCharacter`, mirroring `characterMovers.ts`'s own exclusion), sorted by the games each row prints (`printedGames`), then all-time games, then id. */
 function buildCandidates(fighterMatches: Match[], nowMs: number): CharacterCandidate[] {
   const groups = new Map<number, Match[]>();
   for (const match of fighterMatches) {
@@ -57,7 +69,12 @@ function buildCandidates(fighterMatches: Match[], nowMs: number): CharacterCandi
     });
     candidates.push({ opponentFighterId, baselineRate, recentRate, state, deltaPoints });
   }
-  return candidates.sort((a, b) => b.baselineRate.total - a.baselineRate.total);
+  return candidates.sort(
+    (a, b) =>
+      printedGames(b) - printedGames(a) ||
+      b.baselineRate.total - a.baselineRate.total ||
+      a.opponentFighterId - b.opponentFighterId,
+  );
 }
 
 export interface VsCharactersListProps {
