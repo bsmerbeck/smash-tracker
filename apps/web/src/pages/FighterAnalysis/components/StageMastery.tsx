@@ -93,10 +93,14 @@ export function StageMastery({
     minMatches: MASTERY_CAPTION_MIN_GAMES,
   });
   const bestPick = claim.kind === 'evidenced' ? (claim.value[0] ?? null) : null;
-  const banWorthy =
+  // "Ban-worthy" is a problem framing, so it needs an absolute losing record —
+  // the Wilson-last stage alone is only RELATIVELY worst, and a strong
+  // player's weakest stage can still be winning (UAT F3: FD at 15-6).
+  const lastStage =
     claim.kind === 'evidenced' && claim.value.length > 1
       ? (claim.value[claim.value.length - 1] ?? null)
       : null;
+  const banWorthy = lastStage && lastStage.losses > lastStage.wins ? lastStage : null;
 
   function stageNameNode(stageId: number) {
     const name = stagesById.get(stageId)?.name ?? t('common.unknown');
