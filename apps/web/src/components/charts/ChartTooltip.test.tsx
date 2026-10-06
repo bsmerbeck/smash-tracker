@@ -76,6 +76,34 @@ describe('ChartTooltip opponent-less wording (plan 39.1-50, OOS-14)', () => {
   });
 });
 
+describe('ChartTooltip event points name the running record (plan 38-12, 38-UAT test 20 F5)', () => {
+  it('an event point reads "<rate>% overall so far" above the unchanged "W–L this event" line', () => {
+    const out = lines(
+      eventPoint({ opponentTag: 'rival', cumulativeWinRate: 79, wins: 1, losses: 3 }),
+    );
+    expect(out[0]).toBe('79% overall so far');
+    expect(out.at(-1)).toBe('1–3 this event');
+  });
+
+  it('a binned event point also reads "… overall so far", with the period score line', () => {
+    const out = lines(
+      eventPoint({
+        opponentTag: 'rival',
+        eventKey: 'bin:month:1698796800000',
+        cumulativeWinRate: 79,
+        wins: 1,
+        losses: 3,
+      }),
+    );
+    expect(out[0]).toBe('79% overall so far');
+    expect(out.at(-1)).toBe('1–3 in this period');
+  });
+
+  it('a per-game point keeps the bare rate', () => {
+    expect(lines(gamePoint('rival'))[0]).toBe('60%');
+  });
+});
+
 describe('ChartTooltip value branch (plan 41-02, DD-41-01)', () => {
   const valuePoint: TrendValuePoint = {
     key: 'month:2026-03',
