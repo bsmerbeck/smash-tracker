@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
+  RESEARCH_COVERAGE_MIN_MS,
   RESEARCH_EXCLUDED_OUTCOME_CLASSIFICATIONS,
   normalizeResearchClassificationCounts,
   normalizeResearchCounters,
@@ -131,14 +132,14 @@ function DateSpanRow({
   testid: string;
 }) {
   const unknown = t('coaching.research.coverage.dateCoverage.unknown');
-  const earliest =
-    dateCoverage.earliestSetAtMs != null
-      ? formatEpochMs(dateCoverage.earliestSetAtMs, language)
+  // A stored value before the SSBU-era floor (UAT 36 F1: a year-0002 start)
+  // or one that is not a valid Date renders as unknown, never as a date.
+  const formatEnd = (ms: number | null | undefined): string =>
+    ms != null && ms >= RESEARCH_COVERAGE_MIN_MS && Number.isFinite(new Date(ms).getTime())
+      ? formatEpochMs(ms, language)
       : unknown;
-  const latest =
-    dateCoverage.latestSetAtMs != null
-      ? formatEpochMs(dateCoverage.latestSetAtMs, language)
-      : unknown;
+  const earliest = formatEnd(dateCoverage.earliestSetAtMs);
+  const latest = formatEnd(dateCoverage.latestSetAtMs);
   return (
     <p data-testid={testid} className="text-sm text-muted-foreground">
       {t('coaching.research.coverage.dateCoverage.label')}: {earliest} – {latest}
