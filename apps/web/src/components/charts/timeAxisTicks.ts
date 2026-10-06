@@ -95,23 +95,44 @@ function dayGridlines(startMs: number, endMs: number): number[] {
   return out;
 }
 
-/** The first stride whose labels' estimated spans keep at least `MIN_TICK_LABEL_GAP_PX` apart. */
+function labelsClear(labels: TimeAxisLabel[], xOf: (ms: number) => number): boolean {
+  return labels.every((label, i) => {
+    if (i === 0) return true;
+    return !collides(labels[i - 1]!, label, xOf);
+  });
+}
+
+/** True when `next` starts less than `MIN_TICK_LABEL_GAP_PX` right of `previous`'s estimated span. */
+function collides(
+  previous: TimeAxisLabel,
+  next: TimeAxisLabel,
+  xOf: (ms: number) => number,
+): boolean {
+  const previousRight =
+    xOf(previous.ms) + TIME_AXIS_LABEL_OFFSET_PX + estimateTickLabelWidthPx(previous.text);
+  return xOf(next.ms) + TIME_AXIS_LABEL_OFFSET_PX - previousRight < MIN_TICK_LABEL_GAP_PX;
+}
+
+/**
+ * The first stride whose labels' estimated spans keep at least
+ * `MIN_TICK_LABEL_GAP_PX` apart. With `origin` (plan 39.1-53) that label is
+ * pinned first: the stride filters the remaining candidates, and any kept
+ * label colliding with the origin is dropped instead of it.
+ */
 function thinLabels(
   candidates: TimeAxisLabel[],
   strides: readonly number[],
   xOf: (ms: number) => number,
+  origin: TimeAxisLabel | null,
 ): TimeAxisLabel[] {
   let chosen = candidates;
   for (const stride of strides) {
-    chosen = candidates.filter((_, i) => i % stride === 0);
-    const clears = chosen.every((label, i) => {
-      if (i === 0) return true;
-      const previous = chosen[i - 1]!;
-      const previousRight =
-        xOf(previous.ms) + TIME_AXIS_LABEL_OFFSET_PX + estimateTickLabelWidthPx(previous.text);
-      return xOf(label.ms) + TIME_AXIS_LABEL_OFFSET_PX - previousRight >= MIN_TICK_LABEL_GAP_PX;
-    });
-    if (clears) return chosen;
+    const strided = candidates.filter((_, i) => i % stride === 0);
+    chosen =
+      origin === null
+        ? strided
+        : [origin, ...strided.filter((label) => !collides(origin, label, xOf))];
+    if (labelsClear(chosen, xOf)) return chosen;
   }
   return chosen;
 }
@@ -121,14 +142,21 @@ function thinLabels(
  * across `plotWidthPx`: years from a two-year span, month starts from 28
  * days (short month; January carries its year), local midnights below (a
  * rule only under each kept label).
+ *
+ * `originLabel` (plan 39.1-53, UAT 39.1-35b; CareerTimeline only): gridlines
+ * sit strictly inside the domain, so a career starting mid-2020 was first
+ * labelled "2021". With it, year and month modes add a label at `startMs`
+ * naming the domain's UTC start year / month-with-year — no gridline of its
+ * own — that thinning always keeps. Day mode is unchanged.
  */
 export function selectTimeAxisTicks(input: {
   startMs: number;
   endMs: number;
   plotWidthPx: number;
   locale: string;
+  originLabel?: boolean;
 }): TimeAxisTicks {
-  const { startMs, endMs, plotWidthPx, locale } = input;
+  const { startMs, endMs, plotWidthPx, locale, originLabel = false } = input;
   const span = endMs - startMs;
   if (span <= 0 || plotWidthPx <= 0) return { gridlines: [], labels: [] };
   const xOf = (ms: number) => ((ms - startMs) / span) * plotWidthPx;
@@ -137,11 +165,13 @@ export function selectTimeAxisTicks(input: {
   let candidates: TimeAxisLabel[];
   let strides: readonly number[];
   let rulesFollowLabels = false;
+  let origin: TimeAxisLabel | null = null;
   if (span >= YEAR_MODE_MIN_SPAN_MS) {
     gridlines = yearGridlines(startMs, endMs);
     const year = cachedFormatter('year', locale, { year: 'numeric', timeZone: 'UTC' });
     candidates = gridlines.map((ms) => ({ ms, text: year.format(ms), anchor: 'start' }));
     strides = YEAR_LABEL_STRIDES;
+    if (originLabel) origin = { ms: startMs, text: year.format(startMs), anchor: 'start' };
   } else if (span >= MONTH_MODE_MIN_SPAN_MS) {
     gridlines = monthGridlines(startMs, endMs);
     const month = cachedFormatter('month', locale, { month: 'short', timeZone: 'UTC' });
@@ -156,6 +186,7 @@ export function selectTimeAxisTicks(input: {
       anchor: 'start',
     }));
     strides = MONTH_LABEL_STRIDES;
+    if (originLabel) origin = { ms: startMs, text: monthYear.format(startMs), anchor: 'start' };
   } else {
     gridlines = dayGridlines(startMs, endMs);
     const day = cachedFormatter('day', locale, { month: 'short', day: 'numeric' });
@@ -165,6 +196,6 @@ export function selectTimeAxisTicks(input: {
     // its own: day mode draws a rule only where a label survives thinning.
     rulesFollowLabels = true;
   }
-  const labels = thinLabels(candidates, strides, xOf);
+  const labels = thinLabels(candidates, strides, xOf, origin);
   return { gridlines: rulesFollowLabels ? labels.map((label) => label.ms) : gridlines, labels };
 }

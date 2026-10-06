@@ -264,6 +264,8 @@ describe('CareerTimeline (plan 39.1-34) — the shared-time-axis kit chart', () 
       endMs: TIMELINE.domain!.endMs,
       plotWidthPx: numberAttr(plot, 'width'),
       locale: 'en',
+      // Plan 39.1-53: CareerTimeline opts into the origin label.
+      originLabel: true,
     });
     const gridlines = container.querySelectorAll('[data-slot="career-timeline-gridline"]');
     expect(gridlines).toHaveLength(ticks.gridlines.length);

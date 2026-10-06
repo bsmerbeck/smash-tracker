@@ -522,6 +522,8 @@ function UnderLayer({ timeline, labels, geometry, yDomain, locale }: LayerProps)
     endMs: timeline.domain.endMs,
     plotWidthPx: plot.width,
     locale,
+    // Plan 39.1-53 (UAT 39.1-35b): the axis names the year / month it starts in.
+    originLabel: true,
   });
 
   let band: ReactElement | null = null;
