@@ -301,16 +301,30 @@ describe('HeroStats', () => {
       const HOUR_MS = 60 * 60 * 1000;
       const start = Date.now() - 10 * 24 * HOUR_MS;
       // Session 1: five wins; a day later session 2: L, L, W. The last session
-      // underperforms the first (the old arrow read "▼ 163"), while the whole
-      // last-30 window rises from the default 1500 (ratingMove reads "+198").
+      // underperforms the first (the old arrow read "▼"), while the whole
+      // last-30 window rises (ratingMove reads up).
+      // Plan 39.1-53 (UAT 39.1-17): an 8-game account's last-30 window holds
+      // every game and now collapses (no direction), so the two sessions sit on
+      // top of 60 older losses and 22 earlier wins — the last-30 window is 30 of
+      // 90 games and still rises.
       const results = [true, true, true, true, true, false, false, true];
-      const matches = results.map((win, i) =>
-        makeMatch({
-          id: `p${i}`,
-          time: start + (i < 5 ? i * HOUR_MS : 24 * HOUR_MS + (i - 5) * HOUR_MS),
-          win,
-        }),
+      const older = Array.from({ length: 60 }, (_, i) =>
+        makeMatch({ id: `o${i}`, time: start - 400 * 24 * HOUR_MS + i * HOUR_MS, win: false }),
       );
+      const earlierWins = Array.from({ length: 22 }, (_, i) =>
+        makeMatch({ id: `e${i}`, time: start - 5 * 24 * HOUR_MS + i * HOUR_MS, win: true }),
+      );
+      const matches = [
+        ...older,
+        ...earlierWins,
+        ...results.map((win, i) =>
+          makeMatch({
+            id: `p${i}`,
+            time: start + (i < 5 ? i * HOUR_MS : 24 * HOUR_MS + (i - 5) * HOUR_MS),
+            win,
+          }),
+        ),
+      ];
 
       const dashboard = render(
         <HeroStats matches={matches} timeFilteredMatches={matches} horizon="last30" />,
