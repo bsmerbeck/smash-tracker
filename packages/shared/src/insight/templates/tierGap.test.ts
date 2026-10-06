@@ -238,6 +238,17 @@ describe('tierGapTemplate', () => {
     expect(build(scope, matches)!.copy.values.estimatedEvents).toBe(4);
   });
 
+  it('an asserted state names the counted total: copy.values.count equals countedMatchIds.length (F9)', () => {
+    const trend = tierScope({ a: games('a', 40, 32), b: games('b', 28, 8, 100) });
+    const steady = tierScope({ a: games('a', 40, 21), b: games('b', 28, 14, 100) });
+    for (const { scope, matches } of [trend, steady]) {
+      const insight = build(scope, matches)!;
+      expect(['trend', 'steady']).toContain(insight.state);
+      expect(insight.copy.values.count).toBe(insight.countedMatchIds.length);
+      expect(insight.copy.values.count).not.toBe(insight.copy.values.aGames);
+    }
+  });
+
   it('emits no counted-games door of its own (the web builds it from countedMatchIds)', () => {
     const { scope, matches } = tierScope({ a: games('a', 40, 32), b: games('b', 40, 12, 100) });
     expect(build(scope, matches)!.doors).toEqual([]);

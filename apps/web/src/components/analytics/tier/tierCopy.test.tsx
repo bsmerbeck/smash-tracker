@@ -594,6 +594,24 @@ describe('tier insight copy through the real locale files (G4, plan 39.2-09)', (
         });
       }
 
+      it('F9: an asserted verdict states the same games count as its See-the-games door', async () => {
+        await i18n.changeLanguage(locale);
+        const asserted = insightCases().filter(
+          (item) => item.state === 'trend' || item.state === 'steady',
+        );
+        expect(asserted.length).toBeGreaterThan(0);
+        for (const item of asserted) {
+          const { container, insight, unmount } = renderInsight(item);
+          const door =
+            container.querySelector('[data-slot="insight-card-doors"] a')?.textContent ?? '';
+          const verdict = i18n.t(insight.copy.key, insight.copy.values);
+          const n = new Intl.NumberFormat(locale).format(insight.countedMatchIds.length);
+          expect(door, `${locale} ${item.name}: door`).toContain(n);
+          expect(verdict, `${locale} ${item.name}: verdict`).toContain(n);
+          unmount();
+        }
+      });
+
       it('a large cohort is grouped in this locale and the estimated note names its count', async () => {
         await i18n.changeLanguage(locale);
         const [up] = insightCases();
