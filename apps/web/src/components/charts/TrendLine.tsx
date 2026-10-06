@@ -36,6 +36,7 @@ import {
   CHART_TOKENS,
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
+import { PeriodTooltip } from './PeriodTooltip';
 import { selectEventLabelKeys } from './eventTicks';
 import {
   estimateTickLabelWidthPx,
@@ -235,8 +236,9 @@ interface TrendLineSharedProps {
   width?: number;
   height?: number;
   /** Tooltip content node, passed through to Recharts' `Tooltip`. Defaults to
-   * the kit's shared `ChartTooltip` so every consumer gets the who/where/
-   * when/score content without opting in (D-06). */
+   * the kit's shared `ChartTooltip` (index/event/value modes: who/where/
+   * when/score) or `PeriodTooltip` (period mode: period · rate · W–L, plan
+   * 37-08) so every consumer gets a tooltip without opting in (D-06). */
   tooltip?: ReactElement;
 }
 
@@ -1282,9 +1284,11 @@ function PeriodTrendChart({
         tickMargin={PERIOD_Y_TICK_GAP_PX}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: PERIOD_AXIS_FONT_SIZE_PX }}
       />
-      {props.tooltip && (
-        <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
-      )}
+      {/* Plan 37-08: on by default, like index/event modes — a host `tooltip` still overrides. */}
+      <Tooltip
+        content={props.tooltip ?? <PeriodTooltip points={points} />}
+        cursor={{ stroke: CHART_TOKENS.border }}
+      />
       {props.referenceRate !== undefined && (
         <ReferenceLine
           y={props.referenceRate}
