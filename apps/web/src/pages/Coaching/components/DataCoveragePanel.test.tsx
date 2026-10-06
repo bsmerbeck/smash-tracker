@@ -333,6 +333,34 @@ describe('DataCoveragePanel', () => {
       render(<DataCoveragePanel />);
       expect(screen.getByTestId('data-coverage-span')).toHaveTextContent('unknown');
     });
+
+    it('renders a stored pre-SSBU (year 0002) earliest as unknown on the total and the player row (UAT 36 F1)', () => {
+      // NOT `Date.UTC(2, 10, 30)` — Date.UTC maps years 0–99 to 1900–1999.
+      const year2Ms = new Date('0002-11-30T00:00:00Z').getTime();
+      const latestMs = Date.UTC(2026, 7, 9);
+      const badSpan = { earliestSetAtMs: year2Ms, latestSetAtMs: latestMs };
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: {
+          ...ONE_PLAYER_SNAPSHOT,
+          coverage: {
+            ...ONE_PLAYER_SNAPSHOT.coverage,
+            players: {
+              mkleo: { ...ONE_PLAYER_SNAPSHOT.coverage.players.mkleo, dateCoverage: badSpan },
+            },
+            totals: { ...ONE_PLAYER_SNAPSHOT.coverage.totals, dateCoverage: badSpan },
+          },
+        },
+      });
+      render(<DataCoveragePanel />);
+      const expected = `Date range covered: unknown – ${new Date(latestMs).toLocaleDateString('en')}`;
+      for (const testid of ['data-coverage-span', 'data-coverage-player-mkleo-span']) {
+        const row = screen.getByTestId(testid);
+        expect(row).toHaveTextContent(expected);
+        expect(row.textContent).not.toMatch(/\/2 –/);
+      }
+    });
   });
 
   describe('with a completed two-player snapshot', () => {
