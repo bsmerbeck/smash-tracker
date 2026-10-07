@@ -20,6 +20,38 @@ export interface RatingMoveChipInput {
 export interface RatingMoveChip {
   insight: Insight | null;
   chipView: DeltaChipView | null;
+  /**
+   * The chip's accessible name (UAT review WR-01): the label, the direction
+   * and signed move the chip shows, and its horizon — e.g. "Rating: Trending
+   * up, +210 · last 30". Empty when there is no chip.
+   */
+  ariaLabel: string;
+}
+
+/**
+ * The accessible name of a rating chip, built from the chip view itself so
+ * it always says what the chip shows (DeltaChip's `aria-label` replaces the
+ * visible text for assistive tech).
+ */
+function ratingChipAriaLabel(chipView: DeltaChipView | null, t: TFunction): string {
+  if (chipView === null) {
+    return '';
+  }
+  const label = t('trends.hero.rating');
+  const value = chipView.valueLabel;
+  const horizon = chipView.horizonLabel;
+  if ((chipView.state === 'up' || chipView.state === 'down') && horizon) {
+    return t('insights.chip.ratingAria.directional', {
+      label,
+      direction: t(`insights.chip.aria.${chipView.state}`),
+      value,
+      horizon,
+    });
+  }
+  if (horizon) {
+    return t('insights.chip.ratingAria.withHorizon', { label, value, horizon });
+  }
+  return t('insights.chip.ratingAria.bare', { label, value });
 }
 
 /**
@@ -47,5 +79,5 @@ export function buildRatingMoveChipView({
     deltaUnit: 'rating',
     t,
   });
-  return { insight, chipView };
+  return { insight, chipView, ariaLabel: ratingChipAriaLabel(chipView, t) };
 }

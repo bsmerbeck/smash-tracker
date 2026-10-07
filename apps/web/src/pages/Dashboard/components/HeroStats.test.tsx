@@ -350,6 +350,16 @@ describe('HeroStats', () => {
       expect(dashboardState).toBe(trendsChip!.getAttribute('data-state'));
       expect(dashboardText).toBe(trendsChip!.textContent);
       expect(dashboardAria).toBe(trendsChip!.getAttribute('aria-label'));
+      // UAT review WR-01: the shared label must carry what the chip shows —
+      // direction, the signed move and the horizon — never a self-comparison
+      // of the current rating ("1734 recent vs 1734 all time").
+      const valueLabel = dashboardChip!.querySelector('.text-foreground')?.textContent ?? '';
+      expect(valueLabel).toMatch(/^\+\d+$/);
+      expect(dashboardAria).toContain('Rating');
+      expect(dashboardAria).toContain('Trending up');
+      expect(dashboardAria).toContain(valueLabel);
+      expect(dashboardAria).toContain('last 30');
+      expect(dashboardAria).not.toMatch(/recent vs/);
     });
 
     it('a sub-floor window shows no direction on the unlocked Rating tile (plan 35-05)', () => {

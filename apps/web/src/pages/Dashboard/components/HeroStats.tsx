@@ -381,7 +381,7 @@ function RatingCard({ matches, horizon }: { matches: Match[]; horizon: HorizonKe
   const { current } = computeRatingHistory(matches);
   // Plan 35-05 (F24): the direction comes from the SAME `ratingMove` chip the
   // Trends hero renders — never a session-to-session comparison.
-  const { chipView: ratingChipView } = useMemo(
+  const { chipView: ratingChipView, ariaLabel: ratingChipAria } = useMemo(
     () => buildRatingMoveChipView({ matches, horizon, nowMs, t }),
     [matches, horizon, nowMs, t],
   );
@@ -400,14 +400,7 @@ function RatingCard({ matches, horizon }: { matches: Match[]; horizon: HorizonKe
                 &plusmn;{current.rd}
               </span>
               {ratingChipView === null ? null : (
-                <DeltaChip
-                  {...ratingChipView}
-                  ariaLabel={t('analytics.dumbbell.rowAria', {
-                    label: t('dashboard.hero.rating'),
-                    recentRecord: `${current.rating}`,
-                    baselineRecord: `${current.rating}`,
-                  })}
-                />
+                <DeltaChip {...ratingChipView} ariaLabel={ratingChipAria} />
               )}
             </div>
             {/* Two separate spans, never a joined string (§13.8). */}

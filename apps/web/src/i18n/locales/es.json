@@ -3408,6 +3408,11 @@
       },
       "ratingUp": "+{{points}}",
       "ratingDown": "−{{points}}",
+      "ratingAria": {
+        "directional": "{{label}}: {{direction}}, {{value}} · {{horizon}}",
+        "withHorizon": "{{label}}: {{value}} · {{horizon}}",
+        "bare": "{{label}}: {{value}}"
+      },
       "aria": {
         "up": "En subida",
         "down": "En bajada",

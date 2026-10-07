@@ -72,7 +72,7 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
   // `ratingMove` at the whole-account scope (TRND-02/DD-12) through the ONE
   // shared helper the Dashboard Rating tile also uses (plan 35-05, F24), so
   // the two pages can never disagree on a rating direction.
-  const { chipView: ratingChipView } = useMemo(
+  const { chipView: ratingChipView, ariaLabel: ratingChipAria } = useMemo(
     () => buildRatingMoveChipView({ matches, horizon, nowMs, t }),
     [matches, horizon, nowMs, t],
   );
@@ -180,14 +180,7 @@ export function TrendsHero({ matches, horizon }: TrendsHeroProps) {
         unitSuffix={`±${hero.currentRating.rd}`}
         delta={
           ratingChipView === null ? null : (
-            <DeltaChip
-              {...ratingChipView}
-              ariaLabel={t('analytics.dumbbell.rowAria', {
-                label: t('trends.hero.rating'),
-                recentRecord: `${hero.currentRating.rating}`,
-                baselineRecord: `${hero.currentRating.rating}`,
-              })}
-            />
+            <DeltaChip {...ratingChipView} ariaLabel={ratingChipAria} />
           )
         }
       />

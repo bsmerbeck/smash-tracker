@@ -44,6 +44,38 @@ describe('buildRatingMoveChipView (plan 35-05)', () => {
     expect(chipView?.horizonLabel).toBe('last 30');
   });
 
+  it('UAT review WR-01: the accessible name spells out direction, move and horizon', () => {
+    const matches = [
+      ...Array.from({ length: 60 }, (_, i) =>
+        makeMatch({ id: `l${i}`, time: NOW - (400 * 24 - i) * HOUR_MS, win: false }),
+      ),
+      ...Array.from({ length: 30 }, (_, i) =>
+        makeMatch({ id: `w${i}`, time: NOW - (10 * 24 - i) * HOUR_MS, win: i !== 5 }),
+      ),
+    ];
+    const { insight, ariaLabel } = buildRatingMoveChipView({
+      matches,
+      horizon: 'last30',
+      nowMs: NOW,
+      t,
+    });
+    expect(ariaLabel).toBe(`Rating: Trending up, +${insight?.deltaPoints} · last 30`);
+  });
+
+  it('UAT review WR-01: a sub-floor window names its count, not a direction', () => {
+    const matches = [
+      makeMatch({ id: 'a', time: NOW - 2 * HOUR_MS, win: true }),
+      makeMatch({ id: 'b', time: NOW - HOUR_MS, win: true }),
+    ];
+    const { ariaLabel } = buildRatingMoveChipView({
+      matches,
+      horizon: 'last30',
+      nowMs: NOW,
+      t,
+    });
+    expect(ariaLabel).toBe('Rating: n 2 · no direction');
+  });
+
   it('plan 39.1-53: an 8-game account whose last-30 window holds every game shows no direction', () => {
     const matches = Array.from({ length: 8 }, (_, i) =>
       makeMatch({ id: `w${i}`, time: NOW - (10 * 24 - i) * HOUR_MS, win: i !== 5 }),
