@@ -3400,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · keine Richtung",
       "noDirection_other": "n {{count, grouped}} · keine Richtung",
       "noGames": "keine Matches",
+      "noneInBound": "keine Matches in den letzten 12 Monaten",
       "horizon": {
         "last30": "letzte 30",
         "lastEvent": "letztes Event",

@@ -12,6 +12,7 @@ import {
 import { StatRow, StatFigure } from '@/components/analytics/StatRow';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { windowHeldGamesBeforeBound } from '@/components/analytics/scopedRecencyVerdict';
 import { Record } from '@/components/analytics/Record';
 
 /**
@@ -83,7 +84,9 @@ export function HorizonStatRow({
             scoped: true,
             hasAction: false,
           });
-      return { key, window, recentRate, state, deltaPoints };
+      // Plan 39.1-59: the D-15 bound, not the horizon, emptied this window.
+      const recencyBounded = windowHeldGamesBeforeBound({ matches, horizon: key, nowMs });
+      return { key, window, recentRate, state, deltaPoints, recencyBounded };
     });
   }, [matches, baselineAllTime, nowMs]);
 
@@ -114,7 +117,7 @@ export function HorizonStatRow({
   );
 
   const recentFigureNodes = horizonFigures.map(
-    ({ key, window, recentRate, state, deltaPoints }) => {
+    ({ key, window, recentRate, state, deltaPoints, recencyBounded }) => {
       const isPressed = horizon === key;
       // Plan 39.1-57 (UAT 39.1-28 F7): a last-30 window the D-15 scope trimmed
       // below 30 games states the games it holds ("13 games"), matching the
@@ -135,6 +138,7 @@ export function HorizonStatRow({
         recentGames: recentRate.total,
         horizon: key,
         horizonOwnedByParent: true,
+        recencyBounded,
         t,
       });
       const delta = chipView ? (

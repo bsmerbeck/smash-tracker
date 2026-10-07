@@ -3400,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · 方向なし",
       "noDirection_other": "n {{count, grouped}} · 方向なし",
       "noGames": "試合なし",
+      "noneInBound": "過去12か月は試合なし",
       "horizon": {
         "last30": "直近30戦",
         "lastEvent": "直近の大会",

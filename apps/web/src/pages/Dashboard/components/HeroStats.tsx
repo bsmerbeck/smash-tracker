@@ -21,6 +21,7 @@ import { StatFigure, StatRow } from '@/components/analytics/StatRow';
 import { Record } from '@/components/analytics/Record';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { windowHeldGamesBeforeBound } from '@/components/analytics/scopedRecencyVerdict';
 import { buildRatingMoveChipView } from '@/components/analytics/ratingMoveChip';
 import {
   TILE_CARD_CLASS,
@@ -161,6 +162,9 @@ export function HorizonRecordCard({
     recentGames: recentRate.total,
     horizon,
     horizonOwnedByParent: false,
+    // Plan 39.1-59 (UAT 39.1-33 F17): an inactive scope reads "none in the
+    // last 12 months", never "no games · last 30".
+    recencyBounded: windowHeldGamesBeforeBound({ matches, horizon, nowMs }),
     t,
   });
   const allTimeTier = confidenceTierFor(baseline.total);

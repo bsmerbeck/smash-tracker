@@ -3400,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · sin dirección",
       "noDirection_other": "n {{count, grouped}} · sin dirección",
       "noGames": "sin partidas",
+      "noneInBound": "sin partidas en los últimos 12 meses",
       "horizon": {
         "last30": "últimas 30",
         "lastEvent": "último evento",
