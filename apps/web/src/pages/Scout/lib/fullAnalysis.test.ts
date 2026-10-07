@@ -47,6 +47,15 @@ describe('scoutGamesToMatches', () => {
     expect(matches[0]?.eventName).toBeUndefined();
   });
 
+  it('maps tournamentName onto the Match and omits the key when absent (41-17)', () => {
+    const [named, bare] = scoutGamesToMatches([
+      makeGame({ tournamentName: 'Genesis 9' }),
+      makeGame(),
+    ]);
+    expect(named?.tournamentName).toBe('Genesis 9');
+    expect(bare && 'tournamentName' in bare).toBe(false);
+  });
+
   it('preserves the fighterId-0 / opponentFighterId-0 sentinels as plain numbers', () => {
     const matches = scoutGamesToMatches([makeGame({ opponentFighterId: 0 })]);
     expect(matches[0]?.opponent_id).toBe(0);
@@ -94,6 +103,54 @@ describe('buildScoutFormSeries', () => {
 
   it('no games yields an empty display at grain "event"', () => {
     expect(buildScoutFormSeries([])).toEqual({ display: [], grain: 'event' });
+  });
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Six games in two events both named 'Ultimate Singles', 30 days apart, at two tournaments. */
+function sameNamedEventGames(withTournament: boolean): ScoutGame[] {
+  const at = (tournamentName: string, start: number, wins: boolean[]) =>
+    wins.map((win, i) =>
+      makeGame({
+        time: start + i * 60 * 60 * 1000,
+        win,
+        eventName: 'Ultimate Singles',
+        ...(withTournament ? { tournamentName } : {}),
+      }),
+    );
+  return [
+    ...at('Genesis 9', T0, [true, true, false]),
+    ...at('Pound 2025', T0 + 30 * DAY_MS, [false, false, true]),
+  ];
+}
+
+describe('buildScoutFormSeries — tournament-named labels (41-17, UAT 41-6)', () => {
+  it('two same-named events at two tournaments get distinct "<tournament> · <event>" labels', () => {
+    const { display } = buildScoutFormSeries(scoutGamesToMatches(sameNamedEventGames(true)));
+    expect(display.map((point) => point.label)).toEqual([
+      'Genesis 9 \u00b7 Ultimate Singles',
+      'Pound 2025 \u00b7 Ultimate Singles',
+    ]);
+  });
+
+  it('anchor keys and per-anchor W–L are identical with and without tournamentName', () => {
+    const shape = (withTournament: boolean) =>
+      buildScoutFormSeries(scoutGamesToMatches(sameNamedEventGames(withTournament))).display.map(
+        (point) => ({ key: point.key, wins: point.wins, losses: point.losses }),
+      );
+    const named = shape(true);
+    expect(named).toHaveLength(2);
+    expect(named).toEqual(shape(false));
+    expect(named.map(({ wins, losses }) => [wins, losses])).toEqual([
+      [2, 1],
+      [1, 2],
+    ]);
+  });
+
+  it('without tournamentName the label stays the bare event name', () => {
+    const { display } = buildScoutFormSeries(scoutGamesToMatches(sameNamedEventGames(false)));
+    expect(display.map((point) => point.label)).toEqual(['Ultimate Singles', 'Ultimate Singles']);
   });
 });
 
