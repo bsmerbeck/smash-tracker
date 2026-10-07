@@ -278,6 +278,7 @@ describe('accumulateScoutSet', () => {
       stageName: 'Battlefield',
       opponentTag: 'PowPow',
       eventName: 'Ultimate Singles',
+      tournamentName: 'Test Weekly 42',
     });
     expect(acc.games[1]).toMatchObject({
       win: false,
@@ -286,6 +287,26 @@ describe('accumulateScoutSet', () => {
       stageName: 'Pokémon Stadium 2',
       opponentTag: 'PowPow',
     });
+  });
+
+  it('stamps each game with the trimmed tournament name, and omits the key when the set has no tournament (41-17)', () => {
+    const named = emptyAcc();
+    accumulateScoutSet(
+      named,
+      makeSet({ event: { ...makeSet().event, tournament: { name: ' Genesis 9 ' } } }),
+      PLAYER_ID,
+    );
+    expect(named.games).toHaveLength(2);
+    for (const game of named.games) expect(game.tournamentName).toBe('Genesis 9');
+
+    const bare = emptyAcc();
+    accumulateScoutSet(
+      bare,
+      makeSet({ event: { ...makeSet().event, tournament: undefined } }),
+      PLAYER_ID,
+    );
+    expect(bare.games).toHaveLength(2);
+    for (const game of bare.games) expect('tournamentName' in game).toBe(false);
   });
 
   it('skips emitting a game record when the scouted player’s own character is unmapped', () => {
