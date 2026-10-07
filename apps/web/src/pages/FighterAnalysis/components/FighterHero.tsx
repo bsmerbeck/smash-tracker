@@ -21,6 +21,7 @@ import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
 import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
+import { headStatesScopedWindow } from '@/components/analytics/scopedRecencyVerdict';
 import {
   buildFormStripEvents,
   formStripLabels,
@@ -162,9 +163,19 @@ export function FighterHero({
 
   const chipKind = formNowInsight ? claimChipKindFor(formNowInsight.kind) : 'fact';
   const entity = localizedName;
-  const verdict = formNowInsight
-    ? t(formNowInsight.copy.key, { ...formNowInsight.copy.values, entity })
-    : '';
+  // Plan 39.1-59 (UAT 39.1-33 F17): the same D-15 scoped-window branch as
+  // Matchups' `buildFormNowVerdict` — a fighter with an evidenced lifetime
+  // record whose last 12 months hold 0-2 games reads the bound, never the
+  // engine's "N more games unlock this read".
+  let verdict = '';
+  if (formNowInsight && headStatesScopedWindow(formNowInsight)) {
+    verdict =
+      formNowInsight.window.games === 0
+        ? t('insights.state.noneRecent.fighter', { entity })
+        : t('insights.state.thinRecent.fighter', { count: formNowInsight.window.games, entity });
+  } else if (formNowInsight) {
+    verdict = t(formNowInsight.copy.key, { ...formNowInsight.copy.values, entity });
+  }
   // Plan 39.1-52: the one shared evidence builder — labelled by the sample,
   // no dangling cue, never "over 0". The hero keeps its own cue semantics
   // (the counted-games total the verdict states).

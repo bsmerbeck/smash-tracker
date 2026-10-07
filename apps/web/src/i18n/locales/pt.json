@@ -3476,11 +3476,14 @@
         "last90": "Os últimos 90 dias são todo o histórico — um só número, sem comparação."
       },
       "noneRecent": {
-        "scoped": "Sem partidas vs {{fighter}} nos últimos 12 meses — mostrando o histórico."
+        "scoped": "Sem partidas vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
+        "fighter": "{{entity}} — sem partidas nos últimos 12 meses — mostrando o histórico."
       },
       "thinRecent": {
         "scoped_one": "Só {{count, grouped}} partida vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
         "scoped_other": "Só {{count, grouped}} partidas vs {{fighter}} nos últimos 12 meses — mostrando o histórico.",
+        "fighter_one": "{{entity}} — só {{count, grouped}} partida nos últimos 12 meses — mostrando o histórico.",
+        "fighter_other": "{{entity}} — só {{count, grouped}} partidas nos últimos 12 meses — mostrando o histórico.",
         "page": {
           "last30": "Só {{count, grouped}} partidas nas últimas 30 — mostrando o histórico.",
           "lastEvent": "Só {{count, grouped}} partidas no último evento — mostrando o histórico.",

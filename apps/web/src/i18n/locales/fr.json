@@ -3476,11 +3476,14 @@
         "last90": "Les 90 derniers jours sont tout l'historique — un seul chiffre, pas de comparaison."
       },
       "noneRecent": {
-        "scoped": "Aucun match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché."
+        "scoped": "Aucun match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
+        "fighter": "{{entity}} — aucun match sur les 12 derniers mois — l'historique est affiché."
       },
       "thinRecent": {
         "scoped_one": "Seulement {{count, grouped}} match vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
         "scoped_other": "Seulement {{count, grouped}} matchs vs {{fighter}} sur les 12 derniers mois — l'historique est affiché.",
+        "fighter_one": "{{entity}} — seulement {{count, grouped}} match sur les 12 derniers mois — l'historique est affiché.",
+        "fighter_other": "{{entity}} — seulement {{count, grouped}} matchs sur les 12 derniers mois — l'historique est affiché.",
         "page": {
           "last30": "Seulement {{count, grouped}} matchs sur les 30 derniers — l'historique est affiché.",
           "lastEvent": "Seulement {{count, grouped}} matchs au dernier événement — l'historique est affiché.",

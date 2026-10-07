@@ -3476,11 +3476,14 @@
         "last90": "直近90日間が記録の全体です — 比較対象のない単一の数値です。"
       },
       "noneRecent": {
-        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。"
+        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。",
+        "fighter": "{{entity}} — 過去12か月の記録はありません — 全期間のデータを表示しています。"
       },
       "thinRecent": {
         "scoped_one": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
         "scoped_other": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+        "fighter_one": "{{entity}} — 過去12か月は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+        "fighter_other": "{{entity}} — 過去12か月は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
         "page": {
           "last30": "直近30試合のうち{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
           "lastEvent": "直近のイベントは{{count, grouped}}試合のみ — 全期間のデータを表示しています。",

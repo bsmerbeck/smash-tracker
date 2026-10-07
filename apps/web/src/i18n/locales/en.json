@@ -3476,11 +3476,14 @@
         "last90": "The last 90 days are the whole record — one figure, no comparison."
       },
       "noneRecent": {
-        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime."
+        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "fighter": "{{entity}} — no games in the last 12 months — showing lifetime."
       },
       "thinRecent": {
         "scoped_one": "Only {{count, grouped}} game vs {{fighter}} in the last 12 months — showing lifetime.",
         "scoped_other": "Only {{count, grouped}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "fighter_one": "{{entity}} — only {{count, grouped}} game in the last 12 months — showing lifetime.",
+        "fighter_other": "{{entity}} — only {{count, grouped}} games in the last 12 months — showing lifetime.",
         "page": {
           "last30": "Only {{count, grouped}} games in the last 30 — showing all time.",
           "lastEvent": "Only {{count, grouped}} games at the last event — showing all time.",

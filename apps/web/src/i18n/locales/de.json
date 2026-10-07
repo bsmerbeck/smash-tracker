@@ -3476,11 +3476,14 @@
         "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
       },
       "noneRecent": {
-        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
+        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter": "{{entity}} — keine Matches in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
       },
       "thinRecent": {
         "scoped_one": "Nur {{count, grouped}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
         "scoped_other": "Nur {{count, grouped}} Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter_one": "{{entity}} — nur {{count, grouped}} Match in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter_other": "{{entity}} — nur {{count, grouped}} Matches in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
         "page": {
           "last30": "Nur {{count, grouped}} Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
           "lastEvent": "Nur {{count, grouped}} Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",

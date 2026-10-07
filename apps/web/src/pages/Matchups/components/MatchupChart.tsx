@@ -24,6 +24,7 @@ import {
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
+import { headStatesScopedWindow } from '@/components/analytics/scopedRecencyVerdict';
 import { MATCHUP_TABLE_ANCHOR_ID } from '../lib/matchupAnchors';
 import { useMatchupsContext } from '../MatchupsContext';
 
@@ -106,32 +107,6 @@ export function useMatchupFormNow({
 }
 
 /**
- * Plan 39.1-31 (gap closure, D-07/D-15, item 7): true exactly when the
- * engine's `locked` state is really "the last-30 window has fewer than 3
- * games because D-15's 12-month scoped-recency bound emptied or thinned it,
- * while the pairing's lifetime record is evidenced" — the ONE case this
- * plan maps to a truthful whole-sentence key instead of the engine's own
- * `insights.formNow.locked` (which reads "N more games unlock this read", a
- * sentence about games still NEEDED, not about the window being
- * time-bounded — and whose `copy.values.count` is deliberately `gamesNeeded`
- * per CR-A02, wrong for this purpose). The engine itself is unchanged:
- * `ladder.ts` keeps `locked` before `thinRecent` for every horizon; this is
- * a UI-only reinterpretation of an already-produced `locked` insight. Scoped
- * to `horizon === 'last30'` on purpose — only there is "fewer than 3 in the
- * window" exactly "fewer than 3 in the last 12 months" (D-15's bound IS
- * `last30`'s own scoping); `lastEvent`/`last90` are time-bounded in their
- * own right and keep the engine's stock `locked` copy.
- */
-function headStatesScopedWindow(insight: Insight): boolean {
-  return (
-    insight.state === 'locked' &&
-    insight.horizon === 'last30' &&
-    insight.window.scoped &&
-    insight.baseline.kind === 'evidenced'
-  );
-}
-
-/**
  * Plan 39.1-26 (gap closure): the ONE verdict composition for `formNow` at
  * pairing scope — `entity` is never supplied by the engine (UI-SPEC §9.2
  * rule 7), so this composes it itself before calling `t()`. Shared by
@@ -139,7 +114,7 @@ function headStatesScopedWindow(insight: Insight): boolean {
  * (the terminus's active-filter summary), so the two never independently
  * re-derive the same sentence.
  *
- * Plan 39.1-31: `headStatesScopedWindow` above maps the D-15 scoped-empty
+ * Plan 39.1-31: `headStatesScopedWindow` (scopedRecencyVerdict.ts) maps the D-15 scoped-empty
  * `locked` case to `insights.state.noneRecent.scoped` (0 recent games) or
  * `insights.state.thinRecent.scoped` (1-2) BEFORE falling through to the
  * engine's own `insight.copy.key` — no new key is added under
