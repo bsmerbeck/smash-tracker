@@ -63,13 +63,29 @@
    * of `CHART_TOKENS.series1/series2/deemphasis/deemphasisStrong` onto these
    * in the same plan, and the palette oracle
    * (`apps/web/scripts/guardPalette.mjs`) that reads these values from this
-   * file, never from a copy. No `--tier-1..5` token is declared here — those
-   * names stay reserved for Phase 39.2.
+   * file, never from a copy.
    */
   --viz-series-1: var(--chart-4);
   --viz-series-2: var(--chart-3);
   --viz-context: var(--chart-2);
   --viz-context-strong: var(--chart-5);
+  /*
+   * Tournament tier ramp (Phase 39.2 plan 06, UI-SPEC §4.1, DD-01/DD-14): the
+   * five names 39.1 reserved, declared as ONE amber hue (h 75, the family of
+   * --viz-series-2) stepped in lightness, ordinal from local (1) to
+   * supermajor (5). Every step is a MARK colour — the fill of a tier glyph's
+   * filled bars and nothing else: never text, a badge background, a border or
+   * a row tint (UI-SPEC §4.2 rule 9). The palette oracle checks them in their
+   * OWN list (`TIER_TOKEN_NAMES` in `scripts/guardPaletteCore.mjs`): at least
+   * 3:1 on --card, inside the sRGB gamut, adjacent steps at least 0.06 apart
+   * in lightness. They are deliberately not part of the identity-token
+   * lightness band, which the lighter steps would leave.
+   */
+  --tier-1: oklch(0.56 0.11 75);
+  --tier-2: oklch(0.63 0.12 75);
+  --tier-3: oklch(0.7 0.13 75);
+  --tier-4: oklch(0.77 0.14 75);
+  --tier-5: oklch(0.84 0.13 75);
   /*
    * Coaching mode accent (Phase 11 fix round 2, D-06/D6): a distinct violet
    * hue (mockup #8b7cf6) so coaching chrome reads as visually distinct from
@@ -114,6 +130,12 @@
   --viz-series-2: var(--chart-3);
   --viz-context: var(--chart-2);
   --viz-context-strong: var(--chart-5);
+  /* Mirrors :root's tournament tier ramp (Phase 39.2 plan 06) — see that block's comment. */
+  --tier-1: oklch(0.56 0.11 75);
+  --tier-2: oklch(0.63 0.12 75);
+  --tier-3: oklch(0.7 0.13 75);
+  --tier-4: oklch(0.77 0.14 75);
+  --tier-5: oklch(0.84 0.13 75);
   --coaching-accent: oklch(0.67 0.15 287);
   --coaching-accent-foreground: oklch(0.16 0.005 285);
 }
@@ -149,6 +171,11 @@
   --color-viz-series-2: var(--viz-series-2);
   --color-viz-context: var(--viz-context);
   --color-viz-context-strong: var(--viz-context-strong);
+  --color-tier-1: var(--tier-1);
+  --color-tier-2: var(--tier-2);
+  --color-tier-3: var(--tier-3);
+  --color-tier-4: var(--tier-4);
+  --color-tier-5: var(--tier-5);
   --color-coaching-accent: var(--coaching-accent);
   --color-coaching-accent-foreground: var(--coaching-accent-foreground);
   --radius-sm: calc(var(--radius) - 4px);

@@ -142,13 +142,67 @@ describe('InsightCard', () => {
     expect(names).toEqual(['A', 'Dismiss this read']);
   });
 
-  it('the verdict element carries no truncation utility and no line-clamp below three lines', () => {
+  it('plan 39.2-11 (DD-09): the action renders right-aligned after the doors and before dismiss in tab order', () => {
+    const doors: InsightCardDoors = [
+      <a key="1" href="/a">
+        A
+      </a>,
+      <a key="2" href="/b">
+        B
+      </a>,
+    ];
+    const { container } = render(
+      <InsightCard
+        chip={<span>chip</span>}
+        name="n"
+        verdict="v"
+        evidence="e"
+        doors={doors}
+        action={<button type="button">Act</button>}
+        onDismiss={vi.fn()}
+        dismissLabel="Dismiss this read"
+      />,
+    );
+    const focusable = Array.from(document.querySelectorAll('a[href], button'));
+    const names = focusable.map((el) => el.textContent || el.getAttribute('aria-label'));
+    expect(names).toEqual(['A', 'B', 'Act', 'Dismiss this read']);
+    const slot = container.querySelector('[data-slot="insight-card-action"]')!;
+    expect(slot.className).toMatch(/\bml-auto\b/);
+    expect(slot.parentElement).toBe(container.querySelector('[data-slot="insight-card-doors"]'));
+  });
+
+  it('renders the action row even when the card has no doors', () => {
+    const { container } = render(
+      <InsightCard
+        chip={<span>chip</span>}
+        name="n"
+        verdict="v"
+        evidence="e"
+        action={<button type="button">Act</button>}
+      />,
+    );
+    expect(container.querySelector('[data-slot="insight-card-doors"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Act' })).toBeInTheDocument();
+  });
+
+  it('without an action the DOM is unchanged: no action slot, and no doors row for a doorless card', () => {
+    const { container } = render(
+      <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,
+    );
+    expect(container.querySelector('[data-slot="insight-card-action"]')).toBeNull();
+    expect(container.querySelector('[data-slot="insight-card-doors"]')).toBeNull();
+  });
+
+  // Plan 39.1-58 (UAT 39.1-20/32, F15): the ≤ 3-line budget is a copy-length target — a verdict
+  // wraps in full and is never clamped at any line count.
+  it('the verdict element carries no truncation utility and no line-clamp of any count', () => {
     const { container } = render(
       <InsightCard chip={<span>chip</span>} name="n" verdict="v" evidence="e" />,
     );
     const verdict = container.querySelector('[data-slot="insight-card-verdict"]')!;
     expect(verdict.className).not.toMatch(/\btruncate\b/);
-    expect(verdict.className).not.toMatch(/\bline-clamp-[12]\b/);
+    expect(verdict.className).not.toMatch(/\bline-clamp-/);
+    expect(verdict.className).toMatch(/\btext-pretty\b/);
   });
 
   it("the component's prop type contains no salience, ranking, score, tracking or watchlist member", () => {

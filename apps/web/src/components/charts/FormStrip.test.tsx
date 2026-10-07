@@ -995,4 +995,33 @@ describe('FormStrip foot (plan 39.1-42)', () => {
       'Whole record shown',
     ]);
   });
+
+  // Plan 41-10 (DD-41-04): the optional `drawn` support line is a formatter of
+  // the games the kit actually DRAWS — only the kit knows them after the limit
+  // trim and the width fit.
+  it('drawn: the support line formats the W-L and set count of the DRAWN games only', () => {
+    const { container } = render(
+      <FormStrip
+        events={threeEventFourSetFixture()}
+        limit={30}
+        availableWidthPx={240}
+        labels={{
+          ...emptyLabels,
+          drawn: ({ wins, losses, sets }) => `${wins}-${losses} in ${sets} sets`,
+        }}
+      />,
+    );
+    const drawnGames = container.querySelectorAll('[data-slot="form-strip-tick"]').length;
+    const wins = container.querySelectorAll('[data-slot="form-strip-tick-win"]').length;
+    const support = container.querySelector('[data-slot="form-strip-support"]')!;
+    expect(drawnGames).toBeLessThan(12);
+    expect(support.textContent).toBe(`${wins}-${drawnGames - wins} in ${drawnGames} sets`);
+  });
+
+  it('drawn: absent, the foot renders no support line', () => {
+    const { container } = render(
+      <FormStrip events={twoEventFixture()} limit={30} labels={emptyLabels} />,
+    );
+    expect(container.querySelector('[data-slot="form-strip-support"]')).toBeNull();
+  });
 });

@@ -5,7 +5,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
+import { formatDate } from '@/lib/format';
 import { formatRelativeDate } from '@/lib/relativeDate';
+import { ClaimAtomLine } from '@/components/claims/ClaimAtomLine';
+import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
+import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
+import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
+import { PaidRecommendedActionsCard } from '@/components/claims/PaidRecommendedActionsCard';
+import {
+  isClaimsEraReport,
+  resolveClaimSection,
+  type ResolvedClaimSection,
+} from '@/components/claims/claimSection';
 import { reportMarkdownFilename, reportToMarkdown } from '../reportMarkdown';
 
 function downloadMarkdown(record: ScoutReportRecord) {
@@ -19,6 +30,86 @@ function downloadMarkdown(record: ScoutReportRecord) {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+/** The overview section's connective IS the card's description line, so its claim list renders without restating it. */
+function withoutConnective(section: ResolvedClaimSection): ResolvedClaimSection {
+  if (section.kind === 'claims' || section.kind === 'abstained') {
+    return { ...section, connective: '' };
+  }
+  return { kind: 'empty' };
+}
+
+/**
+ * Plan 39-09 (RPT-06): one claim-anchored section on screen — the connective
+ * once as the section lead, then one `ClaimAtomLine` per surviving claim in
+ * stored order, or the shipped abstention sentence in place of the list when
+ * every claim abstained (UI-SPEC E1). Renders nothing — heading included —
+ * for an `empty` section.
+ */
+function ScreenClaimSection({
+  heading,
+  section,
+}: {
+  heading: string | null;
+  section: ResolvedClaimSection;
+}) {
+  const { t } = useTranslation();
+  if (section.kind === 'empty') {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {heading && <h3 className="text-sm font-semibold">{heading}</h3>}
+      {section.connective && <p className="text-sm">{section.connective}</p>}
+      {section.kind === 'claims' && (
+        <ul className="flex flex-col gap-3">
+          {section.claims.map((claim) => (
+            <li key={claim.id}>
+              <ClaimAtomLine claim={claim} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {section.kind === 'abstained' && (
+        <p className="text-sm text-muted-foreground">
+          {t('shared.evidence.abstained', { count: section.gamesNeeded })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The same section in the `print:block` rendering — kept in lockstep with `ScreenClaimSection` so print/PDF output carries the same app-rendered figures (T-39-09-02). */
+function PrintClaimSection({
+  heading,
+  section,
+}: {
+  heading: string | null;
+  section: ResolvedClaimSection;
+}) {
+  const { t } = useTranslation();
+  if (section.kind === 'empty') {
+    return null;
+  }
+  return (
+    <div data-print-claim-section="">
+      {heading && <h2 className="mt-4 text-lg font-semibold">{heading}</h2>}
+      {section.connective && <p>{section.connective}</p>}
+      {section.kind === 'claims' && (
+        <ul>
+          {section.claims.map((claim) => (
+            <li key={claim.id} className="mt-2">
+              <ClaimAtomLine claim={claim} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {section.kind === 'abstained' && (
+        <p>{t('shared.evidence.abstained', { count: section.gamesNeeded })}</p>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -42,11 +133,44 @@ function downloadMarkdown(record: ScoutReportRecord) {
  * research account (owner/Codex hard gate) — the same download/print class
  * of affordance gated on `/opponents`' H2H export and `/match-data`'s CSV
  * export.
+ *
+ * Phase 39 (plan 39-09, RPT-06): a claims-era record (the stored `sections`
+ * map present) renders its overview / game plan / watch-for sections as
+ * claim-anchored bullets — every figure from the stored claim object, never
+ * from the model's prose — on screen AND in the print block. A legacy record
+ * (no `sections`) keeps the free-prose rendering unchanged. The paid prep card
+ * (`PrepPaidReportsCard`) reuses this component verbatim and inherits both.
+ * `confidenceNotes` is `''` on every claims-era record (D-03 moved confidence
+ * onto each claim's tier phrase), so its line — screen and print — renders
+ * only when non-empty; the stage reasoning, which plan 39-06's projection
+ * fills with the game-plan connective, is not restated on a claims-era record.
+ *
+ * Phase 39 (plan 39-10, RPT-10): a record that is not validated (no
+ * `claimSchemaVersion` / passed `validation` — see `isValidatedRecord`)
+ * carries the legacy provenance line under the "Generated" caption, and the
+ * card footer discloses dropped claims (`DroppedClaimsNote`) and withheld
+ * commentary (`WithheldProseNote`, D-20) whenever the stored counts say so.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { report } = record;
   const isDemoAccount = useIsDemoAccount();
+  const claimsEra = isClaimsEraReport(report);
+  const overviewClaims = claimsEra
+    ? withoutConnective(resolveClaimSection(report.sections?.overview, report.claims))
+    : null;
+  const gameplanClaims = claimsEra
+    ? resolveClaimSection(report.sections?.gameplan, report.claims)
+    : null;
+  const watchForClaims = claimsEra
+    ? resolveClaimSection(report.sections?.watchFor, report.claims)
+    : null;
+  const stageReasoning = claimsEra ? '' : report.stageStrategy.reasoning;
+  const hasStageStrategy =
+    report.stageStrategy.bans.length > 0 ||
+    report.stageStrategy.picks.length > 0 ||
+    stageReasoning.trim().length > 0;
+  const hasConfidenceNotes = report.confidenceNotes.trim().length > 0;
 
   return (
     <>
@@ -56,10 +180,17 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
             <Sparkles className="size-4 text-primary" />
             {t('scout.aiReport.title')}
           </CardTitle>
-          <CardDescription>{report.overview}</CardDescription>
+          {report.overview && <CardDescription>{report.overview}</CardDescription>}
           <p className="text-xs text-muted-foreground">
-            {t('scout.aiReport.generated', { rel: formatRelativeDate(record.createdAt, t) })}
+            {t('scout.aiReport.generated', {
+              rel: formatRelativeDate(record.createdAt, t, i18n.language),
+            })}
           </p>
+          <LegacyReportBadge
+            variant="card"
+            claimSchemaVersion={report.claimSchemaVersion}
+            validation={report.validation}
+          />
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -87,14 +218,20 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
             </Button>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">{t('scout.aiReport.gameplan')}</h3>
-            <ul className="list-disc space-y-1 pl-5 text-sm">
-              {report.gameplan.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
+          {overviewClaims && <ScreenClaimSection heading={null} section={overviewClaims} />}
+
+          {gameplanClaims ? (
+            <ScreenClaimSection heading={t('scout.aiReport.gameplan')} section={gameplanClaims} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">{t('scout.aiReport.gameplan')}</h3>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {report.gameplan.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {report.characterStrategy && (
             <div className="flex flex-col gap-2">
@@ -115,32 +252,34 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">{t('scout.aiReport.stageStrategy')}</h3>
-            <div className="flex flex-col gap-2 text-sm">
-              {report.stageStrategy.bans.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">{t('scout.aiReport.bans')}</span>
-                  {report.stageStrategy.bans.map((stage) => (
-                    <Badge key={stage} variant="destructive">
-                      {stage}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              {report.stageStrategy.picks.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">{t('scout.aiReport.picks')}</span>
-                  {report.stageStrategy.picks.map((stage) => (
-                    <Badge key={stage} variant="success">
-                      {stage}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              <p className="text-muted-foreground">{report.stageStrategy.reasoning}</p>
+          {hasStageStrategy && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">{t('scout.aiReport.stageStrategy')}</h3>
+              <div className="flex flex-col gap-2 text-sm">
+                {report.stageStrategy.bans.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">{t('scout.aiReport.bans')}</span>
+                    {report.stageStrategy.bans.map((stage) => (
+                      <Badge key={stage} variant="destructive">
+                        {stage}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {report.stageStrategy.picks.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">{t('scout.aiReport.picks')}</span>
+                    {report.stageStrategy.picks.map((stage) => (
+                      <Badge key={stage} variant="success">
+                        {stage}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {stageReasoning && <p className="text-muted-foreground">{stageReasoning}</p>}
+              </div>
             </div>
-          </div>
+          )}
 
           {report.headToHead && (
             <div className="flex flex-col gap-2">
@@ -149,33 +288,63 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
             </div>
           )}
 
-          <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">{t('scout.aiReport.watchFor')}</h3>
-            <ul className="list-disc space-y-1 pl-5 text-sm">
-              {report.watchFor.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
+          {watchForClaims ? (
+            <ScreenClaimSection heading={t('scout.aiReport.watchFor')} section={watchForClaims} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">{t('scout.aiReport.watchFor')}</h3>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {report.watchFor.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-          <p className="text-xs text-muted-foreground">{report.confidenceNotes}</p>
+          {/* Plan 39-11 (RPT-09 / D-12): the model's chosen recommended actions,
+              after the claim sections and before the confidence caption —
+              claims-era records only (a legacy record has no action slots). */}
+          {claimsEra && (
+            <PaidRecommendedActionsCard actions={report.actions} claims={report.claims} />
+          )}
+
+          {hasConfidenceNotes && (
+            <p className="text-xs text-muted-foreground">{report.confidenceNotes}</p>
+          )}
+          {/* Plan 39-10 (D-07 / D-20): the two footer disclosures, once each,
+              from the stored counts — never recomputed. */}
+          <DroppedClaimsNote count={report.droppedClaimCount} />
+          <WithheldProseNote
+            strippedSectionCount={report.strippedSectionCount}
+            claimSchemaVersion={report.claimSchemaVersion}
+            validation={report.validation}
+          />
         </CardContent>
       </Card>
 
       <div className="print-packet-root hidden print:block">
         <h1 className="text-2xl font-bold">
-          Scout Report: {record.player.gamerTag} — {new Date(record.createdAt).toLocaleDateString()}
+          Scout Report: {record.player.gamerTag} — {formatDate(record.createdAt, i18n.language)}
         </h1>
 
-        <h2 className="mt-4 text-lg font-semibold">Overview</h2>
-        <p>{report.overview}</p>
+        {(report.overview || (overviewClaims && overviewClaims.kind !== 'empty')) && (
+          <h2 className="mt-4 text-lg font-semibold">Overview</h2>
+        )}
+        {report.overview && <p>{report.overview}</p>}
+        {overviewClaims && <PrintClaimSection heading={null} section={overviewClaims} />}
 
-        <h2 className="mt-4 text-lg font-semibold">Game plan</h2>
-        <ul>
-          {report.gameplan.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
+        {gameplanClaims ? (
+          <PrintClaimSection heading="Game plan" section={gameplanClaims} />
+        ) : (
+          <>
+            <h2 className="mt-4 text-lg font-semibold">Game plan</h2>
+            <ul>
+              {report.gameplan.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </>
+        )}
 
         {report.characterStrategy && (
           <>
@@ -187,14 +356,18 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           </>
         )}
 
-        <h2 className="mt-4 text-lg font-semibold">Stage strategy</h2>
-        {report.stageStrategy.bans.length > 0 && (
-          <p>Bans: {report.stageStrategy.bans.join(', ')}</p>
+        {hasStageStrategy && (
+          <>
+            <h2 className="mt-4 text-lg font-semibold">Stage strategy</h2>
+            {report.stageStrategy.bans.length > 0 && (
+              <p>Bans: {report.stageStrategy.bans.join(', ')}</p>
+            )}
+            {report.stageStrategy.picks.length > 0 && (
+              <p>Picks: {report.stageStrategy.picks.join(', ')}</p>
+            )}
+            {stageReasoning && <p>{stageReasoning}</p>}
+          </>
         )}
-        {report.stageStrategy.picks.length > 0 && (
-          <p>Picks: {report.stageStrategy.picks.join(', ')}</p>
-        )}
-        <p>{report.stageStrategy.reasoning}</p>
 
         {report.headToHead && (
           <>
@@ -203,15 +376,25 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           </>
         )}
 
-        <h2 className="mt-4 text-lg font-semibold">Watch for</h2>
-        <ul>
-          {report.watchFor.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
+        {watchForClaims ? (
+          <PrintClaimSection heading="Watch for" section={watchForClaims} />
+        ) : (
+          <>
+            <h2 className="mt-4 text-lg font-semibold">Watch for</h2>
+            <ul>
+              {report.watchFor.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          </>
+        )}
 
-        <h2 className="mt-4 text-lg font-semibold">Confidence notes</h2>
-        <p>{report.confidenceNotes}</p>
+        {hasConfidenceNotes && (
+          <>
+            <h2 className="mt-4 text-lg font-semibold">Confidence notes</h2>
+            <p>{report.confidenceNotes}</p>
+          </>
+        )}
       </div>
     </>
   );

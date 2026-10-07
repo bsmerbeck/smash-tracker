@@ -21,6 +21,12 @@ export interface DeltaChipViewInput {
    * `chipRating` does — a rating move is not percentage points.
    */
   deltaUnit?: 'points' | 'rating';
+  /**
+   * Plan 39.1-59 (UAT 39.1-33 F17): true when the scope held games in this
+   * horizon before D-15's 12-month bound was applied — an empty last-30 /
+   * last-event window then means "none in the last 12 months", not "no games".
+   */
+  recencyBounded?: boolean;
   t: TFunction;
 }
 
@@ -41,6 +47,9 @@ const CHIP_HORIZON_KEYS: Record<HorizonKey, string> = {
 };
 
 /** Value-label keys per delta unit and direction ("+7 pts" / "−7 pts"; "+24" / "−84"). */
+/** The horizons whose emptiness under the D-15 bound reads "none in the last 12 months" (the 90-day window is time-bounded in its own right). */
+const BOUND_LABELLED_HORIZONS: readonly HorizonKey[] = ['last30', 'lastEvent'];
+
 const DELTA_KEYS = {
   points: { up: 'analytics.record.deltaUp', down: 'analytics.record.deltaDown' },
   rating: { up: 'insights.chip.ratingUp', down: 'insights.chip.ratingDown' },
@@ -55,7 +64,9 @@ const DELTA_KEYS = {
  *
  * - `collapsed` -> `null` (no chip — the recent window IS all games).
  * - 0 recent games -> `none`: "no games", with the horizon label unless the
- *   parent owns it (sketch 001-C `shareBar`: "no games · last 30").
+ *   parent owns it (sketch 001-C `shareBar`: "no games · last 30"). Plan
+ *   39.1-59: when `recencyBounded` and the horizon is last 30 / last event,
+ *   "none in the last 12 months" with no horizon suffix instead.
  * - 1 to `TREND_MIN_RECENT_GAMES - 1` recent games -> `thin`:
  *   "n N · no direction", hollow circle, no horizon suffix (sketch 001-C
  *   `deltaChip` thin branch) — the chip states a count, not a delta, so the
@@ -74,6 +85,7 @@ export function deltaChipView({
   horizon,
   horizonOwnedByParent,
   deltaUnit = 'points',
+  recencyBounded = false,
   t,
 }: DeltaChipViewInput): DeltaChipView | null {
   if (state === 'collapsed') {
@@ -83,6 +95,14 @@ export function deltaChipView({
   const horizonLabel = horizonOwnedByParent ? undefined : t(CHIP_HORIZON_KEYS[horizon]);
 
   if (recentGames <= 0) {
+    if (recencyBounded && BOUND_LABELLED_HORIZONS.includes(horizon)) {
+      return {
+        state: 'none',
+        valueLabel: t('insights.chip.noneInBound'),
+        horizonOwnedByParent: true,
+        recentGames: 0,
+      };
+    }
     return {
       state: 'none',
       valueLabel: t('insights.chip.noGames'),

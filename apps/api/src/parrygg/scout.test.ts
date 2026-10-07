@@ -348,6 +348,35 @@ describe('accumulateParryMatchContext', () => {
     });
   });
 
+  it('stamps each game with the trimmed tournament path name, and omits the key when there is none (41-17)', () => {
+    const makeGame = () => {
+      const game = new MatchGame();
+      game.setStagesList([makeStage('battlefield')]);
+      game.setSlotsList([
+        makeGameSlot(0, MY_USER_ID, 'mario', 1),
+        makeGameSlot(1, OPPONENT_USER_ID, 'sonic', 2),
+      ]);
+      return game;
+    };
+    const named = emptyAcc();
+    accumulateParryMatchContext(
+      named,
+      makeMatchContext({ matchGames: [makeGame()], tournamentName: ' Genesis 9 ' }),
+      MY_USER_ID,
+    );
+    expect(named.games).toHaveLength(1);
+    expect(named.games[0]?.tournamentName).toBe('Genesis 9');
+
+    const bare = emptyAcc();
+    accumulateParryMatchContext(
+      bare,
+      makeMatchContext({ matchGames: [makeGame()], tournamentName: '  ' }),
+      MY_USER_ID,
+    );
+    expect(bare.games).toHaveLength(1);
+    expect('tournamentName' in bare.games[0]!).toBe(false);
+  });
+
   it('skips emitting a game record when the scouted player’s own character is unmapped', () => {
     const acc = emptyAcc();
     const game = new MatchGame();

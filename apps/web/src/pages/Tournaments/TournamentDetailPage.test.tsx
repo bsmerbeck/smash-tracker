@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { TournamentDetailPage } from './TournamentDetailPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { SpriteList } from '@/data/sprites';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
+import { derivePrepSurfaceMode } from '@/lib/prepSurfaceMode';
 
 vi.mock('@/hooks/usePrepBrief', () => ({
   usePrepBrief: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('@/lib/firebase', async () => {
 
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
+const setTierOverride = vi.fn();
 const createVodShare = vi.fn();
 const getMe = vi.fn();
 const listAliases = vi.fn();
@@ -60,6 +62,12 @@ vi.mock('@/lib/api', async () => {
   return {
     ...actual,
     api: {
+      // Plan 39.2-10: every Track host reads the subject's watchlist.
+      watchlist: {
+        list: vi.fn().mockResolvedValue({ items: [] }),
+        track: vi.fn(),
+        untrack: vi.fn(),
+      },
       users: {
         getMe: (...args: unknown[]) => getMe(...args),
       },
@@ -68,6 +76,7 @@ vi.mock('@/lib/api', async () => {
       },
       tournaments: {
         list: (...args: unknown[]) => listTournaments(...args),
+        setTierOverride: (...args: unknown[]) => setTierOverride(...args),
       },
       vodShares: {
         create: (...args: unknown[]) => createVodShare(...args),
@@ -84,11 +93,22 @@ vi.mock('@/lib/api', async () => {
 const mockUsePrepBrief = vi.mocked(usePrepBrief);
 
 /** Convenience wrapper matching `usePrepBrief`'s consumed shape (`isPending`/`isError`/`data.activated`). */
-function mockPrepBrief(state: { isPending: boolean; isError?: boolean; activated?: boolean }) {
+function mockPrepBrief(state: {
+  isPending: boolean;
+  isError?: boolean;
+  activated?: boolean;
+  reviewAt?: number;
+}) {
   mockUsePrepBrief.mockReturnValue({
     isPending: state.isPending,
     isError: Boolean(state.isError),
-    data: state.isPending || state.isError ? undefined : { activated: Boolean(state.activated) },
+    data:
+      state.isPending || state.isError
+        ? undefined
+        : {
+            activated: Boolean(state.activated),
+            ...(state.reviewAt !== undefined ? { reviewAt: state.reviewAt } : {}),
+          },
   } as unknown as ReturnType<typeof usePrepBrief>);
 }
 
@@ -262,6 +282,182 @@ describe('TournamentDetailPage', () => {
     expect(screen.queryByText(/Outperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Underperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Matched seed/)).not.toBeInTheDocument();
+  });
+
+  describe('tier badge and provenance line (TIER-02, T-05, DD-02, DD-03)', () => {
+    it('shows an OUTLINED estimated Supermajor and its provenance sentence for an offline 1,581-entrant entry', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          tournamentName: 'Supernova 2026',
+          numEntrants: 1581,
+          isOnline: false,
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      expect(block).not.toBeNull();
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveTextContent('Supermajor');
+      expect(badge).toHaveAttribute('data-tier', 'supermajor');
+      expect(badge).toHaveAttribute('data-basis', 'estimated');
+      expect(badge).toHaveAttribute('data-variant', 'outline');
+      expect(within(block).getByText('Estimated from 1,581 entrants')).toBeInTheDocument();
+      // An offline main event shows neither the setting nor the kind badge (DD-03).
+      expect(within(block).queryByText('Online')).not.toBeInTheDocument();
+      expect(within(block).queryByText('Side event')).not.toBeInTheDocument();
+    });
+
+    it('resolves over ALL entries: a same-named online sibling a day earlier never hands this entry its games (39.2-REVIEW WEB-WR-02)', async () => {
+      const SAT = Date.UTC(2026, 8, 26, 10);
+      const SUN = Date.UTC(2026, 8, 27, 10);
+      const HOUR = 60 * 60 * 1000;
+      // Two legacy rows (no stored isOnline), both "Ultimate Singles", one day apart.
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 41, firstSetAt: SAT, lastSetAt: SAT + 6 * HOUR, numEntrants: 900 }),
+        makeEntry({ eventId: 42, firstSetAt: SUN, lastSetAt: SUN + 6 * HOUR, numEntrants: 180 }),
+      ]);
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'sat-1', time: SAT + 2 * HOUR, win: true, matchType: 'online-tourney' }),
+        makeMatch({ id: 'sat-2', time: SAT + 3 * HOUR, win: false, matchType: 'online-tourney' }),
+        makeMatch({ id: 'sun-1', time: SUN + 2 * HOUR, win: true, matchType: 'offline-tourney' }),
+        makeMatch({ id: 'sun-2', time: SUN + 3 * HOUR, win: true, matchType: 'offline-tourney' }),
+      ]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      // The ONE resolution (table, recap) gives Sunday only its own offline games: with no stored
+      // isOnline its setting is unknown. Resolving Sunday alone would absorb Saturday's online
+      // games and read it as an online event instead.
+      await waitFor(() => expect(within(block).getByText('Setting unknown')).toBeInTheDocument());
+      expect(within(block).queryByText("Online events aren't estimated")).not.toBeInTheDocument();
+      expect(within(block).queryByText('Online')).not.toBeInTheDocument();
+    });
+
+    it('shows "Tier unknown" with the Online badge and its reason for an online entry, never an estimate', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          tournamentName: 'Online Weekly',
+          numEntrants: 5605,
+          isOnline: true,
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveTextContent('Tier unknown');
+      expect(badge).toHaveAttribute('data-basis', 'unknown');
+      expect(badge).toHaveAttribute('data-variant', 'outline');
+      expect(badge.querySelector('[data-slot="tier-glyph"]')).toBeNull();
+      expect(within(block).getByText('Online')).toBeInTheDocument();
+      expect(within(block).getByText("Online events aren't estimated")).toBeInTheDocument();
+    });
+
+    it('shows a solid manual badge naming its source when an override is stored', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          numEntrants: 412,
+          isOnline: false,
+          tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      const badge = block.querySelector('[data-slot="tier-badge"]') as HTMLElement;
+      expect(badge).toHaveAttribute('data-tier', 'major');
+      expect(badge).toHaveAttribute('data-basis', 'manual');
+      expect(badge).toHaveAttribute('data-variant', 'secondary');
+      expect(within(block).getByText('Set manually')).toBeInTheDocument();
+    });
+
+    it('mounts the tier override card beside the ruleset card, for an admin-imported entry too', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 42,
+          origin: 'admin-imported',
+          provider: 'startgg',
+        } as Partial<TournamentEntry>),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const tierCard = document.querySelector('[data-slot="tier-override"]') as HTMLElement;
+      expect(tierCard).not.toBeNull();
+      expect(within(tierCard).getByText('Tier for this event')).toBeInTheDocument();
+      expect(screen.getByText('Ruleset for this event')).toBeInTheDocument();
+      // One grid row holds both cards (UI-SPEC §8.2), tier card first.
+      expect(tierCard.closest('[data-slot="page-grid"]')).toBe(
+        screen.getByText('Ruleset for this event').closest('[data-slot="page-grid"]'),
+      );
+    });
+
+    it('saving an override PATCHes the entry, refetches the registry, and the header turns into a solid manual badge', async () => {
+      const user = userEvent.setup();
+      const base = makeEntry({ eventId: 42, numEntrants: 412, isOnline: false });
+      listTournaments
+        .mockResolvedValueOnce([base])
+        .mockResolvedValue([
+          { ...base, tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 5 } },
+        ]);
+      setTierOverride.mockResolvedValue({
+        entryKey: '42',
+        tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 5 },
+      });
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const header = document.querySelector(
+        '[data-slot="tournament-tier"] [data-slot="tier-badge"]',
+      );
+      expect(header).toHaveAttribute('data-variant', 'outline');
+
+      await user.click(screen.getByRole('combobox', { name: 'Override tier' }));
+      await user.click(await screen.findByRole('option', { name: 'Major' }));
+
+      await waitFor(() => expect(setTierOverride).toHaveBeenCalledWith('42', { tier: 'major' }));
+      await waitFor(() => {
+        const badge = document.querySelector(
+          '[data-slot="tournament-tier"] [data-slot="tier-badge"]',
+        );
+        expect(badge).toHaveAttribute('data-basis', 'manual');
+        expect(badge).toHaveAttribute('data-variant', 'secondary');
+      });
+      expect(listTournaments).toHaveBeenCalledTimes(2);
+    });
+
+    it('states an unknown setting on the provenance line and labels a side event', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 42, eventName: 'Squad Strike', numEntrants: 100 }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      const block = document.querySelector('[data-slot="tournament-tier"]') as HTMLElement;
+      expect(within(block).getByText('Side event')).toBeInTheDocument();
+      expect(within(block).getByText("Side events don't inherit a tier")).toBeInTheDocument();
+    });
   });
 
   it('renders Event Results with a winner callout and start.gg deep link when synced', async () => {
@@ -467,6 +663,123 @@ describe('TournamentDetailPage', () => {
 
       expect(await screen.findByTestId('tournament-prep-cta')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
+    });
+
+    // Plan 39-12 (PREP-05, D-13, review C1-H6): `debrief` refines `reopen` —
+    // both need an activated brief; only the SERVER's reviewAt separates
+    // them, through the destination page's own derivePrepSurfaceMode.
+    describe('debrief state (plan 39-12)', () => {
+      const HOUR_MS = 60 * 60 * 1000;
+
+      it('shows Debrief this event for an ACTIVATED entry whose server reviewAt has passed, linking to the prep page', async () => {
+        const entry = makeEntry({ eventId: 42 });
+        listTournaments.mockResolvedValue([entry]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: true, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        const cta = await screen.findByTestId('tournament-prep-cta');
+        expect(cta).toHaveTextContent('Debrief this event');
+        expect(cta).toHaveAttribute('href', `/tournaments/${entry.entryKey}/prep`);
+      });
+
+      it('the debrief-qualifying status resolves to review on the destination (derivePrepSurfaceMode), so the CTA cannot land on prep', () => {
+        expect(derivePrepSurfaceMode({ activated: true, reviewAt: Date.now() - HOUR_MS })).toBe(
+          'review',
+        );
+        // The rejected pre-review condition (not activated, event passed) never resolves to review.
+        expect(derivePrepSurfaceMode({ activated: false, reviewAt: Date.now() - HOUR_MS })).toBe(
+          'prep',
+        );
+      });
+
+      it.each([
+        ['absent', undefined],
+        ['still in the future', Date.now() + 24 * HOUR_MS],
+      ])(
+        'shows Open prep brief (reopen) for an activated entry whose reviewAt is %s',
+        async (_label, reviewAt) => {
+          listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+          listMatches.mockResolvedValue([]);
+          mockPrepBrief({ isPending: false, activated: true, reviewAt });
+
+          renderPage('42');
+
+          expect(await screen.findByTestId('tournament-prep-cta')).toHaveTextContent(
+            'Open prep brief',
+          );
+        },
+      );
+
+      it('a NOT-activated past entry with a passed reviewAt shows no debrief CTA (it could never land in review)', async () => {
+        listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: false, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('an imported entry with a debrief-qualifying status still renders no CTA (the origin guard comes first)', async () => {
+        listTournaments.mockResolvedValue([
+          makeEntry({ eventId: 42, origin: 'admin-imported' } as Partial<TournamentEntry>),
+        ]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: false, activated: true, reviewAt: Date.now() - HOUR_MS });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('a pending brief query still renders no CTA', async () => {
+        listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+        listMatches.mockResolvedValue([]);
+        mockPrepBrief({ isPending: true });
+
+        renderPage('42');
+
+        await screen.findByText('Set Timeline');
+        expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+      });
+
+      it('start, reopen and debrief render the SAME button element — label only differs', async () => {
+        const shapes: { tag: string; className: string; href: string | null; text: string }[] = [];
+        const cases = [
+          { entry: { firstSetAt: Date.now() + 24 * HOUR_MS }, brief: { activated: false } },
+          { entry: {}, brief: { activated: true } },
+          { entry: {}, brief: { activated: true, reviewAt: Date.now() - HOUR_MS } },
+        ];
+        for (const { entry, brief } of cases) {
+          listTournaments.mockResolvedValue([makeEntry({ eventId: 42, ...entry })]);
+          listMatches.mockResolvedValue([]);
+          mockPrepBrief({ isPending: false, ...brief });
+          const view = renderPage('42');
+          const cta = await screen.findByTestId('tournament-prep-cta');
+          shapes.push({
+            tag: cta.tagName,
+            className: cta.className,
+            href: cta.getAttribute('href'),
+            text: cta.textContent ?? '',
+          });
+          view.unmount();
+        }
+
+        expect(shapes.map((shape) => shape.text)).toEqual([
+          'Start prep brief',
+          'Open prep brief',
+          'Debrief this event',
+        ]);
+        for (const shape of shapes.slice(1)) {
+          expect(shape.tag).toBe(shapes[0]!.tag);
+          expect(shape.className).toBe(shapes[0]!.className);
+          expect(shape.href).toBe(shapes[0]!.href);
+        }
+      });
     });
   });
 

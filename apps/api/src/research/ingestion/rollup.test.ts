@@ -158,9 +158,43 @@ describe('mergeDateCoverage / mergeDateCoverageSpan', () => {
     });
     expect(viaSpan).toEqual(viaPerSample);
   });
+
+  // UAT 36 test 9 / F1: a garbage provider timestamp (year 0002) must never
+  // become the stored earliest. The floor is the SSBU-era bound 2018-12-01 UTC.
+  // NOT `Date.UTC(2, 10, 30)` — Date.UTC maps years 0–99 to 1900–1999.
+  const YEAR_2_MS = new Date('0002-11-30T00:00:00Z').getTime();
+
+  it('ignores a sub-floor sample when starting from nothing (no year-2 earliest)', () => {
+    expect(mergeDateCoverage(undefined, YEAR_2_MS)).toEqual({});
+  });
+
+  it('ignores a sub-floor sample against existing coverage (returns it unchanged)', () => {
+    const existing = { earliestSetAtMs: Date.UTC(2020, 0, 1), latestSetAtMs: Date.UTC(2026, 7, 9) };
+    expect(mergeDateCoverage(existing, -62e12)).toEqual(existing);
+  });
+
+  it('mergeDateCoverageSpan never back-fills a sub-floor earliest end from the latest end', () => {
+    const latest = Date.UTC(2026, 7, 9);
+    expect(
+      mergeDateCoverageSpan(undefined, { earliestSetAtMs: YEAR_2_MS, latestSetAtMs: latest }),
+    ).toEqual({ latestSetAtMs: latest });
+  });
+
+  it('mergeDateCoverageSpan keeps the current earliest when the incoming earliest is sub-floor', () => {
+    const earliest = Date.UTC(2020, 0, 1);
+    const latest = Date.UTC(2026, 7, 9);
+    const result = mergeDateCoverageSpan(
+      { earliestSetAtMs: earliest, latestSetAtMs: Date.UTC(2025, 0, 1) },
+      { earliestSetAtMs: -62e12, latestSetAtMs: latest },
+    );
+    expect(result).toEqual({ earliestSetAtMs: earliest, latestSetAtMs: latest });
+  });
 });
 
 describe('foldPageReceipt', () => {
+  // Post-floor base (2025-01-01T00:00:00Z) so the small relative offsets the
+  // span cases use stay above the SSBU-era coverage floor.
+  const FOLD_BASE_MS = 1_735_689_600_000;
   const baseRun: ResearchIngestionRun = {
     status: 'running',
     mode: 'full',
@@ -228,26 +262,39 @@ describe('foldPageReceipt', () => {
   it('widens the staged date coverage from the receipt SPAN and raises observedMaxUpdatedAtSeconds only when larger', () => {
     const run: ResearchIngestionRun = {
       ...baseRun,
-      stagedDateCoverage: { earliestSetAtMs: 2_000, latestSetAtMs: 3_000 },
+      stagedDateCoverage: {
+        earliestSetAtMs: FOLD_BASE_MS + 2_000,
+        latestSetAtMs: FOLD_BASE_MS + 3_000,
+      },
       observedMaxUpdatedAtSeconds: 100,
     };
     const receipt = emptyReceipt({
       page: 1,
-      earliestSetAtMs: 1_000,
-      latestSetAtMs: 5_000,
+      earliestSetAtMs: FOLD_BASE_MS + 1_000,
+      latestSetAtMs: FOLD_BASE_MS + 5_000,
       observedMaxUpdatedAtSeconds: 50,
     });
     const folded = foldPageReceipt(run, receipt);
-    expect(folded.stagedDateCoverage).toEqual({ earliestSetAtMs: 1_000, latestSetAtMs: 5_000 });
+    expect(folded.stagedDateCoverage).toEqual({
+      earliestSetAtMs: FOLD_BASE_MS + 1_000,
+      latestSetAtMs: FOLD_BASE_MS + 5_000,
+    });
     // Both are monotone envelopes — a smaller observed high-water never lowers it.
     expect(folded.observedMaxUpdatedAtSeconds).toBe(100);
   });
 
   it('a receipt whose two span ends differ widens both ends of the staged coverage in one fold', () => {
     const run: ResearchIngestionRun = { ...baseRun };
-    const receipt = emptyReceipt({ page: 1, earliestSetAtMs: 100, latestSetAtMs: 900 });
+    const receipt = emptyReceipt({
+      page: 1,
+      earliestSetAtMs: FOLD_BASE_MS + 100,
+      latestSetAtMs: FOLD_BASE_MS + 900,
+    });
     const folded = foldPageReceipt(run, receipt);
-    expect(folded.stagedDateCoverage).toEqual({ earliestSetAtMs: 100, latestSetAtMs: 900 });
+    expect(folded.stagedDateCoverage).toEqual({
+      earliestSetAtMs: FOLD_BASE_MS + 100,
+      latestSetAtMs: FOLD_BASE_MS + 900,
+    });
   });
 });
 
@@ -738,6 +785,23 @@ describe('publishCoverageSnapshot', () => {
       completed.run!,
     );
     expect(result.snapshot.players[PLAYER_A]!.dateCoverage.earliestSetAtMs).toBe(millisValue);
+  });
+
+  it('the workspace total never inherits a stored sub-floor section earliest (UAT 36 F1)', async () => {
+    const database = new FakeDatabase();
+    const latest = Date.UTC(2026, 7, 9);
+    const b = await completeRunWithCounters(database, PLAYER_B, { imported: 1 }, 1_000);
+    await publishCoverageSnapshot(asDatabase(database), TENANT_ID, b.runId, b.run);
+    // Simulate the already-stored production garbage on player B's section.
+    database.seed(`researchCoverage/${TENANT_ID}/players/${PLAYER_B}/dateCoverage`, {
+      earliestSetAtMs: new Date('0002-11-30T00:00:00Z').getTime(),
+      latestSetAtMs: latest,
+    });
+    const a = await completeRunWithCounters(database, PLAYER_A, { imported: 2 }, 5_000);
+    const result = await publishCoverageSnapshot(asDatabase(database), TENANT_ID, a.runId, a.run);
+    expect(result.published).toBe(true);
+    expect(result.snapshot.totals.dateCoverage.earliestSetAtMs).toBeUndefined();
+    expect(result.snapshot.totals.dateCoverage.latestSetAtMs).toBe(latest);
   });
 });
 

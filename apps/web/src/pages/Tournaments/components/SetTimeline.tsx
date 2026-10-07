@@ -158,7 +158,7 @@ function VodTimestampChips({ vodUrl, match }: { vodUrl: string; match: Match }) 
  * set's first game as the record to edit when no `vodUrl` exists yet) so a
  * VOD can be attached even for sets that never got one from start.gg.
  */
-function VodLink({ set }: { set: TournamentSet }) {
+function VodLink({ set, setLabel }: { set: TournamentSet; setLabel: string }) {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -169,8 +169,6 @@ function VodLink({ set }: { set: TournamentSet }) {
   if (!vodMatch) {
     return null;
   }
-
-  const setLabel = set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -248,19 +246,36 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
   );
 }
 
+/**
+ * A set's visible label: start.gg's round text, prefixed with the bracket
+ * phase ("Pools · Winners Quarter-Final") when the event spans more than one
+ * phase — round names are phase-local, so they repeat across phases (UAT
+ * 37-9 / F10). Falls back to "Set {id}" when no round text synced.
+ */
+function useSetLabel(set: TournamentSet, multiPhase: boolean): string {
+  const { t } = useTranslation();
+  if (multiPhase && set.phaseName && set.roundText) {
+    return t('tournaments.timeline.phaseRound', { phase: set.phaseName, round: set.roundText });
+  }
+  return set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
+}
+
 function SetRow({
   set,
   entry,
   attribution,
+  multiPhase,
 }: {
   set: TournamentSet;
   entry: TournamentEntry;
+  /** True when the event's sets span more than one start.gg phase. */
+  multiPhase: boolean;
   /** Phase 30.3 Gate 5: the whole-timeline witness map (keyed by match id), sourced once at the `SetTimeline` level via `useEnrichmentAttribution`. */
   attribution: Record<string, WebEnrichmentAttributionEntry>;
 }) {
   const { t } = useTranslation();
   const isLosersSide = set.bracketRound != null && set.bracketRound < 0;
-  const setLabel = set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
+  const setLabel = useSetLabel(set, multiPhase);
   const setUrl = buildRecapSetUrl(entry, set);
 
   return (
@@ -309,7 +324,7 @@ function SetRow({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <VodLink set={set} />
+        <VodLink set={set} setLabel={setLabel} />
         <span className="text-sm text-muted-foreground">
           {set.gamesWon}-{set.gamesLost}
         </span>
@@ -322,8 +337,10 @@ function SetRow({
 }
 
 /**
- * Chronological set-by-set breakdown of an entry's matches: round label
- * (falling back to "Set {id}" when start.gg's `roundText` hasn't synced
+ * Chronological set-by-set breakdown of an entry's matches (phase order
+ * first when every set carries start.gg phase data — see `buildSetTimeline`):
+ * round label (prefixed "<phase> · " when the event spans several phases,
+ * falling back to "Set {id}" when start.gg's `roundText` hasn't synced
  * yet, and gaining an outbound link to the set's start.gg page when
  * `buildRecapSetUrl(entry, set)` resolves — start.gg only, parry.gg sets
  * are never URL-addressable and render the label with no icon), a
@@ -358,6 +375,10 @@ export function SetTimeline({
     [sets, otherMatches],
   );
   const attribution = useEnrichmentAttribution(allMatchIds);
+  const multiPhase = useMemo(
+    () => new Set(sets.map((s) => s.phaseName).filter(Boolean)).size > 1,
+    [sets],
+  );
   return (
     <Card>
       <CardHeader>
@@ -371,7 +392,13 @@ export function SetTimeline({
             {sets.length > 0 && (
               <ul className="flex flex-col gap-2" aria-label={t('tournaments.timeline.setsAria')}>
                 {sets.map((set) => (
-                  <SetRow key={set.setId} set={set} entry={entry} attribution={attribution} />
+                  <SetRow
+                    key={set.setId}
+                    set={set}
+                    entry={entry}
+                    attribution={attribution}
+                    multiPhase={multiPhase}
+                  />
                 ))}
               </ul>
             )}

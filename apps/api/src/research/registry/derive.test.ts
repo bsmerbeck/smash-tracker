@@ -285,4 +285,36 @@ describe('deriveTournamentRegistryFromResearchSource', () => {
       expect(tournamentEntrySchema.safeParse(row).success).toBe(true);
     }
   });
+
+  it('lifts isOnline (false kept, not dropped) and eventType from the source event', () => {
+    const record = makeEventRecord('s1', '100');
+    record.event = { ...record.event, isOnline: false, eventType: '1' };
+    const { rows } = deriveTournamentRegistryFromResearchSource([record], {
+      importedAtMs: IMPORTED_AT_MS,
+    });
+    expect(rows[0]!.isOnline).toBe(false);
+    expect(rows[0]!.eventType).toBe('1');
+    expect(tournamentEntrySchema.safeParse(rows[0]).success).toBe(true);
+  });
+
+  it('adds no isOnline/eventType key when no source carried either', () => {
+    const { rows } = deriveTournamentRegistryFromResearchSource([makeEventRecord('s1', '100')], {
+      importedAtMs: IMPORTED_AT_MS,
+    });
+    expect('isOnline' in rows[0]!).toBe(false);
+    expect('eventType' in rows[0]!).toBe(false);
+  });
+
+  it('takes the freshest defined isOnline across an event group', () => {
+    const older = makeEventRecord('s1', '100', { lastObservedAtMs: 1_000 });
+    older.event = { ...older.event, isOnline: true };
+    const newer = makeEventRecord('s2', '100', { lastObservedAtMs: 2_000 });
+    newer.event = { ...newer.event, isOnline: false };
+    const withGap = makeEventRecord('s3', '100', { lastObservedAtMs: 3_000 });
+    withGap.event = { ...withGap.event, isOnline: null };
+    const { rows } = deriveTournamentRegistryFromResearchSource([older, newer, withGap], {
+      importedAtMs: IMPORTED_AT_MS,
+    });
+    expect(rows[0]!.isOnline).toBe(false);
+  });
 });

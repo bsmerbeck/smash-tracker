@@ -22,6 +22,8 @@ import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
+import { localizedFighterName } from '@/lib/fighterNames';
+import { TrackToggle } from '@/components/analytics/track/TrackToggle';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import {
   DRILL_DOWN_CLAIM_PARAM,
@@ -646,6 +648,22 @@ export function MatchupsPage() {
                   setHorizon={setHorizon}
                   isLoading={horizonLoading || matchesLoading}
                   nowMs={nowMs}
+                  action={
+                    <TrackToggle
+                      kind="matchup"
+                      itemRef={{
+                        fighterId: effectiveFighter.id,
+                        vsFighterId: effectiveOpponent.id,
+                      }}
+                      name={t('matchups.pairingHeading', {
+                        fighter: localizedFighterName(effectiveFighter.id, t),
+                        opponent: localizedFighterName(effectiveOpponent.id, t),
+                      })}
+                      // Below 640px the toggle is icon-only so the hero identity row never
+                      // wraps (sketch-deep 390 scroll budget); the aria-label keeps its name.
+                      className="max-sm:px-2 max-sm:[&>span]:sr-only"
+                    />
+                  }
                 />
                 <div data-slot="pairing-opponents">
                   <PairingOpponents matchupMatches={matchupMatches} nowMs={nowMs} />

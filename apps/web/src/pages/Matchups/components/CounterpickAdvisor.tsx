@@ -191,6 +191,10 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   const referenceRate = pairingWinRate(matchupMatches);
   const pickRows = toRows(picks);
   const banRows = toRows(bans);
+  // F21 (plan 37-10): the Wilson lower bound can rank a losing record above a
+  // thin winning one — intended, but "Pick these" must say so in text.
+  // Exactly 50% is not losing.
+  const belowEvenCount = picks.filter((s) => s.total > 0 && s.wins / s.total < 0.5).length;
 
   let body: ReactNode;
   if (noLegalStages) {
@@ -242,6 +246,14 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
             referenceRate={referenceRate}
             onSelectRow={handleSelectRow}
           />
+          {belowEvenCount > 0 && (
+            <p
+              data-slot="counterpick-pick-below-even"
+              className="text-xs leading-4 text-muted-foreground"
+            >
+              {t('matchups.counterpick.picksBelowEven', { count: belowEvenCount })}
+            </p>
+          )}
         </div>
         {banRows.length > 0 && (
           <div data-slot="counterpick-ban" className="flex min-w-0 flex-col gap-1">

@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { RankedMatchup } from '@/lib/stats';
+import type { MatchupStats, RankedMatchup } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { DrillableRow, DrillableRowChevron } from '@/components/DrillableRow';
@@ -27,15 +27,25 @@ import { useRowLayout, type RowLayout } from '@/hooks/useRowLayout';
  * row with a known fighter is a real anchor into the param-aware Matchups
  * page; with none supplied (the Scout host), no row renders an anchor at
  * all — preserving that host's six bare-render test cases.
+ *
+ * Plan 38-10 (38-UAT 13/22, F18): the optional `belowFloor` list (the
+ * opponent's characters below the evidence floor) renders AFTER the ranked
+ * rows as disclosure-only rows — sprite, name and the matrix's muted
+ * "Not enough data yet (n games)" copy, never a record, rate or verdict —
+ * still drilling through `rowHref`. The empty copy shows only when both
+ * lists are empty. The Scout host leaves `belowFloor` unset.
  */
 export function WhatTheyPlayTable({
   byTheirFighter,
+  belowFloor = [],
   rowHref,
   layout: layoutOverride,
 }: {
   byTheirFighter: RankedMatchup[];
+  /** Plan 38-10: characters below the evidence floor, most games first — disclosure rows after the ranked ones. */
+  belowFloor?: MatchupStats[];
   /** Host-supplied destination builder — absent entirely at the third-party host (Scout). */
-  rowHref?: (row: RankedMatchup) => string;
+  rowHref?: (row: MatchupStats) => string;
   /** Plan 39.1-49: forces one layout (tests); otherwise read once from the viewport (below 640px: stacked rows). */
   layout?: RowLayout;
 }) {
@@ -43,6 +53,10 @@ export function WhatTheyPlayTable({
   // Plan 39.1-49 (UI-SPEC §6.6): exactly one root mounts per render; the
   // hook is provider-free, so the Scout host's bare render stays valid.
   const layout = useRowLayout(layoutOverride);
+  const rows: { row: MatchupStats; subFloor: boolean }[] = [
+    ...byTheirFighter.map((row) => ({ row, subFloor: false })),
+    ...belowFloor.map((row) => ({ row, subFloor: true })),
+  ];
   return (
     <Card>
       <CardHeader>
@@ -50,7 +64,7 @@ export function WhatTheyPlayTable({
         <CardDescription>{t('opponents.whatTheyPlay.description')}</CardDescription>
       </CardHeader>
       <CardContent>
-        {byTheirFighter.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('opponents.whatTheyPlay.empty')}</p>
         ) : layout === 'stack' ? (
           // Plan 39.1-49 (UI-SPEC §6.6 / §6.5 rules 1-2): one stacked row per
@@ -59,7 +73,7 @@ export function WhatTheyPlayTable({
           // and games as whole tokens. Same overlay link when rowHref
           // resolves; the root keeps the hub's clip-target data-slot.
           <ul data-slot="what-they-play" className="flex flex-col divide-y">
-            {byTheirFighter.map((row) => {
+            {rows.map(({ row, subFloor }) => {
               const sprite = getFighterById(row.opponentFighterId);
               const label = sprite
                 ? localizedFighterName(row.opponentFighterId, t)
@@ -90,19 +104,25 @@ export function WhatTheyPlayTable({
                     </span>
                     {destination != null && <DrillableRowChevron />}
                   </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted-foreground tabular-nums">
-                    <span className="whitespace-nowrap">
-                      <span className="sr-only">{t('matchups.stageTable.record')} </span>
-                      {row.wins}-{row.losses}
-                    </span>
-                    <span className="whitespace-nowrap">
-                      <span className="sr-only">{t('matchups.stageTable.winRate')} </span>
-                      {row.ratio}%
-                    </span>
-                    <span className="whitespace-nowrap">
-                      {row.totalMatches} {t('trends.monthly.games')}
-                    </span>
-                  </div>
+                  {subFloor ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('opponents.hub.matrix.notEnoughData', { count: row.totalMatches })}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-muted-foreground tabular-nums">
+                      <span className="whitespace-nowrap">
+                        <span className="sr-only">{t('matchups.stageTable.record')} </span>
+                        {row.wins}-{row.losses}
+                      </span>
+                      <span className="whitespace-nowrap">
+                        <span className="sr-only">{t('matchups.stageTable.winRate')} </span>
+                        {row.ratio}%
+                      </span>
+                      <span className="whitespace-nowrap">
+                        {row.totalMatches} {t('trends.monthly.games')}
+                      </span>
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -118,7 +138,7 @@ export function WhatTheyPlayTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {byTheirFighter.map((row) => {
+              {rows.map(({ row, subFloor }) => {
                 const sprite = getFighterById(row.opponentFighterId);
                 const label = sprite
                   ? localizedFighterName(row.opponentFighterId, t)
@@ -146,16 +166,27 @@ export function WhatTheyPlayTable({
                         <span>{label}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      {row.wins}-{row.losses}
-                    </TableCell>
-                    <TableCell>{row.ratio}%</TableCell>
-                    <TableCell className="text-right">
-                      <span className="flex items-center justify-end gap-2">
-                        {row.totalMatches}
-                        {destination != null && <DrillableRowChevron />}
-                      </span>
-                    </TableCell>
+                    {subFloor ? (
+                      <TableCell colSpan={3} className="text-muted-foreground">
+                        <span className="flex items-center justify-between gap-2">
+                          {t('opponents.hub.matrix.notEnoughData', { count: row.totalMatches })}
+                          {destination != null && <DrillableRowChevron />}
+                        </span>
+                      </TableCell>
+                    ) : (
+                      <>
+                        <TableCell>
+                          {row.wins}-{row.losses}
+                        </TableCell>
+                        <TableCell>{row.ratio}%</TableCell>
+                        <TableCell className="text-right">
+                          <span className="flex items-center justify-end gap-2">
+                            {row.totalMatches}
+                            {destination != null && <DrillableRowChevron />}
+                          </span>
+                        </TableCell>
+                      </>
+                    )}
                   </TableRow>
                 );
               })}

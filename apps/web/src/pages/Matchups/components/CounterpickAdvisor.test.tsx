@@ -525,12 +525,12 @@ describe('CounterpickAdvisor', () => {
       expect(picking).not.toHaveAttribute('aria-disabled');
       expect(screen.queryByRole('radio', { name: 'Striking' })).toBeNull();
       expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
-        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+        'Assuming Game 2+ · Banning (you won) · no stages played yet, no bans',
       );
       await user.click(picking);
       expect(picking).toHaveAttribute('aria-checked', 'true');
       expect(screen.getByTestId('set-state-assumption-line').textContent).toBe(
-        'Assuming Game 2+ · Picking · no stages played yet, no bans',
+        'Assuming Game 2+ · Picking (you lost) · no stages played yet, no bans',
       );
     });
 
@@ -711,7 +711,7 @@ describe('CounterpickAdvisor', () => {
 
       await user.click(screen.getByRole('radio', { name: 'Game 2+' }));
       expect(screen.getByTestId('set-state-assumption-line').textContent).toContain(
-        'Assuming Game 2+ · Striking · no stages played yet, no bans',
+        'Assuming Game 2+ · Banning (you won) · no stages played yet, no bans',
       );
 
       await user.click(screen.getByRole('button', { name: PLAYED_BANS_LINK }));
@@ -818,6 +818,65 @@ describe('CounterpickAdvisor', () => {
       await user.click(rows[1]!); // Town and City
 
       expect(setDrillDownMock).toHaveBeenCalledWith({ stageId: TOWN_AND_CITY.id });
+    });
+  });
+
+  // Plan 37-10 (UAT 37-10 / F21): ranking stays on the Wilson lower bound, so
+  // "Pick these" can lead with a losing record (MkLeo PS2 15–23 above Town and
+  // City 2–1). The list says so in visible text instead of reordering.
+  describe('F21 losing-record picks', () => {
+    const BELOW_EVEN = '[data-slot="counterpick-pick-below-even"]';
+
+    it('discloses one losing-record pick under "Pick these" and keeps the Wilson order', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 15, 23), // 39%, n=38 — LB ≈ 0.25
+        ...matchesOnStage(TOWN_AND_CITY, 2, 1), // 67%, n=3 — LB ≈ 0.21
+        ...matchesOnStage(SMASHVILLE, 10, 10), // exactly 50% — not losing
+      ];
+      const { container } = renderAdvisor(matches);
+
+      const pick = container.querySelector('[data-slot="counterpick-pick"]')!;
+      const caption = pick.querySelector(BELOW_EVEN);
+      expect(caption).not.toBeNull();
+      expect(caption!.tagName).toBe('P');
+      expect(caption!.textContent).toBe(
+        '1 of these picks has a losing record — ranked by how certain each record is, not by raw win rate.',
+      );
+      const names = Array.from(pick.querySelectorAll('li')).map((li) => li.textContent ?? '');
+      const losingIdx = names.findIndex((n) => n.includes('Battlefield'));
+      const flukeIdx = names.findIndex((n) => n.includes('Town and City'));
+      expect(losingIdx).toBeGreaterThanOrEqual(0);
+      expect(flukeIdx).toBeGreaterThan(losingIdx);
+    });
+
+    it('renders no caption when every pick is at or above 50% (an exact 10–10 does not count)', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 5, 0),
+        ...matchesOnStage(TOWN_AND_CITY, 4, 1),
+        ...matchesOnStage(SMASHVILLE, 10, 10),
+      ];
+      const { container } = renderAdvisor(matches);
+      expect(screen.getByText('Pick these')).toBeInTheDocument();
+      expect(container.querySelector(BELOW_EVEN)).toBeNull();
+    });
+
+    it('counts every losing pick with the plural copy (Hungrybox shape: 46%, 48%, 42%)', () => {
+      const matches = [
+        ...matchesOnStage(BATTLEFIELD, 23, 27), // 46%
+        ...matchesOnStage(SMASHVILLE, 24, 26), // 48%
+        ...matchesOnStage(FINAL_DESTINATION, 21, 29), // 42%
+      ];
+      const { container } = renderAdvisor(matches);
+      const caption = container.querySelector(BELOW_EVEN);
+      expect(caption?.textContent).toBe(
+        '3 of these picks have a losing record — ranked by how certain each record is, not by raw win rate.',
+      );
+    });
+
+    it('renders no caption in the abstained body', () => {
+      const { container } = renderAdvisor(matchesOnStage(BATTLEFIELD, 0, 2));
+      expect(container.querySelector('[data-slot="counterpick-locked"]')).not.toBeNull();
+      expect(container.querySelector(BELOW_EVEN)).toBeNull();
     });
   });
 });

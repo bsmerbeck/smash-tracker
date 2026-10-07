@@ -90,9 +90,17 @@ export function UnknownRow({ bucket, as }: { bucket: UnknownBucket | null; as: '
 /**
  * Outline `Badge` + `Tooltip` disclosing a minority cohort at or above
  * `MIXED_CONTEXT_THRESHOLD` (EVID-02, D-10) — absent, never disabled/greyed,
- * below that threshold or with one homogeneous cohort.
+ * below that threshold or with one homogeneous cohort. Plan 38-12 (38-UAT
+ * test 5): `showDetail` also prints the detail sentence as visible muted text
+ * after the badge; hosts that omit it keep the tooltip-only form.
  */
-export function MixedContextBadge({ cohort }: { cohort: CohortComposition }) {
+export function MixedContextBadge({
+  cohort,
+  showDetail = false,
+}: {
+  cohort: CohortComposition;
+  showDetail?: boolean;
+}) {
   const { t } = useTranslation();
   if (!cohort.mixedContext) {
     return null;
@@ -104,14 +112,58 @@ export function MixedContextBadge({ cohort }: { cohort: CohortComposition }) {
   const majorityLabel = cohort.majorityLabel
     ? t(`shared.evidence.cohort.${cohort.majorityLabel}`)
     : '';
-  return (
+  const detail = t('shared.evidence.mixedContextDetail', {
+    minorityPct,
+    minorityLabel,
+    majorityLabel,
+  });
+  const badge = (
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge variant="outline">{t('shared.evidence.mixedContext')}</Badge>
       </TooltipTrigger>
-      <TooltipContent>
-        {t('shared.evidence.mixedContextDetail', { minorityPct, minorityLabel, majorityLabel })}
-      </TooltipContent>
+      <TooltipContent>{detail}</TooltipContent>
     </Tooltip>
+  );
+  if (!showDetail) {
+    return badge;
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {badge}
+      <span className="text-xs text-muted-foreground">{detail}</span>
+    </span>
+  );
+}
+
+/** Fixed print order of the session-type axis (38-UAT test 5). */
+const SESSION_BUCKETS = ['offline', 'online', 'unspecified'] as const;
+/** Fixed print order of the provenance axis. */
+const SOURCE_BUCKETS = ['manual', 'startgg', 'parrygg'] as const;
+
+/**
+ * Plan 38-12 (38-UAT test 5, UI-SPEC "cohort composition … visible without
+ * hover"): one muted line printing the cohort's non-zero session-type counts
+ * (offline · online · unspecified) and, only when two or more sources are
+ * present, the non-zero source counts — for every cohort, mixed or not.
+ * Renders nothing for an empty cohort.
+ */
+export function CohortCompositionLine({ cohort }: { cohort: CohortComposition }) {
+  const { t } = useTranslation();
+  const part = (bucket: (typeof SESSION_BUCKETS)[number] | (typeof SOURCE_BUCKETS)[number]) =>
+    t('shared.evidence.cohortCount', {
+      count: cohort[bucket],
+      label: t(`shared.evidence.cohort.${bucket}`),
+    });
+  const sessionParts = SESSION_BUCKETS.filter((b) => cohort[b] > 0).map(part);
+  if (sessionParts.length === 0) {
+    return null;
+  }
+  const sources = SOURCE_BUCKETS.filter((b) => cohort[b] > 0);
+  const sourceParts = sources.length >= 2 ? sources.map(part) : [];
+  return (
+    <p data-slot="cohort-composition" className="text-xs text-muted-foreground">
+      {[...sessionParts, ...sourceParts].join(' · ')}
+    </p>
   );
 }

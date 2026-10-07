@@ -31,6 +31,8 @@ function makeMatch(
 
 const BATTLEFIELD = { id: 1, name: 'Battlefield' };
 const FD = { id: 2, name: 'Final Destination' };
+/** The real Final Destination id in the shared stage list (`FD` above predates it and resolves to another stage). */
+const FINAL_DESTINATION = { id: 3, name: 'Final Destination' };
 
 /** 4 wins on FD, 3 losses on Battlefield — both stages clear the abstention floor. */
 function twoStageFixture(): Match[] {
@@ -102,6 +104,55 @@ describe('StageMastery', () => {
     expect(
       coachLinks.some((link) => link.getAttribute('href') === `/coach/test-client/stages/${FD.id}`),
     ).toBe(true);
+  });
+
+  it('never labels a winning stage "Ban-worthy" — every evidenced stage winning keeps Best pick only (36-09, UAT F3)', () => {
+    const matches: Match[] = [
+      ...Array.from({ length: 20 }, (_, i) =>
+        makeMatch({ id: `bf${i}`, time: i, win: i < 18, map: BATTLEFIELD }),
+      ),
+      ...Array.from({ length: 21 }, (_, i) =>
+        makeMatch({ id: `fd${i}`, time: 100 + i, win: i < 15, map: FINAL_DESTINATION }),
+      ),
+    ]; // Battlefield 18-2, Final Destination 15-6 (71%)
+    render(<StageMastery fighterMatches={matches} />);
+
+    expect(screen.getByText(/Best pick/)).toBeInTheDocument();
+    expect(screen.queryByText(/Ban-worthy/)).not.toBeInTheDocument();
+  });
+
+  it('still labels a losing lowest stage "Ban-worthy" (36-09)', () => {
+    const matches: Match[] = [
+      ...Array.from({ length: 20 }, (_, i) =>
+        makeMatch({ id: `bf${i}`, time: i, win: i < 18, map: BATTLEFIELD }),
+      ),
+      ...Array.from({ length: 13 }, (_, i) =>
+        makeMatch({ id: `fd${i}`, time: 100 + i, win: i < 4, map: FINAL_DESTINATION }),
+      ),
+    ]; // Battlefield 18-2, Final Destination 4-9
+    render(<StageMastery fighterMatches={matches} />);
+
+    const label = screen.getByText(/Ban-worthy/);
+    expect(label.closest('p')).toHaveTextContent('Final Destination');
+  });
+
+  it('a thin even stage ranked last never hides a well-sampled losing one from "Ban-worthy" (UAT review WR-02)', () => {
+    const SMASHVILLE = { id: 83, name: 'Smashville' };
+    const matches: Match[] = [
+      ...Array.from({ length: 21 }, (_, i) =>
+        makeMatch({ id: `fd${i}`, time: i, win: i < 15, map: FINAL_DESTINATION }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        makeMatch({ id: `bf${i}`, time: 100 + i, win: i < 3, map: BATTLEFIELD }),
+      ),
+      ...Array.from({ length: 45 }, (_, i) =>
+        makeMatch({ id: `sv${i}`, time: 200 + i, win: i < 20, map: SMASHVILLE }),
+      ),
+    ]; // Final Destination 15-6, Battlefield 3-3 (Wilson-last), Smashville 20-25
+    render(<StageMastery fighterMatches={matches} />);
+
+    const label = screen.getByText(/Ban-worthy/);
+    expect(label.closest('p')).toHaveTextContent('Smashville');
   });
 
   it('with no stageHref supplied, a stage tile renders no anchor and no button — and needs no Router at all', () => {

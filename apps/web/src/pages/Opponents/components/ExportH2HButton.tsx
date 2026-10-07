@@ -21,12 +21,12 @@ const COPY_FEEDBACK_MS = 2000;
  * buttons are gated for.
  */
 export function ExportH2HButton({ packet }: { packet: EvidencePacket }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [copied, setCopied] = useState(false);
   const isDemoAccount = useIsDemoAccount();
 
   async function handleCopy() {
-    const text = packetToText(packet);
+    const text = packetToText(packet, i18n.language);
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);

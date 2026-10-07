@@ -3,19 +3,25 @@ import { useTranslation } from 'react-i18next';
 import {
   CAREER_TIMELINE_MIN_GAMES,
   SUGGESTION_MIN_GAMES,
+  TIER_LEVEL,
   TREND_MIN_RECENT_GAMES,
   buildCareerTimeline,
   calendarBucketBounds,
   resolveWindow,
+  selectTimelineEventMarkers,
   type CareerRatingGrain,
   type CareerRatingPoint,
   type HorizonKey,
   type Match,
+  type ResolvedTierEntry,
+  type TimelineEventCandidate,
+  type TournamentEntry,
 } from '@smash-tracker/shared';
 import type { TFunction } from 'i18next';
 import { ChartCard } from '@/components/charts/ChartCard';
 import {
   CareerTimeline,
+  type CareerTimelineEventMarker,
   type CareerTimelineLabels,
   type CareerTimelineMonthRecord,
   type CareerTimelineReadout,
@@ -24,6 +30,9 @@ import {
 } from '@/components/charts/CareerTimeline';
 import { FormStrip } from '@/components/charts/FormStrip';
 import { GlickoExplainer } from '@/components/GlickoExplainer';
+import { tierProvenanceKey } from '@/components/analytics/tier/tierProvenance';
+import { CHART_TOKENS } from '@/components/charts/tokens';
+import { entryDisplayDateRange } from '@/lib/historicalTournament';
 import { formatPercent } from '@/lib/formatPercent';
 import {
   FORM_STRIP_EMPTY_WINDOW,
@@ -52,6 +61,99 @@ export interface CareerTimelineCardProps {
   onSelectPeriod?: (selection: CareerTimelineSelection) => void;
   /** A thin account's form-strip set was clicked — the page writes it as the `event` drill axis. */
   onSelectSet?: (setKey: string) => void;
+  /**
+   * Plan 41-04 (B2): the page's ONE `resolveEntryTiers(allEntries, allOwnAccountMatches)` result
+   * (the 39.2 resolve-once rule — never a filtered subset). Omitted -> no diamonds.
+   */
+  resolvedEntries?: ResolvedTierEntry[];
+  /** An event diamond was clicked or activated — the page writes `event=<entryKey>`. */
+  onSelectEventMarker?: (entryKey: string) => void;
+}
+
+const NO_RESOLVED_ENTRIES: ResolvedTierEntry[] = [];
+
+/** Plan 41-04 (DD-41-08): only events at or above a major are marked on the career timeline. */
+const EVENT_MARKER_MIN_LEVEL = TIER_LEVEL.major;
+
+/**
+ * Plan 41-04 (B2, DD-41-08): the career timeline's diamonds are views of the page's resolved tier
+ * entries. A marker's x is the entry's display end (else its latest assigned match; an entry with
+ * neither is skipped); markers outside the timeline's domain are dropped; `ratingAfter` is the
+ * first plotted rating point at or after the event, so the readout equals a visible point.
+ *
+ * 41-REVIEW CR-01 (door/terminus same-n): a diamond is a door to the `#games` list, which lists the
+ * page's filtered games only. So an entry is marked only when at least one of its assigned games is
+ * in `visibleMatches` (the page's range- and source-filtered set), and its W-L counts exactly those
+ * games — the readout's n is the list's n.
+ */
+function buildEventCandidates(input: {
+  resolvedEntries: readonly ResolvedTierEntry[];
+  visibleMatches: readonly Match[];
+  timeline: ReturnType<typeof buildCareerTimeline>;
+}): TimelineEventCandidate[] {
+  const { resolvedEntries, visibleMatches, timeline } = input;
+  const visibleIds = new Set(visibleMatches.map((match) => match.id));
+  const { domain } = timeline;
+  if (!domain) {
+    return [];
+  }
+  const candidates: TimelineEventCandidate[] = [];
+  for (const resolved of resolvedEntries) {
+    const { tier } = resolved.resolution;
+    if (tier === 'unknown') {
+      continue;
+    }
+    const own = resolved.matches.filter((match) => visibleIds.has(match.id));
+    if (own.length === 0) {
+      // No listable games behind it: the door would open an empty `#games` list.
+      continue;
+    }
+    // The resolved entry is the registry row at runtime (`resolveEntryTiers` maps the page's entries).
+    const range = entryDisplayDateRange(resolved.entry as TournamentEntry);
+    const latestMatchMs = own.reduce((max, match) => Math.max(max, match.time), 0);
+    const atMs = range?.endMs ?? (latestMatchMs > 0 ? latestMatchMs : null);
+    if (atMs === null || atMs < domain.startMs || atMs > domain.endMs) {
+      continue;
+    }
+    const wins = own.filter((match) => match.win).length;
+    const ratingPoint = timeline.rating.points.find((point) => point.closeMs >= atMs);
+    candidates.push({
+      key: resolved.entryKey,
+      label: resolved.entry.tournamentName ?? resolved.entry.eventName,
+      atMs,
+      wins,
+      losses: own.length - wins,
+      tier,
+      basis: resolved.resolution.basis,
+      level: TIER_LEVEL[tier],
+      entrants: resolved.resolution.entrants,
+      ratingAfter: ratingPoint ? ratingPoint.rating : null,
+    });
+  }
+  return candidates;
+}
+
+/** Sketch 002-C legend swatch: an 11px diamond, filled or hollow like the drawn marker. */
+function DiamondSwatch({ hollow }: { hollow: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width="11"
+      height="11"
+      viewBox="0 0 11 11"
+      className="mr-1 inline-block align-[-1px]"
+      data-slot="career-timeline-legend-swatch"
+      data-hollow={hollow ? 'true' : 'false'}
+    >
+      <path
+        d="M5.5 0.75 10.25 5.5 5.5 10.25 0.75 5.5Z"
+        fill={hollow ? CHART_TOKENS.surface : CHART_TOKENS.deemphasis}
+        stroke={hollow ? CHART_TOKENS.deemphasis : CHART_TOKENS.surface}
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
 }
 
 /** The grain one rung finer than each calendar grain — the one the caption says would not fit. */
@@ -163,8 +265,10 @@ function buildReadout(input: {
   locale: string;
   baselineRate: number;
   pointsByKey: ReadonlyMap<string, CareerRatingPoint>;
+  /** Plan 41-04: each event marker's already-localised provenance sentence (null when it has none). */
+  eventProvenance: ReadonlyMap<string, string | null>;
 }): CareerTimelineReadout {
-  const { target, t, locale, baselineRate, pointsByKey } = input;
+  const { target, t, locale, baselineRate, pointsByKey, eventProvenance } = input;
   const baseline = formatPercent(baselineRate, locale);
   const record = (wins: number, losses: number, total: number) =>
     t('analytics.timeline.readout.record', {
@@ -204,14 +308,19 @@ function buildReadout(input: {
   }
 
   if (target.kind === 'event') {
+    // Parent §10.2 order: name (title) · tier line · rating after (omitted when none) · W-L · estimate caveat.
     const { marker } = target;
-    return {
-      title: marker.label,
-      lines: [
-        t('analytics.timeline.event.ratingAfter', { rating: marker.ratingAfter }),
-        record(marker.wins, marker.losses, marker.wins + marker.losses),
-      ],
-    };
+    const tier = t(`tiers.label.${marker.tier}`);
+    const basis = eventProvenance.get(marker.key);
+    const lines = [basis ? t('analytics.timeline.event.tierLine', { tier, basis }) : tier];
+    if (marker.ratingAfter !== null) {
+      lines.push(t('analytics.timeline.event.ratingAfter', { rating: marker.ratingAfter }));
+    }
+    lines.push(record(marker.wins, marker.losses, marker.wins + marker.losses));
+    if (marker.basis === 'estimated') {
+      lines.push(t('tiers.tooltip.estimateCaveat'));
+    }
+    return { title: marker.label, lines };
   }
 
   const { cell } = target;
@@ -259,6 +368,8 @@ export function CareerTimelineCard({
   stripWidthPx,
   onSelectPeriod,
   onSelectSet,
+  resolvedEntries = NO_RESOLVED_ENTRIES,
+  onSelectEventMarker,
 }: CareerTimelineCardProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -277,6 +388,47 @@ export function CareerTimelineCard({
     [rating.points],
   );
   const baselineRate = timeline.baseline.rate;
+
+  // Plan 41-04 (B2): the diamonds, memoised on the resolved entries and the timeline. The selector caps
+  // them (DD-41-09); `total` counts every placeable major+ event, so the caption can say what is thinned.
+  // A locked timeline draws no chart, so it marks no event either.
+  const eventsDrawable = timeline.state !== 'locked' && rating.points.length > 0;
+  const eventSelection = useMemo(
+    () =>
+      selectTimelineEventMarkers(
+        eventsDrawable
+          ? buildEventCandidates({ resolvedEntries, visibleMatches: matches, timeline })
+          : [],
+        { minLevel: EVENT_MARKER_MIN_LEVEL },
+      ),
+    [eventsDrawable, resolvedEntries, matches, timeline],
+  );
+  const eventMarkers: CareerTimelineEventMarker[] = useMemo(
+    () =>
+      eventSelection.markers.map((marker) => ({
+        key: marker.key,
+        label: marker.label,
+        atMs: marker.atMs,
+        wins: marker.wins,
+        losses: marker.losses,
+        tier: marker.tier,
+        basis: marker.basis,
+        ratingAfter: marker.ratingAfter,
+      })),
+    [eventSelection.markers],
+  );
+  const eventProvenance = useMemo(() => {
+    const byKey = new Map<string, string | null>();
+    const resolvedByKey = new Map(resolvedEntries.map((item) => [item.entryKey, item]));
+    for (const marker of eventSelection.markers) {
+      const resolved = resolvedByKey.get(marker.key);
+      const message = resolved ? tierProvenanceKey(resolved.resolution, locale) : null;
+      byKey.set(marker.key, message ? t(message.key, message.values) : null);
+    }
+    return byKey;
+  }, [eventSelection.markers, resolvedEntries, locale, t]);
+  const estimatedMarkerCount = eventMarkers.filter((marker) => marker.basis === 'estimated').length;
+
   const labels: CareerTimelineLabels = useMemo(
     () => ({
       rate: t('analytics.timeline.strip.rate'),
@@ -299,14 +451,27 @@ export function CareerTimelineCard({
       low: (value: number) => t('analytics.timeline.label.low', { rating: value }),
       band: t(`insights.horizon.${horizon}`),
       readout: (target: CareerTimelineReadoutTarget) =>
-        buildReadout({ target, t, locale, baselineRate, pointsByKey }),
-      eventAria: (marker) =>
-        t('analytics.timeline.event.aria', {
+        buildReadout({ target, t, locale, baselineRate, pointsByKey, eventProvenance }),
+      eventAria: (marker) => {
+        // The estimate wording travels in the aria-label (12.6): a hollow mark is never the only cue.
+        const estimated = marker.basis === 'estimated';
+        const form = `analytics.timeline.event.${
+          estimated
+            ? marker.ratingAfter === null
+              ? 'ariaEstimatedNoRating'
+              : 'ariaEstimated'
+            : marker.ratingAfter === null
+              ? 'ariaNoRating'
+              : 'aria'
+        }`;
+        return t(form, {
           event: marker.label,
-          rating: marker.ratingAfter,
+          tier: t(`tiers.label.${marker.tier}`),
+          rating: marker.ratingAfter ?? undefined,
           wins: marker.wins,
           losses: marker.losses,
-        }),
+        });
+      },
       table: {
         toggle: t('analytics.trend.tableToggle'),
         ratingCaption: t('analytics.timeline.table.ratingCaption'),
@@ -353,6 +518,7 @@ export function CareerTimelineCard({
       locale,
       baselineRate,
       pointsByKey,
+      eventProvenance,
     ],
   );
 
@@ -408,7 +574,7 @@ export function CareerTimelineCard({
     ) : undefined;
 
   const unlocked = timeline.state !== 'locked' && rating.points.length > 0;
-  const captionItems: { key: string; text: string }[] = [];
+  const captionItems: { key: string; text: string; swatch?: 'filled' | 'hollow' }[] = [];
   if (unlocked) {
     captionItems.push({
       key: 'closes',
@@ -438,6 +604,30 @@ export function CareerTimelineCard({
       });
     }
     captionItems.push({ key: 'model', text: t('analytics.timeline.caption.model') });
+    // Plan 41-04 (DD-41-08/09): the diamonds' legend. Nothing drawn -> no legend item at all (E8 empty).
+    if (eventMarkers.length > 0) {
+      captionItems.push({
+        key: 'events',
+        text: t('analytics.timeline.event.legend', { count: eventMarkers.length }),
+        swatch: 'filled',
+      });
+      if (estimatedMarkerCount > 0) {
+        captionItems.push({
+          key: 'eventsEstimated',
+          text: t('analytics.timeline.event.legendEstimated'),
+          swatch: 'hollow',
+        });
+      }
+      if (eventSelection.shown < eventSelection.total) {
+        captionItems.push({
+          key: 'eventsShownOf',
+          text: t('analytics.timeline.event.shownOf', {
+            shown: eventSelection.shown,
+            total: eventSelection.total,
+          }),
+        });
+      }
+    }
   }
 
   return (
@@ -466,6 +656,7 @@ export function CareerTimelineCard({
                 data-slot="career-timeline-caption-item"
                 className={CAPTION_ITEM_CLASSES}
               >
+                {item.swatch && <DiamondSwatch hollow={item.swatch === 'hollow'} />}
                 {item.text}
               </span>
             ))}
@@ -474,16 +665,17 @@ export function CareerTimelineCard({
       }
     >
       {/*
-        Major-event diamonds: NO eventMarkers are passed — the owner's
-        2026-09-25 decision (UI-SPEC §12.1: which events qualify is Phase
-        39.2's tier data, and no name-matched list ships). The kit's layer is
-        built and tested; Phase 39.2's host passes markers with no kit change.
+        Major-event diamonds (plan 41-04, B2): the page's resolved tier entries at or above a major,
+        capped at 40, estimated tiers hollow. Which events qualify is the 39.2 resolver's call — no
+        name-matched list ships (owner decision 2026-09-25).
       */}
       <CareerTimeline
         timeline={timeline}
         labels={labels}
         width={chartWidth}
         onSelectPeriod={onSelectPeriod}
+        eventMarkers={eventMarkers}
+        onSelectEventMarker={onSelectEventMarker}
         thinStrip={thinStrip}
         monthRecords={monthRecords}
       />

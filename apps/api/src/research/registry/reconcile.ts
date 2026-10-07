@@ -7,6 +7,11 @@ import {
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
 import { isPathSafeTenantId } from '../subjectKind.js';
+import {
+  carriedOverrides,
+  withoutOverrides,
+  withoutUnreadableOverrides,
+} from '../../services/tournamentOverrides.js';
 import { recordsDeepEqual } from '../migration/manifest.js';
 import { deriveTournamentRegistryFromResearchSource } from './derive.js';
 import { withRegistryDeadline, type RegistryDeadlineOptions } from './deadline.js';
@@ -138,7 +143,10 @@ export interface TournamentRegistryPlan {
 function readOwnedImportedAtMs(value: unknown): number | null {
   // Only called for values that already passed `isTournamentRegistryOwnedRow`;
   // the schema parse still guards against a structurally-owned but corrupt row.
-  const parsed = tournamentRegistryRowSchema.safeParse(value);
+  // The user-owned override members are left out of the parse (API-WR-02): an
+  // override this build cannot read must not cost the row its first-import
+  // stamp, or every refresh would re-stamp it and the row would never settle.
+  const parsed = tournamentRegistryRowSchema.safeParse(withoutUnreadableOverrides(value).row);
   return parsed.success ? parsed.data.provenance.importedAtMs : null;
 }
 
@@ -216,13 +224,15 @@ export async function planTournamentRegistry(
       continue;
     }
     const existingImportedAtMs = readOwnedImportedAtMs(existing);
-    const finalRow: TournamentRegistryRow =
-      existingImportedAtMs !== null
+    const finalRow: TournamentRegistryRow = {
+      ...(existingImportedAtMs !== null
         ? {
             ...row,
             provenance: { ...row.provenance, importedAtMs: existingImportedAtMs },
           }
-        : row;
+        : row),
+      ...carriedOverrides(existing),
+    };
     derivedRows.push(finalRow);
     if (recordsDeepEqual(existing, finalRow)) {
       unchanged.push(row.entryId);
@@ -336,22 +346,31 @@ export async function applyTournamentRegistryPlan(
       throw new Error(`Refusing to write a non-registry entry key: ${entryId}`);
     }
     progress('write', entryId);
+    const base = withoutOverrides(row);
     const result = await withRegistryDeadline(
       `write tournamentEntries/${uid}/${entryId}`,
       () =>
         database.ref(`tournamentEntries/${uid}/${entryId}`).transaction((current) => {
           if (current === null || current === undefined) {
-            return row; // absent — create
+            // Absent — create. Never with an override: the plan row may carry
+            // one from a row that has since been removed (API-WR-01).
+            return base;
           }
           if (!isTournamentRegistryOwnedRow(current)) {
             return undefined; // foreign — abort, never clobber
           }
           // Owned — replace, but preserve the stored first-import stamp the
           // plan may not have seen (a concurrent first write is still ours).
+          // The per-event overrides are the user's: take them from the value
+          // stored NOW, never from the plan row, so an override set between
+          // plan and apply survives and one cleared in between stays cleared.
           const storedImportedAtMs = readOwnedImportedAtMs(current);
-          return storedImportedAtMs !== null
-            ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
-            : row;
+          return {
+            ...(storedImportedAtMs !== null
+              ? { ...base, provenance: { ...base.provenance, importedAtMs: storedImportedAtMs } }
+              : base),
+            ...carriedOverrides(current),
+          };
         }),
       options,
     );

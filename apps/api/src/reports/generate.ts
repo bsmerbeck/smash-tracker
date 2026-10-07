@@ -3,31 +3,54 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
   ABSTENTION_FLOOR_GAMES,
+  type ActionCandidate,
+  type ActionId,
+  buildActionCandidates,
+  buildClaimSet,
   buildMatchupAdvisorWithGate,
+  buildMatchupEvidence,
   buildStageEvidence,
+  CLAIM_SCHEMA_VERSION,
+  type ClaimAtom,
+  type ClaimSet,
+  type ClaimSubject,
   type CohortComposition,
+  confidenceTierFor,
   describeCohort,
   EVIDENCE_POLICY_VERSION,
-  generatedScoutReportSchema,
+  evidenceIdFor,
+  type EvidenceRow,
+  type EvidenceSnapshot,
   getStageRecords,
   makeCanonicalizer,
   matchRecordSchema,
   opponentNoteMapSchema,
+  orderSnapshotOpponents,
+  rankActionCandidates,
   RECENCY_TREATMENT,
+  type RecommendedActionKind,
+  resolveSubjectDisplayName,
+  type ClaimId,
   type ClaimKind,
+  type ClaimPredicate,
+  type ClaimValue,
+  type ConfidenceTier,
   type RecencyTreatment,
+  type ReportSurface,
   type SampleMeta,
   selectMyCandidateFighterIds,
   SpriteList,
-  type GeneratedScoutReport,
   type Match,
   type MatchupEvidence,
   type MyCharacterRecordVsOpponent,
   type OpponentNote,
   type ScoutBinding,
   type ScoutReportData,
+  type VodRef,
 } from '@smash-tracker/shared';
+import { canonicalDigest } from '../research/registry/canonical.js';
 import { normalizeOpponentTag } from '../startgg/sync.js';
+import { claimSelectionSchema, type ClaimSelection } from './claimSelection.js';
 
 // ---------------------------------------------------------------------------
 // Binding-aware evidence filtering (Phase 27, RPT-01 grounding)
@@ -255,12 +278,397 @@ export interface ReportPayload {
     matchupAdvisor: MatchupAdvisorEntry[];
   };
   notes: OpponentNote | null;
+  /**
+   * Phase 39 (D-01/D-05, RPT-05): the engine's evidence ROWS, keyed by the
+   * shared `evidenceIdFor` (one row per `(predicate, subject)`, never per
+   * subject alone — review C2-B2). Built from the SAME engine results the
+   * fields above are built from; see `buildEvidenceRows` below.
+   */
+  rows: Readonly<Record<string, EvidenceRow>>;
+  /** Phase 39 (D-05): the immutable snapshot over `rows` — content-addressed by `snapshotIdFor` (`./snapshotId.ts`), persisted by plan 39-07. */
+  snapshot: EvidenceSnapshot;
+  /** Phase 39 (D-01/RPT-05): `buildClaimSet({ rows, surface })` — the engine-authored claims the model may select from. */
+  claimSet: ClaimSet;
+  /** Phase 39 (RPT-09/D-12): `rankActionCandidates(buildActionCandidates(...))` — the only actions the model may choose from. */
+  actionCandidates: readonly ActionCandidate[];
+}
+
+/** One claim as the MODEL sees it (Phase 39, D-01): the engine's own fields plus a `displayName` per resolvable subject axis. */
+export interface ModelFacingClaim {
+  id: ClaimId;
+  predicate: ClaimPredicate;
+  subject: ClaimSubject;
+  /**
+   * Review C2-M6: resolved through plan 39-04's `resolveSubjectDisplayName` —
+   * the SAME resolver the prose lint licenses entity names from and
+   * `projectScoutSelection` stores stage names through — so the names the
+   * model is given, the names the lint licenses and the names a record
+   * stores are one resolution. Present only for non-null axes.
+   */
+  displayName: { myFighter?: string; opponentFighter?: string; stage?: string };
+  value: ClaimValue;
+  kind: ClaimKind;
+  tier: ConfidenceTier | null;
+  sample: { countableGames: number; totalGames: number };
+}
+
+/** One ranked action candidate as the MODEL sees it: its id, kind, and the claim ids that license it. */
+export interface ModelFacingActionCandidate {
+  id: ActionId;
+  kind: RecommendedActionKind;
+  claimIds: readonly ClaimId[];
+}
+
+/**
+ * The user message the model receives (Phase 39, plan 39-06 Task 3). DECISION:
+ * the pre-Phase-39 named payload (`scout`, `headToHead`, `userContext`,
+ * `notes`) is REPLACED in what is serialized, not kept alongside — it stays
+ * on `assembleReportPayload`'s RETURN (the rows are built from it and the
+ * existing assembly tests read it) but the model is handed only engine-issued
+ * claims and ranked action candidates. Raw history and a free-text note are
+ * exactly the material a model would lift an unlicensed number, character or
+ * stage from (D-01: the engine authors every specific), and two sources of
+ * the same facts is how the weaker one survives (AI-SPEC §4b).
+ */
+export interface ModelPayload {
+  claims: ModelFacingClaim[];
+  actionCandidates: ModelFacingActionCandidate[];
+}
+
+/**
+ * One issued claim as the model sees it — the ONE model-facing projection,
+ * shared by the scout payload below and the post-event synthesis payload
+ * (`./synthesis.ts`, plan 39-08), so a claim is presented identically on
+ * every surface (RPT-05).
+ */
+export function toModelFacingClaim(claim: ClaimAtom): ModelFacingClaim {
+  return {
+    id: claim.id,
+    predicate: claim.predicate,
+    subject: claim.subject,
+    displayName: {
+      ...(claim.subject.myFighterId !== null
+        ? { myFighter: resolveSubjectDisplayName('fighter', claim.subject.myFighterId) }
+        : {}),
+      ...(claim.subject.opponentFighterId !== null
+        ? {
+            opponentFighter: resolveSubjectDisplayName('fighter', claim.subject.opponentFighterId),
+          }
+        : {}),
+      ...(claim.subject.stageId !== null
+        ? { stage: resolveSubjectDisplayName('stage', claim.subject.stageId) }
+        : {}),
+    },
+    value: claim.value,
+    kind: claim.claimKind,
+    tier: claim.tier,
+    sample: {
+      countableGames: claim.sample.eligibleDenominator,
+      totalGames: claim.sample.rawSampleSize,
+    },
+  };
+}
+
+/** One ranked action candidate as the model sees it — shared by both surfaces, like `toModelFacingClaim`. */
+export function toModelFacingActionCandidate(
+  candidate: ActionCandidate,
+): ModelFacingActionCandidate {
+  return { id: candidate.id, kind: candidate.kind, claimIds: candidate.claimIds };
+}
+
+/** Projects the assembled payload onto the model-facing user message — see `ModelPayload`. */
+export function buildModelPayload(payload: ReportPayload): ModelPayload {
+  return {
+    claims: payload.claimSet.claims.map(toModelFacingClaim),
+    actionCandidates: payload.actionCandidates.map(toModelFacingActionCandidate),
+  };
 }
 
 const TOP_CHARACTERS_COUNT = 5;
 const TOP_STAGES_PER_MATCHUP = 5;
 const RECENT_FORM_SAMPLE_SIZE = 50;
 const MY_TOP_CHARACTERS_COUNT = 5;
+
+const KNOWN_FIGHTER_IDS = new Set(SpriteList.map((fighter) => fighter.id));
+
+/** All four subject axes absent — the axis-free subject `recent_form`/`cohort_disclosure` rest on. */
+const NULL_SUBJECT: ClaimSubject = {
+  myFighterId: null,
+  opponentFighterId: null,
+  stageId: null,
+  opponentTag: null,
+};
+
+/** A raw win/loss record over a match subset — the ONE `record` value shape every record-valued row uses. */
+function recordOf(matches: readonly Match[]): ClaimValue {
+  const wins = matches.filter((match) => match.win).length;
+  return { kind: 'record', wins, losses: matches.length - wins, games: matches.length };
+}
+
+/**
+ * The sample for a CHARACTER-axis row (my character, a matchup, head-to-head,
+ * recent form, the cohort): the engine's own `buildMatchupEvidence` sample,
+ * whose eligible denominator is the known-character games — every
+ * character-axis claim's countable games.
+ */
+function characterAxisSample(matches: Match[], refreshedAt: number): SampleMeta {
+  return buildMatchupEvidence({ matches, refreshedAt }).claim.sample;
+}
+
+/** The sample for a STAGE-axis row: the engine's own `buildStageEvidence` sample, whose eligible denominator is the known-stage games. */
+function stageAxisSample(matches: Match[], refreshedAt: number): SampleMeta {
+  return buildStageEvidence({ matches, refreshedAt }).claim.sample;
+}
+
+/**
+ * Inputs `buildEvidenceRows` reads — every one of them is an engine result
+ * or match subset `assembleReportPayload` ALREADY computes for the named
+ * payload fields, so the rows and those fields cannot disagree.
+ */
+interface EvidenceRowInputs {
+  scout: ScoutReportData;
+  rawMatches: Match[];
+  headToHeadMatches: Match[];
+  recentMatches: Match[];
+  topCharacterIds: number[];
+  myFighterIds: number[];
+  matchupAdvisorClaims: ReturnType<typeof buildMatchupAdvisorWithGate>;
+  refreshedAt: number;
+}
+
+/**
+ * D-01/RPT-05 (phase 39 plan 06): the evidence ROW map the claim builder,
+ * the snapshot and the validator all read. One row per `(predicate,
+ * subject)`, keyed by the shared `evidenceIdFor` (review C2-B2) — a
+ * `stage_record` and a `stage_pick_rate` over the same stage are TWO rows
+ * under two keys. Free text is never a key (review C1-B2): the scouted
+ * opponent's tag rides in `subject.opponentTag` as a VALUE, and its key
+ * position comes from `orderSnapshotOpponents`, called ONCE here and
+ * threaded through every `evidenceIdFor` call (review C2-M10).
+ *
+ * Families, each from the raw material `CLAIM_PREDICATES`' own comments name:
+ * - `stage_record` / `stage_pick_rate` — per opponent top character, per
+ *   known stage in the same top-stages cut `vsTopCharacters` uses;
+ * - `character_matchup_record` — my character vs. their character;
+ * - `my_character_record` — my character overall;
+ * - `head_to_head_record` — my matches against this exact player;
+ * - `recent_form` — my most recent matches, any opponent (axis-free);
+ * - `opponent_character_usage` — ONE ROW PER `scout.characters` ENTRY (the
+ *   scouted opponent's public history). Load-bearing (review C3-B1): it is
+ *   the only evidence channel a caller with an empty `matches/{uid}` has;
+ * - `matchup_advisor_pick` — the deterministic advisor's pick per opponent
+ *   top character (or its abstention);
+ * - `cohort_disclosure` — the composition count every claim is disclosed
+ *   against (axis-free).
+ *
+ * Empty subsets produce no row (there is nothing to claim); unknown-stage and
+ * unknown-character buckets are never a row subject — they stay visible as
+ * the sample's `knownFieldCoverage` and the cohort, never as a pickable
+ * entity (validator rule R7). `vod_annotation` rows are plan 39-08's
+ * (synthesis) and use `vodEvidenceId`, not this function. Every row's
+ * `sample.refreshedAt` is the ONE payload-level refresh time.
+ */
+function buildEvidenceRows(inputs: EvidenceRowInputs): Record<string, EvidenceRow> {
+  const {
+    scout,
+    rawMatches,
+    headToHeadMatches,
+    recentMatches,
+    topCharacterIds,
+    myFighterIds,
+    matchupAdvisorClaims,
+    refreshedAt,
+  } = inputs;
+  const opponentTag = scout.player.gamerTag;
+  const opponentOrder = orderSnapshotOpponents([opponentTag]);
+  const rows: Record<string, EvidenceRow> = {};
+  // Code review API-WR-02: the scout's unmapped-character bucket
+  // (`UNMAPPED_FIGHTER_ID = 0`, every game with no mapped character) is
+  // often in the opponent's top five, but it is never a row subject. The
+  // named payload fields keep `topCharacterIds` whole (the advisor claims
+  // are zipped against it by index); every row family here reads only the
+  // KNOWN ids.
+  const isKnownTopCharacter = (fighterId: number): boolean => KNOWN_FIGHTER_IDS.has(fighterId);
+  const knownTopCharacterIds = topCharacterIds.filter(isKnownTopCharacter);
+
+  function addRow(
+    predicate: ClaimPredicate,
+    subject: ClaimSubject,
+    value: ClaimValue,
+    sample: SampleMeta,
+  ): void {
+    const id = evidenceIdFor({ predicate, subject, opponentOrder });
+    rows[id] = { predicate, subject, value, sample: { ...sample, refreshedAt } };
+  }
+
+  // stage_record + stage_pick_rate, per opponent top character.
+  for (const opponentFighterId of knownTopCharacterIds) {
+    const matchesVsCharacter = rawMatches.filter(
+      (match) => match.opponent_id === opponentFighterId,
+    );
+    const knownStageMatches = matchesVsCharacter.filter((match) => (match.map?.id ?? 0) !== 0);
+    if (knownStageMatches.length === 0) {
+      continue;
+    }
+    const characterStageSample = stageAxisSample(matchesVsCharacter, refreshedAt);
+    const topStageRecords = getStageRecords(knownStageMatches)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, TOP_STAGES_PER_MATCHUP);
+    for (const stageRecord of topStageRecords) {
+      const subject: ClaimSubject = {
+        ...NULL_SUBJECT,
+        opponentFighterId,
+        stageId: stageRecord.stageId,
+      };
+      const stageMatches = knownStageMatches.filter(
+        (match) => match.map?.id === stageRecord.stageId,
+      );
+      addRow(
+        'stage_record',
+        subject,
+        recordOf(stageMatches),
+        stageAxisSample(stageMatches, refreshedAt),
+      );
+      addRow(
+        'stage_pick_rate',
+        subject,
+        {
+          kind: 'rate',
+          numerator: stageRecord.total,
+          denominator: characterStageSample.eligibleDenominator,
+        },
+        characterStageSample,
+      );
+    }
+  }
+
+  // character_matchup_record + my_character_record.
+  for (const myFighterId of myFighterIds) {
+    const matchesAsCharacter = rawMatches.filter((match) => match.fighter_id === myFighterId);
+    if (matchesAsCharacter.length === 0) {
+      continue;
+    }
+    addRow(
+      'my_character_record',
+      { ...NULL_SUBJECT, myFighterId },
+      recordOf(matchesAsCharacter),
+      characterAxisSample(matchesAsCharacter, refreshedAt),
+    );
+    for (const opponentFighterId of knownTopCharacterIds) {
+      const matchupMatches = matchesAsCharacter.filter(
+        (match) => match.opponent_id === opponentFighterId,
+      );
+      if (matchupMatches.length === 0) {
+        continue;
+      }
+      addRow(
+        'character_matchup_record',
+        { ...NULL_SUBJECT, myFighterId, opponentFighterId },
+        recordOf(matchupMatches),
+        characterAxisSample(matchupMatches, refreshedAt),
+      );
+    }
+  }
+
+  // head_to_head_record — my matches against this exact player.
+  if (headToHeadMatches.length > 0) {
+    addRow(
+      'head_to_head_record',
+      { ...NULL_SUBJECT, opponentTag },
+      recordOf(headToHeadMatches),
+      characterAxisSample(headToHeadMatches, refreshedAt),
+    );
+  }
+
+  // recent_form — axis-free.
+  if (recentMatches.length > 0) {
+    addRow(
+      'recent_form',
+      NULL_SUBJECT,
+      recordOf(recentMatches),
+      characterAxisSample(recentMatches, refreshedAt),
+    );
+  }
+
+  // opponent_character_usage — one row per scout.characters entry (C3-B1).
+  // A usage SHARE rests on the opponent's whole countable public sample: the
+  // rate's denominator IS the sample's eligible denominator (the opponent's
+  // games on a known character), which is what validator rule R7 requires of
+  // every rate claim (`packages/shared/src/evidence/validateReport.ts`), and
+  // that countable total drives the tier and the abstention decision exactly
+  // as every other family's countable games do. Unmapped-character games
+  // (the scout's fighterId-0 bucket) stay out of the denominator and show up
+  // as `knownFieldCoverage` below 1, never as a claimable entity.
+  const knownCharacters = scout.characters.filter(
+    (character) => KNOWN_FIGHTER_IDS.has(character.fighterId) && character.games > 0,
+  );
+  const knownCharacterGames = knownCharacters.reduce((sum, character) => sum + character.games, 0);
+  if (knownCharacterGames > 0) {
+    const usageSample: SampleMeta = {
+      rawSampleSize: scout.sampledGames,
+      eligibleDenominator: knownCharacterGames,
+      knownFieldCoverage: scout.sampledGames > 0 ? knownCharacterGames / scout.sampledGames : 0,
+      dateRange: null,
+      refreshedAt,
+      evidencePolicyVersion: EVIDENCE_POLICY_VERSION,
+      recencyTreatment: RECENCY_TREATMENT,
+      confidenceTier: confidenceTierFor(knownCharacterGames),
+    };
+    for (const character of knownCharacters) {
+      addRow(
+        'opponent_character_usage',
+        { ...NULL_SUBJECT, opponentFighterId: character.fighterId, opponentTag },
+        { kind: 'rate', numerator: character.games, denominator: knownCharacterGames },
+        usageSample,
+      );
+    }
+  }
+
+  // matchup_advisor_pick — zipped against topCharacterIds by index, the
+  // same way the named `matchupAdvisor` field is.
+  topCharacterIds.forEach((opponentFighterId, index) => {
+    const claim = matchupAdvisorClaims[index];
+    if (!claim || !isKnownTopCharacter(opponentFighterId)) {
+      return;
+    }
+    const subject: ClaimSubject = { ...NULL_SUBJECT, opponentFighterId };
+    if (claim.kind === 'abstained') {
+      addRow(
+        'matchup_advisor_pick',
+        subject,
+        { kind: 'abstained', gamesNeeded: claim.gamesNeeded },
+        claim.sample,
+      );
+      return;
+    }
+    const topPick = claim.value.ranked[0];
+    if (!topPick) {
+      return;
+    }
+    // The picked character rides on the SUBJECT (as `myFighterId`) as well
+    // as in the value: the prose lint licenses entity names from a claim's
+    // subject axes only, so this is what lets the model name the pick it is
+    // explaining — and what gives it a `displayName` to name it by.
+    addRow(
+      'matchup_advisor_pick',
+      { ...subject, myFighterId: topPick.fighterId },
+      { kind: 'entity', entityKind: 'fighter', entityId: String(topPick.fighterId) },
+      claim.sample,
+    );
+  });
+
+  // cohort_disclosure — axis-free.
+  if (rawMatches.length > 0) {
+    addRow(
+      'cohort_disclosure',
+      NULL_SUBJECT,
+      { kind: 'count', count: rawMatches.length },
+      characterAxisSample(rawMatches, refreshedAt),
+    );
+  }
+
+  return rows;
+}
 
 /**
  * Assembles the JSON payload handed to Claude, built from two deliberately
@@ -284,7 +692,12 @@ export async function assembleReportPayload(
   uid: string,
   scout: ScoutReportData,
   database: Database,
-  options?: { binding?: ScoutBinding; curatedCanonicalName?: string },
+  options?: {
+    binding?: ScoutBinding;
+    curatedCanonicalName?: string;
+    /** Phase 39: the surface the claim set is built for. `buildClaimSet` never branches on it (RPT-05); it defaults to `'scout'`. */
+    surface?: ReportSurface;
+  },
 ): Promise<ReportPayload> {
   const [
     matchesSnapshot,
@@ -310,21 +723,20 @@ export async function assembleReportPayload(
     ? (aliasSnapshot.val() as Record<string, string>)
     : ({} as Record<string, string>);
 
-  const rawMatches = matchesSnapshot.exists()
-    ? (Object.values(matchesSnapshot.val() as Record<string, unknown>).map((value) =>
-        matchRecordSchema.parse(value),
-      ) as Array<ReturnType<typeof matchRecordSchema.parse> & { time: number }>)
+  const matchEntries = matchesSnapshot.exists()
+    ? Object.entries(matchesSnapshot.val() as Record<string, unknown>)
     : [];
+  const rawMatches = matchEntries.map(([, value]) => matchRecordSchema.parse(value)) as Array<
+    ReturnType<typeof matchRecordSchema.parse> & { time: number }
+  >;
 
   // `getStageRecords`/`buildStageEvidence`/`describeCohort` are typed over
-  // `Match[]` (the API-response shape with an `id`); the API's own parsed
-  // rows never carry one (`Object.values` over an RTDB node has no push key
-  // to hand). `id` is never read by any of them, so a synthetic per-index
-  // value is safe here — computed ONCE so every downstream filter still
-  // carries a valid (if synthetic) id.
+  // `Match[]` (the API-response shape with an `id`). None of them reads `id`;
+  // Phase 39 does — a `VodRef` (below) names the REAL match, so `id` is the
+  // RTDB push key the row is stored under (same entry order as `rawMatches`).
   const rawMatchesWithId: Match[] = rawMatches.map((match, index) => ({
     ...match,
-    id: `stage-tally-${index}`,
+    id: matchEntries[index]![0],
   }));
 
   // Phase 36 (EVID-12): the alias hop has exactly one implementation now —
@@ -346,7 +758,7 @@ export async function assembleReportPayload(
   // (V9-B Feature 4), `scout.player.userSlug` is simply absent, so it
   // naturally falls through to canonicalized-gamerTag matching.
   const matchesVsScoutedPlayer = selectOpponentMatches({
-    matches: rawMatches,
+    matches: rawMatchesWithId,
     canonicalOpponentName,
     scoutedCanonicalName,
     scoutedPlayerUserSlug: scout.player.userSlug,
@@ -354,7 +766,7 @@ export async function assembleReportPayload(
     curatedCanonicalName: options?.curatedCanonicalName,
   });
 
-  const headToHead: HeadToHeadMatch[] = matchesVsScoutedPlayer
+  const headToHead: HeadToHeadMatch[] = [...matchesVsScoutedPlayer]
     .sort((a, b) => b.time - a.time)
     .map((match) => ({
       result: match.win ? 'win' : 'loss',
@@ -433,7 +845,7 @@ export async function assembleReportPayload(
     };
   });
 
-  const recentMatches = [...rawMatches]
+  const recentMatches = [...rawMatchesWithId]
     .sort((a, b) => b.time - a.time)
     .slice(0, RECENT_FORM_SAMPLE_SIZE);
   const recentWins = recentMatches.filter((match) => match.win).length;
@@ -555,6 +967,51 @@ export async function assembleReportPayload(
     };
   });
 
+  // Phase 39 (D-01/D-05): the evidence rows, the immutable snapshot over them
+  // and the engine-authored claim set — built from the SAME engine results
+  // and match subsets as every named field above (see `buildEvidenceRows`).
+  const rows = buildEvidenceRows({
+    scout,
+    rawMatches: rawMatchesWithId,
+    headToHeadMatches: matchesVsScoutedPlayer,
+    recentMatches,
+    topCharacterIds,
+    myFighterIds,
+    matchupAdvisorClaims,
+    refreshedAt,
+  });
+  // The match-id digest: count plus the canonical hash of the input match
+  // ids (the RTDB push keys under `matches/{uid}`), sorted so the digest is
+  // independent of read order. Reuses the ONE canonicalizer (C1-B2).
+  const matchIds = matchesSnapshot.exists()
+    ? Object.keys(matchesSnapshot.val() as Record<string, unknown>).sort()
+    : [];
+  const cohort = describeCohort(rawMatchesWithId);
+  const snapshot: EvidenceSnapshot = {
+    policyVersion: EVIDENCE_POLICY_VERSION,
+    claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    refreshedAt,
+    cohort,
+    rows,
+    matchIdDigest: { count: matchIds.length, hash: canonicalDigest(matchIds) },
+  };
+  const claimSet = buildClaimSet({ rows, surface: options?.surface ?? 'scout' });
+  // RPT-09/D-12: the ranked action candidates. VOD refs are ADAPTED from the
+  // EXISTING `selectOpponentMatches` result (the already-corrected shipped
+  // opponent predicate) — a lost head-to-head match carrying at least one VOD
+  // timestamp — never from a second, hand-rolled opponent predicate.
+  const vodRefs: VodRef[] = matchesVsScoutedPlayer
+    .filter((match) => !match.win && (match.vodTimestamps?.length ?? 0) > 0)
+    .map((match) => ({
+      matchId: match.id,
+      opponentTag: scout.player.gamerTag,
+      opponentFighterId: match.opponent_id,
+      lost: true,
+    }));
+  const actionCandidates = rankActionCandidates(
+    buildActionCandidates({ claims: claimSet.claims, vodRefs }),
+  );
+
   // Strip `games` (V9-D) before handing the scout data to Claude — see the
   // doc comment on `ReportPayload.scout`.
   const scoutForPayload: Omit<ScoutReportData, 'games'> = {
@@ -576,7 +1033,7 @@ export async function assembleReportPayload(
       recencyTreatment: RECENCY_TREATMENT,
       refreshedAt,
     },
-    cohort: describeCohort(rawMatchesWithId),
+    cohort,
     userContext: {
       myFighters,
       myCharacterRecords,
@@ -589,6 +1046,10 @@ export async function assembleReportPayload(
       matchupAdvisor,
     },
     notes,
+    rows,
+    snapshot,
+    claimSet,
+    actionCandidates,
   };
 }
 
@@ -597,48 +1058,58 @@ export async function assembleReportPayload(
 // ---------------------------------------------------------------------------
 
 /**
+ * Code review R4-WR-02: the per-request SDK options the route attaches to
+ * every model call (`routes/reports.ts`'s `reportModelRequestOptions`): no
+ * retries, an explicit timeout, and an abort signal carrying the same bound.
+ */
+export interface ReportModelRequestOptions {
+  maxRetries: number;
+  timeout: number;
+  signal?: AbortSignal;
+}
+
+/**
  * Minimal structural interface for the Anthropic client — just the one
  * method this module calls. Lets tests pass a plain stub with a mocked
  * `messages.parse` instead of constructing a real `Anthropic` instance.
  */
 export interface AnthropicLikeClient {
   messages: {
-    parse: (params: {
-      model: string;
-      max_tokens: number;
-      thinking: { type: 'adaptive' };
-      system: string;
-      messages: Array<{ role: 'user'; content: string }>;
-      output_config: {
-        format: ReturnType<typeof zodOutputFormat<typeof generatedScoutReportSchema>>;
-      };
-    }) => Promise<{
+    parse: (
+      params: {
+        model: string;
+        max_tokens: number;
+        thinking: { type: 'adaptive' };
+        system: string;
+        messages: Array<{ role: 'user'; content: string }>;
+        output_config: {
+          format: ReturnType<typeof zodOutputFormat<typeof claimSelectionSchema>>;
+        };
+      },
+      options?: ReportModelRequestOptions,
+    ) => Promise<{
       stop_reason: string | null;
-      parsed_output: GeneratedScoutReport | null;
+      parsed_output: ClaimSelection | null;
     }>;
   };
 }
 
-const REPORT_MODEL = 'claude-opus-4-8';
+export const REPORT_MODEL = 'claude-opus-4-8';
 const REPORT_MAX_TOKENS = 16000;
 
-const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a pre-bracket scouting brief for "you" (the user) about an opponent you are about to play.
+const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a pre-bracket scouting brief for the user about one opponent.
 
-Hard rules — follow these exactly:
-- Ground every claim in the provided JSON payload ONLY. Never invent results, characters, stages, or events that are not present in the data.
-- Every "userContext.vsTopCharacters" and "userContext.myCharacterRecords" entry carries a "sample" object with "eligibleDenominator", "knownFieldCoverage" and "confidenceTier" — state the confidence tier and the sample behind any claim you make in confidenceNotes rather than applying a sample-size threshold of your own. A "userContext.matchupAdvisor" entry marked "abstained" means there is not enough evidence to recommend a character against that opponent character — say so explicitly rather than falling back to tier-list reasoning. The payload's "evidencePolicy.abstentionFloorGames" is the only sample threshold in play. Never state a bare win-probability percentage.
-- Stage names and character names in your output must come VERBATIM from the data provided — do not paraphrase, translate, or invent alternate spellings.
-- Be concise and actionable. No filler, no generic advice that isn't grounded in this specific opponent's data.
-- The payload contains: "scout" (the opponent's public tournament-site history — their characters, stages, recent events, common opponents), "headToHead" (the user's own past matches against this exact player, if any), "userContext" (the user's own character selections and character-matchup records, the user's raw W/L record against players of the opponent's most-used characters broken down by stage, the user's recent overall form, and a deterministic matchup advisor ranking — see below), and "notes" (a saved tendency note about this opponent, if the user has one).
-- When headToHead is empty, set the headToHead field in your response to null — do not fabricate a head-to-head summary.
-- Output must conform to the provided JSON schema exactly.
+Your connective prose is qualitative commentary only. Every figure the user sees comes from the claims, which the app shows beside your prose, so write no figures of any kind: no digits, no number words (such as one, two, three, first, second, half or a dozen), no win-loss records or scores, no percent signs, and no words that grade how sure or how strong a finding is (such as low, medium, high, moderate, strong or weak, even in their everyday sense). A section whose prose contains any of these is withheld from the user. Describe habits, tendencies and what to do about them instead.
 
-Character strategy is CO-EQUAL in importance with stage strategy — treat characterStrategy with the same rigor and specificity you give stageStrategy, not as an afterthought:
-- "userContext.myFighters" lists the user's own primary/secondary character selections. "userContext.myCharacterRecords" gives, for each character the user demonstrably plays (their selections plus their most-used characters by games played), that character's overall W/L and W/L against each of the opponent's top characters.
-- "userContext.matchupAdvisor" is a DETERMINISTIC, pre-computed ranking (not generated by you) of the user's own characters against each of the opponent's top-5 characters, blending the user's real record with tier-list/archetype priors — each entry's "evidence" explains why (a record, a tier score, an archetype edge). Treat this ranking as the GROUND TRUTH starting point for characterStrategy: your picks should normally match its top-ranked character for the opponent's most-used character. You MAY explain nuance or adjust for something the ranking can't see (e.g. stage-specific patterns, a saved note), but if your recommendation diverges from the advisor's top pick you MUST say so explicitly and state why in characterStrategy.reasoning — never silently contradict it. An entry carrying "abstained: true" instead of "ranked" means the user has too few countable games against that opponent character for the advisor to recommend one — treat it as an explicit "not enough data yet" for that specific opponent character, not as license to invent a tier-list-only recommendation in its place.
-- You MUST recommend picks ONLY from characters that appear in "userContext.myFighters" or "userContext.myCharacterRecords" — NEVER recommend a character the user does not play, even if it would theoretically counter the opponent well.
-- characterStrategy.picks must include a game-1 recommendation, and characterStrategy.reasoning must state what to switch to if the opponent changes character (e.g. "Game 1: X; if they swap to Y, counter with Z"), grounded in the user's actual W/L from myCharacterRecords against the opponent's specific top characters and the matchupAdvisor ranking — not generic tier-list reasoning invented from scratch.
-- If the user's own character data is too sparse to ground a confident recommendation, say so explicitly in characterStrategy.reasoning and confidenceNotes rather than guessing.`;
+Write in English only, in plain text: no Markdown emphasis or code marks (no asterisks, underscores, tildes or backticks), no emoji, and no symbol beyond ordinary punctuation (full stops, commas, colons, semicolons, apostrophes, quotation marks, question and exclamation marks, round or square brackets, hyphens, dashes and slashes); an ampersand, a plus sign or any other symbol withholds the section too. The same goes for counting, record and grading words, even in their everyday sense: avoid words such as once, both, single, pair, couple, few, several, many, most, top, mid, max, poor, solid, sure, certain, reliable, shaky, undefeated, unbeaten, winless, swept or perfect record. Write "remember to" rather than "make sure", "upper platform" rather than "top platform", and "when" rather than "once". Avoid all-or-nothing and tally words too, such as every, all, each, never, always, only, even, split, tied, double, triple, lone, sole, solo or perfect. Never spell a word out letter by letter, run words together or stretch them, and never use a lone letter or a roman numeral as a label: write "their main" rather than "X".
+
+The user message is JSON with two lists. "claims" are findings the app has already computed from the user's own match history and the opponent's public results: each has an id, what it is about (with the display names of its characters and stage), and the recorded value. A claim whose value is "abstained" is a gap in the evidence, not a finding. "actionCandidates" are practice actions the app has already ranked; each lists the claim ids that justify it.
+
+Your job is to choose which claims matter most against this opponent and explain how they connect.
+- Fill the three sections (overview, gameplan, watchFor). For each, list the ids of the claims it rests on, most important first, and write a short passage of connective prose, a sentence or a few, explaining how those claims fit together and what the user should do about them.
+- Fill up to three action slots, in priority order, with actions from actionCandidates, each naming the claim it rests on. Leave a slot null when no candidate fits.
+- Use only claim ids and action ids that appear in the input.
+- Do not compute, count, rank or estimate anything. Do not introduce any number, character, stage, player or event that is not in a claim you listed in that same section, and refer to characters and stages only by the display names those claims give. The app shows each claim's own values beside it, so the prose must never repeat them.`;
 
 /** Thrown for a Claude response that didn't produce a usable report. */
 export class ReportGenerationError extends Error {
@@ -655,22 +1126,25 @@ export class ReportGenerationError extends Error {
 }
 
 /**
- * Calls Claude to generate a `GeneratedScoutReport` from the assembled
- * payload. Uses `client.messages.parse` with `output_config.format` built
- * from `zodOutputFormat` (validated against the installed
- * `@anthropic-ai/sdk` version to accept zod v4 schemas directly).
+ * Calls Claude to SELECT claims from the assembled payload (Phase 39,
+ * D-01): the output is a `ClaimSelection` over the fixed claim-id
+ * vocabulary, never a free-prose report. Uses `client.messages.parse` with
+ * `output_config.format` built from `zodOutputFormat` (validated against the
+ * installed `@anthropic-ai/sdk` version to accept zod v4 schemas directly).
+ * The guard ORDER below — refusal, then truncation, then a null parse — is
+ * load-bearing and unchanged.
  */
 export async function generateScoutReport(
   client: AnthropicLikeClient,
   payload: ReportPayload,
-): Promise<GeneratedScoutReport> {
+): Promise<ClaimSelection> {
   const response = await client.messages.parse({
     model: REPORT_MODEL,
     max_tokens: REPORT_MAX_TOKENS,
     thinking: { type: 'adaptive' },
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    output_config: { format: zodOutputFormat(generatedScoutReportSchema) },
+    messages: [{ role: 'user', content: JSON.stringify(buildModelPayload(payload)) }],
+    output_config: { format: zodOutputFormat(claimSelectionSchema) },
   });
 
   if (response.stop_reason === 'refusal') {

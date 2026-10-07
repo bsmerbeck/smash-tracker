@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  countViableClaims,
   entryKeyInputSchema,
   errorResponseSchema,
+  evidenceSnapshotRecordSchema,
   generateReportRequestSchema,
   isReportReadyBinding,
+  MIN_VIABLE_CLAIMS,
   practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
@@ -15,12 +20,19 @@ import {
   scoutReportRecordSchema,
   storedPracticePlanSchema,
   synthesisJobStatusResponseSchema,
+  validateReportOutput,
   type PrepReportJobStatusEntry,
   type PrepReportReason,
+  type ReportFailureReason,
   type ReportJob,
+  type ReportSurface,
+  type ClaimSet,
+  type EvidenceSnapshot,
   type ScoutBinding,
   type ScoutReportData,
+  type ScoutReportRecord,
   type StoredScoutReport,
+  type ValidationOutcome,
 } from '@smash-tracker/shared';
 import type {
   ParryggConfig,
@@ -45,8 +57,13 @@ import {
   Anthropic,
   generateScoutReport,
   ReportGenerationError,
+  REPORT_MODEL,
   type AnthropicLikeClient,
+  type ReportModelRequestOptions,
+  type ReportPayload,
 } from '../reports/generate.js';
+import { projectScoutSelection, type ClaimSelection } from '../reports/claimSelection.js';
+import { normalizeRtdbWriteShape, snapshotIdFor } from '../reports/snapshotId.js';
 // Phase 28 (28-07, REV-03): the synthesis engine (28-06) — payload assembly,
 // the Claude call, and post-generation citation validation. `SynthesisAnthropicClient`
 // is a separate structural type from `AnthropicLikeClient` above (the
@@ -57,12 +74,20 @@ import {
 import {
   assembleSynthesisPayload,
   generatePracticePlan,
-  SynthesisValidationError,
-  validatePracticePlanCitations,
+  projectPracticePlanSelection,
+  type ProjectedPracticePlan,
   type SynthesisAnthropicClient,
   type SynthesisPayload,
 } from '../reports/synthesis.js';
-import { bundleSlotRef, refundCredit, spendCredit, spendCredits } from '../billing/credits.js';
+import {
+  bundleIdFromSlotRef,
+  bundleSlotRef,
+  readBundleSpendFact,
+  refundCredit,
+  refundCreditOnce,
+  spendCredit,
+  spendCredits,
+} from '../billing/credits.js';
 import { createEvent, dayShardKey } from '../events/ledger.js';
 import { buildBillingEnvelope } from '../events/envelope.js';
 // Phase 27 (RPT-01, Task 3): the ONE symbol the reports layer imports from
@@ -85,11 +110,144 @@ import { isDemoAccountSubject } from '../research/demoAccount.js';
  * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
  * considered abandoned (crashed mid-generation, never reached a terminal
  * state) rather than genuinely in-flight — a retry with the same jobId is
- * allowed to proceed instead of 409ing forever. Comfortably beyond any real
- * Anthropic call; the stuck-job sweep (a later plan) uses the same window to
- * find and recover jobs that were never retried by their own client.
+ * allowed to proceed instead of 409ing forever. The stuck-job sweep uses the
+ * same window (`sweepStuckReportJobs.ts` mirrors this value) to find and
+ * recover jobs that were never retried by their own client.
+ *
+ * Code review R4-WR-02: this window is safe only because the one long step
+ * between the running claim and a terminal write — the model call — is
+ * BOUNDED: one attempt (`REPORT_MODEL_MAX_RETRIES`) of at most
+ * `REPORT_MODEL_TIMEOUT_MS`. Before that bound the SDK defaults (two
+ * retries, ten minutes per attempt) let one call run about thirty minutes,
+ * so a live execution could be swept mid-flight. The bound leaves at least
+ * six minutes of slack against the window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
  */
-const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
+export const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
+
+/**
+ * Code review R4-WR-02: the owner's locked rule — ONE model call per job, no
+ * retries. Passed on every model request (and set on the built client), so
+ * the SDK's default of two retries (on timeouts, 408/409/429 and 5xx) never
+ * applies. A failed attempt fails the job and refunds it; the user retries.
+ */
+export const REPORT_MODEL_MAX_RETRIES = 0;
+
+/**
+ * Code review R5-IN-04 (iteration 5): the Cloud Run request timeout of the
+ * `smash-tracker-api` service. 600 seconds is the OWNER-DECIDED value
+ * ([HUMAN], 2026-09-28), applied at the Phase 39 deploy (`--timeout=600` in
+ * the README deploy commands); it must be applied before or together with
+ * this code, never after. The live value was 300 seconds on 2026-09-28
+ * (`timeoutSeconds: 300`, verified read-only by the orchestrator). Report
+ * generation runs INSIDE the request: `POST /reports` awaits
+ * `runReportGeneration`/`runSynthesisGeneration` before it replies. Past this
+ * timeout Cloud Run cuts the request off and a request-billed instance's CPU
+ * is throttled, so the model response and the terminal writes could stall
+ * past the stale window.
+ */
+export const CLOUD_RUN_REQUEST_TIMEOUT_MS = 600 * 1000;
+
+/**
+ * Code review R5-IN-04: the budget for everything a generation request does
+ * besides the one model attempt — scout resolution and payload assembly
+ * before it; the snapshot write, validation, the store and the terminal
+ * writes around it (including `failJob`'s retries of a write that rejected).
+ * One attempt plus this budget must fit inside `CLOUD_RUN_REQUEST_TIMEOUT_MS`.
+ * A settle write that never settles is awaited, not bounded (code review
+ * R7-CR-01 / R7-CR-02, `withSettleRetries`): the recorded residual.
+ */
+export const REPORT_REQUEST_OVERHEAD_BUDGET_MS = 60 * 1000;
+
+/**
+ * Code review R4-WR-02: the explicit per-attempt bound on a model call, well
+ * inside `REPORT_JOB_STALE_MS`. The SDK arms its own timer only until the
+ * response headers arrive, so the same bound is also applied as an abort
+ * signal that covers reading the body (`reportModelRequestOptions`).
+ *
+ * Code review R5-IN-04: eight minutes, so one attempt plus
+ * `REPORT_REQUEST_OVERHEAD_BUDGET_MS` fits inside the owner-decided 600-second
+ * Cloud Run request timeout (`CLOUD_RUN_REQUEST_TIMEOUT_MS`) and ends before
+ * the stale window minus `SWEEP_CLOCK_SKEW_MARGIN_MS`.
+ */
+export const REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000;
+
+/**
+ * Code review R3-WR-02: the clock-skew allowance between this process and
+ * the one running the stuck-job sweep. An execution whose running claim is
+ * older than `REPORT_JOB_STALE_MS` minus this may already have been failed
+ * AND refunded by the sweep, so it never refunds its own spend again.
+ */
+export const SWEEP_CLOCK_SKEW_MARGIN_MS = 60 * 1000;
+
+/**
+ * Code review R5-WR-01 (iteration 5): how many times each of `failJob`'s
+ * writes after the owned settle is attempted — the terminal `set`s, the
+ * index/day update and the (create-once, so retry-safe) refund — before a
+ * persistent failure is logged for reconciliation. The waits double from
+ * `REPORT_SETTLE_WRITE_BACKOFF_MS` (100, 200 and 400 ms).
+ */
+export const REPORT_SETTLE_WRITE_ATTEMPTS = 4;
+export const REPORT_SETTLE_WRITE_BACKOFF_MS = 100;
+
+/**
+ * Runs one idempotent write, retrying it with a doubling backoff only after
+ * the attempt has itself REJECTED; rethrows the last error once every attempt
+ * has failed.
+ *
+ * Code review R7-CR-01 / R7-CR-02 (iteration 7): an attempt that has not
+ * settled is AWAITED, never abandoned. Iteration 6 (R6-IN-03) bounded each
+ * attempt at 2 s and started the next one when the bound fired, but with the
+ * real RTDB client the abandoned attempt is still queued and may still land:
+ * - a refund transaction's unacknowledged marker is applied to the client's
+ *   local state, so the next attempt's first run saw it and reported the
+ *   refund done — then the socket dropped, the client aborted the first
+ *   transaction and reverted its marker, and the ledger and the job said
+ *   "refunded" while the balance never moved;
+ * - an abandoned terminal `set(failed)` landed after `failJob` had thrown to
+ *   leave an unsettled row to the stuck-job sweep, and the sweep skips a
+ *   `failed` row, so the spent credit was never refunded.
+ * A retry therefore never overlaps an attempt that may still commit. The
+ * residual, as before iteration 6: a write that never settles (a connection
+ * that never comes back) holds the request instead of being retried inside
+ * `REPORT_REQUEST_OVERHEAD_BUDGET_MS`.
+ */
+export async function withSettleRetries<T>(write: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await write();
+    } catch (err) {
+      if (attempt >= REPORT_SETTLE_WRITE_ATTEMPTS) {
+        throw err;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, REPORT_SETTLE_WRITE_BACKOFF_MS * 2 ** (attempt - 1)),
+      );
+    }
+  }
+}
+
+/**
+ * Code review R5-IN-01 (iteration 5): true for the bare `DOMException` the
+ * fetch raises when `AbortSignal.timeout` fires after the response headers
+ * arrived (`AbortError`, or `TimeoutError`) — not an `Anthropic.APIError`,
+ * so it needs its own branch to reach the same 502 as the SDK's timeout.
+ */
+function isModelAbort(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return typeof err === 'object' && (name === 'AbortError' || name === 'TimeoutError');
+}
+
+/**
+ * Code review R4-WR-02: the per-request options every model call this plugin
+ * makes carries. Built per call because an abort signal is single-use.
+ */
+function reportModelRequestOptions(): ReportModelRequestOptions {
+  return {
+    maxRetries: REPORT_MODEL_MAX_RETRIES,
+    timeout: REPORT_MODEL_TIMEOUT_MS,
+    signal: AbortSignal.timeout(REPORT_MODEL_TIMEOUT_MS),
+  };
+}
 
 export interface ReportsRoutesOptions {
   config: ReportsConfig | null;
@@ -165,8 +323,212 @@ interface GeneratedReportRecord {
   report: StoredScoutReport;
 }
 
+/**
+ * `record` is the PARSED stored record (schema defaults applied, e.g. an
+ * omitted empty `claimIds` read back as `[]`) — the only form a 200 may send,
+ * because the response serializer ENCODES and never applies a default.
+ */
 type GenerationOutcome =
-  { ok: true; record: GeneratedReportRecord } | { ok: false; failure: ReportFailureReply };
+  { ok: true; record: ScoutReportRecord } | { ok: false; failure: ReportFailureReply };
+
+/**
+ * Phase 39 (RPT-05/D-07): the claim-set surface a `runReportGeneration` job
+ * is validated against, derived from its job-KIND `reason`. A pre-paid
+ * bundle child keeps its stored `prep_bundle` reason, so it validates as a
+ * bundle child; a legacy (reason-free) job is the scout surface.
+ */
+function reportSurfaceFor(reason: PrepReportReason | undefined): ReportSurface {
+  switch (reason) {
+    case 'prep_bundle':
+      return 'prep_bundle_child';
+    case 'prep_report':
+      return 'prep_report';
+    case 'post_event_synthesis':
+      return 'post_event_synthesis';
+    default:
+      return 'scout';
+  }
+}
+
+/** The stored scout-report record minus its push key — the schema the store step checks and whose PARSED output the 200 response sends. */
+const storedScoutReportRecordSchema = scoutReportRecordSchema.omit({ id: true });
+
+/**
+ * `record` is the WRITE form (an empty `claimIds` omitted, since RTDB would
+ * drop it); `parsed` is the same record through the stored schema — the
+ * read-back form, and the only form the 200 response may send.
+ */
+type ValidatedScoutReportBuild =
+  | {
+      ok: true;
+      record: Omit<GeneratedReportRecord, 'id'>;
+      parsed: Omit<ScoutReportRecord, 'id'>;
+      outcome: ValidationOutcome;
+    }
+  | { ok: false };
+
+/** Keeps an action slot only when the claim it rests on SURVIVED validation (rule R8) — a dropped action is counted, never stored. */
+function survivingActionOrNull(
+  action: ClaimSelection['action1'],
+  surviving: ReadonlySet<string>,
+): ClaimSelection['action1'] {
+  return action !== null && action.claimId !== null && surviving.has(action.claimId)
+    ? action
+    : null;
+}
+
+/**
+ * Phase 39 (D-06/D-07/RPT-07, reviews C1-B1/C1-H4/C2-H2/C3-M1): runs the
+ * pure validator over the model's selection and, on `passed`, builds the
+ * stored record from the SURVIVING claims only — so a claim the validator
+ * dropped can never contribute a stage name to `stageStrategy`, and a
+ * section whose prose lost its licence is stored with an empty connective.
+ * TOTAL by construction: a `failed` outcome, a throw anywhere in validation
+ * or projection, and a record the stored schema rejects (`safeParse`, never
+ * a bare `.parse`) all return `{ ok: false }`, which the caller routes into
+ * its ONE `failJob({ failureReason: 'validation' })` call. Never touches the
+ * database and never refunds.
+ */
+function buildValidatedScoutReport(params: {
+  selection: ClaimSelection;
+  payload: ReportPayload;
+  surface: ReportSurface;
+  snapshotId: string;
+  player: ScoutReportData['player'];
+  log: ReportRequestContext['log'];
+}): ValidatedScoutReportBuild {
+  const { selection, payload, surface, snapshotId, player, log } = params;
+  try {
+    const outcome = validateReportOutput({
+      snapshot: payload.snapshot,
+      issuedClaims: payload.claimSet.claims,
+      output: selection,
+      surface,
+    });
+    if (outcome.status === 'failed') {
+      return { ok: false };
+    }
+    const surviving = new Set(outcome.survivingClaimIds);
+    const survivingClaims = payload.claimSet.claims.filter((claim) => surviving.has(claim.id));
+    const selectionForStore: ClaimSelection = {
+      ...selection,
+      action1: survivingActionOrNull(selection.action1, surviving),
+      action2: survivingActionOrNull(selection.action2, surviving),
+      action3: survivingActionOrNull(selection.action3, surviving),
+    };
+    // RTDB deletes null-valued keys on write, so a nullable field is stored
+    // by conditional spread in exactly the shape it reads back in. (The
+    // projection omits `headToHead` by construction; the strip stays for any
+    // future nullable field.)
+    const { headToHead, ...reportRest } = projectScoutSelection({
+      selection: selectionForStore,
+      claims: survivingClaims,
+      strippedSectionIds: outcome.strippedSectionIds,
+    });
+    const report: StoredScoutReport = {
+      ...reportRest,
+      ...(headToHead != null ? { headToHead } : {}),
+      validation: {
+        status: 'passed',
+        policyVersion: outcome.policyVersion,
+        snapshotId,
+        claimSchemaVersion: outcome.claimSchemaVersion,
+      },
+      ...(outcome.droppedClaimCount > 0 ? { droppedClaimCount: outcome.droppedClaimCount } : {}),
+    };
+    // Code review API-IN-02: the ONE model constant the generation call uses.
+    const record = { createdAt: Date.now(), model: REPORT_MODEL, player, report };
+    const checked = storedScoutReportRecordSchema.safeParse(record);
+    if (!checked.success) {
+      log.error(
+        { issues: checked.error.issues.map((issue) => ({ path: issue.path, code: issue.code })) },
+        'Stored scout report failed its schema — routed to the validation failure branch',
+      );
+      return { ok: false };
+    }
+    return { ok: true, record, parsed: checked.data, outcome };
+  } catch (err) {
+    log.error(
+      { err },
+      'Scout report validation/projection threw — routed to the validation failure branch',
+    );
+    return { ok: false };
+  }
+}
+
+type ValidatedPracticePlanBuild =
+  { ok: true; record: ProjectedPracticePlan; outcome: ValidationOutcome } | { ok: false };
+
+/**
+ * Phase 39 (plan 39-08, D-02/D-06/D-07, reviews C1-B1/C2-H2): the synthesis
+ * twin of `buildValidatedScoutReport` above — the ONE shared validator over
+ * the model's selection (the `post_event_synthesis` surface's minimum), then,
+ * on `passed`, `projectPracticePlanSelection` over the SURVIVING claims only.
+ * TOTAL by construction: a `failed` outcome, a throw anywhere in validation
+ * or projection, and a record `storedPracticePlanSchema` rejects (`safeParse`,
+ * never a bare `.parse` — the shipped `.parse` sat OUTSIDE the try that wraps
+ * `ref.set`, so a ZodError escaped with no refund, the job left `running`
+ * and the credit held until the stale-job sweep) all return `{ ok: false }`,
+ * which the caller routes into its ONE `failCurrentJob(day, 'validation')`.
+ * Never touches the database and never refunds.
+ */
+function buildValidatedPracticePlan(params: {
+  selection: ClaimSelection;
+  snapshot: EvidenceSnapshot;
+  claimSet: ClaimSet;
+  snapshotId: string;
+  entryKey: string;
+  log: ReportRequestContext['log'];
+}): ValidatedPracticePlanBuild {
+  const { selection, snapshot, claimSet, snapshotId, entryKey, log } = params;
+  try {
+    const outcome = validateReportOutput({
+      snapshot,
+      issuedClaims: claimSet.claims,
+      output: selection,
+      surface: 'post_event_synthesis',
+    });
+    if (outcome.status === 'failed') {
+      return { ok: false };
+    }
+    const surviving = new Set(outcome.survivingClaimIds);
+    const survivingClaims = claimSet.claims.filter((claim) => surviving.has(claim.id));
+    const record = projectPracticePlanSelection({
+      entryKey,
+      createdAt: Date.now(),
+      selection: {
+        ...selection,
+        action1: survivingActionOrNull(selection.action1, surviving),
+        action2: survivingActionOrNull(selection.action2, surviving),
+        action3: survivingActionOrNull(selection.action3, surviving),
+      },
+      claims: survivingClaims,
+      strippedSectionIds: outcome.strippedSectionIds,
+      droppedClaimCount: outcome.droppedClaimCount,
+      validation: {
+        status: 'passed',
+        policyVersion: outcome.policyVersion,
+        snapshotId,
+        claimSchemaVersion: outcome.claimSchemaVersion,
+      },
+    });
+    const checked = storedPracticePlanSchema.safeParse(record);
+    if (!checked.success) {
+      log.error(
+        { issues: checked.error.issues.map((issue) => ({ path: issue.path, code: issue.code })) },
+        'Stored practice plan failed its schema — routed to the validation failure branch',
+      );
+      return { ok: false };
+    }
+    return { ok: true, record, outcome };
+  } catch (err) {
+    log.error(
+      { err },
+      'Practice plan validation/projection threw — routed to the validation failure branch',
+    );
+    return { ok: false };
+  }
+}
 
 /**
  * Phase 28 (28-07): `runSynthesisGeneration`'s outcome — deliberately NOT
@@ -178,9 +540,25 @@ type SynthesisGenerationOutcome =
   | { ok: true; jobId: string; status: 'succeeded'; updatedAt: number; resultRef: string }
   | { ok: false; failure: ReportFailureReply };
 
+/**
+ * Code review R3-WR-02 (iteration 3): one request execution's settlement
+ * latch. Its failure paths can chain — a resolver fails the job, then
+ * rethrows into the post-spend guard — and since the guard can refund this
+ * execution's own spend even when the job record is no longer its own, the
+ * second attempt must be a no-op. `failOwnedJob` sets it once its first
+ * settle has RESOLVED (review R4-WR-01) and returns immediately on any later
+ * call. A settle that throws leaves it open, so the post-spend guard can
+ * still settle the execution; the settle decision, once made, is final.
+ */
+interface ExecutionSettlement {
+  settled: boolean;
+}
+
 /** The minimal request surface `failJob`/`runReportGeneration` need — deliberately narrow so it's obvious neither depends on Fastify's full request type. */
 interface ReportRequestContext {
   uid: string;
+  /** R6-WR-05: Fastify's request id, carried onto the settle's failure log lines (never the uid). */
+  id?: string;
   log: { error(obj: Record<string, unknown>, msg: string): void };
 }
 
@@ -235,6 +613,23 @@ interface ReportRequestContext {
  * copied storage step, or a copied job state machine) is the specific
  * failure this extraction exists to prevent.
  */
+/**
+ * Code review R2-IN-04: a loggable copy of `err` with every occurrence of
+ * `uid` in its message and stack replaced — RTDB errors name the path they
+ * failed on, and a report job's path carries the uid. Never mutates `err`.
+ */
+function redactUid(err: unknown, uid: string): Record<string, unknown> {
+  const redact = (text: string): string => (uid.length > 0 ? text.split(uid).join('<uid>') : text);
+  if (err instanceof Error) {
+    return {
+      type: err.name,
+      message: redact(err.message),
+      ...(typeof err.stack === 'string' ? { stack: redact(err.stack) } : {}),
+    };
+  }
+  return { message: redact(String(err)) };
+}
+
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
   const { config, startggConfig, stripeConfig, parryggConfig, prepPaidConfig } = options;
 
@@ -257,8 +652,21 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   const fetchImpl = options.fetchImpl ?? fetch;
   const scoutCache = new ScoutCache();
   const parryScoutCache = new ParryScoutCache();
-  const client: AnthropicLikeClient =
-    options.client ?? new Anthropic({ apiKey: config.anthropicApiKey });
+  const sdkClient: AnthropicLikeClient =
+    options.client ??
+    new Anthropic({
+      apiKey: config.anthropicApiKey,
+      maxRetries: REPORT_MODEL_MAX_RETRIES,
+      timeout: REPORT_MODEL_TIMEOUT_MS,
+    });
+  // Code review R4-WR-02: every model call — scout, prep and synthesis — goes
+  // through this one wrapper, so each request carries the one-attempt bound
+  // whichever client (built or injected) sits behind it.
+  const client: AnthropicLikeClient = {
+    messages: {
+      parse: (params) => sdkClient.messages.parse(params, reportModelRequestOptions()),
+    },
+  };
 
   /**
    * Phase 30.3 (Gate 6): the ONE free-access predicate every branch in this
@@ -320,27 +728,122 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     attempt: number;
     /** The day shard the running transition (if reached) already wrote to; null when the job never left `queued`. */
     day: string | null;
+    /**
+     * Phase 39 (D-07): WHY the job failed, written by conditional spread on
+     * the terminal record(s). Deliberately NOT `reason` above — that is the
+     * job KIND (a prep enum) and must never carry a failure cause.
+     */
+    failureReason?: ReportFailureReason;
+    /** R5-WR-01: the execution whose failure this is; with the job id it keys the refund's create-once marker. */
+    executionId?: string;
+    /**
+     * R5-WR-01: true when an owned settle (`settleOwnedJob`) has ALREADY
+     * committed the `failed` status. The row is then terminal and the sweep
+     * will never refund it, so the refund must happen even if the terminal
+     * `set` below keeps failing. False (synthesis) means the row is still
+     * `running` until that `set` lands; a `set` that keeps failing leaves the
+     * refund to the stuck-job sweep, which reads the running row.
+     */
+    rowSettled?: boolean;
+    /** R6-WR-05: the request this execution runs in, for the failure log lines. */
+    requestId?: string;
   }): Promise<void> {
-    const { uid, jobId, creditRef, spent, reason, createdAt, attempt, day } = params;
+    const {
+      uid,
+      jobId,
+      creditRef,
+      spent,
+      reason,
+      createdAt,
+      attempt,
+      day,
+      failureReason,
+      executionId,
+      rowSettled = false,
+      requestId,
+    } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${uid}/${jobId}`);
     const now = Date.now();
-    await jobRef.set(
-      reportJobSchema.parse({
-        status: 'failed',
-        createdAt,
-        updatedAt: now,
-        attempt,
-        creditRef,
-        ...(reason ? { reason } : {}),
-      }),
-    );
+    // Code review R5-WR-01 (iteration 5): every write below is retried
+    // (`withSettleRetries`) — a transient RTDB error after an owned settle
+    // used to strand the spent credit on a `failed` row the sweep never
+    // visits. A write that keeps failing is logged (uid redacted) and the
+    // money path carries on, so reconciliation can find it. Code review
+    // R6-WR-05: the line names what reconciliation needs — the job, its
+    // credit ref, the refund's marker key and the request — and never the
+    // uid or a token (a job id is a client-generated UUID, a credit ref is
+    // the job id or a bundle slot ref).
+    const markerKey = executionId ? `${jobId}:${executionId}` : jobId;
+    const logPersistentFailure = (
+      err: unknown,
+      message: string,
+      extra: Record<string, unknown> = {},
+    ): void => {
+      app.log.error(
+        {
+          err: redactUid(err, uid),
+          jobId,
+          creditRef,
+          ...(requestId ? { requestId } : {}),
+          ...extra,
+        },
+        message,
+      );
+    };
+    try {
+      await withSettleRetries(() =>
+        jobRef.set(
+          reportJobSchema.parse({
+            status: 'failed',
+            createdAt,
+            updatedAt: now,
+            attempt,
+            creditRef,
+            ...(reason ? { reason } : {}),
+            ...(failureReason ? { failureReason } : {}),
+            // Post-plan fix (39-10): the spend fact rides BOTH terminal writes
+            // (C1-H1 — the second `.set()` below replaces the node). A boolean,
+            // never null, so it is always a safe RTDB value.
+            wasCharged: spent,
+          }),
+        ),
+      );
+    } catch (err) {
+      if (!rowSettled) {
+        throw err;
+      }
+      logPersistentFailure(
+        err,
+        'could not rewrite a settled report job as failed; its refund still proceeds',
+      );
+    }
     const resolvedDay = day ?? dayShardKey(now);
-    await app.firebase.database.ref().update({
-      [`reportJobsByStatus/running/${uid}/${jobId}`]: null,
-      [`reportJobsByDay/${resolvedDay}/${jobId}`]: { uid, status: 'failed' },
-    });
+    try {
+      await withSettleRetries(() =>
+        app.firebase.database.ref().update({
+          [`reportJobsByStatus/running/${uid}/${jobId}`]: null,
+          [`reportJobsByDay/${resolvedDay}/${jobId}`]: { uid, status: 'failed' },
+        }),
+      );
+    } catch (err) {
+      logPersistentFailure(err, 'could not clear a failed report job from the running index');
+    }
+    // R5-WR-01: `refundCredit` is not idempotent, so the retried refund is
+    // `refundCreditOnce` — the balance and a create-once marker for THIS
+    // execution commit in one transaction, and a retry after a commit whose
+    // acknowledgement was lost finds the marker instead of refunding again.
+    let refunded = false;
     if (spent) {
-      await refundCredit(app.firebase.database, uid, creditRef);
+      try {
+        await withSettleRetries(() =>
+          refundCreditOnce(app.firebase.database, uid, creditRef, markerKey),
+        );
+        refunded = true;
+      } catch (err) {
+        logPersistentFailure(err, 'could not refund a failed report job; left for reconciliation', {
+          markerKey,
+        });
+      }
     }
     // Phase 27 (RPT-03): the `refunded` terminal is written strictly AFTER
     // `refundCredit` commits when a credit was actually spent, so a player
@@ -358,17 +861,31 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // zero-spend failures keep their Phase 27 `failed` terminal
     // byte-identically (their retry contracts mint fresh jobIds and never
     // gate on `refunded`).
-    if (reason && (spent || reason === 'post_event_synthesis')) {
-      await jobRef.set(
-        reportJobSchema.parse({
-          status: 'refunded',
-          createdAt,
-          updatedAt: Date.now(),
-          attempt,
-          creditRef,
-          reason,
-        }),
-      );
+    // R5-WR-01: never while the credit is still owed — a refund that kept
+    // failing leaves the job `failed`, not claiming `refunded`.
+    if (reason && (spent || reason === 'post_event_synthesis') && (refunded || !spent)) {
+      // Phase 39 (review C1-H1): `.set()` REPLACES the whole node, so this
+      // second terminal write is AUTHORITATIVE and erases any field the
+      // `failed` write above carried but this one omits — every field added
+      // to the terminal record must be carried on BOTH writes.
+      try {
+        await withSettleRetries(() =>
+          jobRef.set(
+            reportJobSchema.parse({
+              status: 'refunded',
+              createdAt,
+              updatedAt: Date.now(),
+              attempt,
+              creditRef,
+              reason,
+              ...(failureReason ? { failureReason } : {}),
+              wasCharged: spent,
+            }),
+          ),
+        );
+      } catch (err) {
+        logPersistentFailure(err, 'could not mark a refunded report job as refunded');
+      }
     }
     void createEvent(
       app.firebase.database,
@@ -382,6 +899,244 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: reason ? { reason } : {},
       }),
     );
+    // Phase 39 (AI-SPEC §7): an ADDITIONAL occurrence event for the
+    // validation cause — the funnel readout counts by event NAME, so the
+    // unchanged `report_failed` above cannot tell `'validation'` apart from
+    // the pre-existing causes. `report_failed`'s own shape is untouched.
+    if (failureReason === 'validation') {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_failed_validation',
+          source: 'job',
+          actorId: uid,
+          sessionId: uid,
+          causationId: `${jobId}:report_failed_validation`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
+  }
+
+  /**
+   * Post-plan fix (39-10, owner decision 2026-09-25): records `wasCharged` —
+   * the `spent` fact the money path just settled — on a job whose `queued`
+   * row was written BEFORE the spend resolved (prep single, legacy scout).
+   * Sites whose queued write follows the spend (bundle children, synthesis)
+   * carry the field on that write instead, and every later whole-node
+   * `.set()` (running claim, succeeded, both `failJob` terminals) carries it
+   * too, so no failed/refunded record the web can read ever lacks it.
+   *
+   * Deliberately BEST-EFFORT: this write sits after a committed spend and
+   * before any `failJob` coverage, so a throw here must never become a 500
+   * that strands a spent credit on a `queued` job the sweep never visits.
+   * Nothing downstream depends on it — the running write re-states it.
+   */
+  async function recordSpendFact(
+    jobRef: ReturnType<typeof app.firebase.database.ref>,
+    spent: boolean,
+    log: FastifyBaseLogger,
+  ): Promise<void> {
+    try {
+      await jobRef.update({ wasCharged: spent });
+    } catch (err) {
+      log.warn({ err }, 'could not record the spend fact on a queued report job');
+    }
+  }
+
+  /**
+   * Code review R2-CR-01 (iteration 2): the ONE atomic settle for a failure
+   * that happens while a job is still this execution's own. A single
+   * `jobRef.transaction()` moves the job to `failed` ONLY when its stored
+   * status is one of `from` AND its `executionId` is this execution's own
+   * token; anything else — `succeeded`, `failed`, `refunded`, a status not in
+   * `from`, or a row another execution of the same job id wrote — aborts
+   * with nothing written. Returns true only when THIS transaction committed
+   * the `failed` row, which is what licenses the one refund (`failJob`).
+   *
+   * Two executions of one job id can both pass the handler's read-then-write
+   * duplicate check. `refundCredit` is not balance-idempotent, so the old
+   * re-read-then-`failJob` guard refunded twice when both threw, and failed
+   * and refunded a bundle child the other execution had already DELIVERED
+   * (minting a credit). A pre-paid bundle child's credit belongs to the job,
+   * not to either execution, so only the execution that still owns the row
+   * may return it.
+   *
+   * RTDB transactions first run against the SDK's local cache, which is
+   * `null` on a listener-less server even when the node exists (review
+   * CR-01's abort-on-null trap). A null input is therefore returned
+   * unchanged to force the server compare; a node that truly does not exist
+   * commits that no-op and is reported as not settled.
+   */
+  async function settleOwnedJob(params: {
+    jobRef: ReturnType<typeof app.firebase.database.ref>;
+    executionId: string;
+    from: ReadonlyArray<'queued' | 'running'>;
+  }): Promise<boolean> {
+    const { jobRef, executionId, from } = params;
+    const result = await jobRef.transaction((current) => {
+      if (current === null || current === undefined) {
+        return null;
+      }
+      const job = current as { status?: unknown; executionId?: unknown };
+      if (!(from as readonly unknown[]).includes(job.status) || job.executionId !== executionId) {
+        return undefined;
+      }
+      return { ...(current as Record<string, unknown>), status: 'failed', updatedAt: Date.now() };
+    });
+    const settled = result.snapshot.val() as { status?: unknown; executionId?: unknown } | null;
+    return result.committed && settled?.status === 'failed' && settled.executionId === executionId;
+  }
+
+  /**
+   * `failJob` behind `settleOwnedJob`: the job is failed, and a spent credit
+   * refunded, only when this execution's atomic settle committed. Used by
+   * every failure path that can run while a concurrent execution of the same
+   * job id may own the job — the post-spend guard, the prep resolver's own
+   * failure branches (a bundle child is the shared case) and, since review
+   * R3-WR-01, every failure after the running claim. Returns whether it
+   * settled, so a caller can tell a no-op apart from a failure.
+   */
+  async function failOwnedJob(params: {
+    uid: string;
+    jobRef: ReturnType<typeof app.firebase.database.ref>;
+    executionId: string;
+    from: ReadonlyArray<'queued' | 'running'>;
+    jobId: string;
+    creditRef: string;
+    spent: boolean;
+    reason?: PrepReportReason;
+    createdAt: number;
+    attempt: number;
+    day: string | null;
+    failureReason?: ReportFailureReason;
+    /** R3-WR-02: see `refundLostExecutionSpend`. */
+    perExecutionSpend: boolean;
+    /** R3-WR-02: when this execution wrote its `running` claim, or null when it never did. */
+    claimedAt: number | null;
+    /** R3-WR-02: this execution's latch — the first call settles, any later call is a no-op. */
+    settlement: ExecutionSettlement;
+    /** R6-WR-05: the request this execution runs in, passed through to `failJob`'s log lines. */
+    requestId?: string;
+  }): Promise<boolean> {
+    const { jobRef, executionId, from, perExecutionSpend, claimedAt, settlement, ...failParams } =
+      params;
+    if (settlement.settled) {
+      return false;
+    }
+    // Code review R4-WR-01: the latch closes only once the settle has
+    // RESOLVED. A settle that throws (a transient RTDB error) has written
+    // nothing and refunded nothing, so the latch stays open and the
+    // post-spend guard (`failOwnedJobThenRethrow`) can still settle this
+    // execution. Latching first stranded the spent credit on a `queued` job.
+    const owned = await settleOwnedJob({ jobRef, executionId, from });
+    settlement.settled = true;
+    if (!owned) {
+      await refundLostExecutionSpend({
+        uid: failParams.uid,
+        creditRef: failParams.creditRef,
+        spent: failParams.spent,
+        perExecutionSpend,
+        claimedAt,
+      });
+      return false;
+    }
+    // R5-WR-01: the settle has committed `failed`, so `failJob` refunds even
+    // if its own terminal write keeps failing, and keys the refund's
+    // create-once marker on this execution.
+    await failJob({ ...failParams, executionId, rowSettled: true });
+    return true;
+  }
+
+  /**
+   * Code review R3-WR-02 (iteration 3): the refund of THIS execution's own
+   * spend when it has lost the job to another execution. The ownership gate
+   * (`settleOwnedJob`) decides who may write the JOB RECORD; it must not
+   * decide whose money comes back. A prep single or a legacy job spends one
+   * credit PER EXECUTION (`spendCredit`, the job id as its ref), so a crafted
+   * duplicate of the same client-sent job id spends twice, and the execution
+   * that lost the job used to keep the user's second credit. It is refunded
+   * here, exactly once, and the job record is never touched. A pre-paid
+   * bundle child's one credit belongs to the JOB (`perExecutionSpend` false),
+   * so only the owner's `failJob` returns it.
+   *
+   * The one other refunder of a per-execution spend is the stuck-job sweep,
+   * which fails and refunds a `running` row older than the staleness window
+   * — this execution's own row if it was still the owner then. When this
+   * execution's running claim is that old (less a clock-skew margin), the
+   * sweep may already have returned its credit, so nothing is refunded here:
+   * the one failure mode left is a user out one credit after a generation
+   * that ran past the window, never a minted credit.
+   */
+  async function refundLostExecutionSpend(params: {
+    uid: string;
+    creditRef: string;
+    spent: boolean;
+    perExecutionSpend: boolean;
+    claimedAt: number | null;
+  }): Promise<void> {
+    const { uid, creditRef, spent, perExecutionSpend, claimedAt } = params;
+    if (!perExecutionSpend || !spent) {
+      return;
+    }
+    if (
+      claimedAt !== null &&
+      Date.now() - claimedAt >= REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS
+    ) {
+      return;
+    }
+    await refundCredit(app.firebase.database, uid, creditRef);
+  }
+
+  /**
+   * Code review R2-IN-04 (iteration 2): `failOwnedJob` for a failure that is
+   * already on its way out as a thrown error. The settle can throw too (a
+   * refund transaction that fails, an unreachable database) — that error is
+   * logged here and swallowed, and the ORIGINAL `cause` is rethrown, so the
+   * provider or assembly root cause is what reaches the 500 handler and its
+   * log. The settle error is logged with the uid redacted from its message
+   * and stack (RTDB errors name the path they failed on); no token is ever
+   * part of a database error.
+   */
+  async function failOwnedJobThenRethrow(
+    params: Parameters<typeof failOwnedJob>[0] & { log: ReportRequestContext['log'] },
+    cause: unknown,
+  ): Promise<never> {
+    const { log, ...settleParams } = params;
+    try {
+      await failOwnedJob(settleParams);
+    } catch (settleErr) {
+      log.error(
+        { err: redactUid(settleErr, settleParams.uid) },
+        'could not settle a report job after a failure; the original error is rethrown',
+      );
+    }
+    throw cause;
+  }
+
+  /**
+   * Phase 39 (D-05/RPT-07): persists a job's evidence snapshot ONCE at its
+   * CONTENT-ADDRESSED path `evidenceSnapshots/{uid}/{snapshotId}` and returns
+   * the id. The path is derived from the snapshot's content (`snapshotIdFor`)
+   * and never from a job id, so a swept-then-retried attempt over drifted
+   * evidence writes a NEW node instead of mutating the old one. The write is
+   * create-if-absent: the transaction aborts when a value already exists, so
+   * a concurrent or repeated attempt over identical evidence is a no-op, not
+   * a rewrite. The record goes through `evidenceSnapshotRecordSchema.parse`
+   * (after the RTDB write-shape normalisation) so an undefined-bearing or
+   * malformed payload fails HERE rather than inside the SDK.
+   */
+  async function writeEvidenceSnapshot(uid: string, snapshot: EvidenceSnapshot): Promise<string> {
+    const snapshotId = snapshotIdFor(snapshot);
+    const snapshotRecord = evidenceSnapshotRecordSchema.parse({
+      ...(normalizeRtdbWriteShape(snapshot) as Record<string, unknown>),
+      createdAt: Date.now(),
+    });
+    await app.firebase.database
+      .ref(`evidenceSnapshots/${uid}/${snapshotId}`)
+      .transaction((current) => (current === null ? snapshotRecord : undefined));
+    return snapshotId;
   }
 
   /**
@@ -403,6 +1158,16 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     jobCreatedAt: number;
     jobAttempt: number;
     reason?: PrepReportReason;
+    /** R2-CR-01: this request execution's own token, written on the job's queued row by the caller. */
+    executionId: string;
+    /**
+     * R3-WR-02: true when `spent` is this execution's OWN `spendCredit` (a
+     * prep single, a legacy job); false for a pre-paid bundle child, whose
+     * credit belongs to the job. See `refundLostExecutionSpend`.
+     */
+    perExecutionSpend: boolean;
+    /** R3-WR-02: this execution's settlement latch, shared with its resolver. */
+    settlement: ExecutionSettlement;
     resolveScout: () => Promise<ScoutResolutionOutcome>;
     payloadOptions?: { binding?: ScoutBinding; curatedCanonicalName?: string };
   }): Promise<GenerationOutcome> {
@@ -414,23 +1179,70 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobCreatedAt,
       jobAttempt,
       reason,
+      executionId,
+      perExecutionSpend,
+      settlement,
       resolveScout,
       payloadOptions,
     } = params;
     const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
 
-    const scoutOutcome = await resolveScout();
-    if (!scoutOutcome.ok) {
-      return { ok: false, failure: scoutOutcome.failure };
+    // Code review API-WR-01: everything between the spend (made by the
+    // caller) and the `running` claim below — scout resolution and payload
+    // assembly (the row builder, the claim builder, the action ranker, the
+    // canonical digest, the stored-row schema parses) — is guarded. A throw
+    // here used to return a 500 with the job left `queued` and the credit
+    // spent; the stuck-job sweep reads only the `running` index, so nothing
+    // ever recovered it. Now the job fails and refunds through the ONE
+    // existing `failJob`, exactly once.
+    //
+    // Code review R2-CR-01: "exactly once" is enforced by ONE atomic
+    // transaction (`failOwnedJob`), not by a re-read. It moves the job
+    // `queued` -> `failed` only when the queued row is still this
+    // execution's own, and the refund happens only when that transaction
+    // committed. A resolver that already failed the job, a concurrent
+    // execution of the same job id that re-queued it, claimed it `running`
+    // or delivered it `succeeded` — all of them make this a no-op for the
+    // job record. Review R3-WR-02: a credit THIS execution spent itself (a
+    // prep single, a legacy job) is still refunded once in that case
+    // (`refundLostExecutionSpend`); a bundle child's job-owned credit is not.
+    let scout: ScoutReportData;
+    let payload: ReportPayload;
+    try {
+      const scoutOutcome = await resolveScout();
+      if (!scoutOutcome.ok) {
+        return { ok: false, failure: scoutOutcome.failure };
+      }
+      scout = scoutOutcome.scout;
+      payload = await assembleReportPayload(
+        request.uid,
+        scout,
+        app.firebase.database,
+        payloadOptions,
+      );
+    } catch (err) {
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          requestId: request.id,
+          jobRef,
+          executionId,
+          from: ['queued'],
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          day: null,
+          perExecutionSpend,
+          claimedAt: null,
+          settlement,
+        },
+        err,
+      );
     }
-    const scout = scoutOutcome.scout;
-
-    const payload = await assembleReportPayload(
-      request.uid,
-      scout,
-      app.firebase.database,
-      payloadOptions,
-    );
 
     // BILL-06/MEAS-03: transition to `running` immediately before the
     // Claude call — this is the durable "generation is genuinely in-flight"
@@ -446,46 +1258,127 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       attempt: jobAttempt,
       creditRef,
       ...(reason ? { reason } : {}),
+      // Post-plan fix (39-10): every whole-node write carries the spend fact.
+      wasCharged: spent,
+      // R2-CR-01: the running row is this execution's own, like the queued one.
+      executionId,
     });
 
-    if (reason) {
-      // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
-      // only, claim the queued->running transition with a `.transaction()`
-      // that aborts when the stored status is ALREADY `running` within the
-      // staleness window — this narrows (without claiming to eliminate) the
-      // pre-existing read-then-write race the single-writer-per-job
-      // invariant otherwise assumes away for two near-simultaneous
-      // executions of the SAME bundle child. Legacy jobs keep the plain
-      // sequential `.set()` below, so their behavior stays byte-identical.
-      const claim = await jobRef.transaction((current) => {
-        const existing = current as { status?: string; updatedAt?: number } | null;
+    // Code review R2-WR-02 (iteration 2): the claim below and the running
+    // index write after it sit after the spend, so a throw at either must not
+    // strand the credit. A claim that throws leaves the job `queued` (nothing
+    // sweeps it) — or, if the write applied before the call failed, `running`
+    // under THIS execution's token — so it settles from either, ownership
+    // checked. An index write that throws leaves the job `running` with no
+    // `reportJobsByStatus/running` entry, the only index the stuck-job sweep
+    // reads, so it settles from `running` and clears the shard it claimed.
+    // Both go through the same atomic settle as the post-spend guard, and the
+    // original error is rethrown.
+    try {
+      if (reason) {
+        // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
+        // only, claim the queued->running transition with a `.transaction()`.
+        // Review R3-WR-01 (iteration 3): the claim commits ONLY over this
+        // execution's own `queued` row (its status is `queued` and its token
+        // is this execution's). The old rule aborted only on a fresh
+        // `running` row, so a duplicate execution that re-queued the job over
+        // this one's claim could claim it as well. Anything else — another
+        // execution's row, a resolved job, a missing node — is a 409. A null
+        // first-run input (the SDK's local cache) is returned unchanged to
+        // force the server compare; a node that truly does not exist commits
+        // that no-op and is reported as not claimed. Legacy jobs keep the
+        // plain sequential `.set()` below, so their behavior is unchanged.
+        const claim = await jobRef.transaction((current) => {
+          if (current === null || current === undefined) {
+            return null;
+          }
+          const existing = current as { status?: unknown; executionId?: unknown };
+          if (existing.status !== 'queued' || existing.executionId !== executionId) {
+            return undefined;
+          }
+          return runningRecord;
+        });
+        const claimed = claim.snapshot.val() as { status?: unknown; executionId?: unknown } | null;
         if (
-          existing &&
-          existing.status === 'running' &&
-          typeof existing.updatedAt === 'number' &&
-          Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
+          !claim.committed ||
+          claimed?.status !== 'running' ||
+          claimed.executionId !== executionId
         ) {
-          return undefined;
+          // R3-WR-02: another execution holds the job, so this one writes no
+          // job record — but a credit it spent itself is still its own.
+          if (!settlement.settled) {
+            settlement.settled = true;
+            await refundLostExecutionSpend({
+              uid: request.uid,
+              creditRef,
+              spent,
+              perExecutionSpend,
+              claimedAt: null,
+            });
+          }
+          return {
+            ok: false,
+            failure: {
+              status: 409,
+              error: 'Conflict',
+              message: 'A report generation for this job is already in progress',
+            },
+          };
         }
-        return runningRecord;
-      });
-      if (!claim.committed) {
-        return {
-          ok: false,
-          failure: {
-            status: 409,
-            error: 'Conflict',
-            message: 'A report generation for this job is already in progress',
-          },
-        };
+      } else {
+        await jobRef.set(runningRecord);
       }
-    } else {
-      await jobRef.set(runningRecord);
+    } catch (err) {
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          requestId: request.id,
+          jobRef,
+          executionId,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          from: ['queued', 'running'],
+          day: null,
+          perExecutionSpend,
+          claimedAt: runningAt,
+          settlement,
+        },
+        err,
+      );
     }
-    await app.firebase.database.ref().update({
-      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
-      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
-    });
+    try {
+      await app.firebase.database.ref().update({
+        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
+        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+      });
+    } catch (err) {
+      return failOwnedJobThenRethrow(
+        {
+          log: request.log,
+          uid: request.uid,
+          requestId: request.id,
+          jobRef,
+          executionId,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          from: ['running'],
+          day: jobDay,
+          perExecutionSpend,
+          claimedAt: runningAt,
+          settlement,
+        },
+        err,
+      );
+    }
     void createEvent(
       app.firebase.database,
       buildBillingEnvelope({
@@ -499,21 +1392,91 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }),
     );
 
+    // Phase 39 (D-05/RPT-07, review C4-H1), corrected by review R3-WR-01
+    // (iteration 3): everything from here to the model call sits STRICTLY
+    // BELOW the queued->running claim above. The claim alone is NOT a
+    // single-writer window: a duplicate execution that read the job before
+    // this claim and wrote its own `queued` row after it used to erase this
+    // execution's `running` row and claim the job too, and a bare `failJob`
+    // on both sides then returned one spend twice (`refundCredit` is NOT
+    // balance-idempotent: an unconditional increment transaction plus a
+    // ledger append; only its `credit_refunded` EVENT is deduped), or failed
+    // and refunded a job the other side had already delivered. Two guards
+    // close it together. The handler's prep queued write is a compare-and-set
+    // against the row it read, and the prep claim commits only over this
+    // execution's OWN queued row, so a straddling duplicate is turned away
+    // with a 409 before it can take the job. And every failure below settles
+    // through `failOwnedJob` from `running` with this execution's token, so
+    // only the execution that still owns the running row can fail or refund
+    // the job. Legacy (no-`reason`) jobs keep the plain `.set()` queued write
+    // and running write; their failures below go through the same owned
+    // settle.
+    const ownedRunningFailure = {
+      uid: request.uid,
+      requestId: request.id,
+      jobRef,
+      executionId,
+      from: ['running'] as const,
+      jobId,
+      creditRef,
+      spent,
+      reason,
+      createdAt: jobCreatedAt,
+      attempt: jobAttempt,
+      day: jobDay,
+      perExecutionSpend,
+      claimedAt: runningAt,
+      settlement,
+    };
+    const surface = reportSurfaceFor(reason);
+    const issuedClaims = payload.claimSet.claims;
+    let snapshotId: string;
+    try {
+      snapshotId = await writeEvidenceSnapshot(request.uid, payload.snapshot);
+    } catch (err) {
+      // A snapshot that cannot be persisted is an internal fault, not a
+      // validation outcome: the catch-all sibling shape (one owned settle,
+      // then rethrow) so the job never rests `running` with the credit held.
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
+    }
+
+    // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
+    // The EVIDENCED claim count is known before the model is called (D-23,
+    // 2026-09-26: `countViableClaims` — abstentions never count, the same
+    // helper the validator's status uses), so a workspace already below the
+    // surface minimum — including one issuing only abstentions — makes NO
+    // model call — the
+    // job goes through the owned settle (`failOwnedJob`, whose `failJob` is
+    // the one unchanged refund) with `failureReason: 'validation'`, and
+    // nothing is stored. The
+    // snapshot above IS still written on this path, deliberately: it is the
+    // evidence for WHY the job failed, it is content-addressed so the write
+    // is idempotent, and a refunded job with no snapshot would leave the
+    // owner unable to tell a genuinely thin workspace from a broken
+    // assembler. This replaces the charged cold-read report the path used to
+    // deliver — that is the decision, not a gap to backfill with a degraded
+    // report.
+    if (countViableClaims(issuedClaims) < MIN_VIABLE_CLAIMS[surface]) {
+      await failOwnedJob({
+        ...ownedRunningFailure,
+        failureReason: 'validation',
+      });
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message: 'There is not enough match evidence yet to build a verified report',
+        },
+      };
+    }
+
     let report;
     try {
       report = await generateScoutReport(client, payload);
     } catch (err) {
       if (err instanceof ReportGenerationError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         const message =
           err.reason === 'refusal'
             ? 'The model declined to generate a report for this request'
@@ -523,16 +1486,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         return { ok: false, failure: { status: 502, error: 'Bad Gateway', message } };
       }
       if (err instanceof Anthropic.RateLimitError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         return {
           ok: false,
           failure: {
@@ -543,16 +1497,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         };
       }
       if (err instanceof Anthropic.APIError) {
-        await failJob({
-          uid: request.uid,
-          jobId,
-          creditRef,
-          spent,
-          reason,
-          createdAt: jobCreatedAt,
-          attempt: jobAttempt,
-          day: jobDay,
-        });
+        await failOwnedJob(ownedRunningFailure);
         request.log.error({ err }, 'Claude report generation failed');
         return {
           ok: false,
@@ -563,52 +1508,66 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           },
         };
       }
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
-      });
-      throw err;
+      // Code review R5-IN-01: the attempt bound's abort signal fired while the
+      // body was being read — the same owned failure and 502 as the SDK's own
+      // timeout error, never a 500 through the generic handler.
+      if (isModelAbort(err)) {
+        await failOwnedJob(ownedRunningFailure);
+        request.log.error({ err }, 'Claude report generation timed out');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model took too long to respond — try again',
+          },
+        };
+      }
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
-    // RTDB deletes null-valued keys on write, so persisting the model's
-    // `headToHead: null` (a legitimate "no head-to-head history" output)
-    // would come back with the key ABSENT and previously corrupted the
-    // stored record (see storedScoutReportSchema's doc). Strip null fields
-    // before writing — house conditional-spread convention — so records
-    // are stored in exactly the shape they'll be read back in.
-    const { headToHead, ...reportRest } = report;
-    const storedReport = {
-      ...reportRest,
-      ...(headToHead !== null ? { headToHead } : {}),
-    };
+    // Phase 39 (D-06/D-07/RPT-07, review C2-H2): the validator seam and the
+    // store-step build, between the model's return and the store. After the
+    // model returns, EVERY outcome ends in exactly one of {a stored valid
+    // record + `report_completed`} or {one `failJob` with
+    // `failureReason: 'validation'`} — never an uncaught throw. A validation
+    // failure, a projection that throws, and a record the stored schema
+    // rejects all take the SAME single-call-then-return branch: a schema
+    // `.parse` (or any throw) outside the refund path would turn a future
+    // projection defect into a 500 with the job left `running` and the credit
+    // held until the stale-job sweeper, and — before this branch existed — an
+    // invalid record surfaced as a response-serialization failure AFTER the
+    // job was already marked `succeeded`.
+    const built = buildValidatedScoutReport({
+      selection: report,
+      payload,
+      surface,
+      snapshotId,
+      player: scout.player,
+      log: request.log,
+    });
+    if (!built.ok) {
+      await failOwnedJob({
+        ...ownedRunningFailure,
+        failureReason: 'validation',
+      });
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message:
+            'The generated report could not be verified against your match evidence — try again',
+        },
+      };
+    }
+    const { record, parsed, outcome } = built;
 
     const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
-    const record = {
-      createdAt: Date.now(),
-      model: 'claude-opus-4-8',
-      player: scout.player,
-      report: storedReport,
-    };
     try {
       await ref.set(record);
     } catch (err) {
-      await failJob({
-        uid: request.uid,
-        jobId,
-        creditRef,
-        spent,
-        reason,
-        createdAt: jobCreatedAt,
-        attempt: jobAttempt,
-        day: jobDay,
-      });
-      throw err;
+      return failOwnedJobThenRethrow({ ...ownedRunningFailure, log: request.log }, err);
     }
 
     const id = ref.key;
@@ -634,6 +1593,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         creditRef,
         resultRef: id,
         ...(reason ? { reason } : {}),
+        wasCharged: spent,
       }),
     );
     await app.firebase.database.ref().update({
@@ -652,8 +1612,48 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: reason ? { reason } : {},
       }),
     );
+    // Phase 39 (AI-SPEC §7, review C3-M1/D-20): occurrence signals for a
+    // DELIVERED report that lost claims or section prose. No count rides the
+    // payload — the ledger is aggregate-only; the counts live on the stored
+    // record the owner samples. Separate names rather than keys on
+    // `report_completed`, because that envelope's payload is pinned by
+    // exact-key assertions (`Object.keys(payload)` toEqual `['reason']` in
+    // `reports.test.ts` and `reportsSynthesis.test.ts`) this phase has no
+    // reason to loosen.
+    if (outcome.droppedClaimCount > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_claims_dropped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_claims_dropped`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
+    if (outcome.strippedSectionIds.length > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_prose_stripped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_prose_stripped`,
+          consentState: 'unknown',
+          payload: reason ? { reason } : {},
+        }),
+      );
+    }
 
-    return { ok: true, record: { id, ...record } };
+    // Post-plan fix (39-08): answer with the PARSED record, never the raw
+    // write form. The serializer encodes without applying `.default([])`, so
+    // a raw record with an omitted empty `claimIds` 500'd here — after the
+    // job was `succeeded`, the report stored and the credit spent.
+    return { ok: true, record: { id, ...parsed } };
   }
 
   /**
@@ -662,9 +1662,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
    * not a fork of the job machine": the queued->running claim transaction
    * shape, `failJob` (verbatim), and the terminal-transition +
    * `report_started`/`report_completed`/`report_failed` event shapes are
-   * ALL reused; only the model call, the post-generation citation-validation
-   * hook (28-06's `validatePracticePlanCitations`, owner invariants 1-2),
-   * and the storage tree (`practicePlans/{uid}` instead of
+   * ALL reused; only the model call, the post-generation validation hook
+   * (Phase 39, plan 39-08: the ONE shared `validateReportOutput`, which
+   * replaced 28-06's citation set-membership check), and the storage tree (`practicePlans/{uid}` instead of
    * `scoutReports/{uid}`) are distinct, because a practice plan has no
    * scouted player and a different output schema.
    *
@@ -681,7 +1681,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     jobAttempt: number;
     entryKey: string;
     payload: SynthesisPayload;
-    allowedPairs: ReadonlySet<string>;
+    /** Phase 39 (D-05): the immutable snapshot over the synthesis rows — written below the claim, before the model call. */
+    snapshot: EvidenceSnapshot;
+    /** Phase 39 (D-01/D-02): the issued `vod_annotation` claim set the validator checks the selection against. */
+    claimSet: ClaimSet;
   }): Promise<SynthesisGenerationOutcome> {
     const {
       request,
@@ -692,14 +1695,19 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobAttempt,
       entryKey,
       payload,
-      allowedPairs,
+      snapshot,
+      claimSet,
     } = params;
     const reason: PrepReportReason = 'post_event_synthesis';
     const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
 
-    const failCurrentJob = (day: string | null): Promise<void> =>
+    const failCurrentJob = (
+      day: string | null,
+      failureReason?: ReportFailureReason,
+    ): Promise<void> =>
       failJob({
         uid: request.uid,
+        requestId: request.id,
         jobId,
         creditRef,
         spent,
@@ -707,6 +1715,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         createdAt: jobCreatedAt,
         attempt: jobAttempt,
         day,
+        ...(failureReason ? { failureReason } : {}),
       });
 
     // BILL-06/MEAS-03: transition to `running` immediately before the
@@ -722,6 +1731,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       attempt: jobAttempt,
       creditRef,
       reason,
+      // Post-plan fix (39-10): every whole-node write carries the spend fact.
+      wasCharged: spent,
     });
     const claim = await jobRef.transaction((current) => {
       const existing = current as { status?: string; updatedAt?: number } | null;
@@ -761,6 +1772,53 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: { reason },
       }),
     );
+
+    // Phase 39 (D-05/D-21/RPT-07, review C4-H1): the snapshot write and the
+    // D-21 count check sit STRICTLY BELOW this function's claim transaction
+    // and its `!claim.committed` 409 return above, and above the model call.
+    // That claim is the only thing serialising two near-simultaneous
+    // executions of the SAME jobId, and `refundCredit` is NOT
+    // balance-idempotent (`billing/credits.ts`: an unconditional increment
+    // transaction plus a ledger append; only its `credit_refunded` EVENT is
+    // deduped on the credit ref, so the event count cannot see a second
+    // refund — the balance and the ledger can). Above the claim, two
+    // executions would each take the D-21 branch and return one spend twice;
+    // here the loser gets the existing 409 like every sibling failure
+    // branch's loser. (On this surface the route also mints a fresh
+    // `randomUUID()` job id per submission behind the
+    // `prepSynthesisJobIndex/{uid}/{entryKey}` pointer transaction, so a
+    // second execution of one synthesis jobId is stopped even earlier.)
+    let snapshotId: string;
+    try {
+      snapshotId = await writeEvidenceSnapshot(request.uid, snapshot);
+    } catch (err) {
+      // An unpersistable snapshot is an internal fault, not a validation
+      // outcome: the catch-all sibling shape (one failCurrentJob, rethrow).
+      await failCurrentJob(jobDay);
+      throw err;
+    }
+
+    // Phase 39 (D-21, owner decision 2026-09-20): FAIL FAST on thin evidence.
+    // The EVIDENCED claim count (D-23: `countViableClaims`, abstentions never
+    // count) is known before the model is called, so an event whose
+    // annotations issue fewer evidenced claims than the surface minimum makes NO
+    // model call — the job takes the SAME `failCurrentJob` wrapper every
+    // sibling branch here uses (the one `failJob`, its unchanged refund and
+    // this path's zero-spend `refunded` terminal) with
+    // `failureReason: 'validation'`, and nothing is stored. The snapshot
+    // above IS still written: it is the evidence for why the job failed, and
+    // it is content-addressed, so the write is idempotent.
+    if (countViableClaims(claimSet.claims) < MIN_VIABLE_CLAIMS['post_event_synthesis']) {
+      await failCurrentJob(jobDay, 'validation');
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message: 'There is not enough annotated evidence yet to build a verified practice plan',
+        },
+      };
+    }
 
     let generated;
     try {
@@ -802,43 +1860,55 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           },
         };
       }
-      await failCurrentJob(jobDay);
-      throw err;
-    }
-
-    // Owner invariants 1-2 (28-06): the hook sits BETWEEN the model call
-    // and the storage write (RESEARCH Pitfall 5) — a total citation drop
-    // must never ship an empty "Ready" plan. `SynthesisValidationError`
-    // routes through the SAME `failJob` path as a `ReportGenerationError`
-    // (refund + `refunded` terminal come free because `reason` is present
-    // and `spent` is true) — no second refund call site.
-    let validated;
-    try {
-      validated = validatePracticePlanCitations(generated, allowedPairs);
-    } catch (err) {
-      if (err instanceof SynthesisValidationError) {
+      // Code review R5-IN-01: a body-read abort, as on the scout path.
+      if (isModelAbort(err)) {
         await failCurrentJob(jobDay);
-        return { ok: false, failure: { status: 502, error: 'Bad Gateway', message: err.message } };
+        request.log.error({ err }, 'Claude practice-plan generation timed out');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model took too long to respond — try again',
+          },
+        };
       }
       await failCurrentJob(jobDay);
       throw err;
     }
 
-    // RTDB empty-array strip (2026-08-03 P1 lesson, INV-7): the STORED
-    // record is written through `storedPracticePlanSchema` — every array
-    // field there defaults to `[]` on READ, so writing the generation
-    // schema's required-array shape straight through is safe either way.
-    // `droppedClaimCount` is the ONE genuinely-optional field here —
-    // conditional-spread, house convention (`routes/reports.ts:494-504`
-    // precedent), so a zero-drop plan stores with the key absent rather
-    // than `droppedClaimCount: 0`.
-    const record = storedPracticePlanSchema.parse({
+    // Phase 39 (plan 39-08, D-02/D-06/D-07/RPT-07, review C2-H2): the
+    // validator seam, between the model's return and the store. The ONE
+    // shared validator replaced 28-06's citation set-membership check here
+    // (its rule is now the validator's R1 evidence-id membership over the
+    // `vod_annotation` rows). After the model returns, EVERY outcome ends in
+    // exactly one of {a stored valid plan + `report_completed`} or {one
+    // `failCurrentJob(jobDay, 'validation')`} — never an uncaught throw.
+    // PRESERVED byte-for-byte on this path, do not "tidy": (1) the spend that
+    // precedes the queued write, (2) the always-transaction running claim,
+    // (3) the retry window keyed on the job-KIND `reason`, (4) the `refunded`
+    // terminal that fires for `post_event_synthesis` even without a spend.
+    const built = buildValidatedPracticePlan({
+      selection: generated,
+      snapshot,
+      claimSet,
+      snapshotId,
       entryKey,
-      createdAt: Date.now(),
-      summary: validated.plan.summary,
-      focusAreas: validated.plan.focusAreas,
-      ...(validated.droppedClaimCount ? { droppedClaimCount: validated.droppedClaimCount } : {}),
+      log: request.log,
     });
+    if (!built.ok) {
+      await failCurrentJob(jobDay, 'validation');
+      return {
+        ok: false,
+        failure: {
+          status: 502,
+          error: 'Bad Gateway',
+          message:
+            'The generated practice plan could not be verified against your annotated moments — try again',
+        },
+      };
+    }
+    const { record, outcome } = built;
 
     const ref = app.firebase.database.ref(`practicePlans/${request.uid}`).push();
     try {
@@ -868,6 +1938,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         creditRef,
         resultRef: planId,
         reason,
+        wasCharged: spent,
       }),
     );
     await app.firebase.database.ref().update({
@@ -886,6 +1957,37 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         payload: { reason },
       }),
     );
+    // Phase 39 (AI-SPEC §7, review C3-M1/D-20): the same occurrence signals,
+    // in the same occurrence-only shape, the scout path emits for a DELIVERED
+    // report that lost claims or section prose — no count in the payload.
+    if (outcome.droppedClaimCount > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_claims_dropped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_claims_dropped`,
+          consentState: 'unknown',
+          payload: { reason },
+        }),
+      );
+    }
+    if (outcome.strippedSectionIds.length > 0) {
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_prose_stripped',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_prose_stripped`,
+          consentState: 'unknown',
+          payload: { reason },
+        }),
+      );
+    }
 
     return { ok: true, jobId, status: 'succeeded', updatedAt: succeededAt, resultRef: planId };
   }
@@ -916,11 +2018,29 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       jobCreatedAt: number;
       jobAttempt: number;
       reason: PrepReportReason;
+      executionId: string;
+      /** R3-WR-02: false for a pre-paid bundle child, whose credit belongs to the job. */
+      perExecutionSpend: boolean;
+      /** R3-WR-02: the execution's settlement latch, shared with `runReportGeneration`. */
+      settlement: ExecutionSettlement;
+      /** R6-WR-05: the request this execution runs in. */
+      requestId?: string;
     },
   ): () => Promise<ScoutResolutionOutcome> {
-    const failCurrentJob = (): Promise<void> =>
-      failJob({
+    // Code review R2-CR-01: a prep job (a pre-paid bundle child above all)
+    // can have two concurrent executions, so the resolver's own failure
+    // branches settle through the same atomic, ownership-checked transaction
+    // as the post-spend guard — never a bare `failJob` over a job the other
+    // execution re-queued, claimed or delivered. Review R3-WR-02: losing the
+    // job record does not forfeit a prep single's own spend, which is still
+    // refunded once (`refundLostExecutionSpend`).
+    const failCurrentJob = async (): Promise<void> => {
+      await failOwnedJob({
         uid: ctx.uid,
+        requestId: ctx.requestId,
+        jobRef: app.firebase.database.ref(`reportJobs/${ctx.uid}/${ctx.jobId}`),
+        executionId: ctx.executionId,
+        from: ['queued'],
         jobId: ctx.jobId,
         creditRef: ctx.jobId,
         spent: ctx.spent,
@@ -928,7 +2048,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         createdAt: ctx.jobCreatedAt,
         attempt: ctx.jobAttempt,
         day: null,
+        perExecutionSpend: ctx.perExecutionSpend,
+        claimedAt: null,
+        settlement: ctx.settlement,
       });
+    };
 
     if (binding.provider === 'startgg') {
       return async () => {
@@ -1296,6 +2420,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             attempt: 0,
             creditRef: childJobId,
             reason: 'prep_bundle',
+            // Post-plan fix (39-10): spend time for a bundle child IS the
+            // bundle debit above — `'debited'` is the only non-free outcome
+            // that reaches this line, so the slot was charged exactly when
+            // the uid is not free-access.
+            wasCharged: !bundleFreeAccess,
           });
           bundleUpdates[`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`] = {
             jobId: childJobId,
@@ -1556,6 +2685,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             attempt: 0,
             creditRef: synthJobId,
             reason: 'post_event_synthesis',
+            // Post-plan fix (39-10): the spend has already resolved, so the
+            // queued record is written WITH its spend fact.
+            wasCharged: synthSpent,
           }),
         );
 
@@ -1568,7 +2700,8 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           jobAttempt: 0,
           entryKey,
           payload: assembled.payload,
-          allowedPairs: assembled.allowedPairs,
+          snapshot: assembled.snapshot,
+          claimSet: assembled.claimSet,
         });
 
         if (!generation.ok) {
@@ -1648,6 +2781,12 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       const existingJob: ReportJob | null = existingSnapshot.exists()
         ? reportJobSchema.parse(existingSnapshot.val())
         : null;
+      // Code review R3-WR-01: the raw row as read, the expected value of the
+      // prep branch's compare-and-set queued write below. A copy, so no later
+      // in-place change to a returned snapshot value can move it.
+      const readJobRow: unknown = existingSnapshot.exists()
+        ? structuredClone(existingSnapshot.val())
+        : null;
 
       // Idempotent retry: a jobId that already succeeded returns the stored
       // result WITHOUT spending a credit or calling Anthropic again. If the
@@ -1702,6 +2841,13 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       const jobCreatedAt = existingJob?.createdAt ?? Date.now();
       const jobAttempt = existingJob ? existingJob.attempt + 1 : 0;
+      // Code review R2-CR-01: this request execution's own token, written on
+      // the queued and running rows it owns. Failure paths settle the job
+      // only while it still carries this token (`settleOwnedJob`).
+      const executionId = randomUUID();
+      // Code review R3-WR-02: this execution settles (fails the job, or
+      // refunds its own lost spend) at most once, across all its paths.
+      const settlement: ExecutionSettlement = { settled: false };
 
       let spent = false;
       let resolveScout: () => Promise<ScoutResolutionOutcome>;
@@ -1723,6 +2869,33 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         const entryKey = request.body.entryKey!;
         const opponentName = request.body.opponentName!;
 
+        // Code review API-CR-01: a pre-paid child's spend fact is the one its
+        // bundle recorded at PURCHASE (`wasCharged` on the stored child, set
+        // from the bundle debit). Free-access status is a live input (the
+        // allowlist and the demo allowlist can both change between purchase
+        // and execution), so re-deriving it here could mint a refund for a
+        // credit never spent, or withhold one for a credit that was.
+        // Code review R2-IN-03: a pre-39-10 child carries no recorded fact, so
+        // it reads the bundle's DURABLE purchase record instead —
+        // `creditBundleOps/{uid}/{bundleId}`, the marker `spendCredits` wrote
+        // (`debited` = charged; `insufficient` or absent = not), the bundle id
+        // derived from the child's own slot ref.
+        // Code review R3-IN-03 (iteration 3): live free access is NEVER
+        // consulted. A paid bundle's children are written only after its
+        // `debited` marker, and markers are never deleted, so a child whose
+        // bundle has no marker was submitted free. Any fact still unknown
+        // below — a stranded `claiming` marker, whose children can only come
+        // from a later free submission of the same id, or a row whose id is
+        // not a slot ref, which the bundle route never writes — is taken as
+        // NOT charged, so a refund can never be minted from it.
+        let recordedSpend: boolean | null =
+          preSpent && typeof existingJob!.wasCharged === 'boolean' ? existingJob!.wasCharged : null;
+        if (preSpent && recordedSpend === null) {
+          const bundleId = bundleIdFromSlotRef(jobId);
+          if (bundleId !== null) {
+            recordedSpend = await readBundleSpendFact(app.firebase.database, request.uid, bundleId);
+          }
+        }
         if (preSpent) {
           effectiveReason = 'prep_bundle';
         }
@@ -1734,25 +2907,56 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // `queued`, carrying the enum `reason` — no entryKey, opponent
         // name, gamer tag, or provider id ever lands on the job node
         // (Information Disclosure mitigation, T-27-33).
-        await jobRef.set(
-          reportJobSchema.parse({
-            status: 'queued',
-            createdAt: jobCreatedAt,
-            updatedAt: Date.now(),
-            attempt: jobAttempt,
-            creditRef: jobId,
-            reason: effectiveReason,
-          }),
-        );
+        //
+        // Code review R3-WR-01 (iteration 3): the queued write is a
+        // COMPARE-AND-SET against the row this request read above. The old
+        // plain `.set()` let a duplicate execution that read the job before
+        // another execution's running claim erase that claim afterwards and
+        // take the job too (the straddle): a bundle child's one credit was
+        // then refunded twice, or refunded after the other execution had
+        // delivered. Any write to the node since the read — a claim, a
+        // re-queue, a settle — aborts this one with a 409, before any spend.
+        const queuedRecord = reportJobSchema.parse({
+          status: 'queued',
+          createdAt: jobCreatedAt,
+          updatedAt: Date.now(),
+          attempt: jobAttempt,
+          creditRef: jobId,
+          reason: effectiveReason,
+          // API-CR-01: the write replaces the node — a pre-paid child keeps
+          // its recorded spend fact across this rewrite (conditional
+          // spread: absent on a pre-39-10 child, never null).
+          ...(recordedSpend !== null ? { wasCharged: recordedSpend } : {}),
+          executionId,
+        });
+        const queuedWrite = await jobRef.transaction((current) => {
+          if (current === null || current === undefined) {
+            // The SDK's local cache reads null on a listener-less server even
+            // when the node exists. For a fresh job id null IS the row that was
+            // read, so the record commits; otherwise null is returned
+            // unchanged, forcing the server compare (a node that truly
+            // vanished commits that no-op and is reported as not queued).
+            return readJobRow === null ? queuedRecord : null;
+          }
+          return isDeepStrictEqual(current, readJobRow) ? queuedRecord : undefined;
+        });
+        const queuedRow = queuedWrite.snapshot.val() as { executionId?: unknown } | null;
+        if (!queuedWrite.committed || queuedRow?.executionId !== executionId) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'A report generation for this job is already in progress',
+            statusCode: 409,
+          });
+        }
 
         if (preSpent) {
           // Phase 27 (Task 2): the credit for this slot was already spent
           // atomically by the bundle submission (or never spent at all, for
           // an allowlisted uid's bundle) — never spend a second time here.
-          // `spent` is recomputed from `freeAccess` rather than trusted from
-          // the stored job, because an allowlisted uid's bundle attaches no
-          // credit to its children at all.
-          spent = !freeAccess;
+          // API-CR-01: trust the fact recorded at purchase (R2-IN-03: or the
+          // bundle's durable op record). R3-IN-03: an unknown fact is NOT
+          // charged — never re-derived from live free access.
+          spent = recordedSpend ?? false;
         } else if (!freeAccess) {
           // V7-C: non-allowlisted uids spend one credit per generation
           // attempt, identical to the legacy branch below.
@@ -1781,6 +2985,10 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           }
         }
 
+        // Post-plan fix (39-10): the queued row above was written before the
+        // spend resolved, so record the spend fact on it now.
+        await recordSpendFact(jobRef, spent, request.log);
+
         // Phase 27 (RPT-01, 27-RESEARCH.md Pitfall 2): a convenience
         // pointer, not money-critical state — deliberately a plain `.set()`
         // rather than a transaction. It exists because job ids are
@@ -1793,17 +3001,29 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // deliberately NOT added to a pruning job this phase — a recorded
         // discretionary follow-up, same spirit as the Phase 23
         // rate-limit-counter retention deferral (STATE.md).
-        await app.firebase.database
-          .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
-          .set({ jobId, updatedAt: Date.now() });
+        // Code review API-WR-01: this write sits after the spend and before
+        // any `failJob` coverage, so — like `recordSpendFact` — it is
+        // best-effort: a throw here must never become a 500 that strands a
+        // spent credit on a `queued` job.
+        try {
+          await app.firebase.database
+            .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
+            .set({ jobId, updatedAt: Date.now() });
+        } catch (err) {
+          request.log.warn({ err }, 'could not write the prep report job index pointer');
+        }
 
         resolveScout = buildPrepResolveScout(binding, {
           uid: request.uid,
+          requestId: request.id,
           jobId,
           spent,
           jobCreatedAt,
           jobAttempt,
           reason: effectiveReason as PrepReportReason,
+          executionId,
+          perExecutionSpend: !preSpent,
+          settlement,
         });
         payloadOptions = { binding, curatedCanonicalName: opponentName };
       } else {
@@ -1870,6 +3090,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             updatedAt: Date.now(),
             attempt: jobAttempt,
             creditRef: jobId,
+            executionId,
           }),
         );
 
@@ -1886,6 +3107,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           if (!spent) {
             await failJob({
               uid: request.uid,
+              requestId: request.id,
               jobId,
               creditRef: jobId,
               spent,
@@ -1901,6 +3123,39 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           }
         }
 
+        // Post-plan fix (39-10): as the prep branch above — the queued row
+        // predates the spend, so the spend fact is recorded on it here.
+        await recordSpendFact(jobRef, spent, request.log);
+
+        // Code review R4-WR-01 (closes R3-IN-04 and R4-IN-03): the legacy
+        // resolver settles through the same owned settle as every other
+        // failure path. The job is failed only while its queued row is still
+        // this execution's own, so a crafted duplicate can no longer clobber
+        // a delivered legacy record; a lost row still refunds this
+        // execution's OWN spend once (`refundLostExecutionSpend`). The latch
+        // closes only after the settle resolves, so a settle that throws
+        // leaves the post-spend guard free to retry it, and a settle that
+        // completed makes the guard's later call a no-op (never a second
+        // refund).
+        const failLegacyJob = async (): Promise<void> => {
+          await failOwnedJob({
+            uid: request.uid,
+            requestId: request.id,
+            jobRef,
+            executionId,
+            from: ['queued'],
+            jobId,
+            creditRef: jobId,
+            spent,
+            createdAt: jobCreatedAt,
+            attempt: jobAttempt,
+            day: null,
+            perExecutionSpend: true,
+            claimedAt: null,
+            settlement,
+          });
+        };
+
         if (combined) {
           resolveScout = async () => {
             const result = await resolveCombinedScout(
@@ -1915,15 +3170,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               },
             );
             if (!result.ok) {
-              await failJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               return {
                 ok: false,
                 failure:
@@ -1951,15 +3198,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               options.parryggClients,
             );
             if (!scout) {
-              await failJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               return {
                 ok: false,
                 failure: {
@@ -1981,15 +3220,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                 scoutCache,
               );
               if (!scout) {
-                await failJob({
-                  uid: request.uid,
-                  jobId,
-                  creditRef: jobId,
-                  spent,
-                  createdAt: jobCreatedAt,
-                  attempt: jobAttempt,
-                  day: null,
-                });
+                await failLegacyJob();
                 return {
                   ok: false,
                   failure: {
@@ -2002,15 +3233,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
               return { ok: true, scout };
             } catch (err) {
               if (err instanceof StartggApiError && err.status === 429) {
-                await failJob({
-                  uid: request.uid,
-                  jobId,
-                  creditRef: jobId,
-                  spent,
-                  createdAt: jobCreatedAt,
-                  attempt: jobAttempt,
-                  day: null,
-                });
+                await failLegacyJob();
                 return {
                   ok: false,
                   failure: {
@@ -2020,15 +3243,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
                   },
                 };
               }
-              await failJob({
-                uid: request.uid,
-                jobId,
-                creditRef: jobId,
-                spent,
-                createdAt: jobCreatedAt,
-                attempt: jobAttempt,
-                day: null,
-              });
+              await failLegacyJob();
               request.log.error({ err }, 'start.gg scout lookup failed during report generation');
               throw err;
             }
@@ -2046,6 +3261,11 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // Phase 27 (Task 2): the EFFECTIVE reason — `prep_bundle`, not the
         // request's own `prep_report`, when this is a pre-paid child.
         reason: effectiveReason,
+        executionId,
+        // R3-WR-02: every execution spends its own credit except a pre-paid
+        // bundle child, whose one credit was spent by the bundle for the job.
+        perExecutionSpend: !preSpent,
+        settlement,
         resolveScout,
         payloadOptions,
       });
@@ -2182,6 +3402,15 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           status: parsed.data.status,
           updatedAt: parsed.data.updatedAt,
           ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+          // Phase 39 (plan 39-10, D-21): the terminal cause the paid card
+          // captions. Conditional spread — absent on every job without one.
+          ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
+          // Post-plan fix (39-10): the spend fact, so the card's refund
+          // wording reads the record. `typeof` (not truthiness): `false` is
+          // a value; absent/null stays absent (unknown).
+          ...(typeof parsed.data.wasCharged === 'boolean'
+            ? { wasCharged: parsed.data.wasCharged }
+            : {}),
         });
       }
 
@@ -2261,6 +3490,12 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           status: parsed.data.status,
           updatedAt: parsed.data.updatedAt,
           ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+          // Phase 39 (plan 39-10, D-21): as `GET /reports/jobs` above.
+          ...(parsed.data.failureReason ? { failureReason: parsed.data.failureReason } : {}),
+          // Post-plan fix (39-10): as `GET /reports/jobs` above.
+          ...(typeof parsed.data.wasCharged === 'boolean'
+            ? { wasCharged: parsed.data.wasCharged }
+            : {}),
         },
       };
     },

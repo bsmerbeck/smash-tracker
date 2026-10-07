@@ -6,6 +6,11 @@ import type { AnthropicLikeClient } from '../reports/generate.js';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { buildTestApp, authHeader } from '../test-support/testApp.js';
 import {
+  seedViableEvidence,
+  VIABLE_CLAIM_SELECTION,
+  VIABLE_OPPONENT_SETS_RESPONSE,
+} from '../test-support/viableEvidenceFixture.js';
+import {
   RtdbService,
   ForbiddenError,
   buildReviewShareId,
@@ -1133,15 +1138,12 @@ const STRIPE_CONFIG: StripeConfig = {
   webhookSecret: 'whsec-test-money-block',
 };
 
-const VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player.',
-  gameplan: ['Punish landing lag.'],
-  characterStrategy: { picks: ['Mario'], reasoning: 'Game 1: Mario.' },
-  stageStrategy: { bans: ['Final Destination'], picks: ['Battlefield'], reasoning: 'Flat stages.' },
-  headToHead: null,
-  watchFor: ['Shine spikes off stage.'],
-  confidenceNotes: 'No sampled sets — treat this as a cold read.',
-};
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION
+ * (`reports/claimSelection.ts`), never a free-prose report — the shared
+ * lint-clean `VIABLE_CLAIM_SELECTION`.
+ */
+const VALID_REPORT = VIABLE_CLAIM_SELECTION;
 
 function moneyScoutFetchMock(): typeof fetch {
   return (async (_url: unknown, init?: RequestInit) => {
@@ -1155,9 +1157,9 @@ function moneyScoutFetchMock(): typeof fetch {
         }),
       );
     }
-    return new Response(
-      JSON.stringify({ data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } } } }),
-    );
+    // Plan 39-06 (C3-B1): the scouted opponent's public history is viable,
+    // not empty — see `test-support/viableEvidenceFixture.ts`.
+    return new Response(JSON.stringify({ data: VIABLE_OPPONENT_SETS_RESPONSE }));
   }) as typeof fetch;
 }
 
@@ -1194,6 +1196,12 @@ describe('money block: research-subject report requests refuse through the real 
       uid: MONEY_ADMIN_UID,
       email: 'money-admin@test.com',
     });
+    // Plan 39-06 (review C3-B1): the positive control below asserts a
+    // generation SUCCESS, so the admin's own workspace is viable. Seeded in
+    // this helper only — NOT through a file-wide `buildTestApp` wrapper — so
+    // the tenant-tree enumerations elsewhere in this file see exactly the
+    // trees they always did.
+    seedViableEvidence(built.database, MONEY_ADMIN_UID, { opponentTag: 'Test' });
     expect(reports.allowedUids.has(MONEY_ADMIN_UID)).toBe(false);
     return built;
   }

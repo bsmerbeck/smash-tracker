@@ -69,6 +69,8 @@ import {
   reviewDraftSchema,
   rulesetOverrideResponseSchema,
   rulesetOverrideUpdateBodySchema,
+  tierOverrideResponseSchema,
+  tierOverrideUpdateBodySchema,
   SAFE_MARKDOWN_DOC_MAX_LENGTH,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -83,6 +85,9 @@ import {
   userProfileSchema,
   vodTimestampEntrySchema,
   vodTimestampSchema,
+  watchlistItemKeySchema,
+  watchlistResponseSchema,
+  watchlistTrackResponseSchema,
   type BulkShareRequest,
   type CheckoutReturnTo,
   type CreateClientRequest,
@@ -106,6 +111,7 @@ import {
   type ResearchEnrichmentConfirmRequest,
   type ReviewChecklistItemId,
   type RulesetOverrideStored,
+  type TierWord,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -117,6 +123,7 @@ import {
   type UpsertOpponentAliasInput,
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
+  type WatchlistTrackInput,
 } from '@smash-tracker/shared';
 import { webEnrichmentAttributionResponseSchema } from './enrichmentEvidence';
 import { getFirebaseAuth } from './firebase';
@@ -298,6 +305,7 @@ const clientWorkspaceExportSchema = z.object({
   opponentNotes: opponentNoteMapSchema,
   stageFavorites: stageFavoritesSchema,
   fighterSelection: fighterSelectionSchema,
+  watchlist: watchlistResponseSchema,
 });
 
 /**
@@ -793,6 +801,22 @@ export const api = {
         {
           method: 'PATCH',
           body: rulesetOverrideUpdateBodySchema.parse({ rulesetOverride }),
+        },
+      ),
+    /**
+     * PATCH /api/tournaments/:entryKey/tier (TIER-04, D-15, D-17 — own-account
+     * only, uid-scoped). `tierOverride: null` requests clearing the stored
+     * override (the route removes the child; a null is never stored). The
+     * client sends only `{ tier }` — the server stamps the contract version
+     * and time — so saving never carries a member the user did not touch.
+     */
+    setTierOverride: (entryKey: string, tierOverride: { tier: TierWord } | null) =>
+      apiRequestParsed(
+        `/api/tournaments/${encodeURIComponent(entryKey)}/tier`,
+        tierOverrideResponseSchema,
+        {
+          method: 'PATCH',
+          body: tierOverrideUpdateBodySchema.parse({ tierOverride }),
         },
       ),
   },
@@ -1483,6 +1507,26 @@ export const api = {
         method: 'PUT',
         body: input,
       }),
+  },
+  watchlist: {
+    /** GET /api/watchlist — the ACTIVE SUBJECT's tracked items (X-Active-Subject scopes it). */
+    list: () => apiRequestParsed('/api/watchlist', watchlistResponseSchema),
+    /**
+     * PUT /api/watchlist/items — idempotently tracks ONE item. There is no
+     * whole-list replace; a 26th item is refused with 409 `watchlist-full`.
+     */
+    track: (input: WatchlistTrackInput) =>
+      apiRequestParsed('/api/watchlist/items', watchlistTrackResponseSchema, {
+        method: 'PUT',
+        body: input,
+      }),
+    /** DELETE /api/watchlist/items/:itemKey — a no-op on a key that is not tracked. */
+    untrack: (itemKey: string) =>
+      apiRequestParsed(
+        `/api/watchlist/items/${encodeURIComponent(itemKey)}`,
+        z.object({ itemKey: watchlistItemKeySchema }),
+        { method: 'DELETE' },
+      ),
   },
   vodShares: {
     /** GET /api/vod-shares — the signed-in user's share links (active + revoked). */

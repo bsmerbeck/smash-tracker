@@ -199,8 +199,8 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
   // wins since sets iterate in the order start.gg returns them).
   const eventId = set.event?.id;
   const eventName = set.event?.name?.trim();
+  const tournamentName = set.event?.tournament?.name?.trim();
   if (eventId != null && eventName) {
-    const tournamentName = set.event?.tournament?.name?.trim();
     const placement = playerEntrant.standing?.placement ?? undefined;
     const numEntrants = set.event?.numEntrants ?? undefined;
     const slug = set.event?.slug?.trim() || undefined;
@@ -285,6 +285,7 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
         ...(resolvedStage ? { stageId: resolvedStage.id, stageName: resolvedStage.name } : {}),
         opponentTag,
         ...(eventName ? { eventName } : {}),
+        ...(tournamentName ? { tournamentName } : {}),
       });
     }
   });

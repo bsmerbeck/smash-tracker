@@ -1,17 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { render, within } from '@testing-library/react';
+import { MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { HorizonKey, Match } from '@smash-tracker/shared';
+import type {
+  GspPoint,
+  GspSettings,
+  HorizonKey,
+  Insight,
+  Match,
+  TierSplitEntry,
+  ValueSeriesReading,
+} from '@smash-tracker/shared';
 import {
   ABSTENTION_FLOOR_GAMES,
+  ACCOUNT_SCOPE,
+  ACTIVITY_HEAT_MAX_YEARS,
   CAREER_TIMELINE_NARROW_STRIP_CELLS,
+  GSP_BAND_MAX_BANDS,
+  INSIGHT_TEMPLATES,
   MARK_BOUND_HEAT_CELLS,
   MARK_BOUND_LINE_POINTS,
   MARK_BOUND_STRIP_TICKS,
+  TIMELINE_EVENT_MARKER_MAX,
+  buildActivityHeat,
   buildOpponentEventSeries,
   buildPeriodSeries,
   buildStageEventSeries,
+  buildValueSeries,
+  getGspGainStats,
+  resolveEntryTiers,
 } from '@smash-tracker/shared';
 import {
   generateSyntheticMatches,
@@ -32,6 +49,18 @@ import {
 import { FighterHero } from '@/pages/FighterAnalysis/components/FighterHero';
 import { useFighterFormNow } from '@/pages/FighterAnalysis/lib/useFighterFormNow';
 import { CareerTimelineCard } from '@/pages/Trends/components/CareerTimelineCard';
+import { PlayRhythmCard } from '@/pages/Trends/components/PlayRhythmCard';
+import { PlayRhythmHeat } from '@/pages/Trends/components/PlayRhythmHeat';
+import { GspCurve } from '@/pages/Gsp/components/GspCurve';
+import { GspVsGlicko } from '@/pages/Gsp/components/GspVsGlicko';
+import { GainsAnalysis } from '@/pages/Gsp/components/GainsAnalysis';
+import { toMmrSeries } from '@/pages/Gsp/lib/gspMmrModel';
+import { buildGspVsGlickoPanels } from '@/pages/Gsp/lib/gspVsGlicko';
+import { computeRatingHistory } from '@/lib/glicko';
+
+// The GSP hosts read the live Elite threshold through TanStack Query; this oracle has no provider and
+// needs none (the same stub GspCurve.test.tsx / GspVsGlicko.test.tsx use).
+vi.mock('@/hooks/useGspLive', () => ({ useGspLive: () => ({ data: undefined }) }));
 
 /**
  * Plan 39.1-21 Task 2 (VIZ-01, UI-SPEC §11/§7.13): the whole-phase mark-bound
@@ -423,5 +452,340 @@ describe('mark bounds — stage detail and hub event trends (plan 39.1-39)', () 
     const rendered = points({ series: bin(series), opponentTag: top, t: (k) => k, locale: 'en' });
     expect(rendered.length).toBeGreaterThan(0);
     expect(rendered.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+  });
+});
+
+/**
+ * Plan 41-09 (VIZ-01, UI-SPEC §11 / §12.5): the Phase 41 half of the whole-phase mark-bound oracle. Every
+ * surface the phase rebuilt is held to its bound through its real host — the GSP value trend (<= 60
+ * points), each GSP-vs-Glicko panel (<= 60), the Gains band bars (<= 12), the Play rhythm heat (<= 108
+ * cells across <= 9 year rows) and the career-timeline event diamonds (<= 40) — and each bound has a
+ * non-vacuity companion proving the fixture is OVER the bound before binning, so a pass cannot come from
+ * a fixture that was small to begin with.
+ */
+describe('Phase 41 surfaces (plan 41-09)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const GSP_START_MS = Date.UTC(2025, 0, 6, 12);
+  const GSP_SETTINGS: GspSettings = { eliteThreshold: 10_500_000, updatedAt: GSP_START_MS };
+
+  /** `count` readings over `spanDays`, rising 5k each, a win on two of every three. */
+  function gspReadings(count: number, spanDays: number): GspPoint[] {
+    return Array.from({ length: count }, (_, i) => ({
+      time: GSP_START_MS + Math.round((i * spanDays * DAY_MS) / count),
+      gsp: 9_000_000 + i * 5_000,
+      win: i % 3 !== 0,
+    }));
+  }
+
+  /** One quickplay match per day, each carrying a GSP reading — the readings and the Glicko sessions line up. */
+  function gspMatches(count: number): Match[] {
+    return Array.from({ length: count }, (_, i) =>
+      makeMatch({
+        id: `gm${i}`,
+        time: GSP_START_MS + i * DAY_MS,
+        win: i % 3 !== 0,
+        gsp: 9_800_000 + i * 4_000,
+      }),
+    );
+  }
+
+  /** Every month of `years` consecutive years carries one game: the densest legal heat. */
+  function everyMonthFor(years: number, firstYear: number): Match[] {
+    const games: Match[] = [];
+    for (let y = 0; y < years; y += 1) {
+      for (let m = 0; m < 12; m += 1) {
+        games.push(
+          makeMatch({
+            id: `heat-${y}-${m}`,
+            time: Date.UTC(firstYear + y, m, 10, 12),
+            win: (y + m) % 2 === 0,
+          }),
+        );
+      }
+    }
+    return games;
+  }
+
+  function leaksDirection(container: HTMLElement): boolean {
+    const classed = Array.from(container.querySelectorAll('[class]')).some((el) =>
+      el
+        .getAttribute('class')!
+        .split(/\s+/)
+        .some((token) => token === 'up' || token === 'down'),
+    );
+    return classed || container.querySelector('[data-direction]') !== null;
+  }
+
+  describe('bounds hold on a realistically large fixture', () => {
+    it('GSP curve: 200 readings render at most 60 points through the host', () => {
+      const series = gspReadings(200, 18 * 30);
+      const { container } = render(
+        <GspCurve series={series} settings={GSP_SETTINGS} chartWidth={830} />,
+      );
+      const root = container.querySelector('[data-slot="trend-line-value"]')!;
+      expect(Number(root.getAttribute('data-point-count'))).toBeLessThanOrEqual(
+        MARK_BOUND_LINE_POINTS,
+      );
+      expect(root.querySelectorAll('[data-slot="trend-value-dot"]').length).toBeLessThanOrEqual(
+        MARK_BOUND_LINE_POINTS,
+      );
+    });
+
+    it('GSP curve structurally: the exact buildValueSeries call the host makes never exceeds the bound (the FighterHero precedent for a plot jsdom measures at 0x0)', () => {
+      const readings: ValueSeriesReading[] = gspReadings(200, 18 * 30).map((point) => ({
+        atMs: point.time,
+        value: point.gsp,
+        calibration: point.win === null,
+      }));
+      const built = buildValueSeries(readings, { target: MARK_BOUND_LINE_POINTS });
+      expect(built.points.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+    });
+
+    it('non-vacuity companion: the 200-reading fixture is over the bound before binning and the host really draws points', () => {
+      const series = gspReadings(200, 18 * 30);
+      expect(series.length).toBeGreaterThan(MARK_BOUND_LINE_POINTS);
+      const { container } = render(
+        <GspCurve series={series} settings={GSP_SETTINGS} chartWidth={830} />,
+      );
+      const root = container.querySelector('[data-slot="trend-line-value"]')!;
+      expect(Number(root.getAttribute('data-point-count'))).toBeGreaterThan(10);
+      expect(root.getAttribute('data-grain')).not.toBe('reading');
+    });
+
+    it('GSP vs Glicko: 200 readings and 300 rating periods draw at most 60 points in EACH panel', () => {
+      const matches = gspMatches(300);
+      const series: GspPoint[] = matches.map((m) => ({ time: m.time, gsp: m.gsp!, win: m.win }));
+      const periods = computeRatingHistory(matches).periods;
+      // Non-vacuity: both inputs are over the bound before binning.
+      expect(series.length).toBeGreaterThan(MARK_BOUND_LINE_POINTS);
+      expect(periods.length).toBeGreaterThan(MARK_BOUND_LINE_POINTS);
+
+      const panels = buildGspVsGlickoPanels({ mmr: toMmrSeries(series), periods });
+      expect(panels.mmr.points.length).toBeGreaterThan(10);
+      expect(panels.mmr.points.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+      expect(panels.glicko.points.length).toBeGreaterThan(10);
+      expect(panels.glicko.points.length).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+
+      const { container } = render(
+        <GspVsGlicko
+          gspSeries={series}
+          allMatches={matches}
+          settings={GSP_SETTINGS}
+          chartWidth={830}
+        />,
+      );
+      const roots = container.querySelectorAll('[data-slot="trend-line-value"]');
+      expect(roots).toHaveLength(2);
+      for (const root of Array.from(roots)) {
+        const count = Number(root.getAttribute('data-point-count'));
+        expect(count).toBeGreaterThan(10);
+        expect(count).toBeLessThanOrEqual(MARK_BOUND_LINE_POINTS);
+      }
+    });
+
+    it('Gains bands: wins spread over 1M-40M GSP list at most 12 bands and the card draws that many bar rows', () => {
+      // Climb 1M -> 40M in +200k wins with a -100k loss every third game.
+      const series: GspPoint[] = [{ time: GSP_START_MS, gsp: 1_000_000, win: true }];
+      let gsp = 1_000_000;
+      for (let i = 1; gsp < 40_000_000; i += 1) {
+        const win = i % 3 !== 0;
+        gsp += win ? 200_000 : -100_000;
+        series.push({ time: GSP_START_MS + i * 60_000, gsp, win });
+      }
+      const stats = getGspGainStats(series);
+      // Non-vacuity: the wins span far more bands than 12 at the narrowest ladder width (250k).
+      const levels = stats.perWinLevels;
+      const narrowestBands =
+        Math.floor(Math.max(...levels) / 250_000) - Math.floor(Math.min(...levels) / 250_000) + 1;
+      expect(narrowestBands).toBeGreaterThan(GSP_BAND_MAX_BANDS);
+      expect(stats.gainsByBand.length).toBeGreaterThan(3);
+      expect(stats.gainsByBand.length).toBeLessThanOrEqual(GSP_BAND_MAX_BANDS);
+
+      const { container } = render(<GainsAnalysis stats={stats} />);
+      const list = container.querySelector('[data-slot="comparison-bars-series"]')!;
+      const rows = within(list as HTMLElement).getAllByRole('listitem');
+      expect(rows).toHaveLength(stats.gainsByBand.length);
+      expect(rows.length).toBeLessThanOrEqual(GSP_BAND_MAX_BANDS);
+    });
+
+    it('Play rhythm heat: a 10-year fixture draws 9 year rows of 12 = at most 108 cells and says 9 of 10 years shown', () => {
+      const matches = everyMonthFor(10, 2016);
+      // Non-vacuity: ten distinct years of games exist before the cap and the uncapped heat is over the bound.
+      expect(buildActivityHeat(matches, { maxYears: 99 }).years).toHaveLength(10);
+      expect(10 * 12).toBeGreaterThan(MARK_BOUND_HEAT_CELLS);
+
+      const { container } = render(<PlayRhythmHeat matches={matches} onSelectMonth={() => {}} />);
+      const root = container.querySelector('[data-slot="matrix-heat-volume"]')!;
+      const buttons = root.querySelectorAll('button').length;
+      const placeholders = root.querySelectorAll('.bg-muted\\/20').length;
+      const rows = root.querySelectorAll('span[aria-label]').length;
+      expect(buttons).toBeGreaterThan(0);
+      expect(buttons + placeholders).toBeLessThanOrEqual(MARK_BOUND_HEAT_CELLS);
+      expect(rows).toBeLessThanOrEqual(ACTIVITY_HEAT_MAX_YEARS);
+      expect(rows).toBeGreaterThan(1);
+      expect(root.textContent).not.toContain('2016');
+      expect(container.textContent).toContain('9 of 10 years shown');
+    });
+
+    describe('career timeline event diamonds', () => {
+      const PRO = generateSyntheticMatches({
+        seed: 39_134_001,
+        count: 6_000,
+        startMs: Date.UTC(2018, 11, 18, 18),
+        sessionSizeRange: [6, 28],
+        sessionGapMs: 135 * 60 * 60 * 1000,
+        winRate: 0.73,
+        mainFighterIds: [8, 22],
+        opponentFighterIds: [1, 10],
+        stageIds: [1],
+      });
+
+      it('55 qualifying resolved entries draw at most 40 diamonds', () => {
+        const entries: TierSplitEntry[] = Array.from({ length: 55 }, (_, i) => ({
+          entryKey: `major-${i}`,
+          tournamentName: `Major ${i}`,
+          eventName: 'Ultimate Singles',
+          firstSetAt: PRO[100 + i * 100]!.time,
+          lastSetAt: PRO[100 + i * 100]!.time + 1,
+          isOnline: false,
+          tierOverride: { contractVersion: 1, tier: 'major', setAtMs: 1 },
+        }));
+        // 41-REVIEW CR-01: a diamond needs listable games, so each entry owns the game it dates from.
+        const resolved = resolveEntryTiers(entries, PRO).map((item, i) => ({
+          ...item,
+          matches: [PRO[100 + i * 100]!],
+        }));
+        // Non-vacuity: all 55 resolve to a known major tier, so the 40 cap is what binds.
+        expect(resolved.filter((entry) => entry.resolution.tier === 'major')).toHaveLength(55);
+        expect(resolved.length).toBeGreaterThan(TIMELINE_EVENT_MARKER_MAX);
+
+        const { container } = render(
+          <CareerTimelineCard
+            matches={PRO}
+            horizon="last30"
+            chartWidth={1000}
+            resolvedEntries={resolved}
+          />,
+        );
+        const drawn = container.querySelectorAll('[data-slot="career-timeline-event"]');
+        expect(drawn.length).toBeGreaterThan(0);
+        expect(drawn.length).toBeLessThanOrEqual(TIMELINE_EVENT_MARKER_MAX);
+        expect(TIMELINE_EVENT_MARKER_MAX).toBe(40);
+      });
+    });
+  });
+
+  describe('sparse fixtures: a real branch, never an empty frame', () => {
+    const TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'playRhythm')!;
+    const sparse: { name: string; build: () => Match[] }[] = [
+      { name: 'empty workspace', build: emptyWorkspace },
+      { name: 'one-game workspace', build: oneGameWorkspace },
+      { name: 'two-game workspace', build: twoGameWorkspace },
+      { name: 'unknown-stage-only workspace', build: unknownStageOnlyWorkspace },
+    ];
+
+    function playRhythmFor(matches: Match[]): Insight[] {
+      return TEMPLATE.build({
+        matches,
+        scope: ACCOUNT_SCOPE,
+        horizon: 'last30',
+        nowMs: Date.UTC(2026, 5, 15, 12),
+      });
+    }
+
+    for (const readingCount of [0, 1, 2]) {
+      it(`GSP curve with ${readingCount} reading(s): the locked sentence or content, never an empty frame`, () => {
+        const { container } = render(
+          <GspCurve
+            series={gspReadings(readingCount, 5)}
+            settings={GSP_SETTINGS}
+            chartWidth={830}
+          />,
+        );
+        expect(container.querySelector('canvas')).toBeNull();
+        expect((container.textContent ?? '').trim().length).toBeGreaterThan(0);
+        expect(container.textContent).not.toMatch(/\bgsp\.[a-z]+\./);
+        expect(directionChipTexts(container)).toEqual([]);
+      });
+
+      it(`Gains with ${readingCount} reading(s): the empty sentence or content, never an empty frame`, () => {
+        const { container } = render(
+          <GainsAnalysis stats={getGspGainStats(gspReadings(readingCount, 5))} />,
+        );
+        expect((container.textContent ?? '').trim().length).toBeGreaterThan(0);
+        expect(container.textContent).not.toMatch(/\bgsp\.[a-z]+\./);
+      });
+
+      it(`GSP vs Glicko with ${readingCount} reading(s): hidden by its gate (the page then gives the note the whole row) — never an empty frame`, () => {
+        const matches = gspMatches(readingCount);
+        const { container } = render(
+          <GspVsGlicko
+            gspSeries={matches.map((m) => ({ time: m.time, gsp: m.gsp!, win: m.win }))}
+            allMatches={matches}
+            settings={GSP_SETTINGS}
+            chartWidth={830}
+          />,
+        );
+        // Below the gate the card returns null: no card at all, which is the designed state, not a blank card.
+        expect(container.querySelector('[data-slot="chart-card"], [data-slot="card"]')).toBeNull();
+        expect(container.textContent ?? '').toBe('');
+      });
+    }
+
+    it('non-vacuity companion: the same GSP vs Glicko card DOES draw once both series reach the gate', () => {
+      const matches = gspMatches(12);
+      const { container } = render(
+        <GspVsGlicko
+          gspSeries={matches.map((m) => ({ time: m.time, gsp: m.gsp!, win: m.win }))}
+          allMatches={matches}
+          settings={GSP_SETTINGS}
+          chartWidth={830}
+        />,
+      );
+      expect(container.querySelectorAll('[data-slot="trend-line-value"]')).toHaveLength(2);
+    });
+
+    for (const fixture of sparse) {
+      it(`Play rhythm on the ${fixture.name}: the heat and the read each render a real branch (or the page mounts neither), and no direction anywhere`, () => {
+        const matches = fixture.build();
+        const insights = playRhythmFor(matches);
+        if (matches.length === 0) {
+          // The page mounts neither the read nor the heat for zero games (TrendsPage: matches.length > 0).
+          expect(insights).toEqual([]);
+          return;
+        }
+        expect(insights).toHaveLength(1);
+        expect(insights[0]!.state).toBe('locked');
+        expect(insights[0]!.deltaPoints).toBeNull();
+
+        const heat = render(<PlayRhythmHeat matches={matches} onSelectMonth={() => {}} />);
+        expect((heat.container.textContent ?? '').trim().length).toBeGreaterThan(0);
+        expect(heat.container.querySelectorAll('button').length).toBeGreaterThan(0);
+        expect(leaksDirection(heat.container)).toBe(false);
+        expect(directionChipTexts(heat.container)).toEqual([]);
+
+        const router = createMemoryRouter(
+          [
+            {
+              path: '/trends',
+              element: <PlayRhythmCard insight={insights[0]!} onDismiss={() => undefined} />,
+            },
+          ],
+          { initialEntries: ['/trends'] },
+        );
+        const card = render(<RouterProvider router={router} />);
+        const root = card.container.querySelector('[data-slot="play-rhythm-card"]')!;
+        expect((root.textContent ?? '').trim().length).toBeGreaterThan(0);
+        expect(leaksDirection(card.container)).toBe(false);
+        expect(directionChipTexts(card.container)).toEqual([]);
+      });
+    }
+
+    it('non-vacuity companion: the direction detector fires on a synthetic .up element and on a delta chip', () => {
+      const probe = document.createElement('div');
+      probe.innerHTML = '<span class="chip up">+3 pts</span>';
+      expect(leaksDirection(probe)).toBe(true);
+      expect(directionChipTexts(probe)).toEqual(['+3 pts']);
+    });
   });
 });

@@ -9,13 +9,46 @@ import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { FakeAuth } from '../test-support/fakeAuth.js';
 import {
   authHeader,
-  buildTestApp,
+  buildTestApp as buildBareTestApp,
   TEST_EMAIL,
   TEST_TOKEN,
   TEST_UID,
 } from '../test-support/testApp.js';
+import {
+  seedViableEvidence,
+  VIABLE_CLAIM_SELECTION,
+  VIABLE_OPPONENT_SETS_RESPONSE,
+  VIABLE_SELECTED_CLAIM_IDS,
+  viableParryMatchesList,
+} from '../test-support/viableEvidenceFixture.js';
+import {
+  buildClaimSet,
+  CLAIM_SCHEMA_VERSION,
+  evidenceSnapshotRecordSchema,
+  MIN_VIABLE_CLAIMS,
+  reportJobSchema,
+  scoutReportRecordSchema,
+  serializeCitationToken,
+  storedScoutReportSchema,
+  validateReportOutput,
+  type ReportSurface,
+  type ScoutBinding,
+  type ScoutReportData,
+} from '@smash-tracker/shared';
 import { buildApp } from '../app.js';
+import {
+  REPORT_JOB_STALE_MS,
+  REPORT_MODEL_MAX_RETRIES,
+  REPORT_MODEL_TIMEOUT_MS,
+  SWEEP_CLOCK_SKEW_MARGIN_MS,
+} from './reports.js';
+import * as reportsRouteModule from './reports.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
+import { assembleReportPayload, REPORT_MODEL } from '../reports/generate.js';
+import { projectScoutSelection } from '../reports/claimSelection.js';
+import { buildScoutReport } from '../startgg/scout.js';
+import { buildParryScoutReport } from '../parrygg/scout.js';
+import { FakeDatabase as FakeDatabaseImpl } from '../test-support/fakeDatabase.js';
 
 const STARTGG_CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -43,7 +76,25 @@ const EMPTY_SETS_RESPONSE = {
   player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } },
 };
 
+/**
+ * Phase 39 (plan 39-06, review C3-B1): the scouted opponent's public history
+ * is now VIABLE by default — three characters across two known stages
+ * (`test-support/viableEvidenceFixture.ts`) — so every generation-success
+ * case in this file assembles enough claims to clear `MIN_VIABLE_CLAIMS`
+ * once plan 39-07's validator seam and D-21 fail-fast land.
+ */
 function scoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return gqlResponse(RESOLVE_RESPONSE);
+    }
+    return gqlResponse(VIABLE_OPPONENT_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+/** The explicit EMPTY opponent-history stub for thin-evidence cases (plans 39-07/39-08) — pair it with `buildBareTestApp`. */
+function emptyScoutFetchMock(): typeof fetch {
   return (async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as { query: string };
     if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
@@ -54,30 +105,67 @@ function scoutFetchMock(): typeof fetch {
 }
 
 /**
- * What VALID_REPORT looks like once persisted (V9-B fix): the write path
- * strips null-valued fields before the RTDB write (RTDB would delete them
- * anyway — deleting on OUR side keeps the stored shape and the read-back
- * shape identical), so `headToHead: null` is simply absent. Defined as the
- * BASE shape; `VALID_REPORT` (the model's generation output, where the field
- * is required) composes it with the explicit null.
+ * C3-B1: THE VIABLE-EVIDENCE WRAPPER. Every `buildTestApp(...)` call site in
+ * this file — INCLUDING the ones inside the LOCKED `paid prep activation
+ * gate (RPT-04)` and `bundle failure math (RPT-02/RPT-03, owner battery item
+ * 3)` describe blocks — resolves this name at MODULE scope to this wrapper,
+ * so those locked bodies run against a viable workspace without one byte
+ * inside them changing. Do NOT "tidy" this back to a direct import of
+ * `test-support/testApp.ts`'s `buildTestApp`: that would silently return
+ * every generation-success case here to a zero-evidence workspace, which
+ * plan 39-07's D-21 fail-fast turns into a refund. `testApp.ts` itself is
+ * deliberately NOT modified (a default seed there would reach every API
+ * suite). Thin-evidence cases use `buildBareTestApp` directly.
+ */
+function buildTestApp(options: Parameters<typeof buildBareTestApp>[0] = {}) {
+  const built = buildBareTestApp(options);
+  seedViableEvidence(built.database, TEST_UID, {
+    opponentTag: RESOLVE_RESPONSE.user.player.gamerTag,
+  });
+  return built;
+}
+
+/**
+ * C4-M1: the claim ids the module-level selection names — exactly the
+ * contiguous LOWEST ids `c01`..`c{K}`, `K` the largest `MIN_VIABLE_CLAIMS`
+ * among this file's generation surfaces (scout, prep single, bundle child),
+ * read from the shared export inside the fixture module, never a literal.
+ */
+const SELECTED_CLAIM_IDS = VIABLE_SELECTED_CLAIM_IDS;
+
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION over the
+ * fixed claim-id vocabulary (`reports/claimSelection.ts`), not a free-prose
+ * report — the shared `VIABLE_CLAIM_SELECTION` (lint-clean connectives; the
+ * union of its section ids is exactly `SELECTED_CLAIM_IDS`).
+ */
+const VALID_REPORT = VIABLE_CLAIM_SELECTION;
+
+/**
+ * What VALID_REPORT becomes once stored: `projectScoutSelection`'s output
+ * over the claims that SURVIVED validation (plan 39-07 re-pointed the
+ * projection from the issued claims to the surviving ones — review C1-B1).
+ * Prose fields carry the selection's own connectives; `stageStrategy` is
+ * ENGINE-derived from SURVIVING stage claims only — `VALID_REPORT` selects
+ * `c01`..`c03`, none of which is a `stage_record` claim, so bans/picks are
+ * empty (under 39-06's interim issued-claims projection they were one stage
+ * each); `confidenceNotes` is empty (D-03); there is no `characterStrategy`
+ * and no `headToHead` own-property. The `C3-B1` describe block at the end of
+ * this file RE-DERIVES this constant from the projection under every
+ * workspace shape and asserts it matches — it is never trusted as
+ * hand-written.
  */
 const STORED_VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player.',
-  gameplan: ['Punish landing lag.'],
-  characterStrategy: {
-    picks: ['Mario'],
-    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
-  },
+  overview: VALID_REPORT.sections.overview.connective,
+  gameplan: [VALID_REPORT.sections.gameplan.connective],
   stageStrategy: {
-    bans: ['Final Destination'],
-    picks: ['Battlefield'],
-    reasoning: 'Flat stages favor us.',
+    bans: [] as string[],
+    picks: [] as string[],
+    reasoning: VALID_REPORT.sections.gameplan.connective,
   },
-  watchFor: ['Shine spikes off stage.'],
-  confidenceNotes: 'No sampled sets — treat this as a cold read.',
+  watchFor: [VALID_REPORT.sections.watchFor.connective],
+  confidenceNotes: '',
 };
-
-const VALID_REPORT = { ...STORED_VALID_REPORT, headToHead: null };
 
 /** Pre-V7-B.1 stored report shape: lacks `characterStrategy` entirely. */
 const PRE_B1_REPORT = {
@@ -356,8 +444,11 @@ describe('POST /api/reports (configured, allowlisted)', () => {
     expect(stored).toMatchObject({
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c' },
-      report: STORED_VALID_REPORT,
     });
+    // Plan 39-07: the surviving-claims projection stores empty stage lists,
+    // which RTDB (and the fake) drop on write — the stored schema's
+    // `.default([])` restores them, so compare the READ-BACK shape.
+    expect(storedScoutReportSchema.parse(stored.report)).toMatchObject(STORED_VALID_REPORT);
     expect(stored.report).not.toHaveProperty('headToHead');
     expect(body.report).not.toHaveProperty('headToHead');
   });
@@ -756,13 +847,13 @@ describe('GET /api/reports (configured, allowlisted)', () => {
         createdAt: 1000,
         model: 'claude-opus-4-8',
         player: { id: 1, gamerTag: 'Old' },
-        report: VALID_REPORT,
+        report: STORED_VALID_REPORT,
       },
       newer: {
         createdAt: 2000,
         model: 'claude-opus-4-8',
         player: { id: 2, gamerTag: 'New' },
-        report: VALID_REPORT,
+        report: STORED_VALID_REPORT,
       },
     });
 
@@ -867,7 +958,7 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       createdAt: 1234,
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
 
     const response = await app.inject({
@@ -880,7 +971,7 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       id: 'report1',
       createdAt: 1234,
       player: { gamerTag: 'Pandem1c' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
   });
 });
@@ -891,8 +982,16 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
 
 const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
 
+/**
+ * Phase 39 (plan 39-06, C3-B1): `matches.getMatches` now returns the VIABLE
+ * public history for `PARRY_USER_ID` by default; `matches: 'empty'` asks for
+ * the empty list back (thin-evidence cases, plans 39-07/39-08). The
+ * `users.getUser` behaviour is unchanged — `getUser: () => null` still fails
+ * to resolve.
+ */
 function parryClients(overrides: {
   getUser?: () => { id: string; gamerTag: string } | null;
+  matches?: 'viable' | 'empty';
 }): ParryggClients {
   return {
     users: {
@@ -905,7 +1004,10 @@ function parryClients(overrides: {
       getUsers: vi.fn(async () => ({ getUsersList: () => [] })),
     } as unknown as ParryggClients['users'],
     matches: {
-      getMatches: vi.fn(async () => ({ getMatchesList: () => [] })),
+      getMatches: vi.fn(async () => ({
+        getMatchesList: () =>
+          overrides.matches === 'empty' ? [] : viableParryMatchesList(PARRY_USER_ID),
+      })),
     } as unknown as ParryggClients['matches'],
   };
 }
@@ -1985,7 +2087,10 @@ describe('report job terminal states (RPT-03)', () => {
     // spend).
     const refundTransactionIndex = writes.findIndex(
       (entry, index) =>
-        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+        // The refund's balance transaction: on the balance node, or (code
+        // review R5-WR-01) on the credits node it shares with the refund's
+        // create-once marker.
+        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}`),
     );
     expect(failedIndex).toBeGreaterThan(-1);
     expect(refundedIndex).toBeGreaterThan(-1);
@@ -3723,5 +3828,4393 @@ describe('research-subject report refusal (RTEN-05A/RTEN-04, plan 29-11)', () =>
     expect(balance.val()).toBe(4);
     const dump = database.dump() as Record<string, unknown>;
     expect(dump.eventLedger).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06, review C3-B1 / C4-M1): the viable-evidence fixture is
+// PROVEN, not assumed. Every app below is built EXACTLY as the named locked
+// case builds its own — through this file's module-level `buildTestApp`
+// wrapper and stubs, with nothing seeded in the test body — and the claims
+// the assembled payload issues are read back off the ONE model call. This
+// block lives OUTSIDE both locked describes and adds no test to them.
+// ---------------------------------------------------------------------------
+
+describe('C3-B1 viable-evidence fixture: locked-block reachability and original-cause preservation (plan 39-06)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const STRIPE_CONFIG: StripeConfig = { secretKey: 'sk-test-123', webhookSecret: 'whsec-test-456' };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const BUNDLE_BINDING: ScoutBinding = {
+    provider: 'parrygg',
+    parryUserId: PARRY_USER_ID,
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+
+  /**
+   * The claim ids the assembled payload issued, read off the model call's
+   * user message — the one place the route hands the assembled payload
+   * across a seam a test can observe without mocking a module.
+   */
+  function issuedClaimIdsFromModelCall(params: unknown): string[] {
+    const content = (params as { messages: Array<{ content: string }> }).messages[0]!.content;
+    const payload = JSON.parse(content) as { claims: Array<{ id: string }> };
+    return payload.claims.map((claim) => claim.id);
+  }
+
+  function capturingClient(failCalls: ReadonlySet<number> = new Set()) {
+    const calls: unknown[] = [];
+    const modelSpy = vi.fn(async (params: unknown) => {
+      calls.push(params);
+      return failCalls.has(calls.length)
+        ? { stop_reason: 'refusal' as const, parsed_output: null }
+        : { stop_reason: 'end_turn' as const, parsed_output: VALID_REPORT };
+    });
+    return { client: stubClient(modelSpy), calls, modelSpy };
+  }
+
+  /**
+   * Block A's shape — `a request without reason behaves exactly as today
+   * whether the gate is on or off` (locked, `paid prep activation gate
+   * (RPT-04)`): module-level `buildTestApp` + `scoutFetchMock()` +
+   * REPORTS_CONFIG + a stripe config, nothing seeded in the body. Seeds and
+   * stubs: the wrapper seeds the own history (three opponent characters x two
+   * stages, at the floor, all against the scouted tag); `scoutFetchMock()`
+   * returns the viable public history. Families licensed: stage_record +
+   * stage_pick_rate (6+6), character_matchup_record (3), my_character_record,
+   * head_to_head_record, recent_form, cohort_disclosure, opponent_character_usage
+   * (3), matchup_advisor_pick (3) — 25 rows, 25 claims, all well above the
+   * scout minimum. The gate-on half of that locked case is the same shape.
+   */
+  it('block A: the locked legacy-scout shape issues at least MIN_VIABLE_CLAIMS.scout claims, and every selected id is among them', async () => {
+    for (const prepPaid of [null, PREP_PAID_CONFIG]) {
+      const { client, calls } = capturingClient();
+      const { app } = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+        ...(prepPaid ? { prepPaid } : {}),
+        reportsClient: client,
+      });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { query: 'user/07dc2239' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(calls).toHaveLength(1);
+      const issued = issuedClaimIdsFromModelCall(calls[0]);
+      expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+      for (const id of SELECTED_CLAIM_IDS) {
+        expect(issued).toContain(id);
+      }
+    }
+  });
+
+  /**
+   * The parry.gg-scouted shape (`generates and stores a report for a
+   * parry.gg-scouted player`): no start.gg config, `parryClients({ getUser })`
+   * whose default `getMatches` is the viable public history. Same families
+   * as block A (the tag matches, so head-to-head is present too).
+   */
+  it('parry-scouted shape: issues at least MIN_VIABLE_CLAIMS.scout claims, and every selected id is among them', async () => {
+    const { client, calls } = capturingClient();
+    const { app } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const issued = issuedClaimIdsFromModelCall(calls[0]);
+    expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+    for (const id of SELECTED_CLAIM_IDS) {
+      expect(issued).toContain(id);
+    }
+  });
+
+  /** Builds an app EXACTLY as the locked `runFailureMathCase` does, submits the bundle, and returns the child jobs. */
+  async function bundleMathShape(failCalls: ReadonlySet<number>) {
+    const { client, calls, modelSpy } = capturingClient(failCalls);
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-c3b1',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submit.statusCode).toBe(202);
+    const { jobs } = submit.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    return { app, database, jobs, calls, modelSpy };
+  }
+
+  /**
+   * Block B's shape — `runFailureMathCase` (locked, `bundle failure math`):
+   * `parryClients({ getUser })` + `seedBundleBrief`, NO start.gg config. The
+   * wrapper's own history is against the scouted TAG, and a bound prep child
+   * matches head-to-head by IDENTITY (the binding's parry id) or the curated
+   * name ('rival1'..'rival3') — never by that tag — so head-to-head is ABSENT
+   * here: 24 rows (block A's families minus head_to_head_record), still far
+   * above the bundle-child minimum.
+   */
+  it('block B: the locked bundle-math shape issues at least MIN_VIABLE_CLAIMS.prep_bundle_child claims per child, and every selected id is among them', async () => {
+    const { app, jobs, calls } = await bundleMathShape(new Set());
+    for (const job of jobs) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: {
+          reason: 'prep_report',
+          entryKey: ENTRY_KEY,
+          opponentName: job.opponentName,
+          jobId: job.jobId,
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ report: STORED_VALID_REPORT });
+    }
+    expect(calls).toHaveLength(jobs.length);
+    for (const call of calls) {
+      const issued = issuedClaimIdsFromModelCall(call);
+      expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.prep_bundle_child);
+      for (const id of SELECTED_CLAIM_IDS) {
+        expect(issued).toContain(id);
+      }
+    }
+  });
+
+  it('original cause preserved: a locked-shaped refusal (stop_reason refusal, parsed_output null) against the VIABLE fixture still reaches the model, refunds once, and records no validation cause', async () => {
+    const { app, database, jobs, modelSpy } = await bundleMathShape(new Set([1]));
+    const firstChild = jobs[0]!;
+    const balanceBefore = (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+    // The model WAS reached — the failure is the refusal, never thin evidence.
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const job = (await database.ref(`reportJobs/${TEST_UID}/${firstChild.jobId}`).get()).val() as {
+      status: string;
+      failureReason?: string;
+    };
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).not.toBe('validation');
+    // Money oracle: the balance and the refund ledger — never the deduped
+    // `credit_refunded` event.
+    const balanceAfter = (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+    expect(balanceAfter).toBe((balanceBefore as number) + 1);
+    const ledger = (database.dump() as { creditLedger: Record<string, Record<string, unknown>> })
+      .creditLedger[TEST_UID]!;
+    const refunds = Object.values(ledger).filter(
+      (entry) => (entry as { type: string; ref: string }).type === 'refund',
+    ) as Array<{ ref: string }>;
+    expect(refunds.map((entry) => entry.ref)).toEqual([firstChild.jobId]);
+  });
+
+  it('FALSIFIER: the bare harness with the empty opponent stub issues FEWER than the scout minimum — the fixture, not the harness, is what makes block A viable', async () => {
+    // Plan 39-07 (D-21): below the minimum the route now FAILS FAST with no
+    // model call, so the issued count is read from the same assembly the
+    // route runs rather than off a model call that no longer happens.
+    const { client, calls } = capturingClient();
+    const { app } = buildBareTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: emptyScoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: client,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(502);
+    expect(calls).toHaveLength(0);
+    const scout = await buildScoutReport(
+      'server-data-token',
+      { id: RESOLVE_RESPONSE.user.player.id, gamerTag: RESOLVE_RESPONSE.user.player.gamerTag },
+      emptyScoutFetchMock(),
+    );
+    const payload = await assembleReportPayload(
+      TEST_UID,
+      scout,
+      new FakeDatabaseImpl() as unknown as Database,
+    );
+    expect(payload.claimSet.claims.length).toBeLessThan(MIN_VIABLE_CLAIMS.scout);
+    expect(EMPTY_SETS_RESPONSE.player.sets.nodes).toHaveLength(0);
+  });
+
+  /**
+   * The stored fixture is RE-DERIVED from the projection under each shape,
+   * and the selection is validated against the real snapshot the shape
+   * assembles — so `STORED_VALID_REPORT` is never a hand-written guess, and
+   * `VALID_REPORT`'s prose is lint-clean (no stripped section, no dropped
+   * claim) under plan 39-04's validator ahead of plan 39-07 wiring it in.
+   */
+  async function assembleShape(shape: 'startgg' | 'parry' | 'bundle') {
+    const database = new FakeDatabaseImpl();
+    seedViableEvidence(database, TEST_UID, { opponentTag: RESOLVE_RESPONSE.user.player.gamerTag });
+    let scout: ScoutReportData;
+    if (shape === 'startgg') {
+      scout = await buildScoutReport(
+        'server-data-token',
+        { id: RESOLVE_RESPONSE.user.player.id, gamerTag: RESOLVE_RESPONSE.user.player.gamerTag },
+        scoutFetchMock(),
+      );
+    } else {
+      scout = await buildParryScoutReport(
+        'parry-key',
+        { parryUserId: PARRY_USER_ID, gamerTag: 'Pandem1c' },
+        parryClients({}),
+      );
+    }
+    return assembleReportPayload(
+      TEST_UID,
+      scout,
+      database as unknown as Database,
+      shape === 'bundle'
+        ? { binding: BUNDLE_BINDING, curatedCanonicalName: BUNDLE_OPPONENT_NAMES[0] }
+        : undefined,
+    );
+  }
+
+  const SHAPES: ReadonlyArray<{ shape: 'startgg' | 'parry' | 'bundle'; surface: ReportSurface }> = [
+    { shape: 'startgg', surface: 'scout' },
+    { shape: 'parry', surface: 'scout' },
+    { shape: 'bundle', surface: 'prep_bundle_child' },
+  ];
+
+  for (const { shape, surface } of SHAPES) {
+    it(`${shape} shape: projectScoutSelection re-derives STORED_VALID_REPORT, and the validator passes the selection with nothing dropped or stripped`, async () => {
+      const payload = await assembleShape(shape);
+      const claims = payload.claimSet.claims;
+      const outcome = validateReportOutput({
+        snapshot: payload.snapshot,
+        issuedClaims: claims,
+        output: VALID_REPORT,
+        surface,
+      });
+      // Plan 39-07: the route projects over the SURVIVING claims (review
+      // C1-B1), so the re-derivation does too.
+      const survivingIds = new Set(outcome.survivingClaimIds);
+      const survivingClaims = claims.filter((claim) => survivingIds.has(claim.id));
+      const {
+        claimSchemaVersion,
+        claims: storedClaims,
+        sections,
+        actions,
+        ...legacyFields
+      } = projectScoutSelection({
+        selection: VALID_REPORT,
+        claims: survivingClaims,
+        strippedSectionIds: outcome.strippedSectionIds,
+      });
+      // The legacy fields are EXACTLY the module-level stored fixture...
+      expect(legacyFields).toEqual(STORED_VALID_REPORT);
+      // ...and the additive claim fields carry the surviving claims and the
+      // selection's sections (no action was selected, so no actions map).
+      expect(claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
+      expect(Object.keys(storedClaims ?? {})).toEqual(survivingClaims.map((claim) => claim.id));
+      expect(Object.keys(sections ?? {})).toEqual(['overview', 'gameplan', 'watchFor']);
+      expect(actions).toBeUndefined();
+      expect(outcome.status).toBe('passed');
+      expect(outcome.droppedClaimCount).toBe(0);
+      expect(outcome.strippedSectionIds).toEqual([]);
+      expect([...outcome.survivingClaimIds].sort()).toEqual([...SELECTED_CLAIM_IDS].sort());
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07): the snapshot, the validator seam and the D-21
+// fail-fast on the job path. EVERY block below is NEW — no assertion lands
+// inside a locked describe. Money oracle throughout: the credit BALANCE and
+// the `refund` entries of `creditLedger/{uid}` — NEVER the `credit_refunded`
+// event count, which `createEvent` dedupes on the causation id built from
+// the credit ref (a double refund still emits ONE event while the balance
+// gains two).
+// ---------------------------------------------------------------------------
+
+const P39_NON_ALLOWLIST_CONFIG: ReportsConfig = {
+  anthropicApiKey: 'sk-test-key',
+  allowedUids: new Set(['someone-else']),
+};
+const P39_STRIPE_CONFIG: StripeConfig = {
+  secretKey: 'sk-test-123',
+  webhookSecret: 'whsec-test-456',
+};
+const P39_PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+const P39_ENTRY_KEY = 'evo-2026-ult';
+const P39_PARRY_BINDING = {
+  provider: 'parrygg',
+  parryUserId: PARRY_USER_ID,
+  displayTag: 'Pandem1c',
+  method: 'matchHistory',
+  confirmedAt: 1,
+};
+const SNAPSHOT_ID_SHAPE = /^[0-9a-f]{64}$/;
+/** A connective carrying an unlicensed number — plan 39-04's R4 strips the section's prose, never its claims. */
+const UNLICENSED_NUMBER_CONNECTIVE = 'Keep the opening 97 games steady.';
+/** A connective naming the unknown bucket as real — R7 (lexical) withholds that section's PROSE only and never drops a claim (owner decision D-22). */
+const UNKNOWN_BUCKET_CONNECTIVE = 'Ban the Unknown Stage early.';
+
+interface ModelFacingClaimView {
+  id: string;
+  predicate: string;
+  value: { kind: string; wins?: number; losses?: number };
+  displayName: { stage?: string };
+}
+
+/** The engine-issued claims the route handed the model, read off the stub's own call. */
+function modelFacingClaims(params: unknown): ModelFacingClaimView[] {
+  const content = (params as { messages: Array<{ content: string }> }).messages[0]!.content;
+  return (JSON.parse(content) as { claims: ModelFacingClaimView[] }).claims;
+}
+
+/** A claim selection over explicit per-section claim ids, reusing VALID_REPORT's lint-clean connectives unless overridden. */
+function selectionOf(
+  claimIds: { overview: string[]; gameplan: string[]; watchFor: string[] },
+  connectives: Partial<Record<'overview' | 'gameplan' | 'watchFor', string>> = {},
+  actions: Partial<
+    Record<'action1' | 'action2' | 'action3', { actionId: string; claimId: string | null } | null>
+  > = {},
+) {
+  return {
+    sections: {
+      overview: {
+        claimIds: claimIds.overview,
+        connective: connectives.overview ?? VALID_REPORT.sections.overview.connective,
+      },
+      gameplan: {
+        claimIds: claimIds.gameplan,
+        connective: connectives.gameplan ?? VALID_REPORT.sections.gameplan.connective,
+      },
+      watchFor: {
+        claimIds: claimIds.watchFor,
+        connective: connectives.watchFor ?? VALID_REPORT.sections.watchFor.connective,
+      },
+    },
+    action1: actions.action1 ?? null,
+    action2: actions.action2 ?? null,
+    action3: actions.action3 ?? null,
+  };
+}
+
+function refundLedgerRefs(database: FakeDatabase): string[] {
+  const dump = database.dump() as { creditLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.creditLedger?.[TEST_UID] ?? {})
+    .filter((entry) => (entry as { type: string }).type === 'refund')
+    .map((entry) => (entry as { ref: string }).ref);
+}
+
+async function balanceOf(database: FakeDatabase): Promise<unknown> {
+  return (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+}
+
+async function jobRecord(database: FakeDatabase, jobId: string): Promise<Record<string, unknown>> {
+  return (await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get()).val() as Record<
+    string,
+    unknown
+  >;
+}
+
+function snapshotNodes(database: FakeDatabase): Record<string, unknown> {
+  const dump = database.dump() as { evidenceSnapshots?: Record<string, Record<string, unknown>> };
+  return dump.evidenceSnapshots?.[TEST_UID] ?? {};
+}
+
+function storedScoutReports(database: FakeDatabase): Array<Record<string, unknown>> {
+  const dump = database.dump() as { scoutReports?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.scoutReports?.[TEST_UID] ?? {}) as Array<Record<string, unknown>>;
+}
+
+/** A billable legacy start.gg scout app over the VIABLE workspace whose model returns `respond(params)`. */
+function legacyBillableApp(respond: (params: unknown) => unknown) {
+  const modelSpy = vi.fn(async (params: unknown) => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: respond(params),
+  }));
+  const built = buildTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: scoutFetchMock(),
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    reportsClient: stubClient(modelSpy),
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return { ...built, modelSpy };
+}
+
+async function postLegacy(app: ReturnType<typeof buildTestApp>['app'], jobId: string) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: { query: 'user/07dc2239', jobId },
+  });
+}
+
+describe('evidence snapshot + validator seam on the LEGACY scout path (plan 39-07, RPT-07/D-05/D-06/D-07)', () => {
+  it('writes the snapshot at evidenceSnapshots/{uid}/{64-hex id} BEFORE the model is called (the stub observes it)', async () => {
+    let observedAtModelCall: Record<string, unknown> | null = null;
+    let db: FakeDatabase | null = null;
+    const { app, database } = legacyBillableApp(() => {
+      observedAtModelCall = snapshotNodes(db!);
+      return VALID_REPORT;
+    });
+    db = database;
+
+    const response = await postLegacy(app, 'p39-snapshot-order');
+    expect(response.statusCode).toBe(200);
+    const ids = Object.keys(observedAtModelCall ?? {});
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(SNAPSHOT_ID_SHAPE);
+    // The node the model call observed IS the node the stored report cites.
+    const body = response.json() as { report: { validation: { snapshotId: string } } };
+    expect(body.report.validation.snapshotId).toBe(ids[0]);
+    // Content-addressed, never keyed by the job id.
+    expect(ids[0]).not.toContain('p39-snapshot-order');
+  });
+
+  it('a second submission over identical evidence reuses the SAME content-addressed node and leaves its content byte-identical', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    expect((await postLegacy(app, 'p39-snap-a')).statusCode).toBe(200);
+    const first = snapshotNodes(database);
+    const firstBytes = JSON.stringify(first);
+    expect(Object.keys(first)).toHaveLength(1);
+
+    expect((await postLegacy(app, 'p39-snap-b')).statusCode).toBe(200);
+    const second = snapshotNodes(database);
+    expect(Object.keys(second)).toEqual(Object.keys(first));
+    expect(JSON.stringify(second)).toBe(firstBytes);
+    // Both stored reports cite the one snapshot.
+    const cited = storedScoutReports(database).map(
+      (record) => (record.report as { validation: { snapshotId: string } }).validation.snapshotId,
+    );
+    expect(cited).toEqual([Object.keys(first)[0], Object.keys(first)[0]]);
+  });
+
+  it('a validation-FAILING response yields a failed job with failureReason validation, exactly one refund effect, no stored report, and one report_failed_validation', async () => {
+    // Two surviving claims — one below MIN_VIABLE_CLAIMS.scout — plus an
+    // UNISSUED in-vocabulary id (rule R1) that is dropped.
+    const { app, database, modelSpy } = legacyBillableApp(() =>
+      selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c32'] }),
+    );
+
+    const response = await postLegacy(app, 'p39-legacy-invalid');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+
+    const job = await jobRecord(database, 'p39-legacy-invalid');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(job).not.toHaveProperty('reason');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-legacy-invalid']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_completed')).toHaveLength(0);
+  });
+
+  it('a validation-PASSING response stores validation.snapshotId equal to the written snapshot id, keyed claims/sections maps, and a keyed action slot', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        { action1: null, action2: null, action3: null },
+      ),
+    );
+
+    const response = await postLegacy(app, 'p39-legacy-valid');
+    expect(response.statusCode).toBe(200);
+    const [snapshotId] = Object.keys(snapshotNodes(database));
+    const [stored] = storedScoutReports(database);
+    const report = stored!.report as Record<string, unknown>;
+    expect(report.validation).toEqual({
+      status: 'passed',
+      policyVersion: expect.any(Number),
+      snapshotId,
+      claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    });
+    expect(report.claimSchemaVersion).toBe(CLAIM_SCHEMA_VERSION);
+    expect(Array.isArray(report.claims)).toBe(false);
+    expect(Object.keys(report.claims as Record<string, unknown>).sort()).toEqual([
+      'c01',
+      'c02',
+      'c03',
+    ]);
+    expect(Array.isArray(report.sections)).toBe(false);
+    expect(Object.keys(report.sections as Record<string, unknown>)).toEqual([
+      'overview',
+      'gameplan',
+      'watchFor',
+    ]);
+    expect(report).not.toHaveProperty('droppedClaimCount');
+    expect(report).not.toHaveProperty('strippedSectionCount');
+    expect(storedScoutReportSchema.safeParse(report).success).toBe(true);
+    const job = await jobRecord(database, 'p39-legacy-valid');
+    expect(job.status).toBe('succeeded');
+    expect(job).not.toHaveProperty('failureReason');
+    expect(refundLedgerRefs(database)).toEqual([]);
+  });
+
+  it("C1-B1 / D-22: stageStrategy is projected from SURVIVING stage claims — an unknown-bucket prose hit in the stage claim's section withholds that prose but no longer drops the claim, so its stage name is still projected", async () => {
+    const stageNameOf = (claims: ModelFacingClaimView[]) => {
+      const stageClaim = claims.find(
+        (claim) =>
+          claim.predicate === 'stage_record' &&
+          claim.value.kind === 'record' &&
+          (claim.value.wins ?? 0) !== (claim.value.losses ?? 0) &&
+          claim.displayName.stage !== undefined,
+      );
+      expect(stageClaim).toBeDefined();
+      return stageClaim!;
+    };
+    let stageClaim: ModelFacingClaimView | null = null;
+
+    // Control: the stage claim survives, so its stage name IS projected.
+    const control = legacyBillableApp((params) => {
+      stageClaim = stageNameOf(modelFacingClaims(params));
+      return selectionOf({
+        overview: ['c01'],
+        gameplan: ['c02'],
+        watchFor: ['c03', stageClaim.id],
+      });
+    });
+    expect((await postLegacy(control.app, 'p39-stage-kept')).statusCode).toBe(200);
+    const kept = storedScoutReportSchema.parse(storedScoutReports(control.database)[0]!.report);
+    const stageName = stageClaim!.displayName.stage!;
+    expect([...kept.stageStrategy.bans, ...kept.stageStrategy.picks]).toContain(stageName);
+
+    // Owner decision D-22 (2026-09-26, updated from the pre-D-22 "dropped"
+    // expectation): the stage claim sits alone in a section whose prose
+    // names the unknown bucket. Before D-22 that R7 lexical hit DROPPED the
+    // claim; now it withholds the section's PROSE only — the claim is
+    // engine-authored and judged on its own ids — so the claim is stored,
+    // its stage name is still projected, nothing counts as dropped, and the
+    // withheld prose is disclosed through strippedSectionCount. No model
+    // selection over engine-issued claims can drop a stage claim any more
+    // (only an unissued id is dropped, R1), so C1-B1's "dropped claim adds
+    // no stage name" half is the projection's own surviving-claims input.
+    const withheld = legacyBillableApp((params) => {
+      const claim = stageNameOf(modelFacingClaims(params));
+      return selectionOf(
+        { overview: ['c01', 'c03'], gameplan: ['c02'], watchFor: [claim.id] },
+        { watchFor: UNKNOWN_BUCKET_CONNECTIVE },
+      );
+    });
+    expect((await postLegacy(withheld.app, 'p39-stage-withheld')).statusCode).toBe(200);
+    const storedWithheld = storedScoutReports(withheld.database)[0]!.report as Record<
+      string,
+      unknown
+    >;
+    const parsed = storedScoutReportSchema.parse(storedWithheld);
+    expect([...parsed.stageStrategy.bans, ...parsed.stageStrategy.picks]).toContain(stageName);
+    expect(Object.keys(parsed.claims ?? {})).toContain(stageClaim!.id);
+    expect(storedWithheld).not.toHaveProperty('droppedClaimCount');
+    expect(parsed.strippedSectionCount).toBe(1);
+    expect(parsed.sections?.watchFor?.connective).toBe('');
+    // Delivered AND charged (D-20/D-22): withheld prose never refunds.
+    expect(refundLedgerRefs(withheld.database)).toEqual([]);
+  });
+
+  it('C3-M1/D-20: one stripped section stores strippedSectionCount 1 and emits exactly one report_prose_stripped whose payload carries no count', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        { overview: UNLICENSED_NUMBER_CONNECTIVE },
+      ),
+    );
+    expect((await postLegacy(app, 'p39-stripped-one')).statusCode).toBe(200);
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report.strippedSectionCount).toBe(1);
+    expect((report.sections as Record<string, { connective: string }>).overview!.connective).toBe(
+      '',
+    );
+    expect(report.overview).toBe('');
+    const events = findEvents(database, 'report_prose_stripped');
+    expect(events).toHaveLength(1);
+    // Aggregate-only ledger: an occurrence signal, never a count.
+    expect(events[0]!.payload).toEqual({});
+    expect(Object.values(events[0]!.payload)).not.toContain(1);
+    // Delivered AND charged (D-20): no refund on stripped prose.
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('C3-M1/D-20: a report with zero stripped sections carries NO strippedSectionCount key and emits no report_prose_stripped', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    expect((await postLegacy(app, 'p39-stripped-none')).statusCode).toBe(200);
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report).not.toHaveProperty('strippedSectionCount');
+    expect(findEvents(database, 'report_prose_stripped')).toHaveLength(0);
+  });
+
+  it('C2-H2: a record the stored schema REJECTS (an empty action id the projection copies through) refunds once through failJob — no 500, no job left running', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        { action1: { actionId: '', claimId: 'c01' } },
+      ),
+    );
+    const response = await postLegacy(app, 'p39-schema-reject');
+    expect(response.statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-schema-reject');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(refundLedgerRefs(database)).toEqual(['p39-schema-reject']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    const running = await database
+      .ref(`reportJobsByStatus/running/${TEST_UID}/p39-schema-reject`)
+      .get();
+    expect(running.exists()).toBe(false);
+  });
+
+  it('C2-H2: a selection that makes the validator THROW (a malformed sections object) takes the same single-refund branch — never an uncaught error', async () => {
+    const { app, database } = legacyBillableApp(() => ({
+      sections: null,
+      action1: null,
+      action2: null,
+      action3: null,
+    }));
+    const response = await postLegacy(app, 'p39-validator-throw');
+    expect(response.statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-validator-throw');
+    expect(job).toMatchObject({ status: 'failed', failureReason: 'validation' });
+    expect(refundLedgerRefs(database)).toEqual(['p39-validator-throw']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  /**
+   * C2-H2 strip/drop LATTICE (property-style, scout surface): each of the
+   * three sections stripped or not (8 combinations) x the surviving-claim
+   * count driven below, exactly at and above MIN_VIABLE_CLAIMS.scout. EVERY
+   * cell ends in exactly one of {a stored record storedScoutReportSchema
+   * accepts + report_completed} or {one failJob, failureReason validation,
+   * EXACTLY ONE refund effect}, and no cell throws. The all-three-stripped
+   * cells at/above the minimum must land in the STORED branch: plan 39-04
+   * removed the total-prose-loss failure (review C2-H3) — prose is never a
+   * failure axis, the surviving claim count is.
+   */
+  it('C2-H2 lattice: every (strip combination x claim-count band) cell ends in exactly one of stored-valid or one-refund, and none throws', async () => {
+    const min = MIN_VIABLE_CLAIMS.scout;
+    const bands: Array<{
+      name: string;
+      ids: { overview: string[]; gameplan: string[]; watchFor: string[] };
+    }> = [
+      { name: 'below', ids: { overview: ['c01'], gameplan: ['c02'], watchFor: [] } },
+      { name: 'at', ids: { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] } },
+      { name: 'above', ids: { overview: ['c01', 'c04'], gameplan: ['c02'], watchFor: ['c03'] } },
+    ];
+    const sectionNames = ['overview', 'gameplan', 'watchFor'] as const;
+    let cells = 0;
+    for (const band of bands) {
+      const survivors = [...band.ids.overview, ...band.ids.gameplan, ...band.ids.watchFor].length;
+      for (let mask = 0; mask < 8; mask += 1) {
+        const strip = sectionNames.filter((_, index) => (mask & (1 << index)) !== 0);
+        const connectives = Object.fromEntries(
+          strip.map((section) => [section, UNLICENSED_NUMBER_CONNECTIVE]),
+        );
+        const { app, database } = legacyBillableApp(() => selectionOf(band.ids, connectives));
+        const jobId = `p39-lattice-${band.name}-${mask}`;
+        const response = await postLegacy(app, jobId);
+        cells += 1;
+        const job = await jobRecord(database, jobId);
+        const stored = storedScoutReports(database);
+        const refunds = refundLedgerRefs(database);
+        if (survivors >= min) {
+          expect(response.statusCode, `${jobId}`).toBe(200);
+          expect(stored, jobId).toHaveLength(1);
+          const report = storedScoutReportSchema.parse(stored[0]!.report);
+          expect(report.strippedSectionCount ?? 0, jobId).toBe(strip.length);
+          expect(findEvents(database, 'report_completed'), jobId).toHaveLength(1);
+          expect(job.status, jobId).toBe('succeeded');
+          expect(refunds, jobId).toEqual([]);
+          expect(await balanceOf(database), jobId).toBe(0);
+        } else {
+          expect(response.statusCode, jobId).toBe(502);
+          expect(stored, jobId).toHaveLength(0);
+          expect(job, jobId).toMatchObject({ status: 'failed', failureReason: 'validation' });
+          expect(refunds, jobId).toEqual([jobId]);
+          expect(await balanceOf(database), jobId).toBe(1);
+          expect(findEvents(database, 'report_completed'), jobId).toHaveLength(0);
+        }
+      }
+    }
+    expect(cells).toBe(24);
+  });
+});
+
+describe('D-21 thin-evidence FAIL FAST on the LEGACY scout path (plan 39-07) — opposite fixture: bare harness + empty stubs', () => {
+  it('makes ZERO model calls, refunds exactly once, records failureReason validation on the FINAL job record, stores nothing, fires report_failed_validation once, and still writes the snapshot', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    // C3-B1: the OPPOSITE fixture — the aliased bare harness (nothing seeded)
+    // plus the explicit empty opponent-history stub. The module-level viable
+    // wrapper every other case depends on is untouched.
+    const { app, database } = buildBareTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: emptyScoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'p39-thin-legacy');
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    const job = await jobRecord(database, 'p39-thin-legacy');
+    expect(job.status).toBe('failed');
+    expect(job.failureReason).toBe('validation');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-thin-legacy']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
+    expect(findEvents(database, 'report_prose_stripped')).toHaveLength(0);
+    // The fail-fast path still records its evidence, content-addressed.
+    const ids = Object.keys(snapshotNodes(database));
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toMatch(SNAPSHOT_ID_SHAPE);
+    expect(evidenceSnapshotRecordSchema.safeParse(snapshotNodes(database)[ids[0]!]).success).toBe(
+      true,
+    );
+  });
+});
+
+describe('C1-H1: failureReason survives BOTH of failJob’s terminal writes (plan 39-07) — read from the FINAL record', () => {
+  it('a SPENT prep_report validation failure: the final read-back carries status refunded AND failureReason validation together', async () => {
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c32'] }),
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: P39_ENTRY_KEY,
+        opponentName: 'rival',
+        jobId: 'p39-c1h1-spent',
+      },
+    });
+    expect(response.statusCode).toBe(502);
+
+    // Read AFTER the whole failJob call completed — the SECOND (refunded)
+    // write is authoritative because `.set()` replaces the node.
+    const job = await jobRecord(database, 'p39-c1h1-spent');
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).toBe('validation');
+    expect(job.reason).toBe('prep_report');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-c1h1-spent']);
+  });
+
+  it('a ZERO-SPEND post_event_synthesis validation failure (Phase 28 CR-02 refunded-without-refund branch): the final read-back carries status refunded AND failureReason validation together', async () => {
+    const { app, database } = buildBareTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      // Every focus area cites a pair outside the real evidence — the
+      // synthesis surface's total citation drop (its validation failure).
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: {
+          summary: 'A strong showing overall.',
+          focusAreas: [
+            {
+              title: 'Neutral game',
+              evidence: `Good read here ${serializeCitationToken({ sourceVodRef: 'no-such-match', seconds: 9999, label: 'note' })}`,
+              drills: ['drill'],
+            },
+          ],
+        },
+      })),
+    });
+    database.seed(`tournamentEntries/${TEST_UID}/${P39_ENTRY_KEY}`, {
+      eventName: 'EVO 2026',
+      firstSetAt: 1_700_000_000_000,
+      lastSetAt: 1_700_000_000_000,
+      setsPlayed: 2,
+      source: 'manual',
+    });
+    database.seed(`prepBriefs/${TEST_UID}/${P39_ENTRY_KEY}`, {
+      eventDate: 1_700_000_000_000,
+      activatedAt: 1_700_000_000_000,
+      lastOpenedAt: 1_700_000_000_000,
+      reviewAt: 1_700_000_000_000,
+    });
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 1_700_000_000_000,
+      win: true,
+      eventName: 'EVO 2026',
+      source: 'startgg',
+      vodTimestamps: [{ seconds: 42, note: 'clean punish' }],
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { reason: 'post_event_synthesis', entryKey: P39_ENTRY_KEY },
+    });
+    expect(response.statusCode).toBe(502);
+
+    const dump = database.dump() as { reportJobs: Record<string, Record<string, unknown>> };
+    const jobId = Object.keys(dump.reportJobs[TEST_UID]!)[0]!;
+    const job = await jobRecord(database, jobId);
+    expect(job.status).toBe('refunded');
+    expect(job.failureReason).toBe('validation');
+    expect(job.reason).toBe('post_event_synthesis');
+    // Zero spend: no credit moved (the known residual — a free-access uid
+    // rests at `refunded` without a refund — is unchanged, not "fixed").
+    expect((database.dump() as { creditLedger?: unknown }).creditLedger).toBeUndefined();
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+  });
+});
+
+describe('C4-H1: the D-21 fail-fast sits BELOW the queued->running claim — two concurrent executions of one bundle child refund ONCE (plan 39-07)', () => {
+  it('two near-simultaneous executions of the SAME thin prep_bundle child: exactly one 409, the balance back at its pre-failure value, and exactly ONE refund ledger entry', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildBareTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(modelSpy),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+        matches: 'empty',
+      }),
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submit = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: P39_ENTRY_KEY,
+        bundleId: 'bundle-c4h1',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submit.statusCode).toBe(202);
+    const child = (submit.json() as { jobs: Array<{ opponentName: string; jobId: string }> })
+      .jobs[0]!;
+    const balanceBeforeFailure = await balanceOf(database);
+    expect(balanceBeforeFailure).toBe(7);
+
+    // Barrier: HOLD the winner between its committed claim and its terminal
+    // job write (the `failed` set inside failJob), so the loser's execution
+    // runs while the winner's record still reads `running`. Released when
+    // the loser answers — or, if a SECOND terminal write arrives (the
+    // double-refund failure this test exists to catch), immediately, so the
+    // test fails on its assertions instead of hanging.
+    const childPath = `reportJobs/${TEST_UID}/${child.jobId}`;
+    let releaseWinner: () => void = () => {};
+    const winnerHeld = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    let terminalWrites = 0;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      if (path !== childPath) {
+        return ref;
+      }
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          const status = (value as { status?: string } | null)?.status;
+          if (status === 'failed') {
+            terminalWrites += 1;
+            if (terminalWrites === 1) {
+              await winnerHeld;
+            } else {
+              releaseWinner();
+            }
+          }
+          return ref.set(value);
+        },
+      };
+    });
+
+    const post = () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: {
+          reason: 'prep_report',
+          entryKey: P39_ENTRY_KEY,
+          opponentName: child.opponentName,
+          jobId: child.jobId,
+        },
+      });
+    const first = post();
+    const second = post();
+    const settled = [first, second].map((pending) =>
+      pending.then((response) => {
+        if (response.statusCode === 409) {
+          releaseWinner();
+        }
+        return response;
+      }),
+    );
+    const responses = await Promise.all(settled);
+
+    const statuses = responses.map((response) => response.statusCode).sort();
+    expect(statuses).toEqual([409, 502]);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    // One bundle debit (10 -> 7), one refund (-> 8): the balance is back at
+    // exactly its pre-failure value plus the ONE returned slot credit.
+    expect(await balanceOf(database)).toBe((balanceBeforeFailure as number) + 1);
+    // The ledger — NOT the `credit_refunded` event, which createEvent dedupes
+    // on `${creditRef}:credit_refunded`, so a double refund would still show
+    // ONE event while the balance gained two.
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    const job = await jobRecord(database, child.jobId);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07, Task 2): the SAME seam on `prep_report` and the
+// `prep_bundle` child. There is ONE `runReportGeneration` call site shared
+// by the legacy, prep-single and bundle-child request shapes, so these are
+// per-surface PROOFS of one edit, not a second implementation.
+// ---------------------------------------------------------------------------
+
+/** A selection with exactly two surviving claims — below MIN_VIABLE_CLAIMS on every prep surface — plus one unissued id (R1). */
+const BELOW_MINIMUM_SELECTION = selectionOf({
+  overview: ['c01'],
+  gameplan: ['c02'],
+  watchFor: ['c32'],
+});
+
+function spendLedgerRefs(database: FakeDatabase): string[] {
+  const dump = database.dump() as { creditLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.creditLedger?.[TEST_UID] ?? {})
+    .filter((entry) => (entry as { type: string }).type === 'spend')
+    .map((entry) => (entry as { ref: string }).ref)
+    .sort();
+}
+
+/** A billable prep app. `fixture: 'viable'` is the module-level wrapper; `'thin'` is the bare harness + the empty parry history (the opposite fixture, C3-B1). */
+function prepBillableApp(
+  fixture: 'viable' | 'thin',
+  respond: (callIndex: number) => { stop_reason: string; parsed_output: unknown },
+) {
+  let calls = 0;
+  const modelSpy = vi.fn(async () => {
+    calls += 1;
+    return respond(calls);
+  });
+  const options = {
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      ...(fixture === 'thin' ? { matches: 'empty' as const } : {}),
+    }),
+  };
+  const built = fixture === 'viable' ? buildTestApp(options) : buildBareTestApp(options);
+  return { ...built, modelSpy };
+}
+
+async function postPrepSingle(
+  app: ReturnType<typeof buildTestApp>['app'],
+  jobId: string,
+  opponentName = 'rival',
+) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: { reason: 'prep_report', entryKey: P39_ENTRY_KEY, opponentName, jobId },
+  });
+}
+
+async function submitBundle(app: ReturnType<typeof buildTestApp>['app'], bundleId: string) {
+  const submit = await app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: {
+      reason: 'prep_bundle',
+      entryKey: P39_ENTRY_KEY,
+      bundleId,
+      opponentNames: BUNDLE_OPPONENT_NAMES,
+    },
+  });
+  expect(submit.statusCode).toBe(202);
+  return (submit.json() as { jobs: Array<{ opponentName: string; jobId: string; slot: number }> })
+    .jobs;
+}
+
+describe('validator seam on prep_report and the prep_bundle child (plan 39-07 Task 2)', () => {
+  it('a prep_report whose generation FAILS validation: failureReason validation, one refund, no stored report, report_failed_validation in addition to report_failed', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39-prep-invalid');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const job = await jobRecord(database, 'p39-prep-invalid');
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    // `reason` (job KIND) and `failureReason` (CAUSE) both survive the fake
+    // database round trip and the job schema, independently.
+    const parsed = reportJobSchema.parse(job);
+    expect(parsed.reason).toBe('prep_report');
+    expect(parsed.failureReason).toBe('validation');
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-prep-invalid']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')[0]!.payload).toEqual({
+      reason: 'prep_report',
+    });
+  });
+
+  it('report_failed_validation fires ONLY for the validation cause — a refusal emits report_failed alone', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'refusal',
+      parsed_output: null,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    expect((await postPrepSingle(app, 'p39-prep-refusal')).statusCode).toBe(502);
+    const job = await jobRecord(database, 'p39-prep-refusal');
+    expect(job.status).toBe('refunded');
+    expect(job).not.toHaveProperty('failureReason');
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(0);
+  });
+
+  it('a prep_bundle child that FAILS validation consumes no additional credit and no additional bundle slot', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39-invalid');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+    expect(spendsAfterSubmit).toHaveLength(3);
+    const opsAfterSubmit = JSON.stringify(
+      (database.dump() as Record<string, unknown>).creditBundleOps ?? null,
+    );
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(502);
+
+    // No re-spend, no fourth slot, no new bundle-op marker — only the ONE
+    // refund of this child's pre-paid slot.
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(
+      JSON.stringify((database.dump() as Record<string, unknown>).creditBundleOps ?? null),
+    ).toBe(opsAfterSubmit);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    const bundleJobIds = Object.keys(
+      (database.dump() as { reportJobs: Record<string, Record<string, unknown>> }).reportJobs[
+        TEST_UID
+      ]!,
+    ).filter((jobId) => jobId.startsWith('bundle-p39-invalid'));
+    expect(bundleJobIds.sort()).toEqual(jobs.map((job) => job.jobId).sort());
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+
+  it('report_claims_dropped fires exactly once for a STORED prep report with a positive dropped count, and not at all when the count is zero', async () => {
+    for (const { jobId, selection, expectedDropped } of [
+      {
+        jobId: 'p39-prep-dropped',
+        // c01..c03 survive (at the minimum); c32 was never issued (R1).
+        selection: selectionOf({ overview: ['c01'], gameplan: ['c02'], watchFor: ['c03', 'c32'] }),
+        expectedDropped: 1,
+      },
+      { jobId: 'p39-prep-clean', selection: VALID_REPORT, expectedDropped: 0 },
+    ]) {
+      const { app, database } = prepBillableApp('viable', () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      }));
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+
+      expect((await postPrepSingle(app, jobId)).statusCode).toBe(200);
+      const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+      const events = findEvents(database, 'report_claims_dropped');
+      if (expectedDropped > 0) {
+        expect(report.droppedClaimCount).toBe(expectedDropped);
+        expect(events).toHaveLength(1);
+        // Occurrence signal — never a count in the payload.
+        expect(events[0]!.payload).toEqual({ reason: 'prep_report' });
+      } else {
+        expect(report).not.toHaveProperty('droppedClaimCount');
+        expect(events).toHaveLength(0);
+      }
+      // Delivered either way: charged, never refunded.
+      expect(refundLedgerRefs(database)).toEqual([]);
+    }
+  });
+
+  it('report_prose_stripped fires exactly once for a STORED prep report with a positive strippedSectionCount, and not at all when the count is zero', async () => {
+    for (const { jobId, selection, expectedStripped } of [
+      {
+        jobId: 'p39-prep-stripped',
+        selection: selectionOf(
+          { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+          { gameplan: UNLICENSED_NUMBER_CONNECTIVE },
+        ),
+        expectedStripped: 1,
+      },
+      { jobId: 'p39-prep-unstripped', selection: VALID_REPORT, expectedStripped: 0 },
+    ]) {
+      const { app, database } = prepBillableApp('viable', () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      }));
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+
+      expect((await postPrepSingle(app, jobId)).statusCode).toBe(200);
+      const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+      const events = findEvents(database, 'report_prose_stripped');
+      if (expectedStripped > 0) {
+        expect(report.strippedSectionCount).toBe(expectedStripped);
+        expect(events).toHaveLength(1);
+        expect(events[0]!.payload).toEqual({ reason: 'prep_report' });
+      } else {
+        expect(report).not.toHaveProperty('strippedSectionCount');
+        expect(events).toHaveLength(0);
+      }
+    }
+  });
+});
+
+describe('D-21 thin-evidence FAIL FAST on prep_report and the prep_bundle child (plan 39-07 Task 2) — opposite fixture: bare harness + empty parry history', () => {
+  it('a prep_report against an unseeded workspace makes ZERO model calls, refunds exactly once, and records failureReason validation on the FINAL record', async () => {
+    const { app, database, modelSpy } = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39-thin-prep');
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    expect(await jobRecord(database, 'p39-thin-prep')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    expect(await balanceOf(database)).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual(['p39-thin-prep']);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(Object.keys(snapshotNodes(database))).toHaveLength(1);
+  });
+
+  it('a prep_bundle child against an unseeded workspace makes ZERO model calls, refunds its slot once, and consumes no additional credit or bundle slot', async () => {
+    const { app, database, modelSpy } = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39-thin');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+
+    const child = jobs[1]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+    expect(Object.keys(snapshotNodes(database))).toHaveLength(1);
+
+    // A resolved child is never re-runnable on the returned credit.
+    const replay = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(replay.statusCode).toBe(409);
+    expect(await balanceOf(database)).toBe(7 + 1);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+  });
+});
+
+/**
+ * SUPPLEMENTS — never replaces — the locked `bundle failure math
+ * (RPT-02/RPT-03, owner battery item 3)` block above, whose own scenarios
+ * (0/1/2/3 failing children, refusal cause) this mirrors. The cause changes;
+ * the money does not: for every failing-child count the balance, the refund
+ * ledger refs and the terminal statuses are IDENTICAL whether the children
+ * fail by refusal (a pre-existing cause) or by validation.
+ */
+describe('bundle failure math is cause-independent: validation vs a pre-existing cause (plan 39-07 Task 2)', () => {
+  async function runCauseCase(cause: 'refusal' | 'validation', failureCount: number) {
+    const { app, database, modelSpy } = prepBillableApp('viable', (callIndex) => {
+      if (callIndex > failureCount) {
+        return { stop_reason: 'end_turn', parsed_output: VALID_REPORT };
+      }
+      return cause === 'refusal'
+        ? { stop_reason: 'refusal', parsed_output: null }
+        : { stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION };
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    const START_BALANCE = 10;
+    database.seed(`credits/${TEST_UID}/balance`, START_BALANCE);
+    const bundleId = `bundle-cause-${failureCount}`;
+    const jobs = await submitBundle(app, bundleId);
+    for (const job of jobs) {
+      const response = await postPrepSingle(app, job.jobId, job.opponentName);
+      expect(response.statusCode).toBe(job.slot <= failureCount ? 502 : 200);
+    }
+    expect(modelSpy).toHaveBeenCalledTimes(3);
+    const statuses: string[] = [];
+    const failureReasons: Array<string | null> = [];
+    for (const job of jobs) {
+      const record = await jobRecord(database, job.jobId);
+      statuses.push(record.status as string);
+      failureReasons.push((record.failureReason as string | undefined) ?? null);
+    }
+    return {
+      balance: await balanceOf(database),
+      expectedBalance: START_BALANCE - 3 + failureCount,
+      refundSlots: refundLedgerRefs(database)
+        .map((ref) => ref.slice(bundleId.length))
+        .sort(),
+      spendCount: spendLedgerRefs(database).length,
+      statuses,
+      failureReasons,
+      reportFailed: findEvents(database, 'report_failed').length,
+      reportFailedValidation: findEvents(database, 'report_failed_validation').length,
+    };
+  }
+
+  for (const failureCount of [0, 1, 2, 3]) {
+    it(`${failureCount} failing children: validation and refusal produce the identical balance, refund slots and terminal statuses`, async () => {
+      const refusal = await runCauseCase('refusal', failureCount);
+      const validation = await runCauseCase('validation', failureCount);
+
+      expect(refusal.balance).toBe(refusal.expectedBalance);
+      expect(validation.balance).toBe(validation.expectedBalance);
+      expect(validation.balance).toBe(refusal.balance);
+      expect(validation.refundSlots).toEqual(refusal.refundSlots);
+      expect(validation.refundSlots).toHaveLength(failureCount);
+      expect(validation.spendCount).toBe(refusal.spendCount);
+      expect(validation.statuses).toEqual(refusal.statuses);
+      expect(validation.reportFailed).toBe(refusal.reportFailed);
+      // Only the cause differs.
+      expect(refusal.failureReasons.every((value) => value === null)).toBe(true);
+      expect(validation.failureReasons.filter((value) => value === 'validation')).toHaveLength(
+        failureCount,
+      );
+      expect(refusal.reportFailedValidation).toBe(0);
+      expect(validation.reportFailedValidation).toBe(failureCount);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-07, Task 3): the money-path REAFFIRMATION battery — the
+// properties v2.5's money safety rests on, re-proven on the tree this plan
+// commits. NEW block; the locked blocks it sits beside are run, never edited.
+// ---------------------------------------------------------------------------
+
+const PREP_KIND_REASONS = new Set(['prep_report', 'prep_bundle', 'post_event_synthesis']);
+
+/** Counts terminal (`failed`/`refunded`) writes to ONE job node, optionally failing the scout-report store write. */
+function instrumentJobWrites(
+  database: FakeDatabase,
+  jobPath: string,
+  options: { failScoutReportStore?: boolean } = {},
+): { failed: number; refunded: number } {
+  const counts = { failed: 0, refunded: 0 };
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    if (path === jobPath) {
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          const status = (value as { status?: string } | null)?.status;
+          if (status === 'failed') counts.failed += 1;
+          if (status === 'refunded') counts.refunded += 1;
+          return ref.set(value);
+        },
+      };
+    }
+    if (options.failScoutReportStore && path === `scoutReports/${TEST_UID}`) {
+      return {
+        ...ref,
+        push: () => {
+          const child = ref.push();
+          return {
+            ...child,
+            set: async () => {
+              throw new Error('simulated scout-report store failure');
+            },
+          };
+        },
+      };
+    }
+    return ref;
+  });
+  return counts;
+}
+
+/** Every job record in the database, for the job-KIND position check. */
+function allJobRecords(database: FakeDatabase): Array<Record<string, unknown>> {
+  const dump = database.dump() as { reportJobs?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.reportJobs ?? {}).flatMap(
+    (jobs) => Object.values(jobs) as Array<Record<string, unknown>>,
+  );
+}
+
+describe('money-path reaffirmation battery (plan 39-07 Task 3)', () => {
+  it('1. the activation gate is still the FIRST statement: a reason-bearing request with the gate absent answers 503 with NO job record, NO credit spend, NO model call and NO snapshot', async () => {
+    const cases = [
+      {
+        reason: 'prep_report',
+        payload: {
+          reason: 'prep_report',
+          entryKey: P39_ENTRY_KEY,
+          opponentName: 'rival',
+          jobId: 'p39-gate-prep',
+        },
+      },
+      {
+        reason: 'prep_bundle',
+        payload: {
+          reason: 'prep_bundle',
+          entryKey: P39_ENTRY_KEY,
+          bundleId: 'bundle-p39-gate',
+          opponentNames: BUNDLE_OPPONENT_NAMES,
+        },
+      },
+      {
+        reason: 'post_event_synthesis',
+        payload: { reason: 'post_event_synthesis', entryKey: P39_ENTRY_KEY },
+      },
+    ];
+    for (const { reason, payload } of cases) {
+      for (const reports of [P39_NON_ALLOWLIST_CONFIG, REPORTS_CONFIG]) {
+        const modelSpy = vi.fn(async () => ({
+          stop_reason: 'end_turn' as const,
+          parsed_output: VALID_REPORT,
+        }));
+        // Gate ABSENT: no `prepPaid` option at all (production ships UNSET).
+        const { app, database } = buildTestApp({
+          reports,
+          stripe: P39_STRIPE_CONFIG,
+          reportsClient: stubClient(modelSpy),
+          parrygg: { apiKey: 'parry-key' },
+          parryggClients: parryClients({
+            getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+          }),
+        });
+        seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+        database.seed(`credits/${TEST_UID}/balance`, 5);
+
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/reports',
+          headers: authHeader(),
+          payload,
+        });
+
+        const dump = database.dump() as Record<string, unknown>;
+        expect(response.statusCode, reason).toBe(503);
+        expect(dump.reportJobs, reason).toBeUndefined();
+        expect(dump.creditLedger, reason).toBeUndefined();
+        expect(dump.creditBundleOps, reason).toBeUndefined();
+        expect(await balanceOf(database), reason).toBe(5);
+        expect(modelSpy, reason).toHaveBeenCalledTimes(0);
+        expect(dump.evidenceSnapshots, reason).toBeUndefined();
+      }
+    }
+  });
+
+  it('2. every reachable failure cause on the job path writes exactly ONE terminal record and exactly ONE refund effect per attempt', async () => {
+    type Cause = {
+      name: string;
+      expectedStatus: number;
+      fixture?: 'thin';
+      failStore?: boolean;
+      startggFetch?: typeof fetch;
+      respond: () => Promise<{ stop_reason: string; parsed_output: unknown }>;
+    };
+    const rateLimit = new Anthropic.RateLimitError(
+      429,
+      { type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } },
+      'slow down',
+      new Headers(),
+    );
+    const apiError = new Anthropic.InternalServerError(
+      500,
+      { type: 'error', error: { type: 'api_error', message: 'boom' } },
+      'boom',
+      new Headers(),
+    );
+    const causes: Cause[] = [
+      {
+        name: 'refusal',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'refusal', parsed_output: null }),
+      },
+      {
+        name: 'truncated',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'max_tokens', parsed_output: null }),
+      },
+      {
+        name: 'unparseable',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: null }),
+      },
+      {
+        name: 'rate-limited',
+        expectedStatus: 429,
+        respond: async () => {
+          throw rateLimit;
+        },
+      },
+      {
+        name: 'provider-error',
+        expectedStatus: 502,
+        respond: async () => {
+          throw apiError;
+        },
+      },
+      {
+        name: 'unexpected-throw (catch-all, rethrown)',
+        expectedStatus: 500,
+        respond: async () => {
+          throw new Error('simulated unexpected client failure');
+        },
+      },
+      {
+        name: 'validation',
+        expectedStatus: 502,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION }),
+      },
+      {
+        name: 'stored-schema reject',
+        expectedStatus: 502,
+        respond: async () => ({
+          stop_reason: 'end_turn',
+          parsed_output: selectionOf(
+            { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+            {},
+            { action1: { actionId: '', claimId: 'c01' } },
+          ),
+        }),
+      },
+      {
+        name: 'D-21 thin evidence',
+        expectedStatus: 502,
+        fixture: 'thin',
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+      {
+        name: 'store failure (catch, rethrown)',
+        expectedStatus: 500,
+        failStore: true,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+      {
+        name: 'scout not found',
+        expectedStatus: 404,
+        startggFetch: (async () => gqlResponse({ user: null })) as unknown as typeof fetch,
+        respond: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_REPORT }),
+      },
+    ];
+
+    for (const cause of causes) {
+      const options = {
+        startgg: STARTGG_CONFIG,
+        startggFetch:
+          cause.startggFetch ??
+          (cause.fixture === 'thin' ? emptyScoutFetchMock() : scoutFetchMock()),
+        reports: P39_NON_ALLOWLIST_CONFIG,
+        stripe: P39_STRIPE_CONFIG,
+        reportsClient: stubClient(cause.respond),
+      };
+      const { app, database } =
+        cause.fixture === 'thin' ? buildBareTestApp(options) : buildTestApp(options);
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const jobId = `p39-battery-${cause.name.replace(/[^a-z0-9]+/gi, '-')}`;
+      const counts = instrumentJobWrites(database, `reportJobs/${TEST_UID}/${jobId}`, {
+        failScoutReportStore: cause.failStore,
+      });
+
+      const response = await postLegacy(app, jobId);
+      vi.mocked(database.ref).mockRestore();
+
+      expect(response.statusCode, cause.name).toBe(cause.expectedStatus);
+      // Exactly ONE terminal write (a legacy job's terminal is always
+      // `failed`, never `refunded`) and exactly ONE refund effect.
+      expect(counts.failed, cause.name).toBe(1);
+      expect(counts.refunded, cause.name).toBe(0);
+      expect(refundLedgerRefs(database), cause.name).toEqual([jobId]);
+      expect(await balanceOf(database), cause.name).toBe(1);
+      expect(findEvents(database, 'report_failed'), cause.name).toHaveLength(1);
+      expect((await jobRecord(database, jobId)).status, cause.name).toBe('failed');
+    }
+  });
+
+  it('3. a validation failure and a truncation failure produce IDENTICAL refund effects for the same job shape (legacy and prep_report)', async () => {
+    async function legacyRun(respond: () => { stop_reason: string; parsed_output: unknown }) {
+      const built = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: P39_NON_ALLOWLIST_CONFIG,
+        stripe: P39_STRIPE_CONFIG,
+        reportsClient: stubClient(async () => respond()),
+      });
+      built.database.seed(`credits/${TEST_UID}/balance`, 1);
+      const response = await postLegacy(built.app, 'p39-same-shape');
+      const job = await jobRecord(built.database, 'p39-same-shape');
+      return {
+        statusCode: response.statusCode,
+        balance: await balanceOf(built.database),
+        refunds: refundLedgerRefs(built.database),
+        status: job.status,
+        failureReason: job.failureReason ?? null,
+      };
+    }
+    async function prepRun(respond: () => { stop_reason: string; parsed_output: unknown }) {
+      const { app, database } = prepBillableApp('viable', respond);
+      seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+        likelyOpponents: { rival: true },
+        scoutBindings: { rival: P39_PARRY_BINDING },
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const response = await postPrepSingle(app, 'p39-same-shape');
+      const job = await jobRecord(database, 'p39-same-shape');
+      return {
+        statusCode: response.statusCode,
+        balance: await balanceOf(database),
+        refunds: refundLedgerRefs(database),
+        status: job.status,
+        failureReason: job.failureReason ?? null,
+      };
+    }
+    const truncation = () => ({ stop_reason: 'max_tokens', parsed_output: null });
+    const validation = () => ({ stop_reason: 'end_turn', parsed_output: BELOW_MINIMUM_SELECTION });
+
+    for (const run of [legacyRun, prepRun]) {
+      const truncated = await run(truncation);
+      const invalid = await run(validation);
+      expect(invalid.statusCode).toBe(truncated.statusCode);
+      expect(invalid.balance).toBe(truncated.balance);
+      expect(invalid.balance).toBe(1);
+      expect(invalid.refunds).toEqual(truncated.refunds);
+      expect(invalid.refunds).toEqual(['p39-same-shape']);
+      expect(invalid.status).toBe(truncated.status);
+      // The cause differs; the money does not.
+      expect(truncated.failureReason).toBeNull();
+      expect(invalid.failureReason).toBe('validation');
+    }
+  });
+
+  it('4. failureReason never lands in the job-KIND position: every failed, refunded or swept job’s reason is a prep kind or absent — never a failure cause', async () => {
+    // The job-kind enum itself refuses a failure cause.
+    expect(
+      reportJobSchema.safeParse({
+        status: 'failed',
+        createdAt: 1,
+        updatedAt: 1,
+        attempt: 0,
+        creditRef: 'x',
+        reason: 'validation',
+      }).success,
+    ).toBe(false);
+
+    const records: Array<Record<string, unknown>> = [];
+
+    // A legacy validation failure, a D-21 thin prep failure, and a bundle
+    // child validation failure.
+    const legacy = legacyBillableApp(() => BELOW_MINIMUM_SELECTION);
+    await postLegacy(legacy.app, 'p39-kind-legacy');
+    records.push(...allJobRecords(legacy.database));
+
+    const thin = prepBillableApp('thin', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(thin.database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    thin.database.seed(`credits/${TEST_UID}/balance`, 1);
+    await postPrepSingle(thin.app, 'p39-kind-thin');
+    records.push(...allJobRecords(thin.database));
+
+    const bundle = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedBundleBrief(bundle.database, TEST_UID, P39_ENTRY_KEY);
+    bundle.database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(bundle.app, 'bundle-p39-kind');
+    await postPrepSingle(bundle.app, jobs[0]!.jobId, jobs[0]!.opponentName);
+    records.push(...allJobRecords(bundle.database));
+
+    // A swept stale prep job that carried a failure cause.
+    const sweepDb = new FakeDatabaseImpl();
+    sweepDb.seed(`reportJobs/${TEST_UID}/p39-kind-swept`, {
+      status: 'running',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'p39-kind-swept',
+      reason: 'prep_report',
+      failureReason: 'validation',
+    });
+    sweepDb.seed(`reportJobsByStatus/running/${TEST_UID}/p39-kind-swept`, true);
+    await runSweepStuckReportJobs(sweepDb as unknown as Database, { now: 10 * 60 * 60 * 1000 });
+    records.push(...allJobRecords(sweepDb));
+
+    const failedOrSwept = records.filter(
+      (record) => record.status === 'failed' || record.status === 'refunded',
+    );
+    expect(failedOrSwept.length).toBeGreaterThanOrEqual(4);
+    for (const record of records) {
+      if (record.reason !== undefined) {
+        expect(PREP_KIND_REASONS.has(record.reason as string)).toBe(true);
+      }
+      expect(record.reason).not.toBe('validation');
+    }
+    expect(failedOrSwept.filter((record) => record.failureReason === 'validation')).toHaveLength(
+      failedOrSwept.length,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-08, WINDOWS.md fixme #7): the 200 body on the three
+// scout-shaped surfaces is the PARSED (schema-applied) record, never the raw
+// in-memory one. `persistSection` omits an empty `claimIds` on write (RTDB
+// would drop it) and `storedReportSectionSchema.claimIds` defaults to `[]`
+// only in the PARSE direction; the response serializer ENCODES, so a raw
+// body with an omitted `claimIds` failed serialization with a 500 AFTER the
+// job succeeded, the report was stored and the credit was spent.
+// ---------------------------------------------------------------------------
+
+/** A viable selection (MIN_VIABLE_CLAIMS surviving claims) that leaves `watchFor` with NO claim ids. */
+function emptySectionSelection() {
+  const ids = [...SELECTED_CLAIM_IDS];
+  return selectionOf({ overview: ids.slice(0, 1), gameplan: ids.slice(1), watchFor: [] });
+}
+
+/** The one stored scout report as `{ id, ...record }` (id = its push key). */
+function storedScoutReportWithId(database: FakeDatabase): Record<string, unknown> {
+  const dump = database.dump() as { scoutReports?: Record<string, Record<string, unknown>> };
+  const entries = Object.entries(dump.scoutReports?.[TEST_UID] ?? {});
+  expect(entries).toHaveLength(1);
+  const [id, record] = entries[0]!;
+  return { id, ...(record as Record<string, unknown>) };
+}
+
+/** The shared post-success money/state assertions for a scout-shaped 200. */
+async function expectDeliveredOnce(
+  database: FakeDatabase,
+  response: Awaited<ReturnType<typeof postLegacy>>,
+  jobId: string,
+) {
+  // Money/state first: before the fix these all held while the status was
+  // 500 — the report was delivered and charged, the user saw an error.
+  const stored = storedScoutReportWithId(database);
+  const job = await jobRecord(database, jobId);
+  expect(job.status).toBe('succeeded');
+  expect(job.resultRef).toBe(stored.id);
+  expect(job).not.toHaveProperty('failureReason');
+  expect(refundLedgerRefs(database)).toEqual([]);
+  expect(findEvents(database, 'report_completed')).toHaveLength(1);
+  expect(findEvents(database, 'report_failed')).toHaveLength(0);
+  expect(response.statusCode).toBe(200);
+  // The guard: the 200 body IS the parsed stored record — schema defaults
+  // applied — so a raw-record response cannot regress unseen.
+  expect(response.json()).toEqual(scoutReportRecordSchema.parse(stored));
+}
+
+describe('post-plan fix (39-08): a 200 is the PARSED record — an empty-section selection is delivered, not a 500 after spend', () => {
+  it('legacy scout: an empty watchFor section answers 200 with claimIds [] — one spend, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => emptySectionSelection());
+
+    const response = await postLegacy(app, 'p39fix-legacy-empty');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(spendLedgerRefs(database)).toEqual(['p39fix-legacy-empty']);
+    expect(await balanceOf(database)).toBe(0);
+    await expectDeliveredOnce(database, response, 'p39fix-legacy-empty');
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('prep_report: an empty watchFor section answers 200 with claimIds [] — one spend, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: emptySectionSelection(),
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'p39fix-prep-empty');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(spendLedgerRefs(database)).toEqual(['p39fix-prep-empty']);
+    expect(await balanceOf(database)).toBe(0);
+    expect((await jobRecord(database, 'p39fix-prep-empty')).reason).toBe('prep_report');
+    await expectDeliveredOnce(database, response, 'p39fix-prep-empty');
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('prep_bundle child: an empty watchFor section answers 200 with claimIds [] — no re-spend beyond the bundle debit, zero refunds, job succeeded, stored once', async () => {
+    const { app, database, modelSpy } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: emptySectionSelection(),
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-p39fix-empty');
+    const spendsAfterSubmit = spendLedgerRefs(database);
+    expect(spendsAfterSubmit).toHaveLength(3);
+    const balanceAfterSubmit = await balanceOf(database);
+    expect(balanceAfterSubmit).toBe(7);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    // The ONE bundle debit is the only spend; the child neither re-spends nor refunds.
+    expect(spendLedgerRefs(database)).toEqual(spendsAfterSubmit);
+    expect(await balanceOf(database)).toBe(balanceAfterSubmit);
+    expect((await jobRecord(database, child.jobId)).reason).toBe('prep_bundle');
+    await expectDeliveredOnce(database, response, child.jobId);
+    const body = response.json() as {
+      report: { sections: Record<string, { claimIds: string[] }> };
+    };
+    expect(body.report.sections.watchFor!.claimIds).toEqual([]);
+  });
+
+  it('guard: a fully-cited selection on every scout-shaped surface also answers with exactly schema.parse(stored)', async () => {
+    const legacy = legacyBillableApp(() => VALID_REPORT);
+    await expectDeliveredOnce(
+      legacy.database,
+      await postLegacy(legacy.app, 'p39fix-legacy-full'),
+      'p39fix-legacy-full',
+    );
+
+    const prep = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedPrepBrief(prep.database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    prep.database.seed(`credits/${TEST_UID}/balance`, 1);
+    await expectDeliveredOnce(
+      prep.database,
+      await postPrepSingle(prep.app, 'p39fix-prep-full'),
+      'p39fix-prep-full',
+    );
+
+    const bundle = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(bundle.database, TEST_UID, P39_ENTRY_KEY);
+    bundle.database.seed(`credits/${TEST_UID}/balance`, 10);
+    const child = (await submitBundle(bundle.app, 'bundle-p39fix-full'))[0]!;
+    await expectDeliveredOnce(
+      bundle.database,
+      await postPrepSingle(bundle.app, child.jobId, child.opponentName),
+      child.jobId,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): the job record
+// carries `wasCharged` — the SAME `spent` fact the money path acts on —
+// written at spend time and carried on every later whole-node `.set()`, so
+// the web's refund wording can never claim a refund on a job that was never
+// charged, even after the viewer's free-access status changes. Additive and
+// RTDB-safe (a boolean, never null). Money is unchanged: every case below
+// also pins balance + `spend`/`refund` ledger refs.
+// ---------------------------------------------------------------------------
+
+interface RecordedJobWrite {
+  op: 'set' | 'update' | 'transaction';
+  path: string;
+  value?: unknown;
+}
+
+/**
+ * Records every write with its path AND value, so a test can find WHEN `wasCharged` first lands on the job node.
+ * A transaction records the value it COMMITTED (a copy, taken when it resolves), or no value when it aborted —
+ * since code review R3-WR-01 the prep queued write is a transaction as well as the running claim.
+ */
+function recordWritesWithValues(database: FakeDatabase): RecordedJobWrite[] {
+  const writes: RecordedJobWrite[] = [];
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        writes.push({ op: 'set', path: path ?? '', value });
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        writes.push({ op: 'update', path: path ?? '', value: values });
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        const entry: RecordedJobWrite = { op: 'transaction', path: path ?? '' };
+        writes.push(entry);
+        const result = await ref.transaction(fn);
+        if (result.committed) {
+          entry.value = structuredClone(result.snapshot.val());
+        }
+        return result;
+      },
+    };
+  });
+  return writes;
+}
+
+/** The index of the first write that puts `wasCharged === expected` on `reportJobs/{uid}/{jobId}` (a set/update of the node itself). */
+function firstWasChargedWrite(
+  writes: RecordedJobWrite[],
+  jobId: string,
+  expected: boolean,
+): number {
+  const jobPath = `reportJobs/${TEST_UID}/${jobId}`;
+  return writes.findIndex(
+    (write) =>
+      write.path === jobPath &&
+      (write.op === 'set' || write.op === 'update') &&
+      (write.value as { wasCharged?: unknown } | null)?.wasCharged === expected,
+  );
+}
+
+function firstRunningWrite(writes: RecordedJobWrite[], jobId: string): number {
+  const jobPath = `reportJobs/${TEST_UID}/${jobId}`;
+  return writes.findIndex(
+    (write) =>
+      write.path === jobPath &&
+      (write.op === 'transaction' || write.op === 'set') &&
+      (write.value as { status?: string } | undefined)?.status === 'running',
+  );
+}
+
+function spendTransactionIndex(writes: RecordedJobWrite[]): number {
+  return writes.findIndex(
+    (write) => write.op === 'transaction' && write.path === `credits/${TEST_UID}/balance`,
+  );
+}
+
+/** A free-access (allowlisted) prep app over the viable workspace. */
+function prepFreeAccessApp(respond: () => { stop_reason: string; parsed_output: unknown }) {
+  const modelSpy = vi.fn(async () => respond());
+  const built = buildTestApp({
+    reports: REPORTS_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    }),
+  });
+  return { ...built, modelSpy };
+}
+
+describe('post-plan fix (39-10): wasCharged is persisted on the job at spend time and survives every terminal write', () => {
+  it('legacy scout, billable: wasCharged true lands on the job AFTER the spend and BEFORE running; the succeeded record keeps it; money unchanged (one spend, zero refunds)', async () => {
+    const { app, database } = legacyBillableApp(() => VALID_REPORT);
+    const writes = recordWritesWithValues(database);
+
+    const response = await postLegacy(app, 'wc-legacy-paid');
+
+    expect(response.statusCode).toBe(200);
+    const spendAt = spendTransactionIndex(writes);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-legacy-paid', true);
+    const runningAt = firstRunningWrite(writes, 'wc-legacy-paid');
+    expect(spendAt).toBeGreaterThan(-1);
+    expect(chargedAt).toBeGreaterThan(spendAt);
+    expect(chargedAt).toBeLessThan(runningAt);
+    expect(await jobRecord(database, 'wc-legacy-paid')).toMatchObject({
+      status: 'succeeded',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wc-legacy-paid']);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('legacy scout, free-access: wasCharged false is written before running and kept on the succeeded record; no ledger movement', async () => {
+    const built = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const writes = recordWritesWithValues(built.database);
+
+    const response = await postLegacy(built.app, 'wc-legacy-free');
+
+    expect(response.statusCode).toBe(200);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-legacy-free', false);
+    expect(chargedAt).toBeGreaterThan(-1);
+    expect(chargedAt).toBeLessThan(firstRunningWrite(writes, 'wc-legacy-free'));
+    expect(await jobRecord(built.database, 'wc-legacy-free')).toMatchObject({
+      status: 'succeeded',
+      wasCharged: false,
+    });
+    expect((built.database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('legacy scout, billable model refusal: the failed terminal carries wasCharged true; exactly one refund, balance restored', async () => {
+    const refusing = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+    });
+    refusing.database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(refusing.app, 'wc-legacy-refusal');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(refusing.database, 'wc-legacy-refusal')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(refusing.database)).toEqual(['wc-legacy-refusal']);
+    expect(refundLedgerRefs(refusing.database)).toEqual(['wc-legacy-refusal']);
+    expect(await balanceOf(refusing.database)).toBe(1);
+  });
+
+  it('prep_report, billable validation failure: the AUTHORITATIVE refunded write carries wasCharged true beside failureReason (C1-H1 shape); one spend, one refund', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: BELOW_MINIMUM_SELECTION,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const writes = recordWritesWithValues(database);
+
+    const response = await postPrepSingle(app, 'wc-prep-paid');
+
+    expect(response.statusCode).toBe(502);
+    const chargedAt = firstWasChargedWrite(writes, 'wc-prep-paid', true);
+    expect(chargedAt).toBeGreaterThan(spendTransactionIndex(writes));
+    expect(chargedAt).toBeLessThan(firstRunningWrite(writes, 'wc-prep-paid'));
+    const job = await jobRecord(database, 'wc-prep-paid');
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wc-prep-paid']);
+    expect(refundLedgerRefs(database)).toEqual(['wc-prep-paid']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report, free-access failure: rests at failed with wasCharged false; no spend, no refund, no ledger', async () => {
+    const { app, database } = prepFreeAccessApp(() => ({
+      stop_reason: 'refusal',
+      parsed_output: null,
+    }));
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+
+    const response = await postPrepSingle(app, 'wc-prep-free');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'wc-prep-free')).toMatchObject({
+      status: 'failed',
+      reason: 'prep_report',
+      wasCharged: false,
+    });
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('prep_bundle, billable: the three queued children carry wasCharged true from the bundle debit; an executed child keeps it on its succeeded record; the one 3-credit debit is the only spend', async () => {
+    const { app, database } = prepBillableApp('viable', () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const jobs = await submitBundle(app, 'bundle-wc-paid');
+
+    for (const child of jobs) {
+      expect(await jobRecord(database, child.jobId)).toMatchObject({
+        status: 'queued',
+        reason: 'prep_bundle',
+        wasCharged: true,
+      });
+    }
+    expect(await balanceOf(database)).toBe(7);
+    const spends = spendLedgerRefs(database);
+    expect(spends).toHaveLength(3);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+    expect(response.statusCode).toBe(200);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'succeeded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(spends);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(7);
+  });
+
+  it('prep_bundle, free-access: the three queued children carry wasCharged false; no ledger movement', async () => {
+    const { app, database } = prepFreeAccessApp(() => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+
+    const jobs = await submitBundle(app, 'bundle-wc-free');
+
+    expect(jobs).toHaveLength(3);
+    for (const child of jobs) {
+      expect(await jobRecord(database, child.jobId)).toMatchObject({
+        status: 'queued',
+        reason: 'prep_bundle',
+        wasCharged: false,
+      });
+    }
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('the stale-job sweep carries wasCharged forward on its failed terminal (and refunds only the charged and legacy jobs)', async () => {
+    const database = new FakeDatabaseImpl();
+    const now = Date.now();
+    for (const [jobId, wasCharged] of [
+      ['wc-swept-paid', true],
+      ['wc-swept-free', false],
+    ] as const) {
+      database.seed(`reportJobs/${TEST_UID}/${jobId}`, {
+        status: 'running',
+        reason: 'prep_report',
+        createdAt: now - 40 * 60 * 1000,
+        updatedAt: now - 40 * 60 * 1000,
+        attempt: 0,
+        creditRef: jobId,
+        wasCharged,
+      });
+      database.seed(`reportJobsByStatus/running/${TEST_UID}/${jobId}`, true);
+    }
+    database.seed(`reportJobs/${TEST_UID}/wc-swept-legacy`, {
+      status: 'running',
+      createdAt: now - 40 * 60 * 1000,
+      updatedAt: now - 40 * 60 * 1000,
+      attempt: 0,
+      creditRef: 'wc-swept-legacy',
+    });
+    database.seed(`reportJobsByStatus/running/${TEST_UID}/wc-swept-legacy`, true);
+
+    const result = await runSweepStuckReportJobs(database as never, { now });
+
+    expect(result).toEqual({ swept: 3, refunded: 2 });
+    expect(await jobRecord(database, 'wc-swept-paid')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(await jobRecord(database, 'wc-swept-free')).toMatchObject({
+      status: 'failed',
+      wasCharged: false,
+    });
+    expect(await jobRecord(database, 'wc-swept-legacy')).not.toHaveProperty('wasCharged');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review (owner decision D-23, 2026-09-26; review SH-CR-03): only
+// EVIDENCED (non-abstained) claims count toward MIN_VIABLE_CLAIMS on the
+// pre-call fail-fast. An all-abstention workspace issues plenty of claims —
+// every one "not enough data yet" — and must refund BEFORE the model call on
+// every surface that shares `runReportGeneration` (scout, prep_report and
+// the prep_bundle child; synthesis is proven in reportsSynthesis.test.ts).
+// Money is proven by the balance and the `refund` ledger entries.
+// ---------------------------------------------------------------------------
+
+/** The viable start.gg sets payload cut to ONE game on each of the first two characters — the scouted opponent's usage rows (2 known games) and the advisor rows all fall below the floor. */
+const ALL_ABSTENTION_SETS_RESPONSE = (() => {
+  const nodes = (
+    VIABLE_OPPONENT_SETS_RESPONSE as {
+      player: {
+        sets: {
+          nodes: Array<{ games: Array<{ selections: Array<{ character: { id: number } }> }> }>;
+        };
+      };
+    }
+  ).player.sets.nodes;
+  const firstPerCharacter = new Map<number, (typeof nodes)[number]>();
+  for (const node of nodes) {
+    const characterId = node.games[0]!.selections[0]!.character.id;
+    if (!firstPerCharacter.has(characterId)) {
+      firstPerCharacter.set(characterId, node);
+    }
+  }
+  return {
+    player: {
+      sets: { pageInfo: { totalPages: 1 }, nodes: [...firstPerCharacter.values()].slice(0, 2) },
+    },
+  };
+})();
+
+function allAbstentionScoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return gqlResponse(RESOLVE_RESPONSE);
+    }
+    return gqlResponse(ALL_ABSTENTION_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+const STARTGG_BINDING = {
+  provider: 'startgg',
+  startggUserSlug: 'user/07dc2239',
+  displayTag: 'Pandem1c',
+  method: 'matchHistory',
+  confirmedAt: 1,
+};
+
+/** A billable BARE app (no own history) whose opponent public history is the all-abstention cut; the model spy must never be called. */
+function allAbstentionBillableApp() {
+  const modelSpy = vi.fn(async () => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: VALID_REPORT,
+  }));
+  const built = buildBareTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: allAbstentionScoutFetchMock(),
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+  });
+  return { ...built, modelSpy };
+}
+
+/** The persisted snapshot's rows, rebuilt into the claim set the route issued — proves the precondition (plenty of claims, none evidenced) from what the route actually wrote. */
+function issuedFromStoredSnapshot(database: FakeDatabase) {
+  const nodes = Object.values(snapshotNodes(database)) as Array<{
+    rows: Parameters<typeof buildClaimSet>[0]['rows'];
+  }>;
+  expect(nodes).toHaveLength(1);
+  return buildClaimSet({ rows: nodes[0]!.rows, surface: 'scout' }).claims;
+}
+
+describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the pre-call fail-fast (code review SH-CR-03)', () => {
+  it('legacy scout: an all-abstention workspace issuing >= MIN claims refunds exactly once, BEFORE any model call', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'd23-legacy');
+
+    expect(response.statusCode).toBe(502);
+    const issued = issuedFromStoredSnapshot(database);
+    expect(issued.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+    expect(issued.filter((claim) => claim.value.kind !== 'abstained')).toEqual([]);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'd23-legacy')).toMatchObject({
+      status: 'failed',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['d23-legacy']);
+    expect(refundLedgerRefs(database)).toEqual(['d23-legacy']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(storedScoutReports(database)).toEqual([]);
+  });
+
+  it('prep_report: the same all-abstention workspace refunds exactly once before any model call and rests at refunded', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: STARTGG_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'd23-prep');
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'd23-prep')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['d23-prep']);
+    expect(refundLedgerRefs(database)).toEqual(['d23-prep']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_bundle child: an all-abstention child refunds its one slot exactly once before any model call', async () => {
+    const { app, database, modelSpy } = allAbstentionBillableApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY, BUNDLE_OPPONENT_NAMES, STARTGG_BINDING);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-d23');
+    expect(await balanceOf(database)).toBe(7);
+
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review API-CR-01: a pre-paid bundle child TRUSTS the spend fact its
+// bundle recorded at purchase (`wasCharged` on the stored child job) and
+// carries it through the queued rewrite, the running claim and every
+// terminal write — it never re-derives `spent` from the uid's free-access
+// status at execution time, which can change between purchase and run (the
+// REPORTS_ALLOWED_UIDS list and the demo allowlist are both live inputs).
+// Since code review R3-IN-03 it is never recomputed at all: a pre-39-10 child
+// with no fact reads the durable bundle-op record, and an unknown fact is
+// not charged. Money: balance + `refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+/** A prep app whose free-access list the test can change between purchase and execution; the model refuses, so every executed child FAILS. */
+function mutableAccessPrepApp(initialAllowed: string[]) {
+  const reportsConfig: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(initialAllowed),
+  };
+  const modelSpy = vi.fn(async () => ({ stop_reason: 'refusal' as const, parsed_output: null }));
+  const built = buildTestApp({
+    reports: reportsConfig,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({
+      getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    }),
+  });
+  return { ...built, modelSpy, allowedUids: reportsConfig.allowedUids as Set<string> };
+}
+
+describe('code review API-CR-01: a bundle child trusts the spend fact recorded at purchase', () => {
+  it('bought while FREE, then free access is LOST before the child runs: the failed child is never refunded (no credit minted) and keeps wasCharged false on every write', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const jobs = await submitBundle(app, 'bundle-cr01-free');
+    expect(await jobRecord(database, jobs[0]!.jobId)).toMatchObject({ wasCharged: false });
+    expect(await balanceOf(database)).toBe(5);
+
+    allowedUids.delete(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(firstWasChargedWrite(writes, child.jobId, true)).toBe(-1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(spendLedgerRefs(database)).toEqual([]);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+
+  it('PAID, then free access is GAINED before the child runs: the failed child is refunded exactly once and keeps wasCharged true', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-cr01-paid');
+    expect(await balanceOf(database)).toBe(7);
+
+    allowedUids.add(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(firstWasChargedWrite(writes, child.jobId, false)).toBe(-1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
+  });
+
+  it('the queued rewrite of a pre-paid child carries the recorded fact, so the node never sits without it', async () => {
+    const { app, database, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const jobs = await submitBundle(app, 'bundle-cr01-queued');
+    allowedUids.add(TEST_UID);
+    const writes = recordWritesWithValues(database);
+    const child = jobs[0]!;
+
+    await postPrepSingle(app, child.jobId, child.opponentName);
+
+    const jobPath = `reportJobs/${TEST_UID}/${child.jobId}`;
+    // Since code review R3-WR-01 the queued rewrite is a compare-and-set
+    // transaction; the recorder captures the value it committed.
+    const queuedRewrite = writes.find(
+      (write) =>
+        write.path === jobPath &&
+        (write.op === 'set' || write.op === 'transaction') &&
+        (write.value as { status?: string } | undefined)?.status === 'queued',
+    );
+    expect(queuedRewrite?.value).toMatchObject({ status: 'queued', wasCharged: true });
+  });
+
+  it('code review R3-IN-03: a pre-39-10 child with NO recorded fact and no bundle-op record to read is NOT charged — live free access is never consulted, no refund is minted', async () => {
+    const { app, database } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 7);
+    const now = Date.now();
+    database.seed(`reportJobs/${TEST_UID}/legacy-child-1`, {
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      attempt: 0,
+      creditRef: 'legacy-child-1',
+      reason: 'prep_bundle',
+    });
+
+    const response = await postPrepSingle(app, 'legacy-child-1', BUNDLE_OPPONENT_NAMES[0]);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'legacy-child-1')).toMatchObject({
+      status: 'failed',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review API-WR-01: a throw between the spend and the `running` claim
+// (scout resolution, payload assembly — the window Phase 39 filled with the
+// row builder, the claim builder, the action ranker and the canonical
+// digest) must fail the job and refund through the existing `failJob`,
+// EXACTLY ONCE, instead of stranding a spent credit on a `queued` job the
+// stuck-job sweep (running index only) never visits.
+// ---------------------------------------------------------------------------
+
+describe('code review API-WR-01: a throw after the spend and before running refunds exactly once', () => {
+  it('legacy scout: payload assembly throws on a corrupt own-history row — the job fails, one refund, balance restored, and the error still surfaces', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    database.seed(`matches/${TEST_UID}/corrupt-row`, { fighter_id: 'not-a-number' });
+
+    const response = await postLegacy(app, 'wr01-legacy-assembly');
+
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr01-legacy-assembly')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wr01-legacy-assembly']);
+    expect(refundLedgerRefs(database)).toEqual(['wr01-legacy-assembly']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report (parry.gg binding): the provider lookup THROWS inside the resolver — the job refunds once and rests at refunded', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+    (clients.matches as unknown as { getMatches: () => Promise<never> }).getMatches = vi.fn(
+      async () => {
+        throw new Error('parry.gg transport exploded');
+      },
+    );
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(modelSpy),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: clients,
+    });
+    seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+      likelyOpponents: { rival: true },
+      scoutBindings: { rival: P39_PARRY_BINDING },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postPrepSingle(app, 'wr01-prep-parry');
+
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr01-prep-parry')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual(['wr01-prep-parry']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('exactly once: a resolver that ALREADY failed the job before rethrowing (start.gg non-429 error) is not refunded a second time', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'wr01-startgg-once');
+
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'wr01-startgg-once')).toMatchObject({ status: 'failed' });
+    expect(refundLedgerRefs(database)).toEqual(['wr01-startgg-once']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+describe('code review API-IN-02: the stored model name is the one REPORT_MODEL constant', () => {
+  it('a delivered scout report records exactly the model the generation call used', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+
+    expect((await postLegacy(app, 'in02-model')).statusCode).toBe(200);
+
+    expect(REPORT_MODEL).toBe('claude-opus-4-8');
+    const calledWith = (modelSpy.mock.calls[0] as unknown as [{ model: string }])[0].model;
+    expect(calledWith).toBe(REPORT_MODEL);
+    expect(storedScoutReports(database)[0]!.model).toBe(REPORT_MODEL);
+  });
+});
+
+describe('code review SH-WR-05 / API-IN-03: droppedClaimCount counts claims only, never a dropped action slot', () => {
+  it('a delivered report whose ONLY drop is an unlinked action slot stores no droppedClaimCount and emits no report_claims_dropped', async () => {
+    const { app, database } = legacyBillableApp(() =>
+      selectionOf(
+        { overview: ['c01'], gameplan: ['c02'], watchFor: ['c03'] },
+        {},
+        // c09 is never selected, so it never survives: an R8 action drop.
+        { action1: { actionId: 'a01', claimId: 'c09' } },
+      ),
+    );
+
+    expect((await postLegacy(app, 'wr05-action-only')).statusCode).toBe(200);
+
+    const report = storedScoutReports(database)[0]!.report as Record<string, unknown>;
+    expect(report).not.toHaveProperty('droppedClaimCount');
+    expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R2-CR-01 (iteration 2): the post-spend guard settles the job
+// with ONE atomic transaction that moves it `queued` -> `failed` ONLY when
+// the queued row is still THIS execution's own, and refunds only when that
+// transaction committed. A job another execution of the same job id owns
+// (its queued row, its `running` claim, or its delivered `succeeded`
+// record), or one already `failed`/`refunded`, is never touched — the guard
+// used to fail and refund a bundle child a concurrent execution had already
+// delivered, minting a credit. Money: balance + `refund` ledger entries,
+// never `credit_refunded` (`refundCredit` is not balance-idempotent).
+// ---------------------------------------------------------------------------
+
+interface ProviderGate {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+
+function providerGate(): ProviderGate {
+  let resolve!: () => void;
+  let reject!: (err: Error) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * A billable prep app (parry.gg bindings) whose provider lookup BLOCKS: every
+ * `users.getUser` call opens a gate the test releases (the lookup continues
+ * normally) or rejects (the lookup throws inside the resolver). The model
+ * always returns the viable selection, so an execution that gets past the
+ * lookup delivers.
+ */
+function gatedLookupPrepApp() {
+  const gates: ProviderGate[] = [];
+  const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+  const users = clients.users as unknown as { getUser: (...args: unknown[]) => Promise<unknown> };
+  const lookup = users.getUser;
+  users.getUser = vi.fn(async (...args: unknown[]) => {
+    const gate = providerGate();
+    gates.push(gate);
+    await gate.promise;
+    return lookup(...args);
+  });
+  const modelSpy = vi.fn(async () => ({
+    stop_reason: 'end_turn' as const,
+    parsed_output: VALID_REPORT,
+  }));
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: clients,
+  });
+  return { ...built, gates, modelSpy };
+}
+
+async function waitForGates(gates: ProviderGate[], count: number): Promise<void> {
+  await vi.waitFor(() => expect(gates.length).toBe(count));
+}
+
+describe('code review R2-CR-01: the post-spend guard settles atomically and only its own queued job', () => {
+  it("the reviewer's scenario: execution B of a bundle child DELIVERS, then execution A's lookup throws — no refund, and the delivered job is untouched", async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    gates[1]!.resolve();
+    const responseB = await executionB;
+    expect(responseB.statusCode).toBe(200);
+    const delivered = await jobRecord(database, child.jobId);
+    expect(delivered).toMatchObject({ status: 'succeeded', reason: 'prep_bundle' });
+    expect(typeof delivered.resultRef).toBe('string');
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    const responseA = await executionA;
+
+    expect(responseA.statusCode).toBe(500);
+    expect(await jobRecord(database, child.jobId)).toEqual(delivered);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    expect(storedScoutReports(database)).toHaveLength(1);
+  });
+
+  it('both executions of one bundle child throw in the same tick: exactly one refund, the job rests refunded', async () => {
+    const { app, database, gates, modelSpy } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-both'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    const boom = new Error('parry.gg transport exploded');
+    for (const gate of gates) {
+      gate.reject(boom);
+    }
+    const [responseA, responseB] = await Promise.all([executionA, executionB]);
+
+    expect(responseA.statusCode).toBe(500);
+    expect(responseB.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('owned by another request: A throws while B (which re-queued the child) is still in flight — A touches nothing, B delivers, no refund', async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-owned'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 2);
+    const queuedByB = await jobRecord(database, child.jobId);
+    expect(queuedByB).toMatchObject({ status: 'queued' });
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    expect((await executionA).statusCode).toBe(500);
+    expect(await jobRecord(database, child.jobId)).toEqual(queuedByB);
+    expect(refundLedgerRefs(database)).toEqual([]);
+
+    gates[1]!.resolve();
+    expect((await executionB).statusCode).toBe(200);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'succeeded' });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it("a job another execution has claimed `running` is never failed or refunded by A's guard", async () => {
+    const { app, database, gates } = gatedLookupPrepApp();
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-r2-running'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await waitForGates(gates, 1);
+    const now = Date.now();
+    const runningElsewhere = {
+      status: 'running',
+      createdAt: now,
+      updatedAt: now,
+      attempt: 1,
+      creditRef: child.jobId,
+      reason: 'prep_bundle',
+      wasCharged: true,
+    };
+    database.seed(`reportJobs/${TEST_UID}/${child.jobId}`, runningElsewhere);
+
+    gates[0]!.reject(new Error('parry.gg transport exploded'));
+    expect((await executionA).statusCode).toBe(500);
+
+    expect(await jobRecord(database, child.jobId)).toEqual(runningElsewhere);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R2-IN-04 (iteration 2): a throw INSIDE the guard's settle (a
+// failed refund transaction, say) must not replace the error that caused
+// the failure. The settle error is logged — with no uid and no token in the
+// log line — and the ORIGINAL error is rethrown, so the provider or
+// assembly root cause is what reaches the 500 handler and its log.
+// ---------------------------------------------------------------------------
+
+describe('code review R2-IN-04: a throw inside the settle never replaces the original error', () => {
+  it('the refund transaction throws while settling a lookup failure: the 500 carries the lookup error, and the settle error is logged without uid or token', async () => {
+    const lines: unknown[][] = [];
+    const record = (...args: unknown[]) => {
+      lines.push(args);
+    };
+    const capturingLogger = {
+      level: 'info',
+      fatal: record,
+      error: record,
+      warn: record,
+      info: record,
+      debug: record,
+      trace: record,
+      silent: record,
+      child: (): unknown => capturingLogger,
+    };
+    const clients = parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) });
+    (clients.matches as unknown as { getMatches: () => Promise<never> }).getMatches = vi.fn(
+      async () => {
+        throw new Error('parry.gg transport exploded');
+      },
+    );
+    const { app, database } = buildTestApp({
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      prepPaid: P39_PREP_PAID_CONFIG,
+      reportsClient: stubClient(vi.fn()),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: clients,
+      logger: capturingLogger as never,
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'bundle-in04'))[0]!;
+
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      // The refund's balance write: the balance node itself, or (code review
+      // R5-WR-01) the credits node the create-once refund marker shares.
+      if (path === `credits/${TEST_UID}/balance` || path === `credits/${TEST_UID}`) {
+        return {
+          ...ref,
+          transaction: async () => {
+            throw new Error('refund store unavailable');
+          },
+        };
+      }
+      return ref;
+    });
+    lines.length = 0;
+
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(500);
+    const errorOf = (line: unknown[]) =>
+      (line[0] as { err?: { message?: string } } | undefined)?.err?.message;
+    const unhandled = lines.find((line) => line[1] === 'Unhandled error');
+    expect(errorOf(unhandled!)).toBe('parry.gg transport exploded');
+    const settleLines = lines.filter((line) => errorOf(line) === 'refund store unavailable');
+    expect(settleLines).toHaveLength(1);
+    const serialized = JSON.stringify(settleLines[0], (_key, value: unknown) =>
+      value instanceof Error ? { message: value.message, stack: value.stack } : value,
+    );
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R2-WR-02 (iteration 2): the three writes between the spend and
+// the model call that API-WR-01 left unguarded — the prep running-claim
+// transaction, the legacy `jobRef.set(runningRecord)`, and the running-index
+// update — must not strand a spent credit. A throw at each point settles the
+// job through the same atomic, ownership-checked settle and refunds exactly
+// once; the job never rests `queued` (nothing sweeps it) or `running`
+// without its index entry (the sweep reads only the index).
+// ---------------------------------------------------------------------------
+
+/** Makes ONE write on `database` throw: the first call for which `shouldThrow(path, op, value)` is true. */
+function failOneWrite(
+  database: FakeDatabase,
+  shouldThrow: (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => boolean,
+): { thrown: () => boolean } {
+  let thrown = false;
+  const originalRef = database.ref.bind(database);
+  const maybeThrow = (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => {
+    if (!thrown && shouldThrow(path, op, value)) {
+      thrown = true;
+      throw new Error(`injected ${op} failure`);
+    }
+  };
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        maybeThrow(path ?? '', 'set', value);
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        maybeThrow(path ?? '', 'update', values);
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        maybeThrow(path ?? '', 'transaction', undefined);
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { thrown: () => thrown };
+}
+
+function prepSingleWr02App() {
+  const built = prepBillableApp('viable', () => ({
+    stop_reason: 'end_turn',
+    parsed_output: VALID_REPORT,
+  }));
+  seedPrepBrief(built.database, TEST_UID, P39_ENTRY_KEY, {
+    likelyOpponents: { rival: true },
+    scoutBindings: { rival: P39_PARRY_BINDING },
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+function runningIndexEntry(database: FakeDatabase, jobId: string): unknown {
+  const dump = database.dump() as {
+    reportJobsByStatus?: { running?: Record<string, Record<string, unknown>> };
+  };
+  return dump.reportJobsByStatus?.running?.[TEST_UID]?.[jobId] ?? null;
+}
+
+describe('code review R2-WR-02: a throw at the running claim or the running index never strands a credit', () => {
+  it('prep_report: the running-claim transaction throws — the job settles, refunds once and rests refunded', async () => {
+    const { app, database, modelSpy } = prepSingleWr02App();
+    const jobPath = `reportJobs/${TEST_UID}/wr02-claim`;
+    // Since code review R3-WR-01 the queued write is the FIRST transaction on
+    // the job node (a compare-and-set); the running claim is the second.
+    let jobTransactions = 0;
+    const injected = failOneWrite(
+      database,
+      (path, op) => path === jobPath && op === 'transaction' && ++jobTransactions === 2,
+    );
+
+    const response = await postPrepSingle(app, 'wr02-claim');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-claim')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(spendLedgerRefs(database)).toEqual(['wr02-claim']);
+    expect(refundLedgerRefs(database)).toEqual(['wr02-claim']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy scout: the plain running `.set()` throws — the job settles failed, refunds once', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    const jobPath = `reportJobs/${TEST_UID}/wr02-legacy-set`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath && op === 'set' && (value as { status?: string }).status === 'running',
+    );
+
+    const response = await postLegacy(app, 'wr02-legacy-set');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-legacy-set')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual(['wr02-legacy-set']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep_report: the running-index update throws after the claim — the job settles, refunds once, and no running entry is left', async () => {
+    const { app, database, modelSpy } = prepSingleWr02App();
+    const indexKey = `reportJobsByStatus/running/${TEST_UID}/wr02-index`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === '' && op === 'update' && (value as Record<string, unknown>)[indexKey] === true,
+    );
+
+    const response = await postPrepSingle(app, 'wr02-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-index')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+      wasCharged: true,
+    });
+    expect(runningIndexEntry(database, 'wr02-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['wr02-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy scout: the running-index update throws — the job settles failed, refunds once, no running entry', async () => {
+    const { app, database, modelSpy } = legacyBillableApp(() => VALID_REPORT);
+    const indexKey = `reportJobsByStatus/running/${TEST_UID}/wr02-legacy-index`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === '' && op === 'update' && (value as Record<string, unknown>)[indexKey] === true,
+    );
+
+    const response = await postLegacy(app, 'wr02-legacy-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'wr02-legacy-index')).toMatchObject({
+      status: 'failed',
+      wasCharged: true,
+    });
+    expect(runningIndexEntry(database, 'wr02-legacy-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['wr02-legacy-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review R2-IN-03 (iteration 2): a bundle child from before 39-10 (no
+// recorded `wasCharged`) takes its spend fact from the DURABLE purchase
+// record — `creditBundleOps/{uid}/{bundleId}`, `debited` meaning charged —
+// not from the uid's LIVE free-access status, which can change between
+// purchase and execution. (R3-IN-03: an absent record now means not
+// charged; live free access is never read.) Money: balance + `refund` ledger
+// entries.
+// ---------------------------------------------------------------------------
+
+/** Rewrites a stored child job without its `wasCharged` — the shape every child written before 39-10 has. */
+async function stripSpendFact(database: FakeDatabase, jobId: string): Promise<void> {
+  const rest = { ...(await jobRecord(database, jobId)) };
+  delete rest.wasCharged;
+  database.seed(`reportJobs/${TEST_UID}/${jobId}`, rest);
+  expect(await jobRecord(database, jobId)).not.toHaveProperty('wasCharged');
+}
+
+describe('code review R2-IN-03: a pre-39-10 bundle child falls back to the durable bundle-op record, not live free access', () => {
+  it('PAID bundle (marker debited), free access GAINED before the child runs: the failed child is refunded exactly once', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp(['someone-else']);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+    const child = (await submitBundle(app, 'bundle-in03-paid'))[0]!;
+    expect(await balanceOf(database)).toBe(7);
+    expect(
+      (await database.ref(`creditBundleOps/${TEST_UID}/bundle-in03-paid`).get()).val(),
+    ).toMatchObject({ status: 'debited' });
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.add(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(8);
+  });
+
+  it('bundle bought FREE with a non-debited marker on record, free access LOST before the child runs: no refund is minted', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    // An earlier paid attempt at this bundle id found too few credits; the
+    // uid then gained free access and submitted it free.
+    database.seed(`creditBundleOps/${TEST_UID}/bundle-in03-free`, {
+      status: 'insufficient',
+      amount: 3,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const child = (await submitBundle(app, 'bundle-in03-free'))[0]!;
+    expect(await balanceOf(database)).toBe(5);
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-WR-01): the STRADDLE of the running claim. A
+// crafted duplicate execution B reads a bundle child BEFORE execution A
+// claims it, and writes its own `queued` row only AFTER A's claim. Under the
+// old plain `.set`, B's row erased A's `running` row, B's claim committed
+// too, and every post-claim failure was a bare `failJob`, so the one slot
+// credit was refunded twice (both fail) or refunded after A had DELIVERED.
+// Money: balance + `refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+interface R3Gate<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}
+
+function r3Gate<T>(): R3Gate<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * A billable prep app whose provider lookup AND model call both block on
+ * gates the test releases. A lookup gate resolves `'found'` (the lookup
+ * continues normally) or `'missing'` (the provider answers not-found); a
+ * model gate resolves with the selection the model returns.
+ */
+function r3StraddleApp(fixture: 'viable' | 'thin') {
+  const lookupGates: Array<R3Gate<'found' | 'missing'>> = [];
+  const clients = parryClients({
+    getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+    ...(fixture === 'thin' ? { matches: 'empty' as const } : {}),
+  });
+  const users = clients.users as unknown as { getUser: (...args: unknown[]) => Promise<unknown> };
+  const lookup = users.getUser;
+  users.getUser = vi.fn(async (...args: unknown[]) => {
+    const gate = r3Gate<'found' | 'missing'>();
+    lookupGates.push(gate);
+    if ((await gate.promise) === 'missing') {
+      return { getUser: () => undefined };
+    }
+    return lookup(...args);
+  });
+  const modelGates: Array<R3Gate<unknown>> = [];
+  const modelSpy = vi.fn(async () => {
+    const gate = r3Gate<unknown>();
+    modelGates.push(gate);
+    return { stop_reason: 'end_turn' as const, parsed_output: await gate.promise };
+  });
+  const options = {
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(modelSpy),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: clients,
+  };
+  const built = fixture === 'viable' ? buildTestApp(options) : buildBareTestApp(options);
+  return { ...built, lookupGates, modelGates, modelSpy };
+}
+
+/**
+ * Holds execution B's queued write on `jobPath` until released: the SECOND
+ * write that is either a `queued` whole-node `.set()` or a `.transaction()`
+ * on that node (execution A's queued write is the first; A's running claim
+ * comes only after the test releases A's lookup, which it does after B is
+ * held).
+ */
+function holdSecondQueuedWrite(database: FakeDatabase, jobPath: string) {
+  const held = r3Gate<void>();
+  let writes = 0;
+  let reached = false;
+  const hold = async () => {
+    writes += 1;
+    if (writes === 2) {
+      reached = true;
+      await held.promise;
+    }
+  };
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    if (path !== jobPath) {
+      return ref;
+    }
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        if ((value as { status?: string } | null)?.status === 'queued') {
+          await hold();
+        }
+        return ref.set(value);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        await hold();
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { release: () => held.resolve(), reached: () => reached };
+}
+
+/**
+ * Runs the straddle up to the point where B's held queued write is released
+ * after A's claim: A is waiting on the model (viable) or finished (thin).
+ * Returns B's in-flight response and a `settle` that drives B to its end —
+ * B either stops at its own queued write or reaches its lookup and model.
+ */
+async function r3Straddle(
+  harness: ReturnType<typeof r3StraddleApp>,
+  child: { jobId: string; opponentName: string },
+) {
+  const { app, database, lookupGates, modelGates } = harness;
+  const hold = holdSecondQueuedWrite(database, `reportJobs/${TEST_UID}/${child.jobId}`);
+  const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+  await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+  const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+  await vi.waitFor(() => expect(hold.reached()).toBe(true));
+  let bDone = false;
+  void executionB.then(() => {
+    bDone = true;
+  });
+  lookupGates[0]!.resolve('found');
+  return {
+    executionA,
+    executionB,
+    /**
+     * Releases B's queued write after A's claim and drives B until it answers
+     * or — when `untilModel` — waits on its own model call.
+     */
+    releaseB: async (untilModel: boolean) => {
+      hold.release();
+      await vi.waitFor(() => expect(bDone || lookupGates.length === 2).toBe(true));
+      if (!bDone && lookupGates.length === 2) {
+        lookupGates[1]!.resolve('found');
+        if (untilModel) {
+          await vi.waitFor(() => expect(bDone || modelGates.length === 2).toBe(true));
+        }
+      }
+    },
+  };
+}
+
+describe('code review R3-WR-01: a straddled bundle child is refunded at most once and never after delivery', () => {
+  it('R3-A: B reads before A claims and re-queues after it; A DELIVERS, B fails validation — no refund, the job stays succeeded', async () => {
+    const harness = r3StraddleApp('viable');
+    const { app, database, modelGates } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-straddle'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const run = await r3Straddle(harness, child);
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'running' });
+    await run.releaseB(true);
+
+    modelGates[0]!.resolve(VALID_REPORT);
+    const responseA = await run.executionA;
+    modelGates[1]?.resolve(BELOW_MINIMUM_SELECTION);
+    const responseB = await run.executionB;
+
+    expect(responseA.statusCode).toBe(200);
+    expect(responseB.statusCode).not.toBe(200);
+    expect(storedScoutReports(database)).toHaveLength(1);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    const job = await jobRecord(database, child.jobId);
+    expect(job).toMatchObject({ status: 'succeeded', reason: 'prep_bundle', wasCharged: true });
+    expect(typeof job.resultRef).toBe('string');
+  });
+
+  it('R3-B: the same straddle, and BOTH executions fail validation — exactly one refund', async () => {
+    const harness = r3StraddleApp('viable');
+    const { app, database, modelGates } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-straddle-2'))[0]!;
+
+    const run = await r3Straddle(harness, child);
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    await run.releaseB(true);
+
+    modelGates[0]!.resolve(BELOW_MINIMUM_SELECTION);
+    modelGates[1]?.resolve(BELOW_MINIMUM_SELECTION);
+    const [responseA, responseB] = await Promise.all([run.executionA, run.executionB]);
+
+    expect(responseA.statusCode).toBe(502);
+    expect(responseB.statusCode).not.toBe(200);
+    expect(storedScoutReports(database)).toHaveLength(0);
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+
+  it('R3-F: a THIN-evidence child, straddled — the D-21 fail-fast refunds the slot exactly once, with no model call', async () => {
+    const harness = r3StraddleApp('thin');
+    const { app, database, modelSpy } = harness;
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-thin'))[0]!;
+
+    const run = await r3Straddle(harness, child);
+    const responseA = await run.executionA;
+    expect(responseA.statusCode).toBe(502);
+    await run.releaseB(false);
+    const responseB = await run.executionB;
+
+    expect(responseB.statusCode).not.toBe(200);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(refundLedgerRefs(database)).toEqual([child.jobId]);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_bundle',
+      failureReason: 'validation',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-WR-02): a prep single (or legacy) execution
+// spends its OWN credit (`spendCredit` per execution, one shared ref). The
+// R2-CR-01 ownership gate is right for the JOB RECORD — only the owner may
+// fail it — but it also withheld the refund of that execution's own spend
+// when a crafted duplicate (same client-sent jobId) had taken the job over,
+// so the user paid two credits for one report. A bundle child's one credit
+// belongs to the job and is still refunded only by the owner.
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+function seedRivalPrepBrief(database: FakeDatabase): void {
+  seedPrepBrief(database, TEST_UID, P39_ENTRY_KEY, {
+    likelyOpponents: { rival: true },
+    scoutBindings: { rival: P39_PARRY_BINDING },
+  });
+}
+
+describe('code review R3-WR-02: an execution that loses a prep single still refunds its OWN spend, exactly once', () => {
+  it('R3-C: B re-queues and DELIVERS; A resolves NOT FOUND — A refunds its own credit, the delivered job is untouched', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    const executionA = postPrepSingle(app, 'dup-single');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, 'dup-single');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    const responseB = await executionB;
+    expect(responseB.statusCode).toBe(200);
+    const delivered = await jobRecord(database, 'dup-single');
+    expect(delivered).toMatchObject({ status: 'succeeded', reason: 'prep_report' });
+
+    lookupGates[0]!.resolve('missing');
+    const responseA = await executionA;
+
+    expect(responseA.statusCode).toBe(404);
+    expect(spendLedgerRefs(database)).toEqual(['dup-single', 'dup-single']);
+    expect(refundLedgerRefs(database)).toEqual(['dup-single']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, 'dup-single')).toEqual(delivered);
+    expect(storedScoutReports(database)).toHaveLength(1);
+  });
+
+  it('A loses its running claim to B, which re-queued after A spent — A answers 409 and refunds its own credit once; B delivers', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    const executionA = postPrepSingle(app, 'dup-claim');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, 'dup-claim');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[0]!.resolve('found');
+    const responseA = await executionA;
+    expect(responseA.statusCode).toBe(409);
+
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    expect((await executionB).statusCode).toBe(200);
+
+    expect(spendLedgerRefs(database)).toEqual(['dup-claim', 'dup-claim']);
+    expect(refundLedgerRefs(database)).toEqual(['dup-claim']);
+    expect(await balanceOf(database)).toBe(1);
+    expect(await jobRecord(database, 'dup-claim')).toMatchObject({ status: 'succeeded' });
+  });
+
+  it("control: when the stuck-job sweep already failed and refunded this execution's stale running job, its late failure refunds nothing more", async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const execution = postPrepSingle(app, 'late-after-sweep');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    lookupGates[0]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    expect(await jobRecord(database, 'late-after-sweep')).toMatchObject({ status: 'running' });
+
+    // Sixteen minutes later (past the fifteen-minute staleness window) the
+    // sweep fails the job and refunds its credit.
+    const realNow = Date.now.bind(Date);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 16 * 60 * 1000);
+    try {
+      const sweep = await runSweepStuckReportJobs(database as never, { now: Date.now() });
+      expect(sweep).toEqual({ swept: 1, refunded: 1 });
+      modelGates[0]!.resolve(BELOW_MINIMUM_SELECTION);
+      const response = await execution;
+      expect(response.statusCode).toBe(502);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(spendLedgerRefs(database)).toEqual(['late-after-sweep']);
+    expect(refundLedgerRefs(database)).toEqual(['late-after-sweep']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('control: a bundle child whose credit belongs to the job is still refunded only by the owner (B delivers, A resolves not found: no refund)', async () => {
+    const { app, database, lookupGates, modelGates } = r3StraddleApp('viable');
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r3-wr02-bundle'))[0]!;
+
+    const executionA = postPrepSingle(app, child.jobId, child.opponentName);
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    const executionB = postPrepSingle(app, child.jobId, child.opponentName);
+    await vi.waitFor(() => expect(lookupGates.length).toBe(2));
+    lookupGates[1]!.resolve('found');
+    await vi.waitFor(() => expect(modelGates.length).toBe(1));
+    modelGates[0]!.resolve(VALID_REPORT);
+    expect((await executionB).statusCode).toBe(200);
+    lookupGates[0]!.resolve('missing');
+    expect((await executionA).statusCode).toBe(404);
+
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'succeeded' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 3 (R3-IN-03): `creditBundleOps/{uid}/{bundleId}` is
+// written only by `spendCredits` (its claim, its `insufficient` set and its
+// `debited` update) and nothing ever removes it, and a PAID bundle's children
+// are written only after its `debited` marker. So for an existing pre-39-10
+// child, an ABSENT marker proves a free-access submission: not charged.
+// Live free access — the last mint path — is no longer consulted.
+// ---------------------------------------------------------------------------
+
+describe('code review R3-IN-03: an absent or stranded bundle-op marker means a pre-39-10 child was not charged', () => {
+  it('bundle bought FREE (no marker at all), free access LOST before the child runs: no refund is minted', async () => {
+    const { app, database, modelSpy, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const child = (await submitBundle(app, 'bundle-in03-nomarker'))[0]!;
+    expect(await balanceOf(database)).toBe(5);
+    expect(
+      (await database.ref(`creditBundleOps/${TEST_UID}/bundle-in03-nomarker`).get()).exists(),
+    ).toBe(false);
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      reason: 'prep_bundle',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+
+  it('a stranded CLAIMING marker (a paid attempt that never materialised children) and a free submission of the same id: not charged, no refund', async () => {
+    const { app, database, allowedUids } = mutableAccessPrepApp([TEST_UID]);
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    database.seed(`creditBundleOps/${TEST_UID}/bundle-in03-claiming`, {
+      status: 'claiming',
+      amount: 3,
+      createdAt: 1,
+    });
+    const child = (await submitBundle(app, 'bundle-in03-claiming'))[0]!;
+    await stripSpendFact(database, child.jobId);
+
+    allowedUids.delete(TEST_UID);
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({
+      status: 'failed',
+      wasCharged: false,
+    });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-01): the settlement latch must be set only
+// AFTER the owned settle resolves. Latching first meant a transient RTDB
+// error on the resolver's first failure write left the latch closed, so the
+// post-spend guard became a no-op and the spent credit stayed stranded on a
+// `queued` job the sweep never reads (it reads only the running index).
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+describe('code review R4-WR-01: a transient failure on the first settle write never strands a spent credit', () => {
+  it("R4-L1 legacy: start.gg answers 500 and failJob's failed set throws once after the settle commits — the job settles and refunds exactly once", async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r4-l1`;
+    // Code review R5-WR-01: the injection names the write the iteration-4
+    // probe named — `failJob`'s whole-node `failed` set, AFTER the owned
+    // settle transaction has committed — and nothing else, so the settle
+    // transaction itself is never the write that throws.
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postLegacy(app, 'r4-l1');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r4-l1')).toMatchObject({ status: 'failed' });
+    expect(spendLedgerRefs(database)).toEqual(['r4-l1']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-l1']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('R4-L2 prep single: the provider answers not found and the settle transaction throws once — the job settles and refunds exactly once', async () => {
+    const { app, database, lookupGates, modelSpy } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r4-l2`;
+    let armed = false;
+    const injected = failOneWrite(
+      database,
+      (path, op) => armed && path === jobPath && op === 'transaction',
+    );
+
+    const execution = postPrepSingle(app, 'r4-l2');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    // The queued compare-and-set has committed; arm the injection for the
+    // resolver's own settle.
+    armed = true;
+    lookupGates[0]!.resolve('missing');
+    const response = await execution;
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r4-l2')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+    });
+    expect(spendLedgerRefs(database)).toEqual(['r4-l2']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-l2']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('control: with no injected failure the legacy resolver still refunds exactly once (the latch still stops a second refund on the rethrow)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'end_turn', parsed_output: null })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r4-l1-control');
+
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r4-l1-control')).toMatchObject({ status: 'failed' });
+    expect(refundLedgerRefs(database)).toEqual(['r4-l1-control']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-WR-01): R4-WR-01 closed the latch only after
+// the owned settle resolves, but `failJob`'s own writes after that settle —
+// the whole-node `failed` set, the index/day update and the refund's balance
+// transaction — could still throw once and strand the spent credit: the row
+// is already `failed` (so the sweep, which reads only `running` rows, skips
+// it) and the latch is closed. Every one of those writes is now retried a
+// bounded number of times; the refund is made idempotent by a create-once
+// marker written in the SAME transaction as the balance, so a retry after a
+// committed-but-unacknowledged refund never refunds twice. These are the
+// reviewer's five reproductions (R4-L1 above, L1b, L1c, L2b, L3b) plus the
+// index write, the lost acknowledgement and the persistent failures.
+// Money: balance + `spend`/`refund` ledger entries, never `credit_refunded`.
+// ---------------------------------------------------------------------------
+
+/** Makes EVERY write on `database` for which `shouldThrow(path, op, value)` is true throw. */
+function failEveryWrite(
+  database: FakeDatabase,
+  shouldThrow: (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => boolean,
+): { count: () => number } {
+  let count = 0;
+  const originalRef = database.ref.bind(database);
+  const maybeThrow = (path: string, op: 'set' | 'update' | 'transaction', value: unknown) => {
+    if (shouldThrow(path, op, value)) {
+      count += 1;
+      throw new Error(`injected persistent ${op} failure`);
+    }
+  };
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        maybeThrow(path ?? '', 'set', value);
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        maybeThrow(path ?? '', 'update', values);
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        maybeThrow(path ?? '', 'transaction', undefined);
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return { count: () => count };
+}
+
+/**
+ * The refund's balance transaction: the SECOND transaction on the balance
+ * node (the first is the spend), or any transaction on the credits node the
+ * create-once refund marker shares with the balance.
+ */
+function refundTransactionPredicate(): (path: string, op: string) => boolean {
+  let balanceTransactions = 0;
+  return (path, op) => {
+    if (op !== 'transaction') {
+      return false;
+    }
+    if (path === `credits/${TEST_UID}`) {
+      return true;
+    }
+    if (path === `credits/${TEST_UID}/balance`) {
+      balanceTransactions += 1;
+      return balanceTransactions >= 2;
+    }
+    return false;
+  };
+}
+
+/** A logger that records every call, at every level, for the no-uid log assertions. */
+function r5CapturingLogger() {
+  const lines: unknown[][] = [];
+  const record = (...args: unknown[]) => {
+    lines.push(args);
+  };
+  const logger = {
+    level: 'info',
+    fatal: record,
+    error: record,
+    warn: record,
+    info: record,
+    debug: record,
+    trace: record,
+    silent: record,
+    child: (): unknown => logger,
+  };
+  return { logger, lines };
+}
+
+const errorMessageOf = (line: unknown[]): string | undefined =>
+  (line[0] as { err?: { message?: string } } | undefined)?.err?.message;
+
+/** A billable legacy app whose start.gg lookup answers 500, so the resolver fails the job. */
+function r5LegacyFailureApp(logger?: unknown) {
+  const built = buildTestApp({
+    startgg: STARTGG_CONFIG,
+    startggFetch: (async () => new Response('upstream down', { status: 500 })) as typeof fetch,
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    reportsClient: stubClient(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    })),
+    ...(logger ? { logger: logger as never } : {}),
+  });
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+/** A billable prep-single app over the viable workspace whose model call throws `err` (default: a provider 500). */
+function r5PrepModelErrorApp(options: { err?: () => unknown; logger?: unknown } = {}) {
+  const err = options.err ?? (() => new Anthropic.APIError(500, undefined, 'boom', new Headers()));
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(async () => {
+      throw err();
+    }),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) }),
+    ...(options.logger ? { logger: options.logger as never } : {}),
+  });
+  seedRivalPrepBrief(built.database);
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return built;
+}
+
+const R5_SWEEP_LATER_MS = 60 * 60 * 1000;
+
+describe('code review R5-WR-01: a transient failure AFTER the owned settle commits never strands a spent credit', () => {
+  it("R5-L1b legacy: the settle commits, failJob's failed set throws once — refunded once, and a later sweep finds nothing", async () => {
+    const { app, database } = r5LegacyFailureApp();
+    const jobPath = `reportJobs/${TEST_UID}/r5-l1b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postLegacy(app, 'r5-l1b');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r5-l1b')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l1b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l1b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L1c legacy: the settle commits, the refund's balance transaction throws once — refunded exactly once", async () => {
+    const { app, database } = r5LegacyFailureApp();
+    const isRefund = refundTransactionPredicate();
+    const injected = failOneWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postLegacy(app, 'r5-l1c');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(500);
+    expect(await jobRecord(database, 'r5-l1c')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l1c']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l1c']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L2b prep single: not found, the settle commits, failJob's failed set throws once — refunded once, job refunded", async () => {
+    const { app, database, lookupGates, modelSpy } = r3StraddleApp('viable');
+    seedRivalPrepBrief(database);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobPath = `reportJobs/${TEST_UID}/r5-l2b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const execution = postPrepSingle(app, 'r5-l2b');
+    await vi.waitFor(() => expect(lookupGates.length).toBe(1));
+    lookupGates[0]!.resolve('missing');
+    const response = await execution;
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(404);
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(await jobRecord(database, 'r5-l2b')).toMatchObject({
+      status: 'refunded',
+      reason: 'prep_report',
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l2b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l2b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("R5-L3b prep single: the model answers a provider error, the running settle commits, failJob's failed set throws once — 502, refunded once, index cleared", async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const jobPath = `reportJobs/${TEST_UID}/r5-l3b`;
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postPrepSingle(app, 'r5-l3b');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-l3b')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-l3b')).toBeNull();
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r5-l3b']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-l3b']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: the index/day update after the settle throws once — 502, refunded once, index cleared', async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const injected = failOneWrite(
+      database,
+      (path, op, value) =>
+        (path === '' || path === '/') &&
+        op === 'update' &&
+        Object.prototype.hasOwnProperty.call(
+          value as Record<string, unknown>,
+          `reportJobsByStatus/running/${TEST_UID}/r5-index`,
+        ) &&
+        (value as Record<string, unknown>)[`reportJobsByStatus/running/${TEST_UID}/r5-index`] ===
+          null,
+    );
+
+    const response = await postPrepSingle(app, 'r5-index');
+
+    expect(injected.thrown()).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-index')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-index')).toBeNull();
+    expect(refundLedgerRefs(database)).toEqual(['r5-index']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('never twice: the refund COMMITS but its acknowledgement is lost (the call throws after committing) — the retry finds the marker, balance 1, one refund entry', async () => {
+    const { app, database } = r5PrepModelErrorApp();
+    const isRefund = refundTransactionPredicate();
+    let lost = false;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        transaction: async (fn: (current: unknown) => unknown) => {
+          const result = await ref.transaction(fn);
+          if (!lost && isRefund(path ?? '', 'transaction')) {
+            lost = true;
+            throw new Error('connection dropped before the commit was acknowledged');
+          }
+          return result;
+        },
+      };
+    });
+
+    const response = await postPrepSingle(app, 'r5-lost-ack');
+
+    expect(lost).toBe(true);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-lost-ack')).toMatchObject({ status: 'refunded' });
+    expect(spendLedgerRefs(database)).toEqual(['r5-lost-ack']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-lost-ack']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it("persistent: failJob's failed set fails on every attempt — the settled row is already failed, so the refund still happens exactly once, and the failure is logged without uid or token", async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const jobPath = `reportJobs/${TEST_UID}/r5-persist-set`;
+    const injected = failEveryWrite(
+      database,
+      (path, op, value) =>
+        path === jobPath &&
+        op === 'set' &&
+        (value as { status?: string } | null)?.status === 'failed',
+    );
+
+    const response = await postPrepSingle(app, 'r5-persist-set');
+
+    expect(injected.count()).toBeGreaterThan(1);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-persist-set')).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual(['r5-persist-set']);
+    expect(await balanceOf(database)).toBe(1);
+    const logged = lines.filter(
+      (line) => errorMessageOf(line) === 'injected persistent set failure',
+    );
+    expect(logged).toHaveLength(1);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+
+  it('persistent: the refund fails on every attempt — no second path refunds it, the job never claims "refunded", and one error is logged for reconciliation without uid or token', async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const isRefund = refundTransactionPredicate();
+    const injected = failEveryWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postPrepSingle(app, 'r5-persist-refund');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(injected.count()).toBeGreaterThan(1);
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-persist-refund')).toMatchObject({ status: 'failed' });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+    const logged = lines.filter(
+      (line) => errorMessageOf(line) === 'injected persistent transaction failure',
+    );
+    expect(logged).toHaveLength(1);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-01): the abort signal R4-WR-02 added fires
+// AFTER the response headers as a bare `DOMException` (`AbortError`, or
+// `TimeoutError` from `AbortSignal.timeout`), not an `Anthropic.APIError`.
+// It takes the same owned failure and the same 502 as the SDK's own timeout
+// error, instead of a 500 through the generic handler.
+// ---------------------------------------------------------------------------
+
+describe('code review R5-IN-01: a body-read abort is a 502 with one owned refund, like the SDK timeout', () => {
+  it('prep single: a DOMException AbortError — 502, refunded once, and a later sweep finds nothing', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('This operation was aborted', 'AbortError'),
+    });
+
+    const response = await postPrepSingle(app, 'r5-a1');
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: Date.now() + R5_SWEEP_LATER_MS,
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a1')).toMatchObject({ status: 'refunded' });
+    expect(runningIndexEntry(database, 'r5-a1')).toBeNull();
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(refundLedgerRefs(database)).toEqual(['r5-a1']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: the TimeoutError DOMException AbortSignal.timeout raises is handled the same way', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('The operation timed out.', 'TimeoutError'),
+    });
+
+    const response = await postPrepSingle(app, 'r5-a1-timeout');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a1-timeout')).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual(['r5-a1-timeout']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('legacy: a DOMException AbortError — 502, failed, refunded once', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r5-a2');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r5-a2')).toMatchObject({ status: 'failed' });
+    expect(spendLedgerRefs(database)).toEqual(['r5-a2']);
+    expect(refundLedgerRefs(database)).toEqual(['r5-a2']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('bundle child: a DOMException AbortError — 502, the child refunded once (its one slot credit)', async () => {
+    const { app, database } = r5PrepModelErrorApp({
+      err: () => new DOMException('This operation was aborted', 'AbortError'),
+    });
+    seedBundleBrief(database, TEST_UID, P39_ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const child = (await submitBundle(app, 'r5-a3'))[0]!;
+    expect(await balanceOf(database)).toBe(0);
+
+    const response = await postPrepSingle(app, child.jobId, child.opponentName);
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, child.jobId)).toMatchObject({ status: 'refunded' });
+    expect(refundLedgerRefs(database)).toEqual([`r5-a3:${child.slot}`]);
+    expect(await balanceOf(database)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-02): the owner's locked rule is ONE model
+// call per job with no retries. The SDK defaults (two retries, a ten-minute
+// timeout per attempt) let one call run about thirty minutes, past the
+// fifteen-minute stale window, which is what made the pre-existing sweep
+// races (S1-S4) reachable on the legit path. The request must carry
+// `maxRetries: 0` and an explicit timeout of at most eight minutes, so a
+// live execution is always terminal before the sweep can see it as stale.
+// Model clients are stubs; money is read from the balance and the ledgers.
+// ---------------------------------------------------------------------------
+
+const EIGHT_MINUTES_MS = 8 * 60 * 1000;
+const SWEEP_STALE_WINDOW_MS = 15 * 60 * 1000;
+
+interface R4ModelCall {
+  options: { maxRetries?: unknown; timeout?: unknown; signal?: unknown } | undefined;
+  resolve: (value: { stop_reason: string; parsed_output: unknown }) => void;
+  reject: (err: unknown) => void;
+}
+
+/** A billable prep-single app whose model call blocks until the test settles it, recording the per-request options the SDK call received. */
+function r4BoundedModelApp() {
+  const calls: R4ModelCall[] = [];
+  const modelSpy = vi.fn(
+    (_params: unknown, options?: unknown) =>
+      new Promise<{ stop_reason: string; parsed_output: unknown }>((resolve, reject) => {
+        calls.push({ options: options as R4ModelCall['options'], resolve, reject });
+      }),
+  );
+  const built = buildTestApp({
+    reports: P39_NON_ALLOWLIST_CONFIG,
+    stripe: P39_STRIPE_CONFIG,
+    prepPaid: P39_PREP_PAID_CONFIG,
+    reportsClient: stubClient(
+      modelSpy as (params: unknown) => Promise<{
+        stop_reason: string | null;
+        parsed_output: unknown;
+      }>,
+    ),
+    parrygg: { apiKey: 'parry-key' },
+    parryggClients: parryClients({ getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }) }),
+  });
+  seedRivalPrepBrief(built.database);
+  built.database.seed(`credits/${TEST_UID}/balance`, 1);
+  return { ...built, calls, modelSpy };
+}
+
+function expectBoundedSingleAttempt(options: R4ModelCall['options']): number {
+  expect(options).toBeDefined();
+  expect(options!.maxRetries).toBe(0);
+  expect(typeof options!.timeout).toBe('number');
+  const timeout = options!.timeout as number;
+  expect(timeout).toBeGreaterThan(0);
+  expect(timeout).toBeLessThanOrEqual(EIGHT_MINUTES_MS);
+  // The same bound as an abort signal, which also covers reading the body.
+  expect(options!.signal).toBeInstanceOf(AbortSignal);
+  return timeout;
+}
+
+describe('code review R4-WR-02: one model call per job, no retries, bounded well inside the stale window', () => {
+  it('the legacy scout model call reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
+    // Typed with the SDK call's two parameters so the per-request options
+    // (the second argument) can be read back from the recorded call.
+    const modelSpy = vi.fn<
+      (
+        params: unknown,
+        options?: unknown,
+      ) => Promise<{ stop_reason: 'end_turn'; parsed_output: unknown }>
+    >(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: P39_NON_ALLOWLIST_CONFIG,
+      stripe: P39_STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await postLegacy(app, 'r4-wr02-legacy');
+
+    expect(response.statusCode).toBe(200);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expectBoundedSingleAttempt(modelSpy.mock.calls[0]![1] as R4ModelCall['options']);
+  });
+
+  it('prep single: the attempt times out at its bound — the job settles and refunds once, and a sweep at the fifteen-minute mark finds nothing to sweep (S1/S4 unreachable)', async () => {
+    const { app, database, calls, modelSpy } = r4BoundedModelApp();
+    const execution = postPrepSingle(app, 'r4-wr02-timeout');
+    await vi.waitFor(() => expect(calls.length).toBe(1));
+    const timeout = expectBoundedSingleAttempt(calls[0]!.options);
+    const running = await jobRecord(database, 'r4-wr02-timeout');
+    expect(running).toMatchObject({ status: 'running' });
+    const runningAt = running.updatedAt as number;
+
+    // The latest a single attempt can end: its own timeout after the claim.
+    // With maxRetries 0 the SDK throws its timeout error instead of retrying.
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => runningAt + timeout);
+    try {
+      calls[0]!.reject(new Anthropic.APIConnectionTimeoutError());
+      const response = await execution;
+      expect(response.statusCode).toBe(502);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(await jobRecord(database, 'r4-wr02-timeout')).toMatchObject({ status: 'refunded' });
+
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: runningAt + SWEEP_STALE_WINDOW_MS + 1,
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(spendLedgerRefs(database)).toEqual(['r4-wr02-timeout']);
+    expect(refundLedgerRefs(database)).toEqual(['r4-wr02-timeout']);
+    expect(await balanceOf(database)).toBe(1);
+  });
+
+  it('prep single: a delivery at the attempt bound is terminal before the sweep window — the sweep neither fails nor refunds it (S2/S3 unreachable)', async () => {
+    const { app, database, calls } = r4BoundedModelApp();
+    const execution = postPrepSingle(app, 'r4-wr02-deliver');
+    await vi.waitFor(() => expect(calls.length).toBe(1));
+    const timeout = expectBoundedSingleAttempt(calls[0]!.options);
+    const runningAt = (await jobRecord(database, 'r4-wr02-deliver')).updatedAt as number;
+
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => runningAt + timeout);
+    try {
+      calls[0]!.resolve({ stop_reason: 'end_turn', parsed_output: VALID_REPORT });
+      expect((await execution).statusCode).toBe(200);
+    } finally {
+      clock.mockRestore();
+    }
+
+    const sweep = await runSweepStuckReportJobs(database as never, {
+      now: runningAt + SWEEP_STALE_WINDOW_MS + 1,
+    });
+    expect(sweep).toEqual({ swept: 0, refunded: 0 });
+    expect(await jobRecord(database, 'r4-wr02-deliver')).toMatchObject({ status: 'succeeded' });
+    expect(storedScoutReports(database)).toHaveLength(1);
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(await balanceOf(database)).toBe(0);
+  });
+
+  it('the bound leaves the fourteen-minute own-refund guard unreachable on a live execution: one attempt plus six minutes of slack still ends before the stale window minus its one-minute margin', () => {
+    // Read from the route's own constants: one attempt (no retries) at the
+    // configured timeout, measured from the running claim, against the
+    // guard's threshold (the stale window minus the clock-skew margin).
+    expect(REPORT_MODEL_MAX_RETRIES).toBe(0);
+    expect(REPORT_MODEL_TIMEOUT_MS).toBeLessThanOrEqual(EIGHT_MINUTES_MS);
+    expect(REPORT_JOB_STALE_MS).toBe(SWEEP_STALE_WINDOW_MS);
+    const guardThresholdMs = REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS;
+    const worstCaseModelMs = (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS;
+    expect(worstCaseModelMs).toBeLessThan(guardThresholdMs);
+    expect(guardThresholdMs - worstCaseModelMs).toBeGreaterThanOrEqual(6 * 60 * 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-04): report generation runs INSIDE the
+// request — `POST /reports` awaits `runReportGeneration` /
+// `runSynthesisGeneration` before it replies — so one model attempt plus the
+// work before it (scout resolution, payload assembly, the snapshot write)
+// and after it (validation, the store, the terminal writes) must fit inside
+// the Cloud Run request timeout. Past it the request is cut off and a
+// request-billed instance's CPU is throttled, which would stall the terminal
+// writes. The live service's `timeoutSeconds` was 300 on 2026-09-28; the
+// owner decided ([HUMAN], 2026-09-28) to raise it to 600 at the Phase 39
+// deploy, applied before or together with this code, and to keep the
+// eight-minute attempt.
+// ---------------------------------------------------------------------------
+
+const OWNER_DECIDED_PLATFORM_TIMEOUT_MS = 600 * 1000;
+
+describe('code review R5-IN-04: one model attempt fits inside the Cloud Run request timeout', () => {
+  it('the platform constant is the owner-decided 600 seconds, and the attempt is eight minutes', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    expect(constants.CLOUD_RUN_REQUEST_TIMEOUT_MS).toBe(OWNER_DECIDED_PLATFORM_TIMEOUT_MS);
+    expect(REPORT_MODEL_TIMEOUT_MS).toBe(EIGHT_MINUTES_MS);
+  });
+
+  it('one attempt plus the documented request-overhead budget stays inside the platform timeout', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    const platformMs = constants.CLOUD_RUN_REQUEST_TIMEOUT_MS;
+    const overheadMs = constants.REPORT_REQUEST_OVERHEAD_BUDGET_MS;
+    expect(typeof platformMs).toBe('number');
+    expect(typeof overheadMs).toBe('number');
+    expect(overheadMs as number).toBeGreaterThanOrEqual(60 * 1000);
+    expect(
+      (REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS + (overheadMs as number),
+    ).toBeLessThanOrEqual(platformMs as number);
+  });
+
+  it('one attempt plus the overhead budget also ends before the fifteen-minute stale window minus its one-minute margin', () => {
+    const constants = reportsRouteModule as unknown as Record<string, unknown>;
+    const overheadMs = constants.REPORT_REQUEST_OVERHEAD_BUDGET_MS as number;
+    expect(REPORT_JOB_STALE_MS).toBe(SWEEP_STALE_WINDOW_MS);
+    expect(SWEEP_CLOCK_SKEW_MARGIN_MS).toBe(60 * 1000);
+    expect((REPORT_MODEL_MAX_RETRIES + 1) * REPORT_MODEL_TIMEOUT_MS + overheadMs).toBeLessThan(
+      REPORT_JOB_STALE_MS - SWEEP_CLOCK_SKEW_MARGIN_MS,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 6 (R6-WR-05): when `refundCreditOnce` keeps failing,
+// the credit is stranded on a `failed` row the sweep never visits, and the
+// error line is all reconciliation has. It must name the job, the credit ref,
+// the refund's marker key and the request, and never the uid or a token.
+// ---------------------------------------------------------------------------
+
+const REFUND_FAILURE_MESSAGE = 'could not refund a failed report job; left for reconciliation';
+
+describe('code review R6-WR-05: a refund that keeps failing is logged with what reconciliation needs, never the uid', () => {
+  it('the refund-failure line names the jobId, the creditRef, the marker key and the request id', async () => {
+    const { logger, lines } = r5CapturingLogger();
+    const { app, database } = r5PrepModelErrorApp({ logger });
+    const isRefund = refundTransactionPredicate();
+    failEveryWrite(database, (path, op) => isRefund(path, op));
+
+    const response = await postPrepSingle(app, 'r6-log-refund');
+
+    expect(response.statusCode).toBe(502);
+    expect(await jobRecord(database, 'r6-log-refund')).toMatchObject({ status: 'failed' });
+    const logged = lines.filter((line) => line[1] === REFUND_FAILURE_MESSAGE);
+    expect(logged).toHaveLength(1);
+    const fields = logged[0]![0] as Record<string, unknown>;
+    expect(fields).toMatchObject({ jobId: 'r6-log-refund', creditRef: 'r6-log-refund' });
+    expect(fields.markerKey).toMatch(/^r6-log-refund:.+$/);
+    expect(typeof fields.requestId).toBe('string');
+    expect((fields.requestId as string).length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(logged[0]);
+    expect(serialized).not.toContain(TEST_UID);
+    expect(serialized).not.toContain(TEST_TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 7 (R7-CR-01 / R7-CR-02): iteration 6 (R6-IN-03)
+// bounded each settle-write ATTEMPT at 2 s and started a new attempt when the
+// bound fired. With the real RTDB client that abandoned attempt is still
+// queued: a refund transaction's optimistic marker let the retry report the
+// refund done before the server had it, and an abandoned `set(failed)` landed
+// after `failJob` had already given the row to the stuck-job sweep. A retry
+// now starts only after the previous attempt has itself REJECTED; a write that
+// has not settled is awaited (the wire-level proofs live in
+// `billing/moneyPathWire.test.ts`). A write that never settles holds the
+// request: the recorded residual, as before iteration 6.
+// ---------------------------------------------------------------------------
+
+describe('code review R7-CR-01/R7-CR-02: a settle write is retried only after its attempt rejected, never while it may still land', () => {
+  const settleExports = reportsRouteModule as unknown as {
+    withSettleRetries?: <T>(write: () => Promise<T>) => Promise<T>;
+    REPORT_SETTLE_WRITE_ATTEMPTS?: number;
+  };
+
+  it('an attempt that has not settled is never abandoned or re-started: the write runs once and the wrapper keeps waiting for it', async () => {
+    expect(typeof settleExports.withSettleRetries).toBe('function');
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      let outcome = 'pending';
+      void settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return new Promise<never>(() => {});
+      }).then(
+        () => {
+          outcome = 'settled';
+        },
+        () => {
+          outcome = 'rejected';
+        },
+      );
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      expect(calls).toBe(1);
+      expect(outcome).toBe('pending');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an attempt that settles late resolves the wrapper with its own result, with no second attempt started', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const outcome = settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return new Promise<string>((resolve) => setTimeout(() => resolve('landed'), 30_000));
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(outcome).resolves.toBe('landed');
+      expect(calls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an attempt that rejects is retried after the backoff, up to REPORT_SETTLE_WRITE_ATTEMPTS, and the last error is rethrown', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const outcome = settleExports.withSettleRetries!(() => {
+        calls += 1;
+        return Promise.reject(new Error(`attempt ${calls} rejected`));
+      }).then(
+        () => 'settled',
+        (err: unknown) => (err as Error).message,
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(outcome).resolves.toBe(
+        `attempt ${settleExports.REPORT_SETTLE_WRITE_ATTEMPTS} rejected`,
+      );
+      expect(calls).toBe(settleExports.REPORT_SETTLE_WRITE_ATTEMPTS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

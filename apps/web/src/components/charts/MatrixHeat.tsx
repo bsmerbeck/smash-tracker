@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ConfidenceTier, SampleMeta } from '@smash-tracker/shared';
+import type { ActivityHeatCell, ConfidenceTier, SampleMeta } from '@smash-tracker/shared';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { careerGamesFill, volumeHeatStep } from '@/components/charts/careerTimelineLayout';
 import { cn } from '@/lib/utils';
 
 /**
@@ -43,7 +44,10 @@ export interface MatrixHeatCell {
 
 export type MatrixHeatLayout = 'grid' | 'stack';
 
-export interface MatrixHeatProps {
+/** The record-tinted cross-tab form (the original member, and still the default when `scale` is omitted). */
+export interface MatrixHeatRecordProps {
+  /** Omitted is `'record'`: every existing call site is byte-unchanged by the volume mode. */
+  scale?: 'record';
   /** Ordered row descriptors — no entry for a pairing that was never played. */
   rows: MatrixHeatAxis[];
   /** Ordered column descriptors — no entry for an axis value that was never played. */
@@ -61,6 +65,38 @@ export interface MatrixHeatProps {
    */
   layout?: MatrixHeatLayout;
 }
+
+/**
+ * DD-41-06 (UI-SPEC 7.3): the games-per-month activity heat. Its own render path: never the Tabs stack,
+ * never a record tint. Every string arrives pre-formatted by the host (the kit localises nothing):
+ * month labels, year labels, counts and the aria sentences.
+ */
+export interface MatrixHeatVolumeProps {
+  scale: 'volume';
+  /** Year rows, newest first (the host passes `buildActivityHeat`'s `years`, at most 9). */
+  years: number[];
+  /** Sparse: one cell per month with at least one game (at most 108). */
+  cells: ActivityHeatCell[];
+  /** The busiest month's games, so the tint step is stable across re-renders. */
+  maxCellValue: number;
+  /** Twelve host-formatted short month names, January first. */
+  monthLabels: readonly string[];
+  /** Twelve two-letter month labels, shown below a 300px grid container. */
+  monthLabelsNarrow: readonly string[];
+  /** The row label: the full year, or the two-digit form below 640px. */
+  yearLabel: (year: number, narrow: boolean) => string;
+  /** A cell's `aria-label` and tooltip (month, year and count, e.g. "March 2026: 12 games"). */
+  cellAria: (cell: ActivityHeatCell) => string;
+  /** A zero-game month's tooltip. */
+  emptyAria: (year: number, month: number) => string;
+  /** A cell's visible count (shown from a 480px container). */
+  formatCount: (n: number) => string;
+  legend: { fewer: string; more: string; unit: string };
+  /** A click hands the host the month's exact range (`fromMs` / `toMs`). */
+  onSelectCell?: (cell: ActivityHeatCell) => void;
+}
+
+export type MatrixHeatProps = MatrixHeatRecordProps | MatrixHeatVolumeProps;
 
 /** Tailwind's `sm` breakpoint (640px) — below this the grid becomes unreadable as a table (per the UI-SPEC's Matrix Responsive Behaviour section) and switches to the per-row Tabs stack. */
 const NARROW_LAYOUT_QUERY = '(max-width: 639px)';
@@ -330,14 +366,14 @@ function MatrixHeatStack({
  * one tab per row, each tab's panel a vertical list of that row's cells —
  * the SAME record/tint/hint/activation contract, a layout change only.
  */
-export function MatrixHeat({
+function MatrixHeatRecord({
   rows,
   cols,
   cells,
   onSelectCell,
   emptyMessage,
   layout,
-}: MatrixHeatProps) {
+}: MatrixHeatRecordProps) {
   const isNarrowViewport = useIsNarrowViewport();
   const resolvedLayout: MatrixHeatLayout = layout ?? (isNarrowViewport ? 'stack' : 'grid');
 
@@ -356,4 +392,124 @@ export function MatrixHeat({
   return (
     <MatrixHeatGrid rows={rows} cols={cols} cellByKey={cellByKey} onSelectCell={onSelectCell} />
   );
+}
+
+/** The five tint steps, for the legend's swatches. */
+const VOLUME_STEPS = [1, 2, 3, 4, 5] as const;
+
+/** Square, at most 48px (`size-12`), centred in its grid column: the column grows with the card, the cell stops. */
+const VOLUME_CELL_BASE_CLASSES = 'aspect-square w-full max-w-12 justify-self-center rounded-[2px]';
+
+const VOLUME_BUTTON_CLASSES = cn(
+  VOLUME_CELL_BASE_CLASSES,
+  'flex items-center justify-center text-xs leading-4 font-medium text-foreground tabular-nums transition-[filter] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+);
+
+function MatrixHeatVolume({
+  years,
+  cells,
+  maxCellValue,
+  monthLabels,
+  monthLabelsNarrow,
+  yearLabel,
+  cellAria,
+  emptyAria,
+  formatCount,
+  legend,
+  onSelectCell,
+}: MatrixHeatVolumeProps) {
+  const cellByKey = new Map(cells.map((cell) => [`${cell.year}:${cell.month}`, cell]));
+
+  return (
+    <div data-slot="matrix-heat-volume" className="@container flex min-w-0 flex-col gap-3">
+      <div className="grid grid-cols-[36px_repeat(12,minmax(22px,1fr))] gap-0.5 sm:grid-cols-[44px_repeat(12,minmax(22px,1fr))]">
+        <span aria-hidden="true" />
+        {monthLabels.map((label, index) => (
+          <span
+            key={index}
+            title={label}
+            className="truncate text-center text-xs leading-4 text-muted-foreground"
+          >
+            <span className="@max-[300px]:hidden">{label}</span>
+            <span aria-hidden="true" className="hidden @max-[300px]:inline">
+              {monthLabelsNarrow[index]}
+            </span>
+          </span>
+        ))}
+        {years.map((year) => (
+          <Fragment key={year}>
+            <span
+              aria-label={yearLabel(year, false)}
+              className="self-center pr-1 text-right text-xs leading-4 text-muted-foreground tabular-nums"
+            >
+              <span className="max-sm:hidden">{yearLabel(year, false)}</span>
+              <span aria-hidden="true" className="hidden max-sm:inline">
+                {yearLabel(year, true)}
+              </span>
+            </span>
+            {monthLabels.map((_, index) => {
+              const month = index + 1;
+              const cell = cellByKey.get(`${year}:${month}`);
+              if (!cell) {
+                return (
+                  <div
+                    key={month}
+                    aria-hidden="true"
+                    title={emptyAria(year, month)}
+                    className={cn(VOLUME_CELL_BASE_CLASSES, 'bg-muted/20')}
+                  />
+                );
+              }
+              const label = cellAria(cell);
+              return (
+                <button
+                  key={month}
+                  type="button"
+                  className={VOLUME_BUTTON_CLASSES}
+                  style={{
+                    backgroundColor: careerGamesFill(volumeHeatStep(cell.total, maxCellValue)),
+                  }}
+                  aria-label={label}
+                  title={label}
+                  onClick={onSelectCell ? () => onSelectCell(cell) : undefined}
+                >
+                  <span aria-hidden="true" className="hidden @[480px]:inline">
+                    {formatCount(cell.total)}
+                  </span>
+                </button>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+      <div
+        data-slot="matrix-heat-legend"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted-foreground"
+      >
+        <span>{legend.fewer}</span>
+        <span aria-hidden="true" className="flex items-center gap-0.5">
+          {VOLUME_STEPS.map((step) => (
+            <span
+              key={step}
+              className="size-3 rounded-[2px]"
+              style={{ backgroundColor: careerGamesFill(step) }}
+            />
+          ))}
+        </span>
+        <span>{legend.more}</span>
+        <span>{legend.unit}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The kit's cross-tab member. `scale` omitted (or `'record'`) is the record-tinted win/loss grid; `scale="volume"`
+ * is the games-per-month activity heat (DD-41-06), its own render path so neither mode can leak into the other.
+ */
+export function MatrixHeat(props: MatrixHeatProps) {
+  if (props.scale === 'volume') {
+    return <MatrixHeatVolume {...props} />;
+  }
+  return <MatrixHeatRecord {...props} />;
 }

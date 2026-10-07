@@ -42,10 +42,11 @@ const XL_PX = 1280;
 const GAP_PX = 16;
 const TOL = 1;
 const EXPECTED_ROWS = 5;
-const PLOT_DEFAULT_PX = 288;
-const PLOT_COMPACT_PX = 160;
 const STACK_BOTTOM_MAX_DELTA_PX = 32;
-const PAIR_BOTTOM_MAX_DELTA_PX = 24;
+/** Plan 41-10 (UI-SPEC §12.11, amends 261002-leg check 5's 24px): the stack-vs-Previous-Matches pair tolerance. */
+const PAIR_BOTTOM_MAX_DELTA_PX = 64;
+/** §12.11: neither side of the pair is shorter than half the other. */
+const PAIR_MIN_HEIGHT_RATIO = 0.5;
 const SPLIT_CONTENT_MIN_PX = 300;
 const RATING_VALUE_ROW_MAX_PX = 34;
 const HEADER_CONTENT_MAX_GAP_PX = 16.5;
@@ -90,7 +91,10 @@ function collectInPage() {
     fighter: pick(heroCards, (c) => c.querySelector('[data-slot="fighter-record-tile"]') != null),
     cvc: pick(heroCards, (c) => text(c).includes('Casual vs Competitive')),
     ovo: pick(heroCards, (c) => text(c).includes('Online vs Offline')),
-    formCurve: pick(allCards, (c) => titled(c, 'Form Curve')),
+    // Plan 41-10 (DD-41-03): the Form Curve is gone — row 3's left cell is the form strip
+    // tile stacked over Matchup Snapshot. The tile has no card title; it is found by its slot.
+    formStrip: pick(allCards, (c) => c.querySelector('[data-slot="form-strip-tile"]') != null),
+    snapshot: pick(allCards, (c) => titled(c, 'Matchup Snapshot')),
     previous: pick(allCards, (c) => titled(c, 'Previous Matches')),
   };
 
@@ -138,7 +142,18 @@ function collectInPage() {
         text(b).startsWith('Show all'),
       )
     : null;
-  const canvas = named.formCurve?.querySelector('canvas') ?? null;
+  const stackCell = grid?.querySelector(':scope > [data-slot="dashboard-form-stack"]') ?? null;
+  const stackCards = stackCell
+    ? Array.from(stackCell.children)
+        .filter((c) => c.getAttribute('data-slot') === 'card')
+        .map((c) => ({
+          id: Object.entries(named).find(([, v]) => v === c)?.[0] ?? 'other',
+          rect: rectOf(c),
+        }))
+    : [];
+  const stripTicks = named.formStrip
+    ? named.formStrip.querySelectorAll('[data-slot="form-strip-tick"]').length
+    : 0;
 
   const cardKeys = Object.keys(named);
   return {
@@ -149,7 +164,9 @@ function collectInPage() {
     ratingValueRowHeight: ratingSpan?.parentElement ? rectOf(ratingSpan.parentElement).h : null,
     previousRows,
     showAllText: showAll ? text(showAll) : null,
-    plotHeight: canvas?.parentElement ? rectOf(canvas.parentElement).h : null,
+    stack: rectOf(stackCell),
+    stackCards,
+    stripTicks,
     caveatShown: cvc ? text(cvc).includes('Ignores the source filter') : null,
     scrollWidth: document.documentElement.scrollWidth,
     innerWidth: window.innerWidth,
@@ -168,11 +185,12 @@ const SINGLE_COLUMN_ORDER = [
   'fighter',
   'cvc',
   'ovo',
-  'formCurve',
+  'formStrip',
+  'snapshot',
   'previous',
 ];
 const HERO_CARD_IDS = ['overall', 'rating', 'form', 'fighter', 'cvc', 'ovo'];
-const DENSE_CARD_IDS = [...HERO_CARD_IDS, 'formCurve', 'previous'];
+const DENSE_CARD_IDS = [...HERO_CARD_IDS, 'formStrip', 'snapshot', 'previous'];
 
 const near = (a, b, tol = TOL) => a != null && b != null && Math.abs(a - b) <= tol;
 const f = (n) => (n == null ? 'null' : Number(n).toFixed(1));
@@ -244,8 +262,21 @@ function evaluateChecks(width, m) {
   );
   add('caveat-absent', m.caveatShown === false, `caveatShown=${m.caveatShown}`);
 
-  const plotWant = width >= SM_PX ? PLOT_DEFAULT_PX : PLOT_COMPACT_PX;
-  add('plot-height', near(m.plotHeight, plotWant), `want=${plotWant} got=${f(m.plotHeight)}`);
+  // Plan 41-10 (DD-41-03): replaces 261002-leg's `plot-height` (the Form Curve's 288 / 160px
+  // chart.js plot no longer exists). Row 3's left cell is the strip tile over the Snapshot,
+  // 16px apart, and the strip actually drew ticks.
+  const stackIds = m.stackCards.map((c) => c.id);
+  const stackGap =
+    m.stackCards.length === 2 ? m.stackCards[1].rect.t - m.stackCards[0].rect.b : null;
+  add(
+    'strip-stack',
+    stackIds.length === 2 &&
+      stackIds[0] === 'formStrip' &&
+      stackIds[1] === 'snapshot' &&
+      near(stackGap, GAP_PX) &&
+      m.stripTicks > 0,
+    `stack=${stackIds.join('+') || 'none'} gap=${f(stackGap)} ticks=${m.stripTicks}`,
+  );
 
   if (width >= XL_PX) {
     const [a, b, c, d] = cells;
@@ -277,13 +308,17 @@ function evaluateChecks(width, m) {
         ? `stacks=${f(a.rect.h)},${f(b.rect.h)} splits=${f(c.rect.h)},${f(d.rect.h)}`
         : 'needs four cells',
     );
-    const fc = m.cards.formCurve?.rect;
+    const sk = m.stack;
     const pm = m.cards.previous?.rect;
+    const ratio = sk && pm ? Math.min(sk.h, pm.h) / Math.max(sk.h, pm.h) : null;
     add(
       'pair-bottoms',
-      fc != null && pm != null && Math.abs(fc.b - pm.b) <= PAIR_BOTTOM_MAX_DELTA_PX,
-      fc && pm
-        ? `delta=${f(Math.abs(fc.b - pm.b))} max=${PAIR_BOTTOM_MAX_DELTA_PX}`
+      sk != null &&
+        pm != null &&
+        Math.abs(sk.b - pm.b) <= PAIR_BOTTOM_MAX_DELTA_PX &&
+        ratio >= PAIR_MIN_HEIGHT_RATIO,
+      sk && pm
+        ? `delta=${f(Math.abs(sk.b - pm.b))} max=${PAIR_BOTTOM_MAX_DELTA_PX} stack.h=${f(sk.h)} previous.h=${f(pm.h)} ratio=${f(ratio)} min=${PAIR_MIN_HEIGHT_RATIO}`
         : 'missing pair',
     );
   } else if (width >= LG_PX) {
@@ -342,9 +377,9 @@ function measurementLine(viewport, m) {
       return c && c.length === 2 ? f(c[1].rect.t - c[0].rect.b) : 'n/a';
     })
     .join(',');
-  const fc = m.cards.formCurve?.rect;
+  const sk = m.stack;
   const pm = m.cards.previous?.rect;
-  return `HERO_MEASUREMENT viewport=${viewport.name} grid.w=${f(m.grid?.w)} ${m.cells.map(cell).join(' ')} cardHeights[${cardHeights}] stackGap=${gaps} plot=${f(m.plotHeight)} formCurve.bottom=${f(fc?.b)} previous.bottom=${f(pm?.b)} rows=${m.previousRows}`;
+  return `HERO_MEASUREMENT viewport=${viewport.name} grid.w=${f(m.grid?.w)} ${m.cells.map(cell).join(' ')} cardHeights[${cardHeights}] stackGap=${gaps} ticks=${m.stripTicks} formStack.h=${f(sk?.h)} formStack.bottom=${f(sk?.b)} previous.h=${f(pm?.h)} previous.bottom=${f(pm?.b)} rows=${m.previousRows}`;
 }
 
 async function measureViewport(browser, baseUrl, viewport) {
@@ -354,22 +389,21 @@ async function measureViewport(browser, baseUrl, viewport) {
     await page.goto(`${baseUrl}/guard-layout.html?id=${ROUTE_ID}`, { waitUntil: 'networkidle0' });
     try {
       await page.waitForSelector(LOADED_MARKER, { timeout: LOAD_TIMEOUT_MS });
+      // Plan 41-10: the form strip's ticks are the row-3 "loaded" marker (was the chart.js plot).
       await page.waitForFunction(
-        () => {
-          const canvas = document.querySelector(
-            '[data-slot="dashboard-body"] [data-slot="page-grid"] canvas',
-          );
-          return canvas != null && canvas.clientHeight > 0;
-        },
+        () =>
+          document.querySelector(
+            '[data-slot="dashboard-body"] [data-slot="page-grid"] [data-slot="form-strip-tile"] [data-slot="form-strip-tick"]',
+          ) != null,
         { timeout: LOAD_TIMEOUT_MS },
       );
     } catch {
       return {
-        unmeasured: `loaded marker or Form Curve plot never appeared in ${LOAD_TIMEOUT_MS}ms`,
+        unmeasured: `loaded marker or the form strip ticks never appeared in ${LOAD_TIMEOUT_MS}ms`,
       };
     }
     await page.evaluate(() => document.fonts.ready);
-    // Let chart.js finish its resize pass before reading plot geometry.
+    // Let the strip's ResizeObserver width fit settle before reading geometry.
     await new Promise((resolve) => setTimeout(resolve, 500));
     return { measurement: await page.evaluate(collectInPage) };
   } finally {

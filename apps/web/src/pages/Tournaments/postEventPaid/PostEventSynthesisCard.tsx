@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import type { StoredPracticePlan } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useCredits } from '@/hooks/useBilling';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
@@ -15,7 +16,57 @@ import {
 } from '@/hooks/usePostEventSynthesis';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import {
+  failedJobBadgeCopy,
+  resolveReportJobCharge,
+  type FailedJobBadgeCopy,
+} from '@/lib/reportJobCharge';
+import { ClaimSectionBody } from '@/components/claims/ClaimAtomLine';
+import { DroppedClaimsNote } from '@/components/claims/DroppedClaimsNote';
+import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
+import { WithheldProseNote } from '@/components/claims/WithheldProseNote';
+import { PaidRecommendedActionsCard } from '@/components/claims/PaidRecommendedActionsCard';
+import { resolveClaimSection, type ResolvedClaimSection } from '@/components/claims/claimSection';
 import { usePostEventCheckoutReturn } from './usePostEventCheckoutReturn';
+
+/**
+ * Plan 39-09 (RPT-06): the claims-era practice plan's claim-anchored
+ * sections, in the expanded plan view. The overview section's connective IS
+ * the plan's `summary` (plan 39-08's projection), so its claims render
+ * without restating it; the other two sections lead with their own heading.
+ * A heading renders only for a non-empty section.
+ */
+const PLAN_CLAIM_SECTIONS = [
+  { id: 'overview', headingKey: null },
+  { id: 'gameplan', headingKey: 'scout.aiReport.gameplan' },
+  { id: 'watchFor', headingKey: 'scout.aiReport.watchFor' },
+] as const;
+
+function planSection(
+  plan: StoredPracticePlan,
+  id: (typeof PLAN_CLAIM_SECTIONS)[number]['id'],
+): ResolvedClaimSection {
+  const resolved = resolveClaimSection(plan.sections?.[id], plan.claims);
+  if (id !== 'overview') {
+    return resolved;
+  }
+  if (resolved.kind === 'claims' || resolved.kind === 'abstained') {
+    return { ...resolved, connective: '' };
+  }
+  return { kind: 'empty' };
+}
+
+/**
+ * Post-plan fix (39-10): the failure badge's four wordings, each ONE complete
+ * string. Refund wording is reachable only from a job that was charged
+ * (`@/lib/reportJobCharge`).
+ */
+const FAILED_BADGE_KEYS: Record<FailedJobBadgeCopy, string> = {
+  pendingRefund: 'postEventPaid.jobStatus.failedPendingRefund',
+  refunded: 'postEventPaid.jobStatus.refunded',
+  noCharge: 'postEventPaid.jobStatus.failedNoCharge',
+  chargeUnknown: 'postEventPaid.jobStatus.failedChargeUnknown',
+};
 
 /**
  * `PostEventSynthesisCard` is the ONE intentionally monetized surface on
@@ -86,6 +137,45 @@ export function PostEventSynthesisCard({
   const hasNoActiveJob = !job || job.status === 'refunded';
   const hasAnnotations = annotatedEvidenceCount > 0;
 
+  // Plan 39-10 (D-21, review C4-M2): the validation caption is TWO clauses on
+  // TWO conditions, never one sentence. The CAUSE keys on an allowlist of ONE
+  // value — `failureReason === 'validation'`; an absent reason or any other
+  // (including one this client does not know yet) renders nothing new. Code
+  // review WEB-03: that one value covers thin evidence, an unverifiable output
+  // and a projection/schema failure alike, so the cause sentence is
+  // cause-neutral and never claims missing evidence.
+  const showValidationCause = job?.failureReason === 'validation';
+  // Post-plan fix (39-10, owner decision 2026-09-25): whether this job took a
+  // credit. `status === 'refunded'` alone cannot say: `failJob` also writes the
+  // refunded terminal for a ZERO-SPEND post_event_synthesis failure (Phase 28
+  // CR-02 — so the entry stays resubmittable) with no refundCredit call. The
+  // job's persisted `wasCharged` decides when present (it survives a later
+  // change to the viewer's free-access status); an older job falls back to a
+  // LOADED credits read (every spend site sets `spent = !freeAccess`); neither
+  // known is 'unknown', which says less rather than something false. The
+  // failure badge and the RETURN clause ("your credit was returned") both
+  // read this one fact.
+  const charge = resolveReportJobCharge({
+    wasCharged: job?.wasCharged,
+    freeAccess: creditsData?.freeAccess,
+  });
+  const failedBadgeKey =
+    job?.status === 'failed' || job?.status === 'refunded'
+      ? FAILED_BADGE_KEYS[failedJobBadgeCopy(job.status, charge)]
+      : null;
+  const showCreditReturned =
+    showValidationCause && job?.status === 'refunded' && charge === 'charged';
+  const validationCaption = showValidationCause ? (
+    <p className="flex flex-wrap gap-x-1 text-xs text-muted-foreground" data-validation-caption="">
+      <span>{t('postEventPaid.jobStatus.failedReason.validation')}</span>
+      {showCreditReturned && (
+        <span data-validation-caption-return="">
+          {t('postEventPaid.jobStatus.failedReason.validationRefunded')}
+        </span>
+      )}
+    </p>
+  ) : null;
+
   function handleSubmitError(error: unknown) {
     if (error instanceof ApiError && error.status === 402) {
       setInsufficientCredits(true);
@@ -139,11 +229,12 @@ export function PostEventSynthesisCard({
 
         {hasAnnotations && hasNoActiveJob && (
           <div className="flex flex-col gap-2">
-            {job?.status === 'refunded' && (
+            {job?.status === 'refunded' && failedBadgeKey && (
               <Badge variant="outline" className="w-fit">
-                {t('postEventPaid.jobStatus.refunded')}
+                {t(failedBadgeKey)}
               </Badge>
             )}
+            {job?.status === 'refunded' && validationCaption}
             <div className="flex items-center justify-between gap-3 rounded-md border p-3">
               <Button type="button" disabled={submitPending} onClick={handleBuy}>
                 <Sparkles className={submitPending ? 'animate-spin' : ''} />
@@ -191,8 +282,9 @@ export function PostEventSynthesisCard({
         )}
 
         {job?.status === 'failed' && (
-          <div className="flex items-center gap-3 rounded-md border p-3">
-            <Badge variant="destructive">{t('postEventPaid.jobStatus.failedPendingRefund')}</Badge>
+          <div className="flex flex-col items-start gap-2 rounded-md border p-3">
+            {failedBadgeKey && <Badge variant="destructive">{t(failedBadgeKey)}</Badge>}
+            {validationCaption}
           </div>
         )}
 
@@ -209,6 +301,13 @@ export function PostEventSynthesisCard({
 
             {isExpanded && planData && (
               <div className="flex flex-col gap-4 rounded-md border p-3">
+                {/* Code review IN-04 (D-08): a plan that is not validated
+                    carries the same legacy provenance label as a scout report. */}
+                <LegacyReportBadge
+                  variant="card"
+                  claimSchemaVersion={planData.plan.claimSchemaVersion}
+                  validation={planData.plan.validation}
+                />
                 <SafeMarkdown body={planData.plan.summary} />
                 {planData.plan.focusAreas.map((focusArea, index) => (
                   <div key={`${focusArea.title}-${index}`} className="flex flex-col gap-2">
@@ -230,6 +329,46 @@ export function PostEventSynthesisCard({
                     )}
                   </div>
                 ))}
+                {planData.plan.sections != null &&
+                  PLAN_CLAIM_SECTIONS.map(({ id, headingKey }) => {
+                    const section = planSection(planData.plan, id);
+                    if (section.kind === 'empty') {
+                      return null;
+                    }
+                    return (
+                      <div key={id} className="flex flex-col gap-2" data-plan-claim-section={id}>
+                        {headingKey && <h3 className="text-sm font-semibold">{t(headingKey)}</h3>}
+                        <ClaimSectionBody
+                          section={planData.plan.sections?.[id]}
+                          claims={planData.plan.claims}
+                          resolved={section}
+                        />
+                      </div>
+                    );
+                  })}
+                {/* Plan 39-11 (RPT-09 / D-12): the plan's recommended actions,
+                    once, after the last focus area / claim section —
+                    claims-era plans only. */}
+                {planData.plan.sections != null && (
+                  <PaidRecommendedActionsCard
+                    actions={planData.plan.actions}
+                    claims={planData.plan.claims}
+                  />
+                )}
+                {/* Plan 39-10 (D-07 / D-20): once each, after the last
+                    focus area / claim section, from the stored counts. */}
+                {/* Code review IN-04: a claims-era plan's count is dropped
+                    claims; a legacy (28-06) plan's is dropped focus-area
+                    sections. */}
+                <DroppedClaimsNote
+                  count={planData.plan.droppedClaimCount}
+                  variant={planData.plan.sections != null ? 'plan' : 'legacyPlan'}
+                />
+                <WithheldProseNote
+                  strippedSectionCount={planData.plan.strippedSectionCount}
+                  claimSchemaVersion={planData.plan.claimSchemaVersion}
+                  validation={planData.plan.validation}
+                />
               </div>
             )}
           </div>

@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import type { HorizonKey, Match } from '@smash-tracker/shared';
 import { MatchupOrPlayerCard, useMatchupOrPlayerInsight } from './MatchupOrPlayerCard';
+
+// Plan 39.2-10: the player branch carries a Track action. The toggle reads the
+// subject's watchlist (auth + query client) and has its own suite, so this card
+// suite stubs it to a plain button.
+vi.mock('@/components/analytics/track/TrackToggle', () => ({
+  TrackToggle: ({ name }: { name: string }) => <button type="button">Track {name}</button>,
+}));
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {

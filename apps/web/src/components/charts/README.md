@@ -7,22 +7,25 @@ come from — read this before adding a sixth chart.
 
 - **Recharts** (`recharts`) may only be imported from inside this directory
   (`apps/web/src/components/charts/**`).
-- **chart.js** / **react-chartjs-2** may only be imported from this directory, or from the five
-  legacy chart.js files still on the allowlist (`chartTheme.ts`, `LastMatchesChart.tsx` and the
-  three GSP charts — each one named explicitly in the allowlists below; the list only shrinks,
-  never grows). Plan 39.1-34 retired the Trends `RatingCurve.tsx` / `MonthlyPerformance.tsx` pair
-  (the career timeline below replaces both); the `chart.js` package stays a dependency until the
-  last five migrate (Phase 41, CHRT-04).
+- **Recharts inside this kit is the only chart library in the repository.** `chart.js` and
+  `react-chartjs-2` were removed in Phase 41 (CHRT-03): the last canvas files were retired plan by
+  plan (the Trends career timeline replaced the Rating Curve / Monthly Performance pair, the GSP
+  charts moved onto `TrendLine`, `ComparisonBars` and `SmallMultiplesGrid`, and the Dashboard Form
+  Curve became the `FormStripTile`, a `FormStrip limit={30}`), then both packages, their shared theme
+  module, the jsdom canvas stub and its vitest alias were deleted. The ban is unconditional - there is
+  no exemption list, in lint or in test.
 
 Two independent, committed oracles enforce this, plus a third that enforces the runtime
 consequence of getting it wrong:
 
 1. **`eslint.config.js`** — a `no-restricted-imports` rule scoped to `apps/web/**/*.{ts,tsx}`,
-   with an `ignores` array naming this directory and the five legacy files. Catches a bad import at
-   edit time (`pnpm lint`).
+   with an `ignores` array naming this directory and nothing else; its messages say the canvas
+   libraries were removed. Catches a bad import at edit time (`pnpm lint`).
 2. **`chartKitBoundary.test.ts`** — a committed test in the DEFAULT `pnpm test` suite that greps
-   the source tree for the same two import patterns. It also proves the allowlist can't rot (every
-   entry must still exist and still need the exemption) and proves the **frame rule** described
+   the source tree for any canvas-library import (kit included), for either package in any
+   workspace `package.json`, for a recreated canvas theme module or canvas stub, a vitest alias or a
+   `vi.mock` of the canvas wrapper, for any eslint `ignores` entry other than this directory, and
+   for a README that claims a legacy file remains. It also proves the **frame rule** described
    below. This is the CI-independent half: it still catches a violation even somewhere lint isn't
    run.
 3. **`bundleIsolation.guard.test.ts`** — a real production `vite build`, excluded from the default
@@ -61,8 +64,7 @@ test proving it renders inside a `ChartCard`.
 
 One token map, no colour-scheme branch — the app is dark-only, and `:root`/`.dark` share an
 identical palette. SVG resolves CSS custom properties natively in `stroke`/`fill`, so unlike
-chart.js this kit does NOT keep a resolved-hex mirror (`apps/web/src/lib/chartTheme.ts`'s pattern
-is the one this kit deliberately does not repeat).
+chart.js did (it was removed in Phase 41) this kit keeps no resolved-hex mirror of the palette.
 
 **Phase 39.1 plan 10 (UIX-05, UI-SPEC §4.1/§4.2) repointed the kit's identity/context tokens onto
 a dedicated tokenised visualization layer.** No kit file may read `var(--chart-` directly anymore
@@ -97,18 +99,6 @@ reader must never read "the line is red, therefore losing" from hue alone (and, 
 it no longer even can — brand red is never a data mark anywhere in the kit). Meaning comes from
 the line's Y-position and the tooltip's numeric value, never from its colour.
 
-## Where the jsdom stub is licensed
-
-`apps/web/src/test/stubs/react-chartjs-2.tsx` is a test stub for the CANVAS library
-(`react-chartjs-2`), reached through a vitest `resolve.alias` in `apps/web/vitest.config.ts` — not
-through an `import`. That's why it is absent from both the lint `ignores` array and the boundary
-test's allowlist: neither rule has anything to exempt there, since the stub file contains no
-import of the package it stands in for. jsdom has no canvas implementation, so a real chart.js
-component floods test output with `Not implemented: getContext` noise; this stub exists so
-chart.js-based component tests get a stable placeholder instead. It has no equivalent for Recharts
-— Recharts renders real SVG under jsdom (D-04), so kit primitives are tested with real DOM
-assertions, not a stub.
-
 ## The frame: `ChartCard`
 
 `ChartCard` is the ONE title/caption/header-right/abstention frame every kit chart renders inside
@@ -125,7 +115,7 @@ variant, no new surface colour, no new spacing value.
 | Body            | `children`                                    | The chart or comparison-bar content.                                                                                                                  |
 | Footer          | `footer?`                                     | Rendered below `children` when not abstained (e.g. a click hint).                                                                                     |
 
-## The vocabulary — five members, four implemented (D-05, D-09)
+## The vocabulary — five members, all implemented (D-05, D-09; small multiples shipped plan 41-02)
 
 ### The career timeline (plan 39.1-34 — the UI-SPEC §12.1 replacement, not a new idiom)
 
@@ -180,6 +170,32 @@ as an explicit `ticks` array — never delegated to Recharts' `preserveStart`/`p
 interval modes, which decide what to drop by MEASURING rendered text through
 `getBoundingClientRect` and therefore never thin under jsdom's all-zero rects. `eventTicks.ts` also
 exports the tick-label truncation formatter (`formatEventTickLabel`) applied to every rendered tick.
+
+**Value mode (plan 41-02, A1 / DD-41-01)** — `mode: 'value'`, a fourth member of `TrendLine`'s mode
+union (not a separate member, so `KIT_CHART_PRIMITIVES` is unchanged): a time-axis numeric trend
+for GSP, estimated MMR and Glicko-2. Its points arrive PRE-BINNED from shared `buildValueSeries`
+(`packages/shared/src/insight/valueSeries.ts`) — the chart never bins. **The grain ladder** is
+`reading → day → week → month → quarter`, the finest grain with at most 60 points (the line mark
+bound), each point the CLOSE of its period (its last reading's value and time); `grain` is named
+in the head overline, and a plot narrower than `CHART_NARROW_PLOT_PX` (520) draws the host's
+`narrowPoints` / `narrowGrain` instead of squeezing marks (re-grain, never squeeze). **Identity is
+`memberIndexes`**, indices into the host's input readings — never the point's `[startMs, endMs)`
+span (the CR-02 lesson from the period mode) — so `onSelectPoint(point)` hands a host the exact
+readings behind a point, whichever zone the bucket boundary fell in (`day` is host-local,
+`week` / `month` / `quarter` are UTC `calendarBucketBounds`). **Marks:** one 2px `series1` line
+(1.5px at `CHART_H_COMPACT` or `lineWidth: 'thin'`); at reading grain no dot on ordinary readings —
+only the last point (a ringed 5px dot) and a calibration reading (a 9px `deemphasis` diamond); at a
+coarser grain a dot per close, a diamond for a close containing a calibration. **y axis:** the data
+± 4% snapped to a 1-2-5 step giving 4–6 hairlines, host-formatted compact ticks at
+`CHART_AXIS_FONT_SIZE`, and a gutter MEASURED from the longest formatted tick (so ja `1088万` is
+accounted for), never assumed. **Reference rule (DD-41-13):** `referencePlacement(values, value)`
+returns `'line'` only when the reference lies within 2x the data span of the nearest data edge,
+else `'above-range'` / `'below-range'`; the kit draws a dashed line (and joins the domain) only for
+`'line'`, otherwise it draws nothing and the head legend states the value in words. **A11y:** the plot
+is one tab stop (`role="img"`), ← → step points (the first press lands on the latest), Home / End,
+Enter / Space select, and a "View as table" twin lists date · value · readings. Hover and keyboard
+share one readout, which is `ChartTooltip`'s value branch (the host pre-resolves its title and lines).
+A `locked` prop swaps the plot for the unlock inset and meter; zero points mount nothing.
 
 **Comparison bars** (`ComparisonBars.tsx`, shipped plan 37-05) — horizontal bars per
 stage/category, one `<li>` per row. Props: `rows: ComparisonBarsRow[]` (`{ key, label: ReactNode,
@@ -246,6 +262,17 @@ lets a test or host force either branch explicitly. Test rule: colocated `Matrix
 asserts the rendered button count equals the supplied cell count (never rows × cols), the sub-floor/
 unknown-axis neutral treatment, the tiered win/loss/neutral tint, and cell activation.
 
+**Volume mode** (plan 41-03, DD-41-06 - `scale="volume"`): the same member's second render path, the
+games-per-month activity heat (Trends' Play rhythm row). `scale` omitted is record mode, byte-identical
+(a captured-markup test pins it). Volume mode is its own component: never the Tabs stack, never a record
+tint. Props: `years` (newest first, at most 9), sparse `cells` (`ActivityHeatCell` from shared
+`buildActivityHeat`), `maxCellValue`, host-formatted `monthLabels` / `monthLabelsNarrow` / `yearLabel` /
+`cellAria` / `emptyAria` / `formatCount` / `legend`, and `onSelectCell`. A cell is a `<button>` tinted by
+`careerGamesFill(volumeHeatStep(n, max))` (`ceil(5 * sqrt(n) / sqrt(max))`, 1-5); a zero-game month is a
+`bg-muted/20` placeholder (not a control). The grid is `36px|44px + 12 x minmax(22px, 1fr)`, square cells at
+most 48px, counts shown from a 480px `@container`, two-letter month labels below a 300px one. At most
+108 cells (9 years); older years stay in the host's table twin.
+
 **The collision rule, concretely, as it applies on Matchups today:** the win-rate trend line
 (`TrendLine.tsx`) wears the categorical identity token `--chart-1` — it is not read as good/bad, its
 Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and ban bars
@@ -253,25 +280,32 @@ Y-position and the tooltip carry the meaning. The Counterpick Advisor's pick and
 ranking is the engine's pick / ban split and the heading says Pick or Ban, but a green / red bar
 would read as a verdict the evidence does not carry, so status colour stays on win / loss marks only.
 
-### NOT implemented this phase — Phase 41 owns these (D-05)
+### Small multiples (plan 41-02, A3 / DD-41-02) — `SmallMultiplesGrid.tsx`
 
-**Small-multiples grid** — a repeated small chart per category (e.g. one mini trend line per
-stage), for comparing many series' shapes at a glance without overlaying them. Sketched API:
+**Small-multiples grid** — N value-mode panels STACKED on one time axis (the GSP vs Glicko-2 page
+passes two). Props: `panels: { key, title, points, grain, formatTick, formatValueFull, readoutLine,
+labels: { aria }, onSelectPoint? }[]`, `layout: 'stacked'` (the only layout), `xDomain` (the host's
+union of the panels' points), `noReadingLine(panelTitle)` (a panel's readout line when its nearest point is
+more than one bucket of its grain from the crosshair — never a value from another season), `height?` (plot px per panel: `CHART_H_MULTIPLE` 120, or
+`CHART_H_MULTIPLE_NARROW` 96 below 640px), `caption`, `aria`, `tableLabels`. Each panel is a
+`TrendLine mode="value"` at `lineWidth: 'thin'` with its OWN fitted y — **never normalised**; the one
+drawn x axis sits under the last panel, and every panel's y gutter is equalised (the widest measured
+one wins) so one x is one pixel column across the stack.
 
-```ts
-interface SmallMultiplesGridProps<T> {
-  items: T[];
-  getKey: (item: T) => string;
-  getTitle: (item: T) => string;
-  renderChart: (item: T) => ReactNode; // typically a TrendLine at a small fixed size
-  columns?: number; // responsive default; explicit for tests
-}
-```
-
-Expected data shape: one `TrendChartPoint[]`-shaped series per grid cell, each rendered through the
-existing `TrendLine` primitive at a smaller fixed size — this is a LAYOUT/composition primitive
-over the existing trend primitive, not a new chart type. Interaction: clicking a cell's chart
-follows the same click-to-matches contract as the full-size trend chart.
+**The crosshair is host-controlled cursor state, not the chart library's built-in cross-chart
+synchronisation.** That mechanism matches a hovered point in the other charts by an exact string
+comparison of the x value (RESEARCH correction 1), so two panels whose x values differ — the GSP vs
+Glicko panels are built from different readings — would silently show no crosshair in the second
+panel. The grid owns one `cursorXMs`; each panel (`TrendLine`'s `cursor: { xMs, onChange }` prop)
+draws its crosshair at that same x, and converts its own pointer position into the nearest of ITS
+points' x through a transparent hit rect over the plot (the `CareerTimeline` pointer-mapping
+pattern — no chart-library mouse events, so nothing about pointer behaviour depends on the library's
+internals). One shared readout lists each panel's line for its nearest point (value leads, label
+follows); ← → step the sorted UNION of every panel's x values, Home / End jump; the grid is
+`role="group"`, each panel a tab stop, and one table twin lists date · each panel's value (blank where
+a panel has no point). Plain DOM — no chart-library import, so it is absent from
+`KIT_CHART_PRIMITIVES`; its colocated `SmallMultiplesGrid.test.tsx` renders it inside a `ChartCard`
+with two panels that share no x value and asserts the crosshair appears in both.
 
 ## Tooltips and interaction (D-06, D-07)
 
@@ -303,6 +337,23 @@ point/bar/cell sets in-page selection state that filters/highlights a table and 
 new URL/query contract exists yet. Phase 38 owns the URL-addressable drill-down contract; every kit
 member built before then should follow the same in-page pattern `MatchupChart`/`MatchupsContext`
 establishes rather than inventing its own.
+
+**The enumerated non-URL clicks (two):** every other kit click drills through the URL contract.
+
+1. _Plan 41-06, DD-41-12:_ the GSP curve / MMR panel's point click. GSP readings are not games, so
+   `FilteredMatchList` has no row for one and the Phase 38 URL contract does not apply. At reading grain
+   `onSelectPoint` opens that reading's edit dialog (`memberIndexes[0]` into the host's entries); at a
+   coarser grain it expands the GSP Log, scrolls to the close's rows and marks them `aria-current="true"`
+   with `bg-muted/40` until the next selection (the rows are exactly the close's `memberIndexes` -
+   identity, never a time window). Neither writes a URL axis.
+2. _Plan 41-12, PD-12-1:_ the Scout Recent Form card's point click (and its keyboard "View as table"
+   twin row, PD-12-3). Scouted games are a third party's history with no row in the viewer's
+   `FilteredMatchList`, and Phase 38 H-01 / H-02 forbid links from that provider-less host into the
+   viewer's own routes, so the click opens an in-card games panel listing exactly the point's games
+   (identity through the point's `matchIds`, never a time window). Buttons only: no anchor, no URL axis,
+   no router / query / subject hook.
+
+Adding another non-URL click means naming it here and in `chartKitBoundary.test.ts`.
 
 **Click surface on Recharts charts:** bind the click handler on the chart CONTAINER (e.g.
 `LineChart`'s `onClick`), not on an individual mark like `Line`'s `dot`. Recharts 3.10.1's

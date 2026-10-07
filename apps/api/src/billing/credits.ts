@@ -25,13 +25,17 @@ import { buildBillingEnvelope } from '../events/envelope.js';
  * `null`/`undefined` on a transaction's first pass means "not yet
  * initialized," never a permanent-abort condition (a fresh uid's first-ever
  * grant/refund is a legitimate null start). `fulfillCheckoutSession()` is
- * the converged Stripe-fulfillment entry point: it dedups via
- * `markStripeEventProcessed`'s transaction, then performs ONE root-level
- * multi-path `update()` that atomically closes the mark+grant+ledger+
- * day-mirror write together — the specific gap this replaces (a separate
- * `markStripeEventProcessed()` call followed by a non-atomic `addCredits()`)
- * could otherwise leave an event marked-processed with no credit ever
- * granted if the process crashed between the two calls.
+ * the Stripe-fulfillment entry point (code review R7-CR-03): ONE transaction
+ * on `credits/{uid}` ADDS the pack's credits and writes a create-once grant
+ * marker holding a fixed ledger key, then ONE idempotent root-level
+ * multi-path `update()` writes the processed marker, its day mirror and the
+ * ledger entry at that key with its day mirror — so a Stripe re-delivery
+ * after any failure completes the same grant exactly once.
+ *
+ * - `credits/{uid}/grantMarkers/{stripeEventId}` -> { ledgerKey, createdAt, credits }
+ *   (create-once grant markers, kept `GRANT_MARKER_RETENTION_MS`)
+ * - `credits/{uid}/refundMarkers/{jobId:executionId}` -> { ledgerKey, createdAt }
+ *   (create-once refund markers, kept 24 h)
  */
 
 function balanceRef(database: Database, uid: string) {
@@ -181,26 +185,132 @@ export async function refundCredit(database: Database, uid: string, ref: string)
   );
 }
 
+/** The child of `credits/{uid}` holding `refundCreditOnce`'s create-once markers, one per refunded execution. */
+export const REFUND_MARKERS_KEY = 'refundMarkers';
+
 /**
- * Idempotency guard for Stripe webhook deliveries: Stripe retries delivery
- * on any non-2xx/timeout response, so the same fulfilling event can arrive
- * more than once. Returns `true` (and marks the event processed) the first
- * time `eventId` is seen; `false` for a replay, which the caller treats as a
- * no-op success. Reused as the dedup gate inside `fulfillCheckoutSession`.
+ * Code review R6-IN-02 (iteration 6): how long a refund marker is kept. A
+ * marker only has to outlive its own request's bounded retries and a
+ * reconnect replay; nothing else reads the map, and every refund
+ * transaction downloads and rewrites all of it.
  */
-export async function markStripeEventProcessed(
+const REFUND_MARKER_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+interface RefundMarker {
+  ledgerKey: string;
+  createdAt: number;
+}
+
+/**
+ * Code review R5-WR-01 (iteration 5): `refundCredit` made SAFE TO RETRY. The
+ * balance increment and a create-once marker keyed on `markerKey` (one per
+ * job execution) are written in ONE transaction on `credits/{uid}` — the
+ * node that holds the balance — so the refund either commits with its
+ * marker or not at all. A retry after a throw (a transient error, or a
+ * commit whose acknowledgement was lost) finds the marker and adds nothing:
+ * it can never refund twice. The marker also carries the ledger entry's key and
+ * timestamp, so the ledger write is an idempotent `set` on a fixed key and
+ * a retry rewrites the same entry instead of appending a second one.
+ *
+ * Returns true when this call committed the balance increment, false when
+ * the marker already existed (an earlier attempt refunded). Code review
+ * R6-IN-02: the same transaction drops every OTHER marker older than
+ * `REFUND_MARKER_RETENTION_MS`, so the map cannot grow without bound; this
+ * execution's own marker is checked first, so it never refunds again however
+ * old that marker is.
+ * A null first-run
+ * input (the SDK's local cache on a listener-less server) is treated as an
+ * empty node: the transaction's server compare re-runs it against the real
+ * node, so it never overwrites an existing balance.
+ *
+ * Code review R7-CR-01 (iteration 7): an ABORT is not proof of an earlier
+ * refund. The client runs a transaction's first pass against its LOCAL state,
+ * which includes another pending attempt's unacknowledged marker. Had that
+ * pass aborted, the client would complete with `committed === false` and the
+ * local snapshot WITHOUT contacting the server — and if the pending attempt
+ * were then aborted (a dropped socket), its marker would be reverted and the
+ * balance would never move. (A `get()` does not help: it answers from the
+ * client's event cache, which holds the pending write too.) So the update
+ * never aborts: when the marker is already there it returns the node
+ * UNCHANGED, a no-op the server's hash compare confirms — or, when the marker
+ * was only a pending local write that got reverted, rejects as stale, so the
+ * update re-runs against the real node and refunds. Every outcome is thus a
+ * server-confirmed commit, and the committed marker's ledger key says whether
+ * THIS call's run placed it.
+ */
+export async function refundCreditOnce(
   database: Database,
-  eventId: string,
+  uid: string,
+  ref: string,
+  markerKey: string,
 ): Promise<boolean> {
-  const ref = database.ref(`processedStripeEvents/${eventId}`);
-  const result = await ref.transaction((current) => {
-    if (current !== null && current !== undefined) {
-      // Already processed — abort, no write.
-      return undefined;
+  const ledgerKey = ledgerRef(database, uid).push().key;
+  if (!ledgerKey) {
+    throw new Error('Failed to allocate a creditLedger push key');
+  }
+  const createdAt = Date.now();
+  const result = await database.ref(`credits/${uid}`).transaction((current) => {
+    const node =
+      current !== null && typeof current === 'object' ? (current as Record<string, unknown>) : {};
+    const markers =
+      node[REFUND_MARKERS_KEY] !== null && typeof node[REFUND_MARKERS_KEY] === 'object'
+        ? (node[REFUND_MARKERS_KEY] as Record<string, unknown>)
+        : {};
+    if (Object.prototype.hasOwnProperty.call(markers, markerKey)) {
+      // Already refunded by an earlier attempt: write nothing new, but commit
+      // the node unchanged so the server confirms the marker (R7-CR-01).
+      return current;
     }
-    return Date.now();
+    const retained = Object.fromEntries(
+      Object.entries(markers).filter(([, marker]) => {
+        const markerCreatedAt = (marker as Partial<RefundMarker> | null)?.createdAt;
+        return !(
+          typeof markerCreatedAt === 'number' &&
+          markerCreatedAt < createdAt - REFUND_MARKER_RETENTION_MS
+        );
+      }),
+    );
+    const balance = typeof node.balance === 'number' ? node.balance : 0;
+    return {
+      ...node,
+      balance: balance + 1,
+      [REFUND_MARKERS_KEY]: {
+        ...retained,
+        [markerKey]: { ledgerKey, createdAt } satisfies RefundMarker,
+      },
+    };
   });
-  return result.committed;
+  const settled = result.snapshot.val() as {
+    [REFUND_MARKERS_KEY]?: Record<string, RefundMarker>;
+  } | null;
+  const marker = result.committed ? settled?.[REFUND_MARKERS_KEY]?.[markerKey] : undefined;
+  if (!marker) {
+    throw new Error('refund marker not confirmed by the server after the refund transaction');
+  }
+
+  await database.ref(`creditLedger/${uid}/${marker.ledgerKey}`).set(
+    creditLedgerEntrySchema.parse({
+      type: 'refund',
+      amount: 1,
+      createdAt: marker.createdAt,
+      ref,
+    }),
+  );
+
+  void createEvent(
+    database,
+    buildBillingEnvelope({
+      eventName: 'credit_refunded',
+      source: 'job',
+      actorId: uid,
+      sessionId: uid,
+      causationId: `${ref}:credit_refunded`,
+      consentState: 'unknown',
+      payload: { amount: 1 },
+    }),
+  );
+
+  return marker.ledgerKey === ledgerKey;
 }
 
 /** Minimal structural seam over the fields `fulfillCheckoutSession` needs from a Stripe Checkout Session. */
@@ -209,26 +319,81 @@ export interface FulfillableCheckoutSession {
   metadata?: { uid?: string; packId?: string } | null;
 }
 
+/** The child of `credits/{uid}` holding `fulfillCheckoutSession`'s create-once grant markers, one per Stripe event. */
+export const GRANT_MARKERS_KEY = 'grantMarkers';
+
 /**
- * BILL-01/BILL-03/BILL-04/BILL-05: the converged, atomic Stripe-fulfillment
- * entry point. Called from every webhook branch that should grant credits
+ * Code review R7-CR-03 (iteration 7): how long a grant marker is kept. A
+ * marker is what makes a Stripe re-delivery of the same event grant nothing
+ * twice while the trail below is still incomplete, so it must outlive every
+ * delivery Stripe can make: automatic retries run for up to 3 days, and an
+ * event can be re-sent by hand for as long as Stripe keeps it (30 days). It
+ * is NOT the 24 h refund-marker window (`REFUND_MARKER_RETENTION_MS`). After
+ * the trail completes, the permanent `processedStripeEvents/{id}` answers a
+ * re-delivery first.
+ */
+export const GRANT_MARKER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+interface GrantMarker {
+  ledgerKey: string;
+  createdAt: number;
+  credits: number;
+}
+
+/**
+ * BILL-01/BILL-03/BILL-04/BILL-05: the Stripe-fulfillment entry point. Called
+ * from every webhook branch that should grant credits
  * (`checkout.session.completed` with `payment_status === 'paid'`,
  * `checkout.session.async_payment_succeeded`) — never from
  * `async_payment_failed`.
  *
+ * Code review R7-CR-03 (iteration 7): the grant is create-once and SAFE TO
+ * RETRY, the same way `refundCreditOnce` is. Stripe answers a 5xx or a
+ * timeout by delivering the same event again, so the grant must survive any
+ * failure at any point and be completed — exactly once — by a later delivery:
+ *
  * 1. Resolves `uid`/`pack` from `session.metadata` — missing/unknown
  *    metadata is a no-op (`{ granted: false }`), same as the pre-hardening
- *    behavior, and never burns the dedup marker.
- * 2. Dedups via `markStripeEventProcessed`'s transaction on
- *    `processedStripeEvents/{stripeEventId}` — a replayed/duplicate-delivered
- *    event returns `{ granted: false }` with no second grant.
- * 3. On a fresh event, issues ONE root-level multi-path `update()` writing
- *    the `processedStripeEvents` marker, its day-mirror, the balance
- *    increment, the `creditLedger` entry, and its day-mirror together — so
- *    the grant and its ledger trail commit as a single atomic unit (the day
- *    mirrors feed the nightly reconciliation job from a later plan).
- * 4. Emits one `credits_granted` B event, deduped on
+ *    behavior.
+ * 2. Fast path: a delivery whose `processedStripeEvents/{id}` already exists
+ *    returns `{ granted: false }`. That marker is written only in step 4,
+ *    after the grant committed, so it never gates a grant that has not
+ *    happened (the iteration-6 flaw: the dedup marker committed FIRST, a
+ *    grant transaction aborted by a dropped socket then failed the webhook,
+ *    and Stripe's retry was deduped — the buyer paid and got nothing). It
+ *    also answers events granted before this deploy, which carry no grant
+ *    marker.
+ * 3. ONE transaction on `credits/{uid}` ADDS `pack.credits` to the balance
+ *    and writes a create-once grant marker `grantMarkers/{stripeEventId}`
+ *    holding a fixed, pre-allocated ledger key, its timestamp and the credit
+ *    count — so the grant commits with its marker or not at all. Being a
+ *    transaction, it re-runs against whatever committed first, so a refund
+ *    or a spend from another process is never overwritten (R6-WR-06). When
+ *    the marker is already there it returns the node UNCHANGED instead of
+ *    aborting, so the outcome is always a server-confirmed commit: an abort
+ *    would complete from the client's local state, which can hold another
+ *    delivery's unacknowledged (and revertible) marker (see
+ *    `refundCreditOnce`, R7-CR-01). Other grant markers older than
+ *    `GRANT_MARKER_RETENTION_MS` are dropped in the same write.
+ * 4. Then ONE idempotent root-level multi-path `update()` writes the
+ *    `processedStripeEvents` marker, its day mirror, and the `creditLedger`
+ *    entry at the marker's ledger key with its day mirror — every value taken
+ *    from the marker, so a retry rewrites the same bytes and never appends a
+ *    second entry (the day mirrors feed the nightly reconciliation job). It
+ *    touches nothing under `credits/`, so it cannot abort an in-flight
+ *    transaction there.
+ * 5. Emits one `credits_granted` B event, deduped on
  *    `${stripeEventId}:credits_granted`.
+ *
+ * If the process stops between steps 3 and 4, the balance holds the credits
+ * and the trail is missing until Stripe re-delivers the event (the webhook
+ * never answered 2xx), which completes it from the marker. Reconciliation
+ * cannot see that window — it cross-checks the day mirrors against the event
+ * ledger, and neither exists yet — so Stripe's re-delivery is what closes it.
+ *
+ * Returns `{ granted: true }` when this delivery granted the pack or
+ * completed the trail of a grant an earlier delivery committed; the events
+ * that drives are deduped on the Stripe event id.
  */
 export async function fulfillCheckoutSession(
   database: Database,
@@ -242,32 +407,67 @@ export async function fulfillCheckoutSession(
     return { granted: false };
   }
 
-  const shouldProcess = await markStripeEventProcessed(database, stripeEventId);
-  if (!shouldProcess) {
+  if ((await database.ref(`processedStripeEvents/${stripeEventId}`).get()).exists()) {
     return { granted: false };
   }
 
-  const current = await getBalance(database, uid);
-  const day = dayShardKey(Date.now());
-  const key = ledgerRef(database, uid).push().key;
-  if (!key) {
+  const ledgerKey = ledgerRef(database, uid).push().key;
+  if (!ledgerKey) {
     throw new Error('Failed to allocate a creditLedger push key');
   }
+  const createdAt = Date.now();
+  const result = await database.ref(`credits/${uid}`).transaction((current) => {
+    const node =
+      current !== null && typeof current === 'object' ? (current as Record<string, unknown>) : {};
+    const markers =
+      node[GRANT_MARKERS_KEY] !== null && typeof node[GRANT_MARKERS_KEY] === 'object'
+        ? (node[GRANT_MARKERS_KEY] as Record<string, unknown>)
+        : {};
+    if (Object.prototype.hasOwnProperty.call(markers, stripeEventId)) {
+      // Already granted by an earlier delivery: add nothing, but commit the
+      // node unchanged so the server confirms the marker (R7-CR-03).
+      return current;
+    }
+    const retained = Object.fromEntries(
+      Object.entries(markers).filter(([, marker]) => {
+        const markerCreatedAt = (marker as Partial<GrantMarker> | null)?.createdAt;
+        return !(
+          typeof markerCreatedAt === 'number' &&
+          markerCreatedAt < createdAt - GRANT_MARKER_RETENTION_MS
+        );
+      }),
+    );
+    const balance = typeof node.balance === 'number' ? node.balance : 0;
+    return {
+      ...node,
+      balance: balance + pack.credits,
+      [GRANT_MARKERS_KEY]: {
+        ...retained,
+        [stripeEventId]: { ledgerKey, createdAt, credits: pack.credits } satisfies GrantMarker,
+      },
+    };
+  });
+  const settled = result.snapshot.val() as {
+    [GRANT_MARKERS_KEY]?: Record<string, GrantMarker>;
+  } | null;
+  const marker = result.committed ? settled?.[GRANT_MARKERS_KEY]?.[stripeEventId] : undefined;
+  if (!marker) {
+    throw new Error('grant marker not confirmed by the server after the grant transaction');
+  }
 
-  const now = Date.now();
+  const day = dayShardKey(marker.createdAt);
   const ledgerEntry = creditLedgerEntrySchema.parse({
     type: 'purchase' as const,
-    amount: pack.credits,
-    createdAt: now,
+    amount: marker.credits,
+    createdAt: marker.createdAt,
     ref: stripeEventId,
   });
 
   await database.ref().update({
-    [`processedStripeEvents/${stripeEventId}`]: now,
+    [`processedStripeEvents/${stripeEventId}`]: marker.createdAt,
     [`processedStripeEventsByDay/${day}/${stripeEventId}`]: true,
-    [`credits/${uid}/balance`]: current + pack.credits,
-    [`creditLedger/${uid}/${key}`]: ledgerEntry,
-    [`creditLedgerByDay/${day}/${uid}/${key}`]: ledgerEntry,
+    [`creditLedger/${uid}/${marker.ledgerKey}`]: ledgerEntry,
+    [`creditLedgerByDay/${day}/${uid}/${marker.ledgerKey}`]: ledgerEntry,
   });
 
   void createEvent(
@@ -279,7 +479,7 @@ export async function fulfillCheckoutSession(
       sessionId: uid,
       causationId: `${stripeEventId}:credits_granted`,
       consentState: 'unknown',
-      payload: { packId: pack.id, credits: pack.credits },
+      payload: { packId: pack.id, credits: marker.credits },
     }),
   );
 
@@ -307,6 +507,52 @@ export function bundleSlotRef(bundleId: string, slot: number): string {
   return `${bundleId}:${slot}`;
 }
 
+/**
+ * The inverse of `bundleSlotRef`: the bundle id a slot ref was built from, or
+ * `null` when `ref` is not a slot ref (no `:`, or a suffix that is not a
+ * positive slot number). Splits on the LAST `:`, since the slot is always the
+ * final segment.
+ */
+export function bundleIdFromSlotRef(ref: string): string | null {
+  const separator = ref.lastIndexOf(':');
+  if (separator <= 0 || !/^[1-9]\d*$/.test(ref.slice(separator + 1))) {
+    return null;
+  }
+  return ref.slice(0, separator);
+}
+
+/**
+ * Code review R2-IN-03: the DURABLE spend fact for a bundle, read from its
+ * `creditBundleOps/{uid}/{bundleId}` operation marker. `'debited'` means the
+ * bundle's credits were taken (true); `'insufficient'` means no debit
+ * happened (false).
+ *
+ * Code review R3-IN-03 (iteration 3): an ABSENT marker also means no debit
+ * (false). `spendCredits` is the only writer of these markers — it writes
+ * `'claiming'` before it touches the balance, then `'insufficient'` or
+ * `'debited'` — and nothing ever deletes one, so a bundle whose credits were
+ * taken always has a marker. A free-access submission writes none.
+ *
+ * A `'claiming'` marker alone is ambiguous — a process can stop between the
+ * balance debit and the marker's `'debited'` write — so it returns `null`.
+ */
+export async function readBundleSpendFact(
+  database: Database,
+  uid: string,
+  bundleId: string,
+): Promise<boolean | null> {
+  const marker = (await bundleOpRef(database, uid, bundleId).get()).val() as {
+    status?: unknown;
+  } | null;
+  if (marker?.status === 'debited') {
+    return true;
+  }
+  if (marker === null || marker?.status === 'insufficient') {
+    return false;
+  }
+  return null;
+}
+
 export type SpendCreditsOutcome = 'debited' | 'insufficient' | 'alreadyProcessed';
 
 interface CreditBundleOpMarker {
@@ -331,7 +577,8 @@ interface CreditBundleOpMarker {
  * Two-phase design:
  *
  * **Phase 1 — claim.** A transaction on `creditBundleOps/{uid}/{bundleId}`
- * mirrors `markStripeEventProcessed`'s polarity (credits.ts:189-202), NOT
+ * mirrors the write-on-empty polarity of `createEvent`'s `eventDedup`
+ * transaction (`events/ledger.ts`), NOT
  * `spendCredit`'s null-handling (credits.ts:96-107): for a balance, "node
  * does not exist" means "zero credits, do nothing"; for a claim marker it
  * means "nobody has attempted this bundle yet, proceed and claim." Reusing

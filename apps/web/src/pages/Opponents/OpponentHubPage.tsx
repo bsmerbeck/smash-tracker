@@ -43,7 +43,8 @@ import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip'
 import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { buildInsightDoors, resolveInsightClaim } from '@/components/analytics/insightDoors';
-import { SampleCue, MixedContextBadge } from '@/components/EvidenceCues';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
+import { SampleCue, MixedContextBadge, CohortCompositionLine } from '@/components/EvidenceCues';
 import { CardSkeleton } from '@/components/analytics/CardSkeleton';
 import { PageShell } from '@/components/analytics/PageShell';
 import { PageFilterRow } from '@/components/analytics/PageFilterRow';
@@ -83,7 +84,6 @@ import { SpriteList } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { alphaStageList } from '@/lib/stageOptions';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { formatPercent } from '@/lib/formatPercent';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
@@ -93,7 +93,9 @@ import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
 import { TendenciesCard } from './components/TendenciesCard';
 import { ExportH2HButton } from './components/ExportH2HButton';
+import { TrackToggle } from '@/components/analytics/track/TrackToggle';
 import { PrintableEvidencePacket } from './components/PrintableEvidencePacket';
+import { HubPrepBriefCard } from './components/HubPrepBriefCard';
 import {
   groupTournamentBlocks,
   getEncounterContext,
@@ -169,41 +171,28 @@ function renderOpponentFormNowHead(
   const chipKind = claimChipKindFor(insight.kind);
   const verdict = buildOpponentFormNowVerdict(insight, opponentTag, t);
 
-  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
-  // `recent`/`baseline` claims and format it through the one shared,
-  // locale-aware percent formatter, rather than the engine's pre-formatted
-  // `copy.values.rate`/`.baselineRate` strings (always English-convention
-  // "42%").
-  const recentRateText =
-    insight.recent.kind === 'evidenced' ? formatPercent(insight.recent.value.rate, locale) : '';
-  const baselineRateText =
-    insight.baseline.kind === 'evidenced' ? formatPercent(insight.baseline.value.rate, locale) : '';
-  const recentRecord = `${insight.copy.values.record ?? ''} · ${recentRateText}`;
+  // Plan 39.1-52: the one shared evidence builder (no dangling cue, never
+  // "over 0"); the H2H head keeps its cue on the verdict's counted games.
   const count = typeof insight.copy.values.count === 'number' ? insight.copy.values.count : 0;
-  const tier = confidenceTierFor(count);
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count }) : '';
-  const evidence = t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord,
-    baselineRate: baselineRateText,
-    baselineGames: insight.copy.values.baselineGames ?? 0,
-    cue,
-  });
+  const evidence = buildInsightEvidenceLine(insight, t, locale, { cueCount: count });
 
   return (
     <div className="flex flex-col gap-2" data-slot="opponent-form-now">
       <ClaimChip kind={chipKind} label={t(`insights.kind.${chipKind}`)} />
       <p
-        className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+        className="text-base leading-6 font-medium text-pretty"
         data-slot="opponent-form-now-verdict"
       >
         {verdict}
       </p>
-      <p
-        className="text-xs leading-4 text-muted-foreground tabular-nums"
-        data-slot="opponent-form-now-evidence"
-      >
-        {evidence}
-      </p>
+      {evidence && (
+        <p
+          className="text-xs leading-4 text-muted-foreground tabular-nums"
+          data-slot="opponent-form-now-evidence"
+        >
+          {evidence}
+        </p>
+      )}
       {door && (
         <div className="flex flex-wrap gap-2" data-slot="opponent-form-now-doors">
           <Button asChild size="sm">
@@ -260,12 +249,15 @@ function matchSource(match: Match): HubSourceChip {
 
 const STAGE_IDS = new Set(stagesById.keys());
 
+/** The identity `resolveOpponentIdentities` gives a game with an absent or empty opponent tag — the unnamed bucket, never a real opponent. */
+const UNKNOWN_OPPONENT_IDENTITY = 'unknown';
+
 export function OpponentHubPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { matches, isLoading, isFetching, filterActive } = useFilteredMatches();
+  const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
@@ -282,7 +274,9 @@ export function OpponentHubPage() {
   // D-02: one identity resolver, one hop — the SAME technique the list page
   // uses (build the resolver once over the filtered matches and the alias
   // map, resolve the target, keep matches whose resolved identity matches).
-  // No second identity comparison is written anywhere on this page.
+  // No second identity comparison is written anywhere on this page (the
+  // prep-brief card's resolver below is the same technique over all matches,
+  // code review WEB-02).
   const resolve = useMemo(
     () => resolveOpponentIdentities(matches, aliasMap ?? {}),
     [matches, aliasMap],
@@ -309,6 +303,44 @@ export function OpponentHubPage() {
   }, [matches, aliasMap, targetIdentity, refreshedAt]);
 
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
+
+  // Code review WEB-02: the prep-brief card's inputs are built from ALL
+  // matches, never the filtered set. The card's door is a navigation
+  // affordance, not an analytics figure, so the Dashboard's source/range
+  // filter must not remove a shared event (its debrief door) or the games
+  // that carry a provider-id link (its likely-opponent identity match) —
+  // the same reason `PrepBriefPage` avoids `useFilteredMatches()`.
+  const prepResolve = useMemo(
+    () => resolveOpponentIdentities(allMatches, aliasMap ?? {}),
+    [allMatches, aliasMap],
+  );
+  const prepIdentity = useMemo(
+    () => (pathTag ? prepResolve({ opponent: pathTag }) : null),
+    [prepResolve, pathTag],
+  );
+  // Code review R3-IN-05: the card needs a REAL identity with at least one
+  // game. The identity is `canonicalize(pathTag)`, never null for a present
+  // path tag, so without this a typo'd URL, a tag whose games were all
+  // deleted and the unknown bucket all mounted the card in the empty state,
+  // naming the raw URL tag.
+  const prepIdentityMatches = useMemo(
+    () =>
+      prepIdentity && prepIdentity !== UNKNOWN_OPPONENT_IDENTITY
+        ? allMatches.filter((m) => prepResolve(m) === prepIdentity)
+        : [],
+    [allMatches, prepResolve, prepIdentity],
+  );
+  // Plan 39.2-10 (TRK-02): the watchlist ref is the resolved canonical tag, and
+  // only for a real identity with at least one game — the same gate the prep
+  // card uses, so a typo'd URL never offers to track a rival who does not exist.
+  const trackOpponentRef =
+    prepIdentity && prepIdentity !== UNKNOWN_OPPONENT_IDENTITY && prepIdentityMatches.length > 0
+      ? prepIdentity
+      : null;
+  const prepTournamentBlocks = useMemo(
+    () => groupTournamentBlocks(prepIdentityMatches),
+    [prepIdentityMatches],
+  );
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
   /**
@@ -670,8 +702,8 @@ export function OpponentHubPage() {
 
   const evidencePacket = useMemo(() => {
     if (!profile) return null;
-    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
-  }, [profile, tournamentBlocks, user]);
+    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you', i18n.language);
+  }, [profile, tournamentBlocks, user, i18n.language]);
 
   // WR-03 (38-REVIEW-FIX): this object literal was rebuilt fresh every
   // render (a NEW reference even when every field's VALUE was unchanged) —
@@ -734,6 +766,26 @@ export function OpponentHubPage() {
 
   const displayTag = profile?.opponent ?? pathTag ?? '';
 
+  // Code review R2-WR-01: the prep-brief card depends only on `allMatches`
+  // (its identity, resolver and tournament blocks — WEB-02) and never on
+  // the FILTERED `profile`. `profile` is null whenever the Dashboard's
+  // source/range filter leaves no game against this opponent (e.g. a
+  // `manual` filter over an opponent met only at a synced event), and the
+  // card used to live only inside the non-null branch, so its debrief door
+  // vanished exactly then. The element is built here, outside that branch:
+  // the hub body mounts it at its UI-SPEC D.2 slot, and the empty state
+  // mounts it right below the empty-state panel. Exactly one renders — and
+  // only for a real identity with at least one game (code review R3-IN-05).
+  const prepBriefCard =
+    prepIdentity && prepIdentityMatches.length > 0 ? (
+      <HubPrepBriefCard
+        opponentIdentity={prepIdentity}
+        opponentTag={displayTag}
+        resolveOpponent={prepResolve}
+        tournamentBlocks={prepTournamentBlocks}
+      />
+    ) : null;
+
   // Plan 39.1-26 (gap closure, Task 2): the terminus's active-filter summary
   // when the active claim is this page's OWN trend insight — the SAME
   // verdict sentence the slot above renders, via `buildOpponentFormNowVerdict`.
@@ -751,6 +803,10 @@ export function OpponentHubPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
         <h1 className="text-2xl font-semibold tracking-tight">{displayTag}</h1>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Plan 39.2-10 (T-04): Track is the FIRST control of the group. It tracks the resolved canonical identity, so an alias-only URL never lists the same rival under two tags. */}
+          {trackOpponentRef && (
+            <TrackToggle kind="opponent" itemRef={trackOpponentRef} name={displayTag} />
+          )}
           {profile && (
             <Button
               type="button"
@@ -767,9 +823,13 @@ export function OpponentHubPage() {
       </div>
 
       {!profile ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-          {t('opponents.hub.empty', { opponent: displayTag })}
-        </div>
+        <>
+          <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
+            {t('opponents.hub.empty', { opponent: displayTag })}
+          </div>
+          {/* Code review R2-WR-01: the card survives an empty FILTERED profile. */}
+          {prepBriefCard}
+        </>
       ) : (
         <div
           key={profile.opponent}
@@ -885,7 +945,12 @@ export function OpponentHubPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {crossTab && <MixedContextBadge cohort={crossTab.cohort} />}
+                {crossTab && (
+                  <div className="flex flex-col gap-1">
+                    <CohortCompositionLine cohort={crossTab.cohort} />
+                    <MixedContextBadge cohort={crossTab.cohort} showDetail />
+                  </div>
+                )}
               </>
             }
             trailing={
@@ -953,7 +1018,7 @@ export function OpponentHubPage() {
             in the same DOM order as before.
           */}
           <PageGrid>
-            <GridCell span={8}>
+            <GridCell span={8} stack>
               <ChartCard
                 title={t('opponents.trend.title')}
                 abstained={
@@ -999,10 +1064,13 @@ export function OpponentHubPage() {
                   onSelectPoint={handleSelectTrendPoint}
                 />
               </ChartCard>
+              {/* Plan 39-12 (PREP-05, D-10/D-11): the free prep-brief card — own-account only, renders nothing under a coach or workspace route. Mounted from `prepBriefCard` (built from ALL matches) at the UI-SPEC D.2 slot, directly under the H2H trend in the trend's own 8-col cell (39.1-37 grid). */}
+              {prepBriefCard}
             </GridCell>
             <GridCell span={4} stack>
               <WhatTheyPlayTable
                 byTheirFighter={profile.byTheirFighter}
+                belowFloor={profile.byTheirFighterBelowFloor}
                 rowHref={(row) =>
                   subjectPath(
                     `/matchups?${buildDrillDownSearch({ vsFighterId: row.opponentFighterId }).toString()}`,
@@ -1015,8 +1083,9 @@ export function OpponentHubPage() {
               />
             </GridCell>
           </PageGrid>
+          {/* Plan 39.1-56: the whole alias-resolved head-to-head — `profile.recent` holds only the last 10 games, so the card never reached its 8-set cap or "Show all". */}
           <RecentEncounters
-            matches={profile.recent}
+            matches={opponentMatches}
             tournamentLinkForMatch={tournamentLinkForMatch}
             onSeeAllInMatchList={scrollToList}
           />

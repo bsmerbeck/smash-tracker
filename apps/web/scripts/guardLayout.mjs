@@ -28,7 +28,8 @@
  * recordable.
  */
 import puppeteer from 'puppeteer';
-import { startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildDashboardScale, startGuardLayoutHarnessServer } from './guardLayoutHarness.mjs';
+import { buildGuardDigestSeed } from './digestGuardFixture.mjs';
 import {
   evaluateStretch,
   evaluateScrollBudget,
@@ -135,6 +136,33 @@ function periodTrendAxisExpectFor(domain) {
 }
 
 /**
+ * Plan 39.2-12 (UI-SPEC G1): the Dashboard routes are measured with an EXPANDED
+ * digest and 25 tracked items (plan 39.2-13: and the recap beside it). The digest's device-local snapshot is seeded before
+ * the app boots (`storageSeed`), and the prepare steps PROVE the seed took by
+ * waiting on the expanded card, its moved rows and "and N more", then open the
+ * Tracked list to all 25 — a route where any of them never appears is UNMEASURED,
+ * never a pass over a quiet card.
+ */
+const DASHBOARD_DIGEST_SEED = buildGuardDigestSeed(buildDashboardScale().matches);
+const DASHBOARD_DIGEST_PREPARE = [
+  { type: 'wait', selector: '#digest[data-state="expanded"]' },
+  { type: 'wait', selector: '#digest [data-slot="digest-moved-list"] > li' },
+  { type: 'wait', selector: '#digest [data-slot="digest-more"]' },
+  { type: 'wait', selector: '#tracked [data-slot="tracked-row"]' },
+  // Plan 39.2-13: the recap shares the digest's row, with its tier badge, the chip, the
+  // set strip and all three doors (debrief, games, event) — the widest form of the card.
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="tier-badge"]' },
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="delta-chip"]' },
+  { type: 'wait', selector: '[data-slot="recap-card"] [data-slot="set-strip"]' },
+  {
+    type: 'wait',
+    selector: '[data-slot="recap-card"] [data-slot="insight-card-doors"] a:nth-of-type(3)',
+  },
+  { type: 'click', selector: '#tracked [data-slot="bounded-list"] > button' },
+  { type: 'wait', selector: '#tracked [data-slot="collapsible-content"][data-state="open"]' },
+];
+
+/**
  * Plan 39.1-44 (sketch 003 A `renderA`, PD-44-1): the Matchups sections in the
  * DOM order every width keeps — the hero, then By opponent, the four rail
  * cards, the matrix, the results. `matchup-or-player` is optional (the engine
@@ -176,6 +204,31 @@ const PAIRING_HERO_CARD_CEILINGS = [
   },
 ];
 
+/**
+ * Plan 41-09 (SC4, TRND-03): the Trends text-fit targets declared at the two desktop viewports — the career
+ * timeline (Rating Curve + Monthly Performance), Match-Type Mix and Recent Events (the Tournaments card)
+ * content roots, and the Play rhythm row (the read and the heat cells).
+ */
+export const TRENDS_1440P_FIT_SELECTORS = [
+  '[data-slot="career-timeline"]',
+  '[data-slot="match-type-mix"]',
+  '[data-slot="recent-events"]',
+  '[data-slot="trends-rhythm-chart"]',
+  '[data-slot="trends-rhythm-read"]',
+];
+
+/**
+ * Plan 41-10 (UI-SPEC §12.11, DD-41-03): the Dashboard's row-3 pair — the strip-tile-over-Snapshot
+ * stack beside Previous Matches. `itemSelector` makes grid-balance measure only that pair (the
+ * digest / hero rows are not part of it); `pairBottomTolerancePx` is the §12.11 bottom tolerance
+ * and `deadGapTolerancePx` the same 64px for the dead-gap rule (§12.11 pair tolerance).
+ */
+const DASHBOARD_PAIR_BALANCE = {
+  itemSelector: '[data-slot="dashboard-form-stack"], [data-slot="previous-matches"]',
+  deadGapTolerancePx: 64,
+  pairBottomTolerancePx: 64,
+};
+
 export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'stretched-card-fixture',
@@ -193,12 +246,23 @@ export const LAYOUT_ORACLE_ROUTES = [
   {
     id: 'dashboard',
     loadedMarker: '[data-slot="dashboard-body"]',
+    // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
+    // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
+    // last-30 horizon and nothing can have MOVED. A current account is what the digest
+    // and the Tracked section exist for. Plan 39.2-13: the `dashboard` scale is that same
+    // account plus one just-finished event, so the 8 + 4 digest-and-recap row is measured.
+    scale: 'dashboard',
+    storageSeed: DASHBOARD_DIGEST_SEED,
+    prepare: DASHBOARD_DIGEST_PREPARE,
     // Plan 39.1-38: the toolbar is the one unboxed filter row (no page h1 —
     // the Dashboard has none); phone StatRows collapse to two columns.
     // Plan 39.1-39: record-fit (the split cards' two records never
     // overprint or leave their cells) and brand-red-text (UI-SPEC §4.3).
-    checks: ['filter-row', 'record-fit', 'brand-red-text'],
+    // Plan 41-10 (UI-SPEC §12.11, DD-41-03): grid-balance on the row-3 PAIR only — the
+    // form-stack cell and Previous Matches — within 64px of each other's bottom.
+    checks: ['filter-row', 'record-fit', 'brand-red-text', 'grid-balance'],
     filterRow: { maxHeightPx: 72, owns: ['[data-slot="horizon-switch"]'] },
+    gridBalance: DASHBOARD_PAIR_BALANCE,
     narrowChecks: ['stat-row-columns'],
   },
   {
@@ -207,7 +271,16 @@ export const LAYOUT_ORACLE_ROUTES = [
     // the Casual vs Competitive / Online vs Offline record overprint.
     id: 'dashboard-app',
     loadedMarker: '[data-slot="dashboard-body"]',
-    checks: ['record-fit', 'brand-red-text'],
+    // Plan 39.2-12: the wall-clock `recent` scale, not `realistic` — the realistic fixture's
+    // games are all in 2023, so every tracked item reads `locked` at the digest's fixed
+    // last-30 horizon and nothing can have MOVED. A current account is what the digest
+    // and the Tracked section exist for. Plan 39.2-13: the `dashboard` scale is that same
+    // account plus one just-finished event, so the 8 + 4 digest-and-recap row is measured.
+    scale: 'dashboard',
+    storageSeed: DASHBOARD_DIGEST_SEED,
+    prepare: DASHBOARD_DIGEST_PREPARE,
+    checks: ['record-fit', 'brand-red-text', 'grid-balance'],
+    gridBalance: DASHBOARD_PAIR_BALANCE,
   },
   {
     id: 'fighter-analysis',
@@ -472,8 +545,15 @@ export const LAYOUT_ORACLE_ROUTES = [
       { first: '[data-slot="trends-reads-rail"]', then: '[data-slot="career-timeline"]' },
     ],
     // Plan 39.1-40 (OOS-4): the Sessions & Tilt rows' dates must read whole.
+    // Plan 41-09 (SC4, TRND-03): at 2560x1440 and 1440x900 the career timeline, the Match-Type Mix and
+    // Recent Events cards content roots and the Play rhythm row (read + heat) must also fit their text,
+    // stretch nothing and add no scroll beyond the viewport budgets.
     fitTargets: [
       { selector: '[data-slot="sessions-and-tilt"]', viewports: ['1440x900', '390x844'] },
+      ...TRENDS_1440P_FIT_SELECTORS.map((selector) => ({
+        selector,
+        viewports: ['2560x1440', '1440x900'],
+      })),
     ],
   },
   {
@@ -518,6 +598,31 @@ export const LAYOUT_ORACLE_ROUTES = [
   },
   // Plan 39.1-39: brand-red-text (UI-SPEC §4.3).
   { id: 'opponents', loadedMarker: '[data-slot="opponents-body"]', checks: ['brand-red-text'] },
+  {
+    // Plan 39.2-07 (UI-SPEC §13 G1): the tier-aware Tournaments page on the
+    // harness's 19-row registry (`guardLayoutHarness.mjs`'s `tournaments`
+    // scale), inside the MainLayout-geometry shell. brand-red-text (§4.3): the
+    // chips, the Clear link and the event links are neutral. On a phone the
+    // rows stack and the table-clip sweep reads the stacked list.
+    id: 'tournaments',
+    loadedMarker: '[data-slot="tournaments-body"]',
+    scale: 'tournaments',
+    checks: ['brand-red-text'],
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="tournaments-table"]'],
+  },
+  {
+    // Plan 39.2-07: the SAME page on a 100-row registry (`tournaments100`) —
+    // one full DOM pass. The table counts at most 500 px toward the page
+    // scroll budget, like every table-layout list (UI-SPEC §6.3 terminus
+    // allowance); the phone stack mounts 20 rows and counts in full.
+    id: 'tournaments-100',
+    loadedMarker: '[data-slot="tournaments-body"]',
+    scale: 'tournaments100',
+    checks: ['brand-red-text'],
+    narrowChecks: ['table-clip'],
+    clipTargets: ['[data-slot="tournaments-table"]'],
+  },
   {
     id: 'opponent-hub',
     loadedMarker: '[data-slot="opponent-hub-body"]',
@@ -638,14 +743,23 @@ export const LAYOUT_ORACLE_ROUTES = [
   },
   {
     // Plan 39.1-49 (OOS-9): the GSP page on the harness's seeded `gsp` scale
-    // (the one definition capture:design also reads), phone width only — its
-    // desktop layout is Phase 41's contract (UI-SPEC §12). No `checks`: the
-    // default families plus the text-fit target on the hero figures.
+    // (the one definition capture:design also reads). Plan 41-05 (D3,
+    // RESEARCH correction 6 / DD-41-11): the page adopted PageShell + PageGrid,
+    // so the route runs at EVERY oracle viewport (the three named ones plus
+    // 1024x768, where UI-SPEC §6.2's 8 + 4 rows still hold) - the stretch,
+    // scroll-width and scroll-budget families and the brand-red-text check
+    // apply, and the hero's text-fit target is measured at each of them.
     id: 'gsp',
     loadedMarker: '[data-slot="gsp-body"]',
     scale: 'gsp',
-    viewports: ['390x844'],
-    fitTargets: [{ selector: '[data-slot="gsp-hero"]', viewports: ['390x844'] }],
+    checks: ['brand-red-text'],
+    extraViewports: ['1024x768'],
+    fitTargets: [
+      {
+        selector: '[data-slot="gsp-hero"]',
+        viewports: ['2560x1440', '1440x900', '1024x768', '390x844'],
+      },
+    ],
   },
 ];
 
@@ -654,8 +768,8 @@ const ROUTE_LOAD_TIMEOUT_MS = 15_000;
 /**
  * Plan 39.1-34: how long a career-timeline route waits for the timeline's
  * plot area after the page-loaded marker. On timeout it proceeds anyway —
- * `evaluateCareerTimeline` then reports what it finds (on production's
- * chart.js Trends: `career-timeline-unmeasured`), never a silent pass.
+ * `evaluateCareerTimeline` then reports what it finds (on a build without the
+ * timeline: `career-timeline-unmeasured`), never a silent pass.
  */
 const CAREER_TIMELINE_WAIT_MS = 5_000;
 
@@ -1023,8 +1137,15 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       // other route keeps the plain card selector.
       const gridCardSelector =
         (familyConfig.gridBalance && familyConfig.gridBalance.cardSelector) || '[data-slot="card"]';
-      const cardBearingChildren = Array.from(gridEl.children).filter(
-        (child) => child.matches(gridCardSelector) || child.querySelector(gridCardSelector),
+      // Plan 41-10: a route may instead name the exact grid children it balances (the Dashboard's
+      // form-stack / Previous Matches pair); only those children are kept, so the digest and hero
+      // rows are not part of that route's measurement. Absent, behaviour is unchanged.
+      const gridItemSelector =
+        (familyConfig.gridBalance && familyConfig.gridBalance.itemSelector) || null;
+      const cardBearingChildren = Array.from(gridEl.children).filter((child) =>
+        gridItemSelector
+          ? child.matches(gridItemSelector)
+          : child.matches(gridCardSelector) || child.querySelector(gridCardSelector),
       );
       if (cardBearingChildren.length < 2) continue;
       const rowGapPx = parseFloat(window.getComputedStyle(gridEl).rowGap) || 0;
@@ -1333,6 +1454,11 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
         rateCells: cellsOf(rootEl, 'career-timeline-rate-cell'),
         gamesCells: cellsOf(rootEl, 'career-timeline-games-cell'),
         formStripTicks: rootEl.querySelectorAll('[data-slot="form-strip-tick"]').length,
+        // Plan 41-04: the tier diamonds drawn, and how many of them are the hollow (estimated) form.
+        eventMarkers: rootEl.querySelectorAll('[data-slot="career-timeline-event"]').length,
+        eventMarkersEstimated: rootEl.querySelectorAll(
+          '[data-slot="career-timeline-event"][data-basis="estimated"]',
+        ).length,
       });
     }
   }
@@ -1721,6 +1847,15 @@ function collectPageMeasurements(checks, ceilingMarkers = [], familyConfig = {})
       el = el.parentElement;
     }
     terminusLists.push(record);
+  }
+
+  // Plan 39.2-07 (UI-SPEC §6.3): the Tournaments table is the same kind of
+  // table-layout list — its scroll container's height counts toward the page
+  // budget only up to the terminus allowance. The stacked phone list has no
+  // `table` and counts in full.
+  for (const table of document.querySelectorAll('table[data-slot="tournaments-table"]')) {
+    const container = table.closest('[data-slot="table-container"]') ?? table;
+    terminusFlowsPx.push(container.getBoundingClientRect().height);
   }
 
   // -------------------------------------------------------------------
@@ -2224,6 +2359,22 @@ function collectTextFit(targetSelectors) {
 }
 
 /**
+ * Plan 39.2-12: a route declaring `storageSeed` ({ key, value }) gets that
+ * localStorage entry written before any page script runs, so a device-local
+ * store (the Dashboard digest) is in the state the route measures.
+ */
+async function seedRouteStorage(page, route) {
+  if (!route.storageSeed) return;
+  await page.evaluateOnNewDocument(
+    (key, value) => {
+      window.localStorage.setItem(key, value);
+    },
+    route.storageSeed.key,
+    route.storageSeed.value,
+  );
+}
+
+/**
  * Plan 39.1-49: one shell=app page load (production geometry — the harness's
  * MainLayout-geometry shell, what capture:design shoots) for the narrow
  * passes. Runs the route's prepare steps, waits for its loaded marker, then
@@ -2237,6 +2388,7 @@ async function measureShellPasses(browser, baseUrl, route, viewport, { sweep, fi
     if (route.scale) {
       await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
     }
+    await seedRouteStorage(page, route);
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}&shell=app`, {
       waitUntil: 'networkidle0',
     });
@@ -2300,6 +2452,7 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
     if (route.scale) {
       await page.setExtraHTTPHeaders({ 'x-guard-layout-scale': route.scale });
     }
+    await seedRouteStorage(page, route);
     await page.goto(`${baseUrl}/guard-layout.html?id=${encodeURIComponent(route.id)}`, {
       waitUntil: 'networkidle0',
     });
@@ -2410,7 +2563,16 @@ async function measureRouteAtViewport(browser, baseUrl, route, viewport) {
       );
     }
     if (checks.includes('grid-balance')) {
-      violations.push(...evaluateGridBalance(measurements.grids));
+      violations.push(
+        ...evaluateGridBalance(measurements.grids, {
+          ...(route.gridBalance?.deadGapTolerancePx !== undefined
+            ? { deadGapTolerancePx: route.gridBalance.deadGapTolerancePx }
+            : {}),
+          ...(route.gridBalance?.pairBottomTolerancePx !== undefined
+            ? { pairBottomTolerancePx: route.gridBalance.pairBottomTolerancePx }
+            : {}),
+        }),
+      );
       violations.push(...evaluateFamilyPresence('grid-balance', measurements.grids));
     }
     // Plan 39.1-32: the four mobile gap-closure families, same opt-in
@@ -2992,7 +3154,7 @@ async function main() {
                 0,
               );
               console.log(
-                `TIMELINE route=${route.id} viewport=${viewport.name} state=${timeline.state} plotWidth=${timeline.plotWidth.toFixed(1)} grain=${timeline.stripGrain ?? 'none'} points=${timeline.anchors.length} vertices=${timeline.lineVertexCount} rateCells=${timeline.rateCells.length} gamesCells=${timeline.gamesCells.length} maxAlignDeltaPx=${maxAlignDeltaPx.toFixed(1)}`,
+                `TIMELINE route=${route.id} viewport=${viewport.name} state=${timeline.state} plotWidth=${timeline.plotWidth.toFixed(1)} grain=${timeline.stripGrain ?? 'none'} points=${timeline.anchors.length} vertices=${timeline.lineVertexCount} rateCells=${timeline.rateCells.length} gamesCells=${timeline.gamesCells.length} maxAlignDeltaPx=${maxAlignDeltaPx.toFixed(1)} events=${timeline.eventMarkers} eventsEstimated=${timeline.eventMarkersEstimated}`,
               );
             }
             for (const violation of result.violations) {

@@ -264,6 +264,8 @@ describe('CareerTimeline (plan 39.1-34) — the shared-time-axis kit chart', () 
       endMs: TIMELINE.domain!.endMs,
       plotWidthPx: numberAttr(plot, 'width'),
       locale: 'en',
+      // Plan 39.1-53: CareerTimeline opts into the origin label.
+      originLabel: true,
     });
     const gridlines = container.querySelectorAll('[data-slot="career-timeline-gridline"]');
     expect(gridlines).toHaveLength(ticks.gridlines.length);
@@ -275,6 +277,33 @@ describe('CareerTimeline (plan 39.1-34) — the shared-time-axis kit chart', () 
       container.querySelectorAll('[data-slot="career-timeline-tick-label"][data-axis="x"]'),
     ).map((el) => el.textContent);
     expect(xLabels).toEqual(ticks.labels.map((l) => l.text));
+  });
+
+  it('plan 39.1-53 (UAT 39.1-35b): a career starting mid-2020 names 2020 as its first x label, with no gridline at the origin', () => {
+    const midYear = buildCareerTimeline({
+      matches: generateSyntheticMatches({
+        seed: 39_153_001,
+        count: 2_000,
+        startMs: Date.UTC(2020, 5, 14, 18),
+        sessionSizeRange: [4, 6],
+        sessionGapMs: 135 * 60 * 60 * 1000,
+        winRate: 0.6,
+        mainFighterIds: [8],
+        opponentFighterIds: [1, 10],
+        stageIds: [1],
+      }),
+      horizon: 'last30',
+      nowMs: Date.UTC(2026, 8, 17),
+    });
+    expect(new Date(midYear.domain!.startMs).getUTCFullYear()).toBe(2020);
+    const { container } = renderTimeline(1000, midYear);
+    const xLabels = Array.from(
+      container.querySelectorAll('[data-slot="career-timeline-tick-label"][data-axis="x"]'),
+    ).map((el) => el.textContent);
+    expect(xLabels[0]).toBe('2020');
+    expect(container.querySelectorAll('[data-slot="career-timeline-gridline"]')).toHaveLength(
+      new Date(midYear.domain!.endMs).getUTCFullYear() - 2020,
+    );
   });
 
   it('shades the recent window (at least 6px wide) and labels it with the horizon; no band without a window', () => {
@@ -761,6 +790,8 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       atMs: TIMELINE.rating.points[8]!.closeMs,
       wins: 5,
       losses: 2,
+      tier: 'supermajor',
+      basis: 'recorded',
       ratingAfter: 1810,
     },
     {
@@ -769,6 +800,8 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       atMs: TIMELINE.rating.points[20]!.closeMs,
       wins: 3,
       losses: 2,
+      tier: 'major',
+      basis: 'manual',
       ratingAfter: 1850,
     },
   ];
@@ -804,6 +837,60 @@ describe('CareerTimeline (plan 39.1-35) — thin slot, locked inset, table twin,
       expect(diamond.getAttribute('stroke')).toBe(CHART_TOKENS.surface);
       expect(diamond.getAttribute('stroke-width')).toBe('1.5');
     });
+  });
+
+  it('event layer (12.6 anti-masquerade): an estimated marker is hollow with data-basis, a recorded or manual one is filled', () => {
+    const estimated: CareerTimelineEventMarker = {
+      ...MARKERS[0]!,
+      key: 'evt-est',
+      tier: 'major',
+      basis: 'estimated',
+      ratingAfter: null,
+    };
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={[MARKERS[0]!, MARKERS[1]!, estimated]}
+        onSelectEventMarker={vi.fn()}
+      />,
+    );
+    const events = Array.from(container.querySelectorAll('[data-slot="career-timeline-event"]'));
+    expect(events).toHaveLength(3);
+    expect(events.map((el) => el.getAttribute('data-basis'))).toEqual([
+      'recorded',
+      'manual',
+      'estimated',
+    ]);
+    const paths = events.map((el) => el.querySelector('path')!);
+    for (const filled of [paths[0]!, paths[1]!]) {
+      expect(filled.getAttribute('fill')).toBe(CHART_TOKENS.deemphasis);
+      expect(filled.getAttribute('stroke')).toBe(CHART_TOKENS.surface);
+    }
+    const hollow = paths[2]!;
+    expect(hollow.getAttribute('fill')).toBe(CHART_TOKENS.surface);
+    expect(hollow.getAttribute('stroke')).toBe(CHART_TOKENS.deemphasis);
+    expect(hollow.getAttribute('stroke-width')).toBe('1.5');
+  });
+
+  it('event layer: supermajor and major markers share one shape (the tier is in the readout, never the mark)', () => {
+    const { container } = render(
+      <CareerTimeline
+        timeline={TIMELINE}
+        labels={LABELS}
+        width={1000}
+        eventMarkers={MARKERS}
+        onSelectEventMarker={vi.fn()}
+      />,
+    );
+    const shapes = Array.from(
+      container.querySelectorAll('[data-slot="career-timeline-event"] path'),
+    );
+    // Same diamond geometry (relative offsets), same fill: only x differs.
+    const normalise = (d: string) => d.replace(/-?\d+(\.\d+)?/g, '#');
+    expect(new Set(shapes.map((el) => normalise(el.getAttribute('d')!))).size).toBe(1);
+    expect(new Set(shapes.map((el) => el.getAttribute('fill'))).size).toBe(1);
   });
 
   it('event layer: focus shows the event readout, Enter and click select the marker', () => {

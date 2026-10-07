@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import en from '@/i18n/locales/en.json';
 import { ScoutSearchForm } from './ScoutSearchForm';
+
+/** The card description the form renders under its title. */
+function cardDescription(container: HTMLElement): string {
+  return container.querySelector('[data-slot="card-description"]')?.textContent ?? '';
+}
 
 describe('ScoutSearchForm', () => {
   it('submits with source: startgg by default, and hides the toggle when parrygg is disabled', async () => {
@@ -22,7 +28,7 @@ describe('ScoutSearchForm', () => {
     const onSubmit = vi.fn();
     render(<ScoutSearchForm onSubmit={onSubmit} isPending={false} parryggEnabled />);
 
-    await user.type(screen.getByLabelText(/start\.gg or parry\.gg profile URL/), 'PowPow');
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'PowPow');
     await user.click(screen.getByRole('radio', { name: 'parry.gg' }));
     await user.click(screen.getByRole('button', { name: 'Scout' }));
 
@@ -38,7 +44,7 @@ describe('ScoutSearchForm', () => {
     expect(screen.getByRole('radio', { name: 'start.gg' })).toHaveAttribute('aria-checked', 'true');
 
     await user.type(
-      screen.getByLabelText(/start\.gg or parry\.gg profile URL/),
+      screen.getByLabelText(/start\.gg profile URL/),
       'https://parry.gg/profile/019ce9ba-debd-7e11-84a2-77258f52644e',
     );
 
@@ -94,5 +100,56 @@ describe('ScoutSearchForm', () => {
     expect(onSubmit).not.toHaveBeenCalledWith(
       expect.objectContaining({ combineWith: expect.anything() }),
     );
+  });
+
+  // Plan 41-16 (UAT 41-8 / F14): the help text matches what the SELECTED source accepts — start.gg
+  // never takes a bare gamer tag, so nothing on the start.gg source says one works.
+  describe('source-aware help text (UAT 41-8 F14)', () => {
+    it('start.gg source (parry.gg enabled): no description, placeholder or aria label says a gamer tag works', () => {
+      const { container } = render(
+        <ScoutSearchForm onSubmit={vi.fn()} isPending={false} parryggEnabled />,
+      );
+      const description = cardDescription(container);
+      expect(description).not.toMatch(/gamer tag|tag/i);
+      expect(description).toMatch(/profile URL/);
+      expect(description).toContain('user/<slug>');
+      expect(description).toMatch(/numeric player id/);
+      const input = screen.getByRole('textbox');
+      expect(input.getAttribute('aria-label') ?? '').not.toMatch(/tag/i);
+      expect(input.getAttribute('placeholder') ?? '').not.toMatch(/tag/i);
+    });
+
+    it('parry.gg source: the description names a parry.gg profile URL or gamer tag', async () => {
+      const user = userEvent.setup();
+      const { container } = render(
+        <ScoutSearchForm onSubmit={vi.fn()} isPending={false} parryggEnabled />,
+      );
+      await user.click(screen.getByRole('radio', { name: 'parry.gg' }));
+      expect(cardDescription(container)).toBe(en.scout.form.descriptionParry);
+      expect(cardDescription(container)).toMatch(/parry\.gg profile URL or a gamer tag/);
+    });
+
+    it('a pasted parry.gg profile URL shows the parry.gg description too', async () => {
+      const user = userEvent.setup();
+      const { container } = render(
+        <ScoutSearchForm onSubmit={vi.fn()} isPending={false} parryggEnabled />,
+      );
+      await user.type(screen.getByRole('textbox'), 'https://parry.gg/profile/019ce9ba');
+      expect(cardDescription(container)).toBe(en.scout.form.descriptionParry);
+    });
+
+    it('Both mode points at the two fields', async () => {
+      const user = userEvent.setup();
+      const { container } = render(
+        <ScoutSearchForm onSubmit={vi.fn()} isPending={false} parryggEnabled />,
+      );
+      await user.click(screen.getByRole('radio', { name: 'Both' }));
+      expect(cardDescription(container)).toBe(en.scout.form.descriptionBoth);
+    });
+
+    it('parry.gg disabled: the start.gg description is unchanged', () => {
+      const { container } = render(<ScoutSearchForm onSubmit={vi.fn()} isPending={false} />);
+      expect(cardDescription(container)).toBe(en.scout.form.description);
+    });
   });
 });

@@ -456,7 +456,11 @@ export function evaluateAxisPresence(surfaces) {
  */
 export function evaluateGridBalance(
   grids,
-  { minHeightRatio = ORPHAN_HALF_MIN_RATIO, deadGapTolerancePx = STRETCH_TOLERANCE_PX } = {},
+  {
+    minHeightRatio = ORPHAN_HALF_MIN_RATIO,
+    deadGapTolerancePx = STRETCH_TOLERANCE_PX,
+    pairBottomTolerancePx = undefined,
+  } = {},
 ) {
   const violations = [];
   for (const grid of grids) {
@@ -480,6 +484,23 @@ export function evaluateGridBalance(
             b: b.selectorPath,
             ratio,
           });
+        }
+        // Plan 41-10 (UI-SPEC §12.11): opt-in. A route that declares `pairBottomTolerancePx`
+        // also requires the two halves of a side-by-side pair to END within that distance of
+        // each other — the Dashboard's strip-and-Snapshot stack beside Previous Matches. The
+        // height ratio above cannot see this (a 446px stack and a 770px list are a 0.58 ratio),
+        // and `dead-gap` below only looks at items stacked ABOVE one another.
+        if (pairBottomTolerancePx !== undefined) {
+          const bottomDelta = Math.abs(a.bottom - b.bottom);
+          if (bottomDelta > pairBottomTolerancePx) {
+            violations.push({
+              type: 'pair-bottom-delta',
+              selectorPath,
+              a: a.selectorPath,
+              b: b.selectorPath,
+              delta: bottomDelta,
+            });
+          }
         }
       }
     }
@@ -1202,7 +1223,7 @@ export function careerTimelineEdgeDeltas(timeline) {
  * `{ selectorPath, state, plotLeft, plotRight, plotWidth, stripGrain,
  * anchors: [{ t, cx }], lineVertexCount, rateCells, gamesCells:
  * [{ startMs, endMs, left, right }], formStripTicks }` — and `canvasCount` is
- * the page's `canvas` element count (the retired chart.js pair drew two).
+ * the page's `canvas` element count (the chart.js pair removed in Phase 41 drew two).
  * `expectation` is the route's own `timelineExpect`
  * (`{ strips?, formStrip?, state? }`). An empty `timelines` list is
  * `career-timeline-unmeasured` (never a silent pass).

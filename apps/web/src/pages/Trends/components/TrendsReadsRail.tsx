@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -14,6 +14,7 @@ import {
 } from '@smash-tracker/shared';
 import {
   InsightRail,
+  selectVisible,
   type InsightRailCard,
   type InsightRailShape,
 } from '@/components/analytics/InsightRail';
@@ -22,10 +23,12 @@ import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { RatingModelNote } from '@/components/RatingModelNote';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { formatPercent } from '@/lib/formatPercent';
+import { formatDate } from '@/lib/format';
+import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
 import { TrendsReadMark } from '@/pages/Trends/components/TrendsReadMarks';
 import { trendsReadMarkKind } from '@/pages/Trends/components/trendsReadMarkKind';
 
@@ -87,68 +90,42 @@ function buildDoorNodes(
 }
 
 function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
+  // Plan 39.1-52: every caption comes from the one shared builder, labelled by
+  // its sample's (template, state) shape. Only TiltCost / SessionFatigue keep
+  // this rail's own 'host' sentences below.
+  if (insight.templateId !== 'tiltCost' && insight.templateId !== 'sessionFatigue') {
+    return buildInsightEvidenceLine(insight, t, locale) ?? '';
+  }
   const claim = insight.recent;
   if (claim.kind !== 'evidenced') {
     return '';
   }
   const record = `${claim.value.wins}–${claim.value.losses}`;
   const tier = claim.sample.confidenceTier;
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
-  // Plan 39.1-40 (UI-SPEC §9.4, D-06): a sample is labelled by what it is.
-  // A Best / Toughest record is a lifetime matchup record — 'all time', never
-  // a recent horizon. A LastEventRecap names one event, which is its own
-  // window (the Fighter rail's precedent).
-  if (insight.templateId === 'bestMatchup' || insight.templateId === 'worstMatchup') {
-    return t('insights.evidence.allTimeOnly', {
-      record,
-      rate: formatPercent(claim.value.rate, locale),
-      cue,
-    });
-  }
-  if (insight.templateId === 'lastEventRecap') {
-    return t('insights.evidence.single', { record, cue });
-  }
   // TiltCost pools every spot of the account's history and SessionFatigue
   // every session — lifetime / cohort samples, never a recent horizon. Card
   // states that reach here always carry a tier (n at least 8); a tier-less
-  // one falls back to the single-sample line.
-  if (insight.templateId === 'tiltCost' || insight.templateId === 'sessionFatigue') {
-    if (!tier) {
-      return t('insights.evidence.single', { record, cue });
-    }
-    const tierLabel = t(`insights.evidence.tier.${tier}`);
-    if (insight.templateId === 'tiltCost') {
-      return t('insights.evidence.spots', {
-        record,
-        count: claim.value.total,
-        tier: tierLabel,
-      });
-    }
-    const lateGameNumber = Number(insight.copy.values.lateGameNumber);
-    return t('insights.evidence.longSessions', {
-      count: Number(insight.copy.values.longSessionCount),
-      games: lateGameNumber - 1,
+  // one falls back to the cue-less single-sample line.
+  if (!tier) {
+    return t('insights.evidence.single', { record, context: 'bare' });
+  }
+  const tierLabel = t(`insights.evidence.tier.${tier}`);
+  if (insight.templateId === 'tiltCost') {
+    return t('insights.evidence.spots', {
+      record,
+      count: claim.value.total,
       tier: tierLabel,
     });
   }
-  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
-  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
-  // literal, which baked in the English convention (no space before `%`)
-  // inside every locale's translated evidence sentence.
-  const rate = formatPercent(claim.value.rate, locale);
-  const baselineClaim = insight.baseline;
-  const baselineRate =
-    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
-  const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
-  return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord: `${record} · ${rate}`,
-    baselineRate,
-    baselineGames,
-    cue,
+  const lateGameNumber = Number(insight.copy.values.lateGameNumber);
+  return t('insights.evidence.longSessions', {
+    count: Number(insight.copy.values.longSessionCount),
+    games: lateGameNumber - 1,
+    tier: tierLabel,
   });
 }
 
-function buildSpan(insight: Insight, t: TFunction): string | undefined {
+function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   // Plan 39.1-40: one named event is its own window — no span line.
   if (insight.templateId === 'lastEventRecap') {
     return undefined;
@@ -158,8 +135,8 @@ function buildSpan(insight: Insight, t: TFunction): string | undefined {
   }
   return t('insights.evidence.span', {
     count: insight.window.games,
-    from: new Date(insight.window.fromMs).toLocaleDateString(),
-    to: new Date(insight.window.toMs).toLocaleDateString(),
+    from: formatDate(insight.window.fromMs, locale),
+    to: formatDate(insight.window.toMs, locale),
   });
 }
 
@@ -233,7 +210,23 @@ export interface TrendsReadsRailProps {
   dismiss: (id: string) => void;
   restoreAll: () => void;
   horizon: HorizonKey;
+  /**
+   * Plan 36-11: true when the page shows a Rating figure (the Trends hero's
+   * `buildTrendsHero(matches).currentRating != null`). Drives the standalone
+   * rating-model door when no visible RatingMove card carries it.
+   */
+  hasRating?: boolean;
 }
+
+/** The ids InsightRail last reported, tagged with the inputs they were reported for. */
+interface ReportedVisibleIds {
+  railKey: string;
+  dismissedKey: string;
+  ids: string[];
+}
+
+/** Joins ids into a comparison key; insight ids never contain a NUL. */
+const ID_KEY_SEPARATOR = '\u0000';
 
 /**
  * The centre rail of the Trends Pro desk (UI-SPEC §8.2 Row 3, TRND-02,
@@ -245,7 +238,13 @@ export interface TrendsReadsRailProps {
  * `[data-slot="trends-read-card"]` hook carrying its template id and state
  * (`data-rail-fallback` on the engine's synthetic fallback only).
  * `RatingMove`'s card carries the rating-model door, demoting the page-level
- * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Session
+ * `RatingModelNote` banner (UI-SPEC §8.2's "Own-account only" note). Plan
+ * 36-11 (36 D-02, UAT 36-5): a rating must never show without a reachable
+ * disclosure, so when `hasRating` is set and no RatingMove card is actually
+ * rendered (absent, dismissed, cut by the unlocksNext budget, or crashed —
+ * decided by InsightRail's own `selectVisible` + `onVisibleIdsChange`, never
+ * re-derived here) one standalone door under the rail toggles the same note;
+ * the page never shows two doors. Session
  * fatigue always renders its standing caveat, in every rendered state — the
  * engine supplies it in `copy.values.caveat` and this rail must not drop it.
  */
@@ -255,6 +254,7 @@ export function TrendsReadsRail({
   dismiss,
   restoreAll,
   horizon,
+  hasRating = false,
 }: TrendsReadsRailProps) {
   const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -272,7 +272,7 @@ export function TrendsReadsRail({
     const chipKind = claimChipKindFor(insight.kind);
     const verdict = buildTrendsVerdict(insight, t, accountName);
     const evidence = buildEvidenceLine(insight, t, i18n.language);
-    const span = buildSpan(insight, t);
+    const span = buildSpan(insight, t, i18n.language);
     const isRatingMove = insight.templateId === 'ratingMove';
     const isSessionFatigue = insight.templateId === 'sessionFatigue';
     const caveat = isSessionFatigue ? t('insights.sessionFatigue.caveat') : undefined;
@@ -402,6 +402,64 @@ export function TrendsReadsRail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assembled, insightById, t, accountName, i18n.language, subjectPath]);
 
+  // Plan 36-11: the RatingMove card ids, then which of the rail's ids are
+  // really on screen — synchronously the same `selectVisible` InsightRail
+  // runs (same rail, same cap), replaced by what InsightRail reports once it
+  // has rendered (which also accounts for per-card crashes).
+  const ratingMoveIds = useMemo(
+    () =>
+      new Set(
+        [...assembled.cards, ...assembled.promotionQueue]
+          .filter((insight) => insight.templateId === 'ratingMove')
+          .map((insight) => insight.id),
+      ),
+    [assembled],
+  );
+  // Keyed by CONTENT, never identity: `rail` is rebuilt whenever
+  // `useSubjectPath`'s fresh closure changes and a host may hand a fresh `[]`
+  // of dismissed ids, so identity keys would never match — and would turn the
+  // report into a render loop.
+  const railKey = [
+    ...rail.cards.map((card) => card.id),
+    '|',
+    ...rail.promotionQueue.map((card) => card.id),
+    '|',
+    rail.unlocksNext?.id ?? '',
+  ].join(ID_KEY_SEPARATOR);
+  const dismissedKey = dismissedIds.join(ID_KEY_SEPARATOR);
+  const [reportedVisible, setReportedVisible] = useState<ReportedVisibleIds | null>(null);
+  const handleVisibleIdsChange = useCallback(
+    (ids: string[]) => {
+      setReportedVisible((prev) =>
+        prev &&
+        prev.railKey === railKey &&
+        prev.dismissedKey === dismissedKey &&
+        prev.ids.join(ID_KEY_SEPARATOR) === ids.join(ID_KEY_SEPARATOR)
+          ? prev
+          : { railKey, dismissedKey, ids },
+      );
+    },
+    [railKey, dismissedKey],
+  );
+  const visibleIds = useMemo(() => {
+    if (
+      reportedVisible &&
+      reportedVisible.railKey === railKey &&
+      reportedVisible.dismissedKey === dismissedKey
+    ) {
+      return reportedVisible.ids;
+    }
+    const selection = selectVisible(rail, dismissedIds, RAIL_CARD_CAP);
+    return [
+      ...selection.cards.map((card) => card.id),
+      ...(selection.unlocksNext ? [selection.unlocksNext.id] : []),
+    ];
+    // `railKey`/`dismissedKey` are the content of `rail`/`dismissedIds`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportedVisible, railKey, dismissedKey]);
+  const ratingDoorOnCard = visibleIds.some((id) => ratingMoveIds.has(id));
+  const showStandaloneRatingDoor = hasRating && !ratingDoorOnCard;
+
   const legend = (
     <>
       <ClaimChip kind="fact" label={t('insights.kind.fact')} />
@@ -442,7 +500,19 @@ export function TrendsReadsRail({
         onDismiss={dismiss}
         onRestore={restoreAll}
         fallbackCard={fallbackCard}
+        cap={RAIL_CARD_CAP}
+        onVisibleIdsChange={handleVisibleIdsChange}
       />
+      {showStandaloneRatingDoor && (
+        <button
+          type="button"
+          data-slot="trends-rating-model-door"
+          className={`self-start text-xs leading-4 underline-offset-4 hover:underline ${MUTED_LINK_TONE}`}
+          onClick={() => setShowRatingModelNote((v) => !v)}
+        >
+          {t('insights.door.ratingModelNote')}
+        </button>
+      )}
       {showRatingModelNote && <RatingModelNote />}
     </div>
   );

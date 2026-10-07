@@ -2,22 +2,31 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
+import type { Reference } from 'firebase-admin/database';
 import {
   entryKeyInputSchema,
   manualTournamentEntryInputSchema,
   RULESET_CONTRACT_VERSION,
   rulesetOverrideResponseSchema,
   rulesetOverrideUpdateBodySchema,
+  TIER_OVERRIDE_CONTRACT_VERSION,
+  tierOverrideResponseSchema,
+  tierOverrideUpdateBodySchema,
   TOURNAMENT_REGISTRY_ORIGIN,
   tournamentEntrySchema,
   tournamentRegistryListSchema,
   tournamentRegistryRowSchema,
   type RulesetOverrideStored,
+  type TierOverrideStored,
   type TournamentEntry,
   type TournamentRegistryListEntry,
 } from '@smash-tracker/shared';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
 import { NotFoundError } from '../services/rtdb.js';
+import {
+  withoutUnreadableOverrides,
+  type UserOwnedOverrideMember,
+} from '../services/tournamentOverrides.js';
 
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f\u007f]/g;
@@ -40,6 +49,82 @@ function deriveManualEntryKey(eventName: string): string {
   const cleaned = eventName.trim().toLowerCase().replace(/\s+/g, '-').replace(RTDB_ILLEGAL, '');
   const base = cleaned.length > 0 ? cleaned : 'event';
   return `manual-${base}-${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * Sets one override member on an EXISTING entry: the existence check and the
+ * write are one transaction on the entry (39.2 code review API-IN-05). A
+ * separate `get()` then `update()` let an entry removed in between (a
+ * reconcile orphan removal, for one) come back as an override-only stub that
+ * GET skips as corrupt and reconcile reports as a foreign collision forever.
+ *
+ * Null-first-safe: the SDK's first run sees `null` and returns `null` (a
+ * no-op delete), which only commits when the node is truly absent; when it
+ * exists the SDK re-runs with the stored value and the member is replaced
+ * wholesale.
+ */
+async function writeOverrideIfEntryExists(
+  entryRef: Reference,
+  entryKey: string,
+  member: { tierOverride: TierOverrideStored } | { rulesetOverride: RulesetOverrideStored },
+): Promise<void> {
+  let found = false;
+  await entryRef.transaction((current: unknown) => {
+    // Reset per run: only the run that commits decides the outcome.
+    found = false;
+    if (current === null || current === undefined) {
+      return null; // absent — nothing to write onto
+    }
+    if (typeof current !== 'object' || Array.isArray(current)) {
+      return undefined; // not an entry — abort, never overwrite
+    }
+    found = true;
+    return { ...(current as Record<string, unknown>), ...member };
+  });
+  if (!found) {
+    throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+  }
+}
+
+/**
+ * Clears one override member of an EXISTING entry, as a transaction on the
+ * entry (39.2 code review R2-WR-01). Every writer of an entry is a
+ * transaction on the entry path, so writers queue behind each other: in the
+ * Firebase SDK a plain `set`/`remove` from this process aborts every queued
+ * transaction at its path, ancestors and descendants — a child `.remove()`
+ * here made an in-flight sync commit, or an in-flight override set, reject
+ * with `Error('set')`. It also replaces a separate `get()` existence check,
+ * which could read an in-flight transaction's optimistic `null` guess and
+ * answer 404 for an entry that exists.
+ *
+ * Null-first-safe like `writeOverrideIfEntryExists`: the first run's `null`
+ * is a no-op delete that only commits when the node is truly absent, and the
+ * member is dropped from the value stored at commit time, never written as a
+ * null (RTDB null-stripping house rule).
+ */
+async function clearOverrideIfEntryExists(
+  entryRef: Reference,
+  entryKey: string,
+  member: UserOwnedOverrideMember,
+): Promise<void> {
+  let found = false;
+  await entryRef.transaction((current: unknown) => {
+    // Reset per run: only the run that commits decides the outcome.
+    found = false;
+    if (current === null || current === undefined) {
+      return null; // absent — nothing to clear
+    }
+    if (typeof current !== 'object' || Array.isArray(current)) {
+      return undefined; // not an entry — abort, never overwrite
+    }
+    found = true;
+    const rest: Record<string, unknown> = { ...(current as Record<string, unknown>) };
+    delete rest[member];
+    return rest;
+  });
+  if (!found) {
+    throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+  }
 }
 
 /**
@@ -102,10 +187,19 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
             entry !== null &&
             typeof entry === 'object' &&
             (entry as Record<string, unknown>).origin === TOURNAMENT_REGISTRY_ORIGIN;
+          // 39.2 code review API-WR-02: an override member this build cannot
+          // read is treated as absent instead of failing the whole row, so
+          // the event stays listed and its page can replace or clear it.
+          const { row, omitted } = withoutUnreadableOverrides(entry);
+          for (const { member, status } of omitted) {
+            request.log.warn(
+              `tournaments: ignoring an unreadable ${member} on entry ${childKey} (${status})`,
+            );
+          }
           const parsed = (
             isRegistryRow ? tournamentRegistryRowSchema : tournamentEntrySchema
           ).safeParse({
-            ...(entry as object),
+            ...(row as object),
             entryKey: childKey,
           });
           if (!parsed.success) {
@@ -196,20 +290,14 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request) => {
       const { entryKey } = request.params;
       const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
-      const existing = await entryRef.get();
-      if (!existing.exists()) {
-        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
-      }
-
       const { rulesetOverride } = request.body;
 
       if (rulesetOverride === null) {
-        // Clearing removes the child outright rather than writing a null
-        // into an update payload — the exact pattern this codebase's
-        // documented `260725-juj` outage was caused by omitting.
-        await app.firebase.database
-          .ref(`tournamentEntries/${request.uid}/${entryKey}/rulesetOverride`)
-          .remove();
+        // Clearing drops the member from the stored entry rather than writing
+        // a null into an update payload — the exact pattern this codebase's
+        // documented `260725-juj` outage was caused by omitting — inside a
+        // transaction on the entry, so it never aborts a sync commit (R2-WR-01).
+        await clearOverrideIfEntryExists(entryRef, entryKey, 'rulesetOverride');
         return { entryKey };
       }
 
@@ -234,11 +322,61 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
           : {}),
         ...(rulesetOverride.setFormat != null ? { setFormat: rulesetOverride.setFormat } : {}),
       };
-      // A single named child of an update() call replaces that child
-      // wholesale, so a member the editor dropped this time does not linger
-      // from a previous write.
-      await entryRef.update({ rulesetOverride: stored });
+      // Replaces the member wholesale, so a member the editor dropped this
+      // time does not linger from a previous write; the existence check and
+      // the write are one transaction (API-IN-05).
+      await writeOverrideIfEntryExists(entryRef, entryKey, { rulesetOverride: stored });
       return { entryKey, rulesetOverride: stored };
+    },
+  );
+
+  // PATCH /api/tournaments/:entryKey/tier — Phase 39.2 (TIER-04, D-15): set
+  // or clear the per-event manual tier override. Mirrors the ruleset route
+  // above: the RTDB path is assembled from `request.uid` ONLY (own-uid by
+  // D-17 — the owner deferred a real coach tier path, so this plugin
+  // registers no subject resolution), which makes a foreign entry key
+  // indistinguishable from a missing one (the same 404).
+  //
+  // WR-02 ("saving never freezes untouched members") holds here because the
+  // override has exactly ONE user-editable member (`tier`): the write
+  // replaces only the `tierOverride` member, and the transaction re-writes
+  // every sibling with the value stored at commit time, so none is changed.
+  // Any future member (for example a reason note)
+  // must adopt `RulesetOverrideSection`'s baseline-diff payload before it
+  // ships. The resolved tier, basis and estimate are read-time only and are
+  // never written (TIER-01).
+  app.patch(
+    '/tournaments/:entryKey/tier',
+    {
+      schema: {
+        params: z.object({ entryKey: entryKeyInputSchema }),
+        body: tierOverrideUpdateBodySchema,
+        response: {
+          200: tierOverrideResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { entryKey } = request.params;
+      const entryRef = app.firebase.database.ref(`tournamentEntries/${request.uid}/${entryKey}`);
+      const { tierOverride } = request.body;
+
+      if (tierOverride === null) {
+        // The member is dropped, never a null inside an update payload (RTDB
+        // null-stripping house rule), in a transaction on the entry (R2-WR-01).
+        await clearOverrideIfEntryExists(entryRef, entryKey, 'tierOverride');
+        return { entryKey };
+      }
+
+      // Version and timestamp are stamped by the server; the body schema
+      // does not even carry them, so a smuggled value never reaches storage.
+      const stored: TierOverrideStored = {
+        contractVersion: TIER_OVERRIDE_CONTRACT_VERSION,
+        tier: tierOverride.tier,
+        setAtMs: Date.now(),
+      };
+      await writeOverrideIfEntryExists(entryRef, entryKey, { tierOverride: stored });
+      return { entryKey, tierOverride: stored };
     },
   );
 };

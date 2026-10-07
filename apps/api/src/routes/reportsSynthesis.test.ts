@@ -1,14 +1,36 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { Auth } from 'firebase-admin/auth';
 import type { Database } from 'firebase-admin/database';
 import {
+  CLAIM_ID_VOCABULARY,
+  extractCitationTokens,
+  isSnapshotId,
+  MIN_VIABLE_CLAIMS,
   serializeCitationToken,
   storedPracticePlanSchema,
+  validateReportOutput,
+  vodEvidenceId,
   type GeneratedPracticePlan,
   type StoredPracticePlan,
 } from '@smash-tracker/shared';
 import type { PrepPaidConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
+import {
+  CLAIM_SELECTION_SECTION_IDS,
+  engineAuthoredSummary,
+  type ClaimSelection,
+  type ClaimSelectionSectionId,
+} from '../reports/claimSelection.js';
+import { snapshotIdFor } from '../reports/snapshotId.js';
+import { assembleSynthesisPayload } from '../reports/synthesis.js';
+// The shipped citation rule, retired from production by plan 39-08 and
+// frozen byte-identically as test support — the migration battery below
+// runs against the rule that SHIPPED.
+import {
+  SynthesisValidationError,
+  validatePracticePlanCitations,
+} from '../test-support/retiredCitationRule.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { FakeAuth } from '../test-support/fakeAuth.js';
 import {
@@ -105,40 +127,114 @@ function seedMatch(
   });
 }
 
-/** One annotated VOD moment, the minimum evidence a submission needs to pass the precondition check. */
+/**
+ * Phase 39 (plan 39-08, review C3-B1 — this file's half): the VIABLE
+ * synthesis evidence. Synthesis claims are `vod_annotation` rows built from
+ * ANNOTATIONS, one per `(matchId, seconds)` moment, sharing ONE event-level
+ * sample whose countable games are the event's ANNOTATED games. Read, not
+ * assumed: the pre-39-08 seed below (one moment in one game) issues exactly
+ * ONE claim — abstained, `gamesNeeded: 2` — which is below
+ * `MIN_VIABLE_CLAIMS['post_event_synthesis']` (2), so after this plan's D-21
+ * seam every generation-success case here would fail fast into a refund.
+ *
+ * The treatment: the same "strengthen at module scope, never inside a test
+ * body" rule plan 39-06 used, applied to this file's own seed helper rather
+ * than a `buildTestApp` wrapper — a wrapper would seed annotations into EVERY
+ * app, including the "zero stored annotations: 409" case, whose whole point
+ * is an annotation-free workspace. `viableEvidenceFixture.ts` (plan 39-06)
+ * carries no synthesis material and is not modified. Each call now seeds the
+ * named moment plus two companion moments in two more games of the same
+ * event: three annotated games clear the abstention floor, so each moment is
+ * one evidenced claim (distinct values, no collapse) — `c01` is always the
+ * named `m1@42` moment (ids rank by ascending evidence id at equal games).
+ * Hand-authored, deterministic, no production data.
+ */
+const VIABLE_COMPANION_MOMENTS = [
+  { matchId: 'viable-2', seconds: 10, note: 'late shield' },
+  { matchId: 'viable-3', seconds: 20, note: 'missed the ledge trap' },
+] as const;
+
+/** The claim ids the viable seed issues, in rank order: `m1@42`, then the two companions. */
+const VIABLE_CLAIM_IDS = ['c01', 'c02', 'c03'] as const;
+
+/** Which issued claim id names which seeded moment under the viable seed. */
+const VIABLE_CLAIM_ID_BY_MOMENT: Readonly<Record<string, (typeof VIABLE_CLAIM_IDS)[number]>> = {
+  'm1:42': 'c01',
+  'viable-2:10': 'c02',
+  'viable-3:20': 'c03',
+};
+
+/** One annotated VOD moment the test drives, plus the two viable companions (see `VIABLE_COMPANION_MOMENTS`). */
 function seedOneAnnotation(database: FakeDatabase, matchId = 'm1', seconds = 42): void {
   seedMatch(database, matchId, {
     source: 'startgg',
     vodTimestamps: [{ seconds, note: 'clean punish' }],
   });
+  for (const moment of VIABLE_COMPANION_MOMENTS) {
+    seedMatch(database, moment.matchId, {
+      source: 'startgg',
+      vodTimestamps: [{ seconds: moment.seconds, note: moment.note }],
+    });
+  }
 }
 
-/** A `GeneratedPracticePlan` whose one focusArea cites exactly `(matchId, seconds)` — survives validation. */
-function citablePlan(matchId: string, seconds: number): GeneratedPracticePlan {
+/** Connective prose that passes the prose lint (no digit, no entity name, no confidence word). */
+const CLEAN_PROSE: Readonly<Record<ClaimSelectionSectionId, string>> = {
+  // Qualitative only (owner decision D-24): "strong" is a confidence-tier
+  // word and would withhold the section.
+  overview: 'A composed showing overall.',
+  gameplan: 'Drill the punish you annotated.',
+  watchFor: 'Watch the moments you flagged.',
+};
+
+/** Prose the lint strips (rule R4): an integer no claim licenses. */
+const STRIPPED_PROSE = 'Repeat it 777 times before the next event.';
+
+/** Builds a claim selection — sections by claim ids, prose defaulting to `CLEAN_PROSE`, all action slots null unless given. */
+function selectionOf(
+  claimIds: Readonly<Record<ClaimSelectionSectionId, readonly string[]>>,
+  prose: Partial<Record<ClaimSelectionSectionId, string>> = {},
+  actions: Partial<Pick<ClaimSelection, 'action1' | 'action2' | 'action3'>> = {},
+): ClaimSelection {
+  const section = (id: ClaimSelectionSectionId) => ({
+    claimIds: [...claimIds[id]] as ClaimSelection['sections']['overview']['claimIds'],
+    connective: prose[id] ?? CLEAN_PROSE[id],
+  });
   return {
-    summary: 'A strong showing overall.',
-    focusAreas: [
-      {
-        title: 'Neutral game',
-        evidence: `Good read here ${serializeCitationToken({ sourceVodRef: matchId, seconds, label: 'note' })}`,
-        drills: ['20 minutes of neutral practice'],
-      },
-    ],
+    sections: {
+      overview: section('overview'),
+      gameplan: section('gameplan'),
+      watchFor: section('watchFor'),
+    },
+    action1: actions.action1 ?? null,
+    action2: actions.action2 ?? null,
+    action3: actions.action3 ?? null,
   };
 }
 
-/** A `GeneratedPracticePlan` whose every focusArea cites a pair OUTSIDE any real evidence — total drop (INV-2). */
-function uncitablePlan(): GeneratedPracticePlan {
-  return {
-    summary: 'A strong showing overall.',
-    focusAreas: [
-      {
-        title: 'Neutral game',
-        evidence: `Good read here ${serializeCitationToken({ sourceVodRef: 'no-such-match', seconds: 9999, label: 'note' })}`,
-        drills: ['drill'],
-      },
-    ],
-  };
+/**
+ * Plan 39-08 migration of the pre-39-08 `citablePlan` (a `GeneratedPracticePlan`
+ * whose one focusArea cited `(matchId, seconds)`): the model now SELECTS the
+ * moment's claim. Selects that moment's claim plus the viable companions, so
+ * the selection survives validation.
+ */
+function citablePlan(matchId: string, seconds: number): ClaimSelection {
+  const cited = VIABLE_CLAIM_ID_BY_MOMENT[`${matchId}:${seconds}`];
+  if (!cited) {
+    throw new Error(`no viable claim seeded for ${matchId}@${seconds}`);
+  }
+  const others = VIABLE_CLAIM_IDS.filter((id) => id !== cited);
+  return selectionOf({ overview: [cited, others[0]!], gameplan: [others[1]!], watchFor: [cited] });
+}
+
+/**
+ * Plan 39-08 migration of the pre-39-08 `uncitablePlan` (every focusArea
+ * citing a pair outside the evidence — total drop, INV-2): a selection naming
+ * only claim ids that were never issued, so every one is dropped (rule R1)
+ * and zero claims survive.
+ */
+function uncitablePlan(): ClaimSelection {
+  return selectionOf({ overview: ['c20'], gameplan: ['c21'], watchFor: [] });
 }
 
 function billableApp(overrides: Partial<Parameters<typeof buildTestApp>[0]> = {}) {
@@ -724,9 +820,15 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     const planSnapshot = await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get();
     expect(planSnapshot.exists()).toBe(true);
     const plan = planSnapshot.val() as StoredPracticePlan;
-    expect(plan.summary).toBe('A strong showing overall.');
-    expect(plan.focusAreas).toHaveLength(1);
-    expect(plan.focusAreas[0]!.title).toBe('Neutral game');
+    expect(plan.summary).toBe(CLEAN_PROSE.overview);
+    // Phase 39 (plan 39-08, migrated): the claim-anchored record replaces the
+    // model-authored focusAreas — `projectPracticePlanSelection` omits the
+    // key; the stored claims, sections and validation block carry the plan.
+    expect(Object.prototype.hasOwnProperty.call(plan, 'focusAreas')).toBe(false);
+    expect(Object.keys(plan.claims ?? {}).sort()).toEqual([...VIABLE_CLAIM_IDS]);
+    expect(plan.sections?.overview?.claimIds).toEqual(['c01', 'c02']);
+    expect(plan.validation?.status).toBe('passed');
+    expect(isSnapshotId(plan.validation?.snapshotId ?? '')).toBe(true);
 
     for (const eventName of ['report_started', 'report_completed']) {
       const events = findEvents(database, eventName);
@@ -793,7 +895,10 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     const refundedIndex = writes.indexOf(`set:reportJobs/${TEST_UID}/${jobId}#refunded`);
     const refundTransactionIndex = writes.findIndex(
       (entry, index) =>
-        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+        // The refund's balance transaction: on the balance node, or (code
+        // review R5-WR-01) on the credits node it shares with the refund's
+        // create-once marker.
+        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}`),
     );
     expect(failedIndex).toBeGreaterThan(-1);
     expect(refundedIndex).toBeGreaterThan(-1);
@@ -802,22 +907,11 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     expect(refundTransactionIndex).toBeLessThan(refundedIndex);
   });
 
-  it('partial drop ships the survivors: one uncitable focusArea dropped, plan stored with droppedClaimCount 1 and the surviving claim intact', async () => {
-    const plan: GeneratedPracticePlan = {
-      summary: 'A strong showing overall.',
-      focusAreas: [
-        {
-          title: 'Neutral game',
-          evidence: `Good read here ${serializeCitationToken({ sourceVodRef: 'm1', seconds: 42, label: 'note' })}`,
-          drills: ['20 minutes of neutral practice'],
-        },
-        {
-          title: 'Uncitable claim',
-          evidence: `Bad token here ${serializeCitationToken({ sourceVodRef: 'no-such-match', seconds: 1, label: 'note' })}`,
-          drills: ['drill'],
-        },
-      ],
-    };
+  it('partial drop ships the survivors: one unissued claim id dropped, plan stored with droppedClaimCount 1 and the surviving claims intact', async () => {
+    // Plan 39-08 migration: the pre-39-08 case had one citable and one
+    // uncitable focusArea. The same scenario on the shared validator is a
+    // selection with three issued claims and one never-issued id (rule R1).
+    const plan = selectionOf({ overview: ['c01', 'c02'], gameplan: ['c03'], watchFor: ['c09'] });
     const { app, database } = billableApp({
       reportsClient: stubClient(async () => ({ stop_reason: 'end_turn', parsed_output: plan })),
     });
@@ -838,8 +932,8 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
 
     const planSnapshot = await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get();
     const stored = planSnapshot.val() as StoredPracticePlan;
-    expect(stored.focusAreas).toHaveLength(1);
-    expect(stored.focusAreas[0]!.title).toBe('Neutral game');
+    expect(Object.keys(stored.claims ?? {}).sort()).toEqual([...VIABLE_CLAIM_IDS]);
+    expect(stored.claims?.c09).toBeUndefined();
     expect(stored.droppedClaimCount).toBe(1);
 
     // Job succeeds — a partial drop is not a failure.
@@ -1291,6 +1385,819 @@ describe('GET /api/reports/synthesis and GET /api/reports/practice-plans/:planId
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-08 Task 1): post-event synthesis on the shared claim
+// pipeline — snapshot, D-21, validator seam, store-step totality, events.
+// Money oracle: the credit BALANCE and the credit ledger's `refund` entries,
+// never the `credit_refunded` event (deduped on `${ref}:credit_refunded`, so
+// it prints 1 whether one refund happened or two).
+// ---------------------------------------------------------------------------
+
+/** The `ref`s of every `refund` entry in the caller's credit ledger. */
+function refundLedgerRefs(database: FakeDatabase): string[] {
+  const dump = database.dump() as Record<string, unknown>;
+  const ledger = (dump.creditLedger ?? {}) as Record<string, Record<string, unknown>>;
+  return Object.values(ledger[TEST_UID] ?? {})
+    .filter((entry) => (entry as { type?: string }).type === 'refund')
+    .map((entry) => (entry as { ref: string }).ref);
+}
+
+/** The ONE job this test submitted, read back as its FINAL stored record. */
+async function onlyJob(
+  database: FakeDatabase,
+): Promise<{ jobId: string; job: Record<string, unknown> }> {
+  const dump = database.dump() as Record<string, unknown>;
+  const reportJobs = dump.reportJobs as Record<string, Record<string, unknown>>;
+  const ids = Object.keys(reportJobs[TEST_UID]!);
+  expect(ids).toHaveLength(1);
+  const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${ids[0]!}`).get();
+  return { jobId: ids[0]!, job: jobSnapshot.val() as Record<string, unknown> };
+}
+
+/** Seeds a thin event from the BARE helpers (never the viable seed): exactly the given moments. */
+function seedThinEvent(
+  database: FakeDatabase,
+  moments: ReadonlyArray<{ matchId: string; seconds: number }>,
+): void {
+  const byMatch = new Map<string, number[]>();
+  for (const moment of moments) {
+    byMatch.set(moment.matchId, [...(byMatch.get(moment.matchId) ?? []), moment.seconds]);
+  }
+  for (const [matchId, seconds] of byMatch) {
+    seedMatch(database, matchId, {
+      source: 'startgg',
+      vodTimestamps: seconds.map((value) => ({ seconds: value, note: 'thin moment' })),
+    });
+  }
+}
+
+async function submitSynthesis(app: Awaited<ReturnType<typeof billableApp>>['app']) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/reports',
+    headers: authHeader(),
+    payload: SYNTHESIS_PAYLOAD,
+  });
+}
+
+async function assembledFor(database: FakeDatabase) {
+  const assembled = await assembleSynthesisPayload(
+    database as unknown as Database,
+    TEST_UID,
+    ENTRY_KEY,
+  );
+  if (!assembled.found) {
+    throw new Error('expected the seeded entry to assemble');
+  }
+  return assembled;
+}
+
+describe('C3-B1 viable synthesis evidence: the seed issues enough claims, the bare seed does not (plan 39-08)', () => {
+  it('the viable seed issues exactly the three evidenced vod_annotation claims every generation-success case selects', async () => {
+    const { database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+
+    const assembled = await assembledFor(database);
+    const claims = assembled.claimSet.claims;
+    expect(claims.map((claim) => claim.id)).toEqual([...VIABLE_CLAIM_IDS]);
+    expect(claims.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.post_event_synthesis);
+    expect(claims.every((claim) => claim.predicate === 'vod_annotation')).toBe(true);
+    expect(claims.every((claim) => claim.value.kind === 'count' && claim.tier === 'low')).toBe(
+      true,
+    );
+    for (const [moment, claimId] of Object.entries(VIABLE_CLAIM_ID_BY_MOMENT)) {
+      const [matchId, seconds] = moment.split(':');
+      const claim = claims.find((candidate) => candidate.id === claimId)!;
+      expect(claim.evidenceIds).toEqual([vodEvidenceId(matchId!, Number(seconds))]);
+    }
+  });
+
+  it('FALSIFIER: the pre-39-08 seed (one moment in one game) issues fewer than the minimum', async () => {
+    const { database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedThinEvent(database, [{ matchId: 'm1', seconds: 42 }]);
+
+    const assembled = await assembledFor(database);
+    expect(assembled.claimSet.claims).toHaveLength(1);
+    expect(assembled.claimSet.claims[0]!.value).toEqual({ kind: 'abstained', gamesNeeded: 2 });
+    expect(assembled.claimSet.claims.length).toBeLessThan(MIN_VIABLE_CLAIMS.post_event_synthesis);
+  });
+});
+
+describe('evidence snapshot + validator seam on post_event_synthesis (plan 39-08, RPT-07/D-05/D-06/D-07)', () => {
+  it('writes the content-addressed snapshot BEFORE the model is called, and stores the plan with its snapshot id', async () => {
+    let snapshotPresentAtModelCall: boolean | null = null;
+    const holder: { database?: FakeDatabase } = {};
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => {
+        const dump = holder.database!.dump() as Record<string, unknown>;
+        const snapshots = (dump.evidenceSnapshots ?? {}) as Record<string, unknown>;
+        snapshotPresentAtModelCall = snapshots[TEST_UID] !== undefined;
+        return { stop_reason: 'end_turn', parsed_output: citablePlan('m1', 42) };
+      }),
+    });
+    holder.database = database;
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const expectedSnapshotId = snapshotIdFor((await assembledFor(database)).snapshot);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    expect(snapshotPresentAtModelCall).toBe(true);
+    const dump = database.dump() as Record<string, unknown>;
+    const snapshots = (dump.evidenceSnapshots as Record<string, Record<string, unknown>>)[
+      TEST_UID
+    ]!;
+    expect(Object.keys(snapshots)).toEqual([expectedSnapshotId]);
+    const storedRows = (snapshots[expectedSnapshotId] as { rows: Record<string, unknown> }).rows;
+    expect(Object.keys(storedRows).sort()).toEqual(
+      [
+        vodEvidenceId('m1', 42),
+        vodEvidenceId('viable-2', 10),
+        vodEvidenceId('viable-3', 20),
+      ].sort(),
+    );
+    const { job } = response.json() as { job: { resultRef: string } };
+    const plan = (
+      await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get()
+    ).val() as StoredPracticePlan;
+    expect(plan.validation).toEqual({
+      status: 'passed',
+      policyVersion: expect.any(Number),
+      snapshotId: expectedSnapshotId,
+      claimSchemaVersion: expect.any(Number),
+    });
+    expect(storedPracticePlanSchema.parse(plan).summary).toBe(CLEAN_PROSE.overview);
+  });
+
+  it('C1-H1/C1-B1: a validation failure ends REFUNDED with failureReason validation on the FINAL record, one refund, no stored plan', async () => {
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: uncitablePlan(),
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    expect((database.dump() as Record<string, unknown>).practicePlans).toBeUndefined();
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    expect(findEvents(database, 'report_failed')).toHaveLength(1);
+  });
+
+  it('a validation failure and a truncation failure have IDENTICAL terminal status and money effects for the same job shape', async () => {
+    async function run(respond: () => Promise<{ stop_reason: string; parsed_output: unknown }>) {
+      const { app, database } = billableApp({ reportsClient: stubClient(respond) });
+      seedEntry(database);
+      seedBrief(database);
+      seedOneAnnotation(database, 'm1', 42);
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const response = await submitSynthesis(app);
+      const { jobId, job } = await onlyJob(database);
+      return {
+        statusCode: response.statusCode,
+        status: job.status,
+        reason: job.reason,
+        failureReason: job.failureReason,
+        refundsForThisJob: refundLedgerRefs(database).filter((ref) => ref === jobId).length,
+        refundsTotal: refundLedgerRefs(database).length,
+        balance: (await database.ref(`credits/${TEST_UID}/balance`).get()).val(),
+        reportFailed: findEvents(database, 'report_failed').length,
+        stored: (database.dump() as Record<string, unknown>).practicePlans !== undefined,
+      };
+    }
+
+    const validation = await run(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: uncitablePlan(),
+    }));
+    const truncation = await run(async () => ({ stop_reason: 'max_tokens', parsed_output: null }));
+
+    const { failureReason: validationCause, ...validationMoney } = validation;
+    const { failureReason: truncationCause, ...truncationMoney } = truncation;
+    expect(validationMoney).toEqual(truncationMoney);
+    expect(validationMoney).toMatchObject({
+      statusCode: 502,
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      refundsForThisJob: 1,
+      refundsTotal: 1,
+      balance: 1,
+      reportFailed: 1,
+      stored: false,
+    });
+    // Only the CAUSE differs — never the money.
+    expect(validationCause).toBe('validation');
+    expect(truncationCause).toBeUndefined();
+  });
+
+  it('the retry window still keys on the job-KIND reason: a validation-failed entry is resubmittable and succeeds, the cause riding a separate field', async () => {
+    let calls = 0;
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => {
+        calls += 1;
+        return {
+          stop_reason: 'end_turn',
+          parsed_output: calls === 1 ? uncitablePlan() : citablePlan('m1', 42),
+        };
+      }),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+
+    const first = await submitSynthesis(app);
+    expect(first.statusCode).toBe(502);
+    const { jobId: firstJobId, job: firstJob } = await onlyJob(database);
+    // Kind and cause are two fields; the kind enum never carries the cause.
+    expect(firstJob.reason).toBe('post_event_synthesis');
+    expect(firstJob.failureReason).toBe('validation');
+    expect(firstJob.status).toBe('refunded');
+
+    const retry = await submitSynthesis(app);
+    expect(retry.statusCode).toBe(202);
+    const retryBody = retry.json() as { job: { jobId: string; status: string } };
+    expect(retryBody.job.status).toBe('succeeded');
+    expect(retryBody.job.jobId).not.toBe(firstJobId);
+    const pointer = await database.ref(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`).get();
+    expect(pointer.val()).toMatchObject({ jobId: retryBody.job.jobId });
+    // 2 -> spend -> refund -> spend: one credit net, exactly one refund.
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    expect(refundLedgerRefs(database)).toEqual([firstJobId]);
+  });
+
+  it('C3-M1/D-20: a stored plan whose overview prose was stripped carries strippedSectionCount 1, the engine-authored summary, and emits report_prose_stripped once', async () => {
+    const selection = selectionOf(
+      { overview: ['c01', 'c02'], gameplan: ['c03'], watchFor: ['c01'] },
+      { overview: STRIPPED_PROSE },
+    );
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const issued = (await assembledFor(database)).claimSet.claims;
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    const { job } = response.json() as { job: { resultRef: string } };
+    const stored = (
+      await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get()
+    ).val() as StoredPracticePlan;
+    expect(stored.strippedSectionCount).toBe(1);
+    expect(stored.sections?.overview?.connective ?? '').toBe('');
+    expect(stored.summary).toBe(engineAuthoredSummary(issued));
+    expect(stored.summary.length).toBeGreaterThan(0);
+    expect(storedPracticePlanSchema.safeParse(stored).success).toBe(true);
+    const stripped = findEvents(database, 'report_prose_stripped');
+    expect(stripped).toHaveLength(1);
+    expect(Object.keys(stripped[0]!.payload)).toEqual(['reason']);
+    // A charged, delivered plan — never a refund on stripped prose (D-20).
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(0);
+  });
+
+  it('C3-M1/D-20: a plan with zero stripped sections has NO strippedSectionCount key and emits no report_prose_stripped', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    const { job } = response.json() as { job: { resultRef: string } };
+    const stored = (
+      await database.ref(`practicePlans/${TEST_UID}/${job.resultRef}`).get()
+    ).val() as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(stored, 'strippedSectionCount')).toBe(false);
+    expect(findEvents(database, 'report_prose_stripped')).toHaveLength(0);
+    expect(findEvents(database, 'report_claims_dropped')).toHaveLength(0);
+  });
+
+  it('C2-H2(b): a record the stored schema rejects is a REFUND through the validation branch — never an uncaught 500 with the job left running', async () => {
+    // The stub bypasses the SDK's Zod parse, so an empty actionId reaches the
+    // store step; storedActionSlotSchema requires `.min(1)`.
+    const selection = selectionOf(
+      { overview: ['c01', 'c02'], gameplan: ['c03'], watchFor: [] },
+      {},
+      { action1: { actionId: '', claimId: 'c01' } as unknown as ClaimSelection['action1'] },
+    );
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({ status: 'refunded', failureReason: 'validation' });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    expect((database.dump() as Record<string, unknown>).practicePlans).toBeUndefined();
+    const running = await database.ref(`reportJobsByStatus/running/${TEST_UID}/${jobId}`).get();
+    expect(running.exists()).toBe(false);
+  });
+});
+
+describe('D-21 thin-evidence FAIL FAST on post_event_synthesis (plan 39-08)', () => {
+  it('one annotated moment (one issued claim, below the minimum): ZERO model calls, one refund, failureReason on the FINAL record, no plan, snapshot kept', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    // NOT the viable seed — the bare helpers, one moment. (A workspace with
+    // NO annotations never reaches this branch: the route's pre-spend
+    // evidence precondition answers 409 before any spend — see the
+    // "zero stored annotations" case above.)
+    seedThinEvent(database, [{ matchId: 'm1', seconds: 42 }]);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const thin = await assembledFor(database);
+    expect(thin.claimSet.claims.length).toBeLessThan(MIN_VIABLE_CLAIMS.post_event_synthesis);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.practicePlans).toBeUndefined();
+    expect(findEvents(database, 'report_failed_validation')).toHaveLength(1);
+    const snapshotId = snapshotIdFor(thin.snapshot);
+    const snapshot = await database.ref(`evidenceSnapshots/${TEST_UID}/${snapshotId}`).get();
+    expect(snapshot.exists()).toBe(true);
+    expect(Object.keys((snapshot.val() as { rows: Record<string, unknown> }).rows)).toEqual([
+      vodEvidenceId('m1', 42),
+    ]);
+  });
+
+  it('two moments in ONE game collapse to one abstained claim (identical predicate/subject/value) — still below the minimum, still fails fast', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    seedThinEvent(database, [
+      { matchId: 'm1', seconds: 42 },
+      { matchId: 'm1', seconds: 90 },
+    ]);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const thin = await assembledFor(database);
+    expect(thin.claimSet.claims).toHaveLength(1);
+    expect([...thin.claimSet.claims[0]!.evidenceIds].sort()).toEqual(
+      [vodEvidenceId('m1', 42), vodEvidenceId('m1', 90)].sort(),
+    );
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({ status: 'refunded', failureReason: 'validation' });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+  });
+
+  it('a FREE-ACCESS thin submission rests at refunded + failureReason validation with NO ledger movement (the recorded CR-02 zero-spend residual, unchanged)', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      reportsClient: stubClient(modelSpy),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedThinEvent(database, [{ matchId: 'm1', seconds: 42 }]);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    const { job } = await onlyJob(database);
+    expect(job).toMatchObject({ status: 'refunded', failureReason: 'validation' });
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+});
+
+describe('D-23: only EVIDENCED claims clear MIN_VIABLE_CLAIMS on the synthesis fail-fast (code review SH-CR-03)', () => {
+  it('two annotated games (two distinct abstained claims — as many as the minimum, none evidenced): ZERO model calls, exactly one refund, balance restored', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    // Two games, one moment each, against DIFFERENT opponent characters, so
+    // the two abstained claims do not collapse into one.
+    seedMatch(database, 'm1', {
+      source: 'startgg',
+      opponent_id: 2,
+      vodTimestamps: [{ seconds: 42, note: 'thin moment' }],
+    });
+    seedMatch(database, 'm2', {
+      source: 'startgg',
+      opponent_id: 3,
+      vodTimestamps: [{ seconds: 90, note: 'thin moment' }],
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const thin = await assembledFor(database);
+    expect(thin.claimSet.claims.length).toBeGreaterThanOrEqual(
+      MIN_VIABLE_CLAIMS.post_event_synthesis,
+    );
+    expect(thin.claimSet.claims.filter((claim) => claim.value.kind !== 'abstained')).toEqual([]);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    expect(modelSpy).not.toHaveBeenCalled();
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+    expect((database.dump() as Record<string, unknown>).practicePlans).toBeUndefined();
+  });
+});
+
+describe('C4-H1: the synthesis snapshot write and D-21 check sit BELOW the claim transaction (plan 39-08)', () => {
+  /** `runSynthesisGeneration`'s body with comment lines stripped — so a comment can neither satisfy nor break the order. */
+  function synthesisBody(): string {
+    const source = readFileSync(new URL('./reports.ts', import.meta.url), 'utf-8');
+    const body = source.slice(
+      source.indexOf('async function runSynthesisGeneration'),
+      source.indexOf('function buildPrepResolveScout'),
+    );
+    return body
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+  }
+
+  it('claim.committed < writeEvidenceSnapshot < MIN_VIABLE_CLAIMS < generatePracticePlan, by byte offset', () => {
+    const body = synthesisBody();
+    const claim = body.indexOf('claim.committed');
+    const snapshot = body.indexOf('writeEvidenceSnapshot(');
+    const check = body.indexOf("MIN_VIABLE_CLAIMS['post_event_synthesis']");
+    const model = body.indexOf('generatePracticePlan(');
+    for (const offset of [claim, snapshot, check, model]) {
+      expect(offset).toBeGreaterThan(-1);
+    }
+    expect(claim).toBeLessThan(snapshot);
+    expect(snapshot).toBeLessThan(check);
+    expect(check).toBeLessThan(model);
+  });
+
+  it('the D-21 branch and the validator branch both go through failCurrentJob — no direct failJob call and no refundCredit in the synthesis body', () => {
+    const body = synthesisBody();
+    expect(body).toContain("failCurrentJob(jobDay, 'validation')");
+    expect(body.match(/failCurrentJob\(jobDay, 'validation'\)/g)).toHaveLength(2);
+    expect(body).not.toMatch(/refundCredit\(/);
+    // The only `failJob(` in the body is the failCurrentJob wrapper itself.
+    expect(body.match(/failJob\(/g)).toHaveLength(1);
+  });
+
+  it('reachability, read from source: every synthesis submission mints a fresh server-side jobId behind the index-pointer transaction', () => {
+    const source = readFileSync(new URL('./reports.ts', import.meta.url), 'utf-8');
+    const branch = source.slice(
+      source.indexOf("if (request.body.reason === 'post_event_synthesis')"),
+      source.indexOf('const generation = await runSynthesisGeneration('),
+    );
+    const mint = branch.indexOf('const synthJobId = randomUUID();');
+    const pointerClaim = branch.indexOf('await indexRef.transaction(');
+    expect(mint).toBeGreaterThan(-1);
+    expect(pointerClaim).toBeGreaterThan(mint);
+  });
+});
+
+describe('C2-H2(c) strip/drop lattice on post_event_synthesis: every cell ends in exactly one of stored-valid or one refund, and none throws (plan 39-08)', () => {
+  const BANDS = {
+    below: ['c01'],
+    at: ['c01', 'c02'],
+    above: ['c01', 'c02', 'c03'],
+  } as const;
+  expect(BANDS.below.length).toBeLessThan(MIN_VIABLE_CLAIMS.post_event_synthesis);
+  expect(BANDS.at.length).toBe(MIN_VIABLE_CLAIMS.post_event_synthesis);
+
+  const cells: Array<{ mask: number; band: keyof typeof BANDS }> = [];
+  for (let mask = 0; mask < 8; mask += 1) {
+    for (const band of Object.keys(BANDS) as Array<keyof typeof BANDS>) {
+      cells.push({ mask, band });
+    }
+  }
+
+  it.each(cells)('strip mask $mask x band $band', async ({ mask, band }) => {
+    const strippedIds = CLAIM_SELECTION_SECTION_IDS.filter((_, index) => (mask >> index) & 1);
+    const ids = BANDS[band];
+    const selection = selectionOf(
+      { overview: ids, gameplan: ids, watchFor: ids },
+      Object.fromEntries(strippedIds.map((id) => [id, STRIPPED_PROSE])),
+    );
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: selection,
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const issued = (await assembledFor(database)).claimSet.claims;
+
+    const response = await submitSynthesis(app);
+
+    const { jobId, job } = await onlyJob(database);
+    const balance = (await database.ref(`credits/${TEST_UID}/balance`).get()).val();
+    const plans = (database.dump() as Record<string, unknown>).practicePlans as
+      Record<string, Record<string, Record<string, unknown>>> | undefined;
+    if (band === 'below') {
+      expect(response.statusCode).toBe(502);
+      expect(job).toMatchObject({ status: 'refunded', failureReason: 'validation' });
+      expect(refundLedgerRefs(database)).toEqual([jobId]);
+      expect(balance).toBe(1);
+      expect(plans).toBeUndefined();
+      return;
+    }
+    expect(response.statusCode).toBe(202);
+    expect(job.status).toBe('succeeded');
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect(balance).toBe(0);
+    const stored = Object.values(plans![TEST_UID]!)[0]!;
+    const parsed = storedPracticePlanSchema.parse(stored);
+    expect(parsed.summary.length).toBeGreaterThan(0);
+    if (strippedIds.length > 0) {
+      expect(stored.strippedSectionCount).toBe(strippedIds.length);
+    } else {
+      expect(Object.prototype.hasOwnProperty.call(stored, 'strippedSectionCount')).toBe(false);
+    }
+    if (strippedIds.includes('overview')) {
+      const surviving = issued.filter((claim) => (ids as readonly string[]).includes(claim.id));
+      expect(parsed.summary).toBe(engineAuthoredSummary(surviving));
+    } else {
+      expect(parsed.summary).toBe(CLEAN_PROSE.overview);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-08 Task 2): the migration battery — the shared
+// validator is AT LEAST AS STRICT as the shipped citation rule on synthesis
+// evidence, exercised through the REAL assembly plumbing (the payload's own
+// pre-serialized cite tokens, `extractCitationTokens`, `vodEvidenceId` and the
+// issued claim set), before the shipped rule is retired.
+// ---------------------------------------------------------------------------
+
+describe('migration battery: shared validator vs the shipped validatePracticePlanCitations on real synthesis evidence (plan 39-08 Task 2)', () => {
+  type FocusArea = GeneratedPracticePlan['focusAreas'][number];
+
+  async function realEvidence() {
+    const { database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    const assembled = await assembledFor(database);
+    const citeOf = (matchId: string, seconds: number): string =>
+      assembled.payload.evidence.find(
+        (item) => item.matchId === matchId && item.seconds === seconds,
+      )!.cite;
+    return { assembled, citeOf };
+  }
+
+  /** The shipped rule's verdict: which focusAreas survive, or a whole-plan rejection. */
+  function shippedVerdict(
+    focusAreas: FocusArea[],
+    allowedPairs: ReadonlySet<string>,
+  ): { planAccepted: boolean; survivingTitles: string[]; storedEvidence: string[] } {
+    try {
+      const result = validatePracticePlanCitations(
+        { summary: 'Battery plan', focusAreas },
+        allowedPairs,
+      );
+      return {
+        planAccepted: true,
+        survivingTitles: result.plan.focusAreas.map((area) => area.title),
+        storedEvidence: result.plan.focusAreas.map((area) => area.evidence),
+      };
+    } catch (error) {
+      expect(error).toBeInstanceOf(SynthesisValidationError);
+      return { planAccepted: false, survivingTitles: [], storedEvidence: [] };
+    }
+  }
+
+  /**
+   * Translates the SAME model output into the claim-selection world through
+   * the real plumbing: each focusArea becomes one section; each citation
+   * token resolves through `vodEvidenceId` to the issued claim carrying that
+   * evidence id, and a token resolving to no issued claim becomes the first
+   * never-issued vocabulary id (the only way a selection can name something
+   * the engine did not issue). The prose is the focusArea text minus tokens.
+   */
+  function toSelection(
+    focusAreas: FocusArea[],
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ): { selection: ClaimSelection; claimIdsByTitle: Map<string, string[]> } {
+    expect(focusAreas.length).toBeLessThanOrEqual(CLAIM_SELECTION_SECTION_IDS.length);
+    const issued = new Set(assembled.claimSet.claims.map((claim) => claim.id as string));
+    const unissued = CLAIM_ID_VOCABULARY.find((id) => !issued.has(id))!;
+    const claimIdsByTitle = new Map<string, string[]>();
+    const sections = Object.fromEntries(
+      CLAIM_SELECTION_SECTION_IDS.map((sectionId, index) => {
+        const area = focusAreas[index];
+        if (!area) {
+          // R6-WR-01: "nothing" is a listed figure word, so the filler is worded around it.
+          return [sectionId, { claimIds: [], connective: 'No moment cited here.' }];
+        }
+        const claimIds = extractCitationTokens(area.evidence).map((token) => {
+          const evidenceId = vodEvidenceId(token.sourceVodRef, token.seconds);
+          const claim = assembled.claimSet.claims.find((candidate) =>
+            candidate.evidenceIds.includes(evidenceId),
+          );
+          return claim ? claim.id : unissued;
+        });
+        claimIdsByTitle.set(area.title, claimIds);
+        const connective = area.evidence.replace(/\{\{cite:[^}]*\}\}/g, '').trim() || 'See clip.';
+        return [sectionId, { claimIds, connective }];
+      }),
+    ) as ClaimSelection['sections'];
+    return {
+      selection: { sections, action1: null, action2: null, action3: null },
+      claimIdsByTitle,
+    };
+  }
+
+  function sharedVerdict(
+    selection: ClaimSelection,
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ) {
+    return validateReportOutput({
+      snapshot: assembled.snapshot,
+      issuedClaims: assembled.claimSet.claims,
+      output: selection,
+      surface: 'post_event_synthesis',
+    });
+  }
+
+  /**
+   * The law, per citation and per plan: every citation token the shipped
+   * rule cannot resolve (its `(matchId, seconds)` pair is outside
+   * `allowedPairs`) maps to a claim the shared validator does NOT keep; a
+   * focusArea with no tokens contributes no claim at all; and a plan the
+   * shipped rule rejects outright is a `failed` outcome.
+   */
+  function expectAtLeastAsStrict(
+    focusAreas: FocusArea[],
+    assembled: Awaited<ReturnType<typeof assembledFor>>,
+  ) {
+    const shipped = shippedVerdict(focusAreas, assembled.allowedPairs);
+    const { selection, claimIdsByTitle } = toSelection(focusAreas, assembled);
+    const outcome = sharedVerdict(selection, assembled);
+    for (const area of focusAreas) {
+      const claimIds = claimIdsByTitle.get(area.title) ?? [];
+      const tokens = extractCitationTokens(area.evidence);
+      expect(claimIds).toHaveLength(tokens.length);
+      tokens.forEach((token, index) => {
+        if (!assembled.allowedPairs.has(`${token.sourceVodRef}:${token.seconds}`)) {
+          expect(outcome.survivingClaimIds).not.toContain(claimIds[index]);
+        }
+      });
+    }
+    if (!shipped.planAccepted) {
+      expect(outcome.status).toBe('failed');
+    }
+    return { shipped, outcome };
+  }
+
+  it('an ACCEPTED citation set: both accept, and the shared survivors are exactly the cited moments’ claims', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      { title: 'A', evidence: `${citeOf('m1', 42)} Good read here.`, drills: ['d'] },
+      { title: 'B', evidence: `${citeOf('viable-2', 10)} Shield less.`, drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    expect(shipped).toMatchObject({ planAccepted: true, survivingTitles: ['A', 'B'] });
+    expect(outcome.status).toBe('passed');
+    expect([...outcome.survivingClaimIds].sort()).toEqual(['c01', 'c02']);
+    expect(outcome.strippedSectionIds).toEqual([]);
+  });
+
+  it('a citation naming an UNKNOWN pair: the shipped rule drops that focusArea; the shared validator drops the claim (R1) and, with nothing viable left, fails', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const unknown = serializeCitationToken({
+      sourceVodRef: 'no-such-match',
+      seconds: 999,
+      label: 'x',
+    });
+    const onlyUnknown: FocusArea[] = [
+      { title: 'U', evidence: `${unknown} Looks right.`, drills: ['d'] },
+    ];
+    const first = expectAtLeastAsStrict(onlyUnknown, assembled);
+    expect(first.shipped.planAccepted).toBe(false);
+    expect(first.outcome.droppedClaims.map((dropped) => dropped.rule)).toEqual(['R1']);
+    expect(first.outcome.survivingClaimIds).toEqual([]);
+
+    // Mixed with one real citation: the shipped rule STORES the real one; the
+    // shared validator keeps the real claim but, below the surface minimum,
+    // refuses the plan — strictly stricter, never looser.
+    const mixed: FocusArea[] = [
+      { title: 'Real', evidence: `${citeOf('m1', 42)} Real moment.`, drills: ['d'] },
+      { title: 'U', evidence: `${unknown} Looks right.`, drills: ['d'] },
+    ];
+    const second = expectAtLeastAsStrict(mixed, assembled);
+    expect(second.shipped).toMatchObject({ planAccepted: true, survivingTitles: ['Real'] });
+    expect(second.outcome.survivingClaimIds).toEqual(['c01']);
+    expect(second.outcome.status).toBe('failed');
+  });
+
+  it('an EMPTY citation set: the shipped rule rejects the plan (INV-2) and the shared validator fails it', async () => {
+    const { assembled } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      { title: 'E', evidence: 'Just prose, no citation tokens at all.', drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    expect(shipped.planAccepted).toBe(false);
+    expect(outcome.status).toBe('failed');
+    expect(outcome.survivingClaimIds).toEqual([]);
+  });
+
+  it('a citation whose pair EXISTS but whose surrounding claim is WRONG: the shipped rule stores the wrong number verbatim; the shared validator withholds it (R4 strips that prose)', async () => {
+    const { assembled, citeOf } = await realEvidence();
+    const focusAreas: FocusArea[] = [
+      {
+        title: 'Wrong',
+        evidence: `${citeOf('m1', 42)} Your record here is actually 18-2, a dominant showing.`,
+        drills: ['d'],
+      },
+      { title: 'B', evidence: `${citeOf('viable-2', 10)} Shield less.`, drills: ['d'] },
+    ];
+    const { shipped, outcome } = expectAtLeastAsStrict(focusAreas, assembled);
+    // The RPT-08 hard case: citation existence alone let the wrong claim ship.
+    expect(shipped.planAccepted).toBe(true);
+    expect(shipped.survivingTitles).toContain('Wrong');
+    expect(shipped.storedEvidence.some((text) => text.includes('18-2'))).toBe(true);
+    // The shared validator keeps the engine's claim (its value is recomputed
+    // from the snapshot, never the model's) and strips the section whose prose
+    // states the unlicensed figure — the wrong number never reaches storage.
+    expect(outcome.status).toBe('passed');
+    expect(outcome.strippedSectionIds).toContain('overview');
+    expect(outcome.strippedSectionIds).not.toContain('gameplan');
+  });
+});
+
 /**
  * Builds a second app instance sharing an EXISTING `FakeDatabase` — mirrors
  * `reports.test.ts`'s own `gateOffApp` construction (a second `buildApp`
@@ -1313,3 +2220,181 @@ function buildAppSharingDatabase(
     ...options,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25): `wasCharged` on
+// the synthesis job. The zero-spend free-access failure is THE case the web's
+// "your credit was refunded" badge got wrong — `failJob` writes the
+// `refunded` terminal for it (Phase 28 CR-02) with no refund — so the record
+// itself must say no credit was taken. Money is pinned alongside.
+// ---------------------------------------------------------------------------
+
+function freeAccessSynthesisApp(
+  respond: () => Promise<{ stop_reason: string | null; parsed_output: unknown }>,
+) {
+  return buildTestApp({
+    reports: REPORTS_CONFIG,
+    prepPaid: PREP_PAID_CONFIG,
+    parrygg: { apiKey: 'parry-key' },
+    reportsClient: stubClient(respond),
+  });
+}
+
+describe('post-plan fix (39-10): wasCharged on the post_event_synthesis job', () => {
+  it('billable: the QUEUED write (after the spend) already carries wasCharged true; the succeeded record keeps it; one spend, zero refunds', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const queuedValues: unknown[] = [];
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          if (
+            (path ?? '').startsWith(`reportJobs/${TEST_UID}/`) &&
+            (value as { status?: string } | null)?.status === 'queued'
+          ) {
+            queuedValues.push(value);
+          }
+          return ref.set(value);
+        },
+      };
+    });
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    expect(queuedValues).toHaveLength(1);
+    expect(queuedValues[0]).toMatchObject({ status: 'queued', wasCharged: true });
+    const { job } = await onlyJob(database);
+    expect(job).toMatchObject({ status: 'succeeded', wasCharged: true });
+    expect(refundLedgerRefs(database)).toEqual([]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(0);
+  });
+
+  it('billable validation failure: the refunded terminal carries wasCharged true; exactly one refund, balance restored', async () => {
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: uncitablePlan(),
+      })),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { jobId, job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      failureReason: 'validation',
+      wasCharged: true,
+    });
+    expect(refundLedgerRefs(database)).toEqual([jobId]);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+  });
+
+  it('CR-02 zero-spend free-access failure: the refunded terminal carries wasCharged FALSE — no spend, no refund, no ledger', async () => {
+    const { app, database } = freeAccessSynthesisApp(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: uncitablePlan(),
+    }));
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const { job } = await onlyJob(database);
+    expect(job).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+      failureReason: 'validation',
+      wasCharged: false,
+    });
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).exists()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 4 (R4-WR-02): the owner's locked "one model call per
+// job, no retries" rule holds on the synthesis call too — it goes through the
+// same bounded client as the scout path.
+// ---------------------------------------------------------------------------
+
+describe('code review R4-WR-02: the synthesis model call is one bounded attempt', () => {
+  it('reaches the SDK with maxRetries 0 and an explicit timeout of at most eight minutes', async () => {
+    // Typed with the SDK call's two parameters so the per-request options
+    // (the second argument) can be read back from the recorded call.
+    const modelSpy = vi.fn<
+      (
+        params: unknown,
+        options?: unknown,
+      ) => Promise<{ stop_reason: 'end_turn'; parsed_output: unknown }>
+    >(async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: citablePlan('m1', 42),
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(202);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const options = modelSpy.mock.calls[0]![1] as
+      { maxRetries?: unknown; timeout?: unknown } | undefined;
+    expect(options).toBeDefined();
+    expect(options!.maxRetries).toBe(0);
+    expect(typeof options!.timeout).toBe('number');
+    expect(options!.timeout as number).toBeGreaterThan(0);
+    expect(options!.timeout as number).toBeLessThanOrEqual(8 * 60 * 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Code review iteration 5 (R5-IN-01): a body-read abort (a bare DOMException,
+// not an `Anthropic.APIError`) takes the same failure path and the same 502
+// as the SDK's own timeout error on the synthesis call too.
+// ---------------------------------------------------------------------------
+
+describe('code review R5-IN-01: a synthesis body-read abort is a 502 with one refund', () => {
+  it('a DOMException AbortError from the model call — 502, the job refunded once, balance restored', async () => {
+    const { app, database } = billableApp({
+      reportsClient: stubClient(async () => {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }),
+    });
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await submitSynthesis(app);
+
+    expect(response.statusCode).toBe(502);
+    const dump = database.dump() as {
+      reportJobs?: Record<string, Record<string, { status?: string }>>;
+      creditLedger?: Record<string, Record<string, { type: string }>>;
+    };
+    const jobs = Object.values(dump.reportJobs?.[TEST_UID] ?? {});
+    expect(jobs.map((job) => job.status)).toEqual(['refunded']);
+    const refunds = Object.values(dump.creditLedger?.[TEST_UID] ?? {}).filter(
+      (entry) => entry.type === 'refund',
+    );
+    expect(refunds).toHaveLength(1);
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(1);
+  });
+});

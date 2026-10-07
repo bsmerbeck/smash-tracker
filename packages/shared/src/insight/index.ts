@@ -26,6 +26,8 @@ export * from './trendsReads.js';
 // Plan 39.1-40: the Trends read cards' mark payloads and validating readers.
 export * from './marks.js';
 export * from './templates/registry.js';
+// Plan 39.2-13: the recap's builder, its structural registry subset and the two-horizon read.
+export * from './templates/lastEventRecap.js';
 // #T-39.1-16: `buildRosterModel` and the roster thresholds (`ROSTER_MAIN_MIN_GAMES`,
 // `ROSTER_SECONDARY_MIN_SHARE`, `ROSTER_SECONDARY_MIN_GAMES`) were defined in plan
 // 39.1-05 with the explicit intent that this plan's Match Data card import them from
@@ -33,3 +35,8 @@ export * from './templates/registry.js';
 // re-exported `templates/rosterCore.js` (only the closed `INSIGHT_TEMPLATES` array from
 // `templates/registry.js` was reachable). Added here as a Rule 3 blocking-issue fix.
 export * from './templates/rosterCore.js';
+// Plan 41-01 (interface-first): the value-series, activity-heat and timeline-event contracts —
+// 41-02 / 41-03 / 41-04 add their builders inside these files, so this barrel is closed for the phase.
+export * from './valueSeries.js';
+export * from './activityHeat.js';
+export * from './timelineEvents.js';

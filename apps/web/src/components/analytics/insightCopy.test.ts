@@ -44,8 +44,31 @@ const FIXTURE_PATH = 'apps/web/src/components/analytics/guardFixtures/Concatenat
  * on a given locale module, so this file needs no further edits when Task 2
  * adds `analytics`.
  */
-const NEW_NAMESPACE_KEYS = ['insights', 'analytics'] as const;
-type NewNamespaceKey = (typeof NEW_NAMESPACE_KEYS)[number];
+const NEW_NAMESPACE_KEYS = ['insights', 'analytics', 'tiers', 'watchlist', 'digest'] as const;
+
+/**
+ * Phase 39.2 plan 06 (UI-SPEC §13 G5): the guard's scope is widened to the
+ * three namespaces 39.2 adds (`tiers`, `watchlist`, `digest`, each scanned
+ * present-when-present like the two above — the later plans add
+ * `watchlist`/`digest`) and to ONE nested path, `tournaments.table`. The
+ * rest of `tournaments.*` stays out of the second-person scan (D-05: the
+ * app's existing second-person copy elsewhere is left alone), so the scanner
+ * takes a dotted path rather than a top-level key.
+ */
+const NESTED_NAMESPACE_PATHS = ['tournaments.table'] as const;
+
+/** Every namespace path this guard's locale scan reads. */
+const SCANNED_NAMESPACES: readonly string[] = [...NEW_NAMESPACE_KEYS, ...NESTED_NAMESPACE_PATHS];
+
+/**
+ * Phase 39.2 plan 06: no string in `tiers.*` or `tournaments.*` says "unlock"
+ * in any sense ("needed" instead). The two trees hold copy that renders under
+ * `pages/Tournaments/`, whose source is scanned for monetization vocabulary,
+ * so the copy stays clear of it in case a string ever moves into a scanned
+ * directory.
+ */
+const UNLOCK_PATTERN = /unlock/i;
+const UNLOCK_FREE_TOP_LEVEL_KEYS = ['tiers', 'tournaments'] as const;
 
 /** The six shipped locales — module scope so both the (b)/(c)/(d) describe block and the Task 2 registry-coverage describe block below can reuse it. */
 const REAL_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
@@ -136,17 +159,56 @@ function collectLeaves(
   });
 }
 
-/** Every leaf under a locale's `insights`/`analytics` namespaces only — never the rest of the document (D-05 scoping). */
-function collectNewNamespaceLeaves(locale: string): LocaleLeaf[] {
-  const tree = INSIGHT_COPY_LOCALE_SOURCE[locale];
+/** Reads a dotted path off a nested object; `undefined` when any segment is missing or not an object. */
+function readNamespacePath(
+  tree: Record<string, unknown>,
+  dottedPath: string,
+): Record<string, unknown> | undefined {
+  let node: unknown = tree;
+  for (const segment of dottedPath.split('.')) {
+    if (node === null || typeof node !== 'object') {
+      return undefined;
+    }
+    node = (node as Record<string, unknown>)[segment];
+  }
+  return node !== null && typeof node === 'object' ? (node as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Every leaf under a locale's scanned namespaces only (`SCANNED_NAMESPACES`:
+ * the top-level keys plus the nested `tournaments.table` path) — never the
+ * rest of the document (D-05 scoping). `source` defaults to the six real
+ * locale files; the permanent positive controls pass a synthetic one.
+ */
+function collectNewNamespaceLeaves(
+  locale: string,
+  source: Record<string, Record<string, unknown>> = INSIGHT_COPY_LOCALE_SOURCE,
+): LocaleLeaf[] {
+  const tree = source[locale];
   if (!tree) {
     throw new Error(`No locale module resolved for ${locale}`);
   }
-  return NEW_NAMESPACE_KEYS.filter(
-    (namespace): namespace is NewNamespaceKey => tree[namespace] !== undefined,
-  ).flatMap((namespace) =>
-    collectLeaves(locale, namespace, tree[namespace] as Record<string, unknown>),
-  );
+  return SCANNED_NAMESPACES.flatMap((namespace) => {
+    const branch = readNamespacePath(tree, namespace);
+    return branch ? collectLeaves(locale, namespace, branch) : [];
+  });
+}
+
+/** Every leaf, in any locale, under `tiers` or `tournaments` whose value says "unlock" (case-insensitive). */
+function collectUnlockViolations(
+  locale: string,
+  source: Record<string, Record<string, unknown>> = INSIGHT_COPY_LOCALE_SOURCE,
+): LocaleLeaf[] {
+  const tree = source[locale];
+  if (!tree) {
+    throw new Error(`No locale module resolved for ${locale}`);
+  }
+  return UNLOCK_FREE_TOP_LEVEL_KEYS.flatMap((namespace) => {
+    const branch = readNamespacePath(tree, namespace);
+    return branch
+      ? collectLeaves(locale, namespace, branch).filter((leaf) => UNLOCK_PATTERN.test(leaf.value))
+      : [];
+  });
 }
 
 /**
@@ -449,9 +511,65 @@ describe('insight copy — no concatenation, no second person, no probability (I
       const scannedLeaves = collectNewNamespaceLeaves('en');
       expect(scannedLeaves.some((leaf) => leaf.value === existingOutsideString)).toBe(false);
       const scannedNamespaces = [...new Set(scannedLeaves.map((leaf) => leaf.namespace))].sort();
-      expect(
-        scannedNamespaces.every((ns) => (NEW_NAMESPACE_KEYS as readonly string[]).includes(ns)),
-      ).toBe(true);
+      expect(scannedNamespaces.every((ns) => SCANNED_NAMESPACES.includes(ns))).toBe(true);
+    });
+
+    describe('Phase 39.2 plan 06 (G5) — the widened scope: tiers, watchlist, digest, tournaments.table', () => {
+      it('scans the tiers namespace and the nested tournaments.table path when present (non-vacuity: tiers is shipped in every locale)', () => {
+        for (const locale of REAL_LOCALES) {
+          const namespaces = new Set(
+            collectNewNamespaceLeaves(locale).map((leaf) => leaf.namespace),
+          );
+          expect(namespaces.has('tiers'), `locale ${locale} scans tiers`).toBe(true);
+        }
+        expect((NEW_NAMESPACE_KEYS as readonly string[]).includes('watchlist')).toBe(true);
+        expect((NEW_NAMESPACE_KEYS as readonly string[]).includes('digest')).toBe(true);
+        expect(NESTED_NAMESPACE_PATHS).toContain('tournaments.table');
+      });
+
+      it('PROVEN FAILING CASE: a synthetic locale whose watchlist value reads "your tracked list" is flagged', () => {
+        const synthetic = {
+          en: { watchlist: { section: { title: 'your tracked list' } } },
+        } as Record<string, Record<string, unknown>>;
+        const offenders = collectNewNamespaceLeaves('en', synthetic).filter((leaf) =>
+          SECOND_PERSON_PATTERNS.en!.test(leaf.value),
+        );
+        expect(offenders.map((leaf) => leaf.keyPath)).toEqual(['section.title']);
+        expect(offenders[0]!.namespace).toBe('watchlist');
+      });
+
+      it('PROVEN FAILING CASE: a second-person value under the nested tournaments.table path is flagged, while one under a sibling tournaments key is out of scope (D-05)', () => {
+        const inScope = {
+          en: { tournaments: { table: { tier: 'your tier' } } },
+        } as Record<string, Record<string, unknown>>;
+        const outOfScope = {
+          en: { tournaments: { header: { entrants: 'your entrants' } } },
+        } as Record<string, Record<string, unknown>>;
+        const flagged = (source: Record<string, Record<string, unknown>>) =>
+          collectNewNamespaceLeaves('en', source).filter((leaf) =>
+            SECOND_PERSON_PATTERNS.en!.test(leaf.value),
+          );
+        expect(flagged(inScope).map((leaf) => leaf.namespace)).toEqual(['tournaments.table']);
+        expect(flagged(outOfScope)).toEqual([]);
+      });
+
+      for (const locale of REAL_LOCALES) {
+        it(`${locale}: no string under tiers.* or tournaments.* says "unlock"`, () => {
+          const offenders = collectUnlockViolations(locale);
+          expect(offenders, JSON.stringify(offenders, null, 2)).toEqual([]);
+        });
+      }
+
+      it('PROVEN FAILING CASE: a tiers value or a tournaments value containing "unlock" is flagged', () => {
+        const synthetic = {
+          en: {
+            tiers: { byTier: { hint: 'Unlocks next at 3 more games' } },
+            tournaments: { header: { hint: 'unlock a report' } },
+          },
+        } as Record<string, Record<string, unknown>>;
+        const offenders = collectUnlockViolations('en', synthetic);
+        expect(offenders.map((leaf) => leaf.namespace).sort()).toEqual(['tiers', 'tournaments']);
+      });
     });
 
     it('the guard never scans apps/web/src/pages/ for second-person strings (D-05)', () => {
@@ -465,16 +583,16 @@ describe('insight copy — no concatenation, no second person, no probability (I
 });
 
 /**
- * Plan 39.1-11 Task 2: every one of the seventeen closed-registry template
+ * Plan 39.1-11 Task 2: every one of the nineteen closed-registry template
  * ids has at least one key under `insights.<templateId>` in all six
  * locales. The template id UNION comes from the built `@smash-tracker/shared`
  * package's `INSIGHT_TEMPLATES` (plan 39.1-05's closed registry), never a
- * hand-written id list — a later plan adding an eighteenth template to the
+ * hand-written id list — a later plan adding a twentieth template to the
  * registry is automatically covered here without a line of new test code.
  */
 describe('insight namespace covers every registered template id (INS-03, Plan 39.1-11 Task 2)', () => {
-  it('the registry is closed at 17 templates (sanity: matches every plan since 39.1-05)', () => {
-    expect(INSIGHT_TEMPLATES.length).toBe(17);
+  it('the registry is closed at 19 templates (sanity: 17 since 39.1-05, plus tierGap in 39.2-09 and playRhythm in 41-03)', () => {
+    expect(INSIGHT_TEMPLATES.length).toBe(19);
   });
 
   for (const locale of REAL_LOCALES) {
@@ -514,7 +632,9 @@ describe('insight namespace covers every registered template id (INS-03, Plan 39
  * - `lastEventRecap.ts`: `hidden`, `fact`, `factGamesOnly`,
  *   `factPlacement`, `factPlacementGamesOnly` (the `hasSets`/`hasPlacement`
  *   2×2 in `buildLastEventRecapInsight`), plus `noSetLosses`/`setLosses`
- *   (`_one`/`_other`) from `setLossSubLine`.
+ *   (`_one`/`_other`) from `setLossSubLine`; `evidence` is the Dashboard recap
+ *   card's companion line (event record, all-time rate, sample cue; plan
+ *   39.2-13), authored beside the verdicts like `tierGap.evidence`.
  * - `ratingMove.ts`: `gate.state` funnels `locked`/`collapsed`/`thin` to a
  *   bare key; `steady` and `up`/`down` (trend) are also bare (no horizon
  *   suffix appended anywhere in this file). `thinRecent` is excluded here
@@ -547,6 +667,14 @@ describe('insight namespace covers every registered template id (INS-03, Plan 39
  *   this file, so `locked` is deliberately NOT in this template's set),
  *   `player`, `matchup`.
  * - `bestMatchup.ts` / `worstMatchup.ts`: bare `locked`, `fact` each.
+ * - `tierGap.ts`: bare `up`/`down` (trend direction), `steady`, `abstained`/
+ *   `abstainedSmaller` (a cohort under the floor), `noTiers`; `evidence` and
+ *   `estimatedNote_one|_other` are the card's own companion lines (the evidence
+ *   sentence and the estimated-tier sub line), authored beside the verdicts.
+ * - `playRhythm.ts`: a FACT only (no direction word exists): `fact.compare` /
+ *   `fact.compareNoSeason` / `fact.recentOnly` verdicts, `locked` (`_one`/`_other`)
+ *   with its `lockedMeter`, and the card's two evidence lines (`evidence` with a
+ *   busiest month, `evidenceNoSeason` without).
  *
  * Both audit directions below are proven failing (reverted before commit,
  * recorded in this plan's SUMMARY): deleting an emitted key from a clone
@@ -581,6 +709,9 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
     'noSetLosses',
     'setLosses_one',
     'setLosses_other',
+    'evidence',
+    // Plan 39.1-52: RecapCard's cue-less variant (`context: 'bare'` when no tier).
+    'evidence_bare',
   ],
   ratingMove: ['up', 'down', 'steady', 'thin', 'collapsed', 'locked_one', 'locked_other'],
   tiltCost: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
@@ -588,13 +719,42 @@ const TEMPLATE_EMITTABLE_KEYS: Record<string, string[]> = {
   settingGap: ['up', 'down', 'steady', 'thin', 'locked_one', 'locked_other'],
   volumeForm: ['up', 'down', 'steady', 'locked_one', 'locked_other'],
   mixShift: ['hidden', 'fact'],
-  rosterCore: ['fact', 'thin'],
+  // Plan 39.1-52: the plural count nouns `fact` nests via $t(…, {"count": …}).
+  rosterCore: [
+    'fact',
+    'thin',
+    'secondaries_one',
+    'secondaries_other',
+    'pockets_one',
+    'pockets_other',
+  ],
   rosterShift: ['hidden', 'steady', 'up', 'down'],
   secondaryPayoff: ['trend', 'suggestion', 'steady', 'locked_one', 'locked_other'],
   pocketCost: ['hidden', 'fact', 'steady'],
   matchupOrPlayer: ['hidden', 'player', 'matchup'],
   bestMatchup: ['locked', 'fact'],
   worstMatchup: ['locked', 'fact'],
+  tierGap: [
+    'up',
+    'down',
+    'steady',
+    'abstained',
+    'abstainedSmaller',
+    'noTiers',
+    'evidence',
+    'estimatedNote_one',
+    'estimatedNote_other',
+  ],
+  playRhythm: [
+    'fact.compare',
+    'fact.compareNoSeason',
+    'fact.recentOnly',
+    'evidence',
+    'evidenceNoSeason',
+    'locked_one',
+    'locked_other',
+    'lockedMeter',
+  ],
 };
 
 /** Every dotted leaf path under a (relative, template-scoped) object tree. */
@@ -689,5 +849,71 @@ describe('registry audit — every emittable key exists, no dead sentences, both
       TEMPLATE_EMITTABLE_KEYS.formNow!,
     );
     expect(unreachable).toContain('neverEmittedByAnyBranch');
+  });
+});
+
+/**
+ * Plan 39.1-52 (UAT 39.1-31, F13): no locale VALUE names an internal template
+ * id ("FormNow · last 30 games vs all time"). The pattern is BUILT from the
+ * registry, in camelCase and PascalCase, word-bounded; keys are exempt. Scans
+ * every namespace of every locale — no allowlist.
+ */
+function collectLocaleValues(tree: unknown, keyPath = ''): { keyPath: string; value: string }[] {
+  if (typeof tree === 'string') return [{ keyPath, value: tree }];
+  if (tree === null || typeof tree !== 'object') return [];
+  return Object.entries(tree as Record<string, unknown>).flatMap(([key, child]) =>
+    collectLocaleValues(child, keyPath ? `${keyPath}.${key}` : key),
+  );
+}
+
+function templateTokenPattern(): RegExp {
+  const ids = INSIGHT_TEMPLATES.map((template) => template.id);
+  const forms = ids.flatMap((id) => [id, id.charAt(0).toUpperCase() + id.slice(1)]);
+  return new RegExp(`\\b(?:${forms.join('|')})\\b`);
+}
+
+/** A `$t(<key>, …)` nesting reference names a KEY, which is never rendered — keys are exempt, so the key path is dropped before the scan. */
+function renderedText(value: string): string {
+  return value.replace(/\$t\([^,)]*/g, '$t(');
+}
+
+function findTemplateTokens(locale: Record<string, unknown>): string[] {
+  const pattern = templateTokenPattern();
+  return collectLocaleValues(locale)
+    .filter(({ value }) => pattern.test(renderedText(value)))
+    .map(({ keyPath, value }) => `${keyPath}: ${value}`);
+}
+
+describe('no internal template id in any locale value (plan 39.1-52, UAT 39.1-31 F13)', () => {
+  it('the token pattern covers all 19 registry ids in both cases', () => {
+    const pattern = templateTokenPattern();
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
+    for (const template of INSIGHT_TEMPLATES) {
+      const pascal = template.id.charAt(0).toUpperCase() + template.id.slice(1);
+      expect(pattern.test(`x ${template.id} y`)).toBe(true);
+      expect(pattern.test(`x ${pascal} y`)).toBe(true);
+    }
+  });
+
+  for (const locale of REAL_LOCALES) {
+    it(`${locale}: no value contains an InsightTemplateId as a word`, () => {
+      expect(findTemplateTokens(INSIGHT_COPY_LOCALE_SOURCE[locale]!)).toEqual([]);
+    });
+  }
+
+  it('permanent positive control — a value naming TiltCost in a clone of the real tree is flagged', () => {
+    const clone = deepClone(INSIGHT_COPY_LOCALE_SOURCE.en!);
+    (clone.insights as Record<string, unknown>).probe = 'TiltCost · last 30 games';
+    expect(findTemplateTokens(clone)).toContain('insights.probe: TiltCost · last 30 games');
+  });
+
+  it('a $t nesting reference is a key (exempt), while the same id in visible text is flagged', () => {
+    const clone = deepClone(INSIGHT_COPY_LOCALE_SOURCE.en!);
+    (clone.insights as Record<string, unknown>).nested =
+      '$t(insights.rosterCore.pockets, {"count": {{pocketCount}} })';
+    (clone.insights as Record<string, unknown>).visible = 'rosterCore · all time';
+    const hits = findTemplateTokens(clone);
+    expect(hits).toContain('insights.visible: rosterCore · all time');
+    expect(hits.some((hit) => hit.startsWith('insights.nested'))).toBe(false);
   });
 });

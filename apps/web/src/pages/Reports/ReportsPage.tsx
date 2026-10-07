@@ -10,6 +10,7 @@ import { useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScoutAiReportCard } from '@/pages/Scout/components/ScoutAiReportCard';
+import { LegacyReportBadge } from '@/components/claims/LegacyReportBadge';
 
 interface ReportGroup {
   key: string;
@@ -82,6 +83,13 @@ function ReportGroupRow({
             {new Date(newest.createdAt).toLocaleDateString(i18n.language)}
           </span>
         </Button>
+        {/* Plan 39-10 (RPT-10, UI-SPEC §B): per-row provenance, between the
+            trailing date and the expand control — never a list banner. */}
+        <LegacyReportBadge
+          variant="row"
+          claimSchemaVersion={newest.report.claimSchemaVersion}
+          validation={newest.report.validation}
+        />
         {group.reports.length > 1 && (
           <Button
             type="button"
@@ -99,11 +107,11 @@ function ReportGroupRow({
       {expanded && group.reports.length > 1 && (
         <ul className="ml-4 flex flex-col gap-1 border-l pl-3">
           {group.reports.slice(1).map((record) => (
-            <li key={record.id}>
+            <li key={record.id} className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="ghost"
-                className="h-auto w-full justify-between px-2 py-1.5 font-normal"
+                className="h-auto flex-1 justify-between px-2 py-1.5 font-normal"
                 onClick={() => onSelect(record)}
               >
                 <span className="text-sm text-muted-foreground">{t('reports.olderReport')}</span>
@@ -111,6 +119,11 @@ function ReportGroupRow({
                   {new Date(record.createdAt).toLocaleDateString(i18n.language)}
                 </span>
               </Button>
+              <LegacyReportBadge
+                variant="row"
+                claimSchemaVersion={record.report.claimSchemaVersion}
+                validation={record.report.validation}
+              />
             </li>
           ))}
         </ul>

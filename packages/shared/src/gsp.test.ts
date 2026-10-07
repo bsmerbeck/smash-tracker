@@ -3,6 +3,8 @@ import type { Match } from './match.js';
 import type { GspReading } from './gspReading.js';
 import {
   DEFAULT_ELITE_THRESHOLD,
+  GSP_BAND_MAX_BANDS,
+  GSP_BAND_WIDTH_LADDER,
   MAX_SIMULATED_MATCHES,
   MIN_OBSERVATIONS_FOR_DECAY_FIT,
   MIN_OBSERVATIONS_FOR_LINEAR_FALLBACK,
@@ -461,5 +463,119 @@ describe('gain stats around calibration points', () => {
     expect(stats.perWinGains).toEqual([]);
     expect(stats.avgGainPerWinLifetime).toBeNull();
     expect(stats.avgDropPerLossLifetime).toBeNull();
+  });
+});
+
+describe('getGspGainStats by GSP band (41-05, A4)', () => {
+  /** A chain of wins: each level is the GSP the win ENDED at; `start` is the first reading. */
+  function winChain(start: number, ends: number[]): GspPoint[] {
+    const series: GspPoint[] = [{ time: 0, gsp: start, win: true }];
+    ends.forEach((gsp, i) => series.push({ time: i + 1, gsp, win: true }));
+    return series;
+  }
+
+  it('exports the ladder and the band cap', () => {
+    expect([...GSP_BAND_WIDTH_LADDER]).toEqual([250_000, 500_000, 1_000_000, 2_000_000, 5_000_000]);
+    expect(GSP_BAND_MAX_BANDS).toBe(12);
+  });
+
+  it('picks 250k when 8.9M-11.6M levels fit in 12 bands', () => {
+    // win start levels run 8.9M .. 11.6M (floor(8.9M/250k)=35, floor(11.6M/250k)=46 -> 12 bands)
+    const series = winChain(8_900_000, [9_000_000, 11_600_000, 11_700_000]);
+    const bands = getGspGainStats(series).gainsByBand;
+    expect(bands.length).toBeGreaterThan(0);
+    for (const band of bands) expect(band.toGsp - band.fromGsp).toBe(250_000);
+  });
+
+  it('widens to 1M for levels spanning 2M-9M', () => {
+    const series = winChain(2_000_000, [2_100_000, 9_000_000, 9_100_000]);
+    const bands = getGspGainStats(series).gainsByBand;
+    for (const band of bands) expect(band.toGsp - band.fromGsp).toBe(1_000_000);
+  });
+
+  it('keeps every band count within the cap, whatever the span', () => {
+    const series = winChain(100_000, [200_000, 30_000_000, 30_100_000]);
+    const stats = getGspGainStats(series);
+    expect(stats.gainsByBand.length).toBeLessThanOrEqual(GSP_BAND_MAX_BANDS);
+    // widest ladder entry is the fallback
+    for (const band of stats.gainsByBand) expect(band.toGsp - band.fromGsp).toBe(5_000_000);
+  });
+
+  it('puts a level exactly on an edge into the upper band', () => {
+    // win starting exactly at 10,000,000; the other win starts at 9,500,000 -> width 250k..1M
+    const series = winChain(9_500_000, [9_600_000, 10_000_000, 10_050_000]);
+    // win starts: 9.5M (gain 100k), 9.6M (gain 400k), 10.0M (gain 50k)
+    const stats = getGspGainStats(series);
+    const width = stats.gainsByBand[0]!.toGsp - stats.gainsByBand[0]!.fromGsp;
+    const edge = stats.gainsByBand.find((b) => b.fromGsp <= 10_000_000 && 10_000_000 < b.toGsp);
+    expect(edge).toBeDefined();
+    expect(edge!.fromGsp).toBe(10_000_000);
+    expect(edge!.wins).toBe(1);
+    expect(edge!.avgGain).toBe(50_000);
+    expect(width).toBeGreaterThan(0);
+  });
+
+  it("lists occupied bands only, ascending, with the mean of that band's win gains", () => {
+    const series: GspPoint[] = [
+      { time: 0, gsp: 1_000_000, win: true },
+      { time: 1, gsp: 1_100_000, win: true }, // win from 1.0M, +100k
+      { time: 2, gsp: 1_300_000, win: true }, // win from 1.1M, +200k
+      { time: 3, gsp: 1_250_000, win: false }, // loss, no band
+      { time: 4, gsp: 1_350_000, win: true }, // win from 1.25M, +100k
+    ];
+    const bands = getGspGainStats(series).gainsByBand;
+    const froms = bands.map((b) => b.fromGsp);
+    expect([...froms].sort((a, b) => a - b)).toEqual(froms);
+    const total = bands.reduce((sum, b) => sum + b.wins, 0);
+    expect(total).toBe(3);
+    const weighted = bands.reduce((sum, b) => sum + b.avgGain * b.wins, 0);
+    expect(weighted).toBeCloseTo(400_000);
+    for (const band of bands) expect(band.wins).toBeGreaterThan(0);
+  });
+
+  it('drops the step ending at a calibration point from every band', () => {
+    const series: GspPoint[] = [
+      { time: 100, gsp: 8_990_000, win: true },
+      { time: 200, gsp: 9_000_000, win: true },
+      { time: 300, gsp: 9_500_000, win: null },
+      { time: 400, gsp: 9_510_000, win: true },
+    ];
+    const stats = getGspGainStats(series);
+    expect(stats.gainsByBand.reduce((sum, b) => sum + b.wins, 0)).toBe(2);
+    expect(stats.perWinLevels).toEqual([8_990_000, 9_500_000]);
+    expect(stats.perWinGains).toEqual([10_000, 10_000]);
+  });
+
+  it('perWinLevels is parallel to perWinGains', () => {
+    const series: GspPoint[] = [{ time: 0, gsp: 0, win: true }];
+    for (let i = 1; i <= 25; i += 1) series.push({ time: i, gsp: i * 10, win: true });
+    const stats = getGspGainStats(series);
+    expect(stats.perWinLevels).toHaveLength(stats.perWinGains.length);
+    expect(getGspGainStats([{ time: 0, gsp: 1, win: true }]).gainsByBand).toEqual([]);
+  });
+
+  // UAT 41 test 9 / F19: each "last 20" average names the steps it actually covers — its wins or its losses.
+  it('counts the win and loss steps behind the last-20 averages separately', () => {
+    const mixed: GspPoint[] = [
+      { time: 0, gsp: 9_000_000, win: true },
+      { time: 1, gsp: 9_010_000, win: true },
+      { time: 2, gsp: 9_020_000, win: true },
+      { time: 3, gsp: 9_015_000, win: false },
+      { time: 4, gsp: 9_025_000, win: true },
+    ];
+    const stats = getGspGainStats(mixed);
+    expect(stats.recentWinStepCount).toBe(3);
+    expect(stats.recentLossStepCount).toBe(1);
+
+    const long: GspPoint[] = [{ time: 0, gsp: 0, win: true }];
+    for (let i = 1; i <= 25; i += 1) long.push({ time: i, gsp: i * 10, win: true });
+    long.push({ time: 26, gsp: 200, win: false });
+    const trailing = getGspGainStats(long);
+    expect(trailing.recentWinStepCount).toBe(19);
+    expect(trailing.recentLossStepCount).toBe(1);
+
+    const single = getGspGainStats([{ time: 0, gsp: 1, win: true }]);
+    expect(single.recentWinStepCount).toBe(0);
+    expect(single.recentLossStepCount).toBe(0);
   });
 });

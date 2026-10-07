@@ -29,6 +29,10 @@ import {
   tournamentEntrySchema,
   userSchema,
   vodTimestampSchema,
+  buildWatchlistItemKey,
+  watchlistItemKeySchema,
+  watchlistItemStoredSchema,
+  WATCHLIST_MAX_ITEMS,
   type ClientVisibleVersion,
   type CoachAttribution,
   type CreateGspReadingInput,
@@ -63,6 +67,10 @@ import {
   type UpsertStageFavoritesInput,
   type User,
   type VodTimestamp,
+  type WatchlistItem,
+  type WatchlistResponse,
+  type WatchlistTrackInput,
+  type WatchlistTrackResponse,
 } from '@smash-tracker/shared';
 import { buildRecapSnapshot } from '../shares/buildRecapSnapshot.js';
 import { buildReviewSnapshot, type ReviewCitationSource } from '../shares/buildReviewSnapshot.js';
@@ -397,6 +405,31 @@ export class ConflictError extends Error {
     super(message);
     this.name = 'ConflictError';
   }
+}
+
+/**
+ * Thrown when a subject's watchlist already holds `WATCHLIST_MAX_ITEMS` items
+ * and a 26th distinct item is tracked (D-08). A 409 whose machine `code` lets
+ * the web toast key off a stable string instead of the message.
+ */
+export class WatchlistFullError extends ConflictError {
+  readonly code = 'watchlist-full';
+  constructor() {
+    super(`The watchlist is full (${WATCHLIST_MAX_ITEMS} items)`);
+    this.name = 'WatchlistFullError';
+  }
+}
+
+/**
+ * True when `getWatchlist` lists this stored child: its key and its value both
+ * parse. The track cap counts exactly these (39.2 code review API-WR-03), so a
+ * child the list hides can never hold a slot the user cannot see or remove.
+ */
+function isListedWatchlistChild(itemKey: string, value: unknown): boolean {
+  return (
+    watchlistItemKeySchema.safeParse(itemKey).success &&
+    watchlistItemStoredSchema.safeParse(value).success
+  );
 }
 
 /** Thrown for a 403-worthy write: the caller is at/over a per-user cap (e.g. the 50-playlist limit). */
@@ -1566,6 +1599,132 @@ export class RtdbService {
     };
     await this.database.ref(`stageFavorites/${uid}`).set(stageFavoritesSchema.parse(favorites));
     return favorites;
+  }
+
+  // ---- watchlist/{subjectId}/{itemKey} -------------------------------------
+
+  /**
+   * Phase 39.2 (TRK-02): the subject's tracked opponents/matchups/stages, a
+   * KEYED MAP (`itemKey` -> item), never an array. Each child is
+   * `safeParse`d and a corrupt one is skipped so a single bad child can never
+   * brick the list; the skip logs only the child's kind prefix and the failing
+   * field paths (never a value, uid or opponent tag — an opponent itemKey
+   * embeds the tag). Sorted by `createdAt`, ties by `itemKey`.
+   */
+  async getWatchlist(subjectId: string): Promise<WatchlistResponse> {
+    const snapshot = await this.database.ref(`watchlist/${subjectId}`).get();
+    if (!snapshot.exists()) {
+      return { items: [] };
+    }
+    const raw = snapshot.val();
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      return { items: [] };
+    }
+    const items: WatchlistResponse['items'] = [];
+    for (const [itemKey, value] of Object.entries(raw as Record<string, unknown>)) {
+      const keyResult = watchlistItemKeySchema.safeParse(itemKey);
+      const itemResult = watchlistItemStoredSchema.safeParse(value);
+      if (!keyResult.success || !itemResult.success) {
+        const paths = [
+          ...(keyResult.success ? [] : ['itemKey']),
+          ...(itemResult.success
+            ? []
+            : itemResult.error.issues.map((issue) => issue.path.join('.') || '(root)')),
+        ];
+        console.warn(
+          `RtdbService.getWatchlist: skipped a corrupt watchlist child (kind prefix "${(
+            itemKey.split(':', 1)[0] ?? ''
+          ).slice(0, 16)}", invalid: ${paths.join(', ')})`,
+        );
+        continue;
+      }
+      items.push({ itemKey, item: itemResult.data });
+    }
+    items.sort((a, b) =>
+      a.item.createdAt !== b.item.createdAt
+        ? a.item.createdAt - b.item.createdAt
+        : a.itemKey < b.itemKey
+          ? -1
+          : a.itemKey > b.itemKey
+            ? 1
+            : 0,
+    );
+    return { items };
+  }
+
+  /**
+   * Idempotently tracks one item. The storage key is derived HERE from the
+   * schema-validated body (a client-supplied key is never trusted) and
+   * `createdAt` is the server clock. The whole map is read-modified-written in
+   * ONE transaction so concurrent taps can never exceed `WATCHLIST_MAX_ITEMS`:
+   * the first run of a transaction always sees `null` (treated as an empty map,
+   * never aborted on), an already-tracked item is left byte-identical (its
+   * original `createdAt` survives), and the 26th distinct item aborts the
+   * transaction and surfaces as `WatchlistFullError`. Nothing is ever evicted.
+   */
+  async trackWatchlistItem(
+    subjectId: string,
+    input: WatchlistTrackInput,
+  ): Promise<WatchlistTrackResponse> {
+    const itemKey = buildWatchlistItemKey(input);
+    // safeParse, never parse (API-IN-04): an input the stored schema refuses is
+    // the caller's 400, not an unmapped ZodError 500.
+    const freshResult = watchlistItemStoredSchema.safeParse({
+      kind: input.kind,
+      ref: input.ref,
+      createdAt: Date.now(),
+    });
+    if (!freshResult.success) {
+      throw new ValidationError('Invalid watchlist item');
+    }
+    const fresh: WatchlistItem = freshResult.data;
+
+    let full = false;
+    let existing: WatchlistItem | undefined;
+    await this.database.ref(`watchlist/${subjectId}`).transaction((raw) => {
+      // Reset per run (review CR-01): an outcome captured during a DISCARDED
+      // (hash-mismatch) run must never leak into the run that commits.
+      full = false;
+      existing = undefined;
+      const current: Record<string, unknown> =
+        typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+          ? { ...(raw as Record<string, unknown>) }
+          : {};
+      const stored = watchlistItemStoredSchema.safeParse(current[itemKey]);
+      if (stored.success) {
+        existing = stored.data;
+        return current;
+      }
+      // 39.2 code review API-WR-03: the cap counts exactly the children
+      // `getWatchlist` lists. A child it hides as corrupt (including a corrupt
+      // child under THIS key, which the write below repairs in place) is
+      // neither counted nor deleted, so the user is never refused at fewer
+      // than WATCHLIST_MAX_ITEMS visible items.
+      const listedCount = Object.entries(current).filter(([key, value]) =>
+        isListedWatchlistChild(key, value),
+      ).length;
+      if (listedCount >= WATCHLIST_MAX_ITEMS) {
+        full = true;
+        return undefined;
+      }
+      current[itemKey] = fresh;
+      return current;
+    });
+
+    if (full) {
+      throw new WatchlistFullError();
+    }
+    return { itemKey, item: existing ?? fresh };
+  }
+
+  /** Untracks one item by its key; a key that is not tracked is a no-op success. */
+  async untrackWatchlistItem(subjectId: string, itemKey: string): Promise<{ itemKey: string }> {
+    const parsedKey = watchlistItemKeySchema.safeParse(itemKey);
+    if (!parsedKey.success) {
+      throw new ValidationError('Invalid watchlist item key');
+    }
+    await this.database.ref(`watchlist/${subjectId}/${parsedKey.data}`).remove();
+    return { itemKey: parsedKey.data };
   }
 
   // ---- playlists/{uid}/{pushKey} -------------------------------------------

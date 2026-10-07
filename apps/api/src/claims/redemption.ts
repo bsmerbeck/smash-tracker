@@ -388,7 +388,7 @@ export async function redeemClaimCode(
 
     // A same-client replay is a genuine no-op with zero additional writes —
     // the flip is already in place from the original consumption —
-    // mirroring `markStripeEventProcessed`'s replay convention.
+    // mirroring the replay convention of `createEvent`'s `eventDedup` transaction.
     return { status: 'ok', tenantId };
   } catch (err) {
     // An unexpected internal failure must be indistinguishable from an

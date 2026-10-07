@@ -63,8 +63,18 @@ function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
 
 const removeMatch = vi.fn();
 
+const listWatchlist = vi.fn();
+const trackWatchlist = vi.fn();
+const untrackWatchlist = vi.fn();
+
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: (...args: unknown[]) => listWatchlist(...args),
+      track: (...args: unknown[]) => trackWatchlist(...args),
+      untrack: (...args: unknown[]) => untrackWatchlist(...args),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
@@ -178,6 +188,11 @@ describe('MatchupsPage', () => {
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     getMe.mockResolvedValue(defaultProfile());
+    listWatchlist.mockResolvedValue({ items: [] });
+    trackWatchlist.mockResolvedValue({
+      itemKey: 'matchup:1-10',
+      item: { kind: 'matchup', ref: { fighterId: 1, vsFighterId: 10 }, createdAt: 1 },
+    });
     setMockUser(makeMockUser());
   });
 
@@ -573,6 +588,59 @@ describe('MatchupsPage', () => {
    * `LocationSearchProbe` before an explicit interaction), so it is not
    * re-asserted here as a standalone case.
    */
+  describe('plan 39.2-10 (T-04): the Track toggle beside the pairing heading', () => {
+    it('sits right-aligned on the pairing hero identity row (outside the h1) and tracks the pairing by fighter ids', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: true }),
+      ]);
+      renderMatchups();
+      await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
+
+      const toggle = await screen.findByRole('button', { name: 'Track Mario vs Luigi' });
+      // Plan 39.1-44 replaced the pairing h2 with the hero's h1; the toggle
+      // moved onto the hero's identity row, still outside the heading.
+      const heading = document.querySelector('[data-slot="pairing-hero"] h1')!;
+      const identity = document.querySelector('[data-slot="pairing-hero-identity"]')!;
+      expect(heading.contains(toggle)).toBe(false);
+      expect(identity.contains(toggle)).toBe(true);
+      expect(toggle.closest('[data-slot="pairing-hero-action"]')?.className).toContain('ml-auto');
+      expect(heading.textContent).not.toContain('Track');
+      await waitFor(() => expect(toggle).toBeEnabled());
+
+      await user.click(toggle);
+
+      await waitFor(() => expect(trackWatchlist).toHaveBeenCalledTimes(1));
+      expect(trackWatchlist).toHaveBeenCalledWith({
+        kind: 'matchup',
+        ref: { fighterId: mario.id, vsFighterId: luigi.id },
+      });
+    });
+
+    it('reads Tracked when the subject list holds this exact pairing key', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: true }),
+      ]);
+      listWatchlist.mockResolvedValue({
+        items: [
+          {
+            itemKey: `matchup:${mario.id}-${luigi.id}`,
+            item: {
+              kind: 'matchup',
+              ref: { fighterId: mario.id, vsFighterId: luigi.id },
+              createdAt: 1,
+            },
+          },
+        ],
+      });
+      renderMatchups();
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking Mario vs Luigi' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    });
+  });
+
   describe('Phase 38-04: URL drill-down contract', () => {
     it('renders the pairing header from the URL fighter axis when it differs from the persisted fighter', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id, bowser.id], secondary: [] });

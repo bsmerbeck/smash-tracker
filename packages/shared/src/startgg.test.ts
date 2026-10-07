@@ -204,6 +204,24 @@ describe('scoutReportDataSchema — V9-D `games` back-compat', () => {
     expect(parsed.stageName).toBeUndefined();
     expect(parsed.eventName).toBeUndefined();
   });
+
+  // 41-17 (UAT 41-6): the parent tournament's display name rides on each scouted game so two
+  // same-named events ('Ultimate Singles') at different tournaments get distinct point labels.
+  it('scoutGameSchema keeps an optional tournamentName and omits the key when absent', () => {
+    const base = {
+      time: 1_700_000_000_000,
+      win: true,
+      fighterId: 67,
+      opponentFighterId: 41,
+      opponentTag: 'PowPow',
+      eventName: 'Ultimate Singles',
+    };
+    expect(scoutGameSchema.parse({ ...base, tournamentName: 'Genesis 9' }).tournamentName).toBe(
+      'Genesis 9',
+    );
+    const legacy = scoutGameSchema.parse(base);
+    expect('tournamentName' in legacy).toBe(false);
+  });
 });
 
 // Phase 28 (REV-01, 28-CONTEXT.md decision 1): the explicit manual-entry

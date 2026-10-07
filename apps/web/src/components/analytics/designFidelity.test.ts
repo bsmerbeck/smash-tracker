@@ -192,10 +192,10 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
     expect(RED_CHART_INK_PATTERN.test('borderColor: chartColors.series,')).toBe(false);
   });
 
-  it('the scanned set is non-empty and includes the Form Curve and all three GSP chart files', () => {
+  it('the scanned set is non-empty and includes the form strip tile and all three GSP chart files', () => {
     expect(RED_INK_SCANNED.length).toBeGreaterThan(50);
     for (const file of [
-      'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
+      'apps/web/src/pages/Dashboard/components/FormStripTile.tsx',
       'apps/web/src/pages/Gsp/components/GspCurve.tsx',
       'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
       'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
@@ -207,6 +207,57 @@ describe('design fidelity — no brand-red chart ink on an analytics or GSP page
   it('no scanned file references redLineDataset, chartColors.red or chartColors.redSoft', () => {
     const offenders = RED_INK_SCANNED.filter((file) =>
       RED_CHART_INK_PATTERN.test(readRepoFile(file)),
+    );
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Plan 41-09 (UI-SPEC §12.13, DD-41-14 widened): the GSP chart files are rebuilt on the chart kit, whose
+ * ink comes from the kit's own series token. Nothing under `pages/Gsp/components/` may reach for a
+ * chart palette token (`var(--chart-*)`), the brand red (`var(--primary)`), the chart.js palette
+ * (`chartColors`) or the red dataset helper (`redLineDataset`) as mark ink. This extends the brand-red
+ * guard above, which only names the two red palette members, to every palette and token route.
+ */
+const GSP_COMPONENT_DIR = 'apps/web/src/pages/Gsp/components/';
+const GSP_MARK_INK_PATTERN = /var\(--chart-|var\(--primary\)|\bchartColors\b|\bredLineDataset\b/;
+const GSP_COMPONENT_FILES = NON_TEST_FILES.filter((file) => file.startsWith(GSP_COMPONENT_DIR));
+/**
+ * Plan 41-10 (UI-SPEC §12.13): the Dashboard form strip tile hosts the kit strip, whose ink is the kit's
+ * own win / loss tokens, so it is held to the same no-palette, no-brand-red rule as the GSP components.
+ */
+const FORM_STRIP_TILE_FILE = 'apps/web/src/pages/Dashboard/components/FormStripTile.tsx';
+const MARK_INK_FILES = [...GSP_COMPONENT_FILES, FORM_STRIP_TILE_FILE];
+
+describe('design fidelity — no palette or brand-red mark ink in the rebuilt GSP components and the Dashboard form strip tile (plans 41-09, 41-10)', () => {
+  it('the pattern detects each forbidden ink reference and ignores a look-alike (non-vacuity)', () => {
+    for (const fixture of [
+      'stroke="var(--chart-1)"',
+      "style={{ fill: 'var(--primary)' }}",
+      'borderColor: chartColors.series,',
+      '...redLineDataset(),',
+    ]) {
+      expect(GSP_MARK_INK_PATTERN.test(fixture), fixture).toBe(true);
+    }
+    expect(GSP_MARK_INK_PATTERN.test('className="text-primary-foreground"')).toBe(false);
+    expect(GSP_MARK_INK_PATTERN.test('stroke="var(--series)"')).toBe(false);
+  });
+
+  it('the scanned set contains the four rebuilt GSP files', () => {
+    for (const file of ['GspCurve.tsx', 'GspVsGlicko.tsx', 'GainsAnalysis.tsx', 'GspHero.tsx']) {
+      expect(GSP_COMPONENT_FILES, file).toContain(`${GSP_COMPONENT_DIR}${file}`);
+    }
+    expect(GSP_COMPONENT_FILES.every((file) => !/\.test\.tsx?$/.test(file))).toBe(true);
+  });
+
+  it('the scanned set also contains the Dashboard form strip tile, which exists (plan 41-10)', () => {
+    expect(MARK_INK_FILES).toContain(FORM_STRIP_TILE_FILE);
+    expect(NON_TEST_FILES).toContain(FORM_STRIP_TILE_FILE);
+  });
+
+  it('no non-test GSP component or the form strip tile uses var(--chart-*), var(--primary), chartColors or redLineDataset', () => {
+    const offenders = MARK_INK_FILES.filter((file) =>
+      GSP_MARK_INK_PATTERN.test(readRepoFile(file)),
     );
     expect(offenders).toEqual([]);
   });
@@ -627,7 +678,9 @@ describe('design fidelity — Matchups carries no pips and no alarm-colour class
  *   `components/analytics` or `pages/Matchups` is allowed only in
  *   `SegmentedControl.tsx` — the page horizon switch and the advisor's
  *   Phase / Role / Won-Lost controls render through it, never through a
- *   second copy of its markup.
+ *   second copy of its markup. A file whose every `<ToggleGroup>` is
+ *   `type="multiple"` is a multi-select chip filter (39.2's
+ *   `TierFilterChips`), not a single-choice segmented control, and is exempt.
  */
 const SEGMENTED_CONTROL_PATH = 'apps/web/src/components/analytics/SegmentedControl.tsx';
 const SEGMENTED_SCOPE_PREFIXES: readonly string[] = [
@@ -647,9 +700,15 @@ function comparisonBarsStatusToneOffences(source: string): string[] {
 function secondSegmentedOffences(file: string, source: string): string[] {
   if (file === SEGMENTED_CONTROL_PATH) return [];
   if (!SEGMENTED_SCOPE_PREFIXES.some((prefix) => file.startsWith(prefix))) return [];
-  return TOGGLE_GROUP_IMPORT_PATTERN.test(source)
-    ? ['imports ToggleGroup outside SegmentedControl']
-    : [];
+  if (!TOGGLE_GROUP_IMPORT_PATTERN.test(source)) return [];
+  return allToggleGroupsMultiple(source) ? [] : ['imports ToggleGroup outside SegmentedControl'];
+}
+
+/** True when the source opens at least one `<ToggleGroup>` and every one is `type="multiple"`. */
+function allToggleGroupsMultiple(source: string): boolean {
+  // Each opening tag runs to the next `<` (its first child or the next tag).
+  const tags = [...source.matchAll(/<ToggleGroup\b(?!Item)[^<]*/g)].map((match) => match[0]);
+  return tags.length > 0 && tags.every((tag) => /\btype\s*=\s*["']multiple["']/.test(tag));
 }
 
 describe('design fidelity — one ComparisonBars tone and one segmented control (plan 39.1-47)', () => {
@@ -698,6 +757,17 @@ describe('design fidelity — one ComparisonBars tone and one segmented control 
         "import { SegmentedControl } from '@/components/analytics/SegmentedControl';",
       ),
     ).toEqual([]);
+    // A multi-select chip filter is not a segmented control; one single-mode group still offends.
+    const multiple = `${importLine}\n<ToggleGroup\n  type="multiple"\n  onValueChange={(v) => set(v)}\n>\n  <ToggleGroupItem value="a" />\n</ToggleGroup>`;
+    expect(
+      secondSegmentedOffences('apps/web/src/components/analytics/Other.tsx', multiple),
+    ).toEqual([]);
+    expect(
+      secondSegmentedOffences(
+        'apps/web/src/components/analytics/Other.tsx',
+        `${multiple}\n<ToggleGroup type="single" value={v}>\n</ToggleGroup>`,
+      ),
+    ).toHaveLength(1);
   });
 
   it('no non-test file under apps/web/src passes a status tone to ComparisonBars', () => {

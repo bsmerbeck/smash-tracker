@@ -35,7 +35,14 @@ export function describeSetStateAssumption(t: TFunction, setState: SetState): st
       : t('matchups.counterpick.setState.bansSummary', { count: bansCount });
   return t('matchups.counterpick.setState.summary', {
     phase: t(`matchups.counterpick.setState.phase.${setState.phase}`),
-    role: t(`matchups.counterpick.setState.role.${setState.role}`),
+    // Game 1 has no pick/ban role (it is always a strike); at Game 2+ the line
+    // names the same role label the advisor's Role segment shows (UAT 37-4).
+    role:
+      setState.phase === 'game1'
+        ? t('matchups.counterpick.setState.role.striking')
+        : t(
+            `matchups.counterpick.setState.roleGame2.${setState.role === 'striking' ? 'banning' : 'picking'}`,
+          ),
     priorSummary: `${priorSummary}, ${bansSummary}`,
   });
 }

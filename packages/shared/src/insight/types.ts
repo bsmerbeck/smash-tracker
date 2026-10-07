@@ -33,7 +33,9 @@ export type InsightTemplateId =
   | 'pocketCost'
   | 'matchupOrPlayer'
   | 'bestMatchup'
-  | 'worstMatchup';
+  | 'worstMatchup'
+  | 'tierGap'
+  | 'playRhythm';
 
 /** D-06: the three recent-window choices a page-level `HorizonSwitch` offers. There is no "last 10 games" option — at n = 10 almost no delta clears the noise test. */
 export type HorizonKey = 'last30' | 'lastEvent' | 'last90';
@@ -172,6 +174,26 @@ export interface InsightScope {
   /** Drill-down axes this scope contributes to a door's URL (DD-09) — empty for the whole-account scope. */
   axes?: Record<string, string | number>;
   filter: (matches: Match[]) => Match[];
+  /**
+   * The two DD-11 tier cohorts (A = supermajor + major games, B = minor +
+   * regional + local games) as pure data, resolved by the caller from the
+   * tournament registry. ONLY the Tournaments page supplies it, and ONLY the
+   * `tierGap` template reads it (returning no insight when it is absent), so no
+   * other page's rail or card can ever render a tier read.
+   */
+  tierCohorts?: InsightTierCohorts;
+}
+
+/** The pure-data cohorts a Tournaments-page tier scope hands `tierGap` (see `InsightScope.tierCohorts`). */
+export interface InsightTierCohorts {
+  a: Match[];
+  b: Match[];
+  aEvents: number;
+  bEvents: number;
+  /** Known events in either cohort whose tier is an estimate. */
+  estimatedEvents: number;
+  /** Events with a known tier (any of the five words), whether or not they have linked games. */
+  knownEvents: number;
 }
 
 /** The canonical whole-account scope — no filtering, no D-15 recency bound. Shared by every plan/test that needs the account-level view rather than re-declaring an identity filter. */

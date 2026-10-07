@@ -20,6 +20,8 @@ import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';
 import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
+import { headStatesScopedWindow } from '@/components/analytics/scopedRecencyVerdict';
 import {
   buildFormStripEvents,
   formStripLabels,
@@ -29,7 +31,6 @@ import {
 import { useFighterName } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import type { DrillDownAxes } from '@/lib/drillDownParams';
-import { formatPercent } from '@/lib/formatPercent';
 
 /** UI-SPEC §8.5 / sketch 001-C: the hero strip draws at most the last 60 games. */
 const HERO_STRIP_LIMIT = 60;
@@ -162,36 +163,27 @@ export function FighterHero({
 
   const chipKind = formNowInsight ? claimChipKindFor(formNowInsight.kind) : 'fact';
   const entity = localizedName;
-  const verdict = formNowInsight
-    ? t(formNowInsight.copy.key, { ...formNowInsight.copy.values, entity })
-    : '';
-  // WR-C05 (39.1-REVIEW.md): read the raw rate off the Insight's own
-  // `recent`/`baseline` claims and format it through the one shared,
-  // locale-aware percent formatter, rather than the engine's pre-formatted
-  // `copy.values.rate`/`.baselineRate` strings (always English-convention
-  // "42%", baked in before this component ever sees `i18n.language`).
-  const recentRateText =
-    formNowInsight && formNowInsight.recent.kind === 'evidenced'
-      ? formatPercent(formNowInsight.recent.value.rate, i18n.language)
-      : '';
-  const recentRecord = `${formNowInsight?.copy.values.record ?? ''} · ${recentRateText}`;
-  const baselineRateText =
-    formNowInsight && formNowInsight.baseline.kind === 'evidenced'
-      ? formatPercent(formNowInsight.baseline.value.rate, i18n.language)
-      : '';
+  // Plan 39.1-59 (UAT 39.1-33 F17): the same D-15 scoped-window branch as
+  // Matchups' `buildFormNowVerdict` — a fighter with an evidenced lifetime
+  // record whose last 12 months hold 0-2 games reads the bound, never the
+  // engine's "N more games unlock this read".
+  let verdict = '';
+  if (formNowInsight && headStatesScopedWindow(formNowInsight)) {
+    verdict =
+      formNowInsight.window.games === 0
+        ? t('insights.state.noneRecent.fighter', { entity })
+        : t('insights.state.thinRecent.fighter', { count: formNowInsight.window.games, entity });
+  } else if (formNowInsight) {
+    verdict = t(formNowInsight.copy.key, { ...formNowInsight.copy.values, entity });
+  }
+  // Plan 39.1-52: the one shared evidence builder — labelled by the sample,
+  // no dangling cue, never "over 0". The hero keeps its own cue semantics
+  // (the counted-games total the verdict states).
   const evidenceCount =
     typeof formNowInsight?.copy.values.count === 'number' ? formNowInsight.copy.values.count : 0;
-  const evidenceTier = confidenceTierFor(evidenceCount);
-  const evidenceCue = evidenceTier
-    ? t(`shared.evidence.sampleCueGlyph.${evidenceTier}`, { count: evidenceCount })
-    : '';
   const evidence = formNowInsight
-    ? t(`insights.evidence.twoHorizon.${horizon}`, {
-        recentRecord,
-        baselineRate: baselineRateText,
-        baselineGames: formNowInsight.copy.values.baselineGames ?? 0,
-        cue: evidenceCue,
-      })
+    ? (buildInsightEvidenceLine(formNowInsight, t, i18n.language, { cueCount: evidenceCount }) ??
+      '')
     : '';
 
   // CR-02 (39.1-REVIEW): a period point drills by its own KEY, never by its
@@ -235,7 +227,8 @@ export function FighterHero({
               <span>
                 {t('fighterAnalysis.hero.identityMeta', {
                   pct: sharePct,
-                  confidence: confidenceLabel,
+                  // Plan 39.1-52 (F22): no tier → the `_bare` meta, never a dangling ' · '.
+                  ...(confidenceLabel ? { confidence: confidenceLabel } : { context: 'bare' }),
                 })}
               </span>
             </p>
@@ -252,7 +245,7 @@ export function FighterHero({
               </span>
             </div>
             <p
-              className="line-clamp-3 text-base leading-6 font-medium text-pretty"
+              className="text-base leading-6 font-medium text-pretty"
               data-slot="fighter-hero-verdict-sentence"
             >
               {verdict}

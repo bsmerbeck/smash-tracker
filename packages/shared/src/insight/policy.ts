@@ -52,6 +52,23 @@ export const COHORT_NOTABLE_Z = 1.96;
 export const COHORT_MIN_SIDE_GAMES = CONFIDENCE_TIER_BOUNDS.medium;
 
 /**
+ * DD-41-07 (Phase 41, `playRhythm`): a play-rhythm read needs at least this many DISTINCT UTC months
+ * with games before it says anything — below it the template is `locked` and the card shows a
+ * "{{have}} of {{need}} months" meter.
+ */
+export const RHYTHM_MIN_MONTHS = 12;
+/**
+ * DD-41-07: the busiest-month-of-year clause is only stated when the history spans at least this many
+ * whole months. A seasonal claim from under two years of history is noise.
+ */
+export const RHYTHM_SEASON_MIN_SPAN_MONTHS = 24;
+/**
+ * DD-41-07: the busiest month-of-year must hold at least this multiple of the mean month-of-year
+ * share (1/12 of all games) before it is called out.
+ */
+export const RHYTHM_BUSIEST_MIN_RATIO = 1.5;
+
+/**
  * Salience scoring weights (`salience.ts`'s `scoreInsight`), documented here
  * as tunable engine policy rather than buried inline in the scoring
  * function. Retuning these changes card ORDER only, never a claim (plan

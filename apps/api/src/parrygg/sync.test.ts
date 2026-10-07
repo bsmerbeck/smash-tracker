@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import type { ParryggSyncSummary } from '@smash-tracker/shared';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  resolveTournamentTier,
+  tournamentEntrySchema,
+  type ParryggSyncSummary,
+} from '@smash-tracker/shared';
 import {
   Entrant,
   EventEntrant,
@@ -21,6 +25,7 @@ import {
 } from '@parry-gg/client';
 import { Timestamp } from 'google-protobuf/google/protobuf/timestamp_pb.js';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import {
   gamesFromMatchContext,
   importParryggMatches,
@@ -639,5 +644,270 @@ describe('importParryggMatches', () => {
     expect(rowsAfter.filter((row) => row.eventName === 'tournament_prep_activated')).toHaveLength(
       1,
     );
+  });
+
+  describe('per-event override carry-forward (39.2 F1)', () => {
+    const TIER_OVERRIDE = { contractVersion: 1, tier: 'major', setAtMs: 1 };
+    const RULESET_OVERRIDE = { contractVersion: 1, dsr: 'standard' as const };
+
+    function registryOf(database: FakeDatabase): Record<string, Record<string, unknown>> {
+      const tree = structuredClone(database.dump()) as Record<string, Record<string, unknown>>;
+      return (tree['tournamentEntries']?.['uid-1'] ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
+    }
+
+    function slugContext(): ParryggMatchContext {
+      return makeMatchContext({
+        eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+        mySeed: 8,
+      });
+    }
+
+    it('store -> sync -> assert: both overrides survive a re-sync', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      expect(entryKey).toBeDefined();
+
+      // The user's PATCH adds the members to the stored child.
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...registryOf(database)[entryKey!],
+        tierOverride: TIER_OVERRIDE,
+        rulesetOverride: RULESET_OVERRIDE,
+      });
+
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.tierOverride).toEqual(TIER_OVERRIDE);
+      expect(row.rulesetOverride).toEqual(RULESET_OVERRIDE);
+      expect(row.source).toBe('parrygg');
+      expect(tournamentEntrySchema.safeParse(row).success).toBe(true);
+    });
+
+    // 39.2 code review API-WR-02: the same policy as start.gg — a newer
+    // contract version's override is carried byte-for-byte, a corrupt one is
+    // not copied forward.
+    it('carries a newer-contract override byte-for-byte and drops a corrupt one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      const future = { contractVersion: 2, tier: 'premier', setAtMs: 5, reason: 'r' };
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...registryOf(database)[entryKey!],
+        tierOverride: future,
+        rulesetOverride: { contractVersion: 1, dsr: 'not-a-variant' },
+      });
+
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.tierOverride).toEqual(future);
+      expect(row).not.toHaveProperty('rulesetOverride');
+    });
+
+    it('adds no override, isOnline or eventType key to an entry that never had one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+      for (const row of Object.values(registryOf(database))) {
+        expect(row).not.toHaveProperty('tierOverride');
+        expect(row).not.toHaveProperty('rulesetOverride');
+        expect(row).not.toHaveProperty('isOnline');
+        expect(row).not.toHaveProperty('eventType');
+      }
+    });
+
+    it('leaves a sibling entry the sync does not rebuild untouched', async () => {
+      const database = new FakeDatabase();
+      const sibling = {
+        eventName: 'Other Event',
+        firstSetAt: 1,
+        lastSetAt: 2,
+        setsPlayed: 3,
+        source: 'manual',
+        tierOverride: TIER_OVERRIDE,
+      };
+      database.seed('tournamentEntries/uid-1/manual-1', sibling);
+
+      await importParryggMatches(
+        database as never,
+        'uid-1',
+        PARRY_USER_ID,
+        'api-key',
+        clientsReturning([slugContext()]),
+      );
+
+      expect(registryOf(database)['manual-1']).toEqual(sibling);
+    });
+
+    it('a parry.gg row has no entrant count: unknown without an override, manual with one', async () => {
+      const database = new FakeDatabase();
+      const clients = clientsReturning([slugContext()]);
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      const stored = registryOf(database)[entryKey!]!;
+
+      const bare = resolveTournamentTier({
+        entry: stored as unknown as Parameters<typeof resolveTournamentTier>[0]['entry'],
+      });
+      expect(bare.tier).toBe('unknown');
+      expect(bare.reason).toBe('noEntrants');
+
+      database.seed(`tournamentEntries/uid-1/${entryKey}`, {
+        ...stored,
+        tierOverride: TIER_OVERRIDE,
+      });
+      await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+      const overridden = resolveTournamentTier({
+        entry: registryOf(database)[entryKey!] as unknown as Parameters<
+          typeof resolveTournamentTier
+        >[0]['entry'],
+      });
+      expect(overridden.basis).toBe('manual');
+      expect(overridden.tier).toBe('major');
+    });
+  });
+
+  // 39.2 code review API-CR-01: the parry.gg sync has no network call after it
+  // reads the stored registry, so its race window is the gap between reading
+  // stored state and committing the rebuilt rows. The hook below lands the
+  // user's PATCH (through the REAL route) exactly there: after the sync's
+  // first read of a registry path, or before its first write to one.
+  describe('an override PATCHed mid-sync (API-CR-01)', () => {
+    type TestApp = ReturnType<typeof buildTestApp>['app'];
+
+    function registryOf(database: FakeDatabase): Record<string, Record<string, unknown>> {
+      const tree = structuredClone(database.dump()) as Record<string, Record<string, unknown>>;
+      return (tree['tournamentEntries']?.[TEST_UID] ?? {}) as Record<
+        string,
+        Record<string, unknown>
+      >;
+    }
+
+    /**
+     * Arms a one-shot hook on `database.ref`: the first time the sync touches a
+     * `tournamentEntries/<uid>` path AFTER writing this run's matches,
+     * `midSync` runs after a `get()` resolves (so the read the sync holds is
+     * already stale) or before a `transaction()`/`update()` runs. The matches
+     * gate and the macrotask flush keep the previous sync's fire-and-forget
+     * activation read (it also reads the registry) from tripping the hook early.
+     */
+    async function armMidSyncPatch(
+      database: FakeDatabase,
+      midSync: () => Promise<void>,
+    ): Promise<void> {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      let matchesWritten = false;
+      let fired = false;
+      const once = async (): Promise<void> => {
+        if (!fired) {
+          fired = true;
+          await midSync();
+        }
+      };
+      const originalRef = database.ref.bind(database);
+      vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+        const ref = originalRef(path);
+        if (path === `matches/${TEST_UID}`) {
+          const { update: updateMatches } = ref;
+          ref.update = async (values) => {
+            await updateMatches(values);
+            matchesWritten = true;
+          };
+          return ref;
+        }
+        if (fired || !matchesWritten || !path?.startsWith(`tournamentEntries/${TEST_UID}`)) {
+          return ref;
+        }
+        const { get, update, transaction } = ref;
+        ref.get = async () => {
+          // A real DataSnapshot is a copy taken at read time; FakeDatabase's
+          // `val()` hands back the live tree node, which would let a later
+          // PATCH leak into a read the sync already holds.
+          const value = structuredClone((await get()).val());
+          await once();
+          return { exists: () => value !== null, val: () => value };
+        };
+        ref.update = async (values) => {
+          await once();
+          return update(values);
+        };
+        ref.transaction = async (updateFn) => {
+          await once();
+          return transaction(updateFn);
+        };
+        return ref;
+      });
+    }
+
+    async function patch(app: TestApp, entryKey: string, member: string, payload: object) {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/api/tournaments/${encodeURIComponent(entryKey)}/${member}`,
+        headers: authHeader(),
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    function slugClients(): ParryggClients {
+      return clientsReturning([
+        makeMatchContext({
+          eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+          mySeed: 8,
+        }),
+      ]);
+    }
+
+    it('an override SET between the sync read and its commit survives the commit', async () => {
+      const { app, database } = buildTestApp();
+      const clients = slugClients();
+      await importParryggMatches(database as never, TEST_UID, PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      expect(entryKey).toBeDefined();
+
+      await armMidSyncPatch(database, async () => {
+        await patch(app, entryKey!, 'tier', { tierOverride: { tier: 'major' } });
+        await patch(app, entryKey!, 'ruleset', {
+          rulesetOverride: { contractVersion: 1, dsr: 'none' },
+        });
+      });
+      await importParryggMatches(database as never, TEST_UID, PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.source).toBe('parrygg');
+      expect(row.tierOverride).toMatchObject({ contractVersion: 1, tier: 'major' });
+      expect(row.rulesetOverride).toEqual({ contractVersion: 1, dsr: 'none' });
+    });
+
+    it('an override CLEARED between the sync read and its commit stays cleared', async () => {
+      const { app, database } = buildTestApp();
+      const clients = slugClients();
+      await importParryggMatches(database as never, TEST_UID, PARRY_USER_ID, 'api-key', clients);
+      const [entryKey] = Object.keys(registryOf(database));
+      await patch(app, entryKey!, 'tier', { tierOverride: { tier: 'major' } });
+      await patch(app, entryKey!, 'ruleset', {
+        rulesetOverride: { contractVersion: 1, dsr: 'none' },
+      });
+      expect(registryOf(database)[entryKey!]).toHaveProperty('tierOverride');
+
+      await armMidSyncPatch(database, async () => {
+        await patch(app, entryKey!, 'tier', { tierOverride: null });
+        await patch(app, entryKey!, 'ruleset', { rulesetOverride: null });
+      });
+      await importParryggMatches(database as never, TEST_UID, PARRY_USER_ID, 'api-key', clients);
+
+      const row = registryOf(database)[entryKey!]!;
+      expect(row.source).toBe('parrygg');
+      expect(row).not.toHaveProperty('tierOverride');
+      expect(row).not.toHaveProperty('rulesetOverride');
+    });
   });
 });

@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
 import { RatingModelNote } from '@/components/RatingModelNote';
+import { PageShell } from '@/components/analytics/PageShell';
+import { PageGrid, GridCell } from '@/components/analytics/PageGrid';
 import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
 import { useGspSettings } from '@/hooks/useGspSettings';
@@ -24,6 +26,8 @@ import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useDeleteGspReading, useGspReadings } from '@/hooks/useGspReadings';
 import { useFighterNameResolver, useSortedFighters } from '@/hooks/useFighterName';
 import { getFighterById } from '@/data/sprites';
+import { computeRatingHistory } from '@/lib/glicko';
+import { cn } from '@/lib/utils';
 import { getGspFighterOptions } from './lib/gspFighters';
 import { GspFighterSelect } from './components/GspFighterSelect';
 import { GspHero } from './components/GspHero';
@@ -34,6 +38,18 @@ import { QuickLogger } from './components/QuickLogger';
 import { GainsAnalysis } from './components/GainsAnalysis';
 import { GspTiers } from './components/GspTiers';
 import { GspVsGlicko } from './components/GspVsGlicko';
+import { shouldShowGspVsGlicko } from './lib/gspVsGlicko';
+
+/**
+ * Plan 41-05 (D3, DD-41-11, UI-SPEC 6.2): the last row pairs the vs-Glicko card (8 cols, left) with the
+ * Rating-model note (4 cols, right) from `lg`. The DOM keeps the note BEFORE the card (RESEARCH correction
+ * 14: the note reads immediately above the first rating-bearing region, and `GspPage.test.tsx` pins that
+ * order), so the desktop composition is restored by explicit placement utilities - never a CSS `order`
+ * utility. Below `lg` every cell spans 12 in DOM order. Both cells name the same row (5: hero, curve +
+ * logger, gains + tiers, log, this row) so they sit side by side.
+ */
+const GSP_VS_GLICKO_PLACEMENT = 'lg:col-start-1 lg:row-start-5';
+const GSP_RATING_NOTE_PLACEMENT = 'lg:col-start-9 lg:row-start-5';
 
 /**
  * V10: GSP (Global Smash Power) tracker for online quickplay. GSP is
@@ -56,7 +72,11 @@ import { GspVsGlicko } from './components/GspVsGlicko';
  */
 export function GspPage() {
   const { t } = useTranslation();
-  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const {
+    data: matches = [],
+    isLoading: matchesLoading,
+    isFetching: matchesFetching,
+  } = useMatches();
   const { data: readings = [], isLoading: readingsLoading } = useGspReadings();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { data: gspSettings, isLoading: settingsLoading } = useGspSettings();
@@ -66,6 +86,14 @@ export function GspPage() {
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [editingReading, setEditingReading] = useState<GspReading | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GspEntry | null>(null);
+  // DD-41-12 (A2): a coarser-grain curve close click selects the log rows it summarises (indices into
+  // `entries`) - never a URL axis. Held until the next selection replaces it, and tied to the `entries`
+  // array it was taken from: an edit, a delete or a fighter switch builds a new array, so a stale index
+  // can never mark the wrong row.
+  const [logSelection, setLogSelection] = useState<{
+    entries: GspEntry[];
+    indexes: number[];
+  } | null>(null);
 
   const localizedName = useFighterNameResolver();
   const fighterOptions = useMemo(
@@ -93,6 +121,21 @@ export function GspPage() {
   const fighter: Fighter | undefined =
     fighterOptions.find((f) => f.id === selectedFighterId) ?? fighterOptions[0] ?? undefined;
 
+  // Index-parity: entries[i] is the record behind series[i] (the series is derived from it in shared/gsp.ts),
+  // which is what makes the curve's point-index -> entry resolution safe (plan 41-06, T-41-16). Memoised so the
+  // curve's value-series memos hold across unrelated re-renders.
+  const fighterId = fighter?.id;
+  const entries = useMemo(
+    () => (fighterId === undefined ? [] : getGspEntries(matches, readings, fighterId)),
+    [matches, readings, fighterId],
+  );
+  const series = useMemo(() => gspSeriesFromEntries(entries), [entries]);
+
+  // The vs-Glicko card's hidden-state gate needs the account's rating periods; counted once here (a hook, so
+  // before the early returns) and read through the same `shouldShowGspVsGlicko` helper the card itself uses, so
+  // the Rating-model note spans the whole row exactly when the card is not drawn.
+  const ratingPeriodCount = useMemo(() => computeRatingHistory(matches).periods.length, [matches]);
+
   const isLoading = matchesLoading || readingsLoading || fightersLoading || settingsLoading;
 
   if (isLoading) {
@@ -115,11 +158,10 @@ export function GspPage() {
     return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
-  // Index-parity: entries[i] is the record behind series[i] (the series is
-  // derived from it in shared/gsp.ts), which is what makes the curve's
-  // point-index → entry resolution safe.
-  const entries = getGspEntries(matches, readings, fighter.id);
-  const series = gspSeriesFromEntries(entries);
+  const logHighlightIndexes = logSelection?.entries === entries ? logSelection.indexes : undefined;
+  // WR-06: a FRESH array per selection. The log keys its expand-and-focus on the array's identity, and a
+  // close's `memberIndexes` is memoised, so re-clicking the same close must not hand it the same array.
+  const selectLogRows = (indexes: number[]) => setLogSelection({ entries, indexes: [...indexes] });
   const gainStats = getGspGainStats(series);
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
@@ -148,41 +190,88 @@ export function GspPage() {
     }
   }
 
-  // data-slot="gsp-body" (plan 39.1-39): exists only once every data hook
-  // has settled and a fighter is resolved — the capture-only harness route's
-  // page-loaded marker (captureDesignScreens.mjs). Layout-neutral.
+  // Plan 41-05: a background refetch (data already loaded once) holds the previous frame at reduced
+  // opacity instead of flashing the loading line (the Trends / Dashboard precedent).
+  const isRefetching = matchesFetching && !matchesLoading;
+  const showVsGlicko = shouldShowGspVsGlicko(series.length, ratingPeriodCount);
+
+  // data-slot="gsp-body" (plan 39.1-39): a `display: contents` marker that exists only once every data hook
+  // has settled and a fighter is resolved - the layout oracle's and capture tool's page-loaded marker.
+  // Layout-neutral (the Dashboard precedent). The dialogs stay at the page root, outside the shell.
   return (
-    <div className="flex flex-col gap-6" data-slot="gsp-body">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('gsp.header.title')}</h1>
-        <p className="max-w-lg text-sm text-muted-foreground">{t('gsp.header.subtitle')}</p>
-        <GspFighterSelect
-          fighter={fighter}
-          fighterOptions={fighterOptions}
-          onChange={(next) => setSelectedFighterId(next.id)}
-        />
-      </div>
+    <>
+      <PageShell>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t('gsp.header.title')}</h1>
+          <p className="max-w-lg text-sm text-muted-foreground">{t('gsp.header.subtitle')}</p>
+          <GspFighterSelect
+            fighter={fighter}
+            fighterOptions={fighterOptions}
+            onChange={(next) => setSelectedFighterId(next.id)}
+          />
+        </div>
 
-      <GspHero series={series} settings={gspSettings} />
+        <div className="contents" data-slot="gsp-body">
+          <PageGrid
+            className={cn(
+              isRefetching &&
+                'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+            )}
+          >
+            <GridCell span={12}>
+              <GspHero series={series} settings={gspSettings} />
+            </GridCell>
 
-      <GspCurve
-        series={series}
-        settings={gspSettings}
-        onPointClick={(index) => editEntry(entries[index] ?? null)}
-      />
+            <GridCell span={8}>
+              <GspCurve
+                series={series}
+                settings={gspSettings}
+                onSelectReading={(index) => editEntry(entries[index] ?? null)}
+                onSelectPeriod={selectLogRows}
+              />
+            </GridCell>
+            <GridCell span={4}>
+              <QuickLogger fighter={fighter} lastPoint={lastPoint} settings={gspSettings} />
+            </GridCell>
 
-      <QuickLogger fighter={fighter} lastPoint={lastPoint} settings={gspSettings} />
+            <GridCell span={6}>
+              <GainsAnalysis stats={gainStats} />
+            </GridCell>
+            <GridCell span={6}>
+              <GspTiers series={series} settings={gspSettings} />
+            </GridCell>
 
-      <GspMatchLog entries={entries} onEdit={editEntry} onDelete={setPendingDelete} />
+            <GridCell span={12}>
+              <GspMatchLog
+                entries={entries}
+                onEdit={editEntry}
+                onDelete={setPendingDelete}
+                highlightedIndexes={logHighlightIndexes}
+                forceShowAll={logHighlightIndexes !== undefined}
+              />
+            </GridCell>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <GainsAnalysis stats={gainStats} />
-        <GspTiers series={series} settings={gspSettings} />
-      </div>
-
-      <RatingModelNote />
-
-      <GspVsGlicko gspSeries={series} allMatches={matches} settings={gspSettings} />
+            <GridCell
+              span={showVsGlicko ? 4 : 12}
+              slot="gsp-rating-note"
+              className={showVsGlicko ? GSP_RATING_NOTE_PLACEMENT : undefined}
+            >
+              <RatingModelNote />
+            </GridCell>
+            {showVsGlicko && (
+              <GridCell span={8} slot="gsp-vs-glicko" className={GSP_VS_GLICKO_PLACEMENT}>
+                <GspVsGlicko
+                  gspSeries={series}
+                  allMatches={matches}
+                  settings={gspSettings}
+                  onSelectReading={(index) => editEntry(entries[index] ?? null)}
+                  onSelectPeriod={selectLogRows}
+                />
+              </GridCell>
+            )}
+          </PageGrid>
+        </div>
+      </PageShell>
 
       {editingMatch && (
         <EditMatchForm
@@ -232,6 +321,6 @@ export function GspPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

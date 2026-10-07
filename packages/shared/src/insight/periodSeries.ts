@@ -1,4 +1,5 @@
 import type { Match } from '../match.js';
+import { eventDisplayName } from '../evidence/eventBlocks.js';
 import { isCountableGame } from '../evidence/predicate.js';
 import { splitIntoSessions } from '../glicko.js';
 import { buildSetTimeline } from '../tournamentAggregation.js';
@@ -197,7 +198,8 @@ function tournamentBlockToPoint(group: Match[], name: string): PeriodPoint {
   return toPeriodPoint({
     grain: 'eventSession',
     key: `eventSession:tournament:${name}:${startMs}`,
-    label: name,
+    // 41-13: display only — the key keeps the bare identity name.
+    label: eventDisplayName(group) ?? name,
     matches: group,
   });
 }

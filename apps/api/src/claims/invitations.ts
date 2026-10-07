@@ -119,8 +119,8 @@ export async function issueClaimInvitation(
     const candidateCode = generateClaimCode();
     const candidateDigest = hashClaimCode(options.hmacSecret, normalizeClaimCode(candidateCode));
 
-    // Write-on-empty transaction (markStripeEventProcessed shape,
-    // apps/api/src/billing/credits.ts): the abort branch below is only
+    // Write-on-empty transaction (the shape of createEvent's eventDedup
+    // transaction, apps/api/src/events/ledger.ts): the abort branch below is only
     // reachable after a retry against REAL stored data, never on the
     // null-local-cache first run — the same digest can never be minted
     // twice as a live record.

@@ -53,6 +53,12 @@ const removeNote = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: vi.fn().mockResolvedValue({ items: [] }),
+      track: vi.fn(),
+      untrack: vi.fn(),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getMe: (...args: unknown[]) => getMe(...args),
@@ -134,7 +140,12 @@ function renderHubAt(initialEntry: string) {
  * subject-family correctness.
  */
 function normalisedText(container: HTMLElement): string {
-  return (container.textContent ?? '')
+  // Plan 39-12 (D-10): the own-account-only prep-brief card is the ONE
+  // deliberate difference between the families — excluded here, and proven
+  // present/absent by `opponentHubPrepBriefOwnAccount.test.tsx`.
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-testid="hub-prep-brief-card"]').forEach((node) => node.remove());
+  return (clone.textContent ?? '')
     .replace(/Generated [^D]*Date range:/, 'Generated <TIME> Date range:')
     .replace(/\s+/g, ' ')
     .trim();
@@ -143,6 +154,7 @@ function normalisedText(container: HTMLElement): string {
 /** Every `[data-slot="card-title"]` text — the section-heading set for the structural (headings-present) half of the parity assertion. */
 function headingSet(): string[] {
   return [...document.querySelectorAll('[data-slot="card-title"]')]
+    .filter((el) => !el.closest('[data-testid="hub-prep-brief-card"]'))
     .map((el) => el.textContent ?? '')
     .sort();
 }
@@ -206,5 +218,27 @@ describe('Opponent hub coach/workspace parity (DRL-04, plan 38-05 Task 3)', () =
     expect(workspaceText).toBe(personalText);
     expect(coachHeadings).toEqual(personalHeadings);
     expect(workspaceHeadings).toEqual(personalHeadings);
+  });
+
+  it('38-10 (UAT 38-13/22, F18): a coach-route hub for a 2-game opponent lists both characters below the floor, not the empty copy, in both route families', async () => {
+    const sonic = SpriteList.find((s) => s.id === 41)!;
+    const palutena = SpriteList.find((s) => s.id === 57)!;
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 't1', time: 1, win: true, opponent: 'moton', opponent_id: sonic.id }),
+      makeMatch({ id: 't2', time: 2, win: false, opponent: 'moton', opponent_id: palutena.id }),
+    ]);
+    for (const entry of ['/coach/test-client/opponents/moton', '/opponents/moton']) {
+      const { unmount } = renderHubAt(entry);
+      await waitFor(() => expect(screen.getAllByText('What They Play').length).toBeGreaterThan(0));
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      const slotText = (
+        document.querySelector('[data-slot="what-they-play"]')?.textContent ?? ''
+      ).replace(/\s+/g, ' ');
+      expect(slotText).toContain('Sonic');
+      expect(slotText).toContain('Palutena');
+      expect(slotText).toContain('Not enough data yet (1 game)');
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });

@@ -42,8 +42,10 @@ export interface SegmentedControlProps {
  * `disabled` button (that would block the tooltip's hover / focus trigger):
  * it is `aria-disabled`, and the guard lives in `handleValueChange`.
  *
- * Below 640px the group is full width with equal segments and each option
- * shows its short label; the accessible name is pinned to the FULL label on
+ * Below 640px the group is full width with content-sized segments
+ * (`flex-auto`, never wrapping — UAT 39.1-22: a long short label such as fr
+ * 'Dernier événement' takes the shorter segments' slack instead of
+ * overflowing an equal third) and each option shows its short label; the accessible name is pinned to the FULL label on
  * the item (both visible spans are `aria-hidden`, because a CSS-only
  * `sm:hidden` toggle is invisible to jsdom's accname computation and both
  * spans would otherwise contribute their text at once).
@@ -85,7 +87,7 @@ export function SegmentedControl({
             aria-label={option.label}
             aria-disabled={isUnavailable || undefined}
             className={cn(
-              'relative h-8 flex-1 px-3 text-sm data-[state=on]:bg-muted data-[state=on]:text-foreground sm:flex-none',
+              'relative h-8 flex-auto whitespace-nowrap px-3 text-sm data-[state=on]:bg-muted data-[state=on]:text-foreground sm:flex-none',
               option.className,
             )}
           >

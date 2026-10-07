@@ -28,6 +28,7 @@
  */
 
 import { buildScoutGuardReport } from './scoutGuardFixture.mjs';
+import { buildGuardWatchlist } from './digestGuardFixture.mjs';
 
 /**
  * @param {object} [options]
@@ -95,6 +96,14 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
           res.end(JSON.stringify(dataset?.aliases ?? {}));
           return;
         }
+        // Plan 39.2-12: the Dashboard's Tracked section reads the subject's watchlist. The
+        // catch-all's bare `{}` fails its response schema, so this is served explicitly:
+        // 25 items drawn from the active dataset's own games (opponents, matchups, stages).
+        if (url === '/watchlist') {
+          res.statusCode = 200;
+          res.end(JSON.stringify({ items: buildGuardWatchlist(dataset?.matches ?? []) }));
+          return;
+        }
         if (url === '/opponent-notes') {
           res.statusCode = 200;
           res.end(JSON.stringify(dataset?.opponentNotes ?? {}));
@@ -104,6 +113,16 @@ export function createGuardLayoutFixturePlugin({ scales = {}, initialScale = nul
           res.statusCode = 200;
           res.end(JSON.stringify(dataset?.tournaments ?? []));
           return;
+        }
+        // Plan 39.2-13: the Dashboard recap's debrief door reads `GET /api/prep/<entryKey>`. Answered
+        // ONLY for a key the active dataset names, so every other scale's responses are unchanged.
+        if (url.startsWith('/prep/')) {
+          const status = dataset?.prepStatuses?.[decodeURIComponent(url.slice('/prep/'.length))];
+          if (status !== undefined) {
+            res.statusCode = 200;
+            res.end(JSON.stringify(status));
+            return;
+          }
         }
         if (url === '/users/me') {
           res.statusCode = 200;

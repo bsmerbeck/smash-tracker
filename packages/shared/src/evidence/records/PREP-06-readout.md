@@ -1,0 +1,250 @@
+# PREP-06: `PREP_PAID_REPORTS_ENABLED` readout, prices and what a credit buys
+
+**Decision substrate:** PREP-06, discharging D-14 (owner-run readout, counts only), D-15 (the
+on/off call is made at the checkpoint with the numbers in front of the owner), D-16 (prices read
+from source bytes), D-17 (no deploy, no gate flip in this phase) and D-19 (every percentage
+labelled with its method and denominator). Recorded during Phase 39 (Evidence-Grounded Prep &
+Debrief Spine), plan 39-14.
+
+This is the TRACKED copy that survives a clean checkout (`.gitignore` ignores `.planning/`). The
+obligations it discharges are written out in
+`.planning/phases/39-evidence-grounded-prep-debrief-spine/39-CONTEXT.md` (D-07, D-14 to D-17, D-19
+to D-21; D-22, D-23 and D-24, the owner decisions that changed what a credit buys after this record's
+skeleton was written; and the PREP-06 owner decision of 2026-09-28). Its anti-drift test is
+`packages/shared/src/evidence/prep06Record.test.ts`.
+
+## PROCEDURE
+
+The owner follows `docs/prep06-readout-runbook.md` and runs the committed, read-only readout
+(`apps/api/scripts/prep06Readout.ts`) in their own shell with their own copy of the internal-jobs
+secret. Claude never sees the secret, never runs the script against production and never reads
+production; the owner pastes back the printed output and Claude transcribes it here.
+
+## SOAK EVIDENCE
+
+Owner run of 2026-09-28, window `20260922..20260928` (7 days). Columns mirror the readout's own
+printed row (`apps/api/scripts/prep06Readout.ts`, the `printReadout` header line): each row states
+its own `method`, and exact and approximate rows are never blended into one figure (D-19).
+
+| day      | method      | reconcile% | duplicate% | numerator | denominator | note                                        |
+| -------- | ----------- | ---------- | ---------- | --------- | ----------- | ------------------------------------------- |
+| 20260928 | approximate | n/a        | n/a        | 0         | 0           | partial day (the readout's current UTC day) |
+| 20260927 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260926 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260925 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260924 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260923 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+| 20260922 | approximate | n/a        | n/a        | 0         | 0           | denominator 0, no percentage computed       |
+
+**Method mix:** `exact=0 approximate=7`.
+
+**Exact vs approximate, stated separately (never blended):** exact arm — 0 days, so no exact
+percentage exists. Approximate arm — 7 days, every one with numerator 0 over denominator 0 and
+both percentages `n/a`, so it produced no range at all. There is **no soak evidence** in this
+window: no day recorded a reconciled billing event, and no percentage of either method was computed.
+
+The owner's readout output, transcribed exactly as supplied (counts only; checked for identifiers
+before writing — none found):
+
+```text
+window: 20260922..20260928 (7 day(s))
+day       method        reconcile%    duplicate%    numerator   denominator
+20260928  approximate   n/a           n/a           0           0
+  note: partial day — 20260928 is the current UTC day of this readout; the nightly reconcile covers yesterday, so this day is excluded from every percentage.
+20260927  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+20260926  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+20260925  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+20260924  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+20260923  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+20260922  approximate   n/a           n/a           0           0
+  note: approximate — denominator is eventCounts summed over RECONCILED_EVENT_NAMES, which is 0 for this day, so no percentage is computed. eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped.
+methodMix: exact=0 approximate=7
+footnote: Reference, not an enforced threshold: v2.5's flip rule reads >=98% reconcile and <0.5% duplicates as the bar the owner compares these numbers against at the 39-14 checkpoint before deciding PREP_PAID_REPORTS_ENABLED — this script does not compute a pass/fail verdict.
+footnote: Approximate method: eventCounts (raw ledger rows for RECONCILED_EVENT_NAMES) as the denominator, minus exceptionCounts over RECONCILE_EXCEPTION_KINDS as the numerator's subtraction — an approximation because eventCounts counts raw ledger rows while the exact method's reconciled units are correlation-id-grouped. A day with no exception rows and no persisted summary reads n/a, never 100% — it cannot be told apart from a day the reconcile never ran.
+footnote: Exact method: the persisted reconcile run's reconciledUnits + phantom + duplicate as the denominator and reconciledUnits - missing (never below 0) as the numerator; the outbox-pending rows its checked count also includes are left out of both.
+footnote: 20260928 is the current UTC day of this readout — a partial day the nightly reconcile has not covered yet, so it carries no percentage.
+footnote: 7 of 7 day(s) in this window are approximate — a day has no persisted summary because it is from before this plan's reconcileSummaries writer took effect (the owner's next deploy), or the shard predates that deploy.
+```
+
+**Denominators (code review API-WR-05/06):** an `exact` row's denominator is the persisted reconcile
+run's `reconciledUnits` plus its phantom and duplicate exceptions, and its numerator is
+`reconciledUnits` minus the missing ones — the outbox-pending rows that run's `checked` also counts
+are left out of both. An `approximate` row's denominator is `eventCounts` over
+`RECONCILED_EVENT_NAMES`. A row reads `n/a` when its denominator is 0, when it is approximate with
+no exception rows at all (no reconcile evidence — never read as 100%), or when it is the readout's
+own current UTC day (partial). No numerator is ever negative.
+
+### FOOTNOTES
+
+The output above is the owner's paste, verbatim: one `note:` line per day and one `footnote:`
+line per footnote, exactly as the script printed them. The script's footnote wording is fixed in
+source (`apps/api/scripts/prep06ReadoutCore.ts:233-249` and `:289-302`).
+
+**REFERENCE:** v2.5's flip rule — `>=98% reconcile` and `<0.5% duplicates` — is the reference the
+numbers above are read AGAINST. It is not a threshold any code enforces: the readout computes no
+pass/fail verdict, and no code in this repository compares a number in this record against it. The
+owner makes the call (D-15).
+
+## PRICES
+
+The credit packs as shipped, read from `packages/shared/src/billing.ts` (`CREDIT_PACKS`) at
+execution time. `amountCents` is the Stripe amount in cents, exactly as the constant carries it.
+
+| id       | credits | amountCents | label        |
+| -------- | ------- | ----------- | ------------ |
+| `pack5`  | 5       | 800         | `5 reports`  |
+| `pack15` | 15      | 2000        | `15 reports` |
+
+These carry forward unchanged (D-16). Any price or packaging change is a separate owner decision
+outside this phase. `prep06Record.test.ts` asserts this table equals `CREDIT_PACKS` row for row.
+
+## WHAT A CREDIT BUYS
+
+PRICES answers what a credit COSTS. This section answers what a credit BUYS after this phase — the
+second clause of PREP-06's sentence. One credit is spent per generation by a caller who is not on
+the free-use list (`REPORTS_ALLOWED_UIDS`); the job records whether it actually took a credit in the
+stored `wasCharged` field, and a failed job is refunded only through the one existing `failJob`
+path. It applies once the owner deploys this phase's code (D-17); nothing here is live today.
+
+A generation is ONE model attempt. `REPORT_MODEL_MAX_RETRIES` is `0` and each attempt is bounded by
+`REPORT_MODEL_TIMEOUT_MS` (8 minutes), on the built client and on every request; a failed attempt
+fails the job and refunds it, and the user retries. A credit never pays for a silent retry. The
+attempt runs inside the request, so the bound is sized to fit the service's Cloud Run request
+timeout — 600 seconds, the owner's decision for the Phase 39 deploy, applied before or with this
+code (it was 300 seconds on 2026-09-28) — with a 60-second budget for the work around it (code
+review R5-IN-04). A refund is
+written once per failed execution: the balance and a create-once marker commit in one transaction,
+and the job's terminal writes and the refund are retried on a transient database error, so a retry
+can never refund twice and a transient error can no longer strand the credit (code review R5-WR-01).
+A retry starts only after an attempt has itself failed: a write that has not settled yet is awaited,
+never abandoned, because an abandoned attempt can still land after its retry (code review R7-CR-01 /
+R7-CR-02, which removed iteration 6's two-second bound per attempt). A write that never settles (a
+database that never comes back) holds the request: the recorded residual. A refund that still fails every attempt is logged for reconciliation with the job id,
+its credit ref, the refund's marker key and the request id, never the uid (code review R6-WR-05).
+
+Minimum viable claim counts per surface, from the exported `MIN_VIABLE_CLAIMS` constant
+(`packages/shared/src/evidence/claims.ts`). Only EVIDENCED claims count toward them — every
+comparison goes through the one shared `countViableClaims` helper, in the validator and in the
+API's pre-call fail-fast alike (owner decision D-23):
+
+| surface                | MIN_VIABLE_CLAIMS |
+| ---------------------- | ----------------- |
+| `scout`                | 3                 |
+| `prep_report`          | 3                 |
+| `prep_bundle_child`    | 3                 |
+| `post_event_synthesis` | 2                 |
+
+1. **The normal case — a validated report.** The claims that survived validation (engine-authored
+   figures, each with its sample cue and confidence tier), the report's sections, at most three
+   recommended actions (the stored slots `action1`, `action2`, `action3`), and a `validation` block
+   that names the `snapshotId` the report was checked against, with its `policyVersion` and
+   `claimSchemaVersion`. The validation block is written only on a report that passed.
+2. **D-20 — prose-less is still delivered and still charged.** When the prose lint withholds the
+   commentary from one section or from every section, the report is still delivered, as a
+   claims-only report, and the credit is spent — a withheld section is never a refund. It is
+   DISCLOSED on the report card (the `reports.withheldProse` caption) and by an equivalent line in
+   the `.md` export, and it is OBSERVABLE: the count is persisted on the stored report as
+   `strippedSectionCount` and emitted as the `report_prose_stripped` event.
+3. **D-21 and D-23 — thin evidence buys a refund, not a report.** When the EVIDENCED claims issued
+   for a job are already below the surface's `MIN_VIABLE_CLAIMS` at job claim — abstentions never
+   count, so an all-abstention job lands here too (D-23) — the job fails fast: the model is not
+   called, nothing is delivered, the job fails through `failJob` with `failureReason`
+   `validation`, the credit is returned exactly once, the `report_failed_validation` event is
+   emitted, and the UI says there is not enough match evidence yet. This is a DELIBERATE CHANGE
+   from today's shipped behaviour on the live, publicly purchasable scout path, where the same
+   caller is currently charged for a cold-read report. It takes effect only when the owner deploys
+   (D-17).
+4. **D-07 and D-22 — dropped claims are delivered with a note.** Claims the validator could not
+   support are dropped, and the delivered report says how many (the `reports.droppedClaims`
+   caption, from the stored `droppedClaimCount`); the `report_claims_dropped` event records it.
+   Prose that names the unknown stage or character bucket withholds that section's prose only,
+   disclosed like any other withheld commentary, and never drops a claim (owner decision D-22); a
+   claim whose own stage or fighter id is the unknown bucket is dropped. Only when fewer than
+   `MIN_VIABLE_CLAIMS` evidenced claims survive does the job fail with `failureReason`
+   `validation` and refund through `failJob`.
+5. **D-24 — the commentary is qualitative only.** Every figure a user sees comes from a checked
+   claim, shown beside the prose. A section whose prose carries a figure or a confidence grade has
+   that section's prose withheld — true or false, and whatever the separator of a win-loss pair.
+   Since code review iteration 5 the check is an allowlist, and since iteration 6 it reads exactly
+   the text the user is shown, never a folded copy: once the licensed fighter and stage names and
+   the licensed opponent tags are read (so the digits and accents inside a name are never
+   figures), the prose may hold only English letters, spaces, line breaks and ordinary
+   punctuation, no Markdown marks, and none of the listed number, record, quantifier,
+   all-or-nothing or confidence-tier words and forms (low, medium, high, moderate, strong, weak
+   and their forms; synonyms such as mid, top, solid or sure; every, never, always, only, even,
+   double or perfect; roman numerals; letters spelled out one by one; glued or stretched words).
+   Commentary is English-only. A withheld section is handled exactly as in item 2: delivered,
+   charged, disclosed, never refunded, and it never touches claim survival. The model prompts
+   state the rule up front, so most commentary is written to survive it.
+
+Sources (line numbers pin to the commit that last edited this list — `git log -1 -- packages/shared/src/evidence/records/PREP-06-readout.md`; the list was first read at HEAD `2b332e6c` and re-pinned for code review iteration 8):
+
+- `MIN_VIABLE_CLAIMS` — `packages/shared/src/evidence/claims.ts:155-160`; `countViableClaims` —
+  `claims.ts:172-174` (counts claims whose `value.kind` is not `abstained`).
+- Validator status on evidenced survivors — `packages/shared/src/evidence/validateReport.ts:1232`;
+  API pre-call fail-fast — `apps/api/src/routes/reports.ts:1459` (scout, prep) and
+  `reports.ts:1811` (post-event synthesis).
+- The D-24 rule — doc comment `validateReport.ts:449-470`; the allowlist
+  `PROSE_DISALLOWED_CHARACTER` `:482`, `MARKDOWN_MARKER` `:489`, `FIGURE_WORD_SOURCE` `:511`,
+  `FIGURE_PHRASE_PATTERN` `:557`, `TIER_STEMS` `:573` and `TIER_FORMS` `:617`, `ROMAN_TOKEN`
+  `:640`, `LONE_ONE_BEFORE_COUNT` `:683`, `SPELLED_LETTER_RUN` `:694`, `isGluedFigure` `:752`, `hasFigureOrTierWord` `:810`,
+  `NAME_COUNT_FOLLOWER` `:870`; enforcement in `lintSectionProse` (`:904`) at
+  `validateReport.ts:1082-1104`. Prompt statement — `apps/api/src/reports/generate.ts:1102-1104`
+  and `apps/api/src/reports/synthesis.ts:504-506`.
+- Events — `EVENT_CATALOG` at `packages/shared/src/events.ts:80`; `report_failed_validation`
+  `:105`, `report_claims_dropped` `:106`, `report_prose_stripped` `:107`.
+- Stored fields — `packages/shared/src/reports.ts`: `strippedSectionCount` `:232`,
+  `droppedClaimCount` `:284`, `failureReason` `:606`, `wasCharged` `:620`.
+- Model bound — `REPORT_MODEL_MAX_RETRIES = 0` at `apps/api/src/routes/reports.ts:133`,
+  `REPORT_MODEL_TIMEOUT_MS = 8 * 60 * 1000` at `reports.ts:172`, sized against
+  `CLOUD_RUN_REQUEST_TIMEOUT_MS` (`:148`) and `REPORT_REQUEST_OVERHEAD_BUDGET_MS` (`:159`), applied on
+  the built client at `reports.ts:659-660` and per request at `reports.ts:246-248`.
+- Refund once — `refundCreditOnce` at `apps/api/src/billing/credits.ts:241`, called from `failJob`
+  (`reports.ts:721`) at `reports.ts:839` inside `withSettleRetries` (`:214`), which retries only an
+  attempt that rejected; the failure log line `logPersistentFailure` at `reports.ts:777`.
+
+## BOUNDARY
+
+Counts only. This record carries no uid, no correlation id, no event payload and no secret — only
+the per-day aggregates the readout prints. If a pasted readout ever shows anything that identifies a
+user, an opponent or a tournament, it is not transcribed; it is reported as a defect in the script.
+
+## DECISION
+
+**Recorded 2026-09-28 by the owner at the plan 39-14 checkpoint ([HUMAN]).**
+
+**Option chosen: `intend-on` — `PREP_PAID_REPORTS_ENABLED` = ON.**
+
+**The evidence did not support it, and the owner chose ON anyway.** The owner decided with the
+readout above in front of them. That readout carries no soak evidence: every day in the window is
+0 over 0 with both percentages `n/a`, and the method mix is `exact=0 approximate=7`. Nothing in it
+was read against the v2.5 reference, because there was nothing to read. The decision rests on the
+owner's judgement, not on the flip-rule numbers. No separate rationale was given beyond the decision
+itself.
+
+**Nothing was flipped or deployed in this phase.** This plan performed no deploy and no
+environment-variable change, and the gate is exactly where it was before Phase 39 started (D-17).
+The flip is an owner production action, taken after the Phase 39 deploy:
+
+```sh
+gcloud run services update smash-tracker-api --region us-central1 --update-env-vars PREP_PAID_REPORTS_ENABLED=true
+```
+
+Use `--update-env-vars`, never `--set-env-vars`, which replaces every other variable on the
+service. The value must be exactly the lowercase word `true`. Any other value, including `TRUE`,
+`1`, `yes` or `on`, leaves the gate off (`apps/api/src/config/env.ts:491` and `:511-512`).
+
+**Recommended follow-up:** re-run the readout about a week after launch, once exact days exist,
+and append the result here as a follow-up entry. That run is the first real soak evidence for this
+gate.
+
+**What a credit buys — acknowledged at the same checkpoint.** The owner read the section above
+and explicitly accepted all four behaviours: D-20 (a report with withheld commentary is delivered,
+charged and disclosed); D-21 with D-23 (thin or all-abstention evidence refunds before the model
+is called); D-07 (dropped claims are delivered with a note, and fewer than the minimum refunds);
+and D-24 (the commentary is qualitative only).

@@ -119,6 +119,18 @@ export function careerGamesFill(step: number): string {
   return mix(CHART_TOKENS.series1, GAMES_STEP_MIX_PERCENT[clamped - 1]!);
 }
 
+/**
+ * UI-SPEC §7.3 / DD-41-06: the activity heat's tint step for a month of `n` games when the busiest
+ * month holds `max` - `ceil(5 * sqrt(n) / sqrt(max))` clamped to 1-5, so one game is still a visible
+ * step 1 beside a 100-game month and the busiest month is always step 5. Square-root, not linear:
+ * a linear ramp would leave every ordinary month at step 1 beside one outlier.
+ */
+export function volumeHeatStep(n: number, max: number): number {
+  if (n <= 0 || max <= 0) return 1;
+  const steps = GAMES_STEP_MIX_PERCENT.length;
+  return Math.min(steps, Math.max(1, Math.ceil((steps * Math.sqrt(n)) / Math.sqrt(max))));
+}
+
 /** UI-SPEC §12.1: gridlines every 100 rating points ... */
 const Y_STEP_DEFAULT = 100;
 /** ... or every 200 when the fitted span exceeds 600 points, or on a narrow plot. */

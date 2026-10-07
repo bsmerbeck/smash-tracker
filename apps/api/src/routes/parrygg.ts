@@ -293,6 +293,7 @@ const parryggRoutes: FastifyPluginAsyncZod<ParryggRoutesOptions> = async (app, o
         link.parryUserId,
         config.apiKey,
         clients,
+        request.log,
       );
     },
   );

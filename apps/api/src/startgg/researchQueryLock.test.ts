@@ -30,7 +30,12 @@ function normalizeQuery(query: string): string {
   return query.replace(/\s+/g, ' ').trim();
 }
 
-/** Copied verbatim from `SETS_QUERY` in `client.ts` — this file's baseline. */
+/**
+ * Copied verbatim from `SETS_QUERY` in `client.ts` — this file's baseline.
+ * Phase 39.2 D-20: `type` added to the `event` selection to persist eventType
+ * on the tournament entry; reviewed at plan time and updated in the same
+ * commit as `SETS_QUERY`.
+ */
 const EXPECTED_LEGACY_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!) {
   player(id: $playerId) {
     sets(perPage: $perPage, page: $page) {
@@ -43,7 +48,8 @@ const EXPECTED_LEGACY_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $pe
         displayScore
         totalGames
         vodUrl
-        event { id name slug isOnline numEntrants videogame { id } tournament { name } }
+        phaseGroup { phase { name phaseOrder } }
+        event { id name slug isOnline numEntrants type videogame { id } tournament { name } }
         slots {
           entrant {
             id

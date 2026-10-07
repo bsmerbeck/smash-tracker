@@ -27,6 +27,7 @@ import gspSettingsRoutes from './routes/gspSettings.js';
 import gspReadingsRoutes from './routes/gspReadings.js';
 import gspLiveRoutes from './routes/gspLive.js';
 import stageFavoritesRoutes from './routes/stageFavorites.js';
+import watchlistRoutes from './routes/watchlist.js';
 import startggRoutes from './routes/startgg.js';
 import parryggRoutes from './routes/parrygg.js';
 import parryggAuthRoutes from './routes/parryggAuth.js';
@@ -58,7 +59,7 @@ import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import researchTenantsRoutes from './routes/research.js';
 import deploymentIdentityRoutes from './routes/deploymentIdentity.js';
-import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   ClaimCodeConfig,
@@ -393,6 +394,18 @@ export function buildApp(options: BuildAppOptions) {
       return;
     }
 
+    // 39.2 code review API-IN-04: a service-level ValidationError is a 400.
+    // Routes that already catch it locally keep their own mapping; this covers
+    // every caller that does not, which previously fell through to the 500 branch.
+    if (error instanceof ValidationError) {
+      reply.code(400).send({
+        error: 'Bad Request',
+        message: error.message,
+        statusCode: 400,
+      });
+      return;
+    }
+
     if (error instanceof ConflictError) {
       reply.code(409).send({
         error: 'Conflict',
@@ -523,6 +536,8 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(gspReadingsRoutes);
       await api.register(gspLiveRoutes, { fetchImpl: options.gspLiveFetch });
       await api.register(stageFavoritesRoutes);
+      // Phase 39.2 (TRK-02): the subject-scoped, per-item, transaction-capped watchlist.
+      await api.register(watchlistRoutes);
       await api.register(tournamentsRoutes);
       // Phase 26 (PREP-01..04): the event-bound free prep brief,
       // personal-only (always request.uid), mirroring tournamentsRoutes'

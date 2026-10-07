@@ -27,9 +27,11 @@ export type InsightDoorSurface =
   | 'trends-rail'
   | 'trends-setting'
   | 'trends-mix'
+  | 'trends-rhythm'
   | 'matchups-chart'
   | 'matchups-card'
-  | 'opponent-hub-trend';
+  | 'opponent-hub-trend'
+  | 'tournaments-tier';
 
 export interface InsightDoorHostFixture {
   matches: Match[];
@@ -47,6 +49,8 @@ export interface InsightDoorHostFixture {
   opponentTag?: string;
   /** Extra search params appended to `personalPath` for a context-carrying variant (URL-seeded pairing, `vs`+`context`). */
   search?: string;
+  /** The `GET /api/tournaments` registry rows the Tournaments host page reads. Only read by `tournaments-tier`; every other host leaves the registry empty. */
+  tournaments?: Record<string, unknown>[];
 }
 
 export interface InsightDoorHost {
@@ -657,6 +661,106 @@ function mixShiftVolumeFormFixture(): Match[] {
 }
 
 // ---------------------------------------------------------------------------
+// Play rhythm (playRhythm, Phase 41-03) — account scope, personal only.
+// ---------------------------------------------------------------------------
+
+/**
+ * One game every 31 days for 28 games: two dates under 31 days apart can share a UTC month, 31 or
+ * more cannot, so all 28 sit in distinct months (past `RHYTHM_MIN_MONTHS`) across a 28-month span.
+ * The recent 12-month window holds 12 of them. WR-04: every game from the 14th back is older than
+ * `FILLER_AGE_MS` (400 days), so those sit in the `#games` terminus's base but in no counted set,
+ * and an unresolved claim shows 28, never the counted 12.
+ */
+function playRhythmFixture(): Match[] {
+  const now = Date.now();
+  return Array.from({ length: 28 }, (_, i) =>
+    mk({
+      id: `rhythm-${i}`,
+      time: now - i * 31 * DAY,
+      win: i % 2 === 0,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tournaments tier read (tierGap, Phase 39.2-09) — account scope, personal only.
+// ---------------------------------------------------------------------------
+
+/** One registry row plus its linked games, named so `matchesForEntry` attributes them. */
+function tierEvent(input: {
+  eventId: number;
+  tournamentName: string;
+  daysAgo: number;
+  numEntrants: number;
+  wins: number;
+  losses: number;
+}): { entry: Record<string, unknown>; matches: Match[] } {
+  const startMs = Date.now() - input.daysAgo * DAY;
+  const entry = {
+    eventId: input.eventId,
+    entryKey: String(input.eventId),
+    eventName: 'Ultimate Singles',
+    tournamentName: input.tournamentName,
+    firstSetAt: startMs,
+    lastSetAt: startMs + HOUR,
+    setsPlayed: 6,
+    numEntrants: input.numEntrants,
+    isOnline: false,
+  };
+  const total = input.wins + input.losses;
+  const matches = Array.from({ length: total }, (_, i) =>
+    mk({
+      id: `tier-${input.eventId}-${i}`,
+      time: startMs + i * MINUTE,
+      win: i < input.wins,
+      matchType: 'offline-tourney',
+      eventName: 'Ultimate Singles',
+      tournamentName: input.tournamentName,
+    }),
+  );
+  return { entry, matches };
+}
+
+/**
+ * A supermajor (12 games) and a local (12 games) clear cohort A and B's floors
+ * with a notable gap, so the card is a Trend with a counted-games door (24
+ * games). WR-04: 6 games with no event at all (an ungrouped online run) sit in
+ * the `#games` terminus's base but in neither cohort, so an unresolved claim
+ * shows 30, never the counted 24.
+ */
+function tournamentsTierFixture(): InsightDoorHostFixture {
+  const supermajor = tierEvent({
+    eventId: 9001,
+    tournamentName: 'Supernova 2026',
+    daysAgo: 40,
+    numEntrants: 2048,
+    wins: 10,
+    losses: 2,
+  });
+  const local = tierEvent({
+    eventId: 9002,
+    tournamentName: 'Cashbox Weekly',
+    daysAgo: 20,
+    numEntrants: 20,
+    wins: 4,
+    losses: 8,
+  });
+  const filler = Array.from({ length: 6 }, (_, i) =>
+    mk({
+      id: `tier-filler-${i}`,
+      time: Date.now() - (5 + i) * HOUR,
+      win: i % 2 === 0,
+      matchType: 'online-tourney',
+    }),
+  );
+  return {
+    matches: [...supermajor.matches, ...local.matches, ...filler],
+    primaryFighterId: MARIO_ID,
+    tournaments: [supermajor.entry, local.entry],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry.
 // ---------------------------------------------------------------------------
 
@@ -717,6 +821,31 @@ const TRENDS_MIX_HOST: InsightDoorHost = {
 };
 
 /**
+ * `coachMountable: false` (38 D-04): the Play rhythm read is part of Trends' own-account row 4.
+ */
+const TRENDS_RHYTHM_HOST: InsightDoorHost = {
+  surface: 'trends-rhythm',
+  personalPath: '/trends',
+  coachMountable: false,
+  doorRegion: '[data-slot="trends-rhythm-read"]',
+  terminusAnchorId: 'games',
+  fixture: () => ({ matches: playRhythmFixture(), primaryFighterId: MARIO_ID }),
+};
+
+/**
+ * `coachMountable: false` (38 D-04): the Tournaments page is personal-only, so
+ * there is no coach or workspace mount of this host.
+ */
+const TOURNAMENTS_TIER_HOST: InsightDoorHost = {
+  surface: 'tournaments-tier',
+  personalPath: '/tournaments',
+  coachMountable: false,
+  doorRegion: '[data-slot="tier-insight-card"]',
+  terminusAnchorId: 'games',
+  fixture: tournamentsTierFixture,
+};
+
+/**
  * Reachability finding (plan 39.1-29, rewritten by plan 39.1-40):
  * `bestMatchup` / `worstMatchup` / `lastEventRecap` keep their
  * `scope.kind !== 'character'` guard as TEMPLATES, so Match Data's
@@ -746,6 +875,8 @@ export const INSIGHT_DOOR_HOSTS: Record<InsightTemplateId, readonly InsightDoorH
   settingGap: [TRENDS_SETTING_HOST],
   mixShift: [TRENDS_MIX_HOST],
   volumeForm: [TRENDS_MIX_HOST],
+  tierGap: [TOURNAMENTS_TIER_HOST],
+  playRhythm: [TRENDS_RHYTHM_HOST],
 };
 
 /** Context-carrying variants (plan 39.1-29 must_haves): a URL-seeded pairing differing from the persisted one for both Matchups hosts, and a `vs`+`context`-narrowed hub. Not part of the registry's per-template mapping — these are additional cases the reachability suite runs against the SAME templates above, with different `search`. */

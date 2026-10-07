@@ -33,6 +33,7 @@ import {
   buildDrillDownSearch,
   readDrillDownParams,
   sortMatchesNewestFirst,
+  DRILL_DOWN_FIGHTER_PARAM,
   DRILL_DOWN_STAGE_PARAM,
   DRILL_DOWN_EVENT_PARAM,
   DRILL_DOWN_FROM_PARAM,
@@ -107,12 +108,10 @@ export function FighterAnalysisPage() {
   const [refreshedAt] = useState(() => Date.now());
 
   const stageIds = useMemo(() => new Set(stagesById.keys()), []);
-  // D-05: a tolerant read of every drill-down axis currently in the URL —
-  // this page writes none of them itself yet (no in-page control narrows by
-  // stage/event/date-range within this plan; the terminus list below is
-  // reachable today only via a URL a future plan's click handler writes),
-  // but the read side and the conditional terminus row are wired now so
-  // that future wiring has a mount point (UI-SPEC §10.3).
+  // D-05: a tolerant read of every drill-down axis currently in the URL.
+  // `fighterId` resolves the effective fighter below (`URL ?? persisted`,
+  // Matchups' rule); the remaining axes narrow the terminus list, written by
+  // the hero drills and insight doors (UI-SPEC §10.3).
   const axesFromUrl = useMemo(
     () => readDrillDownParams(searchParams, { stageIds }),
     [searchParams, stageIds],
@@ -139,6 +138,14 @@ export function FighterAnalysisPage() {
   const { fighter, setFighter, orderedFighterSprites, fighterUsageById } = usePersistedSelection({
     fighterSprites: rawFighterSprites,
   });
+  // 38-11 (UAT 38-23 / F20, DRL-01/DRL-02): the EFFECTIVE fighter is
+  // `URL ?? persisted` — MatchupsPage's `effectiveFighter` rule. A `?fighter=`
+  // that names no known fighter is already `undefined` out of
+  // `readDrillDownParams`, so the persisted/computed fighter wins. A URL-seeded
+  // fighter is render input only: it never calls the persisting `setFighter`
+  // (D-06 — only an explicit pick persists). Every downstream read uses this.
+  const effectiveFighter =
+    (axesFromUrl.fighterId != null ? getFighterById(axesFromUrl.fighterId) : undefined) ?? fighter;
 
   // WR-C02 (39.1-REVIEW.md): this object literal was rebuilt fresh every
   // render (a NEW reference even when every field's VALUE was unchanged),
@@ -151,7 +158,7 @@ export function FighterAnalysisPage() {
   // `OpponentHubPage.tsx`/`StageDetailPage.tsx` place their own copy.
   const terminusAxes: DrillDownAxes = useMemo(
     () => ({
-      fighterId: fighter?.id,
+      fighterId: effectiveFighter?.id,
       stageId: axesFromUrl.stageId,
       eventKey: axesFromUrl.eventKey,
       from: axesFromUrl.from,
@@ -159,7 +166,7 @@ export function FighterAnalysisPage() {
       claimId: axesFromUrl.claimId,
     }),
     [
-      fighter?.id,
+      effectiveFighter?.id,
       axesFromUrl.stageId,
       axesFromUrl.eventKey,
       axesFromUrl.from,
@@ -173,7 +180,7 @@ export function FighterAnalysisPage() {
   // still gets a fresh array reference every render leaves the underlying
   // recomputation just as unfixed, for a different reason (mirrors
   // `OpponentHubPage.tsx`'s own `sortedOpponentMatches` useMemo).
-  const fighterIdForFilter = fighter?.id;
+  const fighterIdForFilter = effectiveFighter?.id;
   const fighterMatches = useMemo(
     () =>
       fighterIdForFilter != null ? matches.filter((m) => m.fighter_id === fighterIdForFilter) : [],
@@ -292,7 +299,7 @@ export function FighterAnalysisPage() {
   const location = useLocation();
   useLandingScroll({
     anchorId: GAMES_ANCHOR_ID,
-    ready: !fightersLoading && !matchesLoading && fighter != null && hasDrillAxis,
+    ready: !fightersLoading && !matchesLoading && effectiveFighter != null && hasDrillAxis,
   });
 
   // Plan 39.1-25 (gap closure, SC6/TRND-04): the ONE URL writer for a hero
@@ -336,9 +343,14 @@ export function FighterAnalysisPage() {
   // claim belongs to the fighter it was drawn from — switching fighter drops
   // them (Matchups' `handleSetFighter` precedent) rather than narrowing the
   // new fighter to an unrelated set, or silently falling back to all games.
+  // 38-11 (UAT 38-23 / F20): the pick also writes `?fighter=<id>` in the SAME
+  // navigation, so a stale URL fighter never overrides an explicit pick
+  // (Matchups' `handleSetFighter`); `pathname` keeps any coach/workspace prefix.
   function handleSelectFighter(next: Fighter): void {
     setFighter(next);
-    if (hasDrillAxis) handleClearFilters();
+    const params = hasDrillAxis ? searchWithoutDrillAxes() : new URLSearchParams(searchParams);
+    params.set(DRILL_DOWN_FIGHTER_PARAM, String(next.id));
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` });
   }
 
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon; when the horizon
@@ -429,7 +441,7 @@ export function FighterAnalysisPage() {
   // one person now render as ONE row. `OpponentTable` itself is
   // presentational (no query/router hook), so the row build + sort +
   // destination-builder all live here.
-  const opponentEvidenceRows = fighter
+  const opponentEvidenceRows = effectiveFighter
     ? buildOpponentEvidence({ matches: fighterMatches, aliasMap: aliasMap ?? {}, refreshedAt }).rows
     : [];
   const opponentTableRows: OpponentTableRow[] = [...opponentEvidenceRows]
@@ -444,8 +456,8 @@ export function FighterAnalysisPage() {
     }));
 
   function opponentHubHref(row: OpponentTableRow): string | undefined {
-    if (!fighter) return undefined;
-    const search = buildDrillDownSearch({ fighterId: fighter.id }).toString();
+    if (!effectiveFighter) return undefined;
+    const search = buildDrillDownSearch({ fighterId: effectiveFighter.id }).toString();
     return subjectPath(`${buildOpponentHubPath(row.key)}${search ? `?${search}` : ''}`);
   }
 
@@ -456,7 +468,7 @@ export function FighterAnalysisPage() {
       title={t('fighterAnalysis.title')}
       leading={
         <SelectFighter
-          fighter={fighter}
+          fighter={effectiveFighter}
           fighterSprites={orderedFighterSprites}
           fighterUsageById={fighterUsageById}
           onChange={handleSelectFighter}
@@ -471,7 +483,7 @@ export function FighterAnalysisPage() {
       {usingInferredFighters && <ChooseFavoritesPrompt />}
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      {fighter && (
+      {effectiveFighter && (
         <PageGrid
           className={cn(
             FIGHTER_GRID_ROWS_CLASS,
@@ -483,7 +495,7 @@ export function FighterAnalysisPage() {
               never reordered by a responsive class. */}
           <GridCell span={8} className={HERO_CELL_PLACEMENT}>
             <FighterHero
-              fighter={fighter}
+              fighter={effectiveFighter}
               fighterMatches={fighterMatches}
               allMatches={allMatches}
               horizon={horizon}
@@ -498,7 +510,7 @@ export function FighterAnalysisPage() {
 
           <GridCell span={4} className={RAIL_CELL_PLACEMENT}>
             <FighterInsightRail
-              fighterId={fighter.id}
+              fighterId={effectiveFighter.id}
               insights={fighterInsights}
               dismissedIds={dismissedIds}
               dismiss={dismiss}
@@ -515,9 +527,9 @@ export function FighterAnalysisPage() {
               data-slot="fighter-vs-lists"
               className="grid grid-cols-1 items-start gap-4 @min-[860px]/page:grid-cols-2"
             >
-              <VsCharactersList fighterId={fighter.id} fighterMatches={fighterMatches} />
+              <VsCharactersList fighterId={effectiveFighter.id} fighterMatches={fighterMatches} />
               <VsPlayersList
-                fighterId={fighter.id}
+                fighterId={effectiveFighter.id}
                 fighterMatches={fighterMatches}
                 aliasMap={aliasMap ?? {}}
               />

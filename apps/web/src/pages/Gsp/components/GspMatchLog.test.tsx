@@ -42,7 +42,7 @@ describe('GspMatchLog', () => {
     // Newest (loss, 9,050,000, delta -100,000) first.
     expect(items[0]).toHaveTextContent('Loss');
     expect(items[0]).toHaveTextContent('9,050,000');
-    expect(items[0]).toHaveTextContent('-100,000');
+    expect(items[0]).toHaveTextContent('−100,000');
     expect(items[1]).toHaveTextContent('+150,000');
     // Oldest entry has no previous reading, so no delta.
     expect(items[2]).toHaveTextContent('9,000,000');
@@ -99,5 +99,107 @@ describe('GspMatchLog', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(8);
     await user.click(screen.getByRole('button', { name: 'Show all 12 entries' }));
     expect(screen.getAllByRole('listitem')).toHaveLength(12);
+  });
+
+  describe('highlighted rows (plan 41-06, DD-41-12)', () => {
+    /** Fifteen ascending daily entries: index 0 is the oldest, 14 the newest. */
+    const many: GspEntry[] = Array.from({ length: 15 }, (_, i) =>
+      matchEntry(
+        makeGspMatch({
+          id: `m${i}`,
+          time: Date.UTC(2026, 0, 1 + i, 12),
+          gsp: 9_000_000 + i * 1_000,
+        }),
+      ),
+    );
+    const marked = (container: HTMLElement) => [
+      ...container.querySelectorAll<HTMLElement>('li[aria-current="true"]'),
+    ];
+
+    it('renders as before with no highlight: 8 rows, a Show all toggle, no aria-current', () => {
+      const { container } = render(
+        <GspMatchLog entries={many} onEdit={vi.fn()} onDelete={vi.fn()} />,
+      );
+      expect(screen.getAllByRole('listitem')).toHaveLength(8);
+      expect(screen.getByRole('button', { name: 'Show all 15 entries' })).toBeInTheDocument();
+      expect(marked(container)).toHaveLength(0);
+    });
+
+    it('expands past the recent rows and marks exactly the highlighted rows', () => {
+      const { container } = render(
+        <GspMatchLog
+          entries={many}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          highlightedIndexes={[1, 2, 3]}
+          forceShowAll
+        />,
+      );
+      // 15 rows now shown: the oldest ones (indexes 1-3) sit below the 8 recent rows.
+      expect(screen.getAllByRole('listitem')).toHaveLength(15);
+      const rows = marked(container);
+      expect(rows).toHaveLength(3);
+      for (const row of rows) expect(row.className).toContain('bg-muted/40');
+      // Identity, not a time window: the marked rows are the dates of entries 1-3.
+      expect(rows.map((row) => row.textContent)).toEqual([
+        expect.stringContaining('Jan 4, 2026'),
+        expect.stringContaining('Jan 3, 2026'),
+        expect.stringContaining('Jan 2, 2026'),
+      ]);
+    });
+
+    it('moves focus to the first (newest) highlighted row', () => {
+      const { container } = render(
+        <GspMatchLog
+          entries={many}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          highlightedIndexes={[1, 2, 3]}
+          forceShowAll
+        />,
+      );
+      expect(marked(container)[0]).toBe(document.activeElement);
+      expect(document.activeElement).toHaveTextContent('Jan 4, 2026');
+    });
+
+    it('replaces the marked set when the next selection arrives', () => {
+      const { container, rerender } = render(
+        <GspMatchLog
+          entries={many}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          highlightedIndexes={[1, 2]}
+          forceShowAll
+        />,
+      );
+      rerender(
+        <GspMatchLog
+          entries={many}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          highlightedIndexes={[10]}
+          forceShowAll
+        />,
+      );
+      const rows = marked(container);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toHaveTextContent('Jan 11, 2026');
+      expect(document.activeElement).toBe(rows[0]);
+    });
+
+    it('only makes a row focusable while it is highlighted', () => {
+      const { container } = render(
+        <GspMatchLog
+          entries={many}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          highlightedIndexes={[14]}
+          forceShowAll
+        />,
+      );
+      const focusable = [...container.querySelectorAll('li[tabindex]')];
+      expect(focusable).toHaveLength(1);
+      expect(focusable[0]).toHaveAttribute('aria-current', 'true');
+    });
   });
 });

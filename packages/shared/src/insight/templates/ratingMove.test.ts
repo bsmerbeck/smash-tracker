@@ -103,6 +103,77 @@ describe('ratingMoveTemplate', () => {
     expect(insight.copy.values.count).toBe(1);
   });
 
+  describe('plan 39.1-53 (UAT 39.1-17): the window covering most of the account collapses', () => {
+    // 6–2 over 8 games, all well inside every horizon; nowMs is after the last game.
+    // Every game belongs to one named event, so lastEvent holds the same 8 games.
+    const thinAccount = buildMatches([true, true, false, true, true, false, true, true]).map(
+      (match) => ({ ...match, tournamentName: 'Demo Weekly', eventName: 'Ultimate Singles' }),
+    );
+
+    function buildAt(matches: Match[], horizon: 'last30' | 'last90' | 'lastEvent') {
+      // One day after the account's last game, so the day-bounded last90 window holds it.
+      const nowMs = matches[matches.length - 1]!.time + 24 * 60 * 60 * 1000;
+      return ratingMoveTemplate.build({ matches, scope: ACCOUNT_SCOPE, horizon, nowMs })[0]!;
+    }
+
+    it.each(['last30', 'last90'] as const)(
+      'an 8-game account at %s states no direction: collapsed fact, no delta',
+      (horizon) => {
+        const insight = buildAt(thinAccount, horizon);
+        expect(insight.state).toBe('collapsed');
+        expect(insight.kind).toBe('fact');
+        expect(insight.deltaPoints).toBeNull();
+        expect(insight.copy.key).toBe('insights.ratingMove.collapsed');
+        expect(insight.window.games).toBe(8);
+      },
+    );
+
+    it('pin: a 40-game account whose last-30 window holds 30 of 40 collapses', () => {
+      const insight = buildAt(buildMatches(Array(40).fill(true)), 'last30');
+      expect(insight.state).toBe('collapsed');
+      expect(insight.deltaPoints).toBeNull();
+    });
+
+    it('pin: a 100-game account whose last-30 window holds 30 of 100 runs the RD-band rule', () => {
+      const prior = buildMatches(Array(70).fill(false));
+      const recent = buildMatches(
+        [...Array(10).fill(true), ...Array(20).fill(false)],
+        prior[prior.length - 1]!.time + 4 * 60 * 60 * 1000,
+      );
+      const insight = buildAt([...prior, ...recent], 'last30');
+      expect(['steady', 'trend']).toContain(insight.state);
+    });
+
+    // Plan 41-14 (UAT 41 test 2): the 39.1-53 pin read 'trend' here from f910cc85 — the last
+    // event held every game, so the move was measured from the 1500 default with no 'before'.
+    it('an 8-game single-event account at lastEvent states no direction: the prior window is empty (plan 41-14)', () => {
+      const insight = buildAt(thinAccount, 'lastEvent');
+      expect(insight.state).toBe('collapsed');
+      expect(insight.kind).toBe('fact');
+      expect(insight.deltaPoints).toBeNull();
+      expect(insight.copy.key).toBe('insights.ratingMove.collapsed');
+    });
+
+    it('pin: lastEvent with an earlier event keeps the RD-band rule (prior window non-empty)', () => {
+      const earlier = buildMatches(Array(70).fill(false)).map((match) => ({
+        ...match,
+        tournamentName: 'Earlier Weekly',
+        eventName: 'Ultimate Singles',
+      }));
+      const last = buildMatches(
+        Array(10).fill(true),
+        earlier[earlier.length - 1]!.time + 7 * 24 * 60 * 60 * 1000,
+      ).map((match) => ({
+        ...match,
+        tournamentName: 'Demo Weekly',
+        eventName: 'Ultimate Singles',
+      }));
+      const insight = buildAt([...earlier, ...last], 'lastEvent');
+      expect(insight.window.games).toBe(10);
+      expect(['steady', 'trend']).toContain(insight.state);
+    });
+  });
+
   it('windowExpressible is true — a rating window is a contiguous scoped window the existing axes express', () => {
     expect(ratingMoveTemplate.windowExpressible).toBe(true);
   });

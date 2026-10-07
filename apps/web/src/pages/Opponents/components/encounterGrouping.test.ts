@@ -164,3 +164,77 @@ describe('groupEncounters (39.1-18 Task 1, UIX-08/D-10)', () => {
     expect(groups[0]!.sets.length).toBe(2);
   });
 });
+
+describe('groupEncounters — tournament-aware event groups (41-13, UAT 41 test 7 F6)', () => {
+  it('a set at a named tournament is headed "Genesis 9 · Ultimate Singles"; an event-only set keeps its event name', () => {
+    const groups = groupEncounters({
+      matches: [
+        makeMatch({
+          id: 'g1',
+          time: 5000,
+          win: true,
+          externalId: 'sgg:900:g1',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis 9',
+        }),
+        makeMatch({
+          id: 'e1',
+          time: 1000,
+          win: true,
+          externalId: 'sgg:901:g1',
+          eventName: 'Locals',
+        }),
+      ],
+    });
+    expect(groups.map((g) => g.label)).toEqual(['Genesis 9 \u00b7 Ultimate Singles', 'Locals']);
+  });
+
+  it('same-named events at two tournaments form TWO groups with distinct keys and labels', () => {
+    const matches = [
+      makeMatch({
+        id: 'gen1',
+        time: 1000,
+        win: true,
+        externalId: 'sgg:300:g1',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Genesis 9',
+      }),
+      makeMatch({
+        id: 'gen2',
+        time: 1001,
+        win: true,
+        externalId: 'sgg:300:g2',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Genesis 9',
+      }),
+      makeMatch({
+        id: 'wk1',
+        time: 9000,
+        win: false,
+        externalId: 'sgg:400:g1',
+        eventName: 'Ultimate Singles',
+        tournamentName: 'Weekly 12',
+      }),
+    ];
+    const groups = groupEncounters({ matches });
+    expect(groups.map((g) => g.kind)).toEqual(['event', 'event']);
+    expect(new Set(groups.map((g) => g.key)).size).toBe(2);
+    expect(groups.map((g) => g.label)).toEqual([
+      'Weekly 12 \u00b7 Ultimate Singles',
+      'Genesis 9 \u00b7 Ultimate Singles',
+    ]);
+    expect(groups.map((g) => g.sets.length)).toEqual([1, 1]);
+  });
+
+  it('sets with no tournament name still group by trimmed event name', () => {
+    const groups = groupEncounters({
+      matches: [
+        makeMatch({ id: 'a', time: 1, win: true, externalId: 'sgg:1:g1', eventName: 'Locals' }),
+        makeMatch({ id: 'b', time: 2, win: true, externalId: 'sgg:2:g1', eventName: ' Locals ' }),
+      ],
+    });
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.label).toBe('Locals');
+    expect(groups[0]!.sets).toHaveLength(2);
+  });
+});

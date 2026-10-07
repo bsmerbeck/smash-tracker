@@ -27,29 +27,17 @@ export default tseslint.config(
     },
   },
   {
-    // CHRT-04/D-08: forbid importing a chart library outside the kit. This is
-    // the FIRST of two independent oracles for the same boundary — the
-    // second, CI-independent one is
-    // `apps/web/src/components/charts/chartKitBoundary.test.ts`. The
-    // `ignores` array below MUST stay identical to that file's
-    // `LEGACY_CANVAS_ALLOWLIST`, path for path: two oracles disagreeing about
-    // the boundary is worse than having only one. Both arrays are
-    // repo-root-relative — ESLint's flat-config `ignores`/`files` patterns
-    // resolve from the config file's own directory, which is the repo root,
-    // exactly like the boundary test's `KIT_DIR`/allowlist base (R1-HIGH-1).
-    // `no-restricted-imports` never sees a `vi.mock(...)` call or a doc
-    // comment, which is the same reason the boundary test's allowlist
-    // excludes the jsdom stub and the mocking test — neither needs an
-    // exemption from a rule about imports.
+    // CHRT-04/D-08 + CHRT-03: forbid importing a chart library outside the kit, and
+    // forbid the canvas libraries everywhere. This is the FIRST of two independent
+    // oracles for the same boundary — the second, CI-independent one is
+    // `apps/web/src/components/charts/chartKitBoundary.test.ts`, which asserts that
+    // the `ignores` array below minus the kit directory is empty (there is no
+    // allowlist any more: Phase 41 removed chart.js and react-chartjs-2 from the
+    // repository, so the kit directory is the only exemption, and it exists for
+    // Recharts). The array is repo-root-relative — ESLint's flat-config
+    // `ignores`/`files` patterns resolve from the config file's own directory.
     files: ['apps/web/**/*.{ts,tsx}'],
-    ignores: [
-      'apps/web/src/components/charts/**',
-      'apps/web/src/lib/chartTheme.ts',
-      'apps/web/src/pages/Dashboard/components/LastMatchesChart.tsx',
-      'apps/web/src/pages/Gsp/components/GainsAnalysis.tsx',
-      'apps/web/src/pages/Gsp/components/GspCurve.tsx',
-      'apps/web/src/pages/Gsp/components/GspVsGlicko.tsx',
-    ],
+    ignores: ['apps/web/src/components/charts/**'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -63,12 +51,20 @@ export default tseslint.config(
             {
               name: 'chart.js',
               message:
-                'chart.js is being retired in Phase 41 (CHRT-04) — do not add new usage. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
+                'chart.js was removed in Phase 41 (CHRT-03) and must not return. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
             },
             {
               name: 'react-chartjs-2',
               message:
-                'react-chartjs-2 is being retired in Phase 41 (CHRT-04) — do not add new usage. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
+                'react-chartjs-2 was removed in Phase 41 (CHRT-03) and must not return. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
+            },
+          ],
+          // `paths` matches the exact specifier only; a sub-path (`chart.js/auto`) needs a pattern.
+          patterns: [
+            {
+              group: ['chart.js/*', 'react-chartjs-2/*'],
+              message:
+                'chart.js and react-chartjs-2 were removed in Phase 41 (CHRT-03) and must not return, sub-paths included. Use the chart kit (apps/web/src/components/charts/**) for any new chart.',
             },
           ],
         },

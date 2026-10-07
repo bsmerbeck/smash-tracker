@@ -48,6 +48,43 @@ function describeError(error: unknown, fallback: string, t: TFunction): string {
   return fallback;
 }
 
+/** A bare word (no slash, not all digits) — a gamer tag, which only the parry.gg source accepts. */
+function isBareWord(query: string): boolean {
+  return !/[/]/.test(query) && !/^\d+$/.test(query);
+}
+
+/**
+ * UAT 41-8 (F14): the scout-LOOKUP error only. A rejected query (400) reads localized copy chosen by
+ * the source it was sent to — never the server's raw English string, and never start.gg advice for a
+ * parry.gg query. Every other status delegates to `describeError`, so 404/429 behaviour is unchanged.
+ * The generate-report alert keeps calling `describeError` directly.
+ */
+function describeScoutLookupError({
+  error,
+  request,
+  parryggEnabled,
+  t,
+}: {
+  error: unknown;
+  request: ScoutSubmitRequest | null;
+  parryggEnabled: boolean;
+  t: TFunction;
+}): string {
+  if (error instanceof ApiError && error.status === 400) {
+    if (request?.combineWith) {
+      return t('scout.errors.badQueryBoth');
+    }
+    if (request?.source === 'parrygg') {
+      return t('scout.errors.badQueryParry');
+    }
+    const badQuery = t('scout.errors.badQuery');
+    return parryggEnabled && request && isBareWord(request.query)
+      ? `${badQuery} ${t('scout.errors.tagNeedsParry')}`
+      : badQuery;
+  }
+  return describeError(error, t('scout.errors.scoutFallback'), t);
+}
+
 /** How many times to re-poll `useCredits` after a successful checkout return (webhook delivery can lag the redirect). */
 const CREDITS_POLL_ATTEMPTS = 5;
 const CREDITS_POLL_INTERVAL_MS = 2000;
@@ -255,7 +292,7 @@ export function ScoutPage() {
 
       {scout.isError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {describeError(scout.error, t('scout.errors.scoutFallback'), t)}
+          {describeScoutLookupError({ error: scout.error, request: lastQuery, parryggEnabled, t })}
         </div>
       )}
 

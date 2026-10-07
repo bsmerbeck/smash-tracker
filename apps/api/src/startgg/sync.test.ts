@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StartggSyncSummary } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import {
   accumulateRegistry,
   gamesFromSet,
@@ -279,6 +280,33 @@ describe('gamesFromSet', () => {
     const set = makeSet({ vodUrl: null });
     const games = gamesFromSet(set, PLAYER_ID, summary);
     expect('vodUrl' in games[0]!.record).toBe(false);
+  });
+
+  it("stores the set's start.gg phase name and order on every game (UAT 37-9 / F10)", () => {
+    const summary = emptySummary();
+    const set = makeSet({ phaseGroup: { phase: { name: 'Pools', phaseOrder: 1 } } });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games).toHaveLength(2);
+    for (const game of games) {
+      expect(game.record.phaseName).toBe('Pools');
+      expect(game.record.phaseOrder).toBe(1);
+    }
+  });
+
+  it('omits phaseName/phaseOrder entirely when start.gg returns no phase', () => {
+    for (const phaseGroup of [
+      null,
+      undefined,
+      { phase: null },
+      { phase: { name: '  ', phaseOrder: null } },
+    ]) {
+      const summary = emptySummary();
+      const games = gamesFromSet(makeSet({ phaseGroup }), PLAYER_ID, summary);
+      expect(games).toHaveLength(2);
+      // RTDB rejects undefined values — the keys must be absent, not undefined/null.
+      expect('phaseName' in games[0]!.record).toBe(false);
+      expect('phaseOrder' in games[0]!.record).toBe(false);
+    }
   });
 
   it('omits stocksLeft when start.gg tracks neither entrant score', () => {
@@ -970,5 +998,426 @@ describe('importPlayerMatches', () => {
     expect(rowsAfter.filter((row) => row.eventName === 'tournament_prep_activated')).toHaveLength(
       1,
     );
+  });
+});
+
+// Phase 39.2 plan 01 (D-20, isOnline half): the live sync persists `isOnline`
+// on the registry entry with a `!= null` conditional spread. `false` is real
+// data (an offline event) and must be stored; an absent value must store NO
+// key (never null — RTDB null-stripping house rule).
+describe('importPlayerMatches — registry isOnline', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  /** The set's event with the `isOnline` key removed entirely (the provider omitted it). */
+  function withoutIsOnline(set: StartggSet): NonNullable<StartggSet['event']> {
+    const event = { ...set.event } as Record<string, unknown>;
+    delete event['isOnline'];
+    return event as NonNullable<StartggSet['event']>;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  it('stores isOnline: false as false (not omitted, not null)', async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: { ...base.event, isOnline: false } }]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry['isOnline']).toBe(false);
+  });
+
+  it('stores isOnline: true as true', async () => {
+    const database = new FakeDatabase();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['isOnline']).toBe(true);
+  });
+
+  it('stores NO isOnline key when the provider omits it (never null)', async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    const eventWithoutIsOnline = withoutIsOnline(base);
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: eventWithoutIsOnline }]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry).toBeDefined();
+    expect('isOnline' in entry).toBe(false);
+  });
+
+  it('keeps an already-known isOnline when a later set of the same event omits it', async () => {
+    const database = new FakeDatabase();
+    const first = makeSet({ id: 1, completedAt: 1_700_000_000 });
+    const base = makeSet({ id: 2, completedAt: 1_700_000_100 });
+    const eventWithoutIsOnline = withoutIsOnline(base);
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([
+        { ...first, event: { ...first.event, isOnline: false } },
+        { ...base, event: eventWithoutIsOnline },
+      ]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['isOnline']).toBe(false);
+  });
+});
+
+// Phase 39.2 plan 03 (F1, D-20): the closing registry `.update()` replaces each
+// event's whole node, so user-authored per-event overrides must be carried
+// forward or every re-sync deletes them. `rulesetOverride` (37-04) was being
+// wiped by every sync before this fix — a live defect found by this phase.
+describe('importPlayerMatches — per-event override carry-forward', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  const TIER_OVERRIDE = { contractVersion: 1, tier: 'major', setAtMs: 1_700_000_000_000 };
+  const RULESET_OVERRIDE = { contractVersion: 1, dsr: 'none' };
+
+  it('store -> sync -> assert: a stored tierOverride AND rulesetOverride survive a re-sync byte-equal', async () => {
+    const database = new FakeDatabase();
+    database.seed('tournamentEntries/uid-1', {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1,
+        lastSetAt: 2,
+        setsPlayed: 1,
+        tierOverride: TIER_OVERRIDE,
+        rulesetOverride: RULESET_OVERRIDE,
+      },
+    });
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    // The re-sync really rewrote the entry (sync-derived members are fresh)...
+    expect(entry['numEntrants']).toBe(512);
+    expect(entry['setsPlayed']).toBe(1);
+    // ...and both user-authored overrides came through unchanged.
+    expect(entry['tierOverride']).toEqual(TIER_OVERRIDE);
+    expect(entry['rulesetOverride']).toEqual(RULESET_OVERRIDE);
+  });
+
+  // 39.2 code review API-WR-02: one policy for a stored override that is not
+  // plain v1 data. Readable → carried byte-for-byte (a newer writer's extra
+  // members are not stripped); a newer contract version's shape → carried
+  // byte-for-byte (a rollback never destroys it); otherwise corrupt → not
+  // copied forward, and the drop is logged without the value.
+  describe('an override that is not plain v1 data (API-WR-02)', () => {
+    async function resyncOver(stored: Record<string, unknown>) {
+      const database = new FakeDatabase();
+      database.seed('tournamentEntries/uid-1', {
+        '987': {
+          eventId: 987,
+          eventName: 'Ultimate Singles',
+          firstSetAt: 1,
+          lastSetAt: 2,
+          setsPlayed: 1,
+          ...stored,
+        },
+      });
+      const warn = vi.fn();
+      await importPlayerMatches(
+        database as never,
+        'uid-1',
+        PLAYER_ID,
+        'server-token',
+        pagesFetch([makeSet()]),
+        { warn },
+      );
+      return { entry: structuredClone(storedEntry(database)), warn };
+    }
+
+    it('carries a readable override with members a newer writer added byte-for-byte', async () => {
+      const tierOverride = { contractVersion: 2, tier: 'major', setAtMs: 5, reason: 'r' };
+      const { entry } = await resyncOver({ tierOverride });
+      expect(entry['tierOverride']).toEqual(tierOverride);
+    });
+
+    it('carries a newer contract version override it cannot read byte-for-byte', async () => {
+      const tierOverride = { contractVersion: 2, tier: 'premier', setAtMs: 5 };
+      const rulesetOverride = { contractVersion: 3, dsr: 'future-variant' };
+      const { entry } = await resyncOver({ tierOverride, rulesetOverride });
+      expect(entry['tierOverride']).toEqual(tierOverride);
+      expect(entry['rulesetOverride']).toEqual(rulesetOverride);
+    });
+
+    it('does not copy a corrupt override forward and logs the drop without the value', async () => {
+      const { entry, warn } = await resyncOver({
+        tierOverride: { contractVersion: 1, tier: 'premier', setAtMs: 5 },
+        rulesetOverride: 'garbage',
+      });
+      expect(entry['numEntrants']).toBe(512);
+      expect(entry).not.toHaveProperty('tierOverride');
+      expect(entry).not.toHaveProperty('rulesetOverride');
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain('tierOverride');
+      expect(logged).toContain('rulesetOverride');
+      expect(logged).not.toContain('premier');
+      expect(logged).not.toContain('garbage');
+    });
+  });
+
+  it('writes neither override key when none was stored (never null, never empty)', async () => {
+    const database = new FakeDatabase();
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([makeSet()]),
+      { warn: vi.fn() },
+    );
+
+    const entry = storedEntry(database);
+    expect(entry).toBeDefined();
+    expect('tierOverride' in entry).toBe(false);
+    expect('rulesetOverride' in entry).toBe(false);
+  });
+});
+
+// 39.2 code review API-CR-01: the user's PATCH can commit while a sync is in
+// its enrichment loop (up to MAX_EVENT_DETAIL_FETCHES sequential network
+// calls). The fetch stub below performs that PATCH through the REAL route in
+// the middle of the REAL sync, so the override the sync commits must be the
+// one stored at commit time — a set made mid-sync survives, a clear made
+// mid-sync stays cleared.
+describe('importPlayerMatches — an override PATCHed mid-sync (API-CR-01)', () => {
+  type TestApp = ReturnType<typeof buildTestApp>['app'];
+  type Patch = { url: string; payload: object };
+
+  /** PlayerSets answers one page; the FIRST event-detail call runs `midSync` (the user's PATCH) before failing. */
+  function fetchPatchingMidSync(sets: StartggSet[], midSync: () => Promise<void>): typeof fetch {
+    let fired = false;
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      if (!fired) {
+        fired = true;
+        await midSync();
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  async function patchAll(app: TestApp, patches: Patch[]): Promise<void> {
+    for (const { url, payload } of patches) {
+      const response = await app.inject({ method: 'PATCH', url, headers: authHeader(), payload });
+      expect(response.statusCode).toBe(200);
+    }
+  }
+
+  function sync(database: FakeDatabase, fetchImpl: typeof fetch) {
+    return importPlayerMatches(database as never, TEST_UID, PLAYER_ID, 'server-token', fetchImpl, {
+      warn: vi.fn(),
+    });
+  }
+
+  function storedRow(database: FakeDatabase): Record<string, unknown> {
+    const tree = structuredClone(database.dump()) as Record<
+      string,
+      Record<string, Record<string, Record<string, unknown>>>
+    >;
+    return tree['tournamentEntries']?.[TEST_UID]?.['987'] ?? {};
+  }
+
+  const SET_TIER: Patch = {
+    url: '/api/tournaments/987/tier',
+    payload: { tierOverride: { tier: 'major' } },
+  };
+  const SET_RULESET: Patch = {
+    url: '/api/tournaments/987/ruleset',
+    payload: { rulesetOverride: { contractVersion: 1, dsr: 'none' } },
+  };
+  const CLEAR_TIER: Patch = { url: '/api/tournaments/987/tier', payload: { tierOverride: null } };
+  const CLEAR_RULESET: Patch = {
+    url: '/api/tournaments/987/ruleset',
+    payload: { rulesetOverride: null },
+  };
+
+  it('an override SET while the sync is enriching survives the sync commit', async () => {
+    const { app, database } = buildTestApp();
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], async () => undefined),
+    );
+    expect(storedRow(database)).not.toHaveProperty('tierOverride');
+
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], () => patchAll(app, [SET_TIER, SET_RULESET])),
+    );
+
+    const row = storedRow(database);
+    // The sync really committed this run's rebuilt row...
+    expect(row['numEntrants']).toBe(512);
+    // ...without deleting the override the user set during it.
+    expect(row['tierOverride']).toMatchObject({ contractVersion: 1, tier: 'major' });
+    expect(row['rulesetOverride']).toEqual({ contractVersion: 1, dsr: 'none' });
+  });
+
+  it('an override CLEARED while the sync is enriching stays cleared after the sync commit', async () => {
+    const { app, database } = buildTestApp();
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], async () => undefined),
+    );
+    await patchAll(app, [SET_TIER, SET_RULESET]);
+    expect(storedRow(database)).toHaveProperty('tierOverride');
+
+    await sync(
+      database,
+      fetchPatchingMidSync([makeSet()], () => patchAll(app, [CLEAR_TIER, CLEAR_RULESET])),
+    );
+
+    const row = storedRow(database);
+    expect(row['numEntrants']).toBe(512);
+    expect(row).not.toHaveProperty('tierOverride');
+    expect(row).not.toHaveProperty('rulesetOverride');
+  });
+});
+
+// Phase 39.2 plan 03 (D-20, eventType half): the provider's event-type integer
+// is persisted as a bounded string, uninterpreted, with a `!= null` spread.
+describe('importPlayerMatches — registry eventType', () => {
+  function pagesFetch(sets: StartggSet[]): typeof fetch {
+    return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: sets } } },
+          }),
+        );
+      }
+      return new Response('no details', { status: 500 });
+    }) as typeof fetch;
+  }
+
+  function storedEntry(database: FakeDatabase): Record<string, unknown> {
+    const tree = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    return tree['tournamentEntries']?.['uid-1']?.['987'] as Record<string, unknown>;
+  }
+
+  it("stores a set's event type: 1 as eventType '1'", async () => {
+    const database = new FakeDatabase();
+    const base = makeSet();
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([{ ...base, event: { ...base.event, type: 1 } }]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['eventType']).toBe('1');
+  });
+
+  it('stores NO eventType key when the provider omits or nulls type (never null)', async () => {
+    for (const type of [undefined, null]) {
+      const database = new FakeDatabase();
+      const base = makeSet();
+      await importPlayerMatches(
+        database as never,
+        'uid-1',
+        PLAYER_ID,
+        'server-token',
+        pagesFetch([{ ...base, event: { ...base.event, type } }]),
+        { warn: vi.fn() },
+      );
+
+      const entry = storedEntry(database);
+      expect(entry).toBeDefined();
+      expect('eventType' in entry).toBe(false);
+    }
+  });
+
+  it('keeps an already-known eventType when a later set of the same event omits it', async () => {
+    const database = new FakeDatabase();
+    const first = makeSet({ id: 1, completedAt: 1_700_000_000 });
+    const later = makeSet({ id: 2, completedAt: 1_700_000_100 });
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      pagesFetch([
+        { ...first, event: { ...first.event, type: 5 } },
+        { ...later, event: { ...later.event, type: undefined } },
+      ]),
+      { warn: vi.fn() },
+    );
+
+    expect(storedEntry(database)['eventType']).toBe('5');
   });
 });

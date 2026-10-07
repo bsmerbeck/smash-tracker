@@ -325,14 +325,21 @@ describe('FighterHero', () => {
       expect(steady.map((el) => el.outerHTML.slice(0, 120))).toEqual([]);
     });
 
-    it('the three recent figures render a muted em dash and the "no games" chip, never the unlock sentence', () => {
+    it('the three recent figures render a muted em dash and a "none" chip, never the unlock sentence', () => {
       renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
-      for (const label of ['30 games', 'Last event', '90 days']) {
+      // Plan 39.1-59 (UAT 39.1-33 F17): the 12-month bound emptied last 30;
+      // the event-less last event and the 90-day window keep "no games".
+      const expected: Record<string, string> = {
+        '30 games': 'none in the last 12 months',
+        'Last event': 'no games',
+        '90 days': 'no games',
+      };
+      for (const [label, chipText] of Object.entries(expected)) {
         const figure = figureButton(label);
         const chip = figure.querySelector('[data-slot="delta-chip"]');
         expect(chip, `figure ${label}`).not.toBeNull();
         expect(chip!.getAttribute('data-state')).toBe('none');
-        expect(chip!.textContent).toBe('no games');
+        expect(chip!.textContent).toBe(chipText);
         const dash = within(figure).getByText('—');
         expect(dash.className).toMatch(/text-muted-foreground/);
       }
@@ -342,7 +349,8 @@ describe('FighterHero', () => {
 
     it('a figure whose window holds 2 games reads "n 2 · no direction"', () => {
       renderHero({ fighterMatches: staleWithTwoRecent(), horizon: 'last30' });
-      const chip = figureButton('30 games').querySelector('[data-slot="delta-chip"]')!;
+      // Plan 39.1-57 (UAT 39.1-28 F7): a last-30 window holding 2 games is labelled by its sample.
+      const chip = figureButton('2 games').querySelector('[data-slot="delta-chip"]')!;
       expect(chip.getAttribute('data-state')).toBe('thin');
       expect(chip.textContent).toBe('n 2 · no direction');
       const statRow = document.querySelector('[data-slot="stat-row"]') as HTMLElement;
@@ -492,6 +500,84 @@ describe('FighterHero', () => {
     });
   });
 
+  describe('plan 39.1-59 (UAT 39.1-33 F17): the verdict names the 12-month bound, never "N more games unlock this read"', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const link = SpriteList.find((s) => s.name === 'Link')!;
+
+    function linkMatches(oldCount: number, recentCount: number): Match[] {
+      const now = Date.now();
+      return [
+        ...Array.from({ length: oldCount }, (_, i) =>
+          makeMatch({
+            id: `old${i}`,
+            fighter_id: link.id,
+            time: now - (400 + i) * DAY_MS,
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: recentCount }, (_, i) =>
+          makeMatch({
+            id: `new${i}`,
+            fighter_id: link.id,
+            time: now - (i + 1) * DAY_MS,
+            win: true,
+          }),
+        ),
+      ];
+    }
+
+    function LinkHarness({ matches }: { matches: Match[] }) {
+      const { insight, nowMs } = useFighterFormNow({
+        fighterId: link.id,
+        fighterMatches: matches,
+        horizon: 'last30',
+      });
+      return (
+        <FighterHero
+          fighter={link}
+          fighterMatches={matches}
+          allMatches={matches}
+          horizon="last30"
+          setHorizon={vi.fn()}
+          isLoading={false}
+          formNowInsight={insight}
+          nowMs={nowMs}
+          periodSeries={buildPeriodSeries({ matches })}
+          onDrill={vi.fn()}
+        />
+      );
+    }
+
+    function renderLink(matches: Match[]): string {
+      render(
+        <MemoryRouter>
+          <LinkHarness matches={matches} />
+        </MemoryRouter>,
+      );
+      return (
+        document.querySelector('[data-slot="fighter-hero-verdict-sentence"]')?.textContent ?? ''
+      );
+    }
+
+    it('12 games all older than 12 months: "Link — no games in the last 12 months — showing lifetime."', () => {
+      const verdict = renderLink(linkMatches(12, 0));
+      expect(verdict).toBe('Link — no games in the last 12 months — showing lifetime.');
+      const body = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      expect(body.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('2 games inside 12 months: "Link — only 2 games in the last 12 months — showing lifetime."', () => {
+      const verdict = renderLink(linkMatches(12, 2));
+      expect(verdict).toBe('Link — only 2 games in the last 12 months — showing lifetime.');
+    });
+
+    it('a 2-game-lifetime fighter (baseline not evidenced) keeps the engine locked sentence', () => {
+      const verdict = renderLink(linkMatches(0, 2));
+      expect(verdict).toMatch(/more games? unlocks? this/);
+      expect(verdict).not.toContain('12 months');
+    });
+  });
+
   describe('T-39.1-25 (gap closure, SC4/INS-04): the door is built from the claim axis, never a hand-built fighter axis', () => {
     it('renders the formNow counted-games door built from the claim axis, count equal to countedMatchIds.length', () => {
       const matches = largeFixture();
@@ -611,6 +697,25 @@ describe('FighterHero', () => {
   it('shows the empty state with no crash when the fighter has no matches at all', () => {
     renderHero({ fighterMatches: [], allMatches: [] });
     expect(screen.getByText(mario.name)).toBeInTheDocument();
+  });
+
+  it('plan 39.1-52 (F22): a 2-game fighter prints no dangling separator in the identity meta or the verdict evidence', () => {
+    const now = Date.now();
+    const twoGames = Array.from({ length: 2 }, (_, i) =>
+      makeMatch({ id: `two${i}`, time: now - (2 - i) * 60 * 60 * 1000, win: i === 0 }),
+    );
+    renderHero({ fighterMatches: twoGames });
+    const identity = document.querySelector('[data-slot="fighter-hero-identity"] p');
+    const meta = identity?.lastElementChild?.textContent ?? '';
+    expect(meta).toContain('% of play');
+    const evidence =
+      document.querySelector('[data-slot="fighter-hero-verdict-evidence"]')?.textContent ?? '';
+    for (const text of [meta, evidence]) {
+      expect(text, `"${text}"`).not.toMatch(/·\s*$/);
+      expect(text, `"${text}"`).not.toMatch(/·\s*·/);
+      expect(text).not.toContain('last 30 · all time');
+      expect(text).not.toMatch(/over 0\b/);
+    }
   });
 
   describe('WR-C05 (39.1-REVIEW.md): locale-aware percent formatting in the evidence sentence', () => {

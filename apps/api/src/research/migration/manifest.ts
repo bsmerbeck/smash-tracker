@@ -104,7 +104,7 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   // (the witness's `vodCandidateId` names it), so it must survive
   // migration exactly like the receipts that authorize attachments.
   { tree: 'researchEnrichmentVodCandidates', disposition: 'copy', shape: 'nested-two-level' },
-  // -- assert-empty (15): authorization + claim + coaching-content ----------
+  // -- assert-empty (16): authorization + claim + coaching-content ----------
   // Authorization-bearing — OUTSIDE the owner-locked migration list. A live
   // grant refuses the run and escalates a separate revoke/disposition
   // decision to the owner (review C2-H1); NEVER copied onto a demo uid.
@@ -117,6 +117,7 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   { tree: 'opponentAliases', disposition: 'assert-empty' },
   { tree: 'opponentNotes', disposition: 'assert-empty' },
   { tree: 'stageFavorites', disposition: 'assert-empty' },
+  { tree: 'watchlist', disposition: 'assert-empty' },
   { tree: 'primaryFighters', disposition: 'assert-empty' },
   { tree: 'secondaryFighters', disposition: 'assert-empty' },
   { tree: 'reviewDrafts', disposition: 'assert-empty' },

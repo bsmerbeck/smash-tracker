@@ -63,6 +63,16 @@ export function ScoutSearchForm({
   // The toggle reflects the detected-parry override in single mode, else the raw mode.
   const toggleValue: ScoutMode = detectedParryUrl ? 'parrygg' : mode;
 
+  // UAT 41-8 (F14): the help text names only what the SELECTED source accepts — start.gg never
+  // takes a bare gamer tag, so the gamer-tag wording appears only on the parry.gg source.
+  const descriptionKey = !parryggEnabled
+    ? 'scout.form.description'
+    : toggleValue === 'parrygg'
+      ? 'scout.form.descriptionParry'
+      : toggleValue === 'both'
+        ? 'scout.form.descriptionBoth'
+        : 'scout.form.description';
+
   const canSubmit = combineMode
     ? startggQuery.trim().length > 0 || parryQuery.trim().length > 0
     : query.trim().length > 0;
@@ -95,9 +105,7 @@ export function ScoutSearchForm({
     <Card>
       <CardHeader>
         <CardTitle>{t('scout.title')}</CardTitle>
-        <CardDescription>
-          {parryggEnabled ? t('scout.form.descriptionWithParry') : t('scout.form.description')}
-        </CardDescription>
+        <CardDescription>{t(descriptionKey)}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -146,7 +154,9 @@ export function ScoutSearchForm({
                 className="pl-8"
                 disabled={isPending}
                 aria-label={
-                  parryggEnabled ? t('scout.form.inputAriaWithParry') : t('scout.form.inputAria')
+                  singleSource === 'parrygg'
+                    ? t('scout.form.parryFieldAria')
+                    : t('scout.form.inputAria')
                 }
               />
             </div>

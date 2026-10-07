@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import '@/i18n';
+import en from '@/i18n/locales/en.json';
+import es from '@/i18n/locales/es.json';
+import fr from '@/i18n/locales/fr.json';
+import de from '@/i18n/locales/de.json';
+import pt from '@/i18n/locales/pt.json';
+import ja from '@/i18n/locales/ja.json';
 import { StrictMode } from 'react';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -469,4 +475,312 @@ describe('PrepPaidReportsCard — demo account gating', () => {
 
     expect(screen.getByTestId('buy-credits-dialog')).toBeInTheDocument();
   });
+});
+
+/**
+ * Plan 39-10 (D-21, review C4-M2): the validation caption under the job-status
+ * badge — a CAUSE sentence keyed on `failureReason === 'validation'` (an
+ * allowlist of one) and a separate RETURN clause keyed on the terminal
+ * `refunded` status AND a loaded `freeAccess === false` credits read.
+ *
+ * The fixtures are the two terminal shapes `failJob` actually writes (plans
+ * 39-07/39-08 prove them on the FINAL record): a SPENT prep job's second,
+ * authoritative `.set()` is `status: 'refunded'` carrying the cause (C1-H1);
+ * a ZERO-SPEND free-access prep job never gets that write (it is gated on
+ * `reason && (spent || reason === 'post_event_synthesis')`) and rests at
+ * `status: 'failed'` with no refund at all.
+ */
+describe('PrepPaidReportsCard — validation-failure caption (plan 39-10, D-21)', () => {
+  // Code review WEB-03: the API writes `failureReason: 'validation'` for thin
+  // evidence (D-21/D-23), an output that fails verification, AND a projection
+  // throw / stored-schema reject, with no field telling them apart — so the
+  // cause sentence is one neutral, accurate line, never "not enough evidence".
+  const CAUSE = "A verified report couldn't be built from your match data, so none was delivered.";
+  const RETURN = 'Your credit was returned.';
+  const RIVAL = {
+    likelyOpponents: { Rival: true } as PrepPresenceMap,
+    scoutBindings: { Rival: makeBinding({ displayTag: 'Rival' }) },
+  };
+
+  function caption(): HTMLElement | null {
+    return document.querySelector('[data-validation-caption]');
+  }
+
+  it('C1-H1: a SPENT job at the refunded terminal with failureReason validation renders BOTH clauses, cause then return, matched exactly', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'refunded', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    const rendered = caption();
+    expect(rendered).not.toBeNull();
+    const spans = Array.from(rendered!.querySelectorAll('span')).map((span) => span.textContent);
+    expect(spans).toEqual([CAUSE, RETURN]);
+    expect(rendered!.textContent).toBe(`${CAUSE}${RETURN}`);
+    // It sits under the existing refunded badge, which keeps its own wording.
+    expect(screen.getByText('Failed — your credit was refunded.')).toBeInTheDocument();
+  });
+
+  it('C4-M2: the ZERO-SPEND allowlisted prep job (terminal failed, failureReason validation, no refund ever) renders the cause and NOT the return clause', () => {
+    // Free-access uid: `spent` was false, so failJob never wrote `refunded`
+    // and refundCredit never ran. The one case this status rule alone would
+    // still overstate — a zero-spend post_event_synthesis failure, which DOES
+    // rest at `refunded` with no refund (Phase 28 CR-02) and carries no spend
+    // fact on the record — is closed on that card by the freeAccess check.
+    creditsResult = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(caption()).toHaveTextContent(CAUSE);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-validation-caption-return]')).toBeNull();
+  });
+
+  it('a failed (not yet refunded) validation job renders the cause only, even for a billable viewer', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+  });
+
+  it('the return clause is withheld when the viewer is free-access, and while the credits read has not loaded', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'refunded', failureReason: 'validation' }),
+    };
+    creditsResult = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+    const { unmount } = renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    unmount();
+
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    renderCard(RIVAL);
+    expect(caption()!.textContent).toBe(CAUSE);
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { label: 'absent', failureReason: undefined },
+    { label: 'refusal', failureReason: 'refusal' },
+    { label: 'truncated', failureReason: 'truncated' },
+    { label: 'unparseable', failureReason: 'unparseable' },
+    { label: 'an unrecognised future value', failureReason: 'some_future_cause' },
+  ])('failureReason $label renders NO caption on either terminal shape', ({ failureReason }) => {
+    for (const status of ['failed', 'refunded'] as const) {
+      jobsByOpponentName = {
+        Rival: makeJob({ opponentName: 'Rival', status, failureReason }),
+      };
+      const { unmount } = renderCard(RIVAL);
+      expect(caption()).toBeNull();
+      expect(screen.queryByText(CAUSE)).not.toBeInTheDocument();
+      expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('a bundle with several failed children renders one caption per child row', () => {
+    jobsByOpponentName = {
+      Alpha: makeJob({
+        opponentName: 'Alpha',
+        jobId: 'a',
+        status: 'refunded',
+        failureReason: 'validation',
+      }),
+      Bravo: makeJob({
+        opponentName: 'Bravo',
+        jobId: 'b',
+        status: 'failed',
+        failureReason: 'validation',
+      }),
+      Charlie: makeJob({
+        opponentName: 'Charlie',
+        jobId: 'c',
+        status: 'refunded',
+        failureReason: 'validation',
+      }),
+    };
+    renderCard({
+      likelyOpponents: { Alpha: true, Bravo: true, Charlie: true },
+      scoutBindings: {
+        Alpha: makeBinding({ displayTag: 'Alpha' }),
+        Bravo: makeBinding({ displayTag: 'Bravo' }),
+        Charlie: makeBinding({ displayTag: 'Charlie' }),
+      },
+    });
+    const captions = document.querySelectorAll('[data-validation-caption]');
+    expect(captions).toHaveLength(3);
+    for (const name of ['Alpha', 'Bravo', 'Charlie']) {
+      const row = screen.getByText(name).closest('.rounded-md.border');
+      expect(row?.querySelectorAll('[data-validation-caption]')).toHaveLength(1);
+    }
+    // Refund clause on exactly the two refunded children, never on the failed one.
+    expect(document.querySelectorAll('[data-validation-caption-return]')).toHaveLength(2);
+  });
+
+  it('the caption carries no amount and no digit in either shape (D-21)', () => {
+    for (const status of ['failed', 'refunded'] as const) {
+      jobsByOpponentName = {
+        Rival: makeJob({ opponentName: 'Rival', status, failureReason: 'validation' }),
+      };
+      const { unmount } = renderCard(RIVAL);
+      expect(caption()!.textContent).not.toMatch(/\p{Nd}/u);
+      unmount();
+    }
+  });
+});
+
+/**
+ * Post-plan fix (39-10, owner decision [HUMAN] 2026-09-25) — LIVE BUG: the
+ * v2.5 status badges said "refunding your credit" / "your credit was
+ * refunded" on free-access jobs that were never charged. Refund wording now
+ * renders only when the job was actually charged: the job's own `wasCharged`
+ * decides when present (even if the viewer's free-access status changed
+ * later); an older job without it falls back to the loaded credits read; and
+ * an unknown charge says only "Failed". Each badge is ONE i18n string.
+ */
+describe('PrepPaidReportsCard — honest failure badge (post-plan fix 39-10)', () => {
+  const RIVAL = {
+    likelyOpponents: { Rival: true } as PrepPresenceMap,
+    scoutBindings: { Rival: makeBinding({ displayTag: 'Rival' }) },
+  };
+  const PENDING_REFUND = 'Failed — refunding your credit…';
+  const REFUNDED = 'Failed — your credit was refunded.';
+  const NO_CHARGE = 'Failed — no credit was used.';
+  const CHARGE_UNKNOWN = 'Failed';
+  const RETURN = 'Your credit was returned.';
+  const FREE_ACCESS = { data: { freeAccess: true, balance: 0, packs: [] }, refetch: vi.fn() };
+
+  function expectNoRefundWording() {
+    expect(screen.queryByText(PENDING_REFUND)).not.toBeInTheDocument();
+    expect(screen.queryByText(REFUNDED)).not.toBeInTheDocument();
+    expect(screen.queryByText(RETURN)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/refund/i);
+  }
+
+  it('paid, refunded (wasCharged true): the refunded badge AND the caption return clause', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'refunded',
+        failureReason: 'validation',
+        wasCharged: true,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+  });
+
+  it('paid, failed (wasCharged true): the pending-refund badge', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: true }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(PENDING_REFUND)).toBeInTheDocument();
+  });
+
+  it('THE LIVE BUG — free-access viewer, older job (no wasCharged), failed: "no credit was used", no refund wording anywhere', () => {
+    creditsResult = FREE_ACCESS;
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', failureReason: 'validation' }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('wasCharged false on a failed job: "no credit was used" even for a billable viewer', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: false }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('STATUS CHANGED LATER — charged while billable, viewer now free-access: wasCharged true beats the current freeAccess read', () => {
+    creditsResult = FREE_ACCESS;
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'refunded',
+        failureReason: 'validation',
+        wasCharged: true,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(REFUNDED)).toBeInTheDocument();
+    expect(screen.getByText(RETURN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
+  });
+
+  it('STATUS CHANGED LATER — ran free, viewer now billable: wasCharged false beats the current freeAccess read', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({
+        opponentName: 'Rival',
+        status: 'failed',
+        failureReason: 'validation',
+        wasCharged: false,
+      }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(NO_CHARGE)).toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('unknown charge (no wasCharged, credits not loaded): a plain "Failed" — never refund wording, never a no-charge claim', () => {
+    creditsResult = { data: undefined, refetch: vi.fn() };
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed' }),
+    };
+    renderCard(RIVAL);
+    expect(screen.getByText(CHARGE_UNKNOWN)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHARGE)).not.toBeInTheDocument();
+    expectNoRefundWording();
+  });
+
+  it('each badge is ONE translated string (no concatenation): the badge element text equals the whole key value', () => {
+    jobsByOpponentName = {
+      Rival: makeJob({ opponentName: 'Rival', status: 'failed', wasCharged: false }),
+    };
+    renderCard(RIVAL);
+    const badge = screen.getByText(NO_CHARGE);
+    expect(badge.textContent).toBe(NO_CHARGE);
+    expect(badge.childElementCount).toBe(0);
+  });
+});
+
+/**
+ * Code review WEB-03: `failureReason: 'validation'` does not identify one
+ * cause (see the caption block above), so neither paid card's cause sentence
+ * may claim the one cause it cannot know — missing match evidence — in any
+ * locale. Each pattern is that locale's "not enough" wording as shipped
+ * before the fix, so the check fails on the old copy.
+ */
+describe('validation-failure cause copy is cause-neutral in every locale (code review WEB-03)', () => {
+  const INSUFFICIENT_EVIDENCE: Record<string, RegExp> = {
+    en: /\benough\b|log (?:a few )?more/i,
+    es: /suficiente/i,
+    fr: /\bassez\b/i,
+    de: /\bgenug\b/i,
+    pt: /suficiente/i,
+    ja: /足りません|不足/,
+  };
+  const BUNDLES = { en, es, fr, de, pt, ja } as const;
+
+  for (const [locale, bundle] of Object.entries(BUNDLES)) {
+    it(`${locale}: neither paid card's validation cause claims there isn't enough match evidence`, () => {
+      const pattern = INSUFFICIENT_EVIDENCE[locale]!;
+      for (const cause of [
+        bundle.prepPaid.jobStatus.failedReason.validation,
+        bundle.postEventPaid.jobStatus.failedReason.validation,
+      ]) {
+        expect(cause.trim().length, locale).toBeGreaterThan(0);
+        expect(cause, locale).not.toMatch(pattern);
+      }
+    });
+  }
 });

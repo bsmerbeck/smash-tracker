@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { StageDetailPage } from './StageDetailPage';
+import { RouteTitles } from '@/routes/RouteTitles';
+import i18n from '@/i18n';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
 import * as drillDownParamsModule from '@/lib/drillDownParams';
@@ -81,8 +83,18 @@ const listNotes = vi.fn();
 const upsertNote = vi.fn();
 const removeNote = vi.fn();
 
+const listWatchlist = vi.fn();
+const trackWatchlist = vi.fn();
+const untrackWatchlist = vi.fn();
+
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: (...args: unknown[]) => listWatchlist(...args),
+      track: (...args: unknown[]) => trackWatchlist(...args),
+      untrack: (...args: unknown[]) => untrackWatchlist(...args),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getMe: (...args: unknown[]) => getMe(...args),
@@ -176,6 +188,11 @@ describe('StageDetailPage', () => {
     listTournaments.mockResolvedValue([]);
     listAliases.mockResolvedValue({});
     listNotes.mockResolvedValue({});
+    listWatchlist.mockResolvedValue({ items: [] });
+    trackWatchlist.mockResolvedValue({
+      itemKey: 'stage:1',
+      item: { kind: 'stage', ref: 1, createdAt: 1 },
+    });
     setMockUser(makeMockUser());
   });
 
@@ -194,6 +211,104 @@ describe('StageDetailPage', () => {
     expect(screen.getByText('Games')).toBeInTheDocument();
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
     expect(screen.getAllByText('second').length).toBeGreaterThan(0);
+  });
+
+  describe('38-11 (UAT 38-21 / F11): the stage page sets its document title', () => {
+    beforeEach(() => {
+      document.title = 'marketing';
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+    });
+
+    it('/stages/:id titles the tab with the stage name', async () => {
+      renderStageAt('/stages/1');
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it('/coach/<id>/stages/:id titles the tab with the stage name', async () => {
+      renderStageAt('/coach/test-client/stages/1');
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it("/workspace/<tenantId>/stages/:id: the stage title wins over RouteTitles' workspace entry, across a language round-trip", async () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      // AppRouter order: RouteTitles is the EARLIER sibling of <Routes>.
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/workspace/t1/stages/1']}>
+            <AuthProvider>
+              <AnalyticsFilterProvider>
+                <RouteTitles />
+                <Routes>
+                  <Route
+                    path="/workspace/:tenantId/stages/:stageId"
+                    element={<StageDetailPage />}
+                  />
+                </Routes>
+              </AnalyticsFilterProvider>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+      expect(document.title).not.toContain('My Workspace');
+
+      try {
+        await act(async () => {
+          await i18n.changeLanguage('es');
+        });
+        await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage('en');
+        });
+      }
+      await waitFor(() => expect(document.title).toBe('Battlefield | grandfinals.gg'));
+    });
+
+    it('a non-numeric stage id titles the tab Unknown', async () => {
+      renderStageAt('/stages/not-a-number');
+      await waitFor(() => expect(document.title).toBe('Unknown | grandfinals.gg'));
+    });
+  });
+
+  describe('plan 39.2-10 (T-04): the Track toggle on the identity row', () => {
+    it('sits on the right of the identity row and tracks the stage id', async () => {
+      const user = userEvent.setup();
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+      renderStageAt('/stages/1');
+
+      const toggle = await screen.findByRole('button', { name: 'Track Battlefield' });
+      const heading = screen.getByRole('heading', { level: 1 });
+      expect(toggle.className).toContain('ml-auto');
+      expect(toggle.parentElement?.contains(heading)).toBe(true);
+      expect(toggle.parentElement?.lastElementChild).toBe(toggle);
+      await waitFor(() => expect(toggle).toBeEnabled());
+
+      await user.click(toggle);
+
+      await waitFor(() => expect(trackWatchlist).toHaveBeenCalledTimes(1));
+      expect(trackWatchlist).toHaveBeenCalledWith({ kind: 'stage', ref: 1 });
+    });
+
+    it('reads Tracked when the subject list holds stage:1', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true })]);
+      listWatchlist.mockResolvedValue({
+        items: [{ itemKey: 'stage:1', item: { kind: 'stage', ref: 1, createdAt: 1 } }],
+      });
+      renderStageAt('/stages/1');
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking Battlefield' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('offers no toggle for the unknown-stage bucket (id 0 is not trackable) or a non-stage segment', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, map: { id: 0, name: 'no selection' } }),
+      ]);
+      renderStageAt('/stages/0');
+      await waitFor(() => expect(listMatches).toHaveBeenCalled());
+      await screen.findByRole('heading', { level: 1 });
+      expect(screen.queryByRole('button', { name: /^Track / })).not.toBeInTheDocument();
+    });
   });
 
   it('renders the neutral empty state for a non-numeric stage id, without throwing', async () => {

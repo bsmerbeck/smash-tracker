@@ -43,7 +43,7 @@ import { buildEvidencePacket } from './evidencePacket';
  * to, and recent encounters. Searchable list ranked by games played.
  */
 export function OpponentsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const subjectPath = useSubjectPath();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
@@ -176,8 +176,8 @@ export function OpponentsPage() {
     if (!profile) {
       return null;
     }
-    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
-  }, [profile, tournamentBlocks, user]);
+    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you', i18n.language);
+  }, [profile, tournamentBlocks, user, i18n.language]);
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern — a
   // skeleton echoing the loaded page's own 320px-rail + report split, so
@@ -292,10 +292,14 @@ export function OpponentsPage() {
                 items-start exists to prevent). The layout oracle measured
                 this as a real 29px stretch violation on this exact pair. */}
             <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-              <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
+              <WhatTheyPlayTable
+                byTheirFighter={profile.byTheirFighter}
+                belowFloor={profile.byTheirFighterBelowFloor}
+              />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
-            <RecentEncounters matches={profile.recent} />
+            {/* UAT review IN-02 (as the hub since plan 39.1-56): the whole alias-resolved head-to-head — `profile.recent` holds only the last 10 games, so the card never reached its 8-set cap or "Show all". */}
+            <RecentEncounters matches={opponentMatches} />
             <TournamentHistory
               blocks={tournamentBlocks}
               tournamentEntries={tournamentEntries ?? []}

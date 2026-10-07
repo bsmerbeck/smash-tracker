@@ -5,6 +5,12 @@ import { getUserMatches, type ParryggClients, type ParryggMatchContext } from '.
 import { parryggCharacterSlugToFighterId } from './characters.js';
 import { resolveParryggStage } from './stages.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
+import {
+  carriedOverrides,
+  settleEntryCommits,
+  withoutOverrides,
+  type UserOwnedOverrideMember,
+} from '../services/tournamentOverrides.js';
 
 /**
  * The Smash Ultimate `Game.slug` on parry.gg, determined empirically from
@@ -294,6 +300,14 @@ export function gamesFromMatchContext(
  * minus the fields parry.gg doesn't expose (numEntrants, placement,
  * top standings) — see Pitfall 1/Assumption A5 in 07-RESEARCH.md.
  *
+ * Phase 39.2 (D-20): no online flag or event type is persisted either. The
+ * `MatchContext` this sync fetches carries neither (its `hierarchy.pathsList`
+ * entries are id/type/name/slug/imageUrl/startTime only); `LocationType`
+ * lives on the `Event` model, which is not reachable from a `MatchContext`,
+ * and adding a request to fetch it is out of scope. parry.gg rows therefore
+ * resolve `unknown` through `resolveTournamentTier` unless a user override
+ * applies.
+ *
  * Walkthrough round 3 (07-11): `slug`/`eventSlug` capture parry.gg's own
  * tournament-level/event-level path slugs directly during sync (unlike
  * start.gg, which fetches these in a separate post-sync enrichment step) —
@@ -432,6 +446,7 @@ export async function importParryggMatches(
   parryUserId: string,
   apiKey: string,
   clients?: ParryggClients,
+  logger?: { warn: (obj: unknown, msg?: string) => void },
 ): Promise<ParryggSyncSummary> {
   const summary: ParryggSyncSummary = {
     matches: 0,
@@ -475,6 +490,9 @@ export async function importParryggMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
+    // The commit below replaces each event's whole child node, so any
+    // user-authored member not rebuilt here would be deleted by every re-sync
+    // (Phase 39.2 F1, the same defect fixed for start.gg in 39.2-03).
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [entryKey, acc] of registry) {
       registryUpdates[entryKey] = {
@@ -490,7 +508,44 @@ export async function importParryggMatches(
         entryKey,
       };
     }
-    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
+    // One transaction per event (39.2 code review API-CR-01): the per-event
+    // overrides are carried from the value stored AT COMMIT TIME, so a
+    // tier/ruleset PATCH that lands while this sync runs is neither deleted
+    // (set) nor brought back (cleared). The first run of every transaction
+    // sees `null` and returns the bare rebuilt row, which only commits when the
+    // node is truly absent; otherwise the SDK re-runs with the stored value.
+    // A corrupt stored override is not copied forward (API-WR-02 policy, see
+    // `services/tournamentOverrides.ts`); the drop is logged without the value.
+    //
+    // Settled with one retry, never `Promise.all` (R2-WR-01) — see
+    // `settleEntryCommits` and startgg/sync.ts's identical commit.
+    const failed = await settleEntryCommits(Object.keys(registryUpdates), async (entryKey) => {
+      const rebuilt = registryUpdates[entryKey]!;
+      let dropped: UserOwnedOverrideMember[] = [];
+      await database.ref(`tournamentEntries/${uid}/${entryKey}`).transaction((current: unknown) => {
+        // Reset per run: only the run that commits decides what was dropped.
+        dropped = [];
+        return {
+          ...withoutOverrides(rebuilt),
+          ...carriedOverrides(current, (member) => dropped.push(member)),
+        };
+      });
+      for (const member of dropped) {
+        logger?.warn(
+          { entryKey, member },
+          'parry.gg sync: dropped a schema-invalid stored override (not copied forward)',
+        );
+      }
+    });
+    for (const { entryKey, reason } of failed) {
+      logger?.warn(
+        { entryKey, reason },
+        'parry.gg sync: a registry entry did not commit after one retry; the next sync rebuilds it',
+      );
+    }
+    if (failed.length > 0) {
+      summary.registryEntriesFailed = failed.length;
+    }
   }
   await database.ref(`parryggLinks/${uid}/lastSyncAt`).set(Date.now());
 

@@ -193,6 +193,8 @@
       "unknownRow_other": "Unknown ({{count, grouped}} games, excluded)",
       "unnamedBucket_one": "{{count, grouped}} game with no opponent name recorded",
       "unnamedBucket_other": "{{count, grouped}} games with no opponent name recorded",
+      "cohortCount_one": "{{count, grouped}} {{label}}",
+      "cohortCount_other": "{{count, grouped}} {{label}}",
       "mixedContext": "Mixed context",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
       "sampleCueGlyph": {
@@ -219,6 +221,7 @@
     },
     "chartTooltip": {
       "rate": "{{rate}}%",
+      "cumulativeRate": "{{rate}}% overall so far",
       "whoWhere": "{{opponent}} on {{stage}}",
       "whenEvent": "{{event}} · {{date}}",
       "whenOnly": "{{date}}",
@@ -237,7 +240,7 @@
       "preset": {
         "default": {
           "name": "House default (SSBU)",
-          "detail": "{{starters}}, {{bans}} per game, {{strikeOrder}} strike, {{dsr}}, {{setFormat}} — house convention modelled on {{source}} ({{date}})"
+          "strikeOrder": "Game 1: 1-2-1 stage strike — the first striker bans one stage, the second bans two, the first bans one more, and the remaining stage is played."
         },
         "starterClause_one": "{{count}} starter",
         "starterClause_other": "{{count}} starters",
@@ -256,7 +259,19 @@
       "customName": "Custom (this event)",
       "overrideBadge": "Event override",
       "overrideEditHint": "Edit this ruleset on the tournament's detail page.",
-      "overrideIgnored": "This event's saved ruleset was written by a newer version of the app and is not being applied."
+      "overrideIgnored": "This event's saved ruleset was written by a newer version of the app and is not being applied.",
+      "rows": {
+        "starters": "Starter stages",
+        "counterpicks": "Counterpick stages",
+        "bans": "Bans per game",
+        "dsr": "DSR",
+        "strikeOrder": "Strike order",
+        "setFormat": "Set format",
+        "none": "None",
+        "setFormatValue": "{{default}} (top cut: {{topCut}})"
+      },
+      "sourceHouse": "House convention modelled on {{source}} ({{date}})",
+      "sourceCustom": "Custom ruleset for this event; unchanged rules follow the house default."
     }
   },
   "dashboard": {
@@ -282,26 +297,7 @@
       "gamesSampled_other": "{{count}} games sampled",
       "ratingCaption": "Glicko-2, session-based · unofficial",
       "ratingLocked": "Rating unlocks at {{threshold}} games",
-      "ratingProgress": "{{played}}/{{threshold}} games so far",
-      "ratingUp": "Rating up from last session",
-      "ratingDown": "Rating down from last session",
-      "ratingUnchanged": "Rating unchanged from last session"
-    },
-    "formCurve": {
-      "title": "Form Curve",
-      "caption": {
-        "last30": "Running win rate · last 30 games",
-        "lastEvent": "Running win rate · last event",
-        "last90": "Running win rate · last 90 days"
-      },
-      "windowEmpty": {
-        "last30": "Fewer than 3 games recorded — the curve needs at least 3.",
-        "lastEvent": "Fewer than 3 games at the last event — the curve needs at least 3.",
-        "last90": "Fewer than 3 games in the last 90 days — the curve needs at least 3."
-      },
-      "empty": "Submit a match to see the match chart.",
-      "winRate": "Win Rate",
-      "opponent": "Opponent: {{name}}"
+      "ratingProgress": "{{played}}/{{threshold}} games so far"
     },
     "previous": {
       "title": "Previous Matches",
@@ -339,6 +335,20 @@
       "setRecorded": "Set recorded: {{score}} vs {{opponent}}",
       "partialSave": "Only {{saved}} of {{total}} games saved before an error occurred. Check Match Data and re-enter any missing games.",
       "setFailed": "Failed to save the set. Please try again."
+    },
+    "formStrip": {
+      "title": {
+        "last30": "Form · last 30 games",
+        "lastEvent": "Form · last 30 games, last event highlighted",
+        "last90": "Form · last 30 games, last 90 days highlighted"
+      },
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets",
+      "empty": "No games for {{fighter}} in this view yet.",
+      "windowEmpty": {
+        "lastEvent": "No games at the last event — the last 30 shown, none highlighted.",
+        "last90": "No games in the last 90 days — the last 30 shown, none highlighted."
+      }
     }
   },
   "matchForm": {
@@ -466,7 +476,6 @@
     },
     "hero": {
       "currentGsp": "Current GSP",
-      "latestReading": "latest reading",
       "noGsp": "No GSP logged yet",
       "estMmr": "Est. MMR",
       "tailReading": "{{zone}}-tail reading — approximate",
@@ -484,26 +493,52 @@
       "recalibratedToast": "Model recalibrated from your threshold reading!",
       "thresholdSaveFailed": "Failed to save the Elite threshold. Please try again.",
       "distanceToElite": "Distance to Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · below Elite ({{elite}})",
       "recentWinRate": "Recent Win Rate",
       "lastNGames_one": "last {{count}} game",
       "lastNGames_other": "last {{count}} games",
-      "liveCalibrated": "auto-updated {{date}} from gsptiers.com"
+      "liveCalibrated": "auto-updated {{date}} from gsptiers.com",
+      "latestReadingDated": "latest reading · {{date}}",
+      "eliteValue": "Elite",
+      "atElite": "MMR {{mmr}} · at or above Elite ({{elite}})",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "GSP Curve",
-      "gspViewAria": "GSP view",
-      "mmrViewAria": "MMR view",
       "gspLabel": "GSP",
-      "eliteLine": "Elite threshold",
       "estMmrLabel": "Est. MMR",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "Estimated hidden MMR behind each reading (community-reverse-engineered model) — unlike GSP, it doesn't inflate over time, so a flat line means flat skill. Dashed line: Elite entry at MMR {{mmr}}.",
       "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
       "clickHint": "Click a point to edit that reading.",
       "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve.",
-      "setManually": "set manually"
+      "setManually": "set manually",
+      "view": "View",
+      "overline": {
+        "reading": "GSP by reading",
+        "day": "GSP · close of day",
+        "week": "GSP · close of week",
+        "month": "GSP · close of month",
+        "quarter": "GSP · close of quarter"
+      },
+      "overlineMmr": {
+        "reading": "Est. MMR by reading",
+        "day": "Est. MMR · close of day",
+        "week": "Est. MMR · close of week",
+        "month": "Est. MMR · close of month",
+        "quarter": "Est. MMR · close of quarter"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "Est. MMR",
+        "elite": "Elite threshold",
+        "eliteMmr": "Elite · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "Est. MMR · {{value}}"
+      },
+      "clickHintPeriod": "Click a close to find its readings in the log.",
+      "lockedMeter": "{{have}} of {{need}} readings"
     },
     "logger": {
       "title": "Quick Logger",
@@ -532,18 +567,26 @@
     },
     "gains": {
       "title": "Gains Analysis",
-      "avgGainLifetime": "Avg gain/win (lifetime)",
-      "avgDropLifetime": "Avg drop/loss (lifetime)",
-      "biggestGain": "Biggest single gain",
-      "avgGainLast20": "Avg gain/win (last 20)",
-      "avgDropLast20": "Avg drop/loss (last 20)",
-      "biggestDrop": "Biggest single drop",
-      "perWinTitle": "Per-win gains over time",
-      "shrinking": "— shrinking as your GSP climbs",
-      "growing": "— trending up",
-      "winNumber": "Win #{{number}}",
-      "gainedGsp": "GSP gained",
-      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends."
+      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends.",
+      "figure": {
+        "avgGain": "Avg gain per win",
+        "avgDrop": "Avg drop per loss",
+        "biggestGain": "Biggest gain",
+        "biggestDrop": "Biggest drop",
+        "recentWins_one": "last win: {{value}}",
+        "recentWins_other": "last {{count}} wins: {{value}}",
+        "recentLosses_one": "last loss: {{value}}",
+        "recentLosses_other": "last {{count}} losses: {{value}}"
+      },
+      "byBand": {
+        "title": "Gain per win by GSP band",
+        "caption": "Average GSP gained per win, by the GSP band the win happened at · lowest band first · grey = under {{floor}} wins",
+        "rowAria_one": "{{band}}: average gain {{gain}} over {{count}} win",
+        "rowAria_other": "{{band}}: average gain {{gain}} over {{count}} wins",
+        "subFloor_one": "{{count}} win — under {{floor}}, no comparison",
+        "subFloor_other": "{{count}} wins — under {{floor}}, no comparison",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "GSP Tiers",
@@ -581,9 +624,23 @@
     },
     "vsGlicko": {
       "title": "Est. MMR vs Glicko-2",
-      "mmrLabel": "Est. MMR (normalized)",
-      "glickoLabel": "Glicko-2 (normalized)",
-      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+      "panel": {
+        "mmr": "Est. MMR",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "By reading",
+        "day": "Close of day",
+        "week": "Close of week",
+        "month": "Close of month",
+        "quarter": "Close of quarter"
+      },
+      "readout": {
+        "mmr": "Est. MMR · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "noReading": "{{title}} · no reading",
+      "captionPanels": "Est. MMR is this fighter's quickplay rating through the community model; Glicko-2 is the overall rating across every fighter and session. Each panel keeps its own scale, so compare the shapes — divergence usually means quickplay form differs from overall form."
     },
     "setGsp": {
       "title": "Set GSP",
@@ -950,6 +1007,8 @@
       "title": "Counterpick Advisor",
       "pickThese": "Pick these",
       "banThese": "Ban / avoid these",
+      "picksBelowEven_one": "{{count}} of these picks has a losing record — ranked by how certain each record is, not by raw win rate.",
+      "picksBelowEven_other": "{{count}} of these picks have a losing record — ranked by how certain each record is, not by raw win rate.",
       "unknownStage": "Unknown stage",
       "meta_one": "Counterpick Advisor · all time · min {{count}} game per stage",
       "meta_other": "Counterpick Advisor · all time · min {{count}} games per stage",
@@ -1027,10 +1086,11 @@
       "formRolling": "Form (rolling 10)",
       "typeColumn": "Type",
       "identityMeta": "{{pct}}% of play · {{confidence}}",
+      "identityMeta_bare": "{{pct}}% of play",
       "verdictMeta": {
-        "last30": "FormNow · last 30 games vs all time",
-        "lastEvent": "FormNow · last event vs all time",
-        "last90": "FormNow · last 90 days vs all time"
+        "last30": "Form · last 30 games vs all time",
+        "lastEvent": "Form · last event vs all time",
+        "last90": "Form · last 90 days vs all time"
       },
       "vsCharacters": {
         "title": "vs characters",
@@ -1124,7 +1184,12 @@
       "title": "Recent Events",
       "placementAndSeed": "{{placement}} of {{entrants}} · Seed {{seed}}",
       "placementOnly": "{{placement}} of {{entrants}}",
-      "seedOnly": "Seed {{seed}}"
+      "seedOnly": "Seed {{seed}}",
+      "outsideRange_one": "{{count}} more outside the current range",
+      "outsideRange_other": "{{count}} more outside the current range",
+      "allTime": "All time",
+      "backToRange": "Back to range",
+      "allTimeNote": "Showing all time — the source filter still applies; the range filter still scopes every other card."
     },
     "tournaments": {
       "title": "Tournaments",
@@ -1149,6 +1214,14 @@
         "last30": "Last 30 games",
         "lastEvent": "Last event",
         "last90": "Last 90 days"
+      }
+    },
+    "rhythm": {
+      "title": "Play rhythm",
+      "caption": {
+        "years_one": "Games by month · {{count}} year, newest first",
+        "years_other": "Games by month · {{count}} years, newest first",
+        "shownOf": "{{shown}} of {{total}} years shown · older years in the table"
       }
     }
   },
@@ -1184,6 +1257,7 @@
       "empty": "No matches recorded for this event yet.",
       "setsAria": "Sets",
       "setFallback": "Set {{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "Your fighters",
       "opponentFighters": "Opponent fighters",
       "watchVod": "Watch VOD",
@@ -1290,7 +1364,32 @@
         "setFormatTopCut": "Top-cut set format",
         "saved": "Ruleset saved for this event.",
         "saveFailed": "Could not save the ruleset for this event."
-      }
+      },
+      "debriefCta": "Debrief this event"
+    },
+    "table": {
+      "tier": "Tier",
+      "event": "Event",
+      "date": "Date",
+      "placement": "Placement",
+      "seedDelta": "Seed Δ",
+      "record": "Record",
+      "sectionLabel_one": "Events · 1 in range",
+      "sectionLabel_other": "Events · {{count}} in range",
+      "sortNote": "newest first",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}st",
+      "placement_ordinal_two": "{{count, grouped}}nd",
+      "placement_ordinal_few": "{{count, grouped}}rd",
+      "placement_ordinal_other": "{{count, grouped}}th",
+      "seedDeltaAria": "Seed {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 event",
+      "yearGroup_other": "{{year}} · {{count}} events",
+      "undated": "No date",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; opens the event",
+      "showMore50": "Show 50 more",
+      "showMore20": "Show 20 more",
+      "loadError": "Tournaments couldn't be loaded. The data is safe — try again."
     }
   },
   "billing": {
@@ -1345,6 +1444,8 @@
       "encounterSpan": "{{start}} and {{end}}",
       "metAt_one": "Met at {{count}} tournament between {{span}}",
       "metAt_other": "Met at {{count}} tournaments between {{span}}",
+      "metIn_one": "Met at {{count}} tournament in {{month}}",
+      "metIn_other": "Met at {{count}} tournaments in {{month}}",
       "rateOverGames_one": "{{rate}}% over {{count}} game",
       "rateOverGames_other": "{{rate}}% over {{count}} games"
     },
@@ -1427,7 +1528,17 @@
         "vs": "Their character",
         "stage": "Stage"
       },
-      "empty": "No games recorded against {{opponent}} yet."
+      "empty": "No games recorded against {{opponent}} yet.",
+      "prepBrief": {
+        "title": "Prep brief",
+        "upcoming": "You're likely to face {{opponentTag}} at {{eventName}} ({{date}}).",
+        "upcomingCta": "Open prep brief",
+        "addEvent": "Add an upcoming event to start tracking {{opponentTag}} as a likely opponent.",
+        "addEventCta": "Go to tournaments",
+        "laterEvents": "{{opponentTag}} isn't a likely opponent at your nearest upcoming events. Check your tournaments for later ones.",
+        "debrief": "Review {{eventName}} — {{date}}.",
+        "debriefCta": "Review this event"
+      }
     }
   },
   "stages": {
@@ -1445,21 +1556,24 @@
   "scout": {
     "title": "Scout a Player",
     "prompt": "Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.",
-    "promptWithParry": "Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.",
+    "promptWithParry": "Paste a start.gg profile URL, slug, or player id — or a parry.gg profile URL or gamer tag — above to pull up their public tournament history.",
     "errors": {
       "notFound": "We couldn't find a start.gg player for that query. Double-check the URL, slug, or player id.",
       "badQuery": "That doesn't look like a start.gg profile URL, slug, or player id.",
+      "badQueryParry": "That doesn't look like a parry.gg profile URL or gamer tag.",
+      "badQueryBoth": "One of those entries doesn't match what its site accepts. Check each field and try again.",
+      "tagNeedsParry": "Gamer tags are searchable on parry.gg only — switch the source to parry.gg to search by tag.",
       "rateLimited": "start.gg is rate-limiting requests right now. Try again in a minute.",
       "scoutFallback": "Something went wrong while scouting that player.",
       "generateFallback": "Something went wrong while generating the report."
     },
     "form": {
       "description": "Paste a start.gg profile URL, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
-      "descriptionWithParry": "Paste a start.gg or parry.gg profile URL, a bare gamer tag, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
+      "descriptionParry": "Paste a parry.gg profile URL or a gamer tag to pull up their public tournament history before you play them.",
+      "descriptionBoth": "Fill in the start.gg field, the parry.gg field, or both to pull up their combined public tournament history before you play them.",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 or a parry.gg profile URL",
       "inputAria": "start.gg profile URL, slug, or player id",
-      "inputAriaWithParry": "start.gg or parry.gg profile URL, slug/tag, or player id",
       "scout": "Scout",
       "scouting": "Scouting…",
       "source": "Source:",
@@ -1549,7 +1663,20 @@
       "stageMasteryOverall": "Stage Mastery — Overall",
       "stageMasteryFor": "Stage Mastery — {{name}}",
       "topCharacter": "Top character",
-      "recentForm": "{{name}}'s Recent Form"
+      "recentForm": "{{name}}'s Recent Form",
+      "form": {
+        "caption": {
+          "event": "Cumulative win rate after each event, oldest first · select a point to list its games",
+          "week": "Cumulative win rate at the end of each week with an event, oldest first · select a point to list its games",
+          "month": "Cumulative win rate at the end of each month with an event, oldest first · select a point to list its games",
+          "quarter": "Cumulative win rate at the end of each quarter with an event, oldest first · select a point to list its games",
+          "year": "Cumulative win rate at the end of each year with an event, oldest first · select a point to list its games"
+        },
+        "games_one": "{{count}} game · {{event}} · {{span}}",
+        "games_other": "{{count}} games · {{event}} · {{span}}",
+        "characters": "{{fighter}} vs {{opponent}}",
+        "close": "Hide games"
+      }
     },
     "aiReport": {
       "title": "AI Scouting Report",
@@ -1583,7 +1710,59 @@
     "groupedBy": "Grouped by player, most recently scouted first.",
     "olderReport": "Older report",
     "hideOlder": "Hide older reports",
-    "showOlder": "Show older reports"
+    "showOlder": "Show older reports",
+    "claimKind": {
+      "fact": "Fact",
+      "inference": "Inference",
+      "recommendation": "Recommendation"
+    },
+    "claimPredicate": {
+      "stageRecord": "Stage record",
+      "stagePickRate": "Stage pick rate",
+      "characterMatchupRecord": "Matchup record",
+      "myCharacterRecord": "Character record",
+      "headToHeadRecord": "Head-to-head record",
+      "recentForm": "Recent form",
+      "opponentCharacterUsage": "Their character usage",
+      "matchupAdvisorPick": "Suggested pick",
+      "vodAnnotation": "VOD moments",
+      "cohortDisclosure": "Session mix"
+    },
+    "legacy": {
+      "badge": "Legacy",
+      "tooltip": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data.",
+      "explain": "Generated before this app's report validator existed — its content wasn't machine-checked against your match data."
+    },
+    "droppedClaims_one": "1 claim couldn't be verified and was removed from this report.",
+    "droppedClaims_other": "{{count}} claims couldn't be verified and were removed from this report.",
+    "droppedClaimsPlan_one": "1 claim couldn't be verified and was removed from this plan.",
+    "droppedClaimsPlan_other": "{{count}} claims couldn't be verified and were removed from this plan.",
+    "droppedPlanSections_one": "1 section couldn't be verified and was removed from this plan.",
+    "droppedPlanSections_other": "{{count}} sections couldn't be verified and were removed from this plan.",
+    "withheldProse_one": "Commentary for 1 section was withheld because it couldn't be verified against your match data.",
+    "withheldProse_other": "Commentary for {{count}} sections was withheld because it couldn't be verified against your match data.",
+    "actions": {
+      "title": "Recommended actions",
+      "empty": "Not enough data yet to recommend a specific action — log a few more games.",
+      "emptyNoOpponents": "No likely opponents are listed for this event yet, so there are no actions to recommend.",
+      "matchupPractice": {
+        "title": "Practice {{myFighter}} vs {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Review your losses to {{opponent}}"
+      },
+      "drill": {
+        "stageHabit": "Drill: your game plan on {{stage}}",
+        "matchupPunish": "Drill: punishing {{opponentFighter}}",
+        "characterFamiliarity": "Drill: learn the {{opponentFighter}} matchup",
+        "vodPattern": "Drill: the pattern in your annotated moments"
+      },
+      "door": {
+        "practiceMatchup": "Practice this matchup",
+        "watchGames": "Watch the games",
+        "openStage": "Open stage"
+      }
+    }
   },
   "groups": {
     "title": "Groups",
@@ -1664,7 +1843,9 @@
       "unknownStages_one": "{{count}} with unrecognized stages",
       "unknownStages_other": "{{count}} with unrecognized stages",
       "dqSkipped_one": "{{count}} DQ skipped",
-      "dqSkipped_other": "{{count}} DQs skipped"
+      "dqSkipped_other": "{{count}} DQs skipped",
+      "registryFailed_one": "{{count}} event's details couldn't be saved — Sync again to retry",
+      "registryFailed_other": "{{count}} events' details couldn't be saved — Sync again to retry"
     },
     "startgg": {
       "connect": "Connect start.gg account",
@@ -2869,6 +3050,10 @@
       "addEvent": {
         "title": "Add your upcoming event to start prepping",
         "cta": "Add event"
+      },
+      "review": {
+        "title": "Review {{eventName}} — {{date}}",
+        "cta": "Review this event"
       }
     },
     "manualEntry": {
@@ -2953,8 +3138,14 @@
       "succeeded": "Ready",
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
+      "failedNoCharge": "Failed — no credit was used.",
+      "failedChargeUnknown": "Failed",
       "viewReport": "View report",
-      "hideReport": "Hide report"
+      "hideReport": "Hide report",
+      "failedReason": {
+        "validation": "A verified report couldn't be built from your match data, so none was delivered.",
+        "validationRefunded": "Your credit was returned."
+      }
     },
     "insufficientCredits": {
       "body": "You're out of credits.",
@@ -3055,8 +3246,14 @@
       "succeeded": "Ready",
       "failedPendingRefund": "Failed — refunding your credit…",
       "refunded": "Failed — your credit was refunded.",
+      "failedNoCharge": "Failed — no credit was used.",
+      "failedChargeUnknown": "Failed",
       "viewPlan": "View plan",
-      "hidePlan": "Hide plan"
+      "hidePlan": "Hide plan",
+      "failedReason": {
+        "validation": "A verified practice plan couldn't be built from your match data, so none was delivered.",
+        "validationRefunded": "Your credit was returned."
+      }
     },
     "insufficientCredits": {
       "body": "You're out of credits.",
@@ -3191,7 +3388,9 @@
       "openStage": "Open stage",
       "openEvent": "Open event",
       "findVods": "Find VODs",
-      "ratingModelNote": "Rating model note"
+      "ratingModelNote": "Rating model note",
+      "showEvents": "Show these events",
+      "debrief": "Debrief this event"
     },
     "chip": {
       "up": "Up",
@@ -3201,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · no direction",
       "noDirection_other": "n {{count, grouped}} · no direction",
       "noGames": "no games",
+      "noneInBound": "none in the last 12 months",
       "horizon": {
         "last30": "last 30",
         "lastEvent": "last event",
@@ -3208,6 +3408,11 @@
       },
       "ratingUp": "+{{points}}",
       "ratingDown": "−{{points}}",
+      "ratingAria": {
+        "directional": "{{label}}: {{direction}}, {{value}} · {{horizon}}",
+        "withHorizon": "{{label}}: {{value}} · {{horizon}}",
+        "bare": "{{label}}: {{value}}"
+      },
       "aria": {
         "up": "Trending up",
         "down": "Trending down",
@@ -3224,19 +3429,26 @@
       "short": {
         "last30": "30 games",
         "lastEvent": "Last event",
-        "last90": "90 days"
+        "last90": "90 days",
+        "lastN_one": "{{count, grouped}} game",
+        "lastN_other": "{{count, grouped}} games"
       }
     },
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} last 30 · {{baselineRate}} all time over {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} last event · {{baselineRate}} all time over {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} last 90 days · {{baselineRate}} all time over {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Those {{count, grouped}} games span {{from}} – {{to}}.",
       "range": "{{rate}} over {{count, grouped}}, inside the usual range ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} all time · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} all time",
       "tier": {
         "low": "low confidence",
         "medium": "medium confidence",
@@ -3269,11 +3481,14 @@
         "last90": "The last 90 days are the whole record — one figure, no comparison."
       },
       "noneRecent": {
-        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime."
+        "scoped": "No games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "fighter": "{{entity}} — no games in the last 12 months — showing lifetime."
       },
       "thinRecent": {
         "scoped_one": "Only {{count, grouped}} game vs {{fighter}} in the last 12 months — showing lifetime.",
         "scoped_other": "Only {{count, grouped}} games vs {{fighter}} in the last 12 months — showing lifetime.",
+        "fighter_one": "{{entity}} — only {{count, grouped}} game in the last 12 months — showing lifetime.",
+        "fighter_other": "{{entity}} — only {{count, grouped}} games in the last 12 months — showing lifetime.",
         "page": {
           "last30": "Only {{count, grouped}} games in the last 30 — showing all time.",
           "lastEvent": "Only {{count, grouped}} games at the last event — showing all time.",
@@ -3336,7 +3551,9 @@
       "factPlacementGamesOnly": "{{event}} — {{placement}} of {{entrants}}; {{gameRecord}} in games.",
       "noSetLosses": "No set losses.",
       "setLosses_one": "Set loss — {{named}}.",
-      "setLosses_other": "Set losses — {{named}}."
+      "setLosses_other": "Set losses — {{named}}.",
+      "evidence": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} at the event · {{baselineRate}} all time over {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Rating — up {{points}} over the last {{count, grouped}} games ({{startRating}} → {{endRating}} ±{{band}}).",
@@ -3381,8 +3598,12 @@
       "fact": "Match mix — {{recentShare}} {{matchType}} recently vs {{lifetimeShare}} lifetime."
     },
     "rosterCore": {
-      "fact": "Roster — {{fighter}} is the main at {{share}}% of play; {{secondaryCount}} secondaries, {{pocketCount}} pockets.",
-      "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it."
+      "fact": "Roster — {{fighter}} is the main at {{share}}% of play; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Roster — main not established yet; {{count, grouped}} games on one fighter set it.",
+      "secondaries_one": "{{count, grouped}} secondary",
+      "secondaries_other": "{{count, grouped}} secondaries",
+      "pockets_one": "{{count, grouped}} pocket",
+      "pockets_other": "{{count, grouped}} pockets"
     },
     "rosterShift": {
       "hidden": "Not enough of a shift in who gets played to report yet.",
@@ -3414,6 +3635,29 @@
     "worstMatchup": {
       "locked": "Toughest record — not enough games yet to name one.",
       "fact": "Toughest record — vs {{vs}}, {{record}} over {{count, grouped}}."
+    },
+    "tierGap": {
+      "up": "Majors and above — {{aRate}} vs {{bRate}} at smaller events, over {{count, grouped}} games.",
+      "down": "Majors and above — {{aRate}}, below {{bRate}} at smaller events, over {{count, grouped}} games.",
+      "steady": "Majors and above — {{aRate}} vs {{bRate}} at smaller events over {{count, grouped}} games; no notable gap.",
+      "abstained": "Not enough games at majors ({{count, grouped}}).",
+      "abstainedSmaller": "Not enough games at smaller events ({{count, grouped}}).",
+      "noTiers": "Tier — no event has a known tier yet.",
+      "evidence": "{{aRecord}} at majors and above · {{bRecord}} at smaller events · {{cue}}",
+      "estimatedNote_one": "1 of those events carries an estimated tier.",
+      "estimatedNote_other": "{{count, grouped}} of those events carry an estimated tier."
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before; busiest: {{month}}.",
+        "compareNoSeason": "Play rhythm — {{recent, grouped}} games in the last 12 months vs {{prior, grouped}} the 12 before.",
+        "recentOnly": "Play rhythm — {{recent, grouped}} games across {{recentMonths}} of the last 12 months."
+      },
+      "evidence": "{{monthsPlayed}} of {{monthsSpan}} months with games · {{share}} of all games fall in {{month}}",
+      "evidenceNoSeason": "{{monthsPlayed}} of {{monthsSpan}} months with games",
+      "locked_one": "Play rhythm — {{count, grouped}} more month with games unlocks this read.",
+      "locked_other": "Play rhythm — {{count, grouped}} more months with games unlock this read.",
+      "lockedMeter": "{{have, grouped}} of {{need, grouped}} months"
     }
   },
   "analytics": {
@@ -3654,8 +3898,192 @@
       },
       "event": {
         "aria": "{{event}} — rating after the event {{rating}}, {{wins}}–{{losses}}",
-        "ratingAfter": "Rating after the event · {{rating}}"
+        "ratingAfter": "Rating after the event · {{rating}}",
+        "legend_one": "{{count}} major+ event",
+        "legend_other": "{{count}} major+ events",
+        "legendEstimated": "hollow = estimated tier",
+        "shownOf": "{{shown}} of {{total}} major+ events marked — the rest are in Recent events",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — estimated {{tier}}, rating after the event {{rating}}, {{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — estimated {{tier}}, {{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}} point, latest {{value}}",
+      "aria_other": "{{title}} — {{count}} points, latest {{value}}",
+      "legend": {
+        "calibration": "set manually",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — above this range",
+        "referenceBelow": "{{label}} {{value}} — below this range"
+      },
+      "readings_one": "{{count}} reading · close shown",
+      "readings_other": "{{count}} readings · close shown",
+      "table": {
+        "headers": {
+          "date": "Date",
+          "readings": "Readings"
+        }
+      },
+      "lockedMeter": "{{have}} of {{need}} readings"
+    },
+    "multiples": {
+      "aria_one": "{{count}} panel on one time axis",
+      "aria_other": "{{count}} panels sharing one time axis",
+      "caption": "Each panel keeps its own scale — compare the shapes, not the heights."
+    },
+    "heat": {
+      "legend": {
+        "fewer": "fewer",
+        "more": "more",
+        "unit": "= games in the month"
+      },
+      "cellAria_one": "{{month}} {{year}}: {{count}} game",
+      "cellAria_other": "{{month}} {{year}}: {{count}} games",
+      "noGames": "{{month}} {{year}}: no games",
+      "table": {
+        "caption": "Games by month, with year totals"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "Supermajor",
+      "major": "Major",
+      "minor": "Minor",
+      "regional": "Regional",
+      "local": "Local",
+      "unknown": "Tier unknown"
+    },
+    "setting": {
+      "online": "Online",
+      "offline": "Offline",
+      "unknown": "Setting unknown"
+    },
+    "kind": {
+      "sideEvent": "Side event"
+    },
+    "provenance": {
+      "estimated_one": "Estimated from {{entrants}} entrant",
+      "estimated_other": "Estimated from {{entrants}} entrants",
+      "manual": "Set manually",
+      "recorded": {
+        "liquipedia": "Recorded on Liquipedia"
+      }
+    },
+    "unknownReason": {
+      "online": "Online events aren't estimated",
+      "sideEvent": "Side events don't inherit a tier",
+      "noEntrants": "No entrant count recorded",
+      "manual": "Set manually to unknown"
+    },
+    "tooltip": {
+      "estimateCaveat": "An estimate from entrant count — it may under-rate an event, never the reverse."
+    },
+    "override": {
+      "title": "Tier for this event",
+      "badge": "Event override",
+      "label": "Override tier",
+      "placeholder": "No override — use the resolved tier",
+      "clear": "Clear override",
+      "saved": "Tier saved for this event.",
+      "saveFailed": "Couldn't save the tier. Try again.",
+      "ignored": "This event's saved tier was written by a newer version of the app and is not being applied.",
+      "help": "An override wins over every other source and can be cleared at any time.",
+      "wouldBe": "Estimate would have been: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Tier",
+      "settingLabel": "Setting",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Hide side events",
+      "clear": "Clear filters",
+      "empty": "No events match these filters.",
+      "countsNote": "Counts reflect the other filters.",
+      "noneInRange": "No {{label}} events in this range.",
+      "sheetButton": "Filters"
+    },
+    "coverage": {
+      "known_one": "Tier known for {{known, grouped}} of 1 event",
+      "known_other": "Tier known for {{known, grouped}} of {{count, grouped}} events",
+      "recorded_one": "1 recorded",
+      "recorded_other": "{{count, grouped}} recorded",
+      "manual_one": "1 set manually",
+      "manual_other": "{{count, grouped}} set manually",
+      "estimated_one": "1 estimated",
+      "estimated_other": "{{count, grouped}} estimated",
+      "unknown_one": "1 unknown",
+      "unknown_other": "{{count, grouped}} unknown",
+      "sideExcluded_one": "1 side event excluded",
+      "sideExcluded_other": "{{count, grouped}} side events excluded",
+      "sideIncluded_one": "1 side event included",
+      "sideIncluded_other": "{{count, grouped}} side events included",
+      "include": "Include",
+      "exclude": "Exclude"
+    },
+    "byTier": {
+      "title": "By tier",
+      "sortNote": "Tier order · Unknown last",
+      "abstain_one": "{{tier}} — 1 more game needed for a rate.",
+      "abstain_other": "{{tier}} — {{count, grouped}} more games needed for a rate.",
+      "excluded": "excluded from the comparison",
+      "allUnknown": "No event has a known tier yet — set one from an event's page.",
+      "rowAria_one": "{{tier}}: {{record}}, 1 game; opens the tournaments filtered to this tier",
+      "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} games; opens the tournaments filtered to this tier"
+    }
+  },
+  "watchlist": {
+    "track": "Track",
+    "tracked": "Tracked",
+    "trackAria": "Track {{name}}",
+    "untrackAria": "Stop tracking {{name}}",
+    "trackedToast": "Tracking {{name}}.",
+    "untrackedToast": "No longer tracking {{name}}.",
+    "full": "Tracked list is full — 25 of 25. Untrack something first.",
+    "manage": "Manage tracked",
+    "error": "Couldn't update the tracked list. Try again.",
+    "loadError": "Tracked items couldn't be loaded. Reload to try again.",
+    "refreshError": "Couldn't refresh tracked items. Showing the last loaded list.",
+    "section": {
+      "title": "Tracked",
+      "count_one": "{{count}} of 25",
+      "count_other": "{{count}} of 25",
+      "empty": "Nothing tracked yet — Track an opponent, matchup or stage from its page.",
+      "sortNote": "moved first · then most games"
+    },
+    "kind": {
+      "opponent": "Opponent",
+      "matchup": "Matchup",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} game; {{state}}; opens details",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} games; {{state}}; opens details",
+      "stateMoved": "{{state}}, {{moved}}"
+    },
+    "moved": {
+      "up": "moved — now trending up",
+      "down": "moved — now trending down",
+      "steady": "moved — now steady",
+      "unlocked": "moved — now enough games",
+      "asserting": "moved — now asserting a direction"
+    }
+  },
+  "digest": {
+    "title": "Since last visit",
+    "since": "since {{date}}",
+    "deviceNote": "Read state is kept on this device.",
+    "markRead": "Mark as read",
+    "markedToast": "Marked as read on this device.",
+    "newGames": "New games",
+    "newEvents": "New events",
+    "moved": "Tracked moved",
+    "andMore_one": "and 1 more →",
+    "andMore_other": "and {{count}} more →",
+    "noneMoved": "No tracked item moved.",
+    "quiet": "Nothing new since {{date}}.",
+    "start": "Digest starts now — changes since this visit will show here.",
+    "loadError": "Matches couldn't be loaded, so the digest can't show what's new. Reload to try again."
   }
 }

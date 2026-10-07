@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   TOKEN_NAMES,
+  TIER_TOKEN_NAMES,
   CARD_SURFACE_NAME,
   CVD_PAIRS,
   parseTokenHexes,
@@ -26,6 +27,7 @@ import {
   checkChromaFloor,
   checkContrastOnSurface,
   checkColourVisionSeparation,
+  checkTierRamp,
 } from './guardPaletteCore.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,6 +36,9 @@ const CSS_PATH = path.join(REPO_ROOT, 'src/index.css');
 function main() {
   const cssSource = readFileSync(CSS_PATH, 'utf8');
   const tokenHexes = parseTokenHexes(cssSource, TOKEN_NAMES);
+  // Phase 39.2 plan 06 (UI-SPEC §13 G2): the tier ramp is read from the SAME
+  // `:root` block but checked in its own list — see `TIER_TOKEN_NAMES`.
+  const tierHexes = parseTokenHexes(cssSource, TIER_TOKEN_NAMES);
   const surfaceEntry = parseTokenHexes(cssSource, [CARD_SURFACE_NAME])[CARD_SURFACE_NAME];
 
   const violations = [];
@@ -44,7 +49,11 @@ function main() {
     }
   }
   if (surfaceEntry.missing) {
-    violations.push({ check: 'missing-token', token: CARD_SURFACE_NAME, error: surfaceEntry.error });
+    violations.push({
+      check: 'missing-token',
+      token: CARD_SURFACE_NAME,
+      error: surfaceEntry.error,
+    });
   }
 
   // Every remaining check needs every token resolved to reason about it
@@ -57,13 +66,20 @@ function main() {
     violations.push(...checkContrastOnSurface(tokenHexes, surfaceEntry.hex));
   }
   violations.push(...checkColourVisionSeparation(tokenHexes, CVD_PAIRS));
+  // A missing tier token is reported by `checkTierRamp` itself (`tier-missing`),
+  // so it is not also reported as a generic `missing-token` here.
+  if (!surfaceEntry.missing) {
+    violations.push(...checkTierRamp(tierHexes, surfaceEntry.hex));
+  }
 
   for (const violation of violations) {
     console.error('VIOLATION', JSON.stringify(violation));
   }
 
   const resolvedCount = TOKEN_NAMES.filter((name) => !tokenHexes[name].missing).length;
+  const tierResolvedCount = TIER_TOKEN_NAMES.filter((name) => !tierHexes[name].missing).length;
   console.log(`TOKENS_RESOLVED=${resolvedCount}/${TOKEN_NAMES.length}`);
+  console.log(`TIER_TOKENS_RESOLVED=${tierResolvedCount}/${TIER_TOKEN_NAMES.length}`);
   console.log(`VIOLATIONS=${violations.length}`);
 
   process.exit(violations.length > 0 ? 1 : 0);

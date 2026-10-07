@@ -29,7 +29,7 @@ import { INSIGHT_DOOR_HOSTS } from '@/test/insightDoorHosts';
 /**
  * Plan 39.1-19 Task 3, closed out by plan 39.1-22 (gap closure, orchestrator
  * Finding 8) — UI-SPEC §13.13/§13.13a's same-n door test, now covering ALL
- * 17 registered templates in ONE uniform branch (never a windowExpressible
+ * 19 registered templates in ONE uniform branch (never a windowExpressible
  * split): a counted-games door is present iff the built `Insight`'s
  * `countedMatchIds` is non-empty, `door.count === countedMatchIds.length`,
  * and the `FilteredMatchList` at the door's destination renders exactly that
@@ -94,7 +94,7 @@ function pairingScope(fighterId: number, opponentFighterId: number): InsightScop
   };
 }
 
-/** The plain 8k synthetic fixture — produces a non-empty, non-hidden result for most of the 17 templates directly. */
+/** The plain 8k synthetic fixture — produces a non-empty, non-hidden result for most of the 19 templates directly. */
 const eightK = generateSyntheticMatches(EIGHT_K_FIXTURE_OPTIONS);
 const SUBJECT_FIGHTER_ID = 8; // Fox — a default main in EIGHT_K_FIXTURE_OPTIONS.
 const OPPONENT_FIGHTER_ID = 2;
@@ -137,6 +137,60 @@ function buildMixShiftFixture(): Match[] {
     } as Match);
   }
   return matches;
+}
+
+/**
+ * Phase 39.2 (TIER-03): `tierGap` reads its two cohorts from the scope, so its
+ * fixture carries a scope built from a small two-cohort match set (20 games at
+ * majors and above, 20 at smaller events), exactly as the Tournaments page
+ * builds one from `buildTierSplitStats`.
+ */
+function buildTierGapFixture(): { matches: Match[]; scope: InsightScope } {
+  const make = (prefix: string, count: number, wins: number, offset: number): Match[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `${prefix}-${i}`,
+      fighter_id: SUBJECT_FIGHTER_ID,
+      opponent_id: OPPONENT_FIGHTER_ID,
+      time: NOW_MS - (offset + count - i) * HOUR,
+      win: i < wins,
+      matchType: 'offline-tourney',
+    })) as Match[];
+  const a = make('tier-a', 20, 15, 0);
+  const b = make('tier-b', 20, 8, 100);
+  const ids = new Set([...a, ...b].map((m) => m.id));
+  return {
+    matches: [...a, ...b],
+    scope: {
+      kind: 'account',
+      key: 'tier:side-excluded',
+      axes: {},
+      filter: (all) => all.filter((m) => ids.has(m.id)),
+      tierCohorts: {
+        a,
+        b,
+        aEvents: 1,
+        bEvents: 1,
+        estimatedEvents: 0,
+        knownEvents: 2,
+      },
+    },
+  };
+}
+
+/**
+ * A play-rhythm history past its 12-month lock: one game every 31 days for 28 games, so every game
+ * sits in its own UTC month (two dates under 31 days apart can share a month, 31 or more cannot),
+ * the span is 28 months, and the recent 12-month window holds 12 of the 28 games.
+ */
+function buildPlayRhythmFixture(): Match[] {
+  const DAY = 24 * HOUR;
+  return Array.from({ length: 28 }, (_, i) => ({
+    id: `pr-${i}`,
+    fighter_id: SUBJECT_FIGHTER_ID,
+    opponent_id: OPPONENT_FIGHTER_ID,
+    time: NOW_MS - i * 31 * DAY,
+    win: i % 2 === 0,
+  })) as Match[];
 }
 
 const ROSTER_SHIFT_BASELINE_FIGHTER_ID = 9;
@@ -192,6 +246,8 @@ const FIXTURES: Record<InsightTemplateId, { matches: Match[]; scope: InsightScop
   volumeForm: { matches: eightK, scope: accountScope() },
   secondaryPayoff: { matches: eightK, scope: accountScope() },
   pocketCost: { matches: eightK, scope: accountScope() },
+  tierGap: buildTierGapFixture(),
+  playRhythm: { matches: buildPlayRhythmFixture(), scope: accountScope() },
 };
 
 function buildInsight(templateId: InsightTemplateId): Insight {
@@ -269,8 +325,8 @@ beforeEach(() => {
 });
 
 describe('registry coverage', () => {
-  it("FIXTURES covers exactly the registry's 17 templates", () => {
-    expect(INSIGHT_TEMPLATES).toHaveLength(17);
+  it("FIXTURES covers exactly the registry's 19 templates", () => {
+    expect(INSIGHT_TEMPLATES).toHaveLength(19);
     expect(new Set(Object.keys(FIXTURES))).toEqual(new Set(INSIGHT_TEMPLATES.map((t) => t.id)));
   });
 

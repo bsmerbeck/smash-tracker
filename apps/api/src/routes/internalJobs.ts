@@ -59,7 +59,20 @@ const pruneResultSchema = z.object({
 /** Quick task 260722-lxt: aggregate-only count map — keys are event/exception names, never person-derived fields. */
 const countMapSchema = z.record(z.string(), z.number().int().nonnegative());
 
-const funnelReadoutResultSchema = z.object({
+/** D-19 (39-CONTEXT.md): the counts-only shape `reconcile.ts` persists at `reconcileSummaries/{day}`, surfaced tolerantly (`.nullish()` below) since older shards and older API revisions never wrote one. */
+const reconcileSummarySchema = z.object({
+  checked: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  phantom: z.number().int().nonnegative(),
+  duplicate: z.number().int().nonnegative(),
+  // Code review API-WR-06: additive, absent on older summaries.
+  reconciledUnits: z.number().int().nonnegative().nullish(),
+  outboxPending: z.number().int().nonnegative().nullish(),
+  generatedAt: z.number().int().nonnegative(),
+});
+
+/** The `GET /internal/jobs/funnel-readout` 200 body — exported so the owner-run PREP-06 readout's own response check can be proven to agree with it. */
+export const funnelReadoutResultSchema = z.object({
   generatedAt: z.number().int().nonnegative(),
   days: z.array(
     z.object({
@@ -67,6 +80,7 @@ const funnelReadoutResultSchema = z.object({
       eventCounts: countMapSchema,
       exceptionCounts: countMapSchema,
       pendingProjection: z.number().int().nonnegative(),
+      reconcileSummary: reconcileSummarySchema.nullish(),
     }),
   ),
   totals: z.object({

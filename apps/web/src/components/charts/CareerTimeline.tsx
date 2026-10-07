@@ -26,6 +26,8 @@ import type {
   CareerStripCell,
   CareerStripSet,
   CareerTimeline as CareerTimelineData,
+  KnownTierWord,
+  TierBasis,
 } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
@@ -51,7 +53,10 @@ import { TIME_AXIS_LABEL_OFFSET_PX, selectTimeAxisTicks } from './timeAxisTicks'
 
 /**
  * A major event on the plot baseline (UI-SPEC §12.1). Which events qualify is
- * Phase 39.2's tier data — until a host supplies markers, none render.
+ * the host's call (plan 41-04: resolved tier >= major); the kit only draws.
+ * `basis` decides the form (12.6 anti-masquerade): an `estimated` tier is a
+ * hollow diamond, a `recorded` / `manual` one is filled — `tier` is never a hue
+ * or a size, only the host's readout words.
  */
 export interface CareerTimelineEventMarker {
   key: string;
@@ -60,8 +65,12 @@ export interface CareerTimelineEventMarker {
   atMs: number;
   wins: number;
   losses: number;
-  /** The rating after the event. */
-  ratingAfter: number;
+  /** The resolved tier word (readout only — supermajor and major share one shape). */
+  tier: KnownTierWord;
+  /** How the tier was established; `estimated` draws hollow. */
+  basis: TierBasis;
+  /** The rating after the event, or null when no plotted rating sits at or after it. */
+  ratingAfter: number | null;
 }
 
 /** One calendar month's record (UTC), for the table twin's year x month table. */
@@ -513,6 +522,8 @@ function UnderLayer({ timeline, labels, geometry, yDomain, locale }: LayerProps)
     endMs: timeline.domain.endMs,
     plotWidthPx: plot.width,
     locale,
+    // Plan 39.1-53 (UAT 39.1-35b): the axis names the year / month it starts in.
+    originLabel: true,
   });
 
   let band: ReactElement | null = null;
@@ -1359,6 +1370,7 @@ export function CareerTimeline({
               <g
                 key={marker.key}
                 data-slot="career-timeline-event"
+                data-basis={marker.basis}
                 tabIndex={0}
                 role="button"
                 aria-label={labels.eventAria ? labels.eventAria(marker) : marker.label}
@@ -1390,8 +1402,12 @@ export function CareerTimeline({
                 />
                 <path
                   d={`M${x} ${y - DIAMOND_HALF_PX} ${x + DIAMOND_HALF_PX} ${y} ${x} ${y + DIAMOND_HALF_PX} ${x - DIAMOND_HALF_PX} ${y}Z`}
-                  fill={CHART_TOKENS.deemphasis}
-                  stroke={CHART_TOKENS.surface}
+                  fill={
+                    marker.basis === 'estimated' ? CHART_TOKENS.surface : CHART_TOKENS.deemphasis
+                  }
+                  stroke={
+                    marker.basis === 'estimated' ? CHART_TOKENS.deemphasis : CHART_TOKENS.surface
+                  }
                   strokeWidth={DIAMOND_STROKE_PX}
                 />
               </g>

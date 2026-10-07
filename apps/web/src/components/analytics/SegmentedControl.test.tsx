@@ -144,13 +144,18 @@ describe('SegmentedControl (plan 39.1-47, segmented-set-state)', () => {
     expect(texts).toHaveLength(1);
   });
 
-  it('is full width with equal segments below 640px and content-width from 640px', () => {
+  // UAT 39.1-22: below 640px the segments are content-sized (flex-auto,
+  // never wrapping) rather than equal thirds, so a long short-label (fr
+  // 'Dernier événement') takes the slack of the shorter segments.
+  it('is full width with content-sized segments below 640px and content-width from 640px', () => {
     renderControl();
     const group = screen.getByRole('radiogroup');
     expect(group.className).toMatch(/\bw-full\b/);
     expect(group.className).toMatch(/\bsm:w-fit\b/);
     for (const radio of screen.getAllByRole('radio')) {
-      expect(radio.className).toMatch(/\bflex-1\b/);
+      expect(radio.className).toMatch(/(^|\s)flex-auto(\s|$)/);
+      expect(radio.className).toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
+      expect(radio.className).not.toMatch(/(^|\s)flex-1(\s|$)/);
       expect(radio.className).toMatch(/\bsm:flex-none\b/);
     }
   });

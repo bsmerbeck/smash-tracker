@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
 import type { HorizonKey, Insight, Match } from '@smash-tracker/shared';
 import { ACCOUNT_SCOPE, INSIGHT_TEMPLATES } from '@smash-tracker/shared';
+import { formatMonthName } from '@/lib/format';
+import { formatPercent } from '@/lib/formatPercent';
 
 /**
  * Plan 39.1-27 (gap closure, SC4/INS-04): the three card-level templates
@@ -12,6 +14,12 @@ import { ACCOUNT_SCOPE, INSIGHT_TEMPLATES } from '@smash-tracker/shared';
 const SETTING_GAP_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'settingGap')!;
 const MIX_SHIFT_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'mixShift')!;
 const VOLUME_FORM_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'volumeForm')!;
+/**
+ * Plan 41-03 (DD-41-07, RESEARCH correction 12): `playRhythm` is built HERE, in the card path, and
+ * never in `useTrendsInsights` — so it can never rank as a reads-rail own read nor back-fill the
+ * centre rail; it owns its own 4-col cell in Trends' row 4.
+ */
+const PLAY_RHYTHM_TEMPLATE = INSIGHT_TEMPLATES.find((template) => template.id === 'playRhythm')!;
 
 export interface UseTrendsCardInsightsInput {
   matches: Match[];
@@ -22,6 +30,7 @@ export interface UseTrendsCardInsightsResult {
   settingGap: Insight | null;
   mixShift: Insight | null;
   volumeForm: Insight | null;
+  playRhythm: Insight | null;
 }
 
 /**
@@ -45,7 +54,7 @@ function buildOne(
 
 /**
  * Plan 39.1-27 (gap closure): the ONE computation of `settingGap`/`mixShift`/
- * `volumeForm` — `TrendsPage.tsx` calls this ONCE, above every early return,
+ * `volumeForm`/`playRhythm` — `TrendsPage.tsx` calls this ONCE, above every early return,
  * and hands the result down to `SettingComparison`/`MatchTypeMix` as props
  * AND its own page-level terminus (`pageInsights`/`resolveClaim`/
  * `claimSummary`), so a rendered door's `claim=<id>` and the resolved list
@@ -68,6 +77,7 @@ export function useTrendsCardInsights({
       settingGap: buildOne(SETTING_GAP_TEMPLATE, matches, horizon, nowMs),
       mixShift: buildOne(MIX_SHIFT_TEMPLATE, matches, horizon, nowMs),
       volumeForm: buildOne(VOLUME_FORM_TEMPLATE, matches, horizon, nowMs),
+      playRhythm: buildOne(PLAY_RHYTHM_TEMPLATE, matches, horizon, nowMs),
     }),
     [matches, horizon, nowMs],
   );
@@ -88,4 +98,35 @@ export function buildMixShiftVerdict(insight: Insight, t: TFunction): string {
     values.matchType = t(`matchForm.matchTypes.${values.matchType}`);
   }
   return t(insight.copy.key, values);
+}
+
+/**
+ * The values `insights.playRhythm.*` interpolates, with the two locale-bearing ones formatted HERE
+ * (the engine never localises, D-11): the month-of-year number becomes the locale's long month name
+ * and the 0-1 share becomes the locale's percent. Absent when the template stated no busiest month.
+ */
+function playRhythmValues(insight: Insight, locale: string): Record<string, string | number> {
+  const values: Record<string, string | number> = { ...insight.copy.values };
+  if (typeof values.month === 'number') {
+    values.month = formatMonthName(values.month, locale, 'long');
+  }
+  if (typeof values.share === 'number') {
+    values.share = formatPercent(values.share, locale);
+  }
+  return values;
+}
+
+/** The `PlayRhythm` verdict sentence (Trends' card and the terminus claim summary share this one spelling). */
+export function buildPlayRhythmVerdict(insight: Insight, t: TFunction, locale: string): string {
+  return t(insight.copy.key, playRhythmValues(insight, locale));
+}
+
+/**
+ * The `PlayRhythm` evidence line: with the busiest month when the template stated one, the plain
+ * months-played line otherwise.
+ */
+export function buildPlayRhythmEvidence(insight: Insight, t: TFunction, locale: string): string {
+  const values = playRhythmValues(insight, locale);
+  const key = typeof insight.copy.values.month === 'number' ? 'evidence' : 'evidenceNoSeason';
+  return t(`insights.playRhythm.${key}`, values);
 }

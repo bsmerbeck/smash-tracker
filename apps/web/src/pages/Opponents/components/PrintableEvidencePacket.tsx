@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { formatDate } from '@/lib/format';
 import type { EvidencePacket } from '../evidencePacket';
 
 /**
@@ -8,15 +10,20 @@ import type { EvidencePacket } from '../evidencePacket';
  * the app's dark UI.
  */
 export function PrintableEvidencePacket({ packet }: { packet: EvidencePacket }) {
+  const { i18n } = useTranslation();
+  const locale = i18n.language;
   return (
     <div className="print-packet-root hidden print:block">
       <h1 className="text-2xl font-bold">
         H2H Evidence Packet: {packet.preparedBy} vs {packet.opponent}
       </h1>
-      <p className="mt-1 text-sm">Generated {new Date(packet.generatedAt).toLocaleString()}</p>
+      <p className="mt-1 text-sm">
+        Generated{' '}
+        {formatDate(packet.generatedAt, locale, { dateStyle: 'short', timeStyle: 'short' })}
+      </p>
       <p className="text-sm">
-        Date range: {new Date(packet.dateRange.firstPlayedAt).toLocaleDateString()} –{' '}
-        {new Date(packet.dateRange.lastPlayedAt).toLocaleDateString()}
+        Date range: {formatDate(packet.dateRange.firstPlayedAt, locale)} –{' '}
+        {formatDate(packet.dateRange.lastPlayedAt, locale)}
       </p>
 
       <h2 className="mt-4 text-lg font-semibold">Overall record</h2>

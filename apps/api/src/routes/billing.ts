@@ -115,9 +115,10 @@ function resolveCheckoutReturnUrls(webBaseUrl: string, body: CheckoutRequest): C
  * idempotency key and emits `checkout_started` (D); the webhook converges
  * `checkout.session.completed` (only when `payment_status === 'paid'`),
  * `checkout.session.async_payment_succeeded` (always), and
- * `checkout.session.async_payment_failed` (never) onto ONE atomic
- * fulfillment path (`fulfillCheckoutSession`, `billing/credits.ts`), and
- * emits `checkout_completed` (B) once per granting event.
+ * `checkout.session.async_payment_failed` (never) onto ONE create-once,
+ * retry-safe fulfillment path (`fulfillCheckoutSession`,
+ * `billing/credits.ts`, code review R7-CR-03), and emits
+ * `checkout_completed` (B) once per granting event.
  */
 const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, options) => {
   const { stripeConfig, reportsConfig, webBaseUrl } = options;
@@ -306,9 +307,14 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
     );
 
     // BILL-01/BILL-04/BILL-05: resolves uid/packId (for logging/eventing),
-    // then delegates to the converged atomic `fulfillCheckoutSession` —
-    // called from every branch below that should grant credits. Emits
-    // `checkout_completed` (B) exactly once per granting event.
+    // then delegates to `fulfillCheckoutSession` — called from every branch
+    // below that should grant credits. It is create-once and retry-safe, not
+    // one atomic write (code review R7-CR-03 / R7-WR-04): the balance and a
+    // grant marker commit first, then the trail. A throw here is a 500, and
+    // Stripe's re-delivery of the same event completes the grant exactly
+    // once — reconciliation cannot see a grant whose trail is missing, so
+    // the re-delivery is what closes that window. Emits `checkout_completed`
+    // (B) once per granting event (deduped on the event id).
     async function fulfillAndAck(
       request: FastifyRequest,
       reply: FastifyReply,

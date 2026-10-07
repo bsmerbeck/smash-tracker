@@ -222,8 +222,32 @@ const ENTRY_MODULEPRELOAD_BOUND = 26;
  * lazy-load the `insights`/`analytics` locale namespaces (−~14 kB per locale)
  * or split the insight engine out of the eager shared chunk.
  */
-const EAGER_BYTES_BASELINE = 1_126_712;
+/**
+ * Re-baselined DOWN 1_126_712 -> 1_084_542 in Phase 41 (plan 41-11, C4 as corrected by evidence;
+ * every figure below is read from THIS guard's own `[eager-bytes]` line, never a bare build):
+ *   BEFORE (phase start)            1_079_914
+ *   AFTER-01 (ledger, formatter)    1_085_041  (+5_127: the en.json ledger growth and `format.ts`)
+ *   BEFORE-REMOVAL (plan 41-11)     1_086_040
+ *   AFTER (plan 41-11, this value)  1_084_542  (-1_498: the retired locale keys leave the eager `en` bundle)
+ * Direction: eager bytes are NOT lower than phase start (+4_628 over BEFORE) - 41-CONTEXT's original
+ * "the eager bundle goes DOWN" expectation was wrong, because chart.js never lived in the eager graph: it
+ * sat in a LAZY chunk behind the pages that used it. Removing the package therefore moves the eager total
+ * by ~0 (the -1_498 above is the deleted locale keys, not the library), and the eager delta over the phase is
+ * the en.json ledger growth plus the new shared exports. The saving is in the lazy graph: research measured
+ * the `chartTheme-*.js` chunk at 173_848 B at phase start; by this plan's step 0 the build no longer emitted
+ * it at all (plans 41-05..41-10 removed its last importers), so the dead module and the two dependencies
+ * left the repository with no further build-output change. The old baseline (1_126_712) sat ~42 KiB above
+ * the real total; the lower bound below (`EAGER_BYTES_LOWER_SLACK`) makes that slack - and any future claim
+ * that the eager bundle went down - falsifiable.
+ */
+const EAGER_BYTES_BASELINE = 1_084_542;
 const EAGER_BYTES_TOLERANCE = 16 * 1024;
+/**
+ * The measured total must also stay within this much BELOW the baseline: a total far under the locked value
+ * means the baseline is stale (or a chunk silently left the eager closure) and the budget no longer describes
+ * the app. Re-baseline from the guard's own run when it trips.
+ */
+const EAGER_BYTES_LOWER_SLACK = 8 * 1024;
 
 let outDir: string;
 let builtOutput: BuiltChunk[];
@@ -426,7 +450,14 @@ describe('chart bundle isolation — build-output guard (SCL-02, D-02, D-19)', (
       totalBytes += fs.statSync(filePath).size;
     }
 
+    // Phase 41 (41-01): print the measured eager total so a re-baseline is taken from the
+    // guard's own run (C4), never from a bare build.
+    console.info(`[eager-bytes] total=${totalBytes} baseline=${EAGER_BYTES_BASELINE}`);
+
     expect(totalBytes).toBeGreaterThan(0);
     expect(totalBytes).toBeLessThanOrEqual(EAGER_BYTES_BASELINE + EAGER_BYTES_TOLERANCE);
+    // Plan 41-11: the lower bound - a "the eager bundle went down" claim is falsifiable, and a stale
+    // baseline cannot hide ~EAGER_BYTES_LOWER_SLACK of unexplained shrink.
+    expect(totalBytes).toBeGreaterThan(EAGER_BYTES_BASELINE - EAGER_BYTES_LOWER_SLACK);
   });
 });

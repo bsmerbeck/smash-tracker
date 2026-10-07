@@ -1,83 +1,171 @@
 import { describe, expect, it } from 'vitest';
 import type { GspPoint } from '@smash-tracker/shared';
+import { VALUE_SERIES_GRAIN_LADDER } from '@smash-tracker/shared';
 import type { RatingPeriodResult } from '@/lib/glicko';
-import { buildGspVsGlickoData, minMaxNormalize } from './gspVsGlicko';
+import { toMmrSeries } from './gspMmrModel';
+import {
+  GSP_VS_GLICKO_MIN_POINTS,
+  buildGspVsGlickoPanels,
+  shouldShowGspVsGlicko,
+} from './gspVsGlicko';
 
-describe('minMaxNormalize', () => {
-  it('returns an empty array for empty input', () => {
-    expect(minMaxNormalize([])).toEqual([]);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const START_MS = Date.UTC(2025, 0, 6, 18);
+
+function ratingPeriod(overrides: Partial<RatingPeriodResult>): RatingPeriodResult {
+  return { start: 0, end: 0, games: 1, rating: 1500, rd: 100, volatility: 0.06, ...overrides };
+}
+
+function gspSeriesOf(count: number, stepMs: number): GspPoint[] {
+  return Array.from({ length: count }, (_, i) => ({
+    time: START_MS + i * stepMs,
+    gsp: 9_800_000 + i * 20_000,
+    win: i % 4 !== 0,
+  }));
+}
+
+function periodsOf(count: number, stepMs: number): RatingPeriodResult[] {
+  return Array.from({ length: count }, (_, i) =>
+    ratingPeriod({
+      start: START_MS + i * stepMs,
+      end: START_MS + i * stepMs + 2 * 60 * 60 * 1000,
+      rating: 1400 + i,
+      rd: 80 + (i % 5),
+    }),
+  );
+}
+
+describe('shouldShowGspVsGlicko', () => {
+  it('is true only when BOTH series reach the minimum point count', () => {
+    expect(GSP_VS_GLICKO_MIN_POINTS).toBe(3);
+    expect(shouldShowGspVsGlicko(3, 3)).toBe(true);
+    expect(shouldShowGspVsGlicko(40, 300)).toBe(true);
   });
 
-  it('maps min to 0 and max to 100', () => {
-    const result = minMaxNormalize([1000, 2000, 3000]);
-    expect(result[0]).toBeCloseTo(0);
-    expect(result[2]).toBeCloseTo(100);
-    expect(result[1]).toBeCloseTo(50);
-  });
-
-  it('returns a flat 50 line when every value is identical (zero range)', () => {
-    expect(minMaxNormalize([500, 500, 500])).toEqual([50, 50, 50]);
-  });
-
-  it('handles a single value as a flat 50', () => {
-    expect(minMaxNormalize([42])).toEqual([50]);
+  it('is false when either series is below the minimum', () => {
+    expect(shouldShowGspVsGlicko(2, 10)).toBe(false);
+    expect(shouldShowGspVsGlicko(10, 2)).toBe(false);
+    expect(shouldShowGspVsGlicko(0, 0)).toBe(false);
   });
 });
 
-describe('buildGspVsGlickoData', () => {
-  function ratingPeriod(overrides: Partial<RatingPeriodResult>): RatingPeriodResult {
-    return { start: 0, end: 0, games: 1, rating: 1500, rd: 100, volatility: 0.06, ...overrides };
-  }
+describe('buildGspVsGlickoPanels', () => {
+  it('puts both panels at the same (coarser) grain, each within 60 points', () => {
+    // 40 readings stay at reading grain on their own; 300 daily closes need a coarser grain.
+    const mmr = toMmrSeries(gspSeriesOf(40, DAY_MS * 7));
+    const periods = periodsOf(300, DAY_MS);
+    const panels = buildGspVsGlickoPanels({ mmr, periods });
 
-  it('normalizes both series independently and pairs each with its own time value', () => {
-    const gspSeries: GspPoint[] = [
-      { time: 10, gsp: 1_000_000, win: true },
-      { time: 20, gsp: 2_000_000, win: true },
-    ];
-    const ratingPeriods: RatingPeriodResult[] = [
-      ratingPeriod({ end: 15, rating: 1400 }),
-      ratingPeriod({ end: 25, rating: 1600 }),
-    ];
-
-    const data = buildGspVsGlickoData(gspSeries, ratingPeriods);
-
-    // GSP -> MMR conversion is monotonic, so the lower GSP reading is still
-    // the series min (0) and the higher the max (100) after normalization.
-    expect(data.mmr).toEqual([
-      { time: 10, value: 0 },
-      { time: 20, value: 100 },
-    ]);
-    expect(data.glicko).toEqual([
-      { time: 15, value: 0 },
-      { time: 25, value: 100 },
-    ]);
+    expect(panels.mmr.grain).toBe(panels.glicko.grain);
+    expect(panels.grain).toBe(panels.glicko.grain);
+    expect(panels.mmr.grain).not.toBe('reading');
+    expect(panels.mmr.points.length).toBeLessThanOrEqual(60);
+    expect(panels.glicko.points.length).toBeLessThanOrEqual(60);
+    expect(panels.mmr.points.length).toBeGreaterThan(0);
   });
 
-  it('converts the GSP series to MMR before normalizing (not a raw-GSP overlay)', () => {
-    // Three GSP readings spaced EQUALLY in GSP, up in the curve's compressed
-    // upper half. On the MMR scale the spacing is NOT equal (the normal-CDF
-    // curve is nonlinear), so the middle point's normalized value must differ
-    // from the raw-GSP midpoint of 50.
-    const gspSeries: GspPoint[] = [
-      { time: 10, gsp: 9_000_000, win: true },
-      { time: 20, gsp: 12_000_000, win: true },
-      { time: 30, gsp: 15_000_000, win: true },
-    ];
-    const ratingPeriods: RatingPeriodResult[] = [
-      ratingPeriod({ end: 15, rating: 1400 }),
-      ratingPeriod({ end: 25, rating: 1500 }),
-      ratingPeriod({ end: 35, rating: 1600 }),
-    ];
-
-    const data = buildGspVsGlickoData(gspSeries, ratingPeriods);
-    expect(data.mmr[0]!.value).toBeCloseTo(0);
-    expect(data.mmr[2]!.value).toBeCloseTo(100);
-    expect(data.mmr[1]!.value).not.toBeCloseTo(50, 0);
+  it('keeps reading grain for both panels when both are short', () => {
+    const panels = buildGspVsGlickoPanels({
+      mmr: toMmrSeries(gspSeriesOf(10, DAY_MS)),
+      periods: periodsOf(12, DAY_MS),
+    });
+    expect(panels.grain).toBe('reading');
+    expect(panels.mmr.points).toHaveLength(10);
+    expect(panels.glicko.points).toHaveLength(12);
   });
 
-  it('returns empty arrays for empty input series', () => {
-    const data = buildGspVsGlickoData([], []);
-    expect(data.mmr).toEqual([]);
-    expect(data.glicko).toEqual([]);
+  it('agrees on the coarser grain even when the thinner panel would stay finer', () => {
+    const panels = buildGspVsGlickoPanels({
+      mmr: toMmrSeries(gspSeriesOf(5, DAY_MS)),
+      periods: periodsOf(400, DAY_MS),
+    });
+    const rank = (g: string) => VALUE_SERIES_GRAIN_LADDER.indexOf(g as never);
+    expect(panels.mmr.grain).toBe(panels.glicko.grain);
+    expect(rank(panels.grain)).toBeGreaterThan(rank('reading'));
+  });
+
+  it('spans xDomain from the earliest to the latest point of either panel', () => {
+    const mmr = toMmrSeries(gspSeriesOf(10, DAY_MS)); // days 0..9
+    const periods = periodsOf(10, DAY_MS).map((p) => ({
+      ...p,
+      end: p.end + 20 * DAY_MS, // later than every reading
+    }));
+    const panels = buildGspVsGlickoPanels({ mmr, periods });
+    const xs = [...panels.mmr.points, ...panels.glicko.points].map((p) => p.xMs);
+    expect(panels.xDomain[0]).toBe(Math.min(...xs));
+    expect(panels.xDomain[1]).toBe(Math.max(...xs));
+    expect(panels.xDomain[0]).toBe(mmr[0]!.time);
+    expect(panels.xDomain[1]).toBe(periods[9]!.end);
+  });
+
+  it('keeps raw values: MMR points equal the MMR closes and Glicko points the period ratings (no rescale)', () => {
+    const mmr = toMmrSeries(gspSeriesOf(8, DAY_MS));
+    const periods = periodsOf(8, DAY_MS);
+    const panels = buildGspVsGlickoPanels({ mmr, periods });
+    expect(panels.mmr.points.map((p) => p.value)).toEqual(mmr.map((p) => p.mmr));
+    expect(panels.glicko.points.map((p) => p.value)).toEqual(periods.map((p) => p.rating));
+    // The two scales differ and neither was squeezed onto 0-100.
+    expect(Math.min(...panels.mmr.points.map((p) => p.value))).toBeGreaterThan(100);
+    expect(Math.min(...panels.glicko.points.map((p) => p.value))).toBeGreaterThan(100);
+  });
+
+  it('stamps a Glicko point at its period end and indexes members into the periods', () => {
+    const periods = periodsOf(6, DAY_MS);
+    const panels = buildGspVsGlickoPanels({ mmr: toMmrSeries(gspSeriesOf(6, DAY_MS)), periods });
+    panels.glicko.points.forEach((point, i) => {
+      expect(point.xMs).toBe(periods[i]!.end);
+      expect(point.memberIndexes).toEqual([i]);
+    });
+  });
+
+  it('marks a calibration reading (win: null) as a calibration point at reading grain', () => {
+    const series: GspPoint[] = [
+      { time: START_MS, gsp: 9_800_000, win: true },
+      { time: START_MS + DAY_MS, gsp: 9_900_000, win: null },
+      { time: START_MS + 2 * DAY_MS, gsp: 9_950_000, win: false },
+    ];
+    const panels = buildGspVsGlickoPanels({
+      mmr: toMmrSeries(series),
+      periods: periodsOf(3, DAY_MS),
+    });
+    expect(panels.mmr.points.map((p) => p.kind)).toEqual(['reading', 'calibration', 'reading']);
+  });
+
+  // UAT 41 test 9 / F19: the MMR panel is one reading PER GSP MATCH, so tied match times collapse to one
+  // close-of-instant point at reading grain — the grain-agreement loop must still converge.
+  it('collapses tied MMR match times into one point and still agrees on one grain (F19)', () => {
+    const series = gspSeriesOf(10, DAY_MS).map((point, i) =>
+      i === 5 ? { ...point, time: START_MS + 4 * DAY_MS } : point,
+    );
+    const panels = buildGspVsGlickoPanels({
+      mmr: toMmrSeries(series),
+      periods: periodsOf(12, DAY_MS),
+    });
+    expect(panels.mmr.grain).toBe(panels.glicko.grain);
+    expect(panels.grain).toBe('reading');
+    expect(panels.mmr.points).toHaveLength(9);
+    const tied = panels.mmr.points.filter((point) => point.xMs === START_MS + 4 * DAY_MS);
+    expect(tied).toHaveLength(1);
+    expect(tied[0]!.n).toBe(2);
+    expect(tied[0]!.memberIndexes).toEqual([4, 5]);
+    const xs = panels.mmr.points.map((point) => point.xMs);
+    expect(new Set(xs).size).toBe(xs.length);
+    expect(panels.glicko.points).toHaveLength(12);
+  });
+
+  it('leaves an untied MMR panel one point per reading, identity by own index (F19)', () => {
+    const mmr = toMmrSeries(gspSeriesOf(10, DAY_MS));
+    const panels = buildGspVsGlickoPanels({ mmr, periods: periodsOf(12, DAY_MS) });
+    expect(panels.mmr.points.map((point) => point.memberIndexes)).toEqual(mmr.map((_, i) => [i]));
+    expect(panels.mmr.points.every((point) => point.kind === 'reading' && point.n === 1)).toBe(
+      true,
+    );
+  });
+
+  it('does not throw on empty input', () => {
+    const panels = buildGspVsGlickoPanels({ mmr: [], periods: [] });
+    expect(panels.mmr.points).toEqual([]);
+    expect(panels.glicko.points).toEqual([]);
+    expect(panels.xDomain).toEqual([0, 0]);
   });
 });

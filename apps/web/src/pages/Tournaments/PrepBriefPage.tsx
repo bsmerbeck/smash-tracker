@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { PrepBriefStatus } from '@smash-tracker/shared';
 import { selectReviewResultsContext, matchesForEntry } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -11,9 +10,13 @@ import { useMatches } from '@/hooks/useMatches';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
+import { useFighters } from '@/hooks/useFighters';
 import { applyOpponentAliases } from '@/hooks/useFilteredMatches';
 import { usePrepBrief, useActivatePrepBrief, useReopenPrepBrief } from '@/hooks/usePrepBrief';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
+import { buildPrepBriefActions } from '@/lib/prepBriefClaims';
+import { derivePrepSurfaceMode, type PrepSurfaceMode } from '@/lib/prepSurfaceMode';
+import { RecommendedActionsCard } from '@/components/claims/RecommendedActionsCard';
 import { TournamentHeader } from './components/TournamentHeader';
 import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { LikelyOpponentsCard } from './prep/LikelyOpponentsCard';
@@ -36,34 +39,6 @@ function NotFoundState() {
       </Button>
     </div>
   );
-}
-
-/**
- * Phase 28 (REV-01, 28-CONTEXT.md "Conversion mechanics", owner invariant
- * 5): widens the Phase 26 single-value switch to `'prep' | 'review'`. The
- * SOLE authority for this decision is `PrepBriefStatus.reviewAt` — the
- * server's EFFECTIVE conversion moment (the frozen `brief.reviewAt` once the
- * write-once transaction has committed, otherwise the server-derived
- * candidate computed from the registry row; see `prepBriefStatusSchema`'s
- * doc comment, 28-04's GET handler). The client NEVER re-derives review mode
- * from raw entry dates (`entry.firstSetAt`/`lastSetAt`/`eventDate`) — doing
- * so was the owner's REJECTED original proposal (28-CONTEXT.md "⚠ ONE
- * CORRECTION"), because a manually-entered event's date can resolve to the
- * start of the selected day, which would flip a tournament that is only
- * STARTING into a "post-event" review. Reading only the server's answer is
- * also what makes a converted surface un-flippable back to prep: once
- * `reviewAt` is frozen server-side, a later sync that moves a synced entry's
- * `lastSetAt` into the future can never change what this function returns,
- * because the registry row is never consulted again once the freeze exists
- * (the freeze itself rides the existing mount activate-or-reopen mutation,
- * server-side, per 28-04).
- */
-type PrepSurfaceMode = 'prep' | 'review';
-
-function derivePrepSurfaceMode(status: PrepBriefStatus): PrepSurfaceMode {
-  return status.activated && status.reviewAt !== undefined && status.reviewAt <= Date.now()
-    ? 'review'
-    : 'prep';
 }
 
 /**
@@ -98,6 +73,10 @@ export function PrepBriefPage() {
   const { data: aliasMap } = useOpponentAliases();
   const { data: canonicalOpponents = [] } = useOpponents();
   const { data: opponentNotes } = useOpponentNotes();
+  // Plan 39-11 (RPT-09, review C2-M8): the caller's declared fighters feed
+  // the recommended-actions producer's candidate set. An EXISTING hook on an
+  // EXISTING query key — no new route, no new query key.
+  const { data: fighters } = useFighters();
 
   const briefQuery = usePrepBrief(entryKey);
   const activateBrief = useActivatePrepBrief(entryKey ?? '');
@@ -134,6 +113,33 @@ export function PrepBriefPage() {
     () => applyOpponentAliases(allMatches, aliasMap ?? {}),
     [allMatches, aliasMap],
   );
+
+  // Plan 39-11 (RPT-09 / D-12, review C1-H8): the free brief's recommended
+  // actions — the shared engine's top three, derived from the data this page
+  // already holds (`buildPrepBriefActions` is pure; it resolves opponent
+  // identity itself, so it takes the stored matches and the alias map). One
+  // mount-time provenance timestamp, the page-level pattern plan 36-02 set.
+  const [actionsRefreshedAt] = useState(() => Date.now());
+  const likelyOpponentTags = useMemo(
+    () => Object.keys(briefQuery.data?.brief?.likelyOpponents ?? {}),
+    [briefQuery.data],
+  );
+  const prepActions = useMemo(
+    () =>
+      buildPrepBriefActions({
+        matches: allMatches,
+        aliasMap: aliasMap ?? {},
+        likelyOpponentTags,
+        myFighters: { primary: fighters?.primary ?? [], secondary: fighters?.secondary ?? [] },
+        refreshedAt: actionsRefreshedAt,
+      }),
+    [allMatches, aliasMap, likelyOpponentTags, fighters, actionsRefreshedAt],
+  );
+  // Code review WEB-04: with no likely opponents the engine has nothing to
+  // rank, whatever the history — the empty state says so instead of asking
+  // for more games.
+  const actionsEmptyKey =
+    likelyOpponentTags.length === 0 ? 'reports.actions.emptyNoOpponents' : 'reports.actions.empty';
 
   // WR-04: keyed by entryKey itself (not a bare boolean) so the guard is
   // entryKey-safe even if this exact component instance is ever kept
@@ -296,6 +302,11 @@ export function PrepBriefPage() {
             />
           )}
           <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
+          <RecommendedActionsCard
+            actions={prepActions.actions}
+            claims={prepActions.claims}
+            emptyKey={actionsEmptyKey}
+          />
         </>
       )}
       {mode === 'review' && (
@@ -304,6 +315,11 @@ export function PrepBriefPage() {
           <ResultsContextCard synced={reviewResults.synced} manual={reviewResults.manual} />
           <ReviewChecklistCard entryKey={entryKey!} reviewChecklist={reviewChecklist} />
           <ReviewGroundingCard eventMatches={eventMatches} />
+          <RecommendedActionsCard
+            actions={prepActions.actions}
+            claims={prepActions.claims}
+            emptyKey={actionsEmptyKey}
+          />
           {/*
            * RPT-04's exact strict-true rule, reused verbatim (owner
            * invariant 6 / REV-03): `showPaidReports` is the SAME

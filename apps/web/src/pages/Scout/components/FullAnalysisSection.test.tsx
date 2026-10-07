@@ -131,34 +131,38 @@ describe('FullAnalysisSection — phone layout (plan 39.1-49)', () => {
 });
 
 /**
- * Plan 39.1-49 (orchestrator 2026-09-26; UI-SPEC §11 "a line chart shows at
- * most 60 points"): the Recent Form trend plots at most MARK_BOUND_LINE_POINTS
- * of the scouted player's rolling-form points — the most recent ones — and
- * says how many of how many games it shows (the strip's existing
- * `analytics.strip.shownOf` line).
+ * Plan 41-12 (UI-SPEC §11 "a line chart shows at most 60 points"; supersedes
+ * the 39.1-49 trailing-form cap): the Recent Form card plots an EVENT-ANCHORED
+ * series — one point per event at or under 60 anchors, calendar bins above —
+ * and the card caption names the grain. No "N of M games shown" line: every
+ * sampled game sits behind exactly one plotted point.
  */
-describe('FullAnalysisSection — Recent Form point cap (plan 39.1-49)', () => {
-  it('recent form cap: 100 games plot 60 points with a "60 of 100 games shown" line; 20 games plot 20 with no line', async () => {
-    const user = userEvent.setup();
-    const many = Array.from({ length: 100 }, (_, i) =>
-      makeGame({ time: 1_700_000_000_000 + i * 60_000, win: i % 3 !== 0 }),
+describe('FullAnalysisSection — Recent Form point cap (plan 41-12)', () => {
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const T0 = Date.UTC(2025, 0, 6, 18);
+
+  function weeklyEvents(count: number): ScoutGame[] {
+    return Array.from({ length: count }, (_, i) =>
+      makeGame({ time: T0 + i * WEEK_MS, win: i % 3 !== 0, eventName: `Weekly ${i}` }),
     );
-    const view = render(<FullAnalysisSection games={many} gamerTag="Pandem1c" />);
+  }
+
+  it('100 games over 100 weekly events plot at most 60 points at grain month; 20 events plot 20 at grain event', async () => {
+    const user = userEvent.setup();
+    const view = render(<FullAnalysisSection games={weeklyEvents(100)} gamerTag="Pandem1c" />);
     await user.click(screen.getByRole('button', { name: /full analysis/i }));
     const trend = view.container.querySelector('[data-slot="scout-recent-form"]');
     expect(trend).not.toBeNull();
-    expect(trend!.getAttribute('data-points')).toBe('60');
-    expect(screen.getByText('60 of 100 games shown')).toBeInTheDocument();
+    expect(Number(trend!.getAttribute('data-points'))).toBeLessThanOrEqual(60);
+    expect(trend!.getAttribute('data-grain')).toBe('month');
+    expect(screen.queryByText(/games shown/)).not.toBeInTheDocument();
     view.unmount();
 
-    const few = Array.from({ length: 20 }, (_, i) =>
-      makeGame({ time: 1_700_000_000_000 + i * 60_000, win: i % 2 === 0 }),
-    );
-    const small = render(<FullAnalysisSection games={few} gamerTag="Pandem1c" />);
+    const small = render(<FullAnalysisSection games={weeklyEvents(20)} gamerTag="Pandem1c" />);
     await user.click(screen.getByRole('button', { name: /full analysis/i }));
-    expect(
-      small.container.querySelector('[data-slot="scout-recent-form"]')?.getAttribute('data-points'),
-    ).toBe('20');
+    const smallTrend = small.container.querySelector('[data-slot="scout-recent-form"]');
+    expect(smallTrend?.getAttribute('data-points')).toBe('20');
+    expect(smallTrend?.getAttribute('data-grain')).toBe('event');
     expect(screen.queryByText(/games shown/)).not.toBeInTheDocument();
   });
 });

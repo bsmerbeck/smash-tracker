@@ -276,6 +276,19 @@ describe('buildPeriodSeries (VIZ-01) — the full ladder (Task 2)', () => {
     expect(series.points[0]?.total).toBe(4);
   });
 
+  it('41-13: an eventSession point names the tournament in its label; its key keeps the bare event name', () => {
+    const matches = buildTournamentBlockFixture().map((match) => ({
+      ...match,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Genesis 9',
+    }));
+    const startMs = Math.min(...matches.map((match) => match.time));
+    const series = buildPeriodSeries({ matches, target: 1 });
+    expect(series.grain).toBe('eventSession');
+    expect(series.points[0]?.label).toBe('Genesis 9 \u00b7 Ultimate Singles');
+    expect(series.points[0]?.key).toBe(`eventSession:tournament:Ultimate Singles:${startMs}`);
+  });
+
   it('collapses two 2-day spans one year apart into two week-grain points with distinct keys', () => {
     const series = buildPeriodSeries({ matches: buildWeekGrainFixture(), target: 3 });
     expect(series.grain).toBe('week');

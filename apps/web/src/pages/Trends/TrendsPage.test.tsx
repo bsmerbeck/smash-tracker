@@ -62,9 +62,14 @@ const { DRILL_FROM_MS, DRILL_TO_MS } = vi.hoisted(() => ({
 vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./components/CareerTimelineCard')>();
   function CareerTimelineCardWithProbe(props: ComponentProps<typeof actual.CareerTimelineCard>) {
-    const { onSelectPeriod: selectPeriod, onSelectSet: selectSet } = props as {
+    const {
+      onSelectPeriod: selectPeriod,
+      onSelectSet: selectSet,
+      onSelectEventMarker: selectEvent,
+    } = props as {
       onSelectPeriod?: (range: object) => void;
       onSelectSet?: (key: string) => void;
+      onSelectEventMarker?: (entryKey: string) => void;
     };
     return (
       <>
@@ -77,6 +82,9 @@ vi.mock('./components/CareerTimelineCard', async (importOriginal) => {
         </button>
         <button type="button" onClick={() => selectSet?.('SETA')}>
           timeline-set-probe
+        </button>
+        <button type="button" onClick={() => selectEvent?.('entry-genesis')}>
+          timeline-event-probe
         </button>
       </>
     );
@@ -531,6 +539,68 @@ describe('TrendsPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  describe('plan 41-03 (B1, DD-41-07): the PlayRhythm door lands on exactly N', () => {
+    /**
+     * One game every 31 days for 28 games (a 28-month span): the recent window (the 12 whole UTC
+     * calendar months ending with this one, 41-REVIEW WR-02) counts some of them, so the door's count
+     * stays below the page's total (28), and "resolves via the claim id" cannot pass on an
+     * unresolved-fallback "everything". The expected count is derived from that same window, so the
+     * test does not depend on the day it runs.
+     */
+    function playRhythmDoorFixture() {
+      const now = Date.now();
+      return Array.from({ length: 28 }, (_, i) =>
+        makeMatch({ id: `rhythm${i}`, time: now - i * 31 * 24 * 60 * 60 * 1000, win: i % 2 === 0 }),
+      );
+    }
+
+    it("clicking the PlayRhythm card's counted-games door mounts #games with exactly the counted games and states the PlayRhythm sentence", async () => {
+      listMatches.mockResolvedValue(playRhythmDoorFixture());
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+
+      const { container } = renderTrends();
+
+      await screen.findByText('Career timeline');
+      const readCell = await waitFor(() => {
+        const el = container.querySelector('[data-slot="trends-rhythm-read"]');
+        if (!el) throw new Error('row 4 read cell not mounted');
+        return el as HTMLElement;
+      });
+      const door = within(readCell).getByRole('link', { name: /See the \d+ games/ });
+      const expectedCount = Number((door.textContent ?? '').match(/\d+/)![0]);
+      const nowDate = new Date();
+      const recentFloorMs = Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth() - 11, 1);
+      const inWindow = playRhythmDoorFixture().filter((m) => m.time >= recentFloorMs).length;
+      expect(expectedCount).toBe(inWindow);
+      expect(expectedCount).toBeGreaterThan(0);
+      expect(expectedCount).toBeLessThan(28);
+
+      await user.click(door);
+
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      const table = within(gamesCard).getByRole('table');
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(expectedCount);
+      const summary = gamesCard.querySelector('p.text-sm.text-muted-foreground') as HTMLElement;
+      expect(summary.textContent).toContain(String(expectedCount));
+      expect(summary.textContent).toMatch(/Play rhythm/);
+    });
+
+    it('the PlayRhythm card is mounted once, in row 4, and never inside the centre reads rail (RESEARCH correction 12)', async () => {
+      listMatches.mockResolvedValue(playRhythmDoorFixture());
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="trends-rhythm-read"]')).not.toBeNull(),
+      );
+      // The centre reads rail never carries the PlayRhythm card (RESEARCH correction 12).
+      const rail = container.querySelector('[data-slot="trends-reads-rail"]') as HTMLElement;
+      expect(rail.querySelector('[data-slot="play-rhythm-card"]')).toBeNull();
+      expect(container.querySelectorAll('[data-slot="play-rhythm-card"]')).toHaveLength(1);
+    });
+  });
+
   describe('plan 39.1-35: a timeline period drills to the Trends terminus', () => {
     it('writes from/to through the drill contract, keeps unrelated params, drops every other drill axis, lands on #games and mounts the terminus', async () => {
       listMatches.mockResolvedValue([
@@ -591,6 +661,61 @@ describe('TrendsPage', () => {
     });
   });
 
+  describe("plan 41-04: a career-timeline event diamond drills to exactly that event's games", () => {
+    it('writes event=<entryKey> + #games and lists only the games assigned to that resolved entry', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const start = Date.UTC(2021, 0, 5, 18);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'g1',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          time: start,
+        }),
+        makeMatch({
+          id: 'g2',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          time: start + 60_000,
+        }),
+        makeMatch({
+          id: 'o1',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Other Weekly',
+          time: start + 40 * day,
+        }),
+        makeMatch({ id: 'm1', time: start + 50 * day }),
+      ]);
+      listTournaments.mockResolvedValue([
+        {
+          entryKey: 'entry-genesis',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Genesis',
+          firstSetAt: start,
+          lastSetAt: start + 60_000,
+          setsPlayed: 2,
+        },
+      ]);
+      const user = userEvent.setup();
+
+      renderTrends();
+
+      await screen.findByText('Career timeline');
+      await user.click(screen.getByRole('button', { name: 'timeline-event-probe' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('location').textContent).toMatch(/event=entry-genesis.*#games$/),
+      );
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const gamesCard = document.getElementById('games') as HTMLElement;
+      await waitFor(() =>
+        expect(Number(within(gamesCard).getByRole('table').getAttribute('data-total-rows'))).toBe(
+          2,
+        ),
+      );
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while matches load', () => {
       listMatches.mockReturnValue(new Promise(() => {}));
@@ -602,12 +727,12 @@ describe('TrendsPage', () => {
       expect(status).toHaveTextContent('Loading trends...');
       expect(container.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThan(0);
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
-      // The skeleton's grid spans (12, 12, 4, 4, 4) mirror the loaded page's
-      // own hero(12)/timeline(12)/rails(4+4+4) spans.
+      // The skeleton's grid spans mirror the loaded page's own hero(12)/timeline(12)/
+      // rails(4+4+4) spans, plus plan 41-03's row 4: an insight (4) and a chart (8).
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4', '8'].sort());
     });
 
     it('renders zero skeleton blocks once loaded, and the loaded page reuses the same grid spans as the skeleton', async () => {
@@ -623,7 +748,8 @@ describe('TrendsPage', () => {
       const spans = Array.from(container.querySelectorAll('[data-span]')).map((el) =>
         el.getAttribute('data-span'),
       );
-      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4'].sort());
+      // The loaded page adds row 4's read (a one-game account's is locked) and heat (plan 41-03).
+      expect(spans.sort()).toEqual(['12', '12', '4', '4', '4', '4', '8'].sort());
     });
 
     it('on a background refetch, dims the previous frame instead of flashing a skeleton', async () => {
@@ -733,6 +859,103 @@ describe('TrendsPage', () => {
       expect(cls(cells[2]!)).toContain('lg:row-start-2');
       expect(cls(cells[3]!)).toEqual(expect.arrayContaining(['lg:col-start-1', 'lg:row-start-3']));
       expect(cls(cells[4]!)).toEqual(expect.arrayContaining(['lg:col-start-9', 'lg:row-start-3']));
+      // Plan 41-03: row 4's insight + chart skeleton pair is its own grid under the rails and carries the
+      // SAME placement constants as the loaded cells.
+      const rhythmGrid = container.querySelectorAll('[data-slot="page-grid"]')[1] as HTMLElement;
+      const rhythm = Array.from(rhythmGrid.children) as HTMLElement[];
+      expect(rhythm.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8']);
+      expect(cls(rhythm[0]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-1', 'xl:col-span-4', 'xl:col-start-9']),
+      );
+      expect(cls(rhythm[1]!)).toEqual(
+        expect.arrayContaining(['lg:row-start-2', 'xl:col-span-8', 'xl:row-start-1']),
+      );
+      expect(rhythm[0]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+      expect(rhythm[1]!.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+    });
+  });
+
+  // Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm" - the read first in the DOM, then the heat.
+  describe('plan 41-03 row 4: Play rhythm', () => {
+    const cls = (el: Element) => el.className.split(/\s+/);
+
+    function twoGames() {
+      return [
+        makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
+        makeMatch({
+          id: 'm2',
+          win: false,
+          time: Date.UTC(2021, 1, 1),
+          matchType: 'offline-tourney',
+        }),
+      ];
+    }
+
+    it('mounts the read and the heat as their own 4 + 8 grid under the rails, read before heat in the DOM', async () => {
+      listMatches.mockResolvedValue(twoGames());
+      const { container } = renderTrends();
+      await screen.findByText('Career timeline');
+      const grids = container.querySelectorAll('[data-slot="page-grid"]');
+      expect(grids).toHaveLength(2);
+      // The rails grid holds rows 1-3 only: five cells, no Play rhythm cell.
+      expect(grids[0]!.children).toHaveLength(5);
+      expect(grids[0]!.querySelector('[data-slot="trends-rhythm-read"]')).toBeNull();
+      const cells = Array.from(grids[1]!.children) as HTMLElement[];
+      expect(cells.map((c) => c.getAttribute('data-slot'))).toEqual([
+        'trends-rhythm-read',
+        'trends-rhythm-chart',
+      ]);
+      expect(cells.map((c) => c.getAttribute('data-span'))).toEqual(['4', '8']);
+      // 1280+: heat 8 left / read 4 right in one row; 1024-1279: read above a 12-col heat; no CSS order.
+      expect(cls(cells[0]!)).toEqual(
+        expect.arrayContaining([
+          'lg:col-span-12',
+          'lg:row-start-1',
+          'xl:col-span-4',
+          'xl:col-start-9',
+        ]),
+      );
+      expect(cls(cells[1]!)).toEqual(
+        expect.arrayContaining([
+          'lg:col-span-12',
+          'lg:row-start-2',
+          'xl:col-span-8',
+          'xl:row-start-1',
+        ]),
+      );
+      for (const cell of cells) expect(cell.className).not.toMatch(/(^|\s)([a-z0-9]+:)*order-/);
+      expect(cells[1]!.textContent).toContain('Play rhythm');
+    });
+
+    it('clicking a heat month drills #games to exactly that UTC month (from/to)', async () => {
+      listMatches.mockResolvedValue(twoGames());
+      const user = userEvent.setup();
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+      renderTrends();
+      await screen.findByText('Career timeline');
+      await user.click(await screen.findByRole('button', { name: 'February 2021: 1 game' }));
+      const location = (await screen.findByTestId('location')).textContent ?? '';
+      const url = new URL(location, 'http://x');
+      expect(url.searchParams.get('from')).not.toBeNull();
+      expect(url.searchParams.get('to')).not.toBeNull();
+      expect(url.hash).toBe('#games');
+      await waitFor(() => expect(document.getElementById('games')).toBeInTheDocument());
+      const table = within(document.getElementById('games') as HTMLElement).getByRole('table');
+      // Only the February game: the month range never reaches January or March.
+      expect(Number(table.getAttribute('data-total-rows'))).toBe(1);
+    });
+
+    it('is not mounted when the global filter leaves no games in scope', async () => {
+      window.localStorage.setItem(
+        ANALYTICS_FILTER_STORAGE_KEY,
+        JSON.stringify({ source: 'startgg', range: 'all' }),
+      );
+      // All matches are manual (no `source`), so the persisted "startgg" filter excludes everything.
+      listMatches.mockResolvedValue(twoGames());
+      const { container } = renderTrends();
+      expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="trends-rhythm-chart"]')).toBeNull();
+      expect(container.querySelector('[data-slot="trends-rhythm-read"]')).toBeNull();
     });
   });
 });

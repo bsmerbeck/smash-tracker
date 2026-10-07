@@ -181,4 +181,18 @@ describe('MatchupSnapshot', () => {
       '/coach/tetra/matchups',
     );
   });
+
+  // Plan 41-10 (DD-41-03): the Snapshot shares a half-width column with the
+  // form strip tile, so its two lists switch on the CARD's width (a container
+  // query), never the viewport's.
+  it('plan 41-10: the two lists are container columns, not viewport columns', () => {
+    const matches = Array.from({ length: 5 }, (_, i) => makeMatch(`${i}`, i, true, 2));
+    const { container } = renderWithContext(matches);
+    const lists = screen.getByText('Strongest Matchups').closest('.grid')!;
+    expect(lists.className).toMatch(/(^|\s)@container(\s|$)/);
+    expect(lists.className).toContain('grid-cols-1');
+    expect(lists.className).toContain('@[440px]:grid-cols-2');
+    expect(lists.className).not.toMatch(/(^|\s)sm:grid-cols-2(\s|$)/);
+    expect(container.querySelector('[data-slot="card"]')!.className).toContain('shadow-none');
+  });
 });

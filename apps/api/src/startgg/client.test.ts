@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fetchEventDetails,
+  fetchPlayerSetsPage,
   fetchResearchSetsIdProbe,
   fetchResearchSetsPage,
   fetchResearchSetsProbePage,
@@ -179,6 +180,39 @@ describe('resolvePlayerById', () => {
 });
 
 // ---- Phase 30 (ING-01/04/06): fetchResearchSetsPage / fetchResearchSetsProbePage ----
+
+describe('fetchPlayerSetsPage — bracket phase (UAT 37-9 / F10)', () => {
+  function pageWith(phaseGroup: unknown) {
+    return {
+      player: {
+        sets: {
+          pageInfo: { totalPages: 1 },
+          nodes: [{ id: 1, fullRoundText: 'Winners Round 1', phaseGroup }],
+        },
+      },
+    };
+  }
+
+  it("keeps a set's phaseGroup.phase name and phaseOrder through the page schema", async () => {
+    const fetchMock = async () =>
+      gqlResponse(pageWith({ phase: { name: 'Pools', phaseOrder: 1 } }));
+
+    const page = await fetchPlayerSetsPage('server-token', 1, 1, 10, fetchMock as typeof fetch);
+
+    expect(page.sets[0]?.phaseGroup?.phase).toEqual({
+      name: 'Pools',
+      phaseOrder: 1,
+    });
+  });
+
+  it('accepts a null phaseGroup and a null phase', async () => {
+    for (const phaseGroup of [null, { phase: null }]) {
+      const fetchMock = async () => gqlResponse(pageWith(phaseGroup));
+      const page = await fetchPlayerSetsPage('server-token', 1, 1, 10, fetchMock as typeof fetch);
+      expect(page.sets[0]?.phaseGroup?.phase ?? null).toBeNull();
+    }
+  });
+});
 
 describe('fetchResearchSetsPage', () => {
   it('sends the lossless field selections and a showByes:true filter', async () => {

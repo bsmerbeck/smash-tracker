@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CANONICAL_SCHEMA_VERSION, type EventEnvelope } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { runReconcile } from './reconcile.js';
+import { RECONCILED_EVENT_NAMES, RECONCILE_EXCEPTION_KINDS, runReconcile } from './reconcile.js';
 
 const DAY = '20260101';
 const FIXED_NOW = 1_700_000_000_000;
@@ -224,6 +224,117 @@ describe('runReconcile', () => {
     const result = await runReconcile(database as never, { day: DAY });
 
     expect(result).toEqual({ checked: 0, missing: 0, phantom: 0, duplicate: 0 });
+  });
+
+  it('exports RECONCILED_EVENT_NAMES with exactly its seven pre-existing members (C1-M7 sibling pin)', () => {
+    expect([...RECONCILED_EVENT_NAMES].sort()).toEqual(
+      [
+        'credits_granted',
+        'checkout_completed',
+        'credit_spent',
+        'credit_refunded',
+        'report_started',
+        'report_completed',
+        'report_failed',
+      ].sort(),
+    );
+  });
+
+  it('exports RECONCILE_EXCEPTION_KINDS with exactly the kinds the four writeException call sites use (C1-M7)', () => {
+    expect([...RECONCILE_EXCEPTION_KINDS].sort()).toEqual(
+      ['missing_event', 'phantom_event', 'duplicate_event'].sort(),
+    );
+  });
+
+  it('persists a counts-only summary to reconcileSummaries/{day} after a run (D-19)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`creditLedgerByDay/${DAY}/uid-1/key-1`, {
+      type: 'spend',
+      amount: -1,
+      createdAt: FIXED_NOW,
+      ref: 'job-1',
+    });
+
+    const result = await runReconcile(database as never, { day: DAY });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const summariesForDay = (dump.reconcileSummaries as Record<string, unknown> | undefined)?.[
+      DAY
+    ] as Record<string, unknown> | undefined;
+    expect(summariesForDay).toEqual({
+      checked: result.checked,
+      missing: result.missing,
+      phantom: result.phantom,
+      duplicate: result.duplicate,
+      // Code review API-WR-06: the units actually reconciled, and the
+      // outbox-pending rows `checked` also counts, are persisted apart.
+      reconciledUnits: result.checked,
+      outboxPending: 0,
+      generatedAt: expect.any(Number),
+    });
+  });
+
+  it('API-WR-06: persists reconciledUnits = checked minus the outbox-pending rows no exception class evaluates', async () => {
+    const database = new FakeDatabase();
+    database.seed(`creditLedgerByDay/${DAY}/uid-1/key-1`, {
+      type: 'spend',
+      amount: -1,
+      createdAt: FIXED_NOW,
+      ref: 'job-1',
+    });
+    database.seed(`outboxPending/${DAY}/row-a`, { eventId: 'a' });
+    database.seed(`outboxPending/${DAY}/row-b`, { eventId: 'b' });
+
+    const result = await runReconcile(database as never, { day: DAY });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const summary = (dump.reconcileSummaries as Record<string, Record<string, unknown>>)[DAY]!;
+    expect(summary.outboxPending).toBe(2);
+    expect(summary.reconciledUnits).toBe(result.checked - 2);
+    expect(summary.checked).toBe(result.checked);
+    // The pinned ReconcileResult shape is untouched.
+    expect(Object.keys(result).sort()).toEqual(['checked', 'duplicate', 'missing', 'phantom']);
+  });
+
+  it('replaces rather than appends the summary on a second run for the same day (D-19)', async () => {
+    const database = new FakeDatabase();
+    const first = await runReconcile(database as never, { day: DAY });
+    expect(first).toEqual({ checked: 0, missing: 0, phantom: 0, duplicate: 0 });
+
+    database.seed(`creditLedgerByDay/${DAY}/uid-1/key-1`, {
+      type: 'spend',
+      amount: -1,
+      createdAt: FIXED_NOW,
+      ref: 'job-1',
+    });
+    const second = await runReconcile(database as never, { day: DAY });
+    expect(second.checked).toBeGreaterThan(0);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const summariesForDay = (dump.reconcileSummaries as Record<string, unknown> | undefined)?.[
+      DAY
+    ] as Record<string, unknown> | undefined;
+    // The stored summary reflects ONLY the second run's counts — never a
+    // merge/accumulation across runs.
+    expect(summariesForDay).toMatchObject({
+      checked: second.checked,
+      missing: second.missing,
+      phantom: second.phantom,
+      duplicate: second.duplicate,
+    });
+  });
+
+  it('the persisted summary write survives the fake database undefined-rejection guard', async () => {
+    const database = new FakeDatabase();
+    // No seeded data at all — proves the write payload never carries an
+    // `undefined` field even in the all-zero case (the fake database throws
+    // synchronously on any undefined value reaching set()).
+    await expect(runReconcile(database as never, { day: DAY })).resolves.toEqual({
+      checked: 0,
+      missing: 0,
+      phantom: 0,
+      duplicate: 0,
+    });
   });
 
   it('reads only day-sharded nodes — never a bare full-tree get() call', () => {

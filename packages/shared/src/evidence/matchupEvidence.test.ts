@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '../match.js';
 import { unknownCharacterOnlyWorkspace } from '../testUtils/index.js';
-import { rankMatchupsByEvidence, getMatchupStageGuide } from './matchupEvidence.js';
+import {
+  rankMatchupsByEvidence,
+  getMatchupStageGuide,
+  listSubFloorMatchups,
+} from './matchupEvidence.js';
 
 /**
  * WR-01: `rankMatchupsByEvidence`'s unknown-character bucketing was applied
@@ -103,5 +107,47 @@ describe('getMatchupStageGuide — WR-01-i2 unknown-character exclusion', () => 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.opponentFighterId).toBe(8);
     expect(rows.some((row) => row.opponentFighterId === 0)).toBe(false);
+  });
+});
+
+describe('listSubFloorMatchups — the disclosure complement of rankMatchupsByEvidence (38-UAT 13/22)', () => {
+  function vs(id: string, opponentFighterId: number, index: number, win: boolean): Match {
+    return { ...knownMatch(id, index, win), opponent_id: opponentFighterId };
+  }
+
+  it('returns exactly the known-character groups rankMatchupsByEvidence drops, most games first then id ascending', () => {
+    const matches = [
+      vs('s1', 41, 0, true),
+      vs('s2', 41, 1, true),
+      vs('s3', 41, 2, false), // Sonic: 3 games -> ranked, not sub-floor
+      vs('p1', 57, 3, false), // Palutena: 1 game
+      vs('m1', 20, 4, true),
+      vs('m2', 20, 5, false), // id 20: 2 games
+      vs('z1', 10, 6, true), // id 10: 1 game
+      ...unknownCharacterOnlyWorkspace(),
+    ];
+
+    const ranked = rankMatchupsByEvidence(matches);
+    const subFloor = listSubFloorMatchups(matches);
+
+    expect(ranked.map((row) => row.opponentFighterId)).toEqual([41]);
+    expect(subFloor.map((row) => row.opponentFighterId)).toEqual([20, 10, 57]);
+    expect(subFloor[0]).toEqual({
+      opponentFighterId: 20,
+      wins: 1,
+      losses: 1,
+      totalMatches: 2,
+      ratio: 50,
+    });
+    expect(subFloor.some((row) => row.opponentFighterId === 0)).toBe(false);
+    // complement: no id in both lists
+    const rankedIds = new Set(ranked.map((row) => row.opponentFighterId));
+    expect(subFloor.every((row) => !rankedIds.has(row.opponentFighterId))).toBe(true);
+  });
+
+  it('an explicit sub-floor minMatches cannot lower the floor (effectiveFloor)', () => {
+    const matches = [vs('p1', 57, 0, true), vs('p2', 57, 1, false)];
+    expect(rankMatchupsByEvidence(matches, 1)).toEqual([]);
+    expect(listSubFloorMatchups(matches, 1).map((row) => row.opponentFighterId)).toEqual([57]);
   });
 });

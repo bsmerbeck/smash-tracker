@@ -58,6 +58,9 @@ function describeSummary(summary: ParryggSyncSummary, t: TFunction): string {
   if (summary.unmappedStages > 0) {
     parts.push(t('integrations.summary.unknownStages', { count: summary.unmappedStages }));
   }
+  if (summary.registryEntriesFailed) {
+    parts.push(t('integrations.summary.registryFailed', { count: summary.registryEntriesFailed }));
+  }
   return parts.join(' · ');
 }
 
@@ -245,7 +248,12 @@ export function ParryggCard() {
     try {
       const summary = await sync.mutateAsync();
       setLastSummary(summary);
-      toast.success(describeSummary(summary, t));
+      // A partially failed event-registry write is still a completed sync, but not a clean one.
+      if (summary.registryEntriesFailed) {
+        toast.warning(describeSummary(summary, t));
+      } else {
+        toast.success(describeSummary(summary, t));
+      }
     } catch {
       toast.error(t('integrations.syncFailed'));
     }

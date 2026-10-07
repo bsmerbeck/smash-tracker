@@ -68,6 +68,9 @@ describe('EVENT_CATALOG', () => {
       report_started: 'B',
       report_completed: 'B',
       report_failed: 'B',
+      report_failed_validation: 'B',
+      report_claims_dropped: 'B',
+      report_prose_stripped: 'B',
       share_view_loaded: 'X',
       signup_cta_clicked: 'X',
       managed_client_created: 'D',
@@ -97,6 +100,12 @@ describe('EVENT_CATALOG', () => {
       post_event_review_started: 'D',
       post_event_review_completed: 'D',
     });
+  });
+
+  it('catalogs the three Phase 39 report-validation occurrence events at class B (plan 39-06, D-07/D-20)', () => {
+    expect(EVENT_CATALOG.report_failed_validation).toBe('B');
+    expect(EVENT_CATALOG.report_claims_dropped).toBe('B');
+    expect(EVENT_CATALOG.report_prose_stripped).toBe('B');
   });
 
   it('classifies client_review_view_loaded (Phase 12 Plan 08) as D — emitted via its own dedicated route, not the generic X-ingestion route', () => {

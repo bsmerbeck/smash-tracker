@@ -13,6 +13,7 @@ import {
   playlistSchema,
   stageFavoritesSchema,
   SUBJECT_KIND_RESOLUTIONS,
+  watchlistResponseSchema,
 } from '@smash-tracker/shared';
 import {
   archiveClient,
@@ -58,6 +59,7 @@ const clientWorkspaceExportSchema = z.object({
   opponentAliases: opponentAliasMapSchema,
   opponentNotes: opponentNoteMapSchema,
   stageFavorites: stageFavoritesSchema,
+  watchlist: watchlistResponseSchema,
   fighterSelection: fighterSelectionSchema,
 });
 

@@ -1,8 +1,13 @@
-import type { TFunction } from 'i18next';
-import type { Match, ScoutGame } from '@smash-tracker/shared';
-import { parseExternalId } from '@smash-tracker/shared';
-import type { RollingWinRatePoint } from '@/lib/stats';
-import type { TrendChartPoint } from '@/components/charts/TrendLine';
+import {
+  binEventSeries,
+  buildPlayerEventSeries,
+  type EventAnchor,
+  type EventBin,
+  type EventBinGrain,
+  type EventDisplaySeries,
+  type Match,
+  type ScoutGame,
+} from '@smash-tracker/shared';
 
 /**
  * V9-D: adapts a scouted player's per-game records (`ScoutReportData.games`,
@@ -39,42 +44,44 @@ export function scoutGamesToMatches(games: ScoutGame[]): Match[] {
     matchType: 'none',
     ...(game.stageId != null ? { map: { id: game.stageId, name: game.stageName ?? '' } } : {}),
     ...(game.eventName ? { eventName: game.eventName } : {}),
+    ...(game.tournamentName ? { tournamentName: game.tournamentName } : {}),
   }));
 }
 
+/** What the Recent Form card plots: the event anchors themselves, or the calendar grain they were binned to. */
+export type ScoutFormGrain = 'event' | EventBinGrain;
+
 /**
- * Phase 38-05 (D-12/B-01): maps a rolling-win-rate series over the shipped
- * `getRollingWinRate` helper onto the chart kit's `TrendChartPoint` shape —
- * the Scout replacement for the deleted chart.js scouting-trend component,
- * mirroring `MatchupChart.tsx`'s own `buildTrendChartPoints`. This is a
- * WEB-TIER rendering of a third party's already-shipped recent-form curve,
- * not a new engine aggregation: `getRollingWinRate` lives in
- * `apps/web/src/lib/stats.ts` (also consumed by `MatchupChart.tsx`), and
- * D-11's "no rolling-N window anywhere" prohibition is scoped to this
- * phase's ENGINE code in `packages/shared` (plan 38-01's own prohibition) —
- * re-rendering an existing web-tier trailing-window card through the kit
- * changes no number.
+ * Plan 41-12 (SC1 / SC2, PD-12-2): the Recent Form card's display series — the
+ * scouted player's whole sampled history as ONE event-anchored cumulative
+ * series (`buildPlayerEventSeries`, the same private anchoring the opponent hub
+ * and the stage page use), binned by the engine to at most 60 points
+ * (`binEventSeries`, identity at or under the bound). The chart never bins and
+ * no trailing window is computed. `refreshedAt` is the latest game time (0 for
+ * none), never a clock read in render. `grain` is `'event'` when the display
+ * array is the unbinned anchors, else the first bin's calendar grain.
  */
-export function buildScoutTrendChartPoints(
-  series: RollingWinRatePoint[],
-  t: TFunction,
-): TrendChartPoint[] {
-  return series.map((point) => {
-    const stageName =
-      point.match.map && point.match.map.id !== 0 ? point.match.map.name : t('common.unknown');
-    const parsedExternalId = parseExternalId(point.match.externalId);
-    return {
-      index: point.index,
-      winRate: point.winRate,
-      context: {
-        matchId: point.match.id,
-        opponentTag: point.match.opponent || t('common.unknown'),
-        stageName,
-        eventName: point.match.eventName ?? point.match.tournamentName ?? null,
-        dateMs: point.match.time,
-        win: point.match.win,
-        gameNumber: parsedExternalId?.game ?? null,
-      },
-    };
-  });
+export function buildScoutFormSeries(matches: Match[]): {
+  display: EventDisplaySeries;
+  grain: ScoutFormGrain;
+} {
+  const refreshedAt = matches.reduce((latest, match) => Math.max(latest, match.time), 0);
+  const series = buildPlayerEventSeries({ matches, refreshedAt });
+  const display = binEventSeries(series);
+  const first = display[0];
+  const grain: ScoutFormGrain = first && first.kind === 'bin' ? first.grain : 'event';
+  return { display, grain };
+}
+
+/**
+ * The games behind one plotted point, oldest first (ties by id). Identity
+ * rule: a point's games are its `matchIds`, never its `[startMs, endMs]`
+ * window (the CR-02 lesson — a window can swallow a neighbouring anchor's
+ * games). An empty `matchIds` yields no games.
+ */
+export function gamesBehindPoint(point: EventAnchor | EventBin, matches: Match[]): Match[] {
+  const ids = new Set(point.matchIds);
+  return matches
+    .filter((match) => ids.has(match.id))
+    .sort((a, b) => a.time - b.time || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }

@@ -11,7 +11,12 @@ import type {
 } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import type { StripeLikeClient } from '../routes/billing.js';
-import { authHeader, buildTestApp } from '../test-support/testApp.js';
+import { authHeader, buildTestApp as buildBareTestApp } from '../test-support/testApp.js';
+import {
+  seedViableEvidence,
+  VIABLE_CLAIM_SELECTION,
+  VIABLE_OPPONENT_SETS_RESPONSE,
+} from '../test-support/viableEvidenceFixture.js';
 import { readSubjectKind } from './subjectKind.js';
 
 /**
@@ -69,15 +74,12 @@ const REPORTS_CONFIG: ReportsConfig = {
   allowedUids: new Set(['some-unrelated-allowlisted-uid']),
 };
 
-const VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player.',
-  gameplan: ['Punish landing lag.'],
-  characterStrategy: { picks: ['Mario'], reasoning: 'Game 1: Mario.' },
-  stageStrategy: { bans: ['Final Destination'], picks: ['Battlefield'], reasoning: 'Flat stages.' },
-  headToHead: null,
-  watchFor: ['Shine spikes off stage.'],
-  confidenceNotes: 'No sampled sets — treat this as a cold read.',
-};
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION
+ * (`reports/claimSelection.ts`), never a free-prose report — the shared
+ * lint-clean `VIABLE_CLAIM_SELECTION`.
+ */
+const VALID_REPORT = VIABLE_CLAIM_SELECTION;
 
 function scoutFetchMock(): typeof fetch {
   return (async (_url: unknown, init?: RequestInit) => {
@@ -91,9 +93,9 @@ function scoutFetchMock(): typeof fetch {
         }),
       );
     }
-    return new Response(
-      JSON.stringify({ data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } } } }),
-    );
+    // Plan 39-06 (C3-B1): the scouted opponent's public history is viable,
+    // not empty — see `test-support/viableEvidenceFixture.ts`.
+    return new Response(JSON.stringify({ data: VIABLE_OPPONENT_SETS_RESPONSE }));
   }) as typeof fetch;
 }
 
@@ -157,6 +159,23 @@ const MONEY_TREES = [
   'reportJobsByStatus',
   'reportJobsByDay',
 ] as const;
+
+/**
+ * Plan 39-06 (review C3-B1): this file asserts generation SUCCESSES (a demo
+ * account and the ordinary control generate a report), so every app it
+ * builds runs against a VIABLE workspace — own history for each account that
+ * generates here, seeded at MODULE scope through this same-named wrapper —
+ * or plan 39-07's D-21 fail-fast would turn those successes into refunds.
+ * `test-support/testApp.ts` is deliberately not modified. Do not "tidy" this
+ * back to a direct import.
+ */
+function buildTestApp(options: Parameters<typeof buildBareTestApp>[0] = {}) {
+  const built = buildBareTestApp(options);
+  for (const uid of [DEMO_UID, OTHER_DEMO_UID, ORDINARY_UID]) {
+    seedViableEvidence(built.database, uid, { opponentTag: 'Test' });
+  }
+  return built;
+}
 
 function buildMoneyApp(overrides: { demo?: DemoAccountConfig | null } = {}) {
   const { client, create } = spyStripeClient();
@@ -316,7 +335,7 @@ describe('demoMoneyGuards: a demo account generates reports free, bypassing (nev
     await flush();
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().report.overview).toBe(VALID_REPORT.overview);
+    expect(response.json().report.overview).toBe(VALID_REPORT.sections.overview.connective);
 
     const dump = database.dump() as Record<string, unknown>;
     // BYPASS, not a grant: no balance node was ever created for this uid,

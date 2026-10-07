@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import type { TrendChartPoint, TrendEventPoint } from './TrendLine';
+import { formatDate } from '@/lib/format';
+import type { TrendChartPoint, TrendEventPoint, TrendValuePoint } from './TrendLine';
 
 /**
  * Deliberately NOT typed against Recharts' `TooltipContentProps` — that type
@@ -31,8 +32,23 @@ interface ChartTooltipProps {
 const BIN_EVENT_KEY_PREFIX = 'bin:';
 
 /** True for a `TrendEventPoint` (has an `eventKey`), false for the numeric-mode `TrendChartPoint` — the ONLY branch this component makes on point shape. */
-function isEventPoint(point: TrendChartPoint | TrendEventPoint): point is TrendEventPoint {
+function isEventPoint(
+  point: TrendChartPoint | TrendEventPoint | TrendValuePoint,
+): point is TrendEventPoint {
   return 'eventKey' in point;
+}
+
+/** Plan 41-02: true for a value-mode point — discriminated on the host-built `context.valueKey`, checked BEFORE the numeric fall-through (a value point carries no `winRate`). */
+function isValuePoint(
+  point: TrendChartPoint | TrendEventPoint | TrendValuePoint,
+): point is TrendValuePoint {
+  return (
+    'context' in point &&
+    typeof point.context === 'object' &&
+    point.context !== null &&
+    'valueKey' in point.context &&
+    point.context.valueKey === 'value'
+  );
 }
 
 export function ChartTooltip({ active, payload }: ChartTooltipProps) {
@@ -42,18 +58,38 @@ export function ChartTooltip({ active, payload }: ChartTooltipProps) {
     return null;
   }
 
-  const point = payload[0]?.payload as TrendChartPoint | TrendEventPoint | undefined;
+  const point = payload[0]?.payload as
+    TrendChartPoint | TrendEventPoint | TrendValuePoint | undefined;
   if (!point) {
     return null;
   }
 
-  if (isEventPoint(point)) {
-    const { context } = point;
-    const date = new Date(context.dateMs).toLocaleDateString(i18n.language);
+  if (isValuePoint(point)) {
+    // Every string arrives pre-resolved by the host: the value leads (title), the label(s) follow.
+    const { title, lines } = point.context;
     return (
       <div className="rounded-md border border-border bg-card p-2 text-xs">
+        <p className="text-sm font-semibold">{title}</p>
+        {lines.map((line, i) => (
+          <p key={`${i}:${line}`} className="text-muted-foreground">
+            {line}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  if (isEventPoint(point)) {
+    const { context } = point;
+    const date = formatDate(context.dateMs, i18n.language);
+    return (
+      <div className="rounded-md border border-border bg-card p-2 text-xs">
+        {/* Plan 38-12 (38-UAT test 20, F5): the plotted series is the D-11
+            cumulative record, so the bold figure says it is the running
+            rate — never read as this event's own rate. Binned points carry
+            their last member's cumulative value, so the label holds there too. */}
         <p className="text-sm font-semibold">
-          {t('shared.chartTooltip.rate', { rate: Math.round(point.cumulativeWinRate) })}
+          {t('shared.chartTooltip.cumulativeRate', { rate: Math.round(point.cumulativeWinRate) })}
         </p>
         <p className="text-muted-foreground">
           {/* Plan 39.1-50 (OOS-14, UI-SPEC §10.2): with no opponent (stage
@@ -81,7 +117,7 @@ export function ChartTooltip({ active, payload }: ChartTooltipProps) {
   }
 
   const { context } = point;
-  const date = new Date(context.dateMs).toLocaleDateString(i18n.language);
+  const date = formatDate(context.dateMs, i18n.language);
   const result = context.win ? t('common.win') : t('common.loss');
 
   return (

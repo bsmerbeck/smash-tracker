@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tournamentEntrySchema } from './startgg.js';
 import { rulesetOverrideStoredSchema } from './ruleset.js';
+import { TOURNAMENT_EVENT_TYPE_MAX_LENGTH, tierOverrideStoredSchema } from './tournamentTier.js';
 
 /**
  * Phase 30.3 (Tournament Registry Backfill): the shared contract for a
@@ -191,6 +192,16 @@ export const tournamentRegistryRowSchema = z.object({
    * for the retrospective (plan 37-06), not the edge case.
    */
   rulesetOverride: rulesetOverrideStoredSchema.nullish(),
+  /**
+   * TIER-01 (39.2): the SAME `isOnline`/`eventType`/`tierOverride` members
+   * `tournamentEntrySchema` carries, declared here for the same reason as
+   * `rulesetOverride` above — the GET response union lists this registry row
+   * FIRST and a Zod object strips unknown keys, so a member declared only on
+   * the legacy shape would vanish from an admin-imported row at serialization.
+   */
+  isOnline: z.boolean().nullish(),
+  eventType: z.string().max(TOURNAMENT_EVENT_TYPE_MAX_LENGTH).nullish(),
+  tierOverride: tierOverrideStoredSchema.nullish(),
 });
 export type TournamentRegistryRow = z.infer<typeof tournamentRegistryRowSchema>;
 

@@ -6,6 +6,8 @@ import type { HorizonKey, Insight, InsightScope, Match } from '@smash-tracker/sh
 import { INSIGHT_TEMPLATES, confidenceTierFor } from '@smash-tracker/shared';
 import { InsightCard, type InsightCardDoors } from '@/components/analytics/InsightCard';
 import { ClaimChip } from '@/components/analytics/ClaimChip';
+import { InsightTrackAction } from '@/components/analytics/track/InsightTrackAction';
+import { trackRefForInsight } from '@/components/analytics/track/trackRef';
 import { Record } from '@/components/analytics/Record';
 import { ComparisonBars, type ComparisonBarsRow } from '@/components/charts/ComparisonBars';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
@@ -271,6 +273,9 @@ export function MatchupOrPlayerCard({
       evidence={evidence}
       mark={buildPlayerMark(insight, t)}
       doors={doors}
+      action={
+        trackRefForInsight(insight) !== null ? <InsightTrackAction insight={insight} /> : undefined
+      }
     />
   );
 }

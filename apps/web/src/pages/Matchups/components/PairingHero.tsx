@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter, HorizonKey, Insight, Match, PeriodSeries } from '@smash-tracker/shared';
@@ -9,6 +9,7 @@ import { HorizonStatRow } from '@/components/analytics/HorizonStatRow';
 import { MatchTypeShareBar } from '@/components/analytics/MatchTypeShareBar';
 import type { InsightDoorDescriptor } from '@/components/analytics/insightDoors';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { cn } from '@/lib/utils';
 import { formatMonthSpan } from '@/lib/dateSpan';
 import { MATCHUP_MATRIX_ANCHOR_ID } from '../lib/matchupAnchors';
 import { MatchupChart, renderFormNowHead } from './MatchupChart';
@@ -41,6 +42,12 @@ export interface PairingHeroProps {
   isLoading: boolean;
   /** The clock `formNowInsight` was built with (D-06 / D-12). */
   nowMs: number;
+  /**
+   * Plan 39.2-10 (T-04): a control right-aligned on the identity row (the
+   * Track toggle). It sits OUTSIDE the h1, so the heading — and the regions it
+   * names — stays the bare pairing text.
+   */
+  action?: ReactNode;
 }
 
 /**
@@ -72,6 +79,7 @@ export function PairingHero({
   setHorizon,
   isLoading,
   nowMs,
+  action,
 }: PairingHeroProps) {
   const { t, i18n } = useTranslation();
 
@@ -101,7 +109,10 @@ export function PairingHero({
   });
 
   const identity = (
-    <div className="flex flex-wrap items-center gap-3" data-slot="pairing-hero-identity">
+    <div
+      className={cn('flex items-center gap-3', action ? 'flex-nowrap' : 'flex-wrap')}
+      data-slot="pairing-hero-identity"
+    >
       <span className="inline-flex flex-none items-center">
         <img src={fighter.url} alt="" className="size-10 object-contain" />
         <span aria-hidden="true" className="mx-1 text-xs text-muted-foreground">
@@ -109,7 +120,7 @@ export function PairingHero({
         </span>
         <img src={opponent.url} alt="" className="size-10 object-contain" />
       </span>
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <h1 id={headingId} className="text-xl leading-6 font-semibold">
           {heading}
         </h1>
@@ -120,6 +131,11 @@ export function PairingHero({
           </p>
         )}
       </div>
+      {action && (
+        <div className="ml-auto flex flex-none items-center" data-slot="pairing-hero-action">
+          {action}
+        </div>
+      )}
     </div>
   );
 

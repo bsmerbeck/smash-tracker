@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ABSTENTION_FLOOR_GAMES,
+  CLAIM_SCHEMA_VERSION,
   EVIDENCE_POLICY_VERSION,
   RECENCY_TREATMENT,
   type ScoutBinding,
@@ -15,6 +16,20 @@ import {
   type AnthropicLikeClient,
   type ReportPayload,
 } from './generate.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { vi } from 'vitest';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import {
+  CLAIM_ID_VOCABULARY,
+  MIN_VIABLE_CLAIMS,
+  buildClaimSet,
+  resolveSubjectDisplayName,
+} from '@smash-tracker/shared';
+import { claimSelectionSchema } from './claimSelection.js';
+import { snapshotIdFor } from './snapshotId.js';
+import { seedViableEvidence } from '../test-support/viableEvidenceFixture.js';
+import { buildModelPayload } from './generate.js';
 
 const UID = 'test-uid-123';
 
@@ -674,21 +689,19 @@ describe('assembleReportPayload (binding-aware evidence, RPT-01)', () => {
   });
 });
 
+/**
+ * Phase 39 (plan 39-06): the model's output is a claim SELECTION over the
+ * fixed claim-id vocabulary, not a free-prose report.
+ */
 const VALID_REPORT = {
-  overview: 'A fast-falling Fox/Falco player who plays aggressively.',
-  gameplan: ['Punish landing lag hard.'],
-  characterStrategy: {
-    picks: ['Mario'],
-    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario — favorable matchup either way.',
+  sections: {
+    overview: { claimIds: ['c01'], connective: 'Start the set patient and steady.' },
+    gameplan: { claimIds: ['c02'], connective: 'Punish landing habits and reset to neutral.' },
+    watchFor: { claimIds: ['c03'], connective: 'Watch for the same ledge option under pressure.' },
   },
-  stageStrategy: {
-    bans: ['Final Destination'],
-    picks: ['Battlefield'],
-    reasoning: 'They perform best on flat stages.',
-  },
-  headToHead: null,
-  watchFor: ['Likes to shine spike off stage.'],
-  confidenceNotes: 'Only 20 games sampled — treat character splits as light samples.',
+  action1: null,
+  action2: null,
+  action3: null,
 };
 
 function stubClient(response: {
@@ -731,6 +744,28 @@ const PAYLOAD: ReportPayload = {
     matchupAdvisor: [],
   },
   notes: null,
+  rows: {},
+  snapshot: {
+    policyVersion: EVIDENCE_POLICY_VERSION,
+    claimSchemaVersion: CLAIM_SCHEMA_VERSION,
+    refreshedAt: 0,
+    cohort: {
+      online: 0,
+      offline: 0,
+      unspecified: 0,
+      manual: 0,
+      startgg: 0,
+      parrygg: 0,
+      mixedContext: false,
+      minorityShare: 0,
+      minorityLabel: null,
+      majorityLabel: null,
+    },
+    rows: {},
+    matchIdDigest: { count: 0, hash: 'fixture-empty-digest' },
+  },
+  claimSet: { claims: [], issuedClaimIds: [], truncatedCandidateCount: 0 },
+  actionCandidates: [],
 };
 
 describe('generateScoutReport', () => {
@@ -759,5 +794,338 @@ describe('generateScoutReport', () => {
     await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject(
       new ReportGenerationError('unparseable'),
     );
+  });
+});
+
+describe('generateScoutReport: claim-selection schema and guard order (Phase 39, plan 39-06)', () => {
+  it('passes the claim-selection schema to messages.parse — the enum over the fixed vocabulary, never the free-prose report schema', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    await generateScoutReport(client, PAYLOAD);
+
+    const expected = zodOutputFormat(claimSelectionSchema);
+    expect(JSON.stringify(captured!.output_config.format.schema)).toBe(
+      JSON.stringify(expected.schema),
+    );
+    // Call SHAPE is byte-preserved: same model, token budget and adaptive thinking.
+    expect(captured).toMatchObject({
+      model: 'claude-opus-4-8',
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+    });
+    for (const forbidden of ['temperature', 'top_p', 'citations']) {
+      expect(captured).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('checks refusal FIRST: a refusal whose parsed_output is also null throws the refusal reason, not unparseable', async () => {
+    const client = stubClient({ stop_reason: 'refusal', parsed_output: null });
+    await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject({
+      name: 'ReportGenerationError',
+      reason: 'refusal',
+    });
+  });
+
+  it('checks truncation before the null-output guard: max_tokens with a null parse throws truncated', async () => {
+    const client = stubClient({ stop_reason: 'max_tokens', parsed_output: null });
+    await expect(generateScoutReport(client, PAYLOAD)).rejects.toMatchObject({
+      reason: 'truncated',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 39 (plan 39-06 Task 3): the payload emits rows, snapshot, claim set
+// and ranked actions; the MODEL sees only claims and action candidates.
+// ---------------------------------------------------------------------------
+
+describe('assembleReportPayload: evidence rows, snapshot, claim set and ranked actions (plan 39-06 Task 3)', () => {
+  /** A scouted opponent with three known characters and one unmapped (fighterId 0) bucket. */
+  const THREE_CHARACTER_SCOUT: ScoutReportData = {
+    player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+    sampledSets: 12,
+    sampledGames: 26,
+    characters: [
+      { fighterId: 8, games: 12, wins: 8 }, // Fox
+      { fighterId: 9, games: 8, wins: 4 }, // Pikachu
+      { fighterId: 23, games: 4, wins: 2 }, // Marth
+      { fighterId: 0, games: 2, wins: 1 }, // unmapped bucket — never a claim subject
+    ],
+    stages: [],
+    recentEvents: [],
+    commonOpponents: [],
+  };
+
+  async function assembleViable() {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    return assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+  }
+
+  it('every emitted claim id is a member of CLAIM_ID_VOCABULARY and every action candidate cites at least one issued claim id', async () => {
+    const payload = await assembleViable();
+    expect(payload.claimSet.claims.length).toBeGreaterThan(0);
+    for (const claim of payload.claimSet.claims) {
+      expect(CLAIM_ID_VOCABULARY).toContain(claim.id);
+    }
+    expect(payload.claimSet.claims).toEqual(
+      buildClaimSet({ rows: payload.rows, surface: 'scout' }).claims,
+    );
+    const issued = new Set(payload.claimSet.issuedClaimIds);
+    expect(payload.actionCandidates.length).toBeGreaterThan(0);
+    for (const candidate of payload.actionCandidates) {
+      expect(candidate.claimIds.length).toBeGreaterThan(0);
+      for (const claimId of candidate.claimIds) {
+        expect(issued.has(claimId)).toBe(true);
+      }
+    }
+  });
+
+  it('C2-B2: a stage_record AND a stage_pick_rate row exist for the same stage under two distinct keys', async () => {
+    const payload = await assembleViable();
+    const recordRow = payload.rows['sr-g8-s1'];
+    const rateRow = payload.rows['spr-g8-s1'];
+    expect(recordRow?.predicate).toBe('stage_record');
+    expect(rateRow?.predicate).toBe('stage_pick_rate');
+    expect(recordRow?.subject).toEqual(rateRow?.subject);
+  });
+
+  it('C3-B1: an EMPTY own history with a populated scouted opponent yields one opponent_character_usage row per known scout.characters entry, issuing at least MIN_VIABLE_CLAIMS.scout claims', async () => {
+    const database = new FakeDatabase();
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const usageRows = Object.values(payload.rows).filter(
+      (row) => row.predicate === 'opponent_character_usage',
+    );
+    const knownCharacters = THREE_CHARACTER_SCOUT.characters.filter((c) => c.fighterId !== 0);
+    expect(usageRows.map((row) => row.subject.opponentFighterId)).toEqual(
+      knownCharacters.map((c) => c.fighterId),
+    );
+    // The rate's denominator IS the sample's countable games (validator rule R7).
+    for (const row of usageRows) {
+      expect(row.value.kind === 'rate' && row.value.denominator).toBe(
+        row.sample.eligibleDenominator,
+      );
+    }
+    expect(payload.claimSet.claims.length).toBeGreaterThanOrEqual(MIN_VIABLE_CLAIMS.scout);
+  });
+
+  it("API-WR-02: the unmapped fighter-0 bucket is never a row or claim subject, even when it is the opponent's TOP character", async () => {
+    const unmappedFirst: ScoutReportData = {
+      ...THREE_CHARACTER_SCOUT,
+      characters: [
+        { fighterId: 0, games: 14, wins: 7 }, // unmapped bucket, most-played
+        ...THREE_CHARACTER_SCOUT.characters.filter((c) => c.fighterId !== 0),
+      ],
+    };
+    for (const scout of [THREE_CHARACTER_SCOUT, unmappedFirst]) {
+      const database = new FakeDatabase();
+      seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+      const payload = await assembleReportPayload(
+        UID,
+        scout,
+        database as unknown as Parameters<typeof assembleReportPayload>[2],
+      );
+      expect(Object.values(payload.rows).some((row) => row.subject.opponentFighterId === 0)).toBe(
+        false,
+      );
+      expect(payload.claimSet.claims.some((claim) => claim.subject.opponentFighterId === 0)).toBe(
+        false,
+      );
+      // Known top characters still get their advisor row.
+      expect(
+        Object.values(payload.rows).some(
+          (row) => row.predicate === 'matchup_advisor_pick' && row.subject.opponentFighterId === 8,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('SH-IN-05 (re-homed denominator proof): unknown-stage games never enter a known stage row — the pick-rate denominator is the KNOWN-stage count, and the raw sample still discloses them', async () => {
+    // This is where denominators are actually computed (the shared claim
+    // builder passes a row's value through unchanged), so the proof that the
+    // unknown bucket is never folded into a known entity's rate lives here.
+    const database = new FakeDatabase();
+    const battlefield = { id: 1, name: 'Battlefield' };
+    const finalDestination = { id: 3, name: 'Final Destination' };
+    const vsFox = (time: number, win: boolean, map?: { id: number; name: string }) => ({
+      fighter_id: 1,
+      opponent_id: 8,
+      time,
+      win,
+      opponent: 'someone',
+      ...(map ? { map } : {}),
+    });
+    database.seed(`matches/${UID}`, {
+      b1: vsFox(1, true, battlefield),
+      b2: vsFox(2, true, battlefield),
+      b3: vsFox(3, false, battlefield),
+      f1: vsFox(4, false, finalDestination),
+      f2: vsFox(5, false, finalDestination),
+      u1: vsFox(6, true), // no map -> unknown stage
+      u2: vsFox(7, true), // no map -> unknown stage
+    });
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const knownStageGames = 5;
+    const allGamesVsFox = 7;
+    const rate = payload.rows['spr-g8-s1'];
+    expect(rate?.value).toEqual({ kind: 'rate', numerator: 3, denominator: knownStageGames });
+    expect(rate?.sample.eligibleDenominator).toBe(knownStageGames);
+    expect(rate?.sample.rawSampleSize).toBe(allGamesVsFox);
+    // The known stage's record counts only its own games; no row is ever
+    // keyed on (or carries) the unknown stage.
+    expect(payload.rows['sr-g8-s1']?.value).toEqual({
+      kind: 'record',
+      wins: 2,
+      losses: 1,
+      games: 3,
+    });
+    expect(Object.values(payload.rows).some((row) => row.subject.stageId === 0)).toBe(false);
+  });
+
+  it('the snapshot id is identical across two assemblies of the same input, even at different wall-clock times', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const first = await assembleViable();
+    nowSpy.mockReturnValue(1_800_086_400_000);
+    const second = await assembleViable();
+    nowSpy.mockRestore();
+    expect(first.snapshot.refreshedAt).not.toBe(second.snapshot.refreshedAt);
+    expect(snapshotIdFor(first.snapshot)).toBe(snapshotIdFor(second.snapshot));
+  });
+
+  it('VOD refs come from the existing selectOpponentMatches result: a LOST head-to-head match with a VOD timestamp licenses a vod_review candidate naming that match', async () => {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    // One extra lost game against the scouted tag, with a VOD moment.
+    database.seed(`matches/${UID}/vod-lost-1`, {
+      fighter_id: 1,
+      opponent_id: 23,
+      time: 1_700_100_000_000,
+      map: { id: 1, name: 'Battlefield' },
+      opponent: 'pandem1c',
+      matchType: 'offline-tourney',
+      win: false,
+      vodUrl: 'https://www.youtube.com/watch?v=fixture',
+      vodTimestamps: [{ seconds: 42, note: 'missed punish' }],
+    });
+    const payload = await assembleReportPayload(
+      UID,
+      THREE_CHARACTER_SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+    const vodCandidates = payload.actionCandidates.filter((c) => c.kind === 'vod_review');
+    expect(vodCandidates.length).toBeGreaterThan(0);
+    expect(vodCandidates.some((c) => c.target.matchId === 'vod-lost-1')).toBe(true);
+  });
+});
+
+describe('the model-facing payload (plan 39-06 Task 3)', () => {
+  async function assembleViable() {
+    const database = new FakeDatabase();
+    seedViableEvidence(database, UID, { opponentTag: 'Pandem1c' });
+    return assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+  }
+
+  it('C2-M6: every claim carries a displayName for each non-null resolvable axis, equal to resolveSubjectDisplayName', async () => {
+    const model = buildModelPayload(await assembleViable());
+    expect(model.claims.length).toBeGreaterThan(0);
+    for (const claim of model.claims) {
+      const expected: Record<string, string> = {};
+      if (claim.subject.myFighterId !== null) {
+        expected.myFighter = resolveSubjectDisplayName('fighter', claim.subject.myFighterId);
+      }
+      if (claim.subject.opponentFighterId !== null) {
+        expected.opponentFighter = resolveSubjectDisplayName(
+          'fighter',
+          claim.subject.opponentFighterId,
+        );
+      }
+      if (claim.subject.stageId !== null) {
+        expected.stage = resolveSubjectDisplayName('stage', claim.subject.stageId);
+      }
+      expect(claim.displayName).toEqual(expected);
+    }
+    // The advisor's pick is on the subject, so its name is resolvable (and licensed).
+    const picks = model.claims.filter(
+      (claim) => claim.predicate === 'matchup_advisor_pick' && claim.value.kind === 'entity',
+    );
+    expect(picks.length).toBeGreaterThan(0);
+    for (const pick of picks) {
+      const entityId = pick.value.kind === 'entity' ? Number(pick.value.entityId) : NaN;
+      expect(pick.subject.myFighterId).toBe(entityId);
+      expect(pick.displayName.myFighter).toBe(resolveSubjectDisplayName('fighter', entityId));
+    }
+  });
+
+  it('the user message carries ONLY the claims and ranked action candidates — the named raw payload is not serialized', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    const payload = await assembleViable();
+    await generateScoutReport(client, payload);
+    const message = JSON.parse(captured!.messages[0]!.content) as Record<string, unknown>;
+    expect(Object.keys(message).sort()).toEqual(['actionCandidates', 'claims']);
+    expect(message).toEqual(JSON.parse(JSON.stringify(buildModelPayload(payload))));
+  });
+
+  it('the assembled system prompt carries no instruction to state or hedge a confidence level, and no per-job value', async () => {
+    let captured: Parameters<AnthropicLikeClient['messages']['parse']>[0] | undefined;
+    const client: AnthropicLikeClient = {
+      messages: {
+        parse: async (params) => {
+          captured = params;
+          return { stop_reason: 'end_turn', parsed_output: VALID_REPORT } as Awaited<
+            ReturnType<AnthropicLikeClient['messages']['parse']>
+          >;
+        },
+      },
+    };
+    await generateScoutReport(client, await assembleViable());
+    const system = captured!.system;
+    expect(system.length).toBeGreaterThan(0);
+    expect(system).not.toMatch(/confidence|hedg/i);
+    expect(system).not.toMatch(/\d/);
+    expect(system).not.toContain('Pandem1c');
+  });
+
+  it('C2-M10: orderSnapshotOpponents is called exactly once in generate.ts (source read) — no second ordering derived locally', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/reports/generate.ts'), 'utf-8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+    expect(source.match(/orderSnapshotOpponents\(/g) ?? []).toHaveLength(1);
+    expect(source).not.toMatch(/localeCompare/);
   });
 });

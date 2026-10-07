@@ -1,4 +1,12 @@
-import type { ScoutReportRecord } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  resolveSubjectDisplayName,
+  type ClaimAtomRecord,
+  type ClaimPredicate,
+  type ScoutReportRecord,
+  type StoredScoutReport,
+} from '@smash-tracker/shared';
+import { isValidatedRecord } from '@/components/claims/provenance';
 
 /**
  * V7-B.1: "Download (.md)" support — a pure content builder for turning a
@@ -10,62 +18,280 @@ import type { ScoutReportRecord } from '@smash-tracker/shared';
  * `report.characterStrategy` is optional on the stored-record schema (V7-B.1
  * back-compat — see packages/shared/src/reports.ts): a pre-B.1 record simply
  * omits that section from the Markdown rather than rendering an empty one.
+ *
+ * Phase 39 (plan 39-09, review C2-H4): the export is the rendering a paying
+ * user KEEPS, so it follows the same claim contract as the card. A
+ * claims-era record (the stored `sections` map present) renders each section
+ * as its connective followed by one line per claim in stored order, every
+ * figure / sample / tier read from the claim object and never from prose. A
+ * legacy record (no `sections`) renders exactly what it rendered before this
+ * plan — `reportMarkdown.test.ts` pins it byte-for-byte — followed only by the
+ * disclosure lines the card also shows (code review IN-05). On BOTH paths a
+ * heading whose body would be empty is suppressed (plan 39-06's projection
+ * writes `confidenceNotes: ''` on every claims-era record, per D-03). The
+ * export is English-only, like every heading in it; the claim lines mirror
+ * the English `shared.evidence.*` / `reports.claimPredicate.*` copy.
+ */
+
+interface MarkdownSection {
+  heading: string;
+  body: string[];
+}
+
+/** Joins the title and every non-empty section exactly as the pre-Phase-39 builder laid them out. */
+function assemble(title: string, sections: MarkdownSection[]): string {
+  const blocks = sections
+    .filter((section) => section.body.some((line) => line.trim().length > 0))
+    .map((section) => [`## ${section.heading}`, ...section.body].join('\n'));
+  return [title, '', blocks.join('\n\n')].join('\n');
+}
+
+function legacySections(report: StoredScoutReport): MarkdownSection[] {
+  const sections: MarkdownSection[] = [
+    { heading: 'Overview', body: [report.overview] },
+    { heading: 'Game plan', body: report.gameplan.map((item) => `- ${item}`) },
+  ];
+  if (report.characterStrategy) {
+    sections.push({
+      heading: 'Character strategy',
+      body: [
+        ...(report.characterStrategy.picks.length > 0
+          ? [`Picks: ${report.characterStrategy.picks.join(', ')}`, '']
+          : []),
+        report.characterStrategy.reasoning,
+      ],
+    });
+  }
+  sections.push(stageSection(report, report.stageStrategy.reasoning));
+  if (report.headToHead) {
+    sections.push({ heading: 'Head-to-head', body: [report.headToHead] });
+  }
+  sections.push({ heading: 'Watch for', body: report.watchFor.map((item) => `- ${item}`) });
+  sections.push({ heading: 'Confidence notes', body: [report.confidenceNotes] });
+  return sections;
+}
+
+function stageSection(report: StoredScoutReport, reasoning: string): MarkdownSection {
+  const body: string[] = [];
+  if (report.stageStrategy.bans.length > 0) {
+    body.push(`Bans: ${report.stageStrategy.bans.join(', ')}`);
+  }
+  if (report.stageStrategy.picks.length > 0) {
+    body.push(`Picks: ${report.stageStrategy.picks.join(', ')}`);
+  }
+  if (reasoning.trim().length > 0 || body.length > 0) {
+    body.push('', reasoning);
+  }
+  return { heading: 'Stage strategy', body };
+}
+
+/** English mirror of `reports.claimPredicate.*` (en.json) — the export has no i18n. */
+const PREDICATE_LABEL: Record<ClaimPredicate, string> = {
+  stage_record: 'Stage record',
+  stage_pick_rate: 'Stage pick rate',
+  character_matchup_record: 'Matchup record',
+  my_character_record: 'Character record',
+  head_to_head_record: 'Head-to-head record',
+  recent_form: 'Recent form',
+  opponent_character_usage: 'Their character usage',
+  matchup_advisor_pick: 'Suggested pick',
+  vod_annotation: 'VOD moments',
+  cohort_disclosure: 'Session mix',
+};
+
+/** 39.1-UI-SPEC §7.6's closed chip vocabulary (English `insights.kind.*`). */
+const KIND_WORD: Record<ClaimAtomRecord['claimKind'], string> = {
+  fact: 'Fact',
+  inference: 'Trend',
+  recommendation: 'Suggestion',
+};
+
+const COUNT = new Intl.NumberFormat('en');
+const PERCENT = new Intl.NumberFormat('en', { style: 'percent', maximumFractionDigits: 0 });
+
+function subjectNames(subject: ClaimAtomRecord['subject']): string[] {
+  if (!subject) return [];
+  const names: string[] = [];
+  if (subject.myFighterId != null)
+    names.push(resolveSubjectDisplayName('fighter', subject.myFighterId));
+  if (subject.opponentFighterId != null) {
+    names.push(resolveSubjectDisplayName('fighter', subject.opponentFighterId));
+  }
+  if (subject.stageId != null) names.push(resolveSubjectDisplayName('stage', subject.stageId));
+  if (subject.opponentTag) names.push(subject.opponentTag);
+  return names;
+}
+
+/** The figure exactly as `ClaimAtomLine` formats it (English locale). */
+function claimFigure(value: ClaimAtomRecord['value']): string | null {
+  switch (value.kind) {
+    case 'record': {
+      const decided = value.wins + value.losses;
+      const record = `${COUNT.format(value.wins)}–${COUNT.format(value.losses)}`;
+      return decided >= ABSTENTION_FLOOR_GAMES
+        ? `${record} · ${PERCENT.format(value.wins / decided)}`
+        : record;
+    }
+    case 'rate': {
+      const fraction = `${COUNT.format(value.numerator)}/${COUNT.format(value.denominator)}`;
+      return value.denominator > 0
+        ? `${PERCENT.format(value.numerator / value.denominator)} (${fraction})`
+        : fraction;
+    }
+    case 'count':
+      return COUNT.format(value.count);
+    case 'entity': {
+      const id = Number(value.entityId);
+      if (
+        (value.entityKind === 'fighter' || value.entityKind === 'stage') &&
+        Number.isInteger(id)
+      ) {
+        return resolveSubjectDisplayName(value.entityKind, id);
+      }
+      return value.entityId;
+    }
+    case 'abstained':
+      return null;
+  }
+}
+
+function abstainedSentence(gamesNeeded: number): string {
+  return `Not enough data yet — ${gamesNeeded} more ${gamesNeeded === 1 ? 'game' : 'games'} needed.`;
+}
+
+/** One claim as one Markdown bullet: kind, predicate, subject, then the app-rendered figure, sample and tier. */
+function claimLine(claim: ClaimAtomRecord): string {
+  const names = subjectNames(claim.subject);
+  const lead = `[${KIND_WORD[claim.claimKind]}] ${PREDICATE_LABEL[claim.predicate]}${
+    names.length > 0 ? `: ${names.join(' · ')}` : ''
+  }`;
+  const figure = claimFigure(claim.value);
+  if (figure === null) {
+    return `- ${lead} — ${abstainedSentence(claim.value.kind === 'abstained' ? claim.value.gamesNeeded : 0)}`;
+  }
+  const tier = claim.sample.confidenceTier;
+  const games = claim.sample.eligibleDenominator;
+  const cue = tier
+    ? ` · ${COUNT.format(games)} ${games === 1 ? 'game' : 'games'} · ${tier} confidence`
+    : '';
+  return `- ${lead} — ${figure}${cue}`;
+}
+
+/** A claims-era section body: the connective (when it survived), then the surviving claims — or the abstention sentence when every claim abstained (the card's UI-SPEC E1 rule). */
+function claimSectionBody(
+  section: NonNullable<StoredScoutReport['sections']>[string] | undefined,
+  claims: StoredScoutReport['claims'],
+): string[] {
+  if (!section) return [];
+  const body: string[] = [];
+  if (section.connective.trim().length > 0) {
+    body.push(section.connective);
+  }
+  const resolved = section.claimIds
+    .map((claimId) => claims?.[claimId])
+    .filter((claim): claim is ClaimAtomRecord => claim !== undefined);
+  const live = resolved.filter((claim) => claim.value.kind !== 'abstained');
+  if (live.length > 0) {
+    body.push(...live.map(claimLine));
+  } else if (resolved.length > 0) {
+    const gamesNeeded = Math.min(
+      ...resolved.map((claim) => (claim.value.kind === 'abstained' ? claim.value.gamesNeeded : 0)),
+    );
+    body.push(abstainedSentence(gamesNeeded));
+  }
+  return body;
+}
+
+function claimsEraSections(report: StoredScoutReport): MarkdownSection[] {
+  const sections = report.sections ?? {};
+  return [
+    { heading: 'Overview', body: claimSectionBody(sections.overview, report.claims) },
+    { heading: 'Game plan', body: claimSectionBody(sections.gameplan, report.claims) },
+    // Plan 39-06's projection fills `stageStrategy.reasoning` with the game-plan
+    // connective; it is not restated here (the card does the same) — only the
+    // engine-derived bans/picks.
+    {
+      heading: 'Stage strategy',
+      body: stageSection(report, '').body.filter((line) => line.length > 0),
+    },
+    { heading: 'Watch for', body: claimSectionBody(sections.watchFor, report.claims) },
+    { heading: 'Confidence notes', body: [report.confidenceNotes] },
+  ];
+}
+
+/**
+ * Plan 39-10 (decision D-20): the withheld-prose disclosure the card shows
+ * (`WithheldProseNote`), carried into the copy the reader keeps. Emitted only
+ * for a VALIDATED record (the shared fail-closed `isValidatedRecord` — a
+ * pre-Phase-39 record cannot have had prose withheld) whose stored
+ * `strippedSectionCount` is a finite integer of at least one — an explicit
+ * guard, never truthiness, so no line can ever read `NaN`. English mirror of
+ * `reports.withheldProse_one` / `_other` (en.json); the export has no i18n.
+ */
+function withheldProseLine(report: StoredScoutReport): string | null {
+  const count: unknown = report.strippedSectionCount;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+    return null;
+  }
+  if (!isValidatedRecord(report)) {
+    return null;
+  }
+  return count === 1
+    ? "Commentary for 1 section was withheld because it couldn't be verified against your match data."
+    : `Commentary for ${COUNT.format(count)} sections was withheld because it couldn't be verified against your match data.`;
+}
+
+/**
+ * Code review IN-05: the legacy provenance label the card shows
+ * (`LegacyReportBadge`) for EVERY record the shared fail-closed
+ * `isValidatedRecord` rejects — a pre-Phase-39 record and a half-written
+ * claims-era one alike. English mirror of `reports.legacy.badge` +
+ * `reports.legacy.explain` (en.json); the export has no i18n.
+ */
+function legacyLabelLine(report: StoredScoutReport): string | null {
+  if (isValidatedRecord(report)) {
+    return null;
+  }
+  return "Legacy: generated before this app's report validator existed — its content wasn't machine-checked against your match data.";
+}
+
+/**
+ * Code review IN-05: the dropped-claims disclosure the card shows
+ * (`DroppedClaimsNote`), from the stored `droppedClaimCount` — rendered as
+ * stored, never recomputed (it counts claims only since SH-WR-05; dropped
+ * action slots are not in it). Same explicit finite-integer guard as the
+ * card, so no line can read `NaN`. English mirror of
+ * `reports.droppedClaims_one` / `_other` (en.json).
+ */
+function droppedClaimsLine(report: StoredScoutReport): string | null {
+  const count: unknown = report.droppedClaimCount;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+    return null;
+  }
+  return count === 1
+    ? "1 claim couldn't be verified and was removed from this report."
+    : `${COUNT.format(count)} claims couldn't be verified and were removed from this report.`;
+}
+
+/**
+ * The disclosure lines after the body, in the card's order: legacy label,
+ * dropped claims, withheld commentary. The legacy body itself stays
+ * byte-identical to the pre-Phase-39 builder (plan 39-09's pin is an exact
+ * prefix of the legacy export).
  */
 export function reportToMarkdown(record: ScoutReportRecord): string {
   const { player, report, createdAt } = record;
   const generatedDate = new Date(createdAt).toLocaleDateString();
-
-  const lines: string[] = [];
-  lines.push(`# Scout Report: ${player.gamerTag} — ${generatedDate}`);
-  lines.push('');
-
-  lines.push('## Overview');
-  lines.push(report.overview);
-  lines.push('');
-
-  lines.push('## Game plan');
-  for (const item of report.gameplan) {
-    lines.push(`- ${item}`);
-  }
-  lines.push('');
-
-  if (report.characterStrategy) {
-    lines.push('## Character strategy');
-    if (report.characterStrategy.picks.length > 0) {
-      lines.push(`Picks: ${report.characterStrategy.picks.join(', ')}`);
-      lines.push('');
-    }
-    lines.push(report.characterStrategy.reasoning);
-    lines.push('');
-  }
-
-  lines.push('## Stage strategy');
-  if (report.stageStrategy.bans.length > 0) {
-    lines.push(`Bans: ${report.stageStrategy.bans.join(', ')}`);
-  }
-  if (report.stageStrategy.picks.length > 0) {
-    lines.push(`Picks: ${report.stageStrategy.picks.join(', ')}`);
-  }
-  lines.push('');
-  lines.push(report.stageStrategy.reasoning);
-  lines.push('');
-
-  if (report.headToHead) {
-    lines.push('## Head-to-head');
-    lines.push(report.headToHead);
-    lines.push('');
-  }
-
-  lines.push('## Watch for');
-  for (const item of report.watchFor) {
-    lines.push(`- ${item}`);
-  }
-  lines.push('');
-
-  lines.push('## Confidence notes');
-  lines.push(report.confidenceNotes);
-
-  return lines.join('\n');
+  const title = `# Scout Report: ${player.gamerTag} — ${generatedDate}`;
+  const markdown = report.sections
+    ? assemble(title, claimsEraSections(report))
+    : assemble(title, legacySections(report));
+  const disclosures = [
+    legacyLabelLine(report),
+    droppedClaimsLine(report),
+    report.sections ? withheldProseLine(report) : null,
+  ].filter((line): line is string => line !== null);
+  return [markdown, ...disclosures].join('\n\n');
 }
 
 /**

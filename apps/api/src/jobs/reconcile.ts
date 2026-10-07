@@ -18,8 +18,11 @@ import { dayShardKey } from '../events/ledger.js';
  * Structural Pitfall-2 guarantee (RESEARCH.md): this module imports ONLY
  * `dayShardKey` from `events/ledger.ts` — it never imports `createEvent`, so
  * a reconciliation run can never re-derive/duplicate a canonical event. Every
- * write this module makes targets `reconciliationExceptions/{day}/*` only;
- * `eventLedger` and every domain record are read-only here.
+ * write this module makes targets `reconciliationExceptions/{day}/*` and (D-19,
+ * 39-CONTEXT.md) `reconcileSummaries/{day}` — a single counts-only summary of
+ * this run's own result, written once per run by this run alone (exclusive
+ * writer for its own day-shard, the same property `writeException` already
+ * relies on); `eventLedger` and every domain record stay read-only here.
  *
  * Every read below is a single bounded day-shard (`.../${day}`), never a
  * bare full-tree `.get()` — this is the T-10-06-02 mitigation (bounded
@@ -52,7 +55,7 @@ const reportJobDayEntrySchema = z.object({
  * D/X event this job doesn't yet cross-reference) never false-positive as
  * orphaned.
  */
-const RECONCILED_EVENT_NAMES = new Set<string>([
+export const RECONCILED_EVENT_NAMES = new Set<string>([
   'credits_granted',
   'checkout_completed',
   'credit_spent',
@@ -61,6 +64,23 @@ const RECONCILED_EVENT_NAMES = new Set<string>([
   'report_completed',
   'report_failed',
 ]);
+
+/**
+ * C1-M7 (39-REVIEWS.md): the exception `kind` strings `writeException` below
+ * is called with, exported so the PREP-06 readout core
+ * (`apps/api/scripts/prep06ReadoutCore.ts`) can consume the SAME list rather
+ * than hand-copying it — the identical drift class `RECONCILED_EVENT_NAMES`
+ * is exported to prevent. `writeException`'s `kind` parameter is narrowed to
+ * `ReconcileExceptionKind` below, so a fifth kind introduced at a new call
+ * site cannot reach the ledger without joining this list first.
+ */
+export const RECONCILE_EXCEPTION_KINDS = [
+  'missing_event',
+  'phantom_event',
+  'duplicate_event',
+] as const;
+export type ReconcileExceptionKind = (typeof RECONCILE_EXCEPTION_KINDS)[number];
+const [MISSING_EVENT_KIND, PHANTOM_EVENT_KIND, DUPLICATE_EVENT_KIND] = RECONCILE_EXCEPTION_KINDS;
 
 interface LedgerEntry {
   key: string;
@@ -123,7 +143,7 @@ export async function runReconcile(
   const knownDomainSubjects = new Set<string>();
 
   async function writeException(
-    kind: string,
+    kind: ReconcileExceptionKind,
     subjectRef: string,
     expected: unknown,
     actual: unknown,
@@ -151,7 +171,7 @@ export async function runReconcile(
     const found = matches.some((match) => match.envelope.eventName === eventName);
     if (!found) {
       result.missing += 1;
-      await writeException('missing_event', subjectRef, { eventName, causationId }, 'absent');
+      await writeException(MISSING_EVENT_KIND, subjectRef, { eventName, causationId }, 'absent');
     }
   }
 
@@ -216,7 +236,7 @@ export async function runReconcile(
       if (!hasReportFailed) {
         result.missing += 1;
         await writeException(
-          'missing_event',
+          MISSING_EVENT_KIND,
           jobId,
           { eventName: 'report_failed', causationId: `${jobId}:report_failed*` },
           'absent',
@@ -234,7 +254,7 @@ export async function runReconcile(
     const subjectRef = subjectRefOf(entry.envelope.causationId);
     if (!knownDomainSubjects.has(subjectRef)) {
       result.phantom += 1;
-      await writeException('phantom_event', subjectRef, 'domain_transition', {
+      await writeException(PHANTOM_EVENT_KIND, subjectRef, 'domain_transition', {
         eventName: entry.envelope.eventName,
         causationId: entry.envelope.causationId,
       });
@@ -255,7 +275,7 @@ export async function runReconcile(
   for (const [groupKey, entries] of duplicateGroups.entries()) {
     if (entries.length > 1) {
       result.duplicate += 1;
-      await writeException('duplicate_event', groupKey, 1, entries.length);
+      await writeException(DUPLICATE_EVENT_KIND, groupKey, 1, entries.length);
     }
   }
 
@@ -263,7 +283,34 @@ export async function runReconcile(
   // see pending-projection volume alongside reconciliation drift; it does
   // not currently produce its own exception class (GA4 projection failures
   // are covered by the outbox's own retry/backoff, not this job).
-  result.checked += Object.keys((outboxSnapshot.val() ?? {}) as Record<string, unknown>).length;
+  const outboxPendingCount = Object.keys(
+    (outboxSnapshot.val() ?? {}) as Record<string, unknown>,
+  ).length;
+  const reconciledUnits = result.checked;
+  result.checked += outboxPendingCount;
+
+  // D-19 (39-CONTEXT.md): additive second write target. A fresh payload
+  // object spreading `result` — `result` itself is never mutated and never
+  // gains a field, because an existing test pins it with an exact
+  // `toEqual({checked, missing, phantom, duplicate})`. Counts only: no uid,
+  // no correlation id, no event payload. A plain `.set()` overwrites this
+  // day's prior summary in full (never appends) — this run is the exclusive
+  // writer of its own day-shard, the same property `writeException` already
+  // relies on for `reconciliationExceptions/{day}/*`.
+  //
+  // Code review API-WR-06: `checked` also counts the outbox-pending rows,
+  // which no exception class ever evaluates, so it is not an honest
+  // denominator. The units ACTUALLY reconciled (the domain transitions the
+  // passes above checked) and the outbox-pending count are persisted apart;
+  // the PREP-06 readout's exact arm uses `reconciledUnits`. Numbers only,
+  // always present, so the write is RTDB-safe as-is.
+  const reconcileSummaryPayload = {
+    ...result,
+    reconciledUnits,
+    outboxPending: outboxPendingCount,
+    generatedAt: Date.now(),
+  };
+  await database.ref(`reconcileSummaries/${day}`).set(reconcileSummaryPayload);
 
   return result;
 }

@@ -91,6 +91,38 @@ export function buildRealisticScale() {
  */
 const CAREER_SESSION_GAP_MS = 135 * 60 * 60 * 1000;
 
+/**
+ * Plan 41-04 (TRND-03 SC4): the career dataset's registry, so the timeline's tier diamonds and the
+ * Recent Events card are measured with content. ILLUSTRATIVE and deterministic (integer arithmetic on
+ * the row index, no PRNG, no wall clock): 14 offline rows spaced 190 days apart inside the games'
+ * span, cycling supermajor / major / minor / regional entrant counts, so 8 resolve to a major or above
+ * (all estimates: no recorded or manual tier here). Rows carry no linked games — the oracle measures
+ * layout, not records.
+ */
+const CAREER_TOURNAMENT_ENTRANTS = [1580, 640, 310, 1100, 96, 520, 205, 48];
+const CAREER_TOURNAMENT_COUNT = 14;
+const CAREER_TOURNAMENT_FIRST_MS = Date.UTC(2019, 5, 8, 18);
+
+function buildCareerTournaments() {
+  return Array.from({ length: CAREER_TOURNAMENT_COUNT }, (_, i) => {
+    const eventId = 7_000 + i;
+    const startMs = CAREER_TOURNAMENT_FIRST_MS + i * 190 * DAY_MS;
+    const entrants = CAREER_TOURNAMENT_ENTRANTS[i % CAREER_TOURNAMENT_ENTRANTS.length];
+    return {
+      eventId,
+      entryKey: String(eventId),
+      eventName: 'Ultimate Singles',
+      tournamentName: `Career Fixture Open ${i + 1}`,
+      firstSetAt: startMs,
+      lastSetAt: startMs + 2 * DAY_MS,
+      setsPlayed: 4 + (i % 6),
+      numEntrants: entrants,
+      isOnline: false,
+      source: 'startgg',
+    };
+  });
+}
+
 function buildCareerScale() {
   const matches = generateSyntheticMatches({
     seed: 39_134_001,
@@ -108,7 +140,7 @@ function buildCareerScale() {
     fighters: { primary: [HARNESS_FIGHTER_A_ID, HARNESS_FIGHTER_B_ID], secondary: [] },
     aliases: {},
     opponentNotes: {},
-    tournaments: [],
+    tournaments: buildCareerTournaments(),
   };
 }
 
@@ -225,6 +257,195 @@ export function buildRecentScale() {
   };
 }
 
+/** The registry key of the Dashboard recap's event; the fixture plugin answers `GET /api/prep/<key>` for it. */
+export const DASHBOARD_RECAP_ENTRY_KEY = 'fixture-harbor-clash-2026';
+
+/**
+ * Plan 39.2-13 (UI-SPEC section 13 G1, section 8.3): the Dashboard oracle's dataset: the wall-clock
+ * `recent` scale plus one just-finished named event, its registry entry and an open debrief, so the
+ * measured page carries the 8 + 4 row with the widest recap card (tier badge and provenance, the
+ * event's two-horizon chip, a four-set strip, and the debrief, games and event doors) rather than a
+ * digest spanning the row.
+ *
+ * DELIBERATELY anchored to the wall clock like `recent`: the recap exists only for an event that
+ * ended inside the last 14 days. The event's twelve games end six hours before the run, AFTER the
+ * dense segment's last game (one day before it), so the card's games door (an inclusive date window)
+ * holds exactly the event. The tournament name is 40 characters, the long-name stress case. Invented
+ * names and integer arithmetic only; nothing is copied from an owner manifest.
+ */
+export function buildDashboardScale() {
+  const base = buildRecentScale();
+  const endMs = Date.now() - 6 * HOUR_MS;
+  const gameCount = 12;
+  const tournamentName = 'Harbor Clash Community Championship 2026';
+  const eventGames = Array.from({ length: gameCount }, (_, i) => {
+    const set = Math.floor(i / 3);
+    return {
+      id: `dashboard-recap-${i}`,
+      fighter_id: HARNESS_FIGHTER_A_ID,
+      opponent_id: i % 2 === 0 ? 1 : 10,
+      time: endMs - (gameCount - 1 - i) * 25 * 60 * 1000,
+      win: set === 2 ? i % 3 === 0 : i % 4 !== 3,
+      matchType: 'offline-tourney',
+      map: { id: 1, name: 'Battlefield' },
+      opponent: `synthopp${1 + set}`,
+      eventName: 'Ultimate Singles',
+      tournamentName,
+      externalId: `sgg:dashboard-recap-set${set}:g${(i % 3) + 1}`,
+    };
+  });
+  const firstSetAt = eventGames[0].time;
+  return {
+    ...base,
+    matches: [...base.matches, ...eventGames],
+    tournaments: [
+      {
+        eventId: 9_900,
+        entryKey: DASHBOARD_RECAP_ENTRY_KEY,
+        eventName: 'Ultimate Singles',
+        tournamentName,
+        firstSetAt,
+        lastSetAt: endMs,
+        setsPlayed: 4,
+        numEntrants: 1_583,
+        placement: 3,
+        isOnline: false,
+        source: 'startgg',
+      },
+    ],
+    // `GET /api/prep/<entryKey>`: activated, with the debrief moment already passed.
+    prepStatuses: {
+      [DASHBOARD_RECAP_ENTRY_KEY]: { activated: true, reviewAt: endMs + HOUR_MS },
+    },
+  };
+}
+
+/**
+ * Plan 39.2-07 (UI-SPEC §13 G1, T-39.2-32): the Tournaments oracle's
+ * registry fixture. ILLUSTRATIVE and deterministic — invented tournament
+ * names and integer arithmetic on the row index, no PRNG, no wall clock, and
+ * never a name, slug, uid or count copied from an owner manifest. Shapes the
+ * table must hold: offline supermajor / major / minor / regional / local
+ * rows carrying `isOnline: false` and `numEntrants`, online weeklies
+ * (`isOnline: true`, so an unknown tier), a Squad Strike side event, a row
+ * with no placement, one 60+ character tournament name over a long event
+ * name (the truncation backstop), and undated rows ("No date").
+ */
+const TOURNAMENT_FIXTURE_TEMPLATES = [
+  { name: 'Harbor Clash', event: 'Ultimate Singles', entrants: 1580, online: false },
+  { name: 'Summit Series', event: 'Ultimate Singles', entrants: 640, online: false },
+  { name: 'Riverside Regional', event: 'Ultimate Singles', entrants: 310, online: false },
+  { name: 'Northgate Monthly', event: 'Ultimate Singles', entrants: 96, online: true },
+  { name: 'Cedar Locals', event: 'Ultimate Singles', entrants: 48, online: false },
+  { name: 'Lakeshore Weekly', event: 'Ultimate Singles', entrants: 72, online: true },
+  { name: 'Lakeshore Weekly Side Bracket', event: 'Squad Strike', entrants: 24, online: false },
+  { name: 'Blue Harbor Open', event: 'Ultimate Singles', entrants: 130, online: false },
+  { name: 'Ironwood Invitational', event: 'Ultimate Singles', entrants: 260, online: false },
+  {
+    name: 'Spring Cascade Community Championship Series Grand Finals Weekend 2025 Edition',
+    event: 'Ultimate Singles Main Bracket (Open Registration, Double Elimination)',
+    entrants: 205,
+    online: false,
+  },
+];
+
+/** Which template each of the 19 rows of the default fixture uses (a fixed pattern, not a draw). */
+const TOURNAMENT_FIXTURE_PATTERN_19 = [0, 1, 2, 3, 3, 4, 4, 5, 6, 7, 7, 8, 9, 0, 3, 4, 5, 2, 4];
+/** The 19-row fixture's last rows are undated. */
+const TOURNAMENT_FIXTURE_UNDATED_19 = 2;
+const TOURNAMENT_FIXTURE_LATEST_MS = Date.UTC(2026, 7, 8, 18);
+
+/**
+ * `count` registry rows plus the games linked to them. `pattern` picks the
+ * template per row; the last `undated` rows carry no dates. Every dated
+ * offline row also gets a handful of linked games (so the Record cell shows a
+ * real record and its confidence glyph), and the placement / seed pair varies
+ * with the index so the seed delta shows all three shapes.
+ */
+function buildTournamentRegistry({ count, patternFor, undated, spacingDays }) {
+  const tournaments = [];
+  const matches = [];
+  for (let i = 0; i < count; i += 1) {
+    const template = TOURNAMENT_FIXTURE_TEMPLATES[patternFor(i)];
+    const isSide = template.event === 'Squad Strike';
+    const isUndated = i >= count - undated;
+    const eventId = 9_000 + i;
+    const tournamentName =
+      i < TOURNAMENT_FIXTURE_PATTERN_19.length ? template.name : `${template.name} #${i}`;
+    const startMs = isUndated ? 0 : TOURNAMENT_FIXTURE_LATEST_MS - i * spacingDays * DAY_MS;
+    const endMs = isUndated ? 0 : startMs + (template.entrants > 500 ? 2 * DAY_MS : 0);
+    const entrants = template.entrants + (i % 4) * 3;
+    const placement =
+      isSide || i % 6 === 5
+        ? undefined
+        : 1 + (((i * 37) % 100) % Math.max(2, Math.round(entrants / 4)));
+    const seed =
+      placement === undefined || i % 7 === 3 ? undefined : Math.max(1, placement + ((i % 5) - 2));
+    tournaments.push({
+      eventId,
+      entryKey: String(eventId),
+      eventName: template.event,
+      tournamentName,
+      firstSetAt: startMs,
+      lastSetAt: endMs === 0 ? 0 : endMs + 6 * HOUR_MS,
+      setsPlayed: 4 + (i % 6),
+      numEntrants: entrants,
+      ...(placement !== undefined ? { placement } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+      isOnline: template.online,
+      ...(i % 3 !== 2 ? { slug: `tournament/fixture-${eventId}` } : {}),
+      source: 'startgg',
+    });
+    if (isUndated) continue;
+    const games = 3 + (i % 6);
+    for (let g = 0; g < games; g += 1) {
+      matches.push({
+        id: `tournaments-fixture-${eventId}-${g}`,
+        fighter_id: HARNESS_FIGHTER_A_ID,
+        opponent_id: g % 2 === 0 ? 1 : 10,
+        time: startMs + (g + 1) * 25 * 60 * 1000,
+        win: (i + g) % 3 !== 0,
+        matchType: template.online ? 'online-tourney' : 'offline-tourney',
+        map: { id: 1, name: 'Battlefield' },
+        opponent: `synthopp${1 + ((i + g) % 12)}`,
+        eventName: template.event,
+        tournamentName,
+      });
+    }
+  }
+  return { tournaments, matches };
+}
+
+/**
+ * Plan 39.2-07: the Tournaments oracle's two datasets — the realistic
+ * account's games plus `count` registry rows and their linked games. Kept as
+ * their OWN scales (selected per page via `x-guard-layout-scale`) rather than
+ * folded into `realistic`, so no other route's measured input changes.
+ */
+export function buildTournamentsScale(count) {
+  const base = buildRealisticScale();
+  const registry =
+    count === 19
+      ? buildTournamentRegistry({
+          count,
+          patternFor: (i) => TOURNAMENT_FIXTURE_PATTERN_19[i],
+          undated: TOURNAMENT_FIXTURE_UNDATED_19,
+          spacingDays: 17,
+        })
+      : buildTournamentRegistry({
+          count,
+          patternFor: (i) =>
+            TOURNAMENT_FIXTURE_PATTERN_19[i % TOURNAMENT_FIXTURE_PATTERN_19.length],
+          undated: 3,
+          spacingDays: 9,
+        });
+  return {
+    ...base,
+    matches: [...base.matches, ...registry.matches],
+    tournaments: registry.tournaments,
+  };
+}
+
 /** A small seeded PRNG (mulberry32) — the `gsp` scale's walk is identical on every run. */
 function seededRandom(seed) {
   let state = seed >>> 0;
@@ -297,7 +518,12 @@ export async function startGuardLayoutHarnessServer({ extraScales = {} } = {}) {
     career: buildCareerScale(),
     casual: buildCasualScale(),
     recent: buildRecentScale(),
+    // Plan 39.2-13: the Dashboard's recap row (see `buildDashboardScale`).
+    dashboard: buildDashboardScale(),
     gsp: buildGspScale(),
+    // Plan 39.2-07: the Tournaments oracle's 19-row and 100-row registries.
+    tournaments: buildTournamentsScale(19),
+    tournaments100: buildTournamentsScale(100),
     // Plan 39.1-41: sketch 003's own two pairings (Cloud vs Pyra/Mythra,
     // Pikachu vs Joker) + its matrix, ported set for set — guard:layout's
     // matchups-sketch-deep / -thin routes and capture:matchups-fidelity

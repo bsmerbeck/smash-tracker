@@ -1,5 +1,11 @@
 import type { Match, SetGame } from '@smash-tracker/shared';
-import { buildSetTimeline, splitIntoSessions, stageBucketId } from '@smash-tracker/shared';
+import {
+  buildSetTimeline,
+  eventDisplayName,
+  splitIntoSessions,
+  stageBucketId,
+  trimmedEventKey,
+} from '@smash-tracker/shared';
 
 /**
  * Phase 39.1 Plan 18 (UIX-08/D-10, UI-SPEC §8.6): turns an already-scoped,
@@ -10,9 +16,12 @@ import { buildSetTimeline, splitIntoSessions, stageBucketId } from '@smash-track
  * Calls the shared set-timeline builder (`buildSetTimeline`) DIRECTLY on the
  * full array — never pre-split by tournament registry entry (RESEARCH.md
  * Pattern 3/Pitfall 4). The builder's parsed sets (grouped purely by parsed
- * `externalId` set identifier) are bucketed here by the event/tournament
- * name carried on their first game — the ONLY new grouping logic this module
- * adds. The builder's unparsable remainder (manual entries with no set
+ * `externalId` set identifier) are bucketed here by the (tournament name,
+ * event name) pair carried on their first game — the ONLY new grouping logic
+ * this module adds. 41-13 (UAT 41 test 7, F6): the bucket used to be the event
+ * name alone, which merged every "Ultimate Singles" across tournaments into
+ * one group headed by the bare event name; the group's display label is now
+ * the shared `eventDisplayName` of its games, computed apart from its key. The builder's unparsable remainder (manual entries with no set
  * identifier) is routed through the existing session splitter
  * (`splitIntoSessions`), one pseudo-set per game.
  *
@@ -42,7 +51,7 @@ export interface EncounterSet {
 export interface EncounterGroup {
   kind: 'event' | 'session';
   key: string;
-  /** Raw event/tournament name for an `'event'` group; empty for a `'session'` group (the component composes the session's own label from `dateMs`). */
+  /** An `'event'` group's display name (`eventDisplayName` of its games — "Genesis 9 · Ultimate Singles" when they share a tournament, else the event name); empty for a `'session'` group (the component composes the session's own label from `dateMs`). Never part of `key`. */
   label: string;
   /** The group's newest game's time — the sort key. */
   dateMs: number;
@@ -58,12 +67,6 @@ function byDateThenKeyDesc(
   if (a.key < b.key) return -1;
   if (a.key > b.key) return 1;
   return 0;
-}
-
-/** UI-SPEC §8.6 / `MatchupChart.tsx`'s `buildFormStripEvents` precedent: event name preferred over tournament name. */
-function eventLabelFor(match: Match): string {
-  const raw = match.eventName ?? match.tournamentName;
-  return raw?.trim() ?? '';
 }
 
 function toEncounterSet(
@@ -121,12 +124,14 @@ export function groupEncounters({
 }): EncounterGroup[] {
   const { sets, otherMatches } = buildSetTimeline(matches);
 
-  const byEvent = new Map<string, { label: string; sets: EncounterSet[] }>();
+  const byEvent = new Map<string, { eventKey: string; sets: EncounterSet[] }>();
   for (const set of sets) {
     const firstMatch = set.games[0]?.match;
     if (!firstMatch) continue;
-    const label = eventLabelFor(firstMatch);
-    const key = `event:${label}`;
+    // Identity: (tournament, event name). A set with no tournament keeps grouping by event name.
+    const eventKey = trimmedEventKey(firstMatch) ?? '';
+    const tournament = firstMatch.tournamentName?.trim() ?? '';
+    const key = `event:${tournament}\u001f${eventKey}`;
     const encounterSet = toEncounterSet(
       set.games,
       set.setId,
@@ -140,13 +145,16 @@ export function groupEncounters({
     if (existing) {
       existing.sets.push(encounterSet);
     } else {
-      byEvent.set(key, { label, sets: [encounterSet] });
+      byEvent.set(key, { eventKey, sets: [encounterSet] });
     }
   }
 
   const eventGroups: EncounterGroup[] = [...byEvent.entries()].map(
-    ([key, { label, sets: encounterSets }]) => {
+    ([key, { eventKey, sets: encounterSets }]) => {
       const ordered = [...encounterSets].sort(byDateThenKeyDesc);
+      // Display only, over every game of the bucketed group — never the key.
+      const label =
+        eventDisplayName(encounterSets.flatMap((s) => s.games.map((g) => g.match))) ?? eventKey;
       let dateMs = -Infinity;
       for (const encounterSet of ordered) {
         if (encounterSet.dateMs > dateMs) dateMs = encounterSet.dateMs;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
 import { HeroStats } from './HeroStats';
+import { TrendsHero } from '@/pages/Trends/components/TrendsHero';
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -114,7 +115,7 @@ describe('HeroStats', () => {
       return card.querySelector('[data-slot="delta-chip"]');
     }
 
-    it('a stale account (no games in the scoped window) reads "no games · last 30"', () => {
+    it('plan 39.1-59 (UAT 39.1-33 F17): a stale account (the 12-month bound emptied the window) reads "none in the last 12 months", never "no games · last 30"', () => {
       const now = Date.now();
       const matches = Array.from({ length: 40 }, (_, i) =>
         makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
@@ -123,7 +124,8 @@ describe('HeroStats', () => {
       const chip = overallChip();
       expect(chip).not.toBeNull();
       expect(chip!.getAttribute('data-state')).toBe('none');
-      expect(chip!.textContent).toBe('no games· last 30');
+      expect(chip!.textContent).toBe('none in the last 12 months');
+      expect(chip!.textContent).not.toContain('last 30');
     });
 
     it('a 2-game scoped window reads "n 2 · no direction"', () => {
@@ -296,52 +298,179 @@ describe('HeroStats', () => {
       expect(screen.getByText('1/5 games so far')).toBeInTheDocument();
     });
 
-    it('shows an upward trend arrow when the latest session outperforms the previous one', () => {
+    it('F24 parity: the Rating tile reads the same ratingMove chip as the Trends hero, never the session-to-session arrow (plan 35-05)', () => {
       const HOUR_MS = 60 * 60 * 1000;
+      const start = Date.now() - 10 * 24 * HOUR_MS;
+      // Session 1: five wins; a day later session 2: L, L, W. The last session
+      // underperforms the first (the old arrow read "▼"), while the whole
+      // last-30 window rises (ratingMove reads up).
+      // Plan 39.1-53 (UAT 39.1-17): an 8-game account's last-30 window holds
+      // every game and now collapses (no direction), so the two sessions sit on
+      // top of 60 older losses and 22 earlier wins — the last-30 window is 30 of
+      // 90 games and still rises.
+      const results = [true, true, true, true, true, false, false, true];
+      const older = Array.from({ length: 60 }, (_, i) =>
+        makeMatch({ id: `o${i}`, time: start - 400 * 24 * HOUR_MS + i * HOUR_MS, win: false }),
+      );
+      const earlierWins = Array.from({ length: 22 }, (_, i) =>
+        makeMatch({ id: `e${i}`, time: start - 5 * 24 * HOUR_MS + i * HOUR_MS, win: true }),
+      );
       const matches = [
-        // Session 1: a loss and a win (net neutral-ish, establishes a baseline).
-        makeMatch({ id: '1', time: 0, win: false }),
-        makeMatch({ id: '2', time: HOUR_MS, win: false }),
-        // Gap > 3h default -> new session.
-        // Session 2: all wins -> should outperform session 1 and trend up.
-        makeMatch({ id: '3', time: 5 * HOUR_MS, win: true }),
-        makeMatch({ id: '4', time: 6 * HOUR_MS, win: true }),
-        makeMatch({ id: '5', time: 7 * HOUR_MS, win: true }),
+        ...older,
+        ...earlierWins,
+        ...results.map((win, i) =>
+          makeMatch({
+            id: `p${i}`,
+            time: start + (i < 5 ? i * HOUR_MS : 24 * HOUR_MS + (i - 5) * HOUR_MS),
+            win,
+          }),
+        ),
       ];
 
-      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      const dashboard = render(
+        <HeroStats matches={matches} timeFilteredMatches={matches} horizon="last30" />,
+      );
+      const ratingCard = within(dashboard.container)
+        .getByText('Rating')
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(ratingCard.textContent).not.toMatch(/[▲▼]/);
+      const dashboardChip = ratingCard.querySelector('[data-slot="delta-chip"]');
+      expect(dashboardChip).not.toBeNull();
+      const dashboardText = dashboardChip!.textContent;
+      const dashboardAria = dashboardChip!.getAttribute('aria-label');
+      const dashboardState = dashboardChip!.getAttribute('data-state');
+      dashboard.unmount();
 
-      expect(screen.getByLabelText('Rating up from last session')).toBeInTheDocument();
+      const trends = render(<TrendsHero matches={matches} horizon="last30" />);
+      const trendsFigure = within(trends.container).getByText('Rating')
+        .parentElement as HTMLElement;
+      const trendsChip = trendsFigure.querySelector('[data-slot="delta-chip"]');
+      expect(trendsChip).not.toBeNull();
+      expect(trendsChip!.getAttribute('data-state')).toBe('up');
+      expect(dashboardState).toBe(trendsChip!.getAttribute('data-state'));
+      expect(dashboardText).toBe(trendsChip!.textContent);
+      expect(dashboardAria).toBe(trendsChip!.getAttribute('aria-label'));
+      // UAT review WR-01: the shared label must carry what the chip shows —
+      // direction, the signed move and the horizon — never a self-comparison
+      // of the current rating ("1734 recent vs 1734 all time").
+      const valueLabel = dashboardChip!.querySelector('.text-foreground')?.textContent ?? '';
+      expect(valueLabel).toMatch(/^\+\d+$/);
+      expect(dashboardAria).toContain('Rating');
+      expect(dashboardAria).toContain('Trending up');
+      expect(dashboardAria).toContain(valueLabel);
+      expect(dashboardAria).toContain('last 30');
+      expect(dashboardAria).not.toMatch(/recent vs/);
     });
 
-    it('shows a downward trend arrow when the latest session underperforms the previous one', () => {
-      const HOUR_MS = 60 * 60 * 1000;
-      const matches = [
-        // Session 1: all wins (establishes a strong baseline).
-        makeMatch({ id: '1', time: 0, win: true }),
-        makeMatch({ id: '2', time: HOUR_MS, win: true }),
-        // Gap > 3h default -> new session.
-        // Session 2: all losses -> should underperform session 1 and trend down.
-        makeMatch({ id: '3', time: 5 * HOUR_MS, win: false }),
-        makeMatch({ id: '4', time: 6 * HOUR_MS, win: false }),
-        makeMatch({ id: '5', time: 7 * HOUR_MS, win: false }),
-      ];
-
-      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
-
-      expect(screen.getByLabelText('Rating down from last session')).toBeInTheDocument();
-    });
-
-    it('omits the trend arrow when only one session exists (nothing to compare against)', () => {
-      const matches = Array.from({ length: 5 }, (_, i) =>
-        makeMatch({ id: `${i}`, time: i * 1000, win: true }),
+    it('a sub-floor window shows no direction on the unlocked Rating tile (plan 35-05)', () => {
+      const now = Date.now();
+      // 6 games: the tile is unlocked (>= 5) but the window is below the
+      // trend floor, so no up / down / steady read and no arrow glyph.
+      const matches = Array.from({ length: 6 }, (_, i) =>
+        makeMatch({ id: `s${i}`, time: now - (6 - i) * 60 * 60 * 1000, win: true }),
       );
 
-      render(<HeroStats matches={matches} timeFilteredMatches={matches} />);
+      render(<HeroStats matches={matches} timeFilteredMatches={matches} horizon="last30" />);
 
-      expect(screen.queryByLabelText('Rating up from last session')).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Rating down from last session')).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Rating unchanged from last session')).not.toBeInTheDocument();
+      const ratingCard = screen.getByText('Rating').closest('[data-slot="card"]') as HTMLElement;
+      expect(ratingCard.textContent).not.toMatch(/[▲▼→]/);
+      expect(within(ratingCard).queryByLabelText(/from last session/)).not.toBeInTheDocument();
+      const chip = ratingCard.querySelector('[data-slot="delta-chip"]');
+      expect(['up', 'down', 'steady']).not.toContain(chip?.getAttribute('data-state'));
+    });
+
+    describe('plan 41-14 (UAT 41 test 2): the Rating tile and the Trends hero agree on one rule', () => {
+      const HOUR_MS = 60 * 60 * 1000;
+
+      function readDashboardChip(matches: Match[], horizon: 'last30' | 'lastEvent') {
+        const view = render(
+          <HeroStats matches={matches} timeFilteredMatches={matches} horizon={horizon} />,
+        );
+        const card = within(view.container)
+          .getByText('Rating')
+          .closest('[data-slot="card"]') as HTMLElement;
+        const chip = card.querySelector('[data-slot="delta-chip"]');
+        const read = {
+          glyph: /[▲▼]/.test(card.textContent ?? ''),
+          state: chip?.getAttribute('data-state') ?? null,
+          text: chip?.textContent ?? null,
+        };
+        view.unmount();
+        return read;
+      }
+
+      function readTrendsChip(matches: Match[], horizon: 'last30' | 'lastEvent') {
+        const view = render(<TrendsHero matches={matches} horizon={horizon} />);
+        const figure = within(view.container).getByText('Rating').parentElement as HTMLElement;
+        const chip = figure.querySelector('[data-slot="delta-chip"]');
+        const read = {
+          state: chip?.getAttribute('data-state') ?? null,
+          text: chip?.textContent ?? null,
+        };
+        view.unmount();
+        return read;
+      }
+
+      // The demo shape: 8 games at one event inside every horizon; the last
+      // session (L, L, W) underperforms the first (five wins).
+      function thinDemo(): Match[] {
+        const start = Date.now() - 3 * 24 * HOUR_MS;
+        return [true, true, true, true, true, false, false, true].map((win, i) =>
+          makeMatch({
+            id: `d${i}`,
+            time: start + (i < 5 ? i * HOUR_MS : 24 * HOUR_MS + (i - 5) * HOUR_MS),
+            win,
+            tournamentName: 'Demo Weekly',
+            eventName: 'Ultimate Singles',
+          }),
+        );
+      }
+
+      // 120 games: 90 older losses, then 30 recent wins (a notable rise; the
+      // last-30 window is a quarter of the account, so it never collapses).
+      function rising(): Match[] {
+        const start = Date.now() - 200 * DAY_MS;
+        return Array.from({ length: 120 }, (_, i) =>
+          makeMatch({ id: `r${i}`, time: start + i * DAY_MS, win: i >= 90 }),
+        );
+      }
+
+      // 120 games alternating W/L at one pace (steady).
+      function steady(): Match[] {
+        const start = Date.now() - 200 * DAY_MS;
+        return Array.from({ length: 120 }, (_, i) =>
+          makeMatch({ id: `s${i}`, time: start + i * DAY_MS, win: i % 2 === 0 }),
+        );
+      }
+
+      it.each(['last30', 'lastEvent'] as const)(
+        'the thin demo account shows no direction on either surface at %s',
+        (horizon) => {
+          const dashboard = readDashboardChip(thinDemo(), horizon);
+          const trends = readTrendsChip(thinDemo(), horizon);
+          expect(dashboard.glyph).toBe(false);
+          expect(['up', 'down']).not.toContain(dashboard.state);
+          expect(['up', 'down']).not.toContain(trends.state);
+          expect(dashboard).toMatchObject(trends);
+        },
+      );
+
+      it.each([
+        ['thin all-in-horizon', thinDemo],
+        ['notable rise', rising],
+        ['steady', steady],
+      ] as const)('%s: the tile and the hero read the same chip at last30', (_label, build) => {
+        const matches = build();
+        const dashboard = readDashboardChip(matches, 'last30');
+        const trends = readTrendsChip(matches, 'last30');
+        expect(dashboard.state).toBe(trends.state);
+        expect(dashboard.text).toBe(trends.text);
+      });
+
+      it('the notable-rise fixture does state a rise on both surfaces (the oracle is not vacuous)', () => {
+        expect(readDashboardChip(rising(), 'last30').state).toBe('up');
+        expect(readTrendsChip(rising(), 'last30').state).toBe('up');
+      });
     });
   });
 });

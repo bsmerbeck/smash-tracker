@@ -206,6 +206,12 @@ export function deriveTournamentRegistryFromResearchSource(
       const value = subjectEntrantOf(record)?.placement;
       return value != null && value > 0 ? value : undefined;
     });
+    // TIER-01 (D-20): the tier resolver's setting axes. `firstDefined` skips
+    // null/undefined only, so a provider-reported `false` is kept (never a
+    // truthiness check); a source that never carried either yields no key.
+    // `eventType` is stored verbatim and never interpreted (A3).
+    const isOnline = firstDefined(freshestFirst, (record) => record.event?.isOnline);
+    const eventType = firstDefined(freshestFirst, (record) => nonEmpty(record.event?.eventType));
 
     let playedSetCount = 0;
     let dqCount = 0;
@@ -246,6 +252,8 @@ export function deriveTournamentRegistryFromResearchSource(
         ...(startAtMs !== undefined ? { startAtMs } : {}),
         ...(endAtMs !== undefined ? { endAtMs } : {}),
         ...(numEntrants !== undefined ? { numEntrants } : {}),
+        ...(isOnline != null ? { isOnline } : {}),
+        ...(eventType != null ? { eventType } : {}),
         ...(seed !== undefined ? { seed } : {}),
         ...(placement !== undefined ? { placement } : {}),
         playedSetCount,

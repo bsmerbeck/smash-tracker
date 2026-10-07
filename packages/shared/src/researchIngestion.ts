@@ -213,6 +213,14 @@ export function providerSecondsToMs(seconds: number | null | undefined): number 
 // Bound constants
 // ---------------------------------------------------------------------------
 
+/**
+ * Lower plausibility floor (epoch ms, 2018-12-01T00:00:00Z) for research date
+ * coverage. SSBU released 2018-12-07, so no Ultimate set can complete before
+ * this instant — an earlier sample is a provider/conversion artifact (UAT 36
+ * F1 rendered a year-0002 start). Ingestion folds ignore such a sample and the
+ * Data Coverage panel renders a stored one as unknown.
+ */
+export const RESEARCH_COVERAGE_MIN_MS = Date.UTC(2018, 11, 1);
 export const RESEARCH_RUN_HISTORY_LIMIT = 10;
 export const RESEARCH_LEASE_TTL_MS = 120_000;
 export const RESEARCH_REFRESH_OVERLAP_SECONDS = 86_400;

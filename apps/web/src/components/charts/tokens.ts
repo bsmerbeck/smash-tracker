@@ -1,8 +1,8 @@
 /**
  * Chart kit design tokens (D-03, CHRT-01/CHRT-04). SVG resolves CSS custom
- * properties natively in `stroke`/`fill` (unlike chart.js, which needs the
- * resolved-hex mirror in `apps/web/src/lib/chartTheme.ts` — that mirror is
- * the anti-pattern this module deliberately does NOT repeat). The app is
+ * properties natively in `stroke`/`fill`, so there is no resolved-hex
+ * mirror of the palette (the former chart.js theme module needed one and
+ * was removed in Phase 41). The app is
  * dark-only, `:root` and `.dark` share one identical palette
  * (`apps/web/src/index.css`), so this module carries exactly one token map
  * and no colour-scheme branch anywhere in the kit.
@@ -86,5 +86,13 @@ export const CHART_BAR_MAX_THICKNESS_PX = 24;
 export const CHART_H_TIMELINE = 220;
 /** UI-SPEC §12.1: `CHART_H_TIMELINE` below a `CHART_NARROW_PLOT_PX` plot (sketch 002-C's `compact` branch). */
 export const CHART_H_TIMELINE_NARROW = 170;
+/**
+ * Plan 41-02 (UI-SPEC §3, DD-41-02): one small-multiples panel's plot height in px — the stacked
+ * GSP vs Glicko panels are 120px each (the 26px x-axis band lives under the last panel only).
+ * SIBLING named export, never a `CHART_TOKENS` key — a dimension, not a colour role.
+ */
+export const CHART_H_MULTIPLE = 120;
+/** UI-SPEC §3: `CHART_H_MULTIPLE` below 640px. SIBLING named export, never a `CHART_TOKENS` key. */
+export const CHART_H_MULTIPLE_NARROW = 96;
 /** UI-SPEC §11 "narrow plots re-grain, they do not squeeze": below this plot width (px) a chart asks for its narrow grain instead of drawing sub-legible marks. */
 export const CHART_NARROW_PLOT_PX = 520;

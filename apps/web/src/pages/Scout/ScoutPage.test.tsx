@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { ScoutPage } from './ScoutPage';
 import { ApiError } from '@/lib/api';
+import en from '@/i18n/locales/en.json';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 const toastSuccess = vi.fn();
@@ -356,6 +357,103 @@ const OTHER_PLAYER_RECORD = {
   },
 };
 
+// Plan 41-16 (UAT 41-8 / F14): a rejected lookup query (400) reads localized, source-aware copy —
+// never the server's raw English string, and never start.gg advice for a parry.gg query.
+describe('ScoutPage — rejected lookup query (400)', () => {
+  const SERVER_400 = 'query must be a start.gg profile URL, user/<slug>, or numeric player id';
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: false });
+    reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
+    getMe.mockResolvedValue(defaultProfile());
+    setMockUser(makeMockUser());
+    scoutLookup.mockRejectedValue(new ApiError(400, SERVER_400));
+  });
+
+  afterEach(() => {
+    parryStatus.isSuccess = false;
+  });
+
+  async function findLookupAlert(): Promise<HTMLElement> {
+    return screen.findByText(
+      (_, element) =>
+        element?.tagName === 'DIV' &&
+        (element.getAttribute('class') ?? '').split(/\s+/).includes('text-destructive'),
+    );
+  }
+
+  it('the parry.gg prompt attributes gamer tags to parry.gg only (no start.gg "slug/tag")', () => {
+    parryStatus.isSuccess = true;
+    renderPage();
+    const prompt = screen.getByText(/above to pull up their public tournament history/);
+    expect(prompt.textContent).not.toMatch(/slug\/tag/);
+    expect(prompt.textContent).toMatch(/parry\.gg profile URL or gamer tag/);
+  });
+
+  it('start.gg source, bare word, parry.gg enabled: badQuery plus the switch-to-parry.gg hint', async () => {
+    parryStatus.isSuccess = true;
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByRole('textbox'), 'mkleo');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const alert = await findLookupAlert();
+    expect(alert.textContent).toBe(`${en.scout.errors.badQuery} ${en.scout.errors.tagNeedsParry}`);
+    expect(screen.queryByText(SERVER_400)).not.toBeInTheDocument();
+  });
+
+  it('start.gg source, not a bare word: badQuery without the hint', async () => {
+    parryStatus.isSuccess = true;
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByRole('textbox'), '12ab/x');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const alert = await findLookupAlert();
+    expect(alert.textContent).toBe(en.scout.errors.badQuery);
+  });
+
+  it('parry.gg source: badQueryParry, which never names start.gg', async () => {
+    parryStatus.isSuccess = true;
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('radio', { name: 'parry.gg' }));
+    await user.type(screen.getByRole('textbox'), 'mkleo');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const alert = await findLookupAlert();
+    expect(alert.textContent).toBe(en.scout.errors.badQueryParry);
+    expect(alert.textContent).not.toContain('start.gg');
+  });
+
+  it('Both mode: badQueryBoth', async () => {
+    parryStatus.isSuccess = true;
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('radio', { name: 'Both' }));
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'mkleo');
+    await user.type(screen.getByLabelText(/parry\.gg profile URL/), 'mkleo');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const alert = await findLookupAlert();
+    expect(alert.textContent).toBe(en.scout.errors.badQueryBoth);
+  });
+
+  it('parry.gg disabled: a bare word gets badQuery with no parry.gg hint', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByRole('textbox'), 'mkleo');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const alert = await findLookupAlert();
+    expect(alert.textContent).toBe(en.scout.errors.badQuery);
+  });
+});
+
 describe('ScoutPage — AI reports feature disabled', () => {
   beforeEach(() => {
     resetAuthMock();
@@ -520,6 +618,32 @@ describe('ScoutPage — AI reports feature enabled', () => {
     expect(
       await screen.findByText('The model declined to generate a report for this request'),
     ).toBeInTheDocument();
+  });
+
+  // Plan 41-16 scoping guard: the source-aware bad-query copy is lookup-only — a generate-report 400
+  // (POST /reports) keeps its server message and never reads as a bad scout query.
+  it('a generate-report 400 shows its server message and none of the bad-query copy', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsGenerate.mockRejectedValue(
+      new ApiError(400, 'That opponent is not currently curated on this brief'),
+    );
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+    await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
+
+    expect(
+      await screen.findByText('That opponent is not currently curated on this brief'),
+    ).toBeInTheDocument();
+    const errors = en.scout.errors as Record<string, string>;
+    for (const key of ['badQuery', 'badQueryParry', 'badQueryBoth', 'tagNeedsParry']) {
+      if (errors[key]) {
+        expect(screen.queryByText(errors[key], { exact: false })).not.toBeInTheDocument();
+      }
+    }
   });
 
   it('shows the past reports card for OTHER players, and selecting one renders it', async () => {

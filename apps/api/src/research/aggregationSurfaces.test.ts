@@ -187,12 +187,17 @@ const CONTENT_TREE_READER_ALLOWLIST: ContentReaderEntry[] = [
   {
     file: 'src/services/rtdb.ts',
     reason:
-      'RtdbService — the central data-access layer. Every method takes the CALLER-RESOLVED subject id (request.subjectId or request.uid) as a direct parameter; no method aggregates across a foreign/cross-user id list. Covers matches/playlists/opponents/opponentAliases/opponentNotes/stageFavorites/primaryFighters/secondaryFighters/reviewVersions/reviewDeliveries/sessionDeliveries.',
+      'RtdbService — the central data-access layer. Every method takes the CALLER-RESOLVED subject id (request.subjectId or request.uid) as a direct parameter; no method aggregates across a foreign/cross-user id list. Covers matches/playlists/opponents/opponentAliases/opponentNotes/stageFavorites/watchlist/primaryFighters/secondaryFighters/reviewVersions/reviewDeliveries/sessionDeliveries.',
   },
   {
     file: 'src/startgg/sync.ts',
     reason:
       "Writes matches/{uid} and opponents/{uid} for the SYNCING user's own uid (the authenticated caller importing their own start.gg history) — never a foreign id.",
+  },
+  {
+    file: 'src/test-support/viableEvidenceFixture.ts',
+    reason:
+      'TEST SUPPORT, never imported by production code (plan 39-06, review C3-B1): seeds matches/{uid}, primaryFighters/{uid} and secondaryFighters/{uid} into an in-memory FakeDatabase for the uid a test passes in — no aggregation, no cross-subject read, no real RTDB.',
   },
 ];
 

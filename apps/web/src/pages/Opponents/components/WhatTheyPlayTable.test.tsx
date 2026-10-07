@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import type { RankedMatchup } from '@/lib/stats';
+import type { MatchupStats, RankedMatchup } from '@/lib/stats';
 import { WhatTheyPlayTable } from './WhatTheyPlayTable';
 
 function makeRow(overrides: Partial<RankedMatchup> = {}): RankedMatchup {
@@ -79,7 +79,7 @@ describe('WhatTheyPlayTable — stacked rows below 640px (plan 39.1-49)', () => 
     makeRow({ opponentFighterId: 1, wins: 1, losses: 4, ratio: 20, totalMatches: 5 }),
     makeRow({ opponentFighterId: 999_999, wins: 2, losses: 2, ratio: 50, totalMatches: 4 }),
   ];
-  const rowHref = (row: RankedMatchup) => `/matchups?vs=${row.opponentFighterId}`;
+  const rowHref = (row: MatchupStats) => `/matchups?vs=${row.opponentFighterId}`;
 
   it('stack versus table parity: same rows, same links per row, every table value in its stacked row', () => {
     const table = render(
@@ -126,5 +126,73 @@ describe('WhatTheyPlayTable — stacked rows below 640px (plan 39.1-49)', () => 
     const slot = container.querySelector('[title="Sonic"]');
     expect(slot).not.toBeNull();
     expect(slot!.className).toMatch(/\btruncate\b/);
+  });
+});
+
+/**
+ * 38-10 (38-UAT 13/22, F18): a thin-data opponent — every character below
+ * the evidence floor — must still list the characters it was recorded on,
+ * as muted "Not enough data yet (n games)" rows with no record, rate or
+ * verdict, still drilling through the host's rowHref.
+ */
+describe('WhatTheyPlayTable — sub-floor rows (38-10)', () => {
+  const belowFloor: MatchupStats[] = [
+    { opponentFighterId: 41, wins: 1, losses: 0, totalMatches: 1, ratio: 100 }, // Sonic
+    { opponentFighterId: 57, wins: 0, losses: 1, totalMatches: 1, ratio: 0 }, // Palutena
+  ];
+  const rowHref = (row: MatchupStats) => `/matchups?vs=${row.opponentFighterId}`;
+
+  it.each(['table', 'stack'] as const)(
+    '%s layout: lists both characters as Not enough data rows, drilling, with no record or rate — never the empty copy',
+    (layout) => {
+      const { container } = render(
+        <MemoryRouter>
+          <WhatTheyPlayTable
+            byTheirFighter={[]}
+            belowFloor={belowFloor}
+            rowHref={rowHref}
+            layout={layout}
+          />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByText('No characters recorded yet.')).not.toBeInTheDocument();
+      const root = container.querySelector('[data-slot="what-they-play"]');
+      expect(root).not.toBeNull();
+      const rowEls = Array.from(
+        root!.querySelectorAll(layout === 'table' ? 'tbody tr' : ':scope > li'),
+      );
+      expect(rowEls).toHaveLength(2);
+      expect(wtpText(rowEls[0])).toContain('Sonic');
+      expect(wtpText(rowEls[1])).toContain('Palutena');
+      for (const el of rowEls) {
+        expect(wtpText(el)).toContain('Not enough data yet (1 game)');
+        expect(wtpText(el)).not.toContain('%');
+        expect(wtpText(el)).not.toMatch(/\d+-\d+/);
+      }
+      expect(rowEls.map((el) => el.querySelector('a')?.getAttribute('href'))).toEqual([
+        '/matchups?vs=41',
+        '/matchups?vs=57',
+      ]);
+    },
+  );
+
+  it('evidenced rows lead, sub-floor rows follow', () => {
+    const { container } = render(
+      <WhatTheyPlayTable
+        byTheirFighter={[makeRow({ opponentFighterId: 1, totalMatches: 5 })]}
+        belowFloor={[belowFloor[1]!]}
+        layout="table"
+      />,
+    );
+    const rowEls = Array.from(container.querySelectorAll('tbody tr'));
+    expect(rowEls.map((el) => wtpText(el))).toEqual([
+      expect.stringContaining('Mario'),
+      expect.stringContaining('Palutena'),
+    ]);
+  });
+
+  it('with both lists empty the empty copy renders', () => {
+    render(<WhatTheyPlayTable byTheirFighter={[]} belowFloor={[]} />);
+    expect(screen.getByText('No characters recorded yet.')).toBeInTheDocument();
   });
 });

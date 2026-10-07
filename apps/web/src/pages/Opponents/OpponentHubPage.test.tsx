@@ -104,6 +104,9 @@ const removeAlias = vi.fn();
 const listNotes = vi.fn();
 const upsertNote = vi.fn();
 const removeNote = vi.fn();
+const listWatchlist = vi.fn();
+const trackWatchlist = vi.fn();
+const untrackWatchlist = vi.fn();
 
 function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
   return {
@@ -139,6 +142,11 @@ vi.mock('@/lib/api', () => ({
         upsert: (...args: unknown[]) => upsertNote(...args),
         remove: (...args: unknown[]) => removeNote(...args),
       },
+    },
+    watchlist: {
+      list: (...args: unknown[]) => listWatchlist(...args),
+      track: (...args: unknown[]) => trackWatchlist(...args),
+      untrack: (...args: unknown[]) => untrackWatchlist(...args),
     },
   },
 }));
@@ -249,6 +257,12 @@ describe('OpponentHubPage', () => {
     listNotes.mockResolvedValue({});
     upsertNote.mockResolvedValue({ updatedAt: 123 });
     removeNote.mockResolvedValue(undefined);
+    listWatchlist.mockResolvedValue({ items: [] });
+    trackWatchlist.mockResolvedValue({
+      itemKey: 'opponent:rival',
+      item: { kind: 'opponent', ref: 'rival', createdAt: 1 },
+    });
+    untrackWatchlist.mockResolvedValue({ itemKey: 'opponent:rival' });
     setMockUser(makeMockUser());
   });
 
@@ -422,6 +436,7 @@ describe('OpponentHubPage', () => {
       firstPlayedAt: 1,
       lastPlayedAt: 2,
       byTheirFighter: [],
+      byTheirFighterBelowFloor: [],
       byStage: [],
       recent: [],
       source: 'manual',
@@ -490,6 +505,68 @@ describe('OpponentHubPage', () => {
       await findRecordText('1-0');
       await user.click(screen.getByRole('button', { name: 'Merge into...' }));
       expect(await screen.findByText('Merge "rival" into...')).toBeInTheDocument();
+    });
+  });
+
+  describe('plan 39.2-10 (T-04): the Track toggle in the header', () => {
+    it('is the FIRST control of the header group, before "Merge into..."', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+
+      const toggle = await screen.findByRole('button', { name: 'Track rival' });
+      const merge = screen.getByRole('button', { name: 'Merge into...' });
+      expect(toggle.parentElement?.firstElementChild).toBe(toggle);
+      expect(toggle.parentElement).toBe(merge.parentElement);
+      expect(toggle.compareDocumentPosition(merge) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('tracks the resolved CANONICAL tag when the URL names an alias', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+      ]);
+      listAliases.mockResolvedValue({ 'old rival': 'rival' });
+      const user = userEvent.setup();
+      renderHub('/opponents/old%20rival');
+      await findRecordText('2-0');
+
+      const toggle = await screen.findByRole('button', { name: /^Track / });
+      await waitFor(() => expect(toggle).toBeEnabled());
+      await user.click(toggle);
+
+      await waitFor(() => expect(trackWatchlist).toHaveBeenCalledTimes(1));
+      expect(trackWatchlist).toHaveBeenCalledWith({ kind: 'opponent', ref: 'rival' });
+    });
+
+    it('reads Tracked once the subject list holds the canonical opponent', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      listWatchlist.mockResolvedValue({
+        items: [
+          { itemKey: 'opponent:rival', item: { kind: 'opponent', ref: 'rival', createdAt: 1 } },
+        ],
+      });
+      renderHub('/opponents/rival');
+      await findRecordText('1-0');
+
+      const toggle = await screen.findByRole('button', { name: 'Stop tracking rival' });
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      expect(within(toggle).getByText('Tracked')).toBeInTheDocument();
+    });
+
+    it('offers no toggle for a tag with no recorded games (a typo URL is never trackable)', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      renderHub('/opponents/nobody-known');
+      await screen.findByText('No games recorded against nobody-known yet.');
+      expect(screen.queryByRole('button', { name: /^Track / })).not.toBeInTheDocument();
     });
   });
 
@@ -598,7 +675,11 @@ describe('OpponentHubPage', () => {
       });
     });
 
-    it('renders the cohort composition and the mixed-context badge without hover, for a mixed-source fixture', async () => {
+    function compositionLine(): HTMLElement | null {
+      return document.querySelector('[data-slot="cohort-composition"]');
+    }
+
+    it('prints the cohort composition counts and the mixed-context detail without hover, for a mixed-source fixture (38-UAT test 5)', async () => {
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
         makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true, source: 'startgg' }),
@@ -609,6 +690,61 @@ describe('OpponentHubPage', () => {
 
       await findRecordText('3-1');
       expect(await screen.findByText('Mixed context')).toBeInTheDocument();
+      await waitFor(() => expect(compositionLine()).not.toBeNull());
+      const text = compositionLine()?.textContent ?? '';
+      expect(text).toContain('3 start.gg');
+      expect(text).toContain('1 manual');
+      expect(screen.getByText('25% manual — mixed with start.gg.')).toBeInTheDocument();
+    });
+
+    it('prints the composition line for a non-mixed opponent, with no Mixed context badge (38-UAT test 5)', async () => {
+      listMatches.mockResolvedValue(
+        [1, 2, 3, 4, 5].map((n) =>
+          makeMatch({
+            id: `m${n}`,
+            time: n,
+            opponent: 'rival',
+            win: true,
+            matchType: 'offline-tourney',
+          }),
+        ),
+      );
+      renderHub('/opponents/rival');
+
+      await findRecordText('5-0');
+      await waitFor(() => expect(compositionLine()).not.toBeNull());
+      expect(compositionLine()?.textContent).toBe('5 offline');
+      expect(screen.queryByText('Mixed context')).not.toBeInTheDocument();
+    });
+
+    it('the composition line follows the context chip (38-UAT test 5)', async () => {
+      listMatches.mockResolvedValue([
+        ...[1, 2, 3].map((n) =>
+          makeMatch({
+            id: `f${n}`,
+            time: n,
+            opponent: 'rival',
+            win: true,
+            matchType: 'offline-tourney',
+          }),
+        ),
+        ...[4, 5].map((n) =>
+          makeMatch({
+            id: `o${n}`,
+            time: n,
+            opponent: 'rival',
+            win: false,
+            matchType: 'online-friendly',
+          }),
+        ),
+      ]);
+      const user = userEvent.setup();
+      renderHub('/opponents/rival');
+
+      await findRecordText('3-2');
+      await waitFor(() => expect(compositionLine()?.textContent).toBe('3 offline · 2 online'));
+      await user.click(screen.getByRole('radio', { name: 'online' }));
+      await waitFor(() => expect(compositionLine()?.textContent).toBe('2 online'));
     });
 
     it('renders the three filter selects with their documented labels', async () => {
@@ -667,6 +803,25 @@ describe('OpponentHubPage', () => {
         expect(ticks.length).toBeLessThanOrEqual(20);
       });
 
+      it('plan 39.1-52 (F22/F23): a 2-game H2H prints no dangling separator, no "over 0" and no empty "last 30 · all time"', async () => {
+        const now = Date.now();
+        listMatches.mockResolvedValue([
+          makeMatch({ id: 'two1', time: now - 2 * 60 * 60 * 1000, opponent: 'rival', win: true }),
+          makeMatch({ id: 'two2', time: now - 60 * 60 * 1000, opponent: 'rival', win: false }),
+        ]);
+        renderHub('/opponents/rival');
+
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="opponent-form-now"]')).toBeInTheDocument(),
+        );
+        const text =
+          document.querySelector('[data-slot="opponent-form-now-evidence"]')?.textContent ?? '';
+        expect(text, `"${text}"`).not.toMatch(/·\s*$/);
+        expect(text, `"${text}"`).not.toMatch(/·\s*·/);
+        expect(text).not.toMatch(/over 0\b/);
+        expect(text).not.toContain('last 30 · all time');
+      });
+
       it("the hub's region structure (card count and order) is otherwise unchanged", async () => {
         listMatches.mockResolvedValue(twoCharacterFixture());
         renderHub('/opponents/rival');
@@ -682,6 +837,8 @@ describe('OpponentHubPage', () => {
           'rival',
           'Matchup Matrix',
           'H2H Trend',
+          // Plan 39-12 (PREP-05): the free prep-brief card, own-account only.
+          'Prep brief',
           'What They Play',
           'Stages',
           'Recent Encounters',
@@ -1158,6 +1315,54 @@ describe('OpponentHubPage', () => {
 // buildEventTrendPoints; clicking a bin drills event=bin:... and the terminus
 // lists exactly that bin's games; a tournament anchor's event= still lists
 // exactly that anchor's games.
+/**
+ * Plan 39.1-56 (UAT 39.1 test 10): Recent Encounters receives the whole
+ * alias-resolved head-to-head, not `profile.recent` (the engine's last 10
+ * GAMES — at most ~3-4 sets, so the card never crossed LIST_CAP and never
+ * offered "Show all").
+ */
+describe('OpponentHubPage — Recent Encounters holds the full head-to-head (plan 39.1-56)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    listWatchlist.mockResolvedValue({ items: [] });
+    setMockUser(makeMockUser());
+  });
+
+  it('12 start.gg sets of 3 games render exactly 8 set rows and a Show all control', async () => {
+    const matches = [];
+    for (let s = 0; s < 12; s++) {
+      for (let g = 1; g <= 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `s${s}g${g}`,
+            time: 1_000_000 + s * 10_000 + g,
+            win: g !== 2,
+            opponent: 'rival',
+            matchType: 'offline-tourney',
+            externalId: `sgg:${700 + s}:g${g}`,
+            eventName: 'Long Rivalry Weekly',
+          }),
+        );
+      }
+    }
+    listMatches.mockResolvedValue(matches);
+
+    renderHub('/opponents/rival');
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(8),
+    );
+    expect(screen.getByRole('button', { name: 'Show all sets' })).toBeInTheDocument();
+  });
+});
+
 describe('OpponentHubPage — bounded, readable event trend (plan 39.1-39)', () => {
   const DAY = 24 * 60 * 60 * 1000;
   const START = Date.UTC(2026, 0, 5, 18);

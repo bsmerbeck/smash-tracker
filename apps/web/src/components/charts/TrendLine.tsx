@@ -1,17 +1,28 @@
-import { useCallback, useState } from 'react';
-import type { ReactElement, ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+  ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   CartesianGrid,
+  DefaultZIndexes,
   Line,
   LineChart,
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
+  ZIndexLayer,
+  usePlotArea,
+  useXAxisScale,
+  useYAxisScale,
 } from 'recharts';
 import { XAxis, YAxis, type MouseHandlerDataParam } from 'recharts';
-import type { PeriodPoint } from '@smash-tracker/shared';
+import type { PeriodPoint, ValueSeriesGrain, ValueSeriesPoint } from '@smash-tracker/shared';
 import { ABSTENTION_FLOOR_GAMES, PERIOD_TREND_MIN_PERIODS } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
@@ -21,9 +32,11 @@ import {
   CHART_H_COMPACT,
   CHART_DOT_RADIUS,
   CHART_LINE_WIDTH,
+  CHART_NARROW_PLOT_PX,
   CHART_TOKENS,
 } from './tokens';
 import { ChartTooltip } from './ChartTooltip';
+import { PeriodTooltip } from './PeriodTooltip';
 import { selectEventLabelKeys } from './eventTicks';
 import {
   estimateTickLabelWidthPx,
@@ -55,8 +68,31 @@ import {
   rateDomainTicks,
   type PeriodValueLabelPlacement,
   type ReferenceLabelPlacement,
+  REFERENCE_LABEL_OFFSET_PX,
 } from './trendGeometry';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
+import { CAREER_TIMELINE_READOUT_MAX_WIDTH_PX, clampReadoutLeft } from './careerTimelineLayout';
+import { TIME_AXIS_LABEL_OFFSET_PX, selectTimeAxisTicks } from './timeAxisTicks';
+import {
+  VALUE_DIAMOND_DIAGONAL_PX,
+  VALUE_DIAMOND_STROKE_PX,
+  VALUE_DOT_DIAMETER_PX,
+  VALUE_DOT_RING_PX,
+  VALUE_MARGIN_RIGHT_PX,
+  VALUE_MARGIN_TOP_PX,
+  VALUE_X_AXIS_BAND_PX,
+  VALUE_MARGIN_BOTTOM_PX,
+  buildValueYAxis,
+  nearestPointIndex,
+  placeValueLabels,
+  referencePlacement,
+  valueLabelRoles,
+  valueLegendItems,
+  valueMarkKind,
+  type ReferencePlacement,
+  type ValueYAxis,
+} from './valueTrendGeometry';
+import { ValueTrendHead, ValueTrendLockedInset, ValueTrendTableTwin } from './valueTrendParts';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -200,8 +236,9 @@ interface TrendLineSharedProps {
   width?: number;
   height?: number;
   /** Tooltip content node, passed through to Recharts' `Tooltip`. Defaults to
-   * the kit's shared `ChartTooltip` so every consumer gets the who/where/
-   * when/score content without opting in (D-06). */
+   * the kit's shared `ChartTooltip` (index/event/value modes: who/where/
+   * when/score) or `PeriodTooltip` (period mode: period · rate · W–L, plan
+   * 37-08) so every consumer gets a tooltip without opting in (D-06). */
   tooltip?: ReactElement;
 }
 
@@ -219,12 +256,114 @@ export interface TrendLineEventProps extends TrendLineSharedProps {
 }
 
 /**
+ * Plan 41-02 (A1 / DD-41-01): the value mode's readout — pre-resolved by the host, the kit never
+ * localises. `valueKey: 'value'` is the discriminant `ChartTooltip` routes on, BEFORE its numeric
+ * fall-through (a value point has no `winRate`). The value leads `title`; `lines` follow.
+ */
+export interface TrendValueReadout {
+  valueKey: 'value';
+  title: string;
+  lines: string[];
+}
+
+/**
+ * One value-mode point: the shared `buildValueSeries` point (identity by `memberIndexes`, never by its
+ * time window — CR-02) plus its host-built readout. The chart never bins, rounds or re-windows it.
+ */
+export interface TrendValuePoint extends ValueSeriesPoint {
+  context: TrendValueReadout;
+}
+
+/** DD-41-13: a reference value (an Elite threshold) and how the host placed it relative to the readings. */
+export interface TrendValueReference {
+  value: number;
+  /** The direct label drawn under a `'line'` placement. */
+  label: string;
+  placement: ReferencePlacement;
+}
+
+/**
+ * Host-controlled cursor (RESEARCH correction 1): the crosshair is state the HOST owns, so a
+ * multiples grid draws it at one `xMs` in every panel even when the panels' x sets differ. The
+ * panel converts the pointer's x into the nearest of ITS OWN points' `xMs` and reports it.
+ */
+export interface TrendValueCursor {
+  xMs: number | null;
+  onChange: (xMs: number | null) => void;
+}
+
+/** The locked state's counts and sentence — pre-composed by the host ("{{have}} of {{need}} readings"). */
+export interface TrendValueLocked {
+  have: number;
+  need: number;
+  sentence: string;
+  meterLabel: string;
+}
+
+/** Every string value mode draws — fully composed by the host. */
+export interface TrendValueLabels {
+  /** The head's overline naming the grain; a function receives the grain actually drawn (a narrow plot re-grains). Omitted renders no head. */
+  overline?: string | ((grain: ValueSeriesGrain) => string);
+  /** The plot's accessible name (`analytics.valueTrend.aria_*`). */
+  aria: string;
+  /** The head's swatch legend (rendered only with an overline). */
+  legend?: { series: string; calibration?: string; reference?: string };
+  /** The table twin's disclosure text; omitted (a multiples panel — its grid owns the one twin) renders none. */
+  tableToggle?: string;
+  tableHeaders?: { date: string; value: string; readings: string };
+}
+
+export interface TrendLineValueProps extends TrendLineSharedProps {
+  mode: 'value';
+  /** `buildValueSeries` output, oldest first (≤ 60). This member never bins. */
+  points: TrendValuePoint[];
+  /** The grain `points` were built at — named in the head overline. */
+  grain: ValueSeriesGrain;
+  /** Below `CHART_NARROW_PLOT_PX` of measured plot width these render instead (re-grain, never squeeze). */
+  narrowPoints?: TrendValuePoint[];
+  narrowGrain?: ValueSeriesGrain;
+  /** A shared x domain (multiples); defaults to the points' own span. */
+  xDomain?: [number, number];
+  /**
+   * Host-formatted compact tick strings (`9.5M`, `1088万`); the y gutter is measured from them (DD-41-14).
+   * `step` is the axis' tick step, so a host can derive enough digits that adjacent ticks never collide.
+   */
+  formatTick: (n: number, step: number) => string;
+  /** Host-formatted full-precision value (direct labels, table twin). */
+  formatValueFull: (n: number) => string;
+  /**
+   * The reference and its placement against the WIDE `points`. A narrow plot re-places it against the
+   * `narrowPoints` it actually draws (`referencePlacement`), so a host that re-derives the placement from
+   * the drawn series (`onDrawnChange`) agrees with the chart.
+   */
+  reference?: TrendValueReference;
+  /**
+   * 41-REVIEW WR-05: reports whether the plot is drawing the host's `narrowPoints` (a plot under
+   * `CHART_NARROW_PLOT_PX`) so the host's hint and aria count describe the series that is on screen.
+   * Called on mount and whenever it changes.
+   */
+  onDrawnChange?: (drawn: { narrow: boolean }) => void;
+  directLabels?: 'last' | 'last-peak-low';
+  locked?: TrendValueLocked;
+  cursor?: TrendValueCursor;
+  /** Draw the x tick band (default true). A multiples grid draws it on its last panel only. */
+  drawXAxis?: boolean;
+  /** `'thin'` = the 1.5px stroke (compact plots, multiples panels). */
+  lineWidth?: 'default' | 'thin';
+  /** A minimum y gutter (px), so stacked panels start their plots at one x. */
+  gutterPx?: number;
+  onSelectPoint?: (point: TrendValuePoint) => void;
+  labels: TrendValueLabels;
+}
+
+/**
  * A discriminated union on `mode`, not two overloaded call signatures: every
  * existing consumer omits `mode` entirely, which selects `TrendLineIndexProps`
  * (`mode` optional there, required as the literal `'event'` on the other
  * member) with no change to its own type-checking.
  */
-export type TrendLineProps = TrendLineIndexProps | TrendLineEventProps | TrendLinePeriodProps;
+export type TrendLineProps =
+  TrendLineIndexProps | TrendLineEventProps | TrendLinePeriodProps | TrendLineValueProps;
 
 /** Used only to derive a legible tick count when no explicit width is given (the runtime responsive wrapper) — the wrapper itself still governs the actual rendered pixel width; this is purely a density fallback. */
 const EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH = 800;
@@ -306,21 +445,11 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
       const rawIndex = state.activeTooltipIndex;
       const index = typeof rawIndex === 'number' ? rawIndex : Number(rawIndex);
       if (!Number.isInteger(index)) return;
-      if (props.mode === 'event') {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
-      } else if (props.mode === 'period') {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
-      } else {
-        const point = props.points[index];
-        if (point) {
-          props.onSelectPoint(point);
-        }
+      // Each mode's `onSelectPoint` takes its own point type, so the union call is narrowed with a cast;
+      // value mode never gets here (it owns its pointer layer and returns below).
+      const point = props.points[index];
+      if (point) {
+        props.onSelectPoint(point as never);
       }
     },
     [props],
@@ -343,6 +472,10 @@ export function TrendLine(props: TrendLineProps): ReactElement | null {
     return (
       <PeriodTrendChart props={props} width={width} height={periodHeight} onClick={handleClick} />
     );
+  }
+
+  if (props.mode === 'value') {
+    return <ValueTrendChart props={props} width={width} height={height} />;
   }
 
   if (props.points.length === 0) {
@@ -1151,9 +1284,11 @@ function PeriodTrendChart({
         tickMargin={PERIOD_Y_TICK_GAP_PX}
         tick={{ fill: CHART_TOKENS.axisText, fontSize: PERIOD_AXIS_FONT_SIZE_PX }}
       />
-      {props.tooltip && (
-        <Tooltip content={props.tooltip} cursor={{ stroke: CHART_TOKENS.border }} />
-      )}
+      {/* Plan 37-08: on by default, like index/event modes — a host `tooltip` still overrides. */}
+      <Tooltip
+        content={props.tooltip ?? <PeriodTooltip points={points} />}
+        cursor={{ stroke: CHART_TOKENS.border }}
+      />
       {props.referenceRate !== undefined && (
         <ReferenceLine
           y={props.referenceRate}
@@ -1377,6 +1512,747 @@ function PeriodTrendRoot({
         : {})}
     >
       {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Value mode (plan 41-02, A1 / DD-41-01, UI-SPEC §7.1) — a fourth member of the mode union: a
+// time-axis numeric trend (GSP, estimated MMR, Glicko-2) whose points arrive PRE-BINNED from shared
+// `buildValueSeries`. It lives in this file so the Recharts import stays inside the two files
+// `chartKitBoundary.test.ts` already lists; its plain-DOM parts (head, locked inset, table twin) live
+// in `valueTrendParts.tsx` and its pure geometry in `valueTrendGeometry.ts`.
+//
+// Every mark, label and the crosshair are drawn by two small layers that read the chart's OWN
+// scales (`useXAxisScale` / `useYAxisScale` / `usePlotArea`, the `CareerTimeline` pattern) — never a
+// second layout and never a Recharts mouse event. The pointer → x mapping is a transparent hit rect
+// over the plot (nearest point by x), which also removes the need to trust Recharts' value
+// synchronisation across panels with different x sets (RESEARCH correction 1).
+// ---------------------------------------------------------------------------
+
+const VALUE_RESPONSIVE_FALLBACK_WIDTH = EVENT_TICKS_RESPONSIVE_FALLBACK_WIDTH;
+/** Phase 38's focus-ring recipe (UI-SPEC §10.1), on the plot's one tab stop. */
+const VALUE_PLOT_FOCUS_CLASSES =
+  'rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+/** The readout's wrapper (UI-SPEC §9.2: max 280px, `meta`, tabular) around `ChartTooltip`'s own surface. */
+const VALUE_READOUT_CLASSES =
+  'pointer-events-none absolute z-10 w-max max-w-[min(280px,100%)] tabular-nums';
+/** UI-SPEC §9.1: the last-point dot scales this much while it is the active point. */
+const VALUE_ACTIVE_DOT_SCALE = 1.35;
+/** The x tick label's baseline under the plot, and the tick mark's length (px). */
+const VALUE_X_LABEL_BASELINE_PX = 16;
+const VALUE_X_TICK_LENGTH_PX = 4;
+/** A reference label's baseline offset from its line: below the line (box top 5px under) / above it (box bottom 5px over). */
+const VALUE_REFERENCE_LABEL_BELOW_DY = 14;
+const VALUE_REFERENCE_LABEL_ABOVE_DY = 8;
+/** The y axis's own tick gap (px) between the tick text and the plot's left edge. */
+const VALUE_Y_TICK_GAP_PX = 6;
+
+type ValueActiveSource = 'pointer' | 'keyboard' | 'touch';
+
+interface ValueActive {
+  index: number;
+  source: ValueActiveSource;
+}
+
+/** The chart's own scales, or `null` until Recharts has laid the chart out. */
+function useValuePlot() {
+  const xScale = useXAxisScale();
+  const yScale = useYAxisScale();
+  const plot = usePlotArea();
+  if (!xScale || !yScale || !plot) return null;
+  return { xScale, yScale, plot };
+}
+
+interface ValueLayerProps {
+  points: TrendValuePoint[];
+  grain: ValueSeriesGrain;
+  xDomain: [number, number];
+  drawXAxis: boolean;
+  locale: string;
+  /** DD-41-13: the reference and how it was placed; only a `'line'` placement is drawn. */
+  reference?: TrendValueReference;
+  /** Which direct labels the plot carries. */
+  directLabels: 'last' | 'last-peak-low';
+  formatValueFull: (n: number) => string;
+  /** Where the crosshair stands (ms), or null. */
+  crosshairMs: number | null;
+  /** The active point's index (its dot is emphasised when it is the last), or null. */
+  activeIndex: number | null;
+  selectable: boolean;
+  /** A fine pointer moved over the plot: the nearest point's index. */
+  onHover: (index: number) => void;
+  /** A fine pointer left the plot. */
+  onLeave: () => void;
+  /** A click / tap landed: the nearest point's index; `touch` says it came from a finger. */
+  onPress: (index: number, touch: boolean) => void;
+}
+
+/** Under the line: the x tick labels (from `selectTimeAxisTicks`, the `CareerTimeline` way). */
+function ValueUnderLayer({ drawXAxis, xDomain, locale }: ValueLayerProps): ReactElement | null {
+  const scales = useValuePlot();
+  if (!scales || !drawXAxis) return null;
+  const { xScale, plot } = scales;
+  const ticks = selectTimeAxisTicks({
+    startMs: xDomain[0],
+    endMs: xDomain[1],
+    plotWidthPx: plot.width,
+    locale,
+  });
+  const baseline = plot.y + plot.height;
+  return (
+    <g data-slot="trend-value-x-axis">
+      {ticks.gridlines.map((ms) => {
+        const x = xScale(ms);
+        if (x == null) return null;
+        return (
+          <line
+            key={`tick:${ms}`}
+            x1={x}
+            x2={x}
+            y1={baseline}
+            y2={baseline + VALUE_X_TICK_LENGTH_PX}
+            stroke={CHART_TOKENS.grid}
+            strokeWidth={1}
+          />
+        );
+      })}
+      {ticks.labels.map((label) => {
+        const x = xScale(label.ms);
+        if (x == null) return null;
+        return (
+          <text
+            key={`label:${label.ms}`}
+            data-slot="trend-value-x-label"
+            x={x + TIME_AXIS_LABEL_OFFSET_PX}
+            y={baseline + VALUE_X_LABEL_BASELINE_PX}
+            textAnchor={label.anchor}
+            fill={CHART_TOKENS.axisText}
+            fontSize={CHART_AXIS_FONT_SIZE}
+          >
+            {label.text}
+          </text>
+        );
+      })}
+    </g>
+  );
+}
+
+function diamondPath(x: number, y: number, diagonal: number): string {
+  const half = diagonal / 2;
+  return `M${x} ${y - half} ${x + half} ${y} ${x} ${y + half} ${x - half} ${y}Z`;
+}
+
+/** Over the line: marks, the crosshair and the transparent pointer layer. */
+function ValueTopLayer(props: ValueLayerProps): ReactElement | null {
+  const {
+    points,
+    grain,
+    reference,
+    directLabels,
+    formatValueFull,
+    crosshairMs,
+    activeIndex,
+    selectable,
+    onHover,
+    onLeave,
+    onPress,
+  } = props;
+  const scales = useValuePlot();
+  // The pointerType of the press that precedes a click — a React click is a MouseEvent in some
+  // engines, so the pointerdown is the reliable source (the `CareerTimeline` pattern).
+  const pressTypeRef = useRef<string | null>(null);
+  if (!scales) return null;
+  const { xScale, yScale, plot } = scales;
+
+  function locate(event: ReactPointerEvent<SVGRectElement> | ReactMouseEvent<SVGRectElement>) {
+    const svg = event.currentTarget.ownerSVGElement;
+    const rect = svg ? svg.getBoundingClientRect() : { left: 0 };
+    const x = event.clientX - rect.left;
+    let best = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    points.forEach((point, i) => {
+      const px = xScale!(point.xMs);
+      if (px == null) return;
+      const distance = Math.abs(px - x);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  const last = points.length - 1;
+  const crosshairX = crosshairMs !== null ? xScale(crosshairMs) : undefined;
+
+  // Every drawn mark (centre + half extent) — direct labels and the reference label never sit on one.
+  const drawnMarks = points.flatMap((point, i) => {
+    const kind = valueMarkKind(point, { isLast: i === last, grain });
+    const x = xScale(point.xMs);
+    const y = yScale(point.value);
+    if (!kind || x == null || y == null) return [];
+    const diameter = kind === 'diamond' ? VALUE_DIAMOND_DIAGONAL_PX : VALUE_DOT_DIAMETER_PX;
+    return [{ xPx: x, yPx: y, diameterPx: diameter, halfPx: diameter / 2 + VALUE_DOT_RING_PX }];
+  });
+  const plotRight = plot.x + plot.width;
+  const labelCandidates = valueLabelRoles(
+    points.map((point) => point.value),
+    directLabels,
+  ).flatMap(({ role, index }) => {
+    const point = points[index]!;
+    const x = xScale(point.xMs);
+    const y = yScale(point.value);
+    return x == null || y == null
+      ? []
+      : [{ role, xPx: x, yPx: y, text: formatValueFull(point.value) }];
+  });
+  const placedLabels = placeValueLabels({
+    candidates: labelCandidates,
+    plotLeftPx: plot.x,
+    plotRightPx: plotRight,
+    plotBottomPx: plot.y + plot.height,
+    marks: drawnMarks,
+  });
+  const referenceY =
+    reference && reference.placement === 'line' ? yScale(reference.value) : undefined;
+  const referenceLabelSlot: ReferenceLabelPlacement =
+    reference && referenceY != null
+      ? placeReferenceLabel({
+          referenceYPx: referenceY,
+          referenceLabelWidthPx: estimateTickLabelWidthPx(reference.label),
+          plotLeftPx: plot.x,
+          plotRightPx: plotRight,
+          labelledPoints: placedLabels.map((label) => ({
+            xPx: label.labelXPx,
+            yPx: label.yPx,
+            labelWidthPx: estimateTickLabelWidthPx(label.text),
+            below: label.below,
+          })),
+          dots: drawnMarks,
+        })
+      : 'none';
+
+  return (
+    <g data-slot="trend-value-top-layer">
+      {reference && referenceY != null && (
+        <g pointerEvents="none">
+          <line
+            data-slot="trend-value-reference"
+            x1={plot.x}
+            x2={plotRight}
+            y1={referenceY}
+            y2={referenceY}
+            stroke={CHART_TOKENS.deemphasis}
+            strokeWidth={1}
+            strokeDasharray="4 3"
+          />
+          {referenceLabelSlot !== 'none' && (
+            <text
+              data-slot="trend-value-reference-label"
+              data-position={referenceLabelSlot}
+              x={
+                referenceLabelSlot.endsWith('Right')
+                  ? plotRight - REFERENCE_LABEL_OFFSET_PX
+                  : plot.x + REFERENCE_LABEL_OFFSET_PX
+              }
+              y={
+                referenceLabelSlot.startsWith('insideTop')
+                  ? referenceY + VALUE_REFERENCE_LABEL_BELOW_DY
+                  : referenceY - VALUE_REFERENCE_LABEL_ABOVE_DY
+              }
+              textAnchor={referenceLabelSlot.endsWith('Right') ? 'end' : 'start'}
+              fill={CHART_TOKENS.axisText}
+              fontSize={CHART_AXIS_FONT_SIZE}
+              {...VALUE_LABEL_HALO}
+            >
+              {reference.label}
+            </text>
+          )}
+        </g>
+      )}
+      {placedLabels.map((label) => (
+        <text
+          key={label.role}
+          data-slot="trend-value-label"
+          data-role={label.role}
+          data-placement={label.below ? 'below' : 'above'}
+          x={label.labelXPx}
+          y={label.baselineYPx}
+          textAnchor="middle"
+          fill={CHART_TOKENS.text}
+          fontSize={CHART_AXIS_FONT_SIZE}
+          fontWeight={600}
+          className="tabular-nums"
+          pointerEvents="none"
+          {...VALUE_LABEL_HALO}
+        >
+          {label.text}
+        </text>
+      ))}
+      {points.map((point, i) => {
+        const kind = valueMarkKind(point, { isLast: i === last, grain });
+        if (!kind) return null;
+        const x = xScale(point.xMs);
+        const y = yScale(point.value);
+        if (x == null || y == null) return null;
+        if (kind === 'diamond') {
+          return (
+            <path
+              key={point.key}
+              data-slot="trend-value-diamond"
+              data-point-key={point.key}
+              d={diamondPath(x, y, VALUE_DIAMOND_DIAGONAL_PX)}
+              fill={CHART_TOKENS.deemphasis}
+              stroke={CHART_TOKENS.surface}
+              strokeWidth={VALUE_DIAMOND_STROKE_PX}
+              pointerEvents="none"
+            />
+          );
+        }
+        const scale = i === last && i === activeIndex ? VALUE_ACTIVE_DOT_SCALE : 1;
+        return (
+          <circle
+            key={point.key}
+            data-slot="trend-value-dot"
+            data-point-key={point.key}
+            cx={x}
+            cy={y}
+            r={(VALUE_DOT_DIAMETER_PX / 2) * scale}
+            fill={CHART_TOKENS.series1}
+            stroke={CHART_TOKENS.surface}
+            strokeWidth={VALUE_DOT_RING_PX}
+            pointerEvents="none"
+          />
+        );
+      })}
+      {crosshairX != null && (
+        <g pointerEvents="none">
+          <line
+            data-slot="trend-value-crosshair"
+            x1={crosshairX}
+            x2={crosshairX}
+            y1={plot.y}
+            y2={plot.y + plot.height}
+            stroke={CHART_TOKENS.deemphasisStrong}
+            strokeWidth={1}
+          />
+          {activeIndex !== null &&
+            points[activeIndex] !== undefined &&
+            points[activeIndex]!.xMs === crosshairMs &&
+            yScale(points[activeIndex]!.value) != null && (
+              <circle
+                data-slot="trend-value-crosshair-dot"
+                cx={crosshairX}
+                cy={yScale(points[activeIndex]!.value)}
+                r={VALUE_DOT_DIAMETER_PX / 2}
+                fill={CHART_TOKENS.series1}
+                stroke={CHART_TOKENS.surface}
+                strokeWidth={VALUE_DOT_RING_PX}
+              />
+            )}
+        </g>
+      )}
+      <rect
+        data-slot="trend-value-hit"
+        x={plot.x}
+        y={plot.y}
+        width={plot.width}
+        height={plot.height}
+        fill="transparent"
+        style={selectable ? { cursor: 'pointer' } : undefined}
+        onPointerDown={(event) => {
+          pressTypeRef.current = event.pointerType || null;
+        }}
+        onPointerMove={(event) => {
+          // A finger dragging over the plot scrolls the page; only fine pointers hover.
+          if (event.pointerType === 'touch') return;
+          const index = locate(event);
+          if (index >= 0) onHover(index);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === 'touch') return;
+          onLeave();
+        }}
+        onClick={(event) => {
+          const touch = pressTypeRef.current === 'touch';
+          pressTypeRef.current = null;
+          const index = locate(event);
+          if (index >= 0) onPress(index, touch);
+        }}
+      />
+    </g>
+  );
+}
+
+/** The span a single-point (or flat-x) series is centred in so the x axis never divides by zero. */
+const VALUE_SINGLE_POINT_HALF_SPAN_MS = 24 * 60 * 60 * 1000;
+
+function defaultXDomain(points: readonly { xMs: number }[]): [number, number] {
+  const first = points[0]!.xMs;
+  const last = points[points.length - 1]!.xMs;
+  return last > first
+    ? [first, last]
+    : [first - VALUE_SINGLE_POINT_HALF_SPAN_MS, last + VALUE_SINGLE_POINT_HALF_SPAN_MS];
+}
+
+/** Reports which series (wide or narrow) value mode is drawing; renders nothing. */
+function DrawnSeriesReporter({
+  narrow,
+  onChange,
+}: {
+  narrow: boolean;
+  onChange?: (drawn: { narrow: boolean }) => void;
+}): null {
+  useEffect(() => {
+    onChange?.({ narrow });
+  }, [narrow, onChange]);
+  return null;
+}
+
+/**
+ * Value mode's whole render tree — a real component because the narrow re-grain and the readout
+ * both need the plot's measured width, known instantly with an explicit `width` (every test) and
+ * from `ResponsiveContainer`'s `onResize` at runtime.
+ */
+function ValueTrendChart({
+  props,
+  width,
+  height,
+}: {
+  props: TrendLineValueProps;
+  width?: number;
+  height: number;
+}): ReactElement | null {
+  const { i18n } = useTranslation();
+  const locale = i18n.language;
+  const [measuredWidth, setMeasuredWidth] = useState(VALUE_RESPONSIVE_FALLBACK_WIDTH);
+  const [active, setActive] = useState<ValueActive | null>(null);
+  const [readoutWidth, setReadoutWidth] = useState(0);
+  const readoutRef = useRef<HTMLDivElement>(null);
+
+  // Every hook lives ABOVE the early returns below. The readout's own width decides which side of
+  // the crosshair it sits on; it is re-measured whenever it shows a different point.
+  const activeKey = active ? `${active.index}` : null;
+  useLayoutEffect(() => {
+    const el = readoutRef.current;
+    if (!el) return undefined;
+    function measure() {
+      if (el) setReadoutWidth(el.offsetWidth);
+    }
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeKey]);
+
+  const { cursor, formatTick, formatValueFull, reference, labels, locked } = props;
+  // UI-SPEC §7.1: no readings at all means no chart (never an empty frame) — the host does not mount it.
+  if (props.points.length === 0) return null;
+
+  const drawXAxis = props.drawXAxis ?? true;
+  const containerWidth = typeof width === 'number' ? width : measuredWidth;
+  const tableTwin = (shown: readonly TrendValuePoint[]) =>
+    labels.tableToggle && labels.tableHeaders && shown.length > 0 ? (
+      <ValueTrendTableTwin
+        points={shown}
+        toggle={labels.tableToggle}
+        headers={labels.tableHeaders}
+        formatValueFull={formatValueFull}
+      />
+    ) : null;
+
+  // UI-SPEC §7.1 locked state: the plot is replaced by an inset with the sentence and the meter.
+  if (locked) {
+    const lockedTitle =
+      typeof labels.overline === 'function' ? labels.overline(props.grain) : labels.overline;
+    return (
+      <div className="contents" data-slot="trend-line-value" data-state="locked">
+        {lockedTitle && <ValueTrendHead title={lockedTitle} items={[]} />}
+        <ValueTrendLockedInset locked={locked} />
+        {tableTwin(props.points)}
+      </div>
+    );
+  }
+
+  const referenceArg = reference
+    ? { value: reference.value, placement: reference.placement }
+    : undefined;
+  const wideAxis: ValueYAxis | null = buildValueYAxis(
+    props.points.map((point) => point.value),
+    formatTick,
+    referenceArg,
+  );
+  if (!wideAxis) return null;
+
+  // "Narrow plots re-grain, they do not squeeze" (§7.1): below `CHART_NARROW_PLOT_PX` of measured
+  // plot width the host's coarser series is drawn instead of sub-legible marks.
+  const widePlotWidthPx =
+    containerWidth - Math.max(wideAxis.gutterPx, props.gutterPx ?? 0) - VALUE_MARGIN_RIGHT_PX;
+  const narrow =
+    props.narrowPoints !== undefined &&
+    props.narrowPoints.length > 0 &&
+    widePlotWidthPx < CHART_NARROW_PLOT_PX;
+  const points = narrow ? props.narrowPoints! : props.points;
+  const grain = narrow ? (props.narrowGrain ?? props.grain) : props.grain;
+  // WR-05: the reference is placed against the series that is drawn (the narrow series can sit further
+  // from it than the wide one), so the dashed line, the legend and the fitted domain agree.
+  const drawnReference: TrendValueReference | undefined =
+    reference && narrow
+      ? {
+          ...reference,
+          placement: referencePlacement(
+            points.map((point) => point.value),
+            reference.value,
+          ),
+        }
+      : reference;
+  const drawnReferenceArg = drawnReference
+    ? { value: drawnReference.value, placement: drawnReference.placement }
+    : undefined;
+  const axis = narrow
+    ? buildValueYAxis(
+        points.map((point) => point.value),
+        formatTick,
+        drawnReferenceArg,
+      )
+    : wideAxis;
+  if (!axis) return null;
+
+  const gutterPx = Math.max(axis.gutterPx, props.gutterPx ?? 0);
+  const plotWidthPx = Math.max(0, containerWidth - gutterPx - VALUE_MARGIN_RIGHT_PX);
+  const bottomPx = drawXAxis ? VALUE_X_AXIS_BAND_PX : VALUE_MARGIN_BOTTOM_PX;
+  const xDomain = props.xDomain ?? defaultXDomain(points);
+  const lineStrokeWidth =
+    props.lineWidth === 'thin' || height <= CHART_H_COMPACT ? 1.5 : CHART_LINE_WIDTH;
+  const lastIndex = points.length - 1;
+
+  const activeIndex = cursor
+    ? cursor.xMs !== null
+      ? nearestPointIndex(points, cursor.xMs)
+      : null
+    : active && active.index <= lastIndex
+      ? active.index
+      : null;
+  const crosshairMs = cursor
+    ? cursor.xMs
+    : activeIndex !== null
+      ? (points[activeIndex]?.xMs ?? null)
+      : null;
+  const activePoint = activeIndex !== null ? points[activeIndex] : undefined;
+
+  function setActiveIndex(index: number, source: ValueActiveSource) {
+    const point = points[index];
+    if (!point) return;
+    if (cursor) cursor.onChange(point.xMs);
+    else setActive({ index, source });
+  }
+
+  function select(index: number) {
+    const point = points[index];
+    if (point) props.onSelectPoint?.(point);
+  }
+
+  function handlePress(index: number, touch: boolean) {
+    if (touch) {
+      // A first tap shows the readout; a second tap on the same point selects it — a single tap
+      // never acts on a point the reader has not seen.
+      if (activeIndex === index && (cursor || active?.source === 'touch')) {
+        select(index);
+        return;
+      }
+      setActiveIndex(index, 'touch');
+      return;
+    }
+    setActiveIndex(index, 'pointer');
+    select(index);
+  }
+
+  /**
+   * UI-SPEC §9.1 / §13: the plot is ONE tab stop. The first ← / → lands on the latest point
+   * (`CareerTimeline`'s rule), then steps; Home / End jump; Enter / Space select; Escape clears.
+   * With a host-controlled `cursor` the host (a multiples grid) owns the keys.
+   */
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (cursor) return;
+    const current = active && active.index <= lastIndex ? active.index : null;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft':
+        next = current === null ? lastIndex : Math.max(0, current - 1);
+        break;
+      case 'ArrowRight':
+        next = current === null ? lastIndex : Math.min(lastIndex, current + 1);
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = lastIndex;
+        break;
+      case 'Enter':
+      case ' ':
+        if (current === null) return;
+        event.preventDefault();
+        select(current);
+        return;
+      case 'Escape':
+        if (current === null) return;
+        event.preventDefault();
+        setActive(null);
+        return;
+      default:
+        return;
+    }
+    event.preventDefault();
+    setActive({ index: next, source: 'keyboard' });
+  }
+
+  const rows = points.map((point) => ({ xMs: point.xMs, value: point.value }));
+  const layerProps: ValueLayerProps = {
+    points,
+    grain,
+    xDomain,
+    drawXAxis,
+    locale,
+    reference: drawnReference,
+    directLabels: props.directLabels ?? 'last',
+    formatValueFull,
+    crosshairMs,
+    activeIndex,
+    selectable: props.onSelectPoint !== undefined,
+    onHover: (index) => setActiveIndex(index, 'pointer'),
+    onLeave: () => {
+      if (cursor) cursor.onChange(null);
+      else setActive((previous) => (previous?.source === 'pointer' ? null : previous));
+    },
+    onPress: handlePress,
+  };
+
+  const chart = (
+    <LineChart
+      {...(typeof width === 'number' ? { width, height } : {})}
+      // One tab stop per plot (the wrapper below): Recharts' default accessibility layer would add a second.
+      accessibilityLayer={false}
+      data={rows}
+      margin={{ top: VALUE_MARGIN_TOP_PX, right: VALUE_MARGIN_RIGHT_PX, bottom: bottomPx, left: 0 }}
+    >
+      <CartesianGrid stroke={CHART_TOKENS.grid} vertical={false} syncWithTicks />
+      <XAxis type="number" dataKey="xMs" scale="linear" domain={xDomain} allowDataOverflow hide />
+      <YAxis
+        type="number"
+        scale="linear"
+        domain={axis.domain}
+        ticks={axis.ticks}
+        interval={0}
+        width={gutterPx}
+        axisLine={false}
+        tickLine={false}
+        tickSize={0}
+        tickMargin={VALUE_Y_TICK_GAP_PX}
+        tickFormatter={(value: number) => formatTick(value, axis.step)}
+        tick={{ fill: CHART_TOKENS.axisText, fontSize: CHART_AXIS_FONT_SIZE }}
+        allowDataOverflow
+      />
+      <ZIndexLayer zIndex={DefaultZIndexes.grid}>
+        <ValueUnderLayer {...layerProps} />
+      </ZIndexLayer>
+      <Line
+        className="trend-line-value-line"
+        type="linear"
+        dataKey="value"
+        stroke={CHART_TOKENS.series1}
+        strokeWidth={lineStrokeWidth}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        dot={false}
+        activeDot={false}
+        connectNulls={false}
+        isAnimationActive={false}
+      />
+      <ZIndexLayer zIndex={DefaultZIndexes.label}>
+        <ValueTopLayer {...layerProps} />
+      </ZIndexLayer>
+    </LineChart>
+  );
+
+  const plot =
+    typeof width === 'number' ? (
+      chart
+    ) : (
+      <ResponsiveContainer width="100%" height={height} onResize={(w) => setMeasuredWidth(w)}>
+        {chart}
+      </ResponsiveContainer>
+    );
+
+  // The standalone readout (a grid owns one readout for all its panels and passes `cursor`).
+  const xSpan = xDomain[1] - xDomain[0];
+  const readoutAnchorX =
+    gutterPx + (((activePoint?.xMs ?? xDomain[0]) - xDomain[0]) / (xSpan || 1)) * plotWidthPx;
+  const readoutLeft = clampReadoutLeft({
+    anchorX: readoutAnchorX,
+    readoutWidth: Math.min(readoutWidth, CAREER_TIMELINE_READOUT_MAX_WIDTH_PX),
+    containerWidth,
+  });
+
+  const title = typeof labels.overline === 'function' ? labels.overline(grain) : labels.overline;
+  const headItems = valueLegendItems({
+    legend: labels.legend,
+    hasCalibration: points.some((point) => point.containsCalibration),
+    referencePlacement: drawnReference?.placement,
+  });
+
+  return (
+    <div
+      className="contents"
+      data-slot="trend-line-value"
+      data-state="drawn"
+      data-grain={grain}
+      data-narrow={narrow ? 'true' : 'false'}
+      data-point-count={points.length}
+      data-y-domain={`${axis.domain[0]},${axis.domain[1]}`}
+    >
+      <DrawnSeriesReporter narrow={narrow} onChange={props.onDrawnChange} />
+      {title && <ValueTrendHead title={title} items={headItems} />}
+      <div
+        data-slot="trend-value-frame"
+        className="relative [&_.recharts-surface]:overflow-visible"
+      >
+        <div
+          data-slot="trend-value-plot"
+          role="img"
+          tabIndex={0}
+          aria-label={labels.aria}
+          className={VALUE_PLOT_FOCUS_CLASSES}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            if (!cursor) setActive(null);
+          }}
+        >
+          {plot}
+        </div>
+        {!cursor && activePoint && (
+          <div
+            ref={readoutRef}
+            data-slot="trend-value-readout"
+            aria-hidden="true"
+            className={VALUE_READOUT_CLASSES}
+            style={{ left: readoutLeft, top: VALUE_MARGIN_TOP_PX }}
+          >
+            <ChartTooltip active payload={[{ payload: activePoint }]} />
+          </div>
+        )}
+        {/* UI-SPEC §13.6: keyboard steps are announced politely; a pointer hover never is. */}
+        {!cursor && (
+          <div data-slot="trend-value-live" aria-live="polite" className="sr-only">
+            {activePoint && active?.source === 'keyboard' ? (
+              <ChartTooltip active payload={[{ payload: activePoint }]} />
+            ) : null}
+          </div>
+        )}
+      </div>
+      {tableTwin(points)}
     </div>
   );
 }

@@ -20,9 +20,10 @@ import { InsightLine } from '@/components/analytics/InsightLine';
 import { UnlocksNext, type UnlocksNextMeter } from '@/components/analytics/UnlocksNext';
 import { ClaimChip, type ClaimChipKind } from '@/components/analytics/ClaimChip';
 import { buildInsightDoors, type InsightDoorDescriptor } from '@/components/analytics/insightDoors';
+import { buildInsightEvidenceLine } from '@/components/analytics/insightEvidenceLine';
 import { useInsightDismissals } from '@/hooks/useInsightDismissals';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
-import { formatPercent } from '@/lib/formatPercent';
+import { formatDate } from '@/lib/format';
 
 /**
  * The four Match Data roster reads (UI-SPEC §8.4's rail: "RosterCore ·
@@ -107,39 +108,14 @@ function buildDoorNodes(
   return [nodes[0]!, nodes[1]!, nodes[2]!] as const;
 }
 
-function buildEvidenceLine(insight: Insight, t: TFunction, locale: string): string {
-  const claim = insight.recent;
-  if (claim.kind !== 'evidenced') {
-    return '';
-  }
-  const record = `${claim.value.wins}–${claim.value.losses}`;
-  // WR-C05 (39.1-REVIEW.md): route through the one shared, locale-aware
-  // percent formatter instead of a bare `${Math.round(x * 100)}%` template
-  // literal, which baked in the English convention (no space before `%`)
-  // inside every locale's translated evidence sentence.
-  const rate = formatPercent(claim.value.rate, locale);
-  const tier = claim.sample.confidenceTier;
-  const cue = tier ? t(`shared.evidence.sampleCueGlyph.${tier}`, { count: claim.value.total }) : '';
-  const baselineClaim = insight.baseline;
-  const baselineRate =
-    baselineClaim.kind === 'evidenced' ? formatPercent(baselineClaim.value.rate, locale) : '';
-  const baselineGames = baselineClaim.kind === 'evidenced' ? baselineClaim.value.total : 0;
-  return t(`insights.evidence.twoHorizon.${insight.horizon}`, {
-    recentRecord: `${record} · ${rate}`,
-    baselineRate,
-    baselineGames,
-    cue,
-  });
-}
-
-function buildSpan(insight: Insight, t: TFunction): string | undefined {
+function buildSpan(insight: Insight, t: TFunction, locale: string): string | undefined {
   if (insight.window.fromMs == null || insight.window.toMs == null) {
     return undefined;
   }
   return t('insights.evidence.span', {
     count: insight.window.games,
-    from: new Date(insight.window.fromMs).toLocaleDateString(),
-    to: new Date(insight.window.toMs).toLocaleDateString(),
+    from: formatDate(insight.window.fromMs, locale),
+    to: formatDate(insight.window.toMs, locale),
   });
 }
 
@@ -244,8 +220,8 @@ export function MatchDataRail({
   function insightToRailCard(insight: Insight): InsightRailCard {
     const chipKind = claimChipKindFor(insight.kind);
     const verdict = buildMatchDataVerdict(insight, t, accountName);
-    const evidence = buildEvidenceLine(insight, t, i18n.language);
-    const span = buildSpan(insight, t);
+    const evidence = buildInsightEvidenceLine(insight, t, i18n.language) ?? '';
+    const span = buildSpan(insight, t, i18n.language);
     const doors = buildDoorNodes(insight, t, subjectPath);
     return {
       id: insight.id,

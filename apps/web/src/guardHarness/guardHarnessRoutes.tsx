@@ -11,6 +11,7 @@ import { OpponentHubPage } from '@/pages/Opponents/OpponentHubPage';
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { GspPage } from '@/pages/Gsp/GspPage';
 import { ScoutPage } from '@/pages/Scout/ScoutPage';
+import { TournamentsPage } from '@/pages/Tournaments/TournamentsPage';
 
 /**
  * The layout-oracle harness's route table (Phase 39.1 Plan 09, review
@@ -56,8 +57,9 @@ export interface GuardHarnessRouteEntry {
    * route except `matchups`, (plan 39.1-34) `trends-career`, (plan 39.1-35)
    * `trends-casual`, (plan 39.1-39) `dashboard-app`, `stage-detail-recent` and the
    * capture-only `gsp`, (plan 39.1-51) the three `*-games` drill routes,
-   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin` and (plan
-   * 39.1-43) `fighter-analysis-recent`.
+   * (plan 39.1-41) `matchups-sketch-deep` / `matchups-sketch-thin`, (plan
+   * 39.1-43) `fighter-analysis-recent` and (plan 39.2-07) the two
+   * `tournaments` routes.
    */
   shell?: 'app';
 }
@@ -205,6 +207,34 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
     loadedMarker: '[data-slot="opponents-body"]',
   },
   {
+    // Plan 39.2-07 (UI-SPEC §13 G1): the tier-aware Tournaments page on the
+    // harness's 19-row `tournaments` registry (offline supermajor / major /
+    // minor / regional / local rows, online weeklies, a side event, a 60+
+    // character name and two undated rows; guardLayout sends
+    // `x-guard-layout-scale: tournaments`). `shell: 'app'` DELIBERATELY: the
+    // table's Event cell is the one flexible slot, so it must be measured at
+    // the content width the MainLayout sidebar leaves it, not at the raw
+    // viewport width an unshelled mount would give it.
+    id: 'tournaments',
+    path: '/tournaments',
+    initialEntry: '/tournaments',
+    element: <TournamentsPage />,
+    loadedMarker: '[data-slot="tournaments-body"]',
+    shell: 'app',
+  },
+  {
+    // Plan 39.2-07: the SAME page on a 100-row registry (`tournaments100`),
+    // exactly one full DOM pass — the terminus measurement (the table counts
+    // at most 500 px toward the scroll budget, like every table-layout list).
+    // A route can carry one dataset per page load, so it is its own entry.
+    id: 'tournaments-100',
+    path: '/tournaments',
+    initialEntry: '/tournaments',
+    element: <TournamentsPage />,
+    loadedMarker: '[data-slot="tournaments-body"]',
+    shell: 'app',
+  },
+  {
     id: 'opponent-hub',
     path: '/opponents/:opponentTag',
     initialEntry: '/opponents/synthopp15',
@@ -272,10 +302,10 @@ export const GUARD_HARNESS_ROUTES: GuardHarnessRouteEntry[] = [
   },
   {
     // Plan 39.1-39 (OWNER DECISION 2026-09-25, DD-11 extended to GSP): a
-    // CAPTURE-ONLY route — `captureDesignScreens.mjs` screenshots the GSP
-    // page's three chart.js charts on its `gsp` fixture scale. It is never
-    // one of guard:layout's `LAYOUT_ORACLE_ROUTES` (GSP stays chart.js until
-    // Phase 41 and is not an analytics route).
+    // route kept for `captureDesignScreens.mjs`, which screenshots the
+    // GSP page on its `gsp` fixture scale; since plan 41-05 the page is also a
+    // guard:layout route at every viewport; its charts are kit charts, and the
+    // chart.js library was removed in Phase 41.
     id: 'gsp',
     path: '/gsp',
     initialEntry: '/gsp',

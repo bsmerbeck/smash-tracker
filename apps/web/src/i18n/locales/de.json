@@ -193,6 +193,8 @@
       "unknownRow_other": "Unbekannt ({{count, grouped}} Matches, ausgeschlossen)",
       "unnamedBucket_one": "{{count, grouped}} Spiel ohne erfassten Gegnernamen",
       "unnamedBucket_other": "{{count, grouped}} Spiele ohne erfassten Gegnernamen",
+      "cohortCount_one": "{{count, grouped}} {{label}}",
+      "cohortCount_other": "{{count, grouped}} {{label}}",
       "mixedContext": "Gemischter Kontext",
       "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — gemischt mit {{majorityLabel}}.",
       "sampleCueGlyph": {
@@ -219,6 +221,7 @@
     },
     "chartTooltip": {
       "rate": "{{rate}} %",
+      "cumulativeRate": "{{rate}}% insgesamt bisher",
       "whoWhere": "{{opponent}} auf {{stage}}",
       "whenEvent": "{{event}} · {{date}}",
       "whenOnly": "{{date}}",
@@ -237,7 +240,7 @@
       "preset": {
         "default": {
           "name": "Haus-Standard (SSBU)",
-          "detail": "{{starters}}, {{bans}} pro Spiel, {{strikeOrder}}-Strike, {{dsr}}, {{setFormat}} — hausinterne Konvention angelehnt an {{source}} ({{date}})"
+          "strikeOrder": "Spiel 1: 1-2-1-Stage-Strike — wer zuerst strikt, bannt eine Stage, die andere Seite bannt zwei, die erste Seite bannt eine weitere, und auf der verbleibenden Stage wird gespielt."
         },
         "starterClause_one": "{{count}} Startstage",
         "starterClause_other": "{{count}} Startstages",
@@ -256,7 +259,19 @@
       "customName": "Angepasst (dieses Event)",
       "overrideBadge": "Angepasstes Regelwerk",
       "overrideEditHint": "Dieses Regelwerk auf der Turnier-Detailseite bearbeiten.",
-      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet."
+      "overrideIgnored": "Das für dieses Event gespeicherte Regelwerk wurde von einer neueren App-Version geschrieben und wird nicht angewendet.",
+      "rows": {
+        "starters": "Startstages",
+        "counterpicks": "Counterpick-Stages",
+        "bans": "Banns pro Spiel",
+        "dsr": "DSR",
+        "strikeOrder": "Strike-Reihenfolge",
+        "setFormat": "Set-Format",
+        "none": "Keine",
+        "setFormatValue": "{{default}} (Top Cut: {{topCut}})"
+      },
+      "sourceHouse": "Hausinterne Konvention angelehnt an {{source}} ({{date}})",
+      "sourceCustom": "Angepasstes Regelwerk für dieses Event; unveränderte Regeln folgen dem Haus-Standard."
     }
   },
   "dashboard": {
@@ -282,26 +297,7 @@
       "gamesSampled_other": "{{count}} Matches ausgewertet",
       "ratingCaption": "Glicko-2, sitzungsbasiert · inoffiziell",
       "ratingLocked": "Wertung wird ab {{threshold}} Matches freigeschaltet",
-      "ratingProgress": "Bisher {{played}}/{{threshold}} Matches",
-      "ratingUp": "Wertung höher als in der letzten Sitzung",
-      "ratingDown": "Wertung niedriger als in der letzten Sitzung",
-      "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
-    },
-    "formCurve": {
-      "title": "Formkurve",
-      "caption": {
-        "last30": "Laufende Winrate · letzte 30 Matches",
-        "lastEvent": "Laufende Winrate · letztes Event",
-        "last90": "Laufende Winrate · letzte 90 Tage"
-      },
-      "windowEmpty": {
-        "last30": "Weniger als 3 Matches erfasst — die Kurve braucht mindestens 3.",
-        "lastEvent": "Weniger als 3 Matches beim letzten Event — die Kurve braucht mindestens 3.",
-        "last90": "Weniger als 3 Matches in den letzten 90 Tagen — die Kurve braucht mindestens 3."
-      },
-      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
-      "winRate": "Winrate",
-      "opponent": "Gegner: {{name}}"
+      "ratingProgress": "Bisher {{played}}/{{threshold}} Matches"
     },
     "previous": {
       "title": "Letzte Matches",
@@ -339,6 +335,20 @@
       "setRecorded": "Set erfasst: {{score}} vs. {{opponent}}",
       "partialSave": "Nur {{saved}} von {{total}} Spielen wurden vor einem Fehler gespeichert. Prüfe die Match-Daten und trage fehlende Spiele erneut ein.",
       "setFailed": "Set konnte nicht gespeichert werden. Bitte erneut versuchen."
+    },
+    "formStrip": {
+      "title": {
+        "last30": "Form · letzte 30 Spiele",
+        "lastEvent": "Form · letzte 30 Spiele, letztes Event hervorgehoben",
+        "last90": "Form · letzte 30 Spiele, letzte 90 Tage hervorgehoben"
+      },
+      "sets_one": "{{count}} Set",
+      "sets_other": "{{count}} Sets",
+      "empty": "In dieser Ansicht gibt es noch keine Spiele mit {{fighter}}.",
+      "windowEmpty": {
+        "lastEvent": "Keine Spiele beim letzten Event — die letzten 30 werden gezeigt, keines hervorgehoben.",
+        "last90": "Keine Spiele in den letzten 90 Tagen — die letzten 30 werden gezeigt, keines hervorgehoben."
+      }
     }
   },
   "matchForm": {
@@ -466,7 +476,6 @@
     },
     "hero": {
       "currentGsp": "Aktuelle GSP",
-      "latestReading": "letzte Ablesung",
       "noGsp": "Noch keine GSP erfasst",
       "estMmr": "Gesch. MMR",
       "tailReading": "Randbereich-Ablesung ({{zone}}) — ungefähr",
@@ -484,26 +493,52 @@
       "recalibratedToast": "Modell anhand deiner Schwellen-Ablesung rekalibriert!",
       "thresholdSaveFailed": "Elite-Schwelle konnte nicht gespeichert werden. Bitte erneut versuchen.",
       "distanceToElite": "Abstand zu Elite",
-      "elite": "ELITE",
       "belowElite": "MMR {{mmr}} · unter Elite ({{elite}})",
       "recentWinRate": "Aktuelle Winrate",
       "lastNGames_one": "letztes Match",
       "lastNGames_other": "letzte {{count}} Matches",
-      "liveCalibrated": "automatisch aktualisiert am {{date}} über gsptiers.com"
+      "liveCalibrated": "automatisch aktualisiert am {{date}} über gsptiers.com",
+      "latestReadingDated": "letzte Ablesung · {{date}}",
+      "eliteValue": "Elite",
+      "atElite": "MMR {{mmr}} · auf oder über Elite ({{elite}})",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "GSP-Kurve",
-      "gspViewAria": "GSP-Ansicht",
-      "mmrViewAria": "MMR-Ansicht",
       "gspLabel": "GSP",
-      "eliteLine": "Elite-Schwelle",
       "estMmrLabel": "Gesch. MMR",
-      "eliteMmrLine": "Elite (MMR {{mmr}})",
       "mmrCaption": "Geschätzte versteckte MMR hinter jeder Ablesung (Community-Modell per Reverse Engineering) — anders als die GSP inflationiert sie nicht mit der Zeit: Eine flache Linie bedeutet konstantes Niveau. Gestrichelte Linie: Elite-Einstieg bei MMR {{mmr}}.",
       "gspCaption": "Jeder Punkt ist eine nach dem Match erfasste GSP-Ablesung für diesen Kämpfer. Die gestrichelte Linie ist die berechnete Elite-Smash-Schwelle — eine Schätzung des Community-Modells, kein von Nintendo veröffentlichter Wert.",
       "clickHint": "Klicke einen Punkt an, um die Ablesung zu bearbeiten.",
       "locked": "Erfasse mindestens {{count}} Matches mit GSP-Ablesung für diesen Kämpfer, um die Kurve zu sehen.",
-      "setManually": "manuell gesetzt"
+      "setManually": "manuell gesetzt",
+      "view": "Ansicht",
+      "overline": {
+        "reading": "GSP je Ablesung",
+        "day": "GSP · Tagesschluss",
+        "week": "GSP · Wochenschluss",
+        "month": "GSP · Monatsschluss",
+        "quarter": "GSP · Quartalsschluss"
+      },
+      "overlineMmr": {
+        "reading": "Gesch. MMR je Ablesung",
+        "day": "Gesch. MMR · Tagesschluss",
+        "week": "Gesch. MMR · Wochenschluss",
+        "month": "Gesch. MMR · Monatsschluss",
+        "quarter": "Gesch. MMR · Quartalsschluss"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "Gesch. MMR",
+        "elite": "Elite-Schwelle",
+        "eliteMmr": "Elite · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "Gesch. MMR · {{value}}"
+      },
+      "clickHintPeriod": "Klicke einen Schlusswert an, um die zugehörigen Ablesungen im Protokoll zu finden.",
+      "lockedMeter": "{{have}} von {{need}} Ablesungen"
     },
     "logger": {
       "title": "Schnell-Logger",
@@ -532,18 +567,26 @@
     },
     "gains": {
       "title": "Gewinn-Analyse",
-      "avgGainLifetime": "Ø Gewinn/Sieg (gesamt)",
-      "avgDropLifetime": "Ø Verlust/Niederlage (gesamt)",
-      "biggestGain": "Größter Einzelgewinn",
-      "avgGainLast20": "Ø Gewinn/Sieg (letzte 20)",
-      "avgDropLast20": "Ø Verlust/Niederlage (letzte 20)",
-      "biggestDrop": "Größter Einzelverlust",
-      "perWinTitle": "Gewinne pro Sieg im Zeitverlauf",
-      "shrinking": "— schrumpfen, während deine GSP steigt",
-      "growing": "— steigend",
-      "winNumber": "Sieg Nr. {{number}}",
-      "gainedGsp": "GSP gewonnen",
-      "empty": "Erfasse ein paar Siege und Niederlagen mit GSP-Ablesungen, um deine Trends zu sehen."
+      "empty": "Erfasse ein paar Siege und Niederlagen mit GSP-Ablesungen, um deine Trends zu sehen.",
+      "figure": {
+        "avgGain": "Ø Gewinn pro Sieg",
+        "avgDrop": "Ø Verlust pro Niederlage",
+        "biggestGain": "Größter Gewinn",
+        "biggestDrop": "Größter Verlust",
+        "recentWins_one": "letzter Sieg: {{value}}",
+        "recentWins_other": "letzte {{count}} Siege: {{value}}",
+        "recentLosses_one": "letzte Niederlage: {{value}}",
+        "recentLosses_other": "letzte {{count}} Niederlagen: {{value}}"
+      },
+      "byBand": {
+        "title": "Gewinn pro Sieg nach GSP-Bereich",
+        "caption": "Ø gewonnene GSP pro Sieg, nach GSP-Bereich, in dem der Sieg stattfand · niedrigster Bereich zuerst · grau = unter {{floor}} Siegen",
+        "rowAria_one": "{{band}}: Ø Gewinn {{gain}} bei {{count}} Sieg",
+        "rowAria_other": "{{band}}: Ø Gewinn {{gain}} bei {{count}} Siegen",
+        "subFloor_one": "{{count}} Sieg — unter {{floor}}, kein Vergleich",
+        "subFloor_other": "{{count}} Siege — unter {{floor}}, kein Vergleich",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "GSP-Tiers",
@@ -581,9 +624,23 @@
     },
     "vsGlicko": {
       "title": "Gesch. MMR vs. Glicko-2",
-      "mmrLabel": "Gesch. MMR (normalisiert)",
-      "glickoLabel": "Glicko-2 (normalisiert)",
-      "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht."
+      "panel": {
+        "mmr": "Gesch. MMR",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "Je Ablesung",
+        "day": "Tagesschluss",
+        "week": "Wochenschluss",
+        "month": "Monatsschluss",
+        "quarter": "Quartalsschluss"
+      },
+      "readout": {
+        "mmr": "Gesch. MMR · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "noReading": "{{title}} · keine Ablesung",
+      "captionPanels": "Gesch. MMR ist das Quickplay-Rating dieses Kämpfers nach dem Community-Modell; Glicko-2 ist das Gesamtrating über alle Kämpfer und Sitzungen. Jedes Feld behält seine eigene Skala, daher zählen die Verläufe — Abweichungen bedeuten meist, dass die Quickplay-Form von der Gesamtform abweicht."
     },
     "setGsp": {
       "title": "GSP setzen",
@@ -950,6 +1007,8 @@
       "title": "Counterpick-Berater",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
+      "picksBelowEven_one": "{{count}} dieser Picks hat eine negative Bilanz — sortiert danach, wie belastbar jede Bilanz ist, nicht nach roher Siegquote.",
+      "picksBelowEven_other": "{{count}} dieser Picks haben eine negative Bilanz — sortiert danach, wie belastbar jede Bilanz ist, nicht nach roher Siegquote.",
       "unknownStage": "Unbekannte Stage",
       "meta_one": "Counterpick-Berater · gesamt · min. {{count}} Spiel pro Stage",
       "meta_other": "Counterpick-Berater · gesamt · min. {{count}} Spiele pro Stage",
@@ -1027,10 +1086,11 @@
       "formRolling": "Form (gleitende 10)",
       "typeColumn": "Typ",
       "identityMeta": "{{pct}} % der Spiele · {{confidence}}",
+      "identityMeta_bare": "{{pct}} % der Spiele",
       "verdictMeta": {
-        "last30": "FormNow · letzte 30 Spiele gegen Gesamt",
-        "lastEvent": "FormNow · letztes Event gegen Gesamt",
-        "last90": "FormNow · letzte 90 Tage gegen Gesamt"
+        "last30": "Form · letzte 30 Spiele gegen Gesamt",
+        "lastEvent": "Form · letztes Event gegen Gesamt",
+        "last90": "Form · letzte 90 Tage gegen Gesamt"
       },
       "vsCharacters": {
         "title": "vs Charaktere",
@@ -1124,7 +1184,12 @@
       "title": "Letzte Events",
       "placementAndSeed": "{{placement}} von {{entrants}} · Setzung {{seed}}",
       "placementOnly": "{{placement}} von {{entrants}}",
-      "seedOnly": "Setzung {{seed}}"
+      "seedOnly": "Setzung {{seed}}",
+      "outsideRange_one": "{{count}} weiteres außerhalb des aktuellen Zeitraums",
+      "outsideRange_other": "{{count}} weitere außerhalb des aktuellen Zeitraums",
+      "allTime": "Gesamter Zeitraum",
+      "backToRange": "Zurück zum Zeitraum",
+      "allTimeNote": "Gesamter Zeitraum angezeigt — der Quellen-Filter gilt weiterhin; der Zeitraumfilter gilt weiterhin für alle anderen Karten."
     },
     "tournaments": {
       "title": "Turniere",
@@ -1149,6 +1214,14 @@
         "last30": "Letzte 30 Matches",
         "lastEvent": "Letztes Event",
         "last90": "Letzte 90 Tage"
+      }
+    },
+    "rhythm": {
+      "title": "Spielrhythmus",
+      "caption": {
+        "years_one": "Spiele pro Monat · {{count}} Jahr, neuestes zuerst",
+        "years_other": "Spiele pro Monat · {{count}} Jahre, neueste zuerst",
+        "shownOf": "{{shown}} von {{total}} Jahren angezeigt · ältere Jahre in der Tabelle"
       }
     }
   },
@@ -1184,6 +1257,7 @@
       "empty": "Für dieses Event sind noch keine Matches erfasst.",
       "setsAria": "Sets",
       "setFallback": "Set {{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "Deine Kämpfer",
       "opponentFighters": "Gegnerische Kämpfer",
       "watchVod": "VOD ansehen",
@@ -1290,7 +1364,32 @@
         "setFormatTopCut": "Set-Format im Top-Cut",
         "saved": "Regelwerk für dieses Event gespeichert.",
         "saveFailed": "Regelwerk für dieses Event konnte nicht gespeichert werden."
-      }
+      },
+      "debriefCta": "Event nachbesprechen"
+    },
+    "table": {
+      "tier": "Stufe",
+      "event": "Event",
+      "date": "Datum",
+      "placement": "Platzierung",
+      "seedDelta": "Δ Setzung",
+      "record": "Bilanz",
+      "sectionLabel_one": "Events · 1 im Zeitraum",
+      "sectionLabel_other": "Events · {{count}} im Zeitraum",
+      "sortNote": "neueste zuerst",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}.",
+      "placement_ordinal_two": "{{count, grouped}}.",
+      "placement_ordinal_few": "{{count, grouped}}.",
+      "placement_ordinal_other": "{{count, grouped}}.",
+      "seedDeltaAria": "Setzung {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}} · 1 Event",
+      "yearGroup_other": "{{year}} · {{count}} Events",
+      "undated": "Ohne Datum",
+      "rowAria": "{{tournament}}, {{event}}, {{date}}, {{tier}}, {{placement}}, {{record}}; öffnet das Event",
+      "showMore50": "50 weitere anzeigen",
+      "showMore20": "20 weitere anzeigen",
+      "loadError": "Die Turniere konnten nicht geladen werden. Die Daten sind sicher — bitte erneut versuchen."
     }
   },
   "billing": {
@@ -1345,6 +1444,8 @@
       "encounterSpan": "{{start}} und {{end}}",
       "metAt_one": "Bei {{count}} Turnier getroffen, zwischen {{span}}",
       "metAt_other": "Bei {{count}} Turnieren getroffen, zwischen {{span}}",
+      "metIn_one": "Bei {{count}} Turnier getroffen, im {{month}}",
+      "metIn_other": "Bei {{count}} Turnieren getroffen, im {{month}}",
       "rateOverGames_one": "{{rate}} % bei {{count}} Match",
       "rateOverGames_other": "{{rate}} % bei {{count}} Matches"
     },
@@ -1427,7 +1528,17 @@
         "vs": "Gegnerischer Charakter",
         "stage": "Stage"
       },
-      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet."
+      "empty": "Noch keine Spiele gegen {{opponent}} aufgezeichnet.",
+      "prepBrief": {
+        "title": "Vorbereitungs-Briefing",
+        "upcoming": "Du triffst wahrscheinlich bei {{eventName}} ({{date}}) auf {{opponentTag}}.",
+        "upcomingCta": "Vorbereitungs-Briefing öffnen",
+        "addEvent": "Füge ein bevorstehendes Event hinzu, um {{opponentTag}} als wahrscheinlichen Gegner zu verfolgen.",
+        "addEventCta": "Zu den Turnieren",
+        "laterEvents": "{{opponentTag}} ist bei deinen nächsten bevorstehenden Events kein wahrscheinlicher Gegner. Sieh in deinen Turnieren nach späteren Events.",
+        "debrief": "{{eventName}} auswerten — {{date}}.",
+        "debriefCta": "Dieses Event auswerten"
+      }
     }
   },
   "stages": {
@@ -1445,21 +1556,24 @@
   "scout": {
     "title": "Spieler scouten",
     "prompt": "Füge oben eine start.gg-Profil-URL, einen Slug oder eine Spieler-ID ein, um die öffentliche Turnier-Historie abzurufen.",
-    "promptWithParry": "Füge oben eine start.gg- oder parry.gg-Profil-URL, einen Slug/Tag oder eine Spieler-ID ein, um die öffentliche Turnier-Historie abzurufen.",
+    "promptWithParry": "Füge oben eine start.gg-Profil-URL, einen Slug oder eine Spieler-ID ein — oder eine parry.gg-Profil-URL oder einen Gamertag —, um die öffentliche Turnier-Historie abzurufen.",
     "errors": {
       "notFound": "Wir konnten keinen start.gg-Spieler zu dieser Suche finden. Prüfe URL, Slug oder Spieler-ID.",
       "badQuery": "Das sieht nicht nach einer start.gg-Profil-URL, einem Slug oder einer Spieler-ID aus.",
+      "badQueryParry": "Das sieht nicht nach einer parry.gg-Profil-URL oder einem Gamertag aus.",
+      "badQueryBoth": "Einer der Einträge passt nicht zu dem, was die jeweilige Seite akzeptiert. Prüfe jedes Feld und versuche es erneut.",
+      "tagNeedsParry": "Gamertags sind nur auf parry.gg suchbar — stelle die Quelle auf parry.gg um, um nach Tag zu suchen.",
       "rateLimited": "start.gg drosselt gerade die Anfragen. Versuche es in einer Minute erneut.",
       "scoutFallback": "Beim Scouten dieses Spielers ist etwas schiefgelaufen.",
       "generateFallback": "Beim Generieren des Berichts ist etwas schiefgelaufen."
     },
     "form": {
       "description": "Füge eine start.gg-Profil-URL, eine „user/<slug>“-Referenz oder eine numerische Spieler-ID ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
-      "descriptionWithParry": "Füge eine start.gg- oder parry.gg-Profil-URL, einen Gamer-Tag, eine „user/<slug>“-Referenz oder eine numerische Spieler-ID ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
+      "descriptionParry": "Füge eine parry.gg-Profil-URL oder einen Gamertag ein, um vor dem Match die öffentliche Turnier-Historie abzurufen.",
+      "descriptionBoth": "Fülle das start.gg-Feld, das parry.gg-Feld oder beide aus, um vor dem Match die kombinierte öffentliche Turnier-Historie abzurufen.",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 oder eine parry.gg-Profil-URL",
       "inputAria": "start.gg-Profil-URL, Slug oder Spieler-ID",
-      "inputAriaWithParry": "start.gg- oder parry.gg-Profil-URL, Slug/Tag oder Spieler-ID",
       "scout": "Scouten",
       "scouting": "Scoutet…",
       "source": "Quelle:",
@@ -1549,7 +1663,20 @@
       "stageMasteryOverall": "Stage-Beherrschung — Gesamt",
       "stageMasteryFor": "Stage-Beherrschung — {{name}}",
       "topCharacter": "Top-Charakter",
-      "recentForm": "Aktuelle Form von {{name}}"
+      "recentForm": "Aktuelle Form von {{name}}",
+      "form": {
+        "caption": {
+          "event": "Kumulierte Siegquote nach jedem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "week": "Kumulierte Siegquote am Ende jeder Woche mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "month": "Kumulierte Siegquote am Ende jedes Monats mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "quarter": "Kumulierte Siegquote am Ende jedes Quartals mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten",
+          "year": "Kumulierte Siegquote am Ende jedes Jahres mit einem Event, älteste zuerst · einen Punkt auswählen, um seine Spiele aufzulisten"
+        },
+        "games_one": "{{count}} Spiel · {{event}} · {{span}}",
+        "games_other": "{{count}} Spiele · {{event}} · {{span}}",
+        "characters": "{{fighter}} gegen {{opponent}}",
+        "close": "Spiele ausblenden"
+      }
     },
     "aiReport": {
       "title": "KI-Scouting-Bericht",
@@ -1583,7 +1710,59 @@
     "groupedBy": "Nach Spieler gruppiert, zuletzt gescoutete zuerst.",
     "olderReport": "Älterer Bericht",
     "hideOlder": "Ältere Berichte ausblenden",
-    "showOlder": "Ältere Berichte anzeigen"
+    "showOlder": "Ältere Berichte anzeigen",
+    "claimKind": {
+      "fact": "Fakt",
+      "inference": "Schlussfolgerung",
+      "recommendation": "Empfehlung"
+    },
+    "claimPredicate": {
+      "stageRecord": "Stage-Bilanz",
+      "stagePickRate": "Stage-Wahlquote",
+      "characterMatchupRecord": "Matchup-Bilanz",
+      "myCharacterRecord": "Charakter-Bilanz",
+      "headToHeadRecord": "Bilanz im Direktvergleich",
+      "recentForm": "Aktuelle Form",
+      "opponentCharacterUsage": "Charakterwahl des Gegners",
+      "matchupAdvisorPick": "Empfohlener Pick",
+      "vodAnnotation": "VOD-Momente",
+      "cohortDisclosure": "Session-Mix"
+    },
+    "legacy": {
+      "badge": "Altbestand",
+      "tooltip": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen.",
+      "explain": "Erstellt, bevor es den Berichtsprüfer dieser App gab — der Inhalt wurde nicht automatisch mit deinen Matchdaten abgeglichen."
+    },
+    "droppedClaims_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Bericht entfernt.",
+    "droppedClaims_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Bericht entfernt.",
+    "droppedClaimsPlan_one": "{{count}} Aussage konnte nicht überprüft werden und wurde aus diesem Plan entfernt.",
+    "droppedClaimsPlan_other": "{{count}} Aussagen konnten nicht überprüft werden und wurden aus diesem Plan entfernt.",
+    "droppedPlanSections_one": "{{count}} Abschnitt konnte nicht überprüft werden und wurde aus diesem Plan entfernt.",
+    "droppedPlanSections_other": "{{count}} Abschnitte konnten nicht überprüft werden und wurden aus diesem Plan entfernt.",
+    "withheldProse_one": "Der Kommentar zu {{count}} Abschnitt wurde zurückgehalten, weil er sich nicht mit deinen Matchdaten abgleichen ließ.",
+    "withheldProse_other": "Die Kommentare zu {{count}} Abschnitten wurden zurückgehalten, weil sie sich nicht mit deinen Matchdaten abgleichen ließen.",
+    "actions": {
+      "title": "Empfohlene Aktionen",
+      "empty": "Noch nicht genug Daten für eine konkrete Empfehlung – erfasse ein paar weitere Spiele.",
+      "emptyNoOpponents": "Für dieses Event sind noch keine wahrscheinlichen Gegner eingetragen, daher gibt es keine Aktionen zu empfehlen.",
+      "matchupPractice": {
+        "title": "Übe {{myFighter}} gegen {{opponentFighter}}"
+      },
+      "vodReview": {
+        "title": "Sieh dir deine Niederlagen gegen {{opponent}} an"
+      },
+      "drill": {
+        "stageHabit": "Übung: dein Spielplan auf {{stage}}",
+        "matchupPunish": "Übung: {{opponentFighter}} bestrafen",
+        "characterFamiliarity": "Übung: lerne das Matchup gegen {{opponentFighter}}",
+        "vodPattern": "Übung: das Muster in deinen markierten Momenten"
+      },
+      "door": {
+        "practiceMatchup": "Dieses Matchup üben",
+        "watchGames": "Spiele ansehen",
+        "openStage": "Stage öffnen"
+      }
+    }
   },
   "groups": {
     "title": "Gruppen",
@@ -1664,7 +1843,9 @@
       "unknownStages_one": "{{count}} mit unbekannten Stages",
       "unknownStages_other": "{{count}} mit unbekannten Stages",
       "dqSkipped_one": "{{count}} DQ übersprungen",
-      "dqSkipped_other": "{{count}} DQs übersprungen"
+      "dqSkipped_other": "{{count}} DQs übersprungen",
+      "registryFailed_one": "Details zu {{count}} Event konnten nicht gespeichert werden – erneut synchronisieren, um es nochmals zu versuchen",
+      "registryFailed_other": "Details zu {{count}} Events konnten nicht gespeichert werden – erneut synchronisieren, um es nochmals zu versuchen"
     },
     "startgg": {
       "connect": "start.gg-Konto verbinden",
@@ -2869,6 +3050,10 @@
       "addEvent": {
         "title": "Füge dein bevorstehendes Event hinzu, um mit der Vorbereitung zu beginnen",
         "cta": "Event hinzufügen"
+      },
+      "review": {
+        "title": "{{eventName}} auswerten — {{date}}",
+        "cta": "Dieses Event auswerten"
       }
     },
     "manualEntry": {
@@ -2953,8 +3138,14 @@
       "succeeded": "Fertig",
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "failedNoCharge": "Fehlgeschlagen — es wurde kein Credit verbraucht.",
+      "failedChargeUnknown": "Fehlgeschlagen",
       "viewReport": "Bericht ansehen",
-      "hideReport": "Bericht ausblenden"
+      "hideReport": "Bericht ausblenden",
+      "failedReason": {
+        "validation": "Aus deinen Matchdaten ließ sich kein geprüfter Bericht erstellen, daher wurde keiner ausgeliefert.",
+        "validationRefunded": "Dein Credit wurde erstattet."
+      }
     },
     "insufficientCredits": {
       "body": "Du hast keine Credits mehr.",
@@ -3055,8 +3246,14 @@
       "succeeded": "Fertig",
       "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
       "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "failedNoCharge": "Fehlgeschlagen — es wurde kein Credit verbraucht.",
+      "failedChargeUnknown": "Fehlgeschlagen",
       "viewPlan": "Plan ansehen",
-      "hidePlan": "Plan ausblenden"
+      "hidePlan": "Plan ausblenden",
+      "failedReason": {
+        "validation": "Aus deinen Matchdaten ließ sich kein geprüfter Trainingsplan erstellen, daher wurde keiner ausgeliefert.",
+        "validationRefunded": "Dein Credit wurde erstattet."
+      }
     },
     "insufficientCredits": {
       "body": "Du hast keine Credits mehr.",
@@ -3191,7 +3388,9 @@
       "openStage": "Stage öffnen",
       "openEvent": "Event öffnen",
       "findVods": "VODs finden",
-      "ratingModelNote": "Hinweis zum Wertungsmodell"
+      "ratingModelNote": "Hinweis zum Wertungsmodell",
+      "showEvents": "Diese Events anzeigen",
+      "debrief": "Dieses Event auswerten"
     },
     "chip": {
       "up": "Steigt",
@@ -3201,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · keine Richtung",
       "noDirection_other": "n {{count, grouped}} · keine Richtung",
       "noGames": "keine Matches",
+      "noneInBound": "keine Matches in den letzten 12 Monaten",
       "horizon": {
         "last30": "letzte 30",
         "lastEvent": "letztes Event",
@@ -3208,6 +3408,11 @@
       },
       "ratingUp": "+{{points}}",
       "ratingDown": "−{{points}}",
+      "ratingAria": {
+        "directional": "{{label}}: {{direction}}, {{value}} · {{horizon}}",
+        "withHorizon": "{{label}}: {{value}} · {{horizon}}",
+        "bare": "{{label}}: {{value}}"
+      },
       "aria": {
         "up": "Steigender Trend",
         "down": "Fallender Trend",
@@ -3224,19 +3429,26 @@
       "short": {
         "last30": "30 Matches",
         "lastEvent": "Letztes Event",
-        "last90": "90 Tage"
+        "last90": "90 Tage",
+        "lastN_one": "{{count, grouped}} Match",
+        "lastN_other": "{{count, grouped}} Matches"
       }
     },
     "evidence": {
       "twoHorizon": {
         "last30": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
+        "last30_bare": "{{recentRecord}} letzte 30 · {{baselineRate}} gesamt über {{baselineGames, grouped}}",
         "lastEvent": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
-        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}"
+        "lastEvent_bare": "{{recentRecord}} letztes Event · {{baselineRate}} gesamt über {{baselineGames, grouped}}",
+        "last90": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}} · {{cue}}",
+        "last90_bare": "{{recentRecord}} letzte 90 Tage · {{baselineRate}} gesamt über {{baselineGames, grouped}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "Diese {{count, grouped}} Matches erstrecken sich von {{from}} bis {{to}}.",
       "range": "{{rate}} über {{count, grouped}}, innerhalb der üblichen Bandbreite ({{lower}}–{{upper}}).",
       "allTimeOnly": "{{record}} · {{rate}} gesamt · {{cue}}",
+      "allTimeOnly_bare": "{{record}} · {{rate}} gesamt",
       "tier": {
         "low": "niedrige Konfidenz",
         "medium": "mittlere Konfidenz",
@@ -3269,11 +3481,14 @@
         "last90": "Die letzten 90 Tage sind der gesamte Datensatz — eine Zahl, kein Vergleich."
       },
       "noneRecent": {
-        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
+        "scoped": "Keine Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter": "{{entity}} — keine Matches in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt."
       },
       "thinRecent": {
         "scoped_one": "Nur {{count, grouped}} Match vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
         "scoped_other": "Nur {{count, grouped}} Matches vs. {{fighter}} in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter_one": "{{entity}} — nur {{count, grouped}} Match in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
+        "fighter_other": "{{entity}} — nur {{count, grouped}} Matches in den letzten 12 Monaten — es wird der Gesamtzeitraum gezeigt.",
         "page": {
           "last30": "Nur {{count, grouped}} Matches in den letzten 30 — es wird der Gesamtzeitraum gezeigt.",
           "lastEvent": "Nur {{count, grouped}} Matches beim letzten Event — es wird der Gesamtzeitraum gezeigt.",
@@ -3332,11 +3547,13 @@
       "hidden": "Noch kein Event erfasst.",
       "fact": "{{event}} — {{gameRecord}} in Matches, {{setRecord}} in Sets.",
       "factGamesOnly": "{{event}} — {{gameRecord}} in Matches.",
-      "factPlacement": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches, {{setRecord}} in Sets.",
-      "factPlacementGamesOnly": "{{event}} — Platz {{placement}} von {{entrants}}; {{gameRecord}} in Matches.",
+      "factPlacement": "{{event}} — {{placement}} von {{entrants}}; {{gameRecord}} in Matches, {{setRecord}} in Sets.",
+      "factPlacementGamesOnly": "{{event}} — {{placement}} von {{entrants}}; {{gameRecord}} in Matches.",
       "noSetLosses": "Keine verlorenen Sets.",
       "setLosses_one": "Verlorener Satz — {{named}}.",
-      "setLosses_other": "Verlorene Sätze — {{named}}."
+      "setLosses_other": "Verlorene Sätze — {{named}}.",
+      "evidence": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}} · {{cue}}",
+      "evidence_bare": "{{eventRecord}} beim Event · {{baselineRate}} insgesamt über {{baselineGames, grouped}}"
     },
     "ratingMove": {
       "up": "Wertung — um {{points}} gestiegen in den letzten {{count, grouped}} Matches ({{startRating}} → {{endRating}} ±{{band}}).",
@@ -3381,8 +3598,12 @@
       "fact": "Match-Mischung — {{recentShare}} {{matchType}} zuletzt vs. {{lifetimeShare}} insgesamt."
     },
     "rosterCore": {
-      "fact": "Roster — {{fighter}} ist der Main mit {{share}}% der Spielzeit; {{secondaryCount}} Secondaries, {{pocketCount}} Pockets.",
-      "thin": "Roster — der Main steht noch nicht fest; {{count, grouped}} Matches auf einem Charakter legen ihn fest."
+      "fact": "Roster — {{fighter}} ist der Main mit {{share}}% der Spielzeit; $t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} }), $t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} }).",
+      "thin": "Roster — der Main steht noch nicht fest; {{count, grouped}} Matches auf einem Charakter legen ihn fest.",
+      "secondaries_one": "{{count, grouped}} Secondary",
+      "secondaries_other": "{{count, grouped}} Secondaries",
+      "pockets_one": "{{count, grouped}} Pocket",
+      "pockets_other": "{{count, grouped}} Pockets"
     },
     "rosterShift": {
       "hidden": "Noch keine nennenswerte Verschiebung darin, wer gespielt wird.",
@@ -3414,6 +3635,29 @@
     "worstMatchup": {
       "locked": "Schwerste Bilanz — noch nicht genug Matches, um eine zu nennen.",
       "fact": "Schwerste Bilanz — vs. {{vs}}, {{record}} über {{count, grouped}}."
+    },
+    "tierGap": {
+      "up": "Majors und darüber — {{aRate}} vs. {{bRate}} bei kleineren Events, über {{count, grouped}} Matches.",
+      "down": "Majors und darüber — {{aRate}}, unter den {{bRate}} bei kleineren Events, über {{count, grouped}} Matches.",
+      "steady": "Majors und darüber — {{aRate}} vs. {{bRate}} bei kleineren Events, über {{count, grouped}} Matches; kein nennenswerter Unterschied.",
+      "abstained": "Nicht genug Matches bei Majors ({{count, grouped}}).",
+      "abstainedSmaller": "Nicht genug Matches bei kleineren Events ({{count, grouped}}).",
+      "noTiers": "Stufe — noch kein Event hat eine bekannte Stufe.",
+      "evidence": "{{aRecord}} bei Majors und darüber · {{bRecord}} bei kleineren Events · {{cue}}",
+      "estimatedNote_one": "1 dieser Events hat eine geschätzte Stufe.",
+      "estimatedNote_other": "{{count, grouped}} dieser Events haben eine geschätzte Stufe."
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "Spielrhythmus — {{recent, grouped}} Spiele in den letzten 12 Monaten vs. {{prior, grouped}} in den 12 davor; aktivster Monat: {{month}}.",
+        "compareNoSeason": "Spielrhythmus — {{recent, grouped}} Spiele in den letzten 12 Monaten vs. {{prior, grouped}} in den 12 davor.",
+        "recentOnly": "Spielrhythmus — {{recent, grouped}} Spiele in {{recentMonths}} der letzten 12 Monate."
+      },
+      "evidence": "{{monthsPlayed}} von {{monthsSpan}} Monaten mit Spielen · {{share}} aller Spiele fallen auf {{month}}",
+      "evidenceNoSeason": "{{monthsPlayed}} von {{monthsSpan}} Monaten mit Spielen",
+      "locked_one": "Spielrhythmus — {{count, grouped}} weiterer Monat mit Spielen schaltet diese Auswertung frei.",
+      "locked_other": "Spielrhythmus — {{count, grouped}} weitere Monate mit Spielen schalten diese Auswertung frei.",
+      "lockedMeter": "{{have, grouped}} von {{need, grouped}} Monaten"
     }
   },
   "analytics": {
@@ -3654,8 +3898,192 @@
       },
       "event": {
         "aria": "{{event}} — Wertung nach dem Event {{rating}}, {{wins}}–{{losses}}",
-        "ratingAfter": "Wertung nach dem Event · {{rating}}"
+        "ratingAfter": "Wertung nach dem Event · {{rating}}",
+        "legend_one": "{{count}} Major+-Event",
+        "legend_other": "{{count}} Major+-Events",
+        "legendEstimated": "hohl = geschätzte Stufe",
+        "shownOf": "{{shown}} von {{total}} Major+-Events markiert — die übrigen stehen unter Letzte Events",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — geschätzt {{tier}}, Wertung nach dem Event {{rating}}, {{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — geschätzt {{tier}}, {{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}} Punkt, zuletzt {{value}}",
+      "aria_other": "{{title}} — {{count}} Punkte, zuletzt {{value}}",
+      "legend": {
+        "calibration": "manuell gesetzt",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — oberhalb dieses Bereichs",
+        "referenceBelow": "{{label}} {{value}} — unterhalb dieses Bereichs"
+      },
+      "readings_one": "{{count}} Ablesung · Schlusswert gezeigt",
+      "readings_other": "{{count}} Ablesungen · Schlusswert gezeigt",
+      "table": {
+        "headers": {
+          "date": "Datum",
+          "readings": "Ablesungen"
+        }
+      },
+      "lockedMeter": "{{have}} von {{need}} Ablesungen"
+    },
+    "multiples": {
+      "aria_one": "{{count}} Feld auf einer Zeitachse",
+      "aria_other": "{{count}} Felder mit gemeinsamer Zeitachse",
+      "caption": "Jedes Feld behält seine eigene Skala — verglichen werden die Verläufe, nicht die Höhen."
+    },
+    "heat": {
+      "legend": {
+        "fewer": "weniger",
+        "more": "mehr",
+        "unit": "= Spiele im Monat"
+      },
+      "cellAria_one": "{{month}} {{year}}: {{count}} Spiel",
+      "cellAria_other": "{{month}} {{year}}: {{count}} Spiele",
+      "noGames": "{{month}} {{year}}: keine Spiele",
+      "table": {
+        "caption": "Spiele pro Monat, mit Jahressummen"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "Supermajor",
+      "major": "Major",
+      "minor": "Minor",
+      "regional": "Regional",
+      "local": "Lokal",
+      "unknown": "Stufe unbekannt"
+    },
+    "setting": {
+      "online": "Online",
+      "offline": "Vor Ort",
+      "unknown": "Austragungsart unbekannt"
+    },
+    "kind": {
+      "sideEvent": "Nebenevent"
+    },
+    "provenance": {
+      "estimated_one": "Geschätzt anhand von {{entrants}} Teilnehmer",
+      "estimated_other": "Geschätzt anhand von {{entrants}} Teilnehmern",
+      "manual": "Manuell festgelegt",
+      "recorded": {
+        "liquipedia": "Erfasst auf Liquipedia"
+      }
+    },
+    "unknownReason": {
+      "online": "Online-Events werden nicht geschätzt",
+      "sideEvent": "Nebenevents erben keine Stufe",
+      "noEntrants": "Keine Teilnehmerzahl erfasst",
+      "manual": "Manuell auf unbekannt gesetzt"
+    },
+    "tooltip": {
+      "estimateCaveat": "Schätzung anhand der Teilnehmerzahl – sie kann ein Event zu niedrig einstufen, nie zu hoch."
+    },
+    "override": {
+      "title": "Stufe dieses Events",
+      "badge": "Stufe überschrieben",
+      "label": "Stufe überschreiben",
+      "placeholder": "Keine Überschreibung – aufgelöste Stufe verwenden",
+      "clear": "Überschreibung entfernen",
+      "saved": "Stufe für dieses Event gespeichert.",
+      "saveFailed": "Die Stufe konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "ignored": "Die für dieses Event gespeicherte Stufe wurde von einer neueren App-Version geschrieben und wird nicht angewendet.",
+      "help": "Eine Überschreibung hat Vorrang vor jeder anderen Quelle und lässt sich jederzeit entfernen.",
+      "wouldBe": "Die Schätzung wäre gewesen: {{tier}} ({{provenance}})"
+    },
+    "filter": {
+      "tierLabel": "Stufe",
+      "settingLabel": "Austragungsart",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "Nebenevents ausblenden",
+      "clear": "Filter zurücksetzen",
+      "empty": "Keine Events entsprechen diesen Filtern.",
+      "countsNote": "Die Zahlen berücksichtigen die anderen Filter.",
+      "noneInRange": "Keine {{label}}-Events in diesem Zeitraum.",
+      "sheetButton": "Filter"
+    },
+    "coverage": {
+      "known_one": "Stufe bekannt bei {{known, grouped}} von 1 Event",
+      "known_other": "Stufe bekannt bei {{known, grouped}} von {{count, grouped}} Events",
+      "recorded_one": "1 erfasst",
+      "recorded_other": "{{count, grouped}} erfasst",
+      "manual_one": "1 manuell festgelegt",
+      "manual_other": "{{count, grouped}} manuell festgelegt",
+      "estimated_one": "1 geschätzt",
+      "estimated_other": "{{count, grouped}} geschätzt",
+      "unknown_one": "1 unbekannt",
+      "unknown_other": "{{count, grouped}} unbekannt",
+      "sideExcluded_one": "1 Nebenevent ausgeschlossen",
+      "sideExcluded_other": "{{count, grouped}} Nebenevents ausgeschlossen",
+      "sideIncluded_one": "1 Nebenevent einbezogen",
+      "sideIncluded_other": "{{count, grouped}} Nebenevents einbezogen",
+      "include": "Einbeziehen",
+      "exclude": "Ausschließen"
+    },
+    "byTier": {
+      "title": "Nach Stufe",
+      "sortNote": "Stufenreihenfolge · Unbekannt zuletzt",
+      "abstain_one": "{{tier}} — 1 weiteres Spiel für eine Quote nötig.",
+      "abstain_other": "{{tier}} — {{count, grouped}} weitere Spiele für eine Quote nötig.",
+      "excluded": "vom Vergleich ausgeschlossen",
+      "allUnknown": "Noch kein Event hat eine bekannte Stufe — auf der Seite eines Events festlegen.",
+      "rowAria_one": "{{tier}}: {{record}}, 1 Spiel; öffnet die Turniere, gefiltert nach dieser Stufe",
+      "rowAria_other": "{{tier}}: {{record}}, {{count, grouped}} Spiele; öffnet die Turniere, gefiltert nach dieser Stufe"
+    }
+  },
+  "watchlist": {
+    "track": "Verfolgen",
+    "tracked": "Verfolgt",
+    "trackAria": "{{name}} verfolgen",
+    "untrackAria": "{{name}} nicht mehr verfolgen",
+    "trackedToast": "{{name}} wird verfolgt.",
+    "untrackedToast": "{{name}} wird nicht mehr verfolgt.",
+    "full": "Die Liste ist voll – 25 von 25. Zuerst muss ein Eintrag entfernt werden.",
+    "manage": "Verfolgte verwalten",
+    "error": "Die Liste konnte nicht aktualisiert werden. Bitte erneut versuchen.",
+    "loadError": "Verfolgte Einträge konnten nicht geladen werden. Zum erneuten Versuch neu laden.",
+    "refreshError": "Verfolgte Einträge konnten nicht aktualisiert werden. Die zuletzt geladene Liste wird angezeigt.",
+    "section": {
+      "title": "Verfolgt",
+      "count_one": "{{count}} von 25",
+      "count_other": "{{count}} von 25",
+      "empty": "Noch nichts verfolgt — Gegner, Matchups und Stages lassen sich auf der jeweiligen Seite verfolgen.",
+      "sortNote": "Veränderte zuerst · dann meiste Spiele"
+    },
+    "kind": {
+      "opponent": "Gegner",
+      "matchup": "Matchup",
+      "stage": "Stage"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}, {{count}} Match; {{state}}; öffnet Details",
+      "aria_other": "{{kind}} {{name}}: {{record}}, {{count}} Matches; {{state}}; öffnet Details",
+      "stateMoved": "{{state}}, {{moved}}"
+    },
+    "moved": {
+      "up": "verändert — jetzt steigend",
+      "down": "verändert — jetzt fallend",
+      "steady": "verändert — jetzt stabil",
+      "unlocked": "verändert — jetzt genug Spiele",
+      "asserting": "verändert — zeigt jetzt eine Richtung"
+    }
+  },
+  "digest": {
+    "title": "Seit dem letzten Besuch",
+    "since": "seit {{date}}",
+    "deviceNote": "Der Lesestatus wird auf diesem Gerät gespeichert.",
+    "markRead": "Als gelesen markieren",
+    "markedToast": "Auf diesem Gerät als gelesen markiert.",
+    "newGames": "Neue Spiele",
+    "newEvents": "Neue Events",
+    "moved": "Verfolgte mit Änderung",
+    "andMore_one": "und 1 weiteres →",
+    "andMore_other": "und {{count}} weitere →",
+    "noneMoved": "Kein verfolgter Eintrag hat sich verändert.",
+    "quiet": "Nichts Neues seit {{date}}.",
+    "start": "Die Übersicht beginnt jetzt — Änderungen seit diesem Besuch erscheinen hier.",
+    "loadError": "Die Spiele konnten nicht geladen werden, daher kann die Übersicht keine Neuigkeiten zeigen. Zum erneuten Versuch neu laden."
   }
 }

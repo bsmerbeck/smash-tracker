@@ -102,9 +102,9 @@ export function claimIssuancePath(coachUid: string, nowMs: number): string {
  * permanently abort in production), so every caller in this codebase must
  * pass `limit >= 1`.
  *
- * Mirrors the write-on-empty-node shape of `markStripeEventProcessed` in
- * `apps/api/src/billing/credits.ts`, not the read-then-decrement shape of
- * `spendCredit` in the same file.
+ * Mirrors the write-on-empty-node shape of `createEvent`'s `eventDedup`
+ * transaction in `apps/api/src/events/ledger.ts`, not the read-then-decrement
+ * shape of `spendCredit` in `apps/api/src/billing/credits.ts`.
  */
 export async function checkAndIncrement(
   database: Database,

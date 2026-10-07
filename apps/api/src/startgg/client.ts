@@ -230,6 +230,22 @@ const setsPageSchema = z.object({
                * free and additive; applies to every game of the set.
                */
               vodUrl: z.string().nullish(),
+              /**
+               * The set's bracket phase (start.gg `Set.phaseGroup` →
+               * `PhaseGroup.phase` → `Phase.name` / `Phase.phaseOrder`).
+               * `fullRoundText` is phase-local, so the phase is what tells a
+               * pools "Winners Round 1" from the next phase's (UAT 37-9 / F10).
+               */
+              phaseGroup: z
+                .object({
+                  phase: z
+                    .object({
+                      name: z.string().nullish(),
+                      phaseOrder: z.number().int().nullish(),
+                    })
+                    .nullish(),
+                })
+                .nullish(),
               event: z
                 .object({
                   id: z.number().nullish(),
@@ -238,6 +254,8 @@ const setsPageSchema = z.object({
                   slug: z.string().nullish(),
                   isOnline: z.boolean().nullish(),
                   numEntrants: z.number().int().nullish(),
+                  /** Phase 39.2 D-20: provider event-type integer, persisted as a string and never interpreted (Assumption A3). */
+                  type: z.number().int().nullish(),
                   videogame: z.object({ id: z.number() }).nullish(),
                   tournament: z.object({ name: z.string().nullish() }).nullish(),
                 })
@@ -322,8 +340,9 @@ export type StartggSet = NonNullable<
 >['nodes'][number];
 
 // Complexity budget per page (perPage 10): ~10 sets x (2 slots x ~4 fields +
-// ~5 games x 5 fields + ~9 set/event fields) stays well under the 1000
-// object limit — nowhere near the ~200 objects/page this shape produces.
+// ~5 games x 5 fields + ~9 set/event fields + 2 phaseGroup/phase objects)
+// stays well under the 1000 object limit — the phase selection (UAT 37-9 /
+// F10) adds ~20 objects/page to the ~200 this shape already produced.
 const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!) {
   player(id: $playerId) {
     sets(perPage: $perPage, page: $page) {
@@ -336,7 +355,8 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
         displayScore
         totalGames
         vodUrl
-        event { id name slug isOnline numEntrants videogame { id } tournament { name } }
+        phaseGroup { phase { name phaseOrder } }
+        event { id name slug isOnline numEntrants type videogame { id } tournament { name } }
         slots {
           entrant {
             id

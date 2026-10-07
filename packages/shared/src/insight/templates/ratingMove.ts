@@ -8,7 +8,7 @@ import {
   countedMatchIdsOf,
 } from '../horizon.js';
 import { classify } from '../ladder.js';
-import { ABSTENTION_FLOOR_GAMES } from '../policy.js';
+import { ABSTENTION_FLOOR_GAMES, HORIZON_COLLAPSE_RATIO } from '../policy.js';
 import type { HorizonKey, Insight, InsightScope } from '../types.js';
 import type { InsightTemplate } from './registry.js';
 
@@ -84,6 +84,23 @@ function buildRatingMoveInsight(input: {
   const startHistory = computeRatingHistory([...priorMatches].sort(byTimeAsc));
   const startRating = startHistory.current?.rating ?? DEFAULT_RATING;
 
+  // Plan 39.1-53 (UAT 39.1-17, UI-SPEC §8.1/D-06): `classify`'s collapse
+  // branch measures the window against its COMPLEMENT, so a window holding
+  // every game (empty baseline) never collapses and a thin account asserts a
+  // direction. For the count/day horizons the window is ALSO collapsed when it
+  // holds at least HORIZON_COLLAPSE_RATIO of all scoped games — the rule
+  // `buildCareerTimeline` already applies. `lastEvent` stays on the ladder.
+  //
+  // Plan 41-14 (UAT 41 test 2 / 39.1 test 17): at ANY horizon, lastEvent
+  // included, an empty prior window collapses — the horizon holds every game,
+  // so there is no 'before' to move from. Only reached once the gate passed;
+  // locked/thinRecent/thin/collapsed keep the gate's own state.
+  const windowCoversAccount =
+    priorMatches.length === 0 ||
+    (horizon !== 'lastEvent' &&
+      scopedMatches.length > 0 &&
+      recentMatches.length >= HORIZON_COLLAPSE_RATIO * scopedMatches.length);
+
   let state: Insight['state'];
   let kind: Insight['kind'];
   let deltaPoints: number | null = null;
@@ -95,6 +112,9 @@ function buildRatingMoveInsight(input: {
     gate.state === 'thin'
   ) {
     state = gate.state;
+    kind = 'fact';
+  } else if (windowCoversAccount) {
+    state = 'collapsed';
     kind = 'fact';
   } else {
     const delta = endRating - startRating;

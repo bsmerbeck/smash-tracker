@@ -1,9 +1,10 @@
+import { cloneElement, type ReactElement } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { GSP_MODEL } from '@smash-tracker/shared';
+import { GSP_MODEL, buildValueSeries } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
 import { GspPage } from './GspPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -18,6 +19,22 @@ vi.mock('sonner', () => ({
     error: (...args: unknown[]) => toastError(...args),
   },
 }));
+
+// jsdom measures every element 0x0, so Recharts' ResponsiveContainer would draw an empty plot; give the
+// curve a real width so its marks (and the click that resolves a reading) exist (plan 41-06, T-41-16).
+vi.mock('recharts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('recharts')>();
+  return {
+    ...actual,
+    ResponsiveContainer: ({
+      children,
+      height,
+    }: {
+      children: ReactElement<{ width?: number; height?: number }>;
+      height?: number;
+    }) => cloneElement(children, { width: 830, height }),
+  };
+});
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -203,9 +220,12 @@ describe('GspPage', () => {
     // makes the conversion deterministic: gsp 9,050,000 -> MMR 1,000.
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_050_000 })]);
 
-    renderGspPage();
+    const { container } = renderGspPage();
 
-    expect(await screen.findByText('Est. MMR')).toBeInTheDocument();
+    // Scoped to the hero: the curve's view switch also reads "Est. MMR" (plan 41-06).
+    await screen.findByText('GSP Curve');
+    const hero = container.querySelector('[data-slot="gsp-hero"]') as HTMLElement;
+    expect(within(hero).getByText('Est. MMR')).toBeInTheDocument();
     expect(screen.getByText('1,000')).toBeInTheDocument();
     // Distance card: 1142 - 1000 = 142, with the MMR framing caption.
     expect(screen.getByText('142')).toBeInTheDocument();
@@ -226,14 +246,16 @@ describe('GspPage', () => {
     expect(await screen.findByText(/top-tail reading — approximate/)).toBeInTheDocument();
   });
 
-  it('shows the ELITE badge once the estimated MMR reaches Elite (1142)', async () => {
+  it('shows the plain Elite figure once the estimated MMR reaches Elite (1142)', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     // gsp 15,000,000 at the floored t -> MMR ~1158 >= 1142.
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 15_000_000 })]);
 
     renderGspPage();
 
-    expect(await screen.findByText('ELITE')).toBeInTheDocument();
+    // The distance figure becomes the plain word (no emerald pill — DD-41-17).
+    expect(await screen.findByText('Elite')).toBeInTheDocument();
+    expect(screen.getByText(/at or above Elite/)).toBeInTheDocument();
     // The tiers card places the reading in the Elite Smash tier (~14.8M
     // boundary on today's ladder) with Top 5% (0.95·max ≈ 15.5M) up next —
     // the in-Elite short-term goal the old Road to Elite card never had.
@@ -500,11 +522,11 @@ describe('GspPage', () => {
     // Default GSP view explains the computed threshold line.
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'MMR view' }));
+    await user.click(screen.getByRole('radio', { name: 'Est. MMR' }));
     expect(screen.getByText(/doesn't inflate over time/)).toBeInTheDocument();
     expect(screen.queryByText(/logged post-match GSP reading/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'GSP view' }));
+    await user.click(screen.getByRole('radio', { name: 'GSP' }));
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
   });
 
@@ -528,6 +550,133 @@ describe('GspPage', () => {
     // delete path too — it hands off to the page's confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete Match' }));
     expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+  });
+
+  it('opens the edit dialog of exactly the reading clicked on the curve (A2, T-41-16)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+      makeMatch({ id: 'm2', time: 300, win: true, gsp: 9_510_000 }),
+    ]);
+    listGspReadings.mockResolvedValue([
+      { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: 200 },
+    ]);
+    const user = userEvent.setup();
+
+    const { container } = renderGspPage();
+    await screen.findByText('GSP Curve');
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+
+    // The calibration reading is the diamond: its path starts at `M{x} ...`.
+    const diamond = container.querySelector('[data-slot="trend-value-diamond"]')!;
+    const diamondX = Number(/^M(-?[\d.]+)/.exec(diamond.getAttribute('d') ?? '')![1]);
+    fireEvent.click(hit, { clientX: diamondX, clientY: 100 });
+    const readingDialog = await screen.findByRole('dialog');
+    expect(readingDialog).toHaveTextContent('Edit GSP reading');
+    expect(within(readingDialog).getByLabelText('Current GSP')).toHaveValue('9500000');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    // The newest reading is the last dot: a match, so the match form opens.
+    const lastDot = container.querySelector('[data-slot="trend-value-dot"]')!;
+    fireEvent.click(hit, { clientX: Number(lastDot.getAttribute('cx')), clientY: 100 });
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Edit Match');
+  });
+
+  it("a close click on the curve expands the GSP Log and marks exactly that close's rows (DD-41-12)", async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startMs = Date.UTC(2026, 0, 1, 12);
+    const matchList = Array.from({ length: 70 }, (_, i) =>
+      makeMatch({
+        id: `m${i}`,
+        time: startMs + i * dayMs,
+        win: i % 2 === 0,
+        gsp: 9_000_000 + i * 1_000,
+      }),
+    );
+    listMatches.mockResolvedValue(matchList);
+    const expected = buildValueSeries(
+      matchList.map((m, i) => ({ atMs: m.time, value: 9_000_000 + i * 1_000, calibration: false })),
+      { target: 60 },
+    );
+    expect(expected.grain).not.toBe('reading');
+
+    const { container } = renderGspPage();
+    const logTitle = await screen.findByText('GSP Log');
+    const logCard = logTitle.closest('[data-slot="card"]') as HTMLElement;
+    // 70 entries, 8 recent rows until a selection arrives.
+    expect(within(logCard).getAllByRole('listitem')).toHaveLength(8);
+    expect(logCard.querySelectorAll('[aria-current="true"]')).toHaveLength(0);
+
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    const clickClose = (k: number) => {
+      const mark = container.querySelector(`[data-point-key="${expected.points[k]!.key}"]`)!;
+      fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    };
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+    const first = expected.points[2]!;
+    const rows = [...logCard.querySelectorAll<HTMLElement>('li[aria-current="true"]')];
+    expect(rows).toHaveLength(first.memberIndexes.length);
+    // The first marked row (newest first) is the close's newest member, and it holds focus.
+    expect(document.activeElement).toBe(rows[0]);
+
+    // The next selection replaces the set.
+    clickClose(5);
+    const second = expected.points[5]!;
+    await waitFor(() =>
+      expect(logCard.querySelectorAll('li[aria-current="true"]')).toHaveLength(
+        second.memberIndexes.length,
+      ),
+    );
+    expect(document.activeElement).toBe(logCard.querySelector('li[aria-current="true"]'));
+    // No edit dialog opened: a close click finds readings, it never edits one.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  // 41-REVIEW WR-06: clicking the SAME close again must act again - re-expand a log the reader collapsed
+  // with "Show recent only", and move focus to the marked rows - not silently do nothing.
+  it('re-clicking the same close re-expands a collapsed GSP Log and refocuses its rows (WR-06)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startMs = Date.UTC(2026, 0, 1, 12);
+    const matchList = Array.from({ length: 70 }, (_, i) =>
+      makeMatch({
+        id: `m${i}`,
+        time: startMs + i * dayMs,
+        win: i % 2 === 0,
+        gsp: 9_000_000 + i * 1_000,
+      }),
+    );
+    listMatches.mockResolvedValue(matchList);
+    const expected = buildValueSeries(
+      matchList.map((m, i) => ({ atMs: m.time, value: 9_000_000 + i * 1_000, calibration: false })),
+      { target: 60 },
+    );
+    const user = userEvent.setup();
+
+    const { container } = renderGspPage();
+    const logTitle = await screen.findByText('GSP Log');
+    const logCard = logTitle.closest('[data-slot="card"]') as HTMLElement;
+    const hit = container.querySelector('[data-slot="trend-value-hit"]')!;
+    const clickClose = (k: number) => {
+      const mark = container.querySelector(`[data-point-key="${expected.points[k]!.key}"]`)!;
+      fireEvent.click(hit, { clientX: Number(mark.getAttribute('cx')), clientY: 100 });
+    };
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+
+    await user.click(within(logCard).getByRole('button', { name: 'Show recent only' }));
+    expect(within(logCard).getAllByRole('listitem')).toHaveLength(8);
+
+    clickClose(2);
+    await waitFor(() => expect(within(logCard).getAllByRole('listitem')).toHaveLength(70));
+    const rows = [...logCard.querySelectorAll<HTMLElement>('li[aria-current="true"]')];
+    expect(rows).toHaveLength(expected.points[2]!.memberIndexes.length);
+    expect(document.activeElement).toBe(rows[0]);
   });
 
   describe('live thresholds (gsptiers.com via /api/gsp-live)', () => {
@@ -608,8 +757,11 @@ describe('GspPage', () => {
 
       renderGspPage();
 
-      await screen.findByText('GSP Log');
-      const items = screen.getAllByRole('listitem');
+      const logTitle = await screen.findByText('GSP Log');
+      // Scoped to the log card: the Gains card's band bars are list items too (plan 41-05).
+      const items = within(logTitle.closest('[data-slot="card"]') as HTMLElement).getAllByRole(
+        'listitem',
+      );
       // Newest first: the post-calibration win deltas from the new baseline.
       expect(items[0]).toHaveTextContent('Win');
       expect(items[0]).toHaveTextContent('+10,000');
@@ -762,6 +914,77 @@ describe('GspPage', () => {
     });
   });
 
+  // Plan 41-05 (D3, DD-41-11): the page sits on PageShell + PageGrid.
+  describe('page grid composition (plan 41-05)', () => {
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+    function cellSpans(): string[] {
+      const grid = document.querySelector('[data-slot="page-grid"]')!;
+      return Array.from(grid.children).map((cell) => cell.getAttribute('data-span') ?? '');
+    }
+
+    it('lays the rows out hero 12, curve 8 + logger 4, gains 6 + tiers 6, log 12, with the hero cell first', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 3, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      const grid = document.querySelector('[data-slot="page-grid"]')!;
+      expect(grid.closest('[data-slot="page-shell"]')).not.toBeNull();
+      expect(grid.closest('[data-slot="gsp-body"]')).not.toBeNull();
+      expect(grid.children[0]!.querySelector('[data-slot="gsp-hero"]')).not.toBeNull();
+      expect(cellSpans().slice(0, 6)).toEqual(['12', '8', '4', '6', '6', '12']);
+    });
+
+    it('spans the Rating model note across the whole row when the vs-Glicko card is not drawn', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // One session only: fewer than GSP_VS_GLICKO_MIN_POINTS rating periods, so the card is hidden.
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 3, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      expect(screen.queryByText('Est. MMR vs Glicko-2')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="gsp-vs-glicko"]')).toBeNull();
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      expect(note.getAttribute('data-span')).toBe('12');
+      expect(note.className).not.toMatch(/lg:col-start/);
+    });
+
+    it('pairs the card (8, left) with the note (4, right) from lg, the note first in the DOM', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      const card = document.querySelector('[data-slot="gsp-vs-glicko"]')!;
+      expect(note.getAttribute('data-span')).toBe('4');
+      expect(card.getAttribute('data-span')).toBe('8');
+      expect(note.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // desktop placement by explicit utilities, never a CSS `order` utility
+      expect(card.className).toMatch(/lg:col-start-1/);
+      expect(note.className).toMatch(/lg:col-start-9/);
+      expect(note.className).toMatch(/lg:row-start-5/);
+      expect(card.className).toMatch(/lg:row-start-5/);
+      expect(`${note.className} ${card.className}`).not.toMatch(/\border-/);
+    });
+  });
+
   // Phase 36 (TRND-01, D-02, R1-HIGH-5): GspVsGlicko is the fourth
   // rating-bearing surface (the mount set is derived from the
   // computeRatingHistory/RatingPeriodResult grep, not recalled) — its
@@ -796,6 +1019,80 @@ describe('GspPage', () => {
       expect(
         note.compareDocumentPosition(vsGlickoTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+    });
+  });
+  // Plan 41-07 (A3, T-41-19): the vs-Glicko card is two small-multiples panels, gated once, whose MMR panel
+  // resolves a click to the stored reading behind it.
+  describe('Est. MMR vs Glicko-2 as small multiples (41-07)', () => {
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+    it('renders the card as two stacked panels on one time axis for a qualifying fixture', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const card = document.querySelector('[data-slot="gsp-vs-glicko"]')!;
+      expect(card.querySelectorAll('[data-slot="multiples-panel"]')).toHaveLength(2);
+      expect(card.querySelectorAll('[data-slot="trend-value-x-axis"]')).toHaveLength(1);
+      expect(card.querySelector('canvas')).toBeNull();
+    });
+
+    it('spans the note across the row and draws no card with only 2 rating periods', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // Three readings, but only two sessions (the first two matches share one).
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 60_000, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      expect(screen.queryByText('Est. MMR vs Glicko-2')).not.toBeInTheDocument();
+      const note = document.querySelector('[data-slot="gsp-rating-note"]')!;
+      expect(note.getAttribute('data-span')).toBe('12');
+    });
+
+    it('opens the edit dialog of exactly the reading clicked on the MMR panel (T-41-19)', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: FOUR_HOURS_MS + 60_000 },
+      ]);
+      const user = userEvent.setup();
+
+      renderGspPage();
+
+      await screen.findByText('Est. MMR vs Glicko-2');
+      const card = document.querySelector<HTMLElement>('[data-slot="gsp-vs-glicko"]')!;
+      const mmrHit = card.querySelectorAll('[data-slot="trend-value-hit"]')[0]!;
+
+      // The calibration reading is the MMR panel's diamond: its path starts at `M{x} ...`.
+      const diamond = card.querySelector('[data-slot="trend-value-diamond"]')!;
+      const diamondX = Number(/^M(-?[\d.]+)/.exec(diamond.getAttribute('d') ?? '')![1]);
+      fireEvent.click(mmrHit, { clientX: diamondX, clientY: 60 });
+      const readingDialog = await screen.findByRole('dialog');
+      expect(readingDialog).toHaveTextContent('Edit GSP reading');
+      expect(within(readingDialog).getByLabelText('Current GSP')).toHaveValue('9500000');
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+      // The Glicko panel is not a reading: a click on it opens nothing.
+      const glickoHit = card.querySelectorAll('[data-slot="trend-value-hit"]')[1]!;
+      const glickoDot = card.querySelectorAll('[data-slot="trend-value-dot"]')[1]!;
+      fireEvent.click(glickoHit, { clientX: Number(glickoDot.getAttribute('cx')), clientY: 60 });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { InsightCardErrorBoundary } from './InsightCardErrorBoundary';
 import { MUTED_LINK_TONE } from '@/components/analytics/linkTone';
@@ -51,11 +51,20 @@ export interface InsightRailProps {
   /** Rendered instead of any card when the rail truly has nothing — the rendered card count is never 0. */
   fallbackCard: ReactNode;
   cap?: number;
+  /**
+   * Plan 36-11: called with the ids of the cards the rail actually renders
+   * (`cards` then `unlocksNext`) whenever that selection changes — dismissal,
+   * promotion, budget and per-card crash exclusion included. Lets a host
+   * attach a fallback to "is card X really on screen" (Trends' rating-model
+   * door) without re-deriving the selection. Optional; omitting it changes
+   * nothing.
+   */
+  onVisibleIdsChange?: (ids: string[]) => void;
 }
 
 const DEFAULT_CAP = 3;
 
-interface VisibleSelection {
+export interface VisibleSelection {
   unlocksNext: InsightRailCard | null;
   cards: InsightRailCard[];
 }
@@ -64,9 +73,11 @@ interface VisibleSelection {
  * Filters excluded (dismissed OR crashed) candidates out of
  * `rail.cards`/`rail.unlocksNext`, then promotes from `rail.promotionQueue`
  * to refill the freed slot(s) up to `cap`. Never re-sorts — `cards` and
- * `promotionQueue` are consumed in the exact order given.
+ * `promotionQueue` are consumed in the exact order given. Exported (plan
+ * 36-11) so a host can compute the same synchronous selection the rail
+ * renders before `onVisibleIdsChange` reports crash exclusions.
  */
-function selectVisible(
+export function selectVisible(
   rail: InsightRailShape,
   excludedIds: string[],
   cap: number,
@@ -122,6 +133,7 @@ export function InsightRail({
   onRestore,
   fallbackCard,
   cap = DEFAULT_CAP,
+  onVisibleIdsChange,
 }: InsightRailProps) {
   const [crashedIds, setCrashedIds] = useState<string[]>([]);
 
@@ -135,6 +147,12 @@ export function InsightRail({
     () => selectVisible(rail, excludedIds, cap),
     [rail, excludedIds, cap],
   );
+
+  // Plan 36-11: every rendered branch (fallback / rail-error / all-dismissed)
+  // leaves `cards`/`unlocksNext` empty, so this list is exactly what renders.
+  useEffect(() => {
+    onVisibleIdsChange?.([...cards.map((c) => c.id), ...(unlocksNext ? [unlocksNext.id] : [])]);
+  }, [cards, unlocksNext, onVisibleIdsChange]);
 
   const allOriginalIds = useMemo(
     () => [

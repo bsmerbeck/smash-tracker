@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,6 +12,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { api } from '@/lib/api';
+import { analyticsDigestStorageKey, writeStoredDigest } from '@/lib/analyticsDigest';
+import { persistSelection, readStoredSelection } from '@/lib/analyticsSelection';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -45,9 +48,20 @@ const listCoachingClients = vi.fn();
 // `<SelfDataCoveragePanel />`) — mocked here so every existing Dashboard
 // test keeps passing with the benign empty default.
 const coverage = vi.fn();
+// Plan 39.2-13: the recap reads the own-account registry and the prep slot reads brief status.
+const listTournaments = vi.fn();
+const getPrepStatus = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
+    tournaments: { list: (...args: unknown[]) => listTournaments(...args) },
+    prep: { get: (...args: unknown[]) => getPrepStatus(...args) },
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: vi.fn().mockResolvedValue({ items: [] }),
+      track: vi.fn(),
+      untrack: vi.fn(),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
@@ -138,12 +152,23 @@ function renderDashboard(initialEntry = '/dashboard', extra?: ReactNode) {
 }
 
 describe('DashboardPage', () => {
+  // Plan 39.2-12: a settled Dashboard writes its digest on a real unmount through a
+  // zero-delay timer. Unmount and let it fire before the next test clears storage,
+  // or the previous test's write lands in the next test's fresh store.
+  afterEach(async () => {
+    cleanup();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    window.localStorage.clear();
+  });
+
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     listOpponents.mockResolvedValue([]);
+    listTournaments.mockResolvedValue([]);
+    getPrepStatus.mockResolvedValue({ activated: false });
     getMe.mockResolvedValue(defaultProfile());
     getOnboardingProgress.mockResolvedValue({
       analytics: false,
@@ -237,7 +262,8 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Casual vs Competitive')).toBeInTheDocument();
     expect(screen.getByText('Online vs Offline')).toBeInTheDocument();
     expect(screen.getByText('Previous Matches')).toBeInTheDocument();
-    expect(screen.getByText('Form Curve')).toBeInTheDocument();
+    expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
+    expect(screen.queryByText('Form Curve')).toBeNull();
     expect(screen.getByText('Most-Played Stages')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
@@ -306,21 +332,51 @@ describe('DashboardPage', () => {
 
   // Plan 39.1-50 Task 3 (DEFECT found on the after capture, UI-SPEC §6.1
   // "no orphan half"): with six hero tiles the second hero row holds Rating
-  // and the fighter tile (6 columns), so the 6-span Form Curve packed in
-  // beside them and left Previous Matches alone on the next row. The Form
-  // Curve starts its own row at lg, so it and Previous Matches stay a pair.
-  it('the Form Curve cell starts a new row at lg, pairing it with Previous Matches', async () => {
+  // and the fighter tile (6 columns), so a 6-span cell packed in beside them
+  // and left Previous Matches alone on the next row. Plan 41-10 (DD-41-03):
+  // the left cell is now the form strip tile stacked over Matchup Snapshot; it
+  // starts its own row at lg, so it and Previous Matches stay a pair.
+  it('the form strip + Snapshot stack starts a new row at lg, pairing it with Previous Matches', async () => {
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
     listMatches.mockResolvedValue([]);
 
-    renderDashboard();
+    const { container } = renderDashboard();
 
-    const curveCell = (await screen.findByText('Form Curve')).closest('[data-span]')!;
+    const tile = await waitFor(() => {
+      const found = container.querySelector('[data-slot="form-strip-tile"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const stackCell = tile.closest('[data-span]')!;
     const previousCell = screen.getByText('Previous Matches').closest('[data-span]')!;
-    expect(curveCell).toHaveAttribute('data-span', '6');
-    expect(curveCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(stackCell).toHaveAttribute('data-slot', 'dashboard-form-stack');
+    expect(stackCell).toHaveAttribute('data-span', '6');
+    expect(stackCell.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+    expect(stackCell.className).toMatch(/(^|\s)flex-col(\s|$)/);
+    // The stack holds the strip tile, then Matchup Snapshot — nothing else.
+    expect(stackCell.children).toHaveLength(2);
+    expect(stackCell.children[0]).toContainElement(tile as HTMLElement);
+    expect(stackCell.children[1]).toHaveAttribute('data-slot', 'card');
+    expect(stackCell.children[1]).not.toContainElement(tile as HTMLElement);
     expect(previousCell).toHaveAttribute('data-span', '6');
-    expect(curveCell.nextElementSibling).toBe(previousCell);
+    expect(previousCell).toHaveAttribute('data-slot', 'previous-matches');
+    expect(stackCell.nextElementSibling).toBe(previousCell);
+    // Most-Played Stages stays a 12-col row below the pair.
+    const stagesCell = screen.getByText('Most-Played Stages').closest('[data-span]')!;
+    expect(stagesCell).toHaveAttribute('data-span', '12');
+    expect(previousCell.nextElementSibling).toBe(stagesCell);
+  });
+
+  it('plan 41-10: the chart.js Form Curve is gone — no canvas and no Form Curve title', async () => {
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    const { container } = renderDashboard();
+
+    await screen.findByText('Form · last 30 games');
+    expect(container.querySelector('canvas')).toBeNull();
+    expect(screen.queryByText('Form Curve')).toBeNull();
+    expect(container.querySelector('[data-slot="form-curve-caption"]')).toBeNull();
   });
 
   it('carries no stretch utility on any grid cell root on this page (UIX-01/UIX-04)', async () => {
@@ -441,23 +497,25 @@ describe('DashboardPage', () => {
       );
     });
 
-    // Plan 39.1-39 (UI-SPEC §10.4, D-06): the Form Curve has no window select
-    // of its own — it plots the page horizon's window, so the same switch
-    // press re-windows it and its caption names the new window.
-    it('the Form Curve follows the page horizon (no per-card select)', async () => {
+    // Plan 39.1-39 (UI-SPEC §10.4, D-06) / plan 41-10: the form strip has no
+    // window select of its own — the page horizon only changes which of its
+    // games are emphasised, and the strip's overline names the new highlight.
+    it('the form strip follows the page horizon (no per-card select)', async () => {
       const user = userEvent.setup();
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue(horizonFixture());
 
       const { container } = renderDashboard();
 
-      const caption = () => container.querySelector('[data-slot="form-curve-caption"]');
-      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 30 games'));
+      const overline = () => container.querySelector('[data-slot="form-strip-overline"]');
+      await waitFor(() => expect(overline()?.textContent).toBe('Form · last 30 games'));
       expect(screen.queryByRole('combobox', { name: 'Rolling window' })).toBeNull();
 
       await user.click(screen.getByRole('radio', { name: 'Last 90 days' }));
 
-      await waitFor(() => expect(caption()?.textContent).toBe('Running win rate · last 90 days'));
+      await waitFor(() =>
+        expect(overline()?.textContent).toBe('Form · last 30 games, last 90 days highlighted'),
+      );
     });
   });
 
@@ -618,6 +676,295 @@ describe('DashboardPage', () => {
   });
 
   // Plan 39.1-20 (UIX-07, UI-SPEC §7.2): the ONE loading pattern.
+  // Plan 39.2-11 (TRK-02, DD-10): the Tracked section is the row directly
+  // above the hero stat row, owns its own loading state, and the hero never
+  // waits for the watchlist.
+  describe('Tracked section (plan 39.2-11)', () => {
+    it('renders the #tracked section before the first hero stat cell in DOM order', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const tracked = container.querySelector('#tracked');
+      const firstHeroCell = container.querySelector('[data-span="3"]');
+      expect(tracked).not.toBeNull();
+      expect(firstHeroCell).not.toBeNull();
+      expect(
+        tracked!.compareDocumentPosition(firstHeroCell!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(tracked!.closest('[data-span="12"]')).not.toBeNull();
+    });
+
+    it('renders the hero while the watchlist GET is still pending, with the section in its own skeleton', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      vi.mocked(api.watchlist.list).mockImplementationOnce(() => new Promise(() => {}));
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const tracked = container.querySelector('#tracked')!;
+      expect(tracked.querySelector('[role="status"][aria-busy="true"]')).not.toBeNull();
+      expect(tracked.querySelector('[data-slot="tracked-row"]')).toBeNull();
+      // The rest of the Dashboard is on screen and unblocked.
+      expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
+    });
+
+    it('a watchlist load failure is one line inside the section and leaves the Dashboard alone', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      // Two failures: the page-level digest starts the GET at mount, and the Tracked section
+      // mounting after the load retries an errored query once (a benign shared-query refetch).
+      vi.mocked(api.watchlist.list)
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockRejectedValueOnce(new Error('boom'));
+
+      renderDashboard();
+
+      expect(await screen.findByText(/Tracked items couldn't be loaded/)).toBeInTheDocument();
+      expect(screen.getByText('Form · last 30 games')).toBeInTheDocument();
+    });
+  });
+
+  // Plan 39.2-12 (TRK-01, DD-10): the since-last-visit digest sits directly above
+  // the Tracked section and reads this device's own store.
+  describe('Digest (plan 39.2-12)', () => {
+    function syncedGames(count: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `dg-${i}`,
+        fighter_id: 1,
+        opponent_id: 2,
+        win: i % 2 === 0,
+        time: 10_000 + i,
+        opponent: 'rival',
+      }));
+    }
+
+    it('renders the digest cell directly above #tracked, before the hero row', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const digestCard = container.querySelector('#digest');
+      const tracked = container.querySelector('#tracked');
+      expect(digestCard).not.toBeNull();
+      expect(
+        digestCard!.compareDocumentPosition(tracked!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(digestCard!.closest('[data-span="12"]')).not.toBeNull();
+    });
+
+    it('a first visit on this device says the digest starts now, with no button', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(syncedGames(3));
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+
+      const digestCard = container.querySelector('#digest')!;
+      expect(digestCard.getAttribute('data-state')).toBe('start');
+      expect(within(digestCard as HTMLElement).queryByRole('button')).toBeNull();
+    });
+
+    it('after a sync adds 41 games it reads 41, and Mark as read collapses it and writes once', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(syncedGames(51));
+      writeStoredDigest('test-uid', null, {
+        lastSeenAt: 5_000,
+        lastSeenMatchCount: 10,
+        tracked: {},
+      });
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+
+      const { container } = renderDashboard();
+      const digestCard = await waitFor(() => {
+        const node = container.querySelector('#digest[data-state="expanded"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      expect(within(digestCard).getByText('41')).toBeInTheDocument();
+      expect(set).not.toHaveBeenCalled();
+
+      await userEvent.click(within(digestCard).getByRole('button', { name: 'Mark as read' }));
+
+      const written = set.mock.calls.filter(
+        (call) => call[0] === analyticsDigestStorageKey('test-uid', null),
+      );
+      expect(written).toHaveLength(1);
+      expect(container.querySelector('#digest')?.getAttribute('data-state')).toBe('quiet');
+      set.mockRestore();
+    });
+  });
+
+  describe('Recap beside the digest (plan 39.2-13, DD-10)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    /** Twelve games of one named event that ended three days ago. */
+    function recentEventGames() {
+      const end = Date.now() - 3 * DAY;
+      return Array.from({ length: 12 }, (_, i) => ({
+        id: `rc-${i}`,
+        fighter_id: 1,
+        opponent_id: 2,
+        win: i % 3 !== 0,
+        time: end - (11 - i) * 60 * 1000,
+        opponent: 'rival',
+        eventName: 'Local Weekly',
+        tournamentName: 'Local Weekly',
+      }));
+    }
+
+    it('shares the row with the digest, 8 + 4 from 1280, the recap above the digest below it', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      const recapCell = recapCard.closest('[data-span]') as HTMLElement;
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.className).toContain('xl:col-span-8');
+      expect(recapCell.className).toContain('xl:col-span-4');
+      expect(recapCell.className).toContain('order-first');
+      // Same grid row: the digest first in the DOM, the recap right after it.
+      expect(recapCell.previousElementSibling).toBe(digestCell);
+      expect(within(recapCard).getByText(/Local Weekly — /)).toBeInTheDocument();
+    });
+
+    it('the digest spans the full 12 when no recap is due, and no 4-col frame is left behind', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      // An event from 1970: far outside the fourteen-day window.
+      listMatches.mockResolvedValue(
+        Array.from({ length: 12 }, (_, i) => ({
+          id: `old-${i}`,
+          fighter_id: 1,
+          opponent_id: 2,
+          win: true,
+          time: 10_000 + i,
+          eventName: 'Ancient Weekly',
+        })),
+      );
+
+      const { container } = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.getAttribute('data-span')).toBe('12');
+      expect(digestCell.className).not.toContain('xl:col-span-8');
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      expect(container.querySelector('[data-span="4"]')).toBeNull();
+    });
+
+    it('a recap dismissed on this device is gone, and the digest returns to 12', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      await userEvent.click(within(recapCard).getByRole('button', { name: 'Dismiss' }));
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      const digestCell = container.querySelector('#digest')!.closest('[data-span]') as HTMLElement;
+      expect(digestCell.className).not.toContain('xl:col-span-8');
+    });
+
+    it('DD-07: one debrief door per event: the recap carries it while shown, and the prep slot takes it back once the recap is dismissed', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      const games = recentEventGames();
+      listMatches.mockResolvedValue(games);
+      const newest = Math.max(...games.map((g) => g.time));
+      listTournaments.mockResolvedValue([
+        {
+          eventName: 'Local Weekly',
+          tournamentName: 'Local Weekly',
+          entryKey: 'local-weekly',
+          firstSetAt: newest - 60 * 60 * 1000,
+          lastSetAt: newest,
+          setsPlayed: 3,
+          source: 'startgg',
+        },
+      ]);
+      getPrepStatus.mockResolvedValue({ activated: true, reviewAt: Date.now() - DAY });
+
+      const { container } = renderDashboard();
+      const recapCard = await waitFor(() => {
+        const node = container.querySelector('[data-slot="recap-card"]');
+        expect(node).not.toBeNull();
+        return node as HTMLElement;
+      });
+      const debrief = await within(recapCard).findByRole('link', { name: 'Debrief this event' });
+      expect(debrief).toHaveAttribute('href', '/tournaments/local-weekly/prep');
+      // The slot's own review door for the same event yields while the recap is on screen.
+      expect(screen.queryByTestId('dashboard-prep-action-slot')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Review this event' })).toBeNull();
+
+      await userEvent.click(within(recapCard).getByRole('button', { name: 'Dismiss' }));
+      expect(container.querySelector('[data-slot="recap-card"]')).toBeNull();
+      const slot = await screen.findByTestId('dashboard-prep-action-slot');
+      expect(slot.getAttribute('data-state')).toBe('review');
+      expect(screen.getByRole('link', { name: 'Review this event' })).toHaveAttribute(
+        'href',
+        '/tournaments/local-weekly/prep',
+      );
+    });
+
+    it('under a coach subject the recap derives from the matches and the registry is never read', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      listMatches.mockResolvedValue(recentEventGames());
+      listTournaments.mockClear();
+
+      const { container } = renderDashboard('/coach/client-1/dashboard');
+      await waitFor(() =>
+        expect(container.querySelector('[data-slot="recap-card"]')).not.toBeNull(),
+      );
+      expect(container.querySelector('[data-slot="tier-badge"]')).toBeNull();
+      expect(listTournaments).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Digest leave-write (plan 39.2-12, T-03)', () => {
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
+    const digestWrites = (set: { mock: { calls: unknown[][] } }) =>
+      set.mock.calls.filter((call) => call[0] === analyticsDigestStorageKey('test-uid', null));
+
+    it('leaving a settled Dashboard writes the digest once; leaving the no-fighters state writes nothing', async () => {
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      writeStoredDigest('test-uid', null, {
+        lastSeenAt: 5_000,
+        lastSeenMatchCount: 0,
+        tracked: {},
+      });
+      set.mockClear();
+
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      const empty = renderDashboard();
+      await screen.findByText("You haven't picked any fighters yet!");
+      empty.unmount();
+      await tick();
+      expect(digestWrites(set)).toHaveLength(0);
+
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      const loaded = renderDashboard();
+      await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+      await waitFor(() => expect(loaded.container.querySelector('#digest')).not.toBeNull());
+      await tick();
+      expect(digestWrites(set)).toHaveLength(0);
+      loaded.unmount();
+      await tick();
+      expect(digestWrites(set)).toHaveLength(1);
+      set.mockRestore();
+    });
+  });
+
   describe('one loading pattern (UIX-07)', () => {
     it('shows the CardSkeleton pattern with the busy status role and the existing loading label while fighters/matches load', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
@@ -633,7 +980,7 @@ describe('DashboardPage', () => {
       expect(container.querySelector('div.text-muted-foreground')).toBeNull();
     });
 
-    it('quick 261002-leg: the skeleton mirrors the loaded hero — four span-3 cells (two stacks of two stat-row skeletons) and no 12-span stat-row skeleton', () => {
+    it('quick 261002-leg: the skeleton mirrors the loaded hero — four span-3 cells (two stacks of two stat-row skeletons) and only the digest 12-span stat-row skeleton', () => {
       getFighters.mockReturnValue(new Promise(() => {}));
       listMatches.mockReturnValue(new Promise(() => {}));
 
@@ -654,7 +1001,26 @@ describe('DashboardPage', () => {
         ),
       );
       expect(statRowGrids).toHaveLength(6);
-      expect(statRowSkeletonCells('12')).toHaveLength(0);
+      // Plan 39.2-12: exactly ONE 12-span stat-row skeleton is legitimate — the digest's own cell.
+      expect(statRowSkeletonCells('12')).toHaveLength(1);
+    });
+
+    it('plan 41-10: the row-3 skeleton mirrors the loaded stack — a chart skeleton over a 3-row list skeleton beside the Previous Matches list, then the Stages row', () => {
+      getFighters.mockReturnValue(new Promise(() => {}));
+      listMatches.mockReturnValue(new Promise(() => {}));
+
+      const { container } = renderDashboard();
+
+      const stack = Array.from(container.querySelectorAll('[data-span="6"]')).find((cell) =>
+        /\bflex-col\b/.test(cell.className),
+      );
+      expect(stack).toBeDefined();
+      expect(stack!.className).toMatch(/(^|\s)lg:col-start-1(\s|$)/);
+      // Two skeleton cards stacked; the Snapshot's own 12-span skeleton is gone.
+      expect(stack!.querySelectorAll('[role="status"]')).toHaveLength(2);
+      expect(stack!.nextElementSibling).toHaveAttribute('data-span', '6');
+      expect(stack!.nextElementSibling!.nextElementSibling).toHaveAttribute('data-span', '12');
+      expect(stack!.nextElementSibling!.nextElementSibling!.nextElementSibling).toBeNull();
     });
 
     it('renders zero skeleton blocks once the dashboard has loaded', async () => {
@@ -753,5 +1119,109 @@ describe('DashboardPage', () => {
     const tile = container.querySelector('[data-slot="fighter-record-tile"]');
     expect(tile).not.toBeNull();
     expect(tile!.closest('[data-slot="card"]')?.querySelector('[data-slot="stat-row"]')).toBeNull();
+  });
+
+  // Plan 35-04 (UAT gap closure): the Dashboard resolves its fighter list and its default
+  // fighter the way Fighter Analysis and Matchups do — the Phase 30.3 inferred-fighter
+  // fallback plus Phase 35's usePersistedSelection (D-03/D-07/D-12).
+  describe('player-true default (35-UAT gaps F16/F24)', () => {
+    const link = SpriteList.find((s) => s.name === 'Link')!;
+    const lucas = SpriteList.find((s) => s.name === 'Lucas')!;
+    const ness = SpriteList.find((s) => s.name === 'Ness')!;
+    const bowserJr = SpriteList.find((s) => s.name === 'Bowser Jr.')!;
+
+    function gamesOn(fighterId: number, count: number, idPrefix: string) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `${idPrefix}-${i}`,
+        fighter_id: fighterId,
+        opponent_id: 10,
+        map: { id: 1, name: 'Battlefield' },
+        opponent: 'rival',
+        notes: '',
+        matchType: 'none',
+        time: Date.now() - (i + 1) * 60_000,
+        win: i % 2 === 0,
+      }));
+    }
+
+    const pickerTrigger = () => screen.getByRole('combobox', { name: 'Select fighter' });
+
+    it('F16: no saved favorites but match history runs on the most-played fighter with the non-blocking prompt, never the gate', async () => {
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([
+        ...gamesOn(link.id, 6, 'link'),
+        ...gamesOn(ness.id, 2, 'ness'),
+      ]);
+
+      const { container } = renderDashboard();
+
+      expect(await screen.findByText('Link record')).toBeInTheDocument();
+      expect(screen.queryByText("You haven't picked any fighters yet!")).toBeNull();
+      expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="dashboard-body"]')).not.toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Link');
+    });
+
+    it('F16 boundary: no saved favorites AND no match history still shows the blocking gate', async () => {
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+      listMatches.mockResolvedValue([]);
+
+      const { container } = renderDashboard();
+
+      expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+      expect(screen.queryByTestId('choose-favorites-prompt')).toBeNull();
+      expect(container.querySelector('[data-slot="dashboard-body"]')).toBeNull();
+    });
+
+    it('F24: with saved favorites the default is the played fighter, not the alphabetically-first 0-game one', async () => {
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id], secondary: [] });
+      listMatches.mockResolvedValue(gamesOn(lucas.id, 5, 'lucas'));
+
+      renderDashboard();
+
+      expect(await screen.findByText('Lucas record')).toBeInTheDocument();
+      expect(screen.queryByText('Bowser Jr. record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Lucas');
+      expect(pickerTrigger()).not.toHaveTextContent('Bowser Jr.');
+      expect(screen.queryByText(/No games for Bowser Jr\./)).toBeNull();
+      // The saved favorites stay the picker list; nothing inferred, no prompt.
+      expect(screen.queryByTestId('choose-favorites-prompt')).toBeNull();
+    });
+
+    it('F24 parity: opens on the remembered fighter from the store Fighter Analysis and Matchups share (D-12)', async () => {
+      // Ness is a saved favorite WITH games that is NOT the most-played one (Lucas), so the
+      // assertion cannot pass on the usage-ranked default alone.
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id, ness.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        ...gamesOn(lucas.id, 6, 'lucas'),
+        ...gamesOn(ness.id, 2, 'ness'),
+      ]);
+      persistSelection('test-uid', null, { fighterId: ness.id });
+
+      renderDashboard();
+
+      expect(await screen.findByText('Ness record')).toBeInTheDocument();
+      expect(screen.queryByText('Lucas record')).toBeNull();
+      expect(screen.queryByText('Bowser Jr. record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Ness');
+    });
+
+    it('an explicit in-session pick of a 0-game favorite is honored (no snap-back) and persisted', async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [bowserJr.id, lucas.id], secondary: [] });
+      listMatches.mockResolvedValue(gamesOn(lucas.id, 5, 'lucas'));
+
+      renderDashboard();
+      expect(await screen.findByText('Lucas record')).toBeInTheDocument();
+
+      await user.click(pickerTrigger());
+      await user.click(await screen.findByRole('option', { name: 'Bowser Jr.' }));
+
+      expect(await screen.findByText('Bowser Jr. record')).toBeInTheDocument();
+      expect(screen.queryByText('Lucas record')).toBeNull();
+      expect(pickerTrigger()).toHaveTextContent('Bowser Jr.');
+      // An explicit change writes the one shared store (D-06/D-12).
+      expect(readStoredSelection('test-uid', null).fighterId).toBe(bowserJr.id);
+    });
   });
 });

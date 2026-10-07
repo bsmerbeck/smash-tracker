@@ -1,5 +1,10 @@
 import type { Database } from 'firebase-admin/database';
-import type { MatchRecord, StartggSyncSummary, TournamentEntry } from '@smash-tracker/shared';
+import {
+  TOURNAMENT_EVENT_TYPE_MAX_LENGTH,
+  type MatchRecord,
+  type StartggSyncSummary,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import {
   fetchEventDetails,
   fetchPlayerSetsPage,
@@ -9,6 +14,12 @@ import {
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStage } from './stageMap.js';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
+import {
+  carriedOverrides,
+  settleEntryCommits,
+  withoutOverrides,
+  type UserOwnedOverrideMember,
+} from '../services/tournamentOverrides.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
@@ -86,6 +97,12 @@ export function gamesFromSet(
   const tournamentName = set.event?.tournament?.name?.trim();
   const roundText = set.fullRoundText?.trim();
   const bracketRound = typeof set.round === 'number' ? set.round : undefined;
+  // The set's bracket phase (e.g. "Pools", "Top 64"): `fullRoundText` is
+  // phase-local, so the set timeline needs the phase to tell repeated round
+  // names apart and to order sets across phases (UAT 37-9 / F10).
+  const phaseName = set.phaseGroup?.phase?.name?.trim();
+  const rawPhaseOrder = set.phaseGroup?.phase?.phaseOrder;
+  const phaseOrder = typeof rawPhaseOrder === 'number' ? rawPhaseOrder : undefined;
   // `Set.vodUrl` is TO-curated and near-always null in practice (see the
   // V6-W1b probe notes on client.ts's `vodUrl` schema field), but when
   // present it applies to every game of the set.
@@ -188,6 +205,8 @@ export function gamesFromSet(
         ...(tournamentName ? { tournamentName } : {}),
         ...(roundText ? { roundText } : {}),
         ...(bracketRound !== undefined ? { bracketRound } : {}),
+        ...(phaseName ? { phaseName } : {}),
+        ...(phaseOrder !== undefined ? { phaseOrder } : {}),
         ...(opponentSeed != null ? { opponentSeed } : {}),
         ...(opponentPlacement != null ? { opponentPlacement } : {}),
         ...(opponentUserSlug ? { opponentUserSlug } : {}),
@@ -210,6 +229,10 @@ interface RegistryAccumulator {
   eventName: string;
   tournamentName?: string;
   numEntrants?: number;
+  /** 39.2 D-20: `false` is real data (offline); only an absent provider value leaves this undefined. */
+  isOnline?: boolean;
+  /** 39.2 D-20: the provider's event-type integer as a bounded string; stored uninterpreted (A3). */
+  eventType?: string;
   seed?: number;
   placement?: number;
   firstSetAt: number;
@@ -245,6 +268,11 @@ export function accumulateRegistry(
   const placement = userEntrant?.standing?.placement;
   const tournamentName = set.event?.tournament?.name?.trim();
   const numEntrants = set.event?.numEntrants;
+  const isOnline = set.event?.isOnline;
+  const eventType =
+    set.event?.type != null
+      ? String(set.event.type).slice(0, TOURNAMENT_EVENT_TYPE_MAX_LENGTH)
+      : undefined;
   const completedAt = set.completedAt != null ? set.completedAt * 1000 : undefined;
 
   const existing = accumulators.get(eventId);
@@ -254,6 +282,8 @@ export function accumulateRegistry(
       eventName,
       ...(tournamentName ? { tournamentName } : {}),
       ...(numEntrants != null ? { numEntrants } : {}),
+      ...(isOnline != null ? { isOnline } : {}),
+      ...(eventType != null ? { eventType } : {}),
       ...(seed != null ? { seed } : {}),
       ...(placement != null ? { placement } : {}),
       firstSetAt: completedAt ?? 0,
@@ -270,6 +300,13 @@ export function accumulateRegistry(
   if (numEntrants != null) {
     existing.numEntrants = numEntrants;
   }
+  // Keep an already-known value when a later set omits it.
+  if (isOnline != null) {
+    existing.isOnline = isOnline;
+  }
+  if (eventType != null) {
+    existing.eventType = eventType;
+  }
   if (seed != null) {
     existing.seed = seed;
   }
@@ -281,6 +318,44 @@ export function accumulateRegistry(
       existing.firstSetAt === 0 ? completedAt : Math.min(existing.firstSetAt, completedAt);
     existing.lastSetAt = Math.max(existing.lastSetAt, completedAt);
   }
+}
+
+/**
+ * The row one event's commit writes: this run's rebuilt sync-owned members,
+ * plus what the run cannot rebuild, read from `stored` — the value in RTDB at
+ * commit time (the transaction's current value).
+ *
+ * - Enrichment baseline (walkthrough amendment 07-10): an event outside this
+ *   run's `MAX_EVENT_DETAIL_FETCHES` window, or whose detail fetch failed,
+ *   keeps its already-fetched slug/eventSlug/topStandings; otherwise a recap's
+ *   "View bracket on start.gg" link would break until the event re-entered
+ *   the top N. A value fetched this run wins.
+ * - User-authored overrides (39.2 F1 `tierOverride`, 37-04 `rulesetOverride`):
+ *   carried from `stored` only, so any override on `rebuilt` is ignored. A
+ *   corrupt stored override is not copied forward (API-WR-02 policy, see
+ *   `services/tournamentOverrides.ts`); `onDroppedOverride` reports it.
+ */
+function rebuildOverStoredEntry(
+  rebuilt: TournamentEntry,
+  stored: unknown,
+  onDroppedOverride: (member: UserOwnedOverrideMember) => void,
+): TournamentEntry {
+  const existing: Partial<TournamentEntry> =
+    stored !== null && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Partial<TournamentEntry>)
+      : {};
+  const base = withoutOverrides(rebuilt);
+  return {
+    ...base,
+    ...(!base.slug && existing.slug ? { slug: existing.slug } : {}),
+    ...(!base.eventSlug && existing.eventSlug ? { eventSlug: existing.eventSlug } : {}),
+    ...(!(base.topStandings && base.topStandings.length > 0) &&
+    existing.topStandings &&
+    existing.topStandings.length > 0
+      ? { topStandings: existing.topStandings }
+      : {}),
+    ...carriedOverrides(stored, onDroppedOverride),
+  };
 }
 
 /**
@@ -347,45 +422,28 @@ export async function importPlayerMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
-    // Walkthrough amendment (07-10): read the CURRENT registry first so
-    // previously-fetched enrichment fields (slug/eventSlug/topStandings) can
-    // be carried forward as a baseline below. Every sync re-derives
-    // registryUpdates from scratch off THIS run's own paginated sets (not an
-    // incremental diff), and the closing `.update()` REPLACES each event's
-    // whole node — without this read-and-merge step, an event that drops out
-    // of this run's `MAX_EVENT_DETAIL_FETCHES` most-recently-active window
-    // (or whose `fetchEventDetails` call transiently fails) would have its
-    // ALREADY-FETCHED slug/eventSlug/topStandings silently wiped by this
-    // sync, permanently breaking a recap's "View bracket on start.gg" link
-    // for that tournament until it happens to re-enter the top N and
-    // re-fetch successfully again.
-    const existingRegistrySnapshot = await database.ref(`tournamentEntries/${uid}`).get();
-    const existingRegistry = (existingRegistrySnapshot.val() ?? {}) as Record<
-      string,
-      TournamentEntry | undefined
-    >;
-
+    // Every sync re-derives each event's sync-owned members from scratch off
+    // THIS run's own paginated sets (not an incremental diff), and the commit
+    // below REPLACES each event's whole node. Members this run cannot rebuild
+    // are merged from the value stored AT COMMIT TIME (see
+    // `rebuildOverStoredEntry`), never from a read taken before the network
+    // phase below.
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [eventId, acc] of registry) {
-      const existingEntry = existingRegistry[String(eventId)];
       registryUpdates[String(eventId)] = {
         eventId: acc.eventId,
         eventName: acc.eventName,
         ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
         ...(acc.numEntrants != null ? { numEntrants: acc.numEntrants } : {}),
+        // `!= null`, never truthiness: `false` is real data (an offline event).
+        ...(acc.isOnline != null ? { isOnline: acc.isOnline } : {}),
+        // Stored uninterpreted (Assumption A3): side-event detection stays name-token based.
+        ...(acc.eventType != null ? { eventType: acc.eventType } : {}),
         ...(acc.seed != null ? { seed: acc.seed } : {}),
         ...(acc.placement != null ? { placement: acc.placement } : {}),
         firstSetAt: acc.firstSetAt,
         lastSetAt: acc.lastSetAt,
         setsPlayed: acc.setsPlayed,
-        // Baseline carried forward from the existing stored entry — the
-        // enrichment loop below overwrites these with fresh values for any
-        // event it successfully re-fetches this sync.
-        ...(existingEntry?.slug ? { slug: existingEntry.slug } : {}),
-        ...(existingEntry?.eventSlug ? { eventSlug: existingEntry.eventSlug } : {}),
-        ...(existingEntry?.topStandings && existingEntry.topStandings.length > 0
-          ? { topStandings: existingEntry.topStandings }
-          : {}),
       };
     }
 
@@ -419,7 +477,43 @@ export async function importPlayerMatches(
       }
     }
 
-    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
+    // One transaction per event (39.2 code review API-CR-01): each commit
+    // merges the user-owned overrides and the enrichment baseline from the
+    // value stored NOW, so a tier/ruleset PATCH that lands during the
+    // enrichment loop above is neither deleted (set) nor brought back
+    // (cleared). The first run of every transaction sees `null` and returns
+    // the bare rebuilt row, which only commits when the node is truly absent;
+    // otherwise the SDK re-runs the merge with the real stored value.
+    //
+    // Settled, never `Promise.all` (R2-WR-01): the SDK aborts a transaction
+    // when this process writes under the entry by any other means, so one
+    // aborted entry is retried once, and one that fails again is logged and
+    // counted in the summary — it never fails the sync, since every other
+    // write above and below still commits.
+    const failed = await settleEntryCommits(Object.keys(registryUpdates), async (eventKey) => {
+      const rebuilt = registryUpdates[eventKey]!;
+      let dropped: UserOwnedOverrideMember[] = [];
+      await database.ref(`tournamentEntries/${uid}/${eventKey}`).transaction((current: unknown) => {
+        // Reset per run: only the run that commits decides what was dropped.
+        dropped = [];
+        return rebuildOverStoredEntry(rebuilt, current, (member) => dropped.push(member));
+      });
+      for (const member of dropped) {
+        logger?.warn(
+          { eventId: eventKey, member },
+          'start.gg sync: dropped a schema-invalid stored override (not copied forward)',
+        );
+      }
+    });
+    for (const { entryKey, reason } of failed) {
+      logger?.warn(
+        { eventId: entryKey, reason },
+        'start.gg sync: a registry entry did not commit after one retry; the next sync rebuilds it',
+      );
+    }
+    if (failed.length > 0) {
+      summary.registryEntriesFailed = failed.length;
+    }
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
 

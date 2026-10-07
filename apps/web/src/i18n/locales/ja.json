@@ -193,6 +193,8 @@
       "unknownRow_other": "不明（{{count, grouped}}戦、除外）",
       "unnamedBucket_one": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
       "unnamedBucket_other": "対戦相手名が未記録の試合が{{count, grouped}}戦あります",
+      "cohortCount_one": "{{label}} {{count, grouped}}",
+      "cohortCount_other": "{{label}} {{count, grouped}}",
       "mixedContext": "混合コンテキスト",
       "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
       "sampleCueGlyph": {
@@ -219,6 +221,7 @@
     },
     "chartTooltip": {
       "rate": "{{rate}}%",
+      "cumulativeRate": "これまでの通算 {{rate}}%",
       "whoWhere": "{{opponent}}（{{stage}}）",
       "whenEvent": "{{event}} · {{date}}",
       "whenOnly": "{{date}}",
@@ -237,7 +240,7 @@
       "preset": {
         "default": {
           "name": "ハウスデフォルト（SSBU）",
-          "detail": "{{starters}}、1戦あたり{{bans}}、{{strikeOrder}}ストライク、{{dsr}}、{{setFormat}} — {{source}}（{{date}}）を参考にしたハウスルール"
+          "strikeOrder": "第1戦：1-2-1のステージストライク — 先攻が1つ禁止し、後攻が2つ禁止し、先攻がさらに1つ禁止して、残ったステージで対戦します。"
         },
         "starterClause_one": "初期ステージ{{count}}個",
         "starterClause_other": "初期ステージ{{count}}個",
@@ -256,7 +259,19 @@
       "customName": "カスタム（この大会）",
       "overrideBadge": "カスタムルール",
       "overrideEditHint": "このルールは大会詳細ページで編集できます。",
-      "overrideIgnored": "この大会に保存されたルールは新しいバージョンのアプリで書き込まれたため、適用されていません。"
+      "overrideIgnored": "この大会に保存されたルールは新しいバージョンのアプリで書き込まれたため、適用されていません。",
+      "rows": {
+        "starters": "初期ステージ",
+        "counterpicks": "カウンターピックステージ",
+        "bans": "1戦あたりの禁止数",
+        "dsr": "DSR",
+        "strikeOrder": "ストライク順",
+        "setFormat": "セット形式",
+        "none": "なし",
+        "setFormatValue": "{{default}}（トップカット：{{topCut}}）"
+      },
+      "sourceHouse": "{{source}}（{{date}}）を参考にしたハウスルール",
+      "sourceCustom": "この大会のカスタムルールセット。変更していないルールはハウスデフォルトに従います。"
     }
   },
   "dashboard": {
@@ -282,26 +297,7 @@
       "gamesSampled_other": "{{count}}戦を集計",
       "ratingCaption": "Glicko-2・セッション制・非公式",
       "ratingLocked": "レーティングは{{threshold}}戦で解放されます",
-      "ratingProgress": "現在{{played}}/{{threshold}}戦",
-      "ratingUp": "前回セッションからレーティング上昇",
-      "ratingDown": "前回セッションからレーティング下降",
-      "ratingUnchanged": "前回セッションからレーティング変化なし"
-    },
-    "formCurve": {
-      "title": "調子の推移",
-      "caption": {
-        "last30": "累積勝率 · 直近30試合",
-        "lastEvent": "累積勝率 · 直近のイベント",
-        "last90": "累積勝率 · 直近90日間"
-      },
-      "windowEmpty": {
-        "last30": "記録された試合が3試合未満です — 曲線の表示には3試合以上必要です。",
-        "lastEvent": "直近のイベントの試合が3試合未満です — 曲線の表示には3試合以上必要です。",
-        "last90": "直近90日間の試合が3試合未満です — 曲線の表示には3試合以上必要です。"
-      },
-      "empty": "対戦を登録するとグラフが表示されます。",
-      "winRate": "勝率",
-      "opponent": "相手: {{name}}"
+      "ratingProgress": "現在{{played}}/{{threshold}}戦"
     },
     "previous": {
       "title": "最近の対戦",
@@ -339,6 +335,20 @@
       "setRecorded": "セットを記録: {{score}} vs {{opponent}}",
       "partialSave": "エラーが発生し、{{total}}戦中{{saved}}戦のみ保存されました。対戦データを確認し、足りない分を再入力してください。",
       "setFailed": "セットを保存できませんでした。もう一度お試しください。"
+    },
+    "formStrip": {
+      "title": {
+        "last30": "フォーム · 直近30試合",
+        "lastEvent": "フォーム · 直近30試合、直近のイベントを強調",
+        "last90": "フォーム · 直近30試合、直近90日を強調"
+      },
+      "sets_one": "{{count}}セット",
+      "sets_other": "{{count}}セット",
+      "empty": "この表示には{{fighter}}の対戦がまだありません。",
+      "windowEmpty": {
+        "lastEvent": "直近のイベントでの対戦がありません — 直近30試合を表示しており、強調はありません。",
+        "last90": "直近90日間に対戦がありません — 直近30試合を表示しており、強調はありません。"
+      }
     }
   },
   "matchForm": {
@@ -466,7 +476,6 @@
     },
     "hero": {
       "currentGsp": "現在のGSP",
-      "latestReading": "最新の記録",
       "noGsp": "まだGSPの記録がありません",
       "estMmr": "推定MMR",
       "tailReading": "分布の端（{{zone}}）の値 — 概算",
@@ -484,26 +493,52 @@
       "recalibratedToast": "入力されたボーダー値でモデルを再調整しました！",
       "thresholdSaveFailed": "VIPボーダーを保存できませんでした。もう一度お試しください。",
       "distanceToElite": "VIPまでの距離",
-      "elite": "VIP",
       "belowElite": "MMR {{mmr}} · VIP基準（{{elite}}）未満",
       "recentWinRate": "直近の勝率",
       "lastNGames_one": "直近{{count}}戦",
       "lastNGames_other": "直近{{count}}戦",
-      "liveCalibrated": "gsptiers.comから{{date}}に自動更新"
+      "liveCalibrated": "gsptiers.comから{{date}}に自動更新",
+      "latestReadingDated": "最新の記録 · {{date}}",
+      "eliteValue": "VIP",
+      "atElite": "MMR {{mmr}} · VIP基準（{{elite}}）以上",
+      "mmrUnit": "MMR"
     },
     "curve": {
       "title": "GSP推移",
-      "gspViewAria": "GSP表示",
-      "mmrViewAria": "MMR表示",
       "gspLabel": "GSP",
-      "eliteLine": "VIPボーダー",
       "estMmrLabel": "推定MMR",
-      "eliteMmrLine": "VIP（MMR {{mmr}}）",
       "mmrCaption": "各記録の背後にある推定隠しレート（コミュニティ解析モデル）です。GSPと違って時間でインフレしないため、横ばいの線は実力が安定していることを意味します。点線: MMR {{mmr}}のVIPボーダー。",
       "gspCaption": "各ポイントはこのファイターで対戦後に記録したGSPです。点線は計算されたVIPマッチのボーダー — コミュニティモデルの推定値であり、任天堂公表の値ではありません。",
       "clickHint": "ポイントをクリックするとその記録を編集できます。",
       "locked": "このファイターでGSP付きの対戦を{{count}}戦以上記録すると推移が表示されます。",
-      "setManually": "手動設定"
+      "setManually": "手動設定",
+      "view": "表示",
+      "overline": {
+        "reading": "GSP（記録ごと）",
+        "day": "GSP · 日末",
+        "week": "GSP · 週末",
+        "month": "GSP · 月末",
+        "quarter": "GSP · 四半期末"
+      },
+      "overlineMmr": {
+        "reading": "推定MMR（記録ごと）",
+        "day": "推定MMR · 日末",
+        "week": "推定MMR · 週末",
+        "month": "推定MMR · 月末",
+        "quarter": "推定MMR · 四半期末"
+      },
+      "legend": {
+        "gsp": "GSP",
+        "mmr": "推定MMR",
+        "elite": "VIPボーダー",
+        "eliteMmr": "VIP · MMR {{mmr}}"
+      },
+      "readout": {
+        "gsp": "GSP · {{value}}",
+        "mmr": "推定MMR · {{value}}"
+      },
+      "clickHintPeriod": "期末のポイントをクリックすると、その記録をログで確認できます。",
+      "lockedMeter": "{{need}}件中{{have}}件の記録"
     },
     "logger": {
       "title": "クイック記録",
@@ -532,18 +567,26 @@
     },
     "gains": {
       "title": "増減分析",
-      "avgGainLifetime": "勝利あたり平均増加（通算）",
-      "avgDropLifetime": "敗北あたり平均減少（通算）",
-      "biggestGain": "1戦での最大増加",
-      "avgGainLast20": "勝利あたり平均増加（直近20戦）",
-      "avgDropLast20": "敗北あたり平均減少（直近20戦）",
-      "biggestDrop": "1戦での最大減少",
-      "perWinTitle": "勝利ごとの増加量の推移",
-      "shrinking": "— GSPが上がるにつれて縮小中",
-      "growing": "— 増加傾向",
-      "winNumber": "{{number}}勝目",
-      "gainedGsp": "獲得GSP",
-      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。"
+      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。",
+      "figure": {
+        "avgGain": "勝利あたり平均増加",
+        "avgDrop": "敗北あたり平均減少",
+        "biggestGain": "最大増加",
+        "biggestDrop": "最大減少",
+        "recentWins_one": "直近1勝: {{value}}",
+        "recentWins_other": "直近{{count}}勝: {{value}}",
+        "recentLosses_one": "直近1敗: {{value}}",
+        "recentLosses_other": "直近{{count}}敗: {{value}}"
+      },
+      "byBand": {
+        "title": "GSP帯別の勝利あたり増加",
+        "caption": "勝利あたりの平均GSP増加量（勝利時のGSP帯別）· 低い帯から順 · グレー = 勝利{{floor}}回未満",
+        "rowAria_one": "{{band}}: 平均増加 {{gain}}（勝利{{count}}回）",
+        "rowAria_other": "{{band}}: 平均増加 {{gain}}（勝利{{count}}回）",
+        "subFloor_one": "勝利{{count}}回 — {{floor}}回未満のため比較なし",
+        "subFloor_other": "勝利{{count}}回 — {{floor}}回未満のため比較なし",
+        "range": "{{from}}–{{to}}"
+      }
     },
     "tiers": {
       "title": "GSPティア",
@@ -581,9 +624,23 @@
     },
     "vsGlicko": {
       "title": "推定MMR vs Glicko-2",
-      "mmrLabel": "推定MMR（正規化）",
-      "glickoLabel": "Glicko-2（正規化）",
-      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
+      "panel": {
+        "mmr": "推定MMR",
+        "glicko": "Glicko-2"
+      },
+      "overline": {
+        "reading": "記録ごと",
+        "day": "日末",
+        "week": "週末",
+        "month": "月末",
+        "quarter": "四半期末"
+      },
+      "readout": {
+        "mmr": "推定MMR · {{value}}",
+        "glicko": "Glicko-2 · {{value}} ±{{rd}}"
+      },
+      "noReading": "{{title}} · 記録なし",
+      "captionPanels": "推定MMRはコミュニティモデルによるこのファイターのクイックプレイでのレートで、Glicko-2は全ファイター・全セッションを通した全体のレートです。各パネルは独自のスケールなので、比べるのは形です。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
     },
     "setGsp": {
       "title": "世界戦闘力を設定",
@@ -950,6 +1007,8 @@
       "title": "カウンターピック指南",
       "pickThese": "ここを選ぶ",
       "banThese": "ここは拒否/回避",
+      "picksBelowEven_one": "このうち{{count}}ステージは負け越しています。並び順は勝率そのものではなく、各戦績の確かさに基づきます。",
+      "picksBelowEven_other": "このうち{{count}}ステージは負け越しています。並び順は勝率そのものではなく、各戦績の確かさに基づきます。",
       "unknownStage": "不明なステージ",
       "meta_one": "カウンターピック指南 · 全期間 · 各ステージ最低{{count}}戦",
       "meta_other": "カウンターピック指南 · 全期間 · 各ステージ最低{{count}}戦",
@@ -1027,10 +1086,11 @@
       "formRolling": "調子（直近10戦）",
       "typeColumn": "種類",
       "identityMeta": "対戦の{{pct}}% · {{confidence}}",
+      "identityMeta_bare": "対戦の{{pct}}%",
       "verdictMeta": {
-        "last30": "FormNow · 直近30試合 対 通算",
-        "lastEvent": "FormNow · 直近イベント 対 通算",
-        "last90": "FormNow · 直近90日 対 通算"
+        "last30": "調子 · 直近30試合 対 通算",
+        "lastEvent": "調子 · 直近イベント 対 通算",
+        "last90": "調子 · 直近90日 対 通算"
       },
       "vsCharacters": {
         "title": "対キャラクター",
@@ -1124,7 +1184,12 @@
       "title": "最近のイベント",
       "placementAndSeed": "{{entrants}}人中{{placement}}位 · シード{{seed}}",
       "placementOnly": "{{entrants}}人中{{placement}}位",
-      "seedOnly": "シード{{seed}}"
+      "seedOnly": "シード{{seed}}",
+      "outsideRange_one": "現在の期間外にあと{{count}}件",
+      "outsideRange_other": "現在の期間外にあと{{count}}件",
+      "allTime": "全期間",
+      "backToRange": "期間に戻る",
+      "allTimeNote": "全期間を表示中 — 種別フィルターは引き続き適用され、期間フィルターは他のすべてのカードに引き続き適用されます。"
     },
     "tournaments": {
       "title": "大会",
@@ -1149,6 +1214,14 @@
         "last30": "直近30戦",
         "lastEvent": "直近の大会",
         "last90": "直近90日"
+      }
+    },
+    "rhythm": {
+      "title": "プレーリズム",
+      "caption": {
+        "years_one": "月別の対戦数 · {{count}}年分、新しい順",
+        "years_other": "月別の対戦数 · {{count}}年分、新しい順",
+        "shownOf": "{{total}}年中{{shown}}年を表示 · それ以前の年は表に掲載"
       }
     }
   },
@@ -1184,6 +1257,7 @@
       "empty": "この大会の対戦はまだ記録されていません。",
       "setsAria": "セット",
       "setFallback": "セット{{id}}",
+      "phaseRound": "{{phase}} · {{round}}",
       "yourFighters": "自分のファイター",
       "opponentFighters": "相手のファイター",
       "watchVod": "VODを見る",
@@ -1290,7 +1364,32 @@
         "setFormatTopCut": "トップカットのセット形式",
         "saved": "この大会のルールを保存しました。",
         "saveFailed": "この大会のルールを保存できませんでした。"
-      }
+      },
+      "debriefCta": "このイベントを振り返る"
+    },
+    "table": {
+      "tier": "ティア",
+      "event": "イベント",
+      "date": "日付",
+      "placement": "順位",
+      "seedDelta": "シード差",
+      "record": "戦績",
+      "sectionLabel_one": "イベント · 期間内1件",
+      "sectionLabel_other": "イベント · 期間内{{count}}件",
+      "sortNote": "新しい順",
+      "placementOf": "{{placement}} / {{entrants}}",
+      "placement_ordinal_one": "{{count, grouped}}位",
+      "placement_ordinal_two": "{{count, grouped}}位",
+      "placement_ordinal_few": "{{count, grouped}}位",
+      "placement_ordinal_other": "{{count, grouped}}位",
+      "seedDeltaAria": "シード {{seed}} → {{placement}}",
+      "yearGroup_one": "{{year}}年 · 1件",
+      "yearGroup_other": "{{year}}年 · {{count}}件",
+      "undated": "日付なし",
+      "rowAria": "{{tournament}}、{{event}}、{{date}}、{{tier}}、{{placement}}、{{record}}；イベントを開く",
+      "showMore50": "さらに50件表示",
+      "showMore20": "さらに20件表示",
+      "loadError": "大会を読み込めませんでした。データは安全です。もう一度お試しください。"
     }
   },
   "billing": {
@@ -1345,6 +1444,8 @@
       "encounterSpan": "{{start}}〜{{end}}",
       "metAt_one": "{{span}}の間に{{count}}つの大会で対戦",
       "metAt_other": "{{span}}の間に{{count}}つの大会で対戦",
+      "metIn_one": "{{month}}に{{count}}つの大会で対戦",
+      "metIn_other": "{{month}}に{{count}}つの大会で対戦",
       "rateOverGames_one": "{{count}}戦で勝率{{rate}}%",
       "rateOverGames_other": "{{count}}戦で勝率{{rate}}%"
     },
@@ -1427,7 +1528,17 @@
         "vs": "相手のキャラクター",
         "stage": "ステージ"
       },
-      "empty": "{{opponent}}との対戦記録はまだありません。"
+      "empty": "{{opponent}}との対戦記録はまだありません。",
+      "prepBrief": {
+        "title": "準備ブリーフィング",
+        "upcoming": "{{eventName}}（{{date}}）で{{opponentTag}}と対戦する可能性があります。",
+        "upcomingCta": "準備ブリーフィングを開く",
+        "addEvent": "今後のイベントを追加すると、{{opponentTag}}を対戦候補として追跡できます。",
+        "addEventCta": "大会へ移動",
+        "laterEvents": "直近の今後のイベントでは{{opponentTag}}は対戦候補に入っていません。それ以降のイベントは大会ページで確認してください。",
+        "debrief": "{{eventName}}を振り返る — {{date}}",
+        "debriefCta": "このイベントを振り返る"
+      }
     }
   },
   "stages": {
@@ -1445,21 +1556,24 @@
   "scout": {
     "title": "プレイヤーを検索",
     "prompt": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
-    "promptWithParry": "上にstart.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
+    "promptWithParry": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーID、またはparry.ggのプロフィールURL・ゲーマータグを貼り付けると、公開されている大会履歴を表示します。",
     "errors": {
       "notFound": "その検索条件に一致するstart.ggプレイヤーが見つかりませんでした。URL・スラッグ・プレイヤーIDを確認してください。",
       "badQuery": "start.ggのプロフィールURL・スラッグ・プレイヤーIDではないようです。",
+      "badQueryParry": "parry.ggのプロフィールURLまたはゲーマータグではないようです。",
+      "badQueryBoth": "いずれかの入力がそのサイトで使える形式と一致しません。各欄を確認してもう一度お試しください。",
+      "tagNeedsParry": "ゲーマータグで検索できるのはparry.ggのみです。タグで検索するにはソースをparry.ggに切り替えてください。",
       "rateLimited": "現在start.ggがリクエストを制限しています。1分後にもう一度お試しください。",
       "scoutFallback": "プレイヤーの検索中に問題が発生しました。",
       "generateFallback": "レポートの生成中に問題が発生しました。"
     },
     "form": {
       "description": "start.ggのプロフィールURL、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
-      "descriptionWithParry": "start.ggまたはparry.ggのプロフィールURL、ゲーマータグ、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "descriptionParry": "parry.ggのプロフィールURLまたはゲーマータグを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "descriptionBoth": "start.ggの欄、parry.ggの欄、またはその両方を入力すると、対戦前に統合された公開大会履歴を確認できます。",
       "placeholder": "https://start.gg/user/07dc2239",
       "placeholderWithParry": "https://start.gg/user/07dc2239 またはparry.ggのプロフィールURL",
       "inputAria": "start.ggのプロフィールURL・スラッグ・プレイヤーID",
-      "inputAriaWithParry": "start.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーID",
       "scout": "検索",
       "scouting": "検索中…",
       "source": "ソース:",
@@ -1549,7 +1663,20 @@
       "stageMasteryOverall": "ステージ習熟度 — 全体",
       "stageMasteryFor": "ステージ習熟度 — {{name}}",
       "topCharacter": "メインキャラ",
-      "recentForm": "{{name}}の最近の調子"
+      "recentForm": "{{name}}の最近の調子",
+      "form": {
+        "caption": {
+          "event": "各イベント終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "week": "イベントのあった各週の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "month": "イベントのあった各月の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "quarter": "イベントのあった各四半期の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示",
+          "year": "イベントのあった各年の終了時の累計勝率（古い順）· ポイントを選択すると対象の試合を一覧表示"
+        },
+        "games_one": "{{count}}試合 · {{event}} · {{span}}",
+        "games_other": "{{count}}試合 · {{event}} · {{span}}",
+        "characters": "{{fighter}} vs {{opponent}}",
+        "close": "試合を隠す"
+      }
     },
     "aiReport": {
       "title": "AIスカウティングレポート",
@@ -1583,7 +1710,59 @@
     "groupedBy": "プレイヤーごとにグループ化し、最近スカウトした順に表示します。",
     "olderReport": "過去のレポート",
     "hideOlder": "過去のレポートを隠す",
-    "showOlder": "過去のレポートを表示"
+    "showOlder": "過去のレポートを表示",
+    "claimKind": {
+      "fact": "事実",
+      "inference": "推論",
+      "recommendation": "推奨"
+    },
+    "claimPredicate": {
+      "stageRecord": "ステージ別戦績",
+      "stagePickRate": "ステージ選択率",
+      "characterMatchupRecord": "キャラ対戦績",
+      "myCharacterRecord": "キャラ別戦績",
+      "headToHeadRecord": "直接対決の戦績",
+      "recentForm": "最近の調子",
+      "opponentCharacterUsage": "相手のキャラ使用率",
+      "matchupAdvisorPick": "おすすめピック",
+      "vodAnnotation": "VODの場面",
+      "cohortDisclosure": "セッション構成"
+    },
+    "legacy": {
+      "badge": "旧形式",
+      "tooltip": "このアプリのレポート検証機能ができる前に作成されました — 内容は試合データと自動照合されていません。",
+      "explain": "このアプリのレポート検証機能ができる前に作成されました — 内容は試合データと自動照合されていません。"
+    },
+    "droppedClaims_one": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
+    "droppedClaims_other": "{{count}}件の主張を検証できなかったため、このレポートから削除しました。",
+    "droppedClaimsPlan_one": "{{count}}件の主張を検証できなかったため、この練習プランから削除しました。",
+    "droppedClaimsPlan_other": "{{count}}件の主張を検証できなかったため、この練習プランから削除しました。",
+    "droppedPlanSections_one": "{{count}}件のセクションを検証できなかったため、この練習プランから削除しました。",
+    "droppedPlanSections_other": "{{count}}件のセクションを検証できなかったため、この練習プランから削除しました。",
+    "withheldProse_one": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
+    "withheldProse_other": "{{count}}件のセクションのコメントは、試合データで検証できなかったため表示を控えています。",
+    "actions": {
+      "title": "おすすめのアクション",
+      "empty": "具体的なアクションを提案するにはまだデータが足りません。もう少し試合を記録してください。",
+      "emptyNoOpponents": "このイベントにはまだ対戦候補が登録されていないため、提案できるアクションはありません。",
+      "matchupPractice": {
+        "title": "{{myFighter}}で{{opponentFighter}}のキャラ対を練習"
+      },
+      "vodReview": {
+        "title": "{{opponent}}に負けた試合を振り返る"
+      },
+      "drill": {
+        "stageHabit": "ドリル：{{stage}}でのゲームプラン",
+        "matchupPunish": "ドリル：{{opponentFighter}}への確定反撃",
+        "characterFamiliarity": "ドリル：{{opponentFighter}}のキャラ対を覚える",
+        "vodPattern": "ドリル：メモした場面のパターン"
+      },
+      "door": {
+        "practiceMatchup": "このキャラ対を練習",
+        "watchGames": "試合を見る",
+        "openStage": "ステージを開く"
+      }
+    }
   },
   "groups": {
     "title": "グループ",
@@ -1664,7 +1843,9 @@
       "unknownStages_one": "{{count}}件は認識できないステージを含みます",
       "unknownStages_other": "{{count}}件は認識できないステージを含みます",
       "dqSkipped_one": "{{count}}件のDQをスキップしました",
-      "dqSkipped_other": "{{count}}件のDQをスキップしました"
+      "dqSkipped_other": "{{count}}件のDQをスキップしました",
+      "registryFailed_one": "{{count}}件の大会の詳細を保存できませんでした — もう一度同期すると再試行します",
+      "registryFailed_other": "{{count}}件の大会の詳細を保存できませんでした — もう一度同期すると再試行します"
     },
     "startgg": {
       "connect": "start.ggアカウントを連携",
@@ -2869,6 +3050,10 @@
       "addEvent": {
         "title": "今後のイベントを追加して準備を始めましょう",
         "cta": "イベントを追加"
+      },
+      "review": {
+        "title": "{{eventName}}を振り返る — {{date}}",
+        "cta": "このイベントを振り返る"
       }
     },
     "manualEntry": {
@@ -2953,8 +3138,14 @@
       "succeeded": "準備完了",
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
+      "failedNoCharge": "失敗 — クレジットは使用されていません。",
+      "failedChargeUnknown": "失敗",
       "viewReport": "レポートを見る",
-      "hideReport": "レポートを隠す"
+      "hideReport": "レポートを隠す",
+      "failedReason": {
+        "validation": "試合データから検証済みのレポートを作成できなかったため、レポートはお届けしていません。",
+        "validationRefunded": "クレジットは返却されました。"
+      }
     },
     "insufficientCredits": {
       "body": "クレジットがなくなりました。",
@@ -3055,8 +3246,14 @@
       "succeeded": "準備完了",
       "failedPendingRefund": "失敗 — クレジットを返金しています…",
       "refunded": "失敗 — クレジットは返金されました。",
+      "failedNoCharge": "失敗 — クレジットは使用されていません。",
+      "failedChargeUnknown": "失敗",
       "viewPlan": "プランを見る",
-      "hidePlan": "プランを隠す"
+      "hidePlan": "プランを隠す",
+      "failedReason": {
+        "validation": "試合データから検証済みの練習プランを作成できなかったため、プランはお届けしていません。",
+        "validationRefunded": "クレジットは返却されました。"
+      }
     },
     "insufficientCredits": {
       "body": "クレジットがなくなりました。",
@@ -3191,7 +3388,9 @@
       "openStage": "ステージを開く",
       "openEvent": "イベントを開く",
       "findVods": "VODを探す",
-      "ratingModelNote": "レーティングモデルについての注記"
+      "ratingModelNote": "レーティングモデルについての注記",
+      "showEvents": "これらのイベントを表示",
+      "debrief": "このイベントを振り返る"
     },
     "chip": {
       "up": "上昇",
@@ -3201,6 +3400,7 @@
       "noDirection_one": "n {{count, grouped}} · 方向なし",
       "noDirection_other": "n {{count, grouped}} · 方向なし",
       "noGames": "試合なし",
+      "noneInBound": "過去12か月は試合なし",
       "horizon": {
         "last30": "直近30戦",
         "lastEvent": "直近の大会",
@@ -3208,6 +3408,11 @@
       },
       "ratingUp": "+{{points}}",
       "ratingDown": "−{{points}}",
+      "ratingAria": {
+        "directional": "{{label}}：{{direction}}、{{value}} · {{horizon}}",
+        "withHorizon": "{{label}}：{{value}} · {{horizon}}",
+        "bare": "{{label}}：{{value}}"
+      },
       "aria": {
         "up": "上昇傾向",
         "down": "下降傾向",
@@ -3224,19 +3429,26 @@
       "short": {
         "last30": "30試合",
         "lastEvent": "直近のイベント",
-        "last90": "90日間"
+        "last90": "90日間",
+        "lastN_one": "{{count, grouped}}試合",
+        "lastN_other": "{{count, grouped}}試合"
       }
     },
     "evidence": {
       "twoHorizon": {
         "last30": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "last30_bare": "直近30試合 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}",
         "lastEvent": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
-        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}"
+        "lastEvent_bare": "直近のイベント {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}",
+        "last90": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}} · {{cue}}",
+        "last90_bare": "直近90日間 {{recentRecord}} · 全期間 {{baselineGames, grouped}}戦中 {{baselineRate}}"
       },
       "single": "{{record}} · {{cue}}",
+      "single_bare": "{{record}}",
       "span": "この{{count, grouped}}試合の期間は{{from}}〜{{to}}です。",
       "range": "{{count, grouped}}戦で{{rate}} — 通常の範囲内です（{{lower}}〜{{upper}}）。",
       "allTimeOnly": "全期間 {{record}} · {{rate}} · {{cue}}",
+      "allTimeOnly_bare": "全期間 {{record}} · {{rate}}",
       "tier": {
         "low": "信頼度低",
         "medium": "信頼度中",
@@ -3269,11 +3481,14 @@
         "last90": "直近90日間が記録の全体です — 比較対象のない単一の数値です。"
       },
       "noneRecent": {
-        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。"
+        "scoped": "過去12か月で{{fighter}}戦の記録はありません — 全期間のデータを表示しています。",
+        "fighter": "{{entity}} — 過去12か月の記録はありません — 全期間のデータを表示しています。"
       },
       "thinRecent": {
         "scoped_one": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
         "scoped_other": "過去12か月で{{fighter}}戦は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+        "fighter_one": "{{entity}} — 過去12か月は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
+        "fighter_other": "{{entity}} — 過去12か月は{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
         "page": {
           "last30": "直近30試合のうち{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
           "lastEvent": "直近のイベントは{{count, grouped}}試合のみ — 全期間のデータを表示しています。",
@@ -3332,11 +3547,13 @@
       "hidden": "まだイベントが記録されていません。",
       "fact": "{{event}} — 試合成績{{gameRecord}}、セット成績{{setRecord}}。",
       "factGamesOnly": "{{event}} — 試合成績{{gameRecord}}。",
-      "factPlacement": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}、セット成績{{setRecord}}。",
-      "factPlacementGamesOnly": "{{event}} — {{entrants}}人中{{placement}}位、試合成績{{gameRecord}}。",
+      "factPlacement": "{{event}} — {{entrants}}人中{{placement}}、試合成績{{gameRecord}}、セット成績{{setRecord}}。",
+      "factPlacementGamesOnly": "{{event}} — {{entrants}}人中{{placement}}、試合成績{{gameRecord}}。",
       "noSetLosses": "セットの負けはありません。",
       "setLosses_one": "セット負け — {{named}}。",
-      "setLosses_other": "セット負け — {{named}}。"
+      "setLosses_other": "セット負け — {{named}}。",
+      "evidence": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）· {{cue}}",
+      "evidence_bare": "イベント {{eventRecord}} · 通算 {{baselineRate}}（{{baselineGames, grouped}}戦）"
     },
     "ratingMove": {
       "up": "レーティング — 直近{{count, grouped}}試合で{{points}}上昇（{{startRating}} → {{endRating}} ±{{band}}）。",
@@ -3381,8 +3598,12 @@
       "fact": "対戦タイプの構成 — 直近は{{matchType}}が{{recentShare}}、全期間では{{lifetimeShare}}です。"
     },
     "rosterCore": {
-      "fact": "使用キャラ構成 — {{fighter}}がメインで使用率{{share}}%、サブ{{secondaryCount}}体、ポケット{{pocketCount}}体。",
-      "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count, grouped}}試合に達すると確定します。"
+      "fact": "使用キャラ構成 — {{fighter}}がメインで使用率{{share}}%、$t(insights.rosterCore.secondaries, {\"count\": {{secondaryCount}} })、$t(insights.rosterCore.pockets, {\"count\": {{pocketCount}} })。",
+      "thin": "使用キャラ構成 — メインはまだ確定していません。1キャラで{{count, grouped}}試合に達すると確定します。",
+      "secondaries_one": "サブ{{count, grouped}}体",
+      "secondaries_other": "サブ{{count, grouped}}体",
+      "pockets_one": "ポケット{{count, grouped}}体",
+      "pockets_other": "ポケット{{count, grouped}}体"
     },
     "rosterShift": {
       "hidden": "使用キャラの構成にまだ有意な変化はありません。",
@@ -3414,6 +3635,29 @@
     "worstMatchup": {
       "locked": "最も苦手な相性 — まだ名前を挙げられるだけの試合数がありません。",
       "fact": "最も苦手な相性 — vs {{vs}}、{{count, grouped}}戦{{record}}。"
+    },
+    "tierGap": {
+      "up": "メジャー以上 — {{aRate}}、小規模イベントでは{{bRate}}です（計{{count, grouped}}戦）。",
+      "down": "メジャー以上 — {{aRate}}、小規模イベントの{{bRate}}を下回っています（計{{count, grouped}}戦）。",
+      "steady": "メジャー以上 — {{aRate}}、小規模イベント（{{bRate}}）と有意な差はありません（計{{count, grouped}}戦）。",
+      "abstained": "メジャーでの試合数が不足しています（{{count, grouped}}）。",
+      "abstainedSmaller": "小規模イベントでの試合数が不足しています（{{count, grouped}}）。",
+      "noTiers": "ティア — ティアが判明しているイベントはまだありません。",
+      "evidence": "メジャー以上 {{aRecord}} · 小規模イベント {{bRecord}} · {{cue}}",
+      "estimatedNote_one": "これらのイベントのうち1件はティアが推定です。",
+      "estimatedNote_other": "これらのイベントのうち{{count, grouped}}件はティアが推定です。"
+    },
+    "playRhythm": {
+      "fact": {
+        "compare": "プレーリズム — 直近12か月は{{recent, grouped}}試合、その前の12か月は{{prior, grouped}}試合。最も多い月: {{month}}。",
+        "compareNoSeason": "プレーリズム — 直近12か月は{{recent, grouped}}試合、その前の12か月は{{prior, grouped}}試合。",
+        "recentOnly": "プレーリズム — 直近12か月のうち{{recentMonths}}か月で{{recent, grouped}}試合。"
+      },
+      "evidence": "{{monthsSpan}}か月中{{monthsPlayed}}か月に対戦あり · 全対戦の{{share}}が{{month}}に集中",
+      "evidenceNoSeason": "{{monthsSpan}}か月中{{monthsPlayed}}か月に対戦あり",
+      "locked_one": "プレーリズム — あと{{count, grouped}}か月分の対戦でこの分析が解放されます。",
+      "locked_other": "プレーリズム — あと{{count, grouped}}か月分の対戦でこの分析が解放されます。",
+      "lockedMeter": "{{need, grouped}}か月中{{have, grouped}}か月"
     }
   },
   "analytics": {
@@ -3654,8 +3898,192 @@
       },
       "event": {
         "aria": "{{event}} — 大会後のレーティング {{rating}}、{{wins}}–{{losses}}",
-        "ratingAfter": "大会後のレーティング · {{rating}}"
+        "ratingAfter": "大会後のレーティング · {{rating}}",
+        "legend_one": "メジャー以上のイベント{{count}}件",
+        "legend_other": "メジャー以上のイベント{{count}}件",
+        "legendEstimated": "白抜き = 推定ティア",
+        "shownOf": "メジャー以上のイベント{{total}}件中{{shown}}件をマーク — 残りは「最近のイベント」に掲載",
+        "tierLine": "{{tier}} · {{basis}}",
+        "ariaEstimated": "{{event}} — 推定{{tier}}、大会後のレーティング {{rating}}、{{wins}}–{{losses}}",
+        "ariaNoRating": "{{event}} — {{tier}}, {{wins}}–{{losses}}",
+        "ariaEstimatedNoRating": "{{event}} — 推定{{tier}}、{{wins}}–{{losses}}"
+      }
+    },
+    "valueTrend": {
+      "aria_one": "{{title}} — {{count}}点、最新 {{value}}",
+      "aria_other": "{{title}} — {{count}}点、最新 {{value}}",
+      "legend": {
+        "calibration": "手動設定",
+        "reference": "{{label}} {{value}}",
+        "referenceAbove": "{{label}} {{value}} — この範囲より上",
+        "referenceBelow": "{{label}} {{value}} — この範囲より下"
+      },
+      "readings_one": "記録{{count}}件 · 期末の値を表示",
+      "readings_other": "記録{{count}}件 · 期末の値を表示",
+      "table": {
+        "headers": {
+          "date": "日付",
+          "readings": "記録数"
+        }
+      },
+      "lockedMeter": "{{need}}件中{{have}}件の記録"
+    },
+    "multiples": {
+      "aria_one": "{{count}}パネル（時間軸は共通）",
+      "aria_other": "{{count}}パネル（時間軸は共通）",
+      "caption": "各パネルは独自のスケール — 比べるのは高さではなく形です。"
+    },
+    "heat": {
+      "legend": {
+        "fewer": "少",
+        "more": "多",
+        "unit": "= 月間の対戦数"
+      },
+      "cellAria_one": "{{year}}年{{month}}: {{count}}試合",
+      "cellAria_other": "{{year}}年{{month}}: {{count}}試合",
+      "noGames": "{{year}}年{{month}}: 対戦なし",
+      "table": {
+        "caption": "月別の対戦数と年間合計"
       }
     }
+  },
+  "tiers": {
+    "label": {
+      "supermajor": "スーパーメジャー",
+      "major": "メジャー",
+      "minor": "マイナー",
+      "regional": "リージョナル",
+      "local": "ローカル",
+      "unknown": "ティア不明"
+    },
+    "setting": {
+      "online": "オンライン",
+      "offline": "オフライン",
+      "unknown": "開催形式不明"
+    },
+    "kind": {
+      "sideEvent": "サイドイベント"
+    },
+    "provenance": {
+      "estimated_one": "参加者{{entrants}}名から推定",
+      "estimated_other": "参加者{{entrants}}名から推定",
+      "manual": "手動設定",
+      "recorded": {
+        "liquipedia": "Liquipediaに記録済み"
+      }
+    },
+    "unknownReason": {
+      "online": "オンライン大会は推定しません",
+      "sideEvent": "サイドイベントはティアを継承しません",
+      "noEntrants": "参加者数の記録なし",
+      "manual": "手動で不明に設定"
+    },
+    "tooltip": {
+      "estimateCaveat": "参加者数からの推定です。大会を低く見積もることはあっても、高く見積もることはありません。"
+    },
+    "override": {
+      "title": "この大会のティア",
+      "badge": "ティア上書き",
+      "label": "ティアを上書き",
+      "placeholder": "上書きなし — 解決されたティアを使用",
+      "clear": "上書きを解除",
+      "saved": "この大会のティアを保存しました。",
+      "saveFailed": "ティアを保存できませんでした。もう一度お試しください。",
+      "ignored": "この大会に保存されたティアは新しいバージョンのアプリで書き込まれたため、適用されていません。",
+      "help": "上書きは他のどの情報源よりも優先され、いつでも解除できます。",
+      "wouldBe": "推定値は次のとおりでした: {{tier}}（{{provenance}}）"
+    },
+    "filter": {
+      "tierLabel": "ティア",
+      "settingLabel": "開催形式",
+      "chip": "{{label}} ({{count}})",
+      "hideSideEvents": "サイドイベントを非表示",
+      "clear": "フィルターをクリア",
+      "empty": "これらの条件に一致するイベントはありません。",
+      "countsNote": "件数は他のフィルターを反映しています。",
+      "noneInRange": "この期間に{{label}}のイベントはありません。",
+      "sheetButton": "フィルター"
+    },
+    "coverage": {
+      "known_one": "ティア判明: 1件中{{known, grouped}}件",
+      "known_other": "ティア判明: {{count, grouped}}件中{{known, grouped}}件",
+      "recorded_one": "記録済み 1件",
+      "recorded_other": "記録済み {{count, grouped}}件",
+      "manual_one": "手動設定 1件",
+      "manual_other": "手動設定 {{count, grouped}}件",
+      "estimated_one": "推定 1件",
+      "estimated_other": "推定 {{count, grouped}}件",
+      "unknown_one": "不明 1件",
+      "unknown_other": "不明 {{count, grouped}}件",
+      "sideExcluded_one": "サイドイベント1件を除外",
+      "sideExcluded_other": "サイドイベント{{count, grouped}}件を除外",
+      "sideIncluded_one": "サイドイベント1件を含む",
+      "sideIncluded_other": "サイドイベント{{count, grouped}}件を含む",
+      "include": "含める",
+      "exclude": "除外する"
+    },
+    "byTier": {
+      "title": "ティア別",
+      "sortNote": "ティア順 · 不明は最後",
+      "abstain_one": "{{tier}} — 勝率の算出にはあと1試合必要です。",
+      "abstain_other": "{{tier}} — 勝率の算出にはあと{{count, grouped}}試合必要です。",
+      "excluded": "比較から除外",
+      "allUnknown": "ティアが判明しているイベントはまだありません — イベントのページから設定できます。",
+      "rowAria_one": "{{tier}}: {{record}}、1試合。このティアで絞り込んだ大会一覧を開く",
+      "rowAria_other": "{{tier}}: {{record}}、{{count, grouped}}試合。このティアで絞り込んだ大会一覧を開く"
+    }
+  },
+  "watchlist": {
+    "track": "追跡",
+    "tracked": "追跡中",
+    "trackAria": "{{name}}を追跡",
+    "untrackAria": "{{name}}の追跡を解除",
+    "trackedToast": "{{name}}を追跡しています。",
+    "untrackedToast": "{{name}}の追跡を解除しました。",
+    "full": "追跡リストがいっぱいです（25／25）。先にどれかの追跡を解除してください。",
+    "manage": "追跡を管理",
+    "error": "追跡リストを更新できませんでした。もう一度お試しください。",
+    "loadError": "追跡中の項目を読み込めませんでした。再読み込みして、もう一度お試しください。",
+    "refreshError": "追跡中の項目を更新できませんでした。最後に読み込んだリストを表示しています。",
+    "section": {
+      "title": "追跡中",
+      "count_one": "25件中{{count}}件",
+      "count_other": "25件中{{count}}件",
+      "empty": "まだ追跡中の項目はありません — 対戦相手・マッチアップ・ステージは各ページから追跡できます。",
+      "sortNote": "変化のあった項目を先頭に · 次に試合数順"
+    },
+    "kind": {
+      "opponent": "対戦相手",
+      "matchup": "マッチアップ",
+      "stage": "ステージ"
+    },
+    "row": {
+      "aria_one": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く",
+      "aria_other": "{{kind}} {{name}}: {{record}}、{{count}}試合、{{state}}、詳細を開く",
+      "stateMoved": "{{state}}、{{moved}}"
+    },
+    "moved": {
+      "up": "変化あり — 上昇傾向になりました",
+      "down": "変化あり — 下降傾向になりました",
+      "steady": "変化あり — 安定しました",
+      "unlocked": "変化あり — 試合数が十分になりました",
+      "asserting": "変化あり — 傾向が示されました"
+    }
+  },
+  "digest": {
+    "title": "前回の訪問以降",
+    "since": "{{date}}以降",
+    "deviceNote": "既読の状態はこの端末に保存されます。",
+    "markRead": "既読にする",
+    "markedToast": "この端末で既読にしました。",
+    "newGames": "新しい試合",
+    "newEvents": "新しいイベント",
+    "moved": "変化のあった追跡項目",
+    "andMore_one": "ほか1件 →",
+    "andMore_other": "ほか{{count}}件 →",
+    "noneMoved": "変化のあった追跡項目はありません。",
+    "quiet": "{{date}}以降、新しい情報はありません。",
+    "start": "ダイジェストはここから始まります — 今回の訪問以降の変化がここに表示されます。",
+    "loadError": "試合を読み込めなかったため、ダイジェストに新着を表示できません。再読み込みして、もう一度お試しください。"
   }
 }

@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { RulesetDetailList } from '@/components/RulesetDetailList';
 import { useRulesetOverride } from '@/hooks/useRulesetOverride';
 
 export interface RulesetOverrideSectionProps {
@@ -164,24 +165,6 @@ export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
     }
   }
 
-  const starterClause = t('shared.ruleset.preset.starterClause', {
-    count: ruleset.starterStageIds.length,
-  });
-  const banClause = t('shared.ruleset.preset.banClause', {
-    count: ruleset.banCounts[ruleset.setFormat.default],
-  });
-  const dsrLabel = t(`shared.ruleset.dsr.${ruleset.dsr}`);
-  const setFormatLabel = t(`shared.ruleset.setFormat.${ruleset.setFormat.default}`);
-  const detailLine = t('shared.ruleset.preset.default.detail', {
-    starters: starterClause,
-    bans: banClause,
-    strikeOrder: ruleset.strikeOrder,
-    dsr: dsrLabel,
-    setFormat: setFormatLabel,
-    source: ruleset.source.url,
-    date: ruleset.source.retrievedAt,
-  });
-
   function buildPayload(): RulesetOverrideStored {
     const currentStarterIds = stageIdsWithRole(stageRoles, 'starter');
     const currentCounterpickIds = stageIdsWithRole(stageRoles, 'counterpick');
@@ -262,7 +245,7 @@ export function RulesetOverrideSection({ entry }: RulesetOverrideSectionProps) {
               : 'tournaments.detail.rulesetOverride.usingDefault',
           )}
         </p>
-        <p className="text-muted-foreground">{detailLine}</p>
+        <RulesetDetailList resolved={resolved} />
         {resolved.ignoredOverrideReason && (
           <p className="text-xs text-muted-foreground">{t('shared.ruleset.overrideIgnored')}</p>
         )}

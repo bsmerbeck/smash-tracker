@@ -1,15 +1,22 @@
 import type { TFunction } from 'i18next';
+import { formatDate } from '@/lib/format';
 
 /**
  * Minimal relative-date formatter, originally built for the group
  * leaderboard's "last active" column and reused (V7-B.1) for the Scout
  * page's "Generated <relative date>" line on a persisted AI report — the
  * codebase has no date library dependency (elsewhere it uses
- * `toLocaleDateString()` for absolute dates), so this is a small,
+ * `formatDate` from `lib/format.ts` for absolute dates), so this is a small,
  * dependency-free helper rather than pulling one in for a single column.
- * Takes `t` so the units come out of the active locale.
+ * Takes `t` so the units come out of the active locale, and an explicit `locale`
+ * (I18N-01) so the 30+ day absolute-date fallback follows the app language too.
  */
-export function formatRelativeDate(epochMs: number, t: TFunction, now = Date.now()): string {
+export function formatRelativeDate(
+  epochMs: number,
+  t: TFunction,
+  locale: string,
+  now = Date.now(),
+): string {
   const diffMs = now - epochMs;
   const minute = 60 * 1000;
   const hour = 60 * minute;
@@ -30,5 +37,5 @@ export function formatRelativeDate(epochMs: number, t: TFunction, now = Date.now
   if (days < 30) {
     return t('shared.relativeDate.daysAgo', { count: days });
   }
-  return new Date(epochMs).toLocaleDateString();
+  return formatDate(epochMs, locale);
 }

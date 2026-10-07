@@ -132,7 +132,7 @@ describe('VsPlayersList', () => {
       expect(screen.queryByText('Thin')).not.toBeInTheDocument();
     });
 
-    it('a row with no recent games reads "no games" with no horizon suffix', () => {
+    it('a stale row (every game older than 12 months) reads "none in the last 12 months", never "no games" (UAT review WR-03, F17)', () => {
       const now = Date.now();
       const matches = Array.from({ length: 12 }, (_, i) =>
         makeMatch({
@@ -146,7 +146,8 @@ describe('VsPlayersList', () => {
       const chip = chipOf();
       expect(chip).not.toBeNull();
       expect(chip!.getAttribute('data-state')).toBe('none');
-      expect(chip!.textContent).toBe('no games');
+      expect(chip!.textContent).toBe('none in the last 12 months');
+      expect(chip!.textContent).not.toMatch(/no games/);
     });
   });
 
@@ -165,5 +166,59 @@ describe('VsPlayersList', () => {
     renderList([]);
     expect(screen.getByText(/no opponent data/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('plan 39.1-54 (UAT 39.1-26 F2): rows sort by the games they print', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  /** A: 34 all-time, 13 inside the scoped window; B: 30 in window; C: 9; D: 7; E: 5; F: sub-floor (2 recent, 40 all-time — prints its all-time record). */
+  function printedSortFixture(): Match[] {
+    const now = Date.now();
+    const matches: Match[] = [];
+    let id = 0;
+    const add = (key: string, recent: number, old: number) => {
+      for (let i = 0; i < old; i++) {
+        matches.push(
+          makeMatch({
+            id: `p${id++}`,
+            time: now - (400 + i) * DAY_MS,
+            win: i % 2 === 0,
+            opponent: key,
+          }),
+        );
+      }
+      for (let i = 0; i < recent; i++) {
+        matches.push(
+          makeMatch({
+            id: `p${id++}`,
+            time: now - (recent - i) * DAY_MS,
+            win: i % 3 !== 0,
+            opponent: key,
+          }),
+        );
+      }
+    };
+    add('alpha', 13, 21);
+    add('bravo', 30, 0);
+    add('charlie', 9, 0);
+    add('delta', 7, 0);
+    add('echo', 5, 0);
+    add('foxtrot', 2, 38);
+    return matches;
+  }
+
+  function printedGames(): number[] {
+    return Array.from(document.querySelectorAll('[data-slot="record"]')).map((node) => {
+      const match = /(\d+)–(\d+)/.exec(node.textContent ?? '');
+      expect(match).not.toBeNull();
+      return Number(match![1]) + Number(match![2]);
+    });
+  }
+
+  it('the printed game counts are non-increasing down the list, the sub-floor row by its printed all-time count', () => {
+    renderList(printedSortFixture());
+    fireEvent.click(screen.getByRole('button', { name: /show all/i }));
+    expect(printedGames()).toEqual([40, 30, 13, 9, 7, 5]);
   });
 });

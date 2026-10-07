@@ -697,6 +697,31 @@ describe('renderFormNowHead (plan 39.1-44, pairing-hero: the door row moved to t
     return render(<Head />);
   }
 
+  it('plan 39.1-52 (F22): a window below the confidence floor drops the cue segment — no dangling separator', () => {
+    function ThinHead() {
+      const { t, i18n } = useTranslation();
+      const insight = useMatchupFormNow({ matchupMatches: recentSequence(10), horizon: 'last30' });
+      // The formNow hero cues on the window's own game count; a 2-game window has no tier.
+      return insight ? (
+        renderFormNowHead(
+          { ...insight, window: { ...insight.window, games: 2 } },
+          10,
+          t,
+          i18n.language,
+        )
+      ) : (
+        <span>no insight</span>
+      );
+    }
+    const { container } = render(<ThinHead />);
+    const text =
+      container.querySelector('[data-slot="matchup-form-now-evidence"]')?.textContent ?? '';
+    expect(text).toContain('all time');
+    expect(text, `"${text}"`).not.toMatch(/·\s*$/);
+    expect(text, `"${text}"`).not.toMatch(/·\s*·/);
+    expect(text).not.toContain('last 30 · all time');
+  });
+
   it("never renders a doors row — the pairing hero owns the card's last row now", () => {
     const { container } = renderHead({});
     expect(container.querySelector('[data-slot="matchup-form-now-doors"]')).toBeNull();
@@ -704,11 +729,11 @@ describe('renderFormNowHead (plan 39.1-44, pairing-hero: the door row moved to t
   });
 
   it('shows an optional meta line beside the claim chip, before the verdict', () => {
-    const { container } = renderHead({ meta: 'FormNow · last 30 games vs all time' });
+    const { container } = renderHead({ meta: 'Form · last 30 games vs all time' });
     const head = container.querySelector('[data-slot="matchup-form-now"]')!;
     const chipRow = head.firstElementChild!;
     expect(chipRow.querySelector('[data-slot="badge"]')).not.toBeNull();
-    expect(chipRow.textContent).toContain('FormNow · last 30 games vs all time');
+    expect(chipRow.textContent).toContain('Form · last 30 games vs all time');
     expect(
       chipRow.compareDocumentPosition(
         head.querySelector('[data-slot="matchup-form-now-verdict"]')!,

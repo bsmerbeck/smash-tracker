@@ -1,5 +1,6 @@
 import type { Database } from 'firebase-admin/database';
 import {
+  RESEARCH_COVERAGE_MIN_MS,
   RESEARCH_REFRESH_OVERLAP_SECONDS,
   RESEARCH_SET_CLASSIFICATIONS,
   isPathSafeProviderId,
@@ -103,51 +104,73 @@ export function foldClassificationCounts(
   return result;
 }
 
+/** A date-coverage end is usable only when it is a finite epoch-ms at or after the SSBU floor. */
+function plausibleCoverageMs(ms: number | null | undefined): number | null {
+  return ms != null && Number.isFinite(ms) && ms >= RESEARCH_COVERAGE_MIN_MS ? ms : null;
+}
+
+/**
+ * Widens ONE end of a coverage span. A sub-floor/null incoming end leaves the
+ * side as it was; a sub-floor CURRENT end (already-stored garbage) is treated
+ * as absent. The result never carries an end below the floor.
+ */
+function widenCoverageEnd(
+  currentMs: number | null | undefined,
+  incomingMs: number | null | undefined,
+  pick: (a: number, b: number) => number,
+): number | null {
+  const current = plausibleCoverageMs(currentMs);
+  const incoming = plausibleCoverageMs(incomingMs);
+  if (incoming == null) return current;
+  return current == null ? incoming : pick(current, incoming);
+}
+
 /**
  * Per-SAMPLE date-coverage widener the executor uses to BUILD a page's own
  * span (one call per contributing set). `mergeDateCoverageSpan` below is the
- * RECEIPT-level fold `foldPageReceipt` uses; the two must never drift apart
- * — folding a two-set page through this per-sample form and then folding
- * the resulting span through `mergeDateCoverageSpan` must equal folding
- * both samples through `mergeDateCoverageSpan` directly.
+ * RECEIPT-level fold `foldPageReceipt` uses; for POST-FLOOR samples the two
+ * agree — folding a two-set page through this per-sample form and then
+ * folding the resulting span through `mergeDateCoverageSpan` equals folding
+ * both samples through `mergeDateCoverageSpan` directly. (A sub-floor sample
+ * is dropped by both, but the span fold drops it per END, so the equivalence
+ * is only stated for plausible samples.)
  *
  * Takes epoch MILLISECONDS (review C-M3) — start.gg reports `completedAt`
  * in SECONDS; the caller converts once via the shared `providerSecondsToMs`
  * before calling this function. A `null`/`undefined` sample (no completion
- * timestamp) returns the existing coverage unchanged.
+ * timestamp) or a sample before `RESEARCH_COVERAGE_MIN_MS` (a provider
+ * artifact — UAT 36 F1) returns the existing coverage unchanged.
  */
 export function mergeDateCoverage(
   current: ResearchDateCoverage | null | undefined,
   sampleMs: number | null | undefined,
 ): ResearchDateCoverage {
-  if (sampleMs == null) {
-    return {
-      ...(current?.earliestSetAtMs != null ? { earliestSetAtMs: current.earliestSetAtMs } : {}),
-      ...(current?.latestSetAtMs != null ? { latestSetAtMs: current.latestSetAtMs } : {}),
-    };
-  }
-  const earliest =
-    current?.earliestSetAtMs != null ? Math.min(current.earliestSetAtMs, sampleMs) : sampleMs;
-  const latest =
-    current?.latestSetAtMs != null ? Math.max(current.latestSetAtMs, sampleMs) : sampleMs;
-  return { earliestSetAtMs: earliest, latestSetAtMs: latest };
+  return mergeDateCoverageSpan(current, { earliestSetAtMs: sampleMs, latestSetAtMs: sampleMs });
 }
 
 /**
  * The receipt-level fold (review C3-A4): widens BOTH ends of the existing
- * coverage independently from an incoming SPAN, built from exactly two
- * `mergeDateCoverage` calls (one per end) so the two functions cannot drift
- * apart. `SETS_QUERY` specifies no ordering, so a single page can hold both
- * the earliest and the latest eligible set in a whole career — a
- * single-sample fold could carry at most one of those ends, silently
- * narrowing the published span with no visible symptom.
+ * coverage independently from an incoming SPAN. `SETS_QUERY` specifies no
+ * ordering, so a single page can hold both the earliest and the latest
+ * eligible set in a whole career — a single-sample fold could carry at most
+ * one of those ends, silently narrowing the published span.
+ *
+ * Each end is guarded on its own (UAT 36 F1): a plausible incoming earliest
+ * widens only `earliestSetAtMs`, a plausible incoming latest widens only
+ * `latestSetAtMs`, and a sub-floor or null end leaves its side untouched —
+ * it is NEVER back-filled from the other end. A current end that is already
+ * sub-floor (stored garbage) is treated as absent on that side.
  */
 export function mergeDateCoverageSpan(
   current: ResearchDateCoverage | null | undefined,
   span: { earliestSetAtMs?: number | null; latestSetAtMs?: number | null },
 ): ResearchDateCoverage {
-  const afterEarliest = mergeDateCoverage(current, span.earliestSetAtMs ?? null);
-  return mergeDateCoverage(afterEarliest, span.latestSetAtMs ?? null);
+  const earliest = widenCoverageEnd(current?.earliestSetAtMs, span.earliestSetAtMs, Math.min);
+  const latest = widenCoverageEnd(current?.latestSetAtMs, span.latestSetAtMs, Math.max);
+  return {
+    ...(earliest != null ? { earliestSetAtMs: earliest } : {}),
+    ...(latest != null ? { latestSetAtMs: latest } : {}),
+  };
 }
 
 export function classificationCountsDelta(

@@ -325,6 +325,7 @@ export function accumulateParryMatchContext(
         ...(resolvedStage ? { stageId: resolvedStage.id, stageName: resolvedStage.name } : {}),
         opponentTag,
         ...(eventName ? { eventName } : {}),
+        ...(tournamentName ? { tournamentName } : {}),
       });
     }
   });

@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Insight, Match } from '@smash-tracker/shared';
+import { resolveEntryTiers, type Insight, type Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/analytics/PageShell';
@@ -13,6 +13,7 @@ import { FilteredMatchList } from '@/components/FilteredMatchList';
 import { resolveInsightClaim } from '@/components/analytics/insightDoors';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useHorizon } from '@/hooks/useHorizon';
+import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useClaimFollowsHorizon, useUrlClaimRewriter } from '@/hooks/useClaimFollowsHorizon';
 import { useLandingScroll } from '@/hooks/useLandingScroll';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -33,6 +34,7 @@ import {
 } from '@/lib/drillDownParams';
 import { createFormStripSetKeyResolver } from '@/lib/formStripEvents';
 import { TrendsHero } from './components/TrendsHero';
+import { buildTrendsHero } from './lib/trendsHero';
 import {
   TrendsReadsRail,
   buildTrendsVerdict,
@@ -43,7 +45,13 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { RecentEvents } from './components/RecentEvents';
 import { SettingComparison } from './components/SettingComparison';
 import { MatchTypeMix } from './components/MatchTypeMix';
-import { useTrendsCardInsights, buildMixShiftVerdict } from './lib/useTrendsCardInsights';
+import { PlayRhythmCard } from './components/PlayRhythmCard';
+import { PlayRhythmHeat } from './components/PlayRhythmHeat';
+import {
+  useTrendsCardInsights,
+  buildMixShiftVerdict,
+  buildPlayRhythmVerdict,
+} from './lib/useTrendsCardInsights';
 
 const GAMES_ANCHOR_ID = 'games';
 
@@ -61,6 +69,19 @@ const TRENDS_TIMELINE_PLACEMENT = 'lg:row-start-2';
 const TRENDS_LEFT_STACK_PLACEMENT = 'lg:col-start-1 lg:row-start-3';
 const TRENDS_READS_PLACEMENT = 'lg:col-start-5 lg:row-start-3';
 const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
+/**
+ * Plan 41-03 (B1, DD-41-05, UI-SPEC 6.3): row 4, "Play rhythm", its own `PageGrid` UNDER the rails grid.
+ * Row 3's three rails are content-hugging and ragged by design (`items-start`, never stretched), so a row
+ * placed inside that same grid would sit below cells that end up to ~280px short of it - a dead gap the
+ * layout oracle rightly flags. A section of its own (like the `#games` terminus that follows it) keeps
+ * row 3 a self-contained rail row and row 4 a balanced 8 + 4 pair. DOM order is read, then heat (a phone
+ * reads the insight before the chart). At 1024-1279 the read spans 12 above a 12-col heat; from 1280 the
+ * heat is 8 cols at the left and the read 4 cols at the right, both in this grid's first row.
+ */
+const TRENDS_RHYTHM_READ_PLACEMENT =
+  'lg:col-span-12 lg:col-start-1 lg:row-start-1 xl:col-span-4 xl:col-start-9';
+const TRENDS_RHYTHM_CHART_PLACEMENT =
+  'lg:col-span-12 lg:col-start-1 lg:row-start-2 xl:col-span-8 xl:row-start-1';
 
 /**
  * Trends, recomposed onto the insight-first Pro-desk grid contract (UI-SPEC
@@ -75,15 +96,22 @@ const TRENDS_RIGHT_STACK_PLACEMENT = 'lg:col-start-9 lg:row-start-3';
  * only). Row 3 is the three 4-col
  * rails: left (Sessions & Tilt, Recent events), centre (`TrendsReadsRail`,
  * the engine-backed reads), right (Setting comparison, Match-type mix). The
- * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2) —
- * `Tournaments.tsx` itself stays committed, since `TournamentsPage.tsx`
- * still imports it.
+ * six-column `Tournaments` table is removed from this page (UI-SPEC §8.2);
+ * plan 39.2-07 then deleted the component itself once `TournamentsTable`
+ * replaced it on `/tournaments`.
+ *
+ * Plan 41-03 (B1, DD-41-05): row 4, "Play rhythm" — the `PlayRhythm` read
+ * (4 cols) and the year x month activity heat (8 cols), under the three rails
+ * and above the `#games` terminus; not mounted at 0 games in scope.
  *
  * The page-level `RatingModelNote` banner is REMOVED here (UI-SPEC §8.2): it
  * is demoted to a secondary door on `TrendsReadsRail`'s rating-move card.
+ * Plan 36-11 (36 D-02, UAT 36-5): whenever the hero shows a Rating figure the
+ * rail also gets `hasRating`, so it renders one standalone door when no
+ * visible rating-move card carries it — still a door, never a banner.
  */
 export function TrendsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchParams] = useSearchParams();
   const { matches, allMatches, isLoading, isFetching, filterActive } = useFilteredMatches();
   const {
@@ -142,6 +170,37 @@ export function TrendsPage() {
   // session is one set, a legacy `game:<id>` key still resolves.
   const stripSetKeysForMatch = useMemo(() => createFormStripSetKeyResolver(matches), [matches]);
 
+  // Plan 41-04 (B2, DD-41-08): the ONE tier resolution — every registry entry against ALL own-account
+  // matches (the 39.2 resolve-once rule: never a filtered subset, or an out-of-range match would
+  // un-assign and a tier would resolve off a partial record). The career timeline's diamonds and the
+  // terminus' `event=<entryKey>` resolver both read it; Phase 42's recorded tiers arrive through the
+  // same resolver with no change here.
+  const { data: tournamentEntries } = useTournamentEntries();
+  const resolvedEntries = useMemo(
+    () => resolveEntryTiers(tournamentEntries ?? [], allMatches),
+    [tournamentEntries, allMatches],
+  );
+  // RESEARCH correction 9: a diamond's `event=<entryKey>` must list exactly that entry's games, so a
+  // match assigned to a resolved entry also answers to the entry's key (after its strip set keys).
+  // Memoised for the terminus' D-16 reference check (WR-C02).
+  const entryKeyByMatchId = useMemo(() => {
+    const byMatch = new Map<string, string>();
+    for (const resolved of resolvedEntries) {
+      for (const match of resolved.matches) {
+        byMatch.set(match.id, resolved.entryKey);
+      }
+    }
+    return byMatch;
+  }, [resolvedEntries]);
+  const eventKeyForMatch = useMemo(
+    () => (match: Match) => {
+      const setKeys = stripSetKeysForMatch(match);
+      const entryKey = entryKeyByMatchId.get(match.id);
+      return entryKey === undefined ? setKeys : [...setKeys, entryKey];
+    },
+    [stripSetKeysForMatch, entryKeyByMatchId],
+  );
+
   // Plan 39.1-24 (gap closure, Task 2, DD-09 reachability): the ONE insight
   // computation this page shares with `TrendsReadsRail` (which takes the
   // result as props below) and this page's own NEW page-level
@@ -154,6 +213,8 @@ export function TrendsPage() {
     dismiss,
     restoreAll,
   } = useTrendsInsights({ matches, horizon });
+  // Plan 36-11: the same "is there a Rating figure" the hero reads.
+  const hasRating = useMemo(() => buildTrendsHero(matches).currentRating != null, [matches]);
   // Plan 39.1-27 (gap closure, SC4/INS-04): the ONE `settingGap`/`mixShift`/
   // `volumeForm` computation this page shares with `SettingComparison`/
   // `MatchTypeMix` (which take the result as props) and its own terminus
@@ -164,11 +225,20 @@ export function TrendsPage() {
   // three card insights (non-null only) — one array, one terminus resolver,
   // matching `FighterAnalysisPage.tsx`'s `pageInsights` precedent.
   const pageInsights = useMemo(() => {
-    const cards = [cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm].filter(
-      (insight): insight is Insight => insight != null,
-    );
+    const cards = [
+      cardInsights.settingGap,
+      cardInsights.mixShift,
+      cardInsights.volumeForm,
+      cardInsights.playRhythm,
+    ].filter((insight): insight is Insight => insight != null);
     return [...trendsInsights, ...cards];
-  }, [trendsInsights, cardInsights.settingGap, cardInsights.mixShift, cardInsights.volumeForm]);
+  }, [
+    trendsInsights,
+    cardInsights.settingGap,
+    cardInsights.mixShift,
+    cardInsights.volumeForm,
+    cardInsights.playRhythm,
+  ]);
   const insightById = useMemo(
     () => new Map(pageInsights.map((insight) => [insight.id, insight])),
     [pageInsights],
@@ -182,9 +252,12 @@ export function TrendsPage() {
           // Plan 39.1-27 (gap closure, Task 2): mixShift's own raw
           // `matchType` literal must never reach the summary — the SAME
           // `buildMixShiftVerdict` the line itself uses.
-          return insight.templateId === 'mixShift'
-            ? buildMixShiftVerdict(insight, t)
-            : buildTrendsVerdict(insight, t, accountNameForClaim);
+          if (insight.templateId === 'mixShift') return buildMixShiftVerdict(insight, t);
+          // Plan 41-03: playRhythm's month and share arrive as numbers; the host formats them.
+          if (insight.templateId === 'playRhythm') {
+            return buildPlayRhythmVerdict(insight, t, i18n.language);
+          }
+          return buildTrendsVerdict(insight, t, accountNameForClaim);
         })()
       : undefined;
   // WR-C02 (39.1-REVIEW.md) precedent, re-applied: an inline arrow function
@@ -272,6 +345,20 @@ export function TrendsPage() {
     });
   }
 
+  // Plan 41-04 (B2, DD-41-08): a career-timeline event diamond drills to exactly that event's games —
+  // `event=<entryKey>`, the key the terminus' `eventKeyForMatch` above answers to.
+  function handleTimelineEventDrill(entryKey: string): void {
+    const params = searchWithoutDrillAxes();
+    for (const [key, value] of buildDrillDownSearch({ eventKey: entryKey })) {
+      params.set(key, value);
+    }
+    navigate({
+      pathname: location.pathname,
+      search: `?${params.toString()}`,
+      hash: `#${GAMES_ANCHOR_ID}`,
+    });
+  }
+
   // WR-01 (39.1-REVIEW): a claim id ends in its horizon — re-point it to the
   // same insight at a new horizon; one that cannot resolve is shown as not
   // applied by the terminus. Mirrors `FighterAnalysisPage.tsx`.
@@ -316,6 +403,14 @@ export function TrendsPage() {
               <CardSkeleton variant="list" rows={3} statusLabel={t('trends.loading')} />
             </GridCell>
           </PageGrid>
+          <PageGrid>
+            <GridCell span={4} className={TRENDS_RHYTHM_READ_PLACEMENT}>
+              <CardSkeleton variant="insight" statusLabel={t('trends.loading')} />
+            </GridCell>
+            <GridCell span={8} className={TRENDS_RHYTHM_CHART_PLACEMENT}>
+              <CardSkeleton variant="chart" statusLabel={t('trends.loading')} />
+            </GridCell>
+          </PageGrid>
         </div>
       </PageShell>
     );
@@ -340,16 +435,23 @@ export function TrendsPage() {
   // `.filters`): ONE unboxed row — title, spacer, HorizonSwitch.
   const filterRow = <PageFilterRow title={t('trends.title')} trailing={<HorizonSwitch />} />;
 
+  // Plan 41-03: row 4 is not mounted at 0 games in scope (the page-level no-matches view covers it);
+  // a dismissed read leaves the row's heat in place.
+  const showPlayRhythm =
+    matches.length > 0 &&
+    cardInsights.playRhythm != null &&
+    !dismissedIds.includes(cardInsights.playRhythm.id);
+
+  const refetchingClass = cn(
+    isRefetching && 'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
+  );
+  const showRhythmGrid = matches.length > 0 || hasDrillAxis;
+
   return (
     <PageShell filterRow={filterRow}>
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <PageGrid
-        className={cn(
-          isRefetching &&
-            'opacity-60 transition-opacity duration-150 motion-reduce:transition-none',
-        )}
-      >
+      <PageGrid className={refetchingClass}>
         {/* Plan 39.1-38 (UI-SPEC §8.2 "insight before chart"): DOM order is
             the phone reading order — stat row, reads, timeline, then the two
             rail stacks; lg placement keeps the desktop composition. */}
@@ -364,6 +466,7 @@ export function TrendsPage() {
             dismiss={dismiss}
             restoreAll={restoreAll}
             horizon={horizon}
+            hasRating={hasRating}
           />
         </GridCell>
 
@@ -373,12 +476,14 @@ export function TrendsPage() {
             horizon={horizon}
             onSelectPeriod={handleTimelineDrill}
             onSelectSet={handleTimelineSetDrill}
+            resolvedEntries={resolvedEntries}
+            onSelectEventMarker={handleTimelineEventDrill}
           />
         </GridCell>
 
         <GridCell span={4} stack className={TRENDS_LEFT_STACK_PLACEMENT}>
           <SessionsAndTilt matches={matches} />
-          <RecentEvents matches={matches} />
+          <RecentEvents matches={matches} allMatches={allMatches} />
         </GridCell>
 
         <GridCell span={4} stack className={TRENDS_RIGHT_STACK_PLACEMENT}>
@@ -394,28 +499,49 @@ export function TrendsPage() {
             volumeFormInsight={cardInsights.volumeForm}
           />
         </GridCell>
-
-        {hasDrillAxis && (
-          <GridCell span={12}>
-            <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
-              <CardHeader>
-                <CardTitle>{t('matchups.results')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <FilteredMatchList
-                  matches={sortedMatches}
-                  axes={terminusAxes}
-                  eventKeyForMatch={stripSetKeysForMatch}
-                  resolveClaim={resolveClaimForTerminus}
-                  claimSummary={claimSummary}
-                  onClearFilters={handleClearFilters}
-                  showDelete
-                />
-              </CardContent>
-            </Card>
-          </GridCell>
-        )}
       </PageGrid>
+
+      {showRhythmGrid && (
+        <PageGrid className={refetchingClass}>
+          {showPlayRhythm && cardInsights.playRhythm && (
+            <GridCell span={4} slot="trends-rhythm-read" className={TRENDS_RHYTHM_READ_PLACEMENT}>
+              <PlayRhythmCard
+                insight={cardInsights.playRhythm}
+                onDismiss={() => dismiss(cardInsights.playRhythm!.id)}
+              />
+            </GridCell>
+          )}
+
+          {/* Plan 41-03: the heat follows the read in the DOM (a phone reads the insight first); the
+            placement constants put it beside the read from 1280 and under it from 1024. */}
+          {matches.length > 0 && (
+            <GridCell span={8} slot="trends-rhythm-chart" className={TRENDS_RHYTHM_CHART_PLACEMENT}>
+              <PlayRhythmHeat matches={matches} onSelectMonth={handleTimelineDrill} />
+            </GridCell>
+          )}
+
+          {hasDrillAxis && (
+            <GridCell span={12}>
+              <Card id={GAMES_ANCHOR_ID} className="scroll-mt-16">
+                <CardHeader>
+                  <CardTitle>{t('matchups.results')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FilteredMatchList
+                    matches={sortedMatches}
+                    axes={terminusAxes}
+                    eventKeyForMatch={eventKeyForMatch}
+                    resolveClaim={resolveClaimForTerminus}
+                    claimSummary={claimSummary}
+                    onClearFilters={handleClearFilters}
+                    showDelete
+                  />
+                </CardContent>
+              </Card>
+            </GridCell>
+          )}
+        </PageGrid>
+      )}
     </PageShell>
   );
 }

@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import {
   buildSetTimeline,
+  buildTierSplitStats,
+  resolveTournamentTier,
   ROSTER_MAIN_MIN_GAMES,
   ROSTER_SECONDARY_MIN_GAMES,
 } from '@smash-tracker/shared';
@@ -41,6 +43,16 @@ import { FilteredMatchList, FILTERED_MATCH_LIST_ROW_CAP } from '@/components/Fil
 import { StageDetailPage } from '@/pages/Stages/StageDetailPage';
 import { FullAnalysisSection } from '@/pages/Scout/components/FullAnalysisSection';
 import { SetTimeline } from '@/pages/Tournaments/components/SetTimeline';
+import {
+  TournamentsTable,
+  type TournamentTableRow,
+} from '@/pages/Tournaments/components/TournamentsTable';
+import { ByTierCard } from '@/components/analytics/tier/ByTierCard';
+import { TrackedRow } from '@/components/analytics/track/TrackedRow';
+import { DigestCard } from '@/components/analytics/track/DigestCard';
+import type { UseDigestResult } from '@/hooks/useDigest';
+import { buildTrackedRows } from '@/components/analytics/track/trackedRowModel';
+import i18n from '@/i18n';
 import { PairingOpponents } from '@/pages/Matchups/components/PairingOpponents';
 import { MatchupStageTable } from '@/pages/Matchups/components/MatchupStageTable';
 import { MatchupInsights } from '@/pages/Matchups/components/MatchupInsights';
@@ -88,6 +100,18 @@ import userEvent from '@testing-library/user-event';
  * terminus's row-cap Show-all expanded tail, proving no-inert-row holds past
  * `FILTERED_MATCH_LIST_ROW_CAP`, not just in the capped head every other
  * FilteredMatchList entry above exercises.
+ *
+ * Plan 39.2-07 (TIER-02, UI-SPEC §13 G6) appends TWO more entries (30 -> 32):
+ * the tier-aware Tournaments table (`TournamentsTable.tsx`) in both its table
+ * root and its stacked phone root.
+ *
+ * Plan 39.2-08 (TIER-03, UI-SPEC §13 G6) appends ONE more entry (32 -> 33):
+ * the By-tier card (`ByTierCard.tsx`), whose rows include the Unknown row in
+ * its inset — every tier row and the Unknown row is a filter door.
+ *
+ * Plan 39.2-11 (TRK-02, UI-SPEC §13 G6) appends TWO more entries (33 -> 35):
+ * the Dashboard's Tracked rows (`TrackedRow.tsx`), full and compact, one row of
+ * each kind (opponent, matchup, stage).
  *
  * PROVEN FAILING (both directions, executed by hand during this task,
  * reverted before commit — see the plan's SUMMARY for the exact observed
@@ -141,6 +165,12 @@ const enrichmentAttribution = vi.fn().mockResolvedValue({ attributions: [] });
 
 vi.mock('@/lib/api', () => ({
   api: {
+    // Plan 39.2-10: every Track host reads the subject's watchlist.
+    watchlist: {
+      list: vi.fn().mockResolvedValue({ items: [] }),
+      track: vi.fn(),
+      untrack: vi.fn(),
+    },
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getMe: (...args: unknown[]) => getMe(...args),
@@ -227,11 +257,154 @@ function accessibleInteractiveDescendant(row: HTMLElement): HTMLElement | null {
 // second entry for the shared filtered match list's narrow/stacked layout).
 // ---------------------------------------------------------------------------
 
+/**
+ * Plan 39.2-11: one tracked item of each kind (opponent, matchup, stage) over
+ * a small history, built through the same `buildTrackedRows` the Dashboard's
+ * section uses, so the enumerated rows are the real rows.
+ */
+function trackedRowModelsFixture(
+  moved?: ReadonlyMap<string, { token: 'up' | 'down' | 'unlocked'; salience: number }>,
+) {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const matches = Array.from({ length: 6 }, (_, i) =>
+    makeMatch({ id: `tr-${i}`, time: now - (6 - i) * day, win: i % 2 === 0, opponent: 'rival' }),
+  );
+  const entries = [
+    { itemKey: 'opponent:rival', item: { kind: 'opponent' as const, ref: 'rival', createdAt: 1 } },
+    {
+      itemKey: `matchup:${mario.id}-${luigi.id}`,
+      item: {
+        kind: 'matchup' as const,
+        ref: { fighterId: mario.id, vsFighterId: luigi.id },
+        createdAt: 2,
+      },
+    },
+    { itemKey: 'stage:1', item: { kind: 'stage' as const, ref: 1, createdAt: 3 } },
+  ];
+  return buildTrackedRows({
+    entries,
+    matches,
+    aliasMap: {},
+    horizon: 'last30',
+    nowMs: now,
+    t: i18n.t.bind(i18n),
+    moved,
+  });
+}
+
+/** Plan 39.2-12: the digest as the Dashboard mounts it — expanded, with the three fixture items all moved. */
+function expandedDigestFixture(): UseDigestResult {
+  const movedRows = trackedRowModelsFixture(
+    new Map([
+      ['opponent:rival', { token: 'down' as const, salience: 3 }],
+      [`matchup:${mario.id}-${luigi.id}`, { token: 'up' as const, salience: 2 }],
+      ['stage:1', { token: 'unlocked' as const, salience: 1 }],
+    ]),
+  );
+  return {
+    status: 'expanded',
+    newGames: 41,
+    newEvents: 2,
+    movedCount: movedRows.length,
+    movedRows,
+    moreCount: 2,
+    movedByItemKey: new Map(),
+    since: Date.now(),
+    visitLastSeenAt: null,
+    visitSeenEvents: null,
+    snapshotReady: true,
+    canMarkAsRead: true,
+    markAsRead: () => undefined,
+  };
+}
+
 interface Surface {
   name: string;
   file: string;
   render: () => RenderResult;
   rows: (result: RenderResult) => HTMLElement[];
+}
+
+/** Plan 39.2-07: three Tournaments rows — dated, imported with no games, and undated. */
+function tournamentTableFixtureRows(): TournamentTableRow[] {
+  const entries = [
+    {
+      eventId: 1,
+      entryKey: '1',
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Supernova 2026',
+      firstSetAt: Date.UTC(2026, 7, 8),
+      lastSetAt: Date.UTC(2026, 7, 9),
+      setsPlayed: 5,
+      numEntrants: 2048,
+      placement: 3,
+      seed: 8,
+      isOnline: false,
+    },
+    {
+      eventId: 2,
+      entryKey: '2',
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+      firstSetAt: Date.UTC(2024, 5, 10),
+      lastSetAt: Date.UTC(2024, 5, 10),
+      setsPlayed: 5,
+      origin: 'admin-imported',
+      provider: 'startgg',
+    },
+    {
+      eventId: 3,
+      entryKey: '3',
+      eventName: 'Squad Strike',
+      tournamentName: 'Undated Open',
+      firstSetAt: 0,
+      lastSetAt: 0,
+      setsPlayed: 0,
+    },
+  ] as unknown as TournamentEntry[];
+  return entries.map((entry) => ({
+    entry,
+    record: { wins: 0, losses: 0, total: 0, winRate: 0 } as TournamentTableRow['record'],
+    resolution: resolveTournamentTier({ entry, observedOnline: false }),
+  }));
+}
+
+/**
+ * Plan 39.2-08: a By-tier split with two ordinary tier rows, one tier row
+ * that abstains (a row must be a door even with no bar) and the Unknown row.
+ */
+function byTierFixtureStats() {
+  const day = 24 * 60 * 60 * 1000;
+  const base = Date.UTC(2026, 0, 1);
+  const entryAt = (index: number, overrides: Record<string, unknown>) => ({
+    entryKey: `by-tier-${index}`,
+    eventName: `Fixture Event ${index}`,
+    tournamentName: `Fixture Tournament ${index}`,
+    firstSetAt: base + index * 30 * day,
+    lastSetAt: base + index * 30 * day + day / 2,
+    isOnline: false,
+    ...overrides,
+  });
+  const entries = [
+    entryAt(1, { numEntrants: 2048 }),
+    entryAt(2, { numEntrants: 20 }),
+    entryAt(3, { numEntrants: 300 }),
+    entryAt(4, { isOnline: true, numEntrants: 40 }),
+  ];
+  const matches: Match[] = entries.flatMap((entry, index) =>
+    Array.from({ length: index === 2 ? 1 : 5 }, (_, g) =>
+      makeMatch({
+        id: `by-tier-${index}-${g}`,
+        time: entry.firstSetAt + g * 1000,
+        win: g % 2 === 0,
+        eventName: entry.eventName,
+        tournamentName: entry.tournamentName,
+        matchType: entry.isOnline ? 'online-tourney' : 'offline-tourney',
+      }),
+    ),
+  );
+  return buildTierSplitStats({ entries, matches, includeSideEvents: false });
 }
 
 const SURFACES: Surface[] = [
@@ -879,6 +1052,87 @@ const SURFACES: Surface[] = [
     },
     rows: (result) => within(result.container).getAllByRole('listitem'),
   },
+  // Plan 39.2-07 (TIER-02, UI-SPEC §13 G6): the tier-aware Tournaments table,
+  // both roots — every row is a DrillableRow overlay into its event. The
+  // fixture spans a dated row, an imported row with no linked games (the
+  // Gate 4 dash record) and an undated row, so no shape is left uncovered.
+  {
+    name: 'Tournaments table (TournamentsTable)',
+    file: 'apps/web/src/pages/Tournaments/components/TournamentsTable.tsx',
+    render: () =>
+      withRouter(
+        <TooltipProvider>
+          <TournamentsTable rows={tournamentTableFixtureRows()} layout="table" />
+        </TooltipProvider>,
+      ),
+    rows: (result) => dataRows(result.container),
+  },
+  {
+    name: 'Tournaments table, stacked (below 640px)',
+    file: 'apps/web/src/pages/Tournaments/components/TournamentsTable.tsx',
+    render: () =>
+      withRouter(
+        <TooltipProvider>
+          <TournamentsTable rows={tournamentTableFixtureRows()} layout="stack" />
+        </TooltipProvider>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tournaments-row"]')),
+  },
+  // Plan 39.2-08 (TIER-03, UI-SPEC §13 G6): the By-tier card. Rows include the
+  // Unknown row in its inset; each is a `DrillableRow` into a `?tier=` filter.
+  {
+    name: 'By-tier card rows, including the Unknown row (ByTierCard)',
+    file: 'apps/web/src/components/analytics/tier/ByTierCard.tsx',
+    render: () =>
+      withRouter(<ByTierCard stats={byTierFixtureStats()} sideEventCount={0} overallRate={0.6} />),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="by-tier-row"]')),
+  },
+  // Plan 39.2-11 (TRK-02, UI-SPEC §13 G6): the Dashboard Tracked rows, full and
+  // compact. Every row of every kind is a `DrillableRow` overlay into the item's
+  // own surface; the untrack button is a second, separate control.
+  {
+    name: 'Tracked rows (TrackedRow, full)',
+    file: 'apps/web/src/components/analytics/track/TrackedRow.tsx',
+    render: () =>
+      withRouter(
+        <ul>
+          {trackedRowModelsFixture().map((model) => (
+            <TrackedRow key={model.itemKey} model={model} onUntrack={() => undefined} />
+          ))}
+        </ul>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tracked-row"]')),
+  },
+  {
+    name: 'Tracked rows (TrackedRow, compact — the digest variant)',
+    file: 'apps/web/src/components/analytics/track/TrackedRow.tsx',
+    render: () =>
+      withRouter(
+        <ul>
+          {trackedRowModelsFixture().map((model) => (
+            <TrackedRow key={model.itemKey} model={model} compact />
+          ))}
+        </ul>,
+      ),
+    rows: (result) =>
+      Array.from(result.container.querySelectorAll<HTMLElement>('[data-slot="tracked-row"]')),
+  },
+  // Plan 39.2-12 (UI-SPEC §13 G6): the digest's moved rows as DigestCard mounts them, each
+  // carrying its moved token, plus the "and N more" door to #tracked.
+  {
+    name: "Digest moved rows (DigestCard's compact TrackedRows with moved tokens)",
+    file: 'apps/web/src/components/analytics/track/DigestCard.tsx',
+    render: () => withRouter(<DigestCard digest={expandedDigestFixture()} />),
+    rows: (result) =>
+      Array.from(
+        result.container.querySelectorAll<HTMLElement>(
+          '[data-slot="digest-moved-list"] > [data-slot="tracked-row"]',
+        ),
+      ),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1021,8 +1275,61 @@ describe('DRL-03 no-inert-row oracle', () => {
     expect(missing, `stale enumeration entries (file missing): ${missing.join(', ')}`).toEqual([]);
   });
 
-  it("the surface enumeration has the stated THIRTY-TWO entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.1-46's stage breakdown and insights rows)", () => {
-    expect(SURFACES.length).toBe(32);
+  it("the surface enumeration has the stated THIRTY-EIGHT entries (18 + 39.1-21's 7 + 39.1-23's 1 + 39.1-49's 4 stacked layouts + 39.1-46's stage breakdown and insights rows + 39.2-07's 2 Tournaments table roots + 39.2-08's By-tier card + 39.2-11's 2 Tracked row variants + 39.2-12's digest moved rows)", () => {
+    expect(SURFACES.length).toBe(38);
+  });
+
+  it("the digest's moved rows are each a door to their own surface, carry a moved token, and 'and N more' leads to #tracked (plan 39.2-12 non-vacuity)", async () => {
+    const surface = SURFACES.find((s) => s.name.startsWith('Digest moved rows'))!;
+    const result = await renderReady(surface);
+    const rows = surface.rows(result);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.querySelector('a')?.getAttribute('href')).toBeTruthy();
+      expect(row.querySelector('[data-slot="tracked-row-moved"]')?.textContent).toMatch(/^moved/);
+    }
+    expect(result.container.querySelector('[data-slot="digest-more"]')).toHaveAttribute(
+      'href',
+      '/dashboard#tracked',
+    );
+    result.unmount();
+  });
+
+  it('the Tracked entries enumerate one row per kind and each is a door to its own surface (plan 39.2-11 non-vacuity)', async () => {
+    for (const name of ['Tracked rows (TrackedRow, full)', 'Tracked rows (TrackedRow, compact']) {
+      const surface = SURFACES.find((s) => s.name.startsWith(name))!;
+      const result = await renderReady(surface);
+      const rows = surface.rows(result);
+      expect(rows.map((row) => row.getAttribute('data-kind')).sort()).toEqual([
+        'matchup',
+        'opponent',
+        'stage',
+      ]);
+      const hrefs = rows.map((row) => row.querySelector('a')?.getAttribute('href'));
+      expect(hrefs).toEqual(
+        expect.arrayContaining([
+          '/opponents/rival',
+          `/matchups?fighter=${mario.id}&vs=${luigi.id}`,
+          '/stages/1',
+        ]),
+      );
+      result.unmount();
+    }
+  });
+
+  it('the By-tier entry enumerates a plain tier row, an abstaining tier row and the Unknown row (plan 39.2-08 non-vacuity)', async () => {
+    const surface = SURFACES.find((s) => s.name.startsWith('By-tier card rows'))!;
+    const result = await renderReady(surface);
+    const tiers = surface.rows(result).map((row) => row.getAttribute('data-tier'));
+    expect(tiers).toContain('unknown');
+    expect(tiers).toContain('supermajor');
+    // The abstaining row draws no bar but is still a door.
+    const abstaining = surface
+      .rows(result)
+      .find((row) => row.getAttribute('data-tier') === 'minor')!;
+    expect(abstaining.querySelector('[data-slot="by-tier-bar"]')).toBeNull();
+    expect(accessibleInteractiveDescendant(abstaining)).not.toBeNull();
+    result.unmount();
   });
 
   it('every surface renders at least one row for its fixture (never passes vacuously)', async () => {

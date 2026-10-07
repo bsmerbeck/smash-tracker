@@ -6,6 +6,7 @@ import { getWinLossRecord } from './records.js';
 import { splitIntoSessions } from '../glicko.js';
 import { calendarBucketBounds, type CalendarGrain } from '../insight/periodSeries.js';
 import { MARK_BOUND_LINE_POINTS } from '../insight/markBounds.js';
+import { eventDisplayName, splitTournamentBlocks, trimmedEventKey } from './eventBlocks.js';
 import type { ClaimKind, ConfidenceTier } from './types.js';
 
 /**
@@ -32,15 +33,20 @@ import type { ClaimKind, ConfidenceTier } from './types.js';
  */
 
 /**
- * Ported from `apps/web/src/pages/Opponents/tournamentHistory.ts`'s
- * `TOURNAMENT_PROXIMITY_WINDOW_MS` — kept in sync by naming that file, not by
- * importing it (web must never be imported from `packages/shared`).
- *
- * WR-04 (38-REVIEW-FIX): exported so a caller that needs to construct a test
- * fixture spanning more than one proximity block (or otherwise reason about
- * the window) reads the real value rather than hard-coding `4` days.
+ * 39.2-REVIEW SH-CR-01: the proximity window, the name rule and the block
+ * split moved to the leaf `eventBlocks.ts` (so the insight templates and the
+ * digest can read the ONE event-identity rule without this module's imports).
+ * Re-exported here so every existing import of these names keeps working.
  */
-export const EVENT_ANCHOR_PROXIMITY_MS = 4 * 24 * 60 * 60 * 1000;
+export {
+  EVENT_ANCHOR_PROXIMITY_MS,
+  trimmedEventKey,
+  eventDisplayName,
+  splitTournamentBlocks,
+  eventBlocksOf,
+  newestEventBlock,
+  type EventBlock,
+} from './eventBlocks.js';
 
 export type EventAnchorKind = 'tournament' | 'session';
 
@@ -51,7 +57,7 @@ export interface EventAnchor {
   /** Content-derived — kind, normalized name (empty for a session), and the anchor's first-game timestamp. Never an array index; stable across a re-render or a repeat call. */
   key: string;
   kind: EventAnchorKind;
-  /** Raw, untruncated display name for a tournament anchor, or a formatted session date for a session anchor. */
+  /** Raw, untruncated display name for a tournament anchor (`eventDisplayName` — names the tournament when every game shares one; never part of `key`), or a formatted session date for a session anchor. */
   label: string;
   startMs: number;
   endMs: number;
@@ -72,57 +78,6 @@ interface RawAnchor {
   kind: EventAnchorKind;
   name: string;
   matches: Match[];
-}
-
-/**
- * CR-02 (38-REVIEW-FIX): the ONE name-priority rule for a tournament anchor
- * — `eventName` first, `tournamentName` as fallback. Exported so every other
- * module that needs to reproduce (never re-derive by hand) which name a
- * match's tournament anchor uses reads it from here — `apps/web`'s
- * `tournamentHistory.ts` (`tournamentBlockEventKey`) and `TournamentDetailPage.tsx`
- * both used to hard-code their OWN, differently-prioritized expression,
- * which silently diverged from the anchors this module actually builds
- * (`buildOpponentEventSeries`/`buildStageEventSeries`) whenever a match
- * carried both fields with different values — the standard shape for any
- * start.gg-synced set with a named parent tournament.
- */
-export function trimmedEventKey(match: Match): string | null {
-  const raw = match.eventName ?? match.tournamentName;
-  if (raw == null) {
-    return null;
-  }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-/**
- * Splits one name-grouped, time-sorted set of tournament matches into blocks
- * whenever consecutive games exceed the proximity window — the same
- * technique `groupTournamentBlocks` uses, ported rather than imported.
- *
- * WR-04 (38-REVIEW-FIX): exported as the ONE place this block-splitting rule
- * lives — `TournamentDetailPage.tsx`'s per-stage anchor-key lookup calls this
- * directly (over its own stage-scoped, already name-uniform match list)
- * instead of re-implementing the proximity comparison, so it can never
- * silently diverge from what `buildStageEventSeries` itself will split a
- * stage's matches into.
- */
-export function splitTournamentBlocks(sorted: Match[]): Match[][] {
-  const blocks: Match[][] = [];
-  let current: Match[] = [];
-  for (const match of sorted) {
-    const previous = current[current.length - 1];
-    if (previous && match.time - previous.time > EVENT_ANCHOR_PROXIMITY_MS) {
-      blocks.push(current);
-      current = [match];
-    } else {
-      current.push(match);
-    }
-  }
-  if (current.length > 0) {
-    blocks.push(current);
-  }
-  return blocks;
 }
 
 function buildTournamentAnchors(matches: Match[]): RawAnchor[] {
@@ -219,7 +174,12 @@ function buildEventSeries(
     anchors.push({
       key: anchorKey(anchor.kind, anchor.name, anchor.startMs),
       kind: anchor.kind,
-      label: anchor.kind === 'tournament' ? anchor.name : formatSessionLabel(anchor.startMs),
+      // 41-13: the DISPLAY label names the tournament (`eventDisplayName`); the key above keeps
+      // the bare identity name so deep links and dismissal keys still resolve.
+      label:
+        anchor.kind === 'tournament'
+          ? (eventDisplayName(anchor.matches) ?? anchor.name)
+          : formatSessionLabel(anchor.startMs),
       startMs: anchor.startMs,
       endMs: anchor.endMs,
       wins: record.wins,
@@ -263,6 +223,24 @@ export function buildStageEventSeries(input: {
   const onStage = matches.filter((m) => stageBucketId(m) === stageId);
   const countable = onStage.filter(isCountableGame);
   return buildEventSeries(countable, refreshedAt, minMatches);
+}
+
+/**
+ * Plan 41-12 (SC1 / SC2, PD-12-2): one player's whole countable history as an
+ * event-anchored series — unscoped by opponent or stage. The Scout page's
+ * Recent Form card plots a THIRD PARTY's sampled games (`ScoutReportData.games`
+ * adapted to `Match[]`), where there is no single opponent or stage to scope
+ * by. Shares the one private builder with the opponent and stage entry points,
+ * so its anchoring can never diverge from the hub's or the stage page's; no
+ * windowed average.
+ */
+export function buildPlayerEventSeries(input: {
+  matches: Match[];
+  refreshedAt: number;
+  minMatches?: number;
+}): EventSeries {
+  const { matches, refreshedAt, minMatches } = input;
+  return buildEventSeries(matches.filter(isCountableGame), refreshedAt, minMatches);
 }
 
 /**

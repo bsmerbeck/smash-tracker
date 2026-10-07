@@ -4,7 +4,14 @@ import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { buildRecapTournamentUrl, type TournamentEntry } from '@smash-tracker/shared';
+import {
+  buildRecapTournamentUrl,
+  type TierResolution,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
+import { TierBadge } from '@/components/analytics/tier/TierBadge';
+import { TierProvenanceLine } from '@/components/analytics/tier/TierProvenanceLine';
+import { useTierProvenanceText } from '@/components/analytics/tier/tierProvenance';
 import {
   entryDisplayDateRange,
   entryDisplaySetsPlayed,
@@ -68,6 +75,37 @@ export function buildSeedPlacementBadge(
 }
 
 /**
+ * The tier badge, the setting / kind badges and the provenance line (TIER-02,
+ * DD-02, DD-03). `Online` and `Side event` show only when they differ from the
+ * default; an unknown setting is stated by the provenance line alone. The
+ * provenance sentence sits on its own line under the badges, so an estimate
+ * never reads as a recorded tier.
+ */
+function TournamentTierBlock({ resolution }: { resolution: TierResolution }) {
+  const { t } = useTranslation();
+  const provenance = useTierProvenanceText(resolution) ?? '';
+  return (
+    <div data-slot="tournament-tier" className="mt-2 flex min-w-0 flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <TierBadge
+          tier={resolution.tier}
+          basis={resolution.basis}
+          source={resolution.source}
+          provenance={provenance}
+        />
+        {resolution.setting === 'online' && (
+          <Badge variant="outline">{t('tiers.setting.online')}</Badge>
+        )}
+        {resolution.eventKind === 'side-event' && (
+          <Badge variant="outline">{t('tiers.kind.sideEvent')}</Badge>
+        )}
+      </div>
+      <TierProvenanceLine resolution={resolution} />
+    </div>
+  );
+}
+
+/**
  * Tournament detail header: tournament name (falling back to the event name
  * when start.gg didn't provide one) with an inline outbound link via
  * `buildRecapTournamentUrl(entry)` (both start.gg and parry.gg, hidden when
@@ -76,8 +114,19 @@ export function buildSeedPlacementBadge(
  * outbound "View on start.gg" button when `eventSlug`/`slug` has synced
  * (falls back to the tournament slug when the event slug isn't available
  * yet; hidden entirely when neither is present).
+ *
+ * Phase 39.2 (TIER-02): when the caller passes `tierResolution` (resolved once
+ * by `TournamentDetailPage` through the shared resolver) the header also shows
+ * the tier badge and its provenance line. Surfaces that render the header
+ * without a resolution (the prep brief page) show no tier block.
  */
-export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
+export function TournamentHeader({
+  entry,
+  tierResolution,
+}: {
+  entry: TournamentEntry;
+  tierResolution?: TierResolution;
+}) {
   const { t, i18n } = useTranslation();
   const title = entry.tournamentName ?? entry.eventName;
   const showEventSubline = entry.tournamentName != null && entry.tournamentName !== entry.eventName;
@@ -119,6 +168,7 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
           <p className="mt-1 text-sm text-muted-foreground">
             {formatDateRange(entry, i18n.language)}
           </p>
+          {tierResolution && <TournamentTierBlock resolution={tierResolution} />}
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           {historical != null && <Badge variant="outline">{t('tournaments.imported.badge')}</Badge>}
