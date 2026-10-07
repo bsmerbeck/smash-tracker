@@ -500,6 +500,84 @@ describe('FighterHero', () => {
     });
   });
 
+  describe('plan 39.1-59 (UAT 39.1-33 F17): the verdict names the 12-month bound, never "N more games unlock this read"', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const link = SpriteList.find((s) => s.name === 'Link')!;
+
+    function linkMatches(oldCount: number, recentCount: number): Match[] {
+      const now = Date.now();
+      return [
+        ...Array.from({ length: oldCount }, (_, i) =>
+          makeMatch({
+            id: `old${i}`,
+            fighter_id: link.id,
+            time: now - (400 + i) * DAY_MS,
+            win: i % 2 === 0,
+          }),
+        ),
+        ...Array.from({ length: recentCount }, (_, i) =>
+          makeMatch({
+            id: `new${i}`,
+            fighter_id: link.id,
+            time: now - (i + 1) * DAY_MS,
+            win: true,
+          }),
+        ),
+      ];
+    }
+
+    function LinkHarness({ matches }: { matches: Match[] }) {
+      const { insight, nowMs } = useFighterFormNow({
+        fighterId: link.id,
+        fighterMatches: matches,
+        horizon: 'last30',
+      });
+      return (
+        <FighterHero
+          fighter={link}
+          fighterMatches={matches}
+          allMatches={matches}
+          horizon="last30"
+          setHorizon={vi.fn()}
+          isLoading={false}
+          formNowInsight={insight}
+          nowMs={nowMs}
+          periodSeries={buildPeriodSeries({ matches })}
+          onDrill={vi.fn()}
+        />
+      );
+    }
+
+    function renderLink(matches: Match[]): string {
+      render(
+        <MemoryRouter>
+          <LinkHarness matches={matches} />
+        </MemoryRouter>,
+      );
+      return (
+        document.querySelector('[data-slot="fighter-hero-verdict-sentence"]')?.textContent ?? ''
+      );
+    }
+
+    it('12 games all older than 12 months: "Link — no games in the last 12 months — showing lifetime."', () => {
+      const verdict = renderLink(linkMatches(12, 0));
+      expect(verdict).toBe('Link — no games in the last 12 months — showing lifetime.');
+      const body = document.querySelector('[data-slot="fighter-hero-body"]') as HTMLElement;
+      expect(body.textContent).not.toMatch(/more games? unlocks? this/);
+    });
+
+    it('2 games inside 12 months: "Link — only 2 games in the last 12 months — showing lifetime."', () => {
+      const verdict = renderLink(linkMatches(12, 2));
+      expect(verdict).toBe('Link — only 2 games in the last 12 months — showing lifetime.');
+    });
+
+    it('a 2-game-lifetime fighter (baseline not evidenced) keeps the engine locked sentence', () => {
+      const verdict = renderLink(linkMatches(0, 2));
+      expect(verdict).toMatch(/more games? unlocks? this/);
+      expect(verdict).not.toContain('12 months');
+    });
+  });
+
   describe('T-39.1-25 (gap closure, SC4/INS-04): the door is built from the claim axis, never a hand-built fighter axis', () => {
     it('renders the formNow counted-games door built from the claim axis, count equal to countedMatchIds.length', () => {
       const matches = largeFixture();
