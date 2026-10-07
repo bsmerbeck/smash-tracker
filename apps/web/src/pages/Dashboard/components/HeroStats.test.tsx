@@ -115,7 +115,7 @@ describe('HeroStats', () => {
       return card.querySelector('[data-slot="delta-chip"]');
     }
 
-    it('a stale account (no games in the scoped window) reads "no games · last 30"', () => {
+    it('plan 39.1-59 (UAT 39.1-33 F17): a stale account (the 12-month bound emptied the window) reads "none in the last 12 months", never "no games · last 30"', () => {
       const now = Date.now();
       const matches = Array.from({ length: 40 }, (_, i) =>
         makeMatch({ id: `s${i}`, time: now - (400 + i) * DAY_MS, win: i % 2 === 0 }),
@@ -124,7 +124,8 @@ describe('HeroStats', () => {
       const chip = overallChip();
       expect(chip).not.toBeNull();
       expect(chip!.getAttribute('data-state')).toBe('none');
-      expect(chip!.textContent).toBe('no games· last 30');
+      expect(chip!.textContent).toBe('none in the last 12 months');
+      expect(chip!.textContent).not.toContain('last 30');
     });
 
     it('a 2-game scoped window reads "n 2 · no direction"', () => {

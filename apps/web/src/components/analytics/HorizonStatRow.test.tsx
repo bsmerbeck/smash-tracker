@@ -147,14 +147,39 @@ describe('HorizonStatRow (plan 39.1-43, hero-idioms-kit)', () => {
     expect(figureButton('Last event')).toContainElement(chips[0] as HTMLElement);
   });
 
-  it('none state: a stale account renders three muted em dashes with the "no games" chip, never "Steady"', async () => {
+  it('none state: a stale account renders three muted em dashes with a "none" chip, never "Steady"', async () => {
     const { container } = await renderRow({ matches: staleFixture() });
-    for (const label of ['30 games', 'Last event', '90 days']) {
+    // Plan 39.1-59 (UAT 39.1-33 F17): the last-30 window was emptied by the
+    // 12-month bound; the event-less last event and the 90-day window were
+    // empty regardless, so they keep "no games".
+    const expected: Record<string, string> = {
+      '30 games': 'none in the last 12 months',
+      'Last event': 'no games',
+      '90 days': 'no games',
+    };
+    for (const [label, chipText] of Object.entries(expected)) {
       const button = figureButton(label);
       expect(button.textContent).toContain('—');
-      expect(button.querySelector('[data-slot="delta-chip"]')?.textContent).toBe('no games');
+      const chip = button.querySelector('[data-slot="delta-chip"]');
+      expect(chip?.getAttribute('data-state')).toBe('none');
+      expect(chip?.textContent).toBe(chipText);
     }
     expect(container.textContent).not.toMatch(/steady/i);
+  });
+
+  it('plan 39.1-59 (UAT 39.1-33 F17): a fighter whose 40 games (in named events) are all 400+ days old reads "none in the last 12 months" on last 30 and last event', async () => {
+    const matches = staleFixture().map((match, i) => ({
+      ...match,
+      eventName: `Old Event ${Math.floor(i / 10)}`,
+    }));
+    await renderRow({ matches });
+    for (const label of ['30 games', 'Last event']) {
+      const button = figureButton(label);
+      expect(button.textContent, label).toContain('none in the last 12 months');
+      expect(button.textContent, label).not.toContain('no games');
+    }
+    expect(figureButton('90 days').textContent).toContain('no games');
+    expect(figureButton('90 days').textContent).not.toContain('12 months');
   });
 
   it('populated state: the large fixture renders a rate and a record on every horizon figure', async () => {

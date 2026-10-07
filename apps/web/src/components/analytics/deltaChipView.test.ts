@@ -255,3 +255,70 @@ describe('deltaChipView — one ladder-to-chip mapping (honest-none-chip)', () =
     }
   });
 });
+
+describe('deltaChipView — the D-15 12-month bound emptied the window (plan 39.1-59, UAT 39.1-33 F17)', () => {
+  // A dynamic input object so the RED run compiles before `recencyBounded` exists on the type.
+  function boundedInput(
+    horizon: HorizonKey,
+    recencyBounded: boolean | undefined,
+    horizonOwnedByParent = false,
+  ) {
+    return {
+      state: 'locked' as InsightState,
+      deltaPoints: null,
+      recentGames: 0,
+      horizon,
+      horizonOwnedByParent,
+      ...(recencyBounded === undefined ? {} : { recencyBounded }),
+      t,
+    };
+  }
+
+  it("an empty bounded last-30 / last-event window reads 'none in the last 12 months' with no horizon suffix", async () => {
+    const deltaChipView = await loadView();
+    for (const horizon of ['last30', 'lastEvent'] as const) {
+      const view = deltaChipView(boundedInput(horizon, true));
+      expect(view, horizon).not.toBeNull();
+      expect(view!.state).toBe('none');
+      expect(view!.valueLabel).toBe('none in the last 12 months');
+      expect(view!.horizonLabel).toBeUndefined();
+      expect(view!.horizonOwnedByParent).toBe(true);
+      expect(view!.recentGames).toBe(0);
+    }
+  });
+
+  it("the 90-day window keeps 'no games' even when bounded", async () => {
+    const deltaChipView = await loadView();
+    const view = deltaChipView(boundedInput('last90', true));
+    expect(view!.valueLabel).toBe('no games');
+    expect(view!.horizonLabel).toBe('last 90 days');
+  });
+
+  it('recencyBounded false or omitted returns exactly what it returns today', async () => {
+    const deltaChipView = await loadView();
+    for (const horizon of ['last30', 'lastEvent', 'last90'] as const) {
+      const today = {
+        state: 'none',
+        valueLabel: 'no games',
+        horizonLabel: t(`insights.chip.horizon.${horizon}`),
+        horizonOwnedByParent: false,
+        recentGames: 0,
+      };
+      expect(deltaChipView(boundedInput(horizon, false))).toEqual(today);
+      expect(deltaChipView(boundedInput(horizon, undefined))).toEqual(today);
+    }
+  });
+
+  it('a non-empty window ignores recencyBounded', async () => {
+    const deltaChipView = await loadView();
+    const base = {
+      state: 'thin' as InsightState,
+      deltaPoints: null,
+      recentGames: 2,
+      horizon: 'last30' as HorizonKey,
+      horizonOwnedByParent: false,
+      t,
+    };
+    expect(deltaChipView({ ...base, ...{ recencyBounded: true } })).toEqual(deltaChipView(base));
+  });
+});

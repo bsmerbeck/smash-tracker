@@ -325,14 +325,21 @@ describe('FighterHero', () => {
       expect(steady.map((el) => el.outerHTML.slice(0, 120))).toEqual([]);
     });
 
-    it('the three recent figures render a muted em dash and the "no games" chip, never the unlock sentence', () => {
+    it('the three recent figures render a muted em dash and a "none" chip, never the unlock sentence', () => {
       renderHero({ fighterMatches: staleFixture(), horizon: 'last30' });
-      for (const label of ['30 games', 'Last event', '90 days']) {
+      // Plan 39.1-59 (UAT 39.1-33 F17): the 12-month bound emptied last 30;
+      // the event-less last event and the 90-day window keep "no games".
+      const expected: Record<string, string> = {
+        '30 games': 'none in the last 12 months',
+        'Last event': 'no games',
+        '90 days': 'no games',
+      };
+      for (const [label, chipText] of Object.entries(expected)) {
         const figure = figureButton(label);
         const chip = figure.querySelector('[data-slot="delta-chip"]');
         expect(chip, `figure ${label}`).not.toBeNull();
         expect(chip!.getAttribute('data-state')).toBe('none');
-        expect(chip!.textContent).toBe('no games');
+        expect(chip!.textContent).toBe(chipText);
         const dash = within(figure).getByText('—');
         expect(dash.className).toMatch(/text-muted-foreground/);
       }
