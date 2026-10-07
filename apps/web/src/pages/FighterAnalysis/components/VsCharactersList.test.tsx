@@ -138,7 +138,7 @@ describe('VsCharactersList', () => {
       expect(screen.queryByText('Thin')).not.toBeInTheDocument();
     });
 
-    it('a row with no recent games reads "no games" with no horizon suffix', () => {
+    it('a stale row (every game older than 12 months) reads "none in the last 12 months", never "no games" (UAT review WR-03, F17)', () => {
       const now = Date.now();
       const matches = Array.from({ length: 12 }, (_, i) =>
         makeMatch({
@@ -152,7 +152,8 @@ describe('VsCharactersList', () => {
       const chip = chipOf();
       expect(chip).not.toBeNull();
       expect(chip!.getAttribute('data-state')).toBe('none');
-      expect(chip!.textContent).toBe('no games');
+      expect(chip!.textContent).toBe('none in the last 12 months');
+      expect(chip!.textContent).not.toMatch(/no games/);
     });
   });
 

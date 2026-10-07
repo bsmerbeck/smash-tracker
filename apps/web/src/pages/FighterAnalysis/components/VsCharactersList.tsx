@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BoundedList, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { windowHeldGamesBeforeBound } from '@/components/analytics/scopedRecencyVerdict';
 import { Record } from '@/components/analytics/Record';
 import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
@@ -25,6 +26,12 @@ interface CharacterCandidate {
   recentRate: RateValue;
   state: InsightState;
   deltaPoints: number | null;
+  /**
+   * UAT review WR-03 (F17, plan 39.1-59): the row's last-30 window held games
+   * before D-15's 12-month bound — an emptied window then reads "none in the
+   * last 12 months", never "no games" beside an all-time record.
+   */
+  recencyBounded: boolean;
 }
 
 /**
@@ -67,7 +74,15 @@ function buildCandidates(fighterMatches: Match[], nowMs: number): CharacterCandi
       scoped: true,
       hasAction: false,
     });
-    candidates.push({ opponentFighterId, baselineRate, recentRate, state, deltaPoints });
+    const recencyBounded = windowHeldGamesBeforeBound({ matches, horizon: 'last30', nowMs });
+    candidates.push({
+      opponentFighterId,
+      baselineRate,
+      recentRate,
+      state,
+      deltaPoints,
+      recencyBounded,
+    });
   }
   return candidates.sort(
     (a, b) =>
@@ -131,6 +146,7 @@ export function VsCharactersList({ fighterId, fighterMatches }: VsCharactersList
       recentGames: candidate.recentRate.total,
       horizon: 'last30',
       horizonOwnedByParent: true,
+      recencyBounded: candidate.recencyBounded,
       t,
     });
     const recordNode = subFloor ? (

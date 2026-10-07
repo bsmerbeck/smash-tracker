@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BoundedList, LIST_CAP_RAIL } from '@/components/analytics/BoundedList';
 import { DeltaChip } from '@/components/analytics/DeltaChip';
 import { deltaChipView } from '@/components/analytics/deltaChipView';
+import { windowHeldGamesBeforeBound } from '@/components/analytics/scopedRecencyVerdict';
 import { Record } from '@/components/analytics/Record';
 import { ComparisonBars, type ComparisonBarsDumbbellRow } from '@/components/charts/ComparisonBars';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -25,6 +26,12 @@ interface PlayerCandidate {
   recentRate: RateValue;
   state: InsightState;
   deltaPoints: number | null;
+  /**
+   * UAT review WR-03 (F17, plan 39.1-59): the row's last-30 window held games
+   * before D-15's 12-month bound — an emptied window then reads "none in the
+   * last 12 months", never "no games" beside an all-time record.
+   */
+  recencyBounded: boolean;
 }
 
 /** A simple, deterministic display tag: the first non-empty stored `opponent` tag among the group's matches, falling back to the identity itself (mirrors `rivalMovers.ts`'s own `pickDisplayTag` — not exported, duplicated by convention). */
@@ -92,6 +99,7 @@ function buildCandidates(
       recentRate,
       state,
       deltaPoints,
+      recencyBounded: windowHeldGamesBeforeBound({ matches, horizon: 'last30', nowMs }),
     });
   }
   return candidates.sort(
@@ -156,6 +164,7 @@ export function VsPlayersList({ fighterId, fighterMatches, aliasMap }: VsPlayers
       recentGames: candidate.recentRate.total,
       horizon: 'last30',
       horizonOwnedByParent: true,
+      recencyBounded: candidate.recencyBounded,
       t,
     });
     const recordNode = subFloor ? (
