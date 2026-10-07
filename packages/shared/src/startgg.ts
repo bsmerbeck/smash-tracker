@@ -455,6 +455,12 @@ export const scoutGameSchema = z.object({
   opponentTag: z.string().min(1),
   /** The event name this set belonged to, when known. */
   eventName: z.string().optional(),
+  /**
+   * The parent tournament's display name, when known (41-17). Lets two same-named events
+   * ('Ultimate Singles') at different tournaments read as distinct points. Absent on scout data
+   * built before it existed; consumers fall back to the event-name label.
+   */
+  tournamentName: z.string().optional(),
 });
 export type ScoutGame = z.infer<typeof scoutGameSchema>;
 
