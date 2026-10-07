@@ -297,6 +297,48 @@ describe('buildPracticeRecommendations', () => {
     });
   });
 
+  it('a thin even matchup ranked last never hides a well-sampled losing one (UAT review WR-02)', () => {
+    // Wilson lower bounds (z = 1.96): Fox 3-3 ~0.19 sits BELOW Luigi 20-25
+    // ~0.31, so the Wilson-last row is the even one. The bullet must name the
+    // worst LOSING matchup, as the shared action engine does.
+    const fighterMatches = [
+      ...Array.from({ length: 45 }, (_, i) =>
+        makeMatch({ id: `lu${i}`, time: i, win: i < 20, opponent_id: LUIGI }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        makeMatch({ id: `fx${i}`, time: 100 + i, win: i < 3, opponent_id: FOX }),
+      ),
+    ];
+    const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
+
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
+
+    expect(recs).toContainEqual({
+      kind: 'worst-matchup',
+      text: 'Struggling vs Luigi: 20-25',
+    });
+  });
+
+  it('a thin even stage ranked last never hides a well-sampled losing one (UAT review WR-02)', () => {
+    const onStage = (prefix: string, count: number, wins: number, map: Match['map'], t0: number) =>
+      Array.from({ length: count }, (_, i) =>
+        makeMatch({ id: `${prefix}${i}`, time: t0 + i, win: i < wins, opponent_id: LUIGI, map }),
+      );
+    const fighterMatches = [
+      ...onStage('fd', 21, 15, { id: 3, name: 'Final Destination' }, 0), // 15-6
+      ...onStage('bf', 6, 3, { id: 1, name: 'Battlefield' }, 100), // 3-3, Wilson-last
+      ...onStage('sv', 45, 20, { id: 83, name: 'Smashville' }, 200), // 20-25
+    ];
+    const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
+
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
+
+    expect(recs).toContainEqual({
+      kind: 'stage-habit',
+      text: 'You keep playing on Smashville: 20-25',
+    });
+  });
+
   it('returns an honest empty list when nothing qualifies', () => {
     expect(buildPracticeRecommendations([], [], nameFor, i18n.t)).toEqual([]);
   });

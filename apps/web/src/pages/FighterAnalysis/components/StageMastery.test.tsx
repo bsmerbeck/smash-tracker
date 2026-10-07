@@ -136,6 +136,25 @@ describe('StageMastery', () => {
     expect(label.closest('p')).toHaveTextContent('Final Destination');
   });
 
+  it('a thin even stage ranked last never hides a well-sampled losing one from "Ban-worthy" (UAT review WR-02)', () => {
+    const SMASHVILLE = { id: 83, name: 'Smashville' };
+    const matches: Match[] = [
+      ...Array.from({ length: 21 }, (_, i) =>
+        makeMatch({ id: `fd${i}`, time: i, win: i < 15, map: FINAL_DESTINATION }),
+      ),
+      ...Array.from({ length: 6 }, (_, i) =>
+        makeMatch({ id: `bf${i}`, time: 100 + i, win: i < 3, map: BATTLEFIELD }),
+      ),
+      ...Array.from({ length: 45 }, (_, i) =>
+        makeMatch({ id: `sv${i}`, time: 200 + i, win: i < 20, map: SMASHVILLE }),
+      ),
+    ]; // Final Destination 15-6, Battlefield 3-3 (Wilson-last), Smashville 20-25
+    render(<StageMastery fighterMatches={matches} />);
+
+    const label = screen.getByText(/Ban-worthy/);
+    expect(label.closest('p')).toHaveTextContent('Smashville');
+  });
+
   it('with no stageHref supplied, a stage tile renders no anchor and no button — and needs no Router at all', () => {
     // Deliberately NO <MemoryRouter> here — this is the exact shape
     // `FullAnalysisSection.test.tsx`'s six bare renders require (H-01).

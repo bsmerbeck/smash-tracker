@@ -94,16 +94,17 @@ export interface PracticeRecommendation {
  * Up to 3 evidence-driven practice bullets for the selected fighter, each
  * omitted when its trigger condition isn't met:
  *
- * 1. Worst Wilson-ranked matchup with >= `PRACTICE_MATCHUP_MIN_GAMES` games,
- *    only when that record is losing (losses > wins) — a relatively-worst
- *    matchup that is winning or even is not a problem ("struggling vs X: 2-7").
+ * 1. The lowest Wilson-ranked LOSING matchup (losses > wins) with >=
+ *    `PRACTICE_MATCHUP_MIN_GAMES` games — a relatively-worst matchup that is
+ *    winning or even is not a problem, and never hides a losing one ranked
+ *    above it ("struggling vs X: 2-7").
  * 2. Biggest coverage gap: the highest-`metaGames` coverage entry with
  *    `status === 'none'` that's been faced at least
  *    `COVERAGE_GAP_MIN_META_GAMES` times account-wide ("no games vs Y — you
  *    face them often").
- * 3. Worst ban-worthy stage habit: the lowest Wilson-ranked stage with >=
- *    `PRACTICE_STAGE_MIN_GAMES` games, only when that record is losing
- *    (losses > wins) ("you keep playing on Z: 1-5").
+ * 3. Worst ban-worthy stage habit: the lowest Wilson-ranked LOSING stage
+ *    (losses > wins) with >= `PRACTICE_STAGE_MIN_GAMES` games ("you keep
+ *    playing on Z: 1-5").
  *
  * `nameForFighter`/`nameForStage` are injected so this module stays pure
  * (no sprite/stage-art imports needed beyond stage name lookup, which is
@@ -119,8 +120,11 @@ export function buildPracticeRecommendations(
   const recs: PracticeRecommendation[] = [];
 
   const rankedMatchups = rankMatchupsByEvidence(fighterMatches, PRACTICE_MATCHUP_MIN_GAMES);
-  const worstMatchup = rankedMatchups[rankedMatchups.length - 1];
-  if (worstMatchup && worstMatchup.losses > worstMatchup.wins) {
+  // Filter to losing records BEFORE taking the worst (UAT review WR-02), as
+  // `evidence/actions.ts` does: a thin even row can rank Wilson-last and must
+  // not hide a well-sampled losing matchup above it.
+  const worstMatchup = [...rankedMatchups].reverse().find((m) => m.losses > m.wins);
+  if (worstMatchup) {
     recs.push({
       kind: 'worst-matchup',
       text: t('fighterAnalysis.practice.struggling', {
@@ -144,8 +148,8 @@ export function buildPracticeRecommendations(
   }
 
   const rankedStages = rankStagesByEvidence(fighterMatches, PRACTICE_STAGE_MIN_GAMES);
-  const worstStage = rankedStages[rankedStages.length - 1];
-  if (worstStage && worstStage.losses > worstStage.wins) {
+  const worstStage = [...rankedStages].reverse().find((s) => s.losses > s.wins);
+  if (worstStage) {
     const stageName = stagesById.get(worstStage.stageId)?.name ?? t('common.unknown');
     recs.push({
       kind: 'stage-habit',

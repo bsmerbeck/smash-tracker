@@ -95,12 +95,17 @@ export function StageMastery({
   const bestPick = claim.kind === 'evidenced' ? (claim.value[0] ?? null) : null;
   // "Ban-worthy" is a problem framing, so it needs an absolute losing record —
   // the Wilson-last stage alone is only RELATIVELY worst, and a strong
-  // player's weakest stage can still be winning (UAT F3: FD at 15-6).
-  const lastStage =
+  // player's weakest stage can still be winning (UAT F3: FD at 15-6). Filter
+  // to losing stages BEFORE taking the worst (UAT review WR-02, as
+  // `evidence/actions.ts` does), so a thin even stage ranked last never hides
+  // a well-sampled losing one; the best pick (index 0) is never also ban-worthy.
+  const banWorthy =
     claim.kind === 'evidenced' && claim.value.length > 1
-      ? (claim.value[claim.value.length - 1] ?? null)
+      ? (claim.value
+          .slice(1)
+          .reverse()
+          .find((stage) => stage.losses > stage.wins) ?? null)
       : null;
-  const banWorthy = lastStage && lastStage.losses > lastStage.wins ? lastStage : null;
 
   function stageNameNode(stageId: number) {
     const name = stagesById.get(stageId)?.name ?? t('common.unknown');
