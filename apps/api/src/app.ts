@@ -226,6 +226,13 @@ export interface BuildAppOptions {
   logger?: boolean | FastifyBaseLogger;
 }
 
+/**
+ * `@fastify/cors` defaults to GET, HEAD and POST only. The dev web app calls this
+ * API cross-origin, so PUT/PATCH/DELETE must be listed or every edit fails at
+ * preflight. Production is same-origin via the Hosting rewrite and never preflights.
+ */
+const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+
 export function buildApp(options: BuildAppOptions) {
   const loggerOption = options.logger ?? true;
   const app = Fastify({
@@ -252,6 +259,7 @@ export function buildApp(options: BuildAppOptions) {
 
   app.register(cors, {
     origin: options.corsOrigin ?? 'http://localhost:5173',
+    methods: CORS_METHODS,
   });
 
   // P1 2026-08-12: GET /api/matches shipped 3.67MB of identity-encoded JSON
