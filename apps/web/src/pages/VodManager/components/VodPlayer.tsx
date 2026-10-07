@@ -3,6 +3,7 @@ import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import { useVodPlayer } from '@/lib/useVodPlayer';
+import { detectVodProvider, vodDeepLink } from '@/lib/vod';
 
 export interface VodPlayerProps {
   /** The selected match's raw stored VOD URL. */
@@ -59,7 +60,10 @@ export interface VodPlayerProps {
  * available" message on a dead/private VOD (Pitfall 3, replacing the player
  * entirely so layout doesn't jump), or a plain "Open on {host}" link for any
  * non-YouTube/Twitch host (never attempting an embed for an unrecognized
- * URL).
+ * URL). A Twitch embed is always followed by the same "Open on {host}" link,
+ * deep-linked to the start offset: Twitch can paint its own in-iframe overlay
+ * (e.g. "Failed to determine content classification") that the Embed API
+ * never reports, so the app can't detect it — the link is the escape hatch.
  *
  * Invoked by `VodManagerPage`'s detail panel. All player construction and
  * seek logic lives in `useVodPlayer` (`@/lib/useVodPlayer`) — this
@@ -129,15 +133,7 @@ export function VodPlayer({
         data-testid="vod-player-box"
         className="aspect-video min-h-[300px] rounded-lg border bg-muted flex items-center justify-center p-4 text-center"
       >
-        <a
-          href={vodUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-        >
-          {t('vodManager.openOnHost', { host: safeHostname(vodUrl) })}
-          <ExternalLink className="size-3.5" />
-        </a>
+        <OpenOnHostLink href={vodUrl} host={safeHostname(vodUrl)} />
       </div>
     );
   }
@@ -153,7 +149,7 @@ export function VodPlayer({
     );
   }
 
-  return (
+  const embed = (
     <div
       data-testid="vod-player-box"
       className="relative aspect-video min-h-[300px] overflow-hidden rounded-lg border"
@@ -161,6 +157,35 @@ export function VodPlayer({
       <div ref={containerRef} className="absolute inset-0 size-full" />
       {!isReady && <div className="absolute inset-0 bg-muted animate-pulse" />}
     </div>
+  );
+
+  if (detectVodProvider(vodUrl).provider !== 'twitch') {
+    return embed;
+  }
+
+  return (
+    <>
+      {embed}
+      <div className="mt-2 flex justify-end">
+        <OpenOnHostLink href={vodDeepLink(vodUrl, startSeconds ?? 0)} host={safeHostname(vodUrl)} />
+      </div>
+    </>
+  );
+}
+
+/** The "Open on {host}" external link — the unsupported-host fallback, and the always-on escape hatch beneath a Twitch embed. */
+function OpenOnHostLink({ href, host }: { href: string; host: string }) {
+  const { t } = useTranslation();
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+    >
+      {t('vodManager.openOnHost', { host })}
+      <ExternalLink className="size-3.5" />
+    </a>
   );
 }
 
