@@ -298,7 +298,8 @@ export function OpponentsPage() {
               />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
-            <RecentEncounters matches={profile.recent} />
+            {/* UAT review IN-02 (as the hub since plan 39.1-56): the whole alias-resolved head-to-head — `profile.recent` holds only the last 10 games, so the card never reached its 8-set cap or "Show all". */}
+            <RecentEncounters matches={opponentMatches} />
             <TournamentHistory
               blocks={tournamentBlocks}
               tournamentEntries={tournamentEntries ?? []}

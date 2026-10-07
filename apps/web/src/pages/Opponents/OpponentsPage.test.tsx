@@ -1357,3 +1357,51 @@ describe('OpponentsPage', () => {
     });
   });
 });
+
+/**
+ * UAT review IN-02: the legacy page's Recent Encounters receives the whole
+ * alias-resolved head-to-head, as the hub does since plan 39.1-56 — not
+ * `profile.recent` (the engine's last 10 GAMES, at most ~3-4 sets, so the
+ * card never reached its 8-set cap or offered "Show all").
+ */
+describe('OpponentsPage — Recent Encounters holds the full head-to-head (UAT review IN-02)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    setMockUser(makeMockUser());
+  });
+
+  it('12 start.gg sets of 3 games render exactly 8 set rows and a Show all control', async () => {
+    const matches = [];
+    for (let s = 0; s < 12; s++) {
+      for (let g = 1; g <= 3; g++) {
+        matches.push(
+          makeMatch({
+            id: `s${s}g${g}`,
+            time: 1_000_000 + s * 10_000 + g,
+            win: g !== 2,
+            opponent: 'rival',
+            matchType: 'offline-tourney',
+            externalId: `sgg:${700 + s}:g${g}`,
+            eventName: 'Long Rivalry Weekly',
+          }),
+        );
+      }
+    }
+    listMatches.mockResolvedValue(matches);
+
+    renderOpponents();
+
+    await waitFor(() => expect(screen.getByText('Recent Encounters')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="encounter-set-row"]').length).toBe(8),
+    );
+    expect(screen.getByRole('button', { name: 'Show all sets' })).toBeInTheDocument();
+  });
+});
