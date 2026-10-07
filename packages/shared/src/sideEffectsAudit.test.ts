@@ -686,11 +686,13 @@ const REVIEWED_TOP_LEVEL_EFFECTS: Record<string, ReviewedModule> = {
   'researchIngestion.ts': {
     verdict: 'module-local',
     statements: [
+      'call:Date.UTC@RESEARCH_COVERAGE_MIN_MS',
       'template-substitution@researchCoverageSnapshotSchema',
       'template-substitution@researchIdentityMappingSchema',
       'template-substitution@researchTenantIngestionStateSchema',
     ],
-    reason: "The templates only build validation-message strings inside this module's own schemas.",
+    reason:
+      "Date.UTC (a pure number, 36-10's SSBU coverage-date floor) computes this module's own constant; the templates only build validation-message strings inside this module's own schemas.",
   },
   'ruleset.ts': {
     verdict: 'module-local',
