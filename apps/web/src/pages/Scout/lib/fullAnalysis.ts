@@ -44,6 +44,7 @@ export function scoutGamesToMatches(games: ScoutGame[]): Match[] {
     matchType: 'none',
     ...(game.stageId != null ? { map: { id: game.stageId, name: game.stageName ?? '' } } : {}),
     ...(game.eventName ? { eventName: game.eventName } : {}),
+    ...(game.tournamentName ? { tournamentName: game.tournamentName } : {}),
   }));
 }
 
